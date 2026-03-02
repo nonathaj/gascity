@@ -289,7 +289,7 @@ func poolAgents(cfgAgent *config.Agent, desired int, cityName, cityPath string,
 				prompt = beacon
 			}
 		}
-		env := mergeEnv(passthroughEnv(), resolved.Env, cfgAgent.Env, agentEnv)
+		env := mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(cfgAgent.Env), agentEnv)
 		// Expand session_setup templates with session context.
 		sessName := agent.SessionNameFor(cityName, qualifiedInstance, sessionTemplate)
 		configDir := cityPath

@@ -38,6 +38,7 @@ func TestNoBdExecOutsideBeads(t *testing.T) {
 	// Directories where bd calls are allowed.
 	allowedDirs := []string{
 		filepath.Join("internal", "beads") + string(filepath.Separator),
+		filepath.Join("internal", "dolt") + string(filepath.Separator), // upstream-synced from gastown
 		filepath.Join("test", "integration") + string(filepath.Separator),
 	}
 

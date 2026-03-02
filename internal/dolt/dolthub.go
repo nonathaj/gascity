@@ -1,8 +1,5 @@
 package dolt
 
-// dolthub.go — copied from gastown internal/doltserver/dolthub.go at 8e7ce630.
-// Adapted: package doltserver → dolt, gastown import paths → gascity.
-
 import (
 	"bytes"
 	"encoding/json"
@@ -37,11 +34,11 @@ func HubOrg() string {
 }
 
 // HubRepoName converts a local database name to a DoltHub repo name.
-// Replaces underscores with hyphens (e.g., "beads_gc" → "beads-gc").
-// Special case: "hq" maps to "gc-hq" (the city-level HQ database uses the gc- prefix).
+// Replaces underscores with hyphens (e.g., "beads_gt" → "beads-gt").
+// Special case: "hq" maps to "gt-hq" (the town-level HQ database uses the gt- prefix).
 func HubRepoName(dbName string) string {
 	if dbName == "hq" {
-		return "gc-hq"
+		return "gt-hq"
 	}
 	return strings.ReplaceAll(dbName, "_", "-")
 }
@@ -51,9 +48,9 @@ func HubRemoteURL(org, repo string) string {
 	return fmt.Sprintf("%s/%s/%s", dolthubRemoteBase, org, repo)
 }
 
-// CreateDoltHubRepo creates a private repository on DoltHub via the API.
+// CreateHubRepo creates a private repository on DoltHub via the API.
 // Returns nil if the repo was created or already exists.
-func CreateDoltHubRepo(org, repo, token string) error {
+func CreateHubRepo(org, repo, token string) error {
 	body := map[string]string{
 		"ownerName":  org,
 		"repoName":   repo,
@@ -125,15 +122,15 @@ func AddRemote(dbDir, org, repo string) error {
 	return nil
 }
 
-// SetupDoltHubRemote creates a DoltHub repo, adds the remote, and does an
+// SetupHubRemote creates a DoltHub repo, adds the remote, and does an
 // initial push. Each step is fail-fast — the function returns on the first
 // error because each step requires the previous to succeed (can't add a
 // remote if repo creation failed, can't push if the remote wasn't added).
-func SetupDoltHubRemote(dbDir, org, dbName, token string) error {
+func SetupHubRemote(dbDir, org, dbName, token string) error {
 	repo := HubRepoName(dbName)
 
 	// Step 1: Create the DoltHub repo
-	if err := CreateDoltHubRepo(org, repo, token); err != nil {
+	if err := CreateHubRepo(org, repo, token); err != nil {
 		return fmt.Errorf("creating DoltHub repo %s/%s: %w", org, repo, err)
 	}
 
@@ -142,8 +139,8 @@ func SetupDoltHubRemote(dbDir, org, dbName, token string) error {
 		return fmt.Errorf("adding remote for %s/%s: %w", org, repo, err)
 	}
 
-	// Step 3: Initial push
-	if err := PushDatabase(dbDir, false); err != nil {
+	// Step 3: Initial push (AddRemote creates "origin")
+	if err := PushDatabase(dbDir, "origin", false); err != nil {
 		return fmt.Errorf("initial push to %s/%s: %w", org, repo, err)
 	}
 

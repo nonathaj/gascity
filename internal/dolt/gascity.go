@@ -780,3 +780,159 @@ func runBdInit(store *beads.BdStore, rigPath, prefix, doltHost string, doltPort 
 
 	return nil
 }
+
+// ── Orphan detection and cleanup (city-scoped) ───────────────────────
+
+// collectReferencedDatabasesCity returns the set of database names referenced by
+// metadata.json files within a Gas City directory. Checks:
+//   - HQ: <cityPath>/.beads/metadata.json
+//   - Routes: <cityPath>/.beads/routes.jsonl → each route's .beads/metadata.json
+//   - Broad scan: top-level dirs → <dir>/.beads/metadata.json
+func collectReferencedDatabasesCity(cityPath string) map[string]bool {
+	referenced := make(map[string]bool)
+
+	// HQ beads
+	if db := readExistingDoltDatabase(filepath.Join(cityPath, ".beads")); db != "" {
+		referenced[db] = true
+	}
+
+	// Routes (catches rigs that have routes but aren't top-level dirs yet)
+	routesPath := filepath.Join(cityPath, ".beads", "routes.jsonl")
+	if routesData, err := os.ReadFile(routesPath); err == nil {
+		for _, line := range strings.Split(string(routesData), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var route struct {
+				Path string `json:"path"`
+			}
+			if json.Unmarshal([]byte(line), &route) != nil || route.Path == "" {
+				continue
+			}
+			beadsDir := filepath.Join(cityPath, route.Path, ".beads")
+			if db := readExistingDoltDatabase(beadsDir); db != "" {
+				referenced[db] = true
+			}
+		}
+	}
+
+	// Broad scan: top-level directories
+	if entries, err := os.ReadDir(cityPath); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || entry.Name() == ".gc" || entry.Name() == ".beads" {
+				continue
+			}
+			if db := readExistingDoltDatabase(filepath.Join(cityPath, entry.Name(), ".beads")); db != "" {
+				referenced[db] = true
+			}
+		}
+	}
+
+	return referenced
+}
+
+// FindOrphanedDatabasesCity scans .gc/dolt-data/ for databases not referenced
+// by any metadata.json dolt_database field in the city.
+func FindOrphanedDatabasesCity(cityPath string) ([]OrphanedDatabase, error) {
+	databases, err := ListDatabasesCity(cityPath)
+	if err != nil {
+		return nil, fmt.Errorf("listing databases: %w", err)
+	}
+	if len(databases) == 0 {
+		return nil, nil
+	}
+
+	referenced := collectReferencedDatabasesCity(cityPath)
+
+	config := GasCityConfig(cityPath)
+	var orphans []OrphanedDatabase
+	for _, dbName := range databases {
+		if referenced[dbName] {
+			continue
+		}
+		dbPath := filepath.Join(config.DataDir, dbName)
+		size := dirSize(dbPath)
+		orphans = append(orphans, OrphanedDatabase{
+			Name:      dbName,
+			Path:      dbPath,
+			SizeBytes: size,
+		})
+	}
+
+	return orphans, nil
+}
+
+// RemoveDatabaseCity removes an orphaned database from a Gas City's .gc/dolt-data/.
+// If the server is running, it DROPs the database first and cleans up branch_control.
+// If force is false and the database has user tables, it refuses.
+func RemoveDatabaseCity(cityPath, dbName string, force bool) error {
+	config := GasCityConfig(cityPath)
+	dbPath := filepath.Join(config.DataDir, dbName)
+
+	if _, err := os.Stat(filepath.Join(dbPath, ".dolt")); err != nil {
+		return fmt.Errorf("database %q not found at %s", dbName, dbPath)
+	}
+
+	// Safety: refuse if DB has real data and force is not set.
+	running, _, _ := IsRunningCity(cityPath)
+	if running && !force {
+		if hasData, _ := databaseHasUserTablesCity(cityPath, dbName); hasData {
+			return fmt.Errorf("database %q has user tables — use --force to remove", dbName)
+		}
+	}
+
+	// If server is running, DROP + clean branch_control.
+	if running {
+		if dropErr := serverExecSQLCity(cityPath, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", dbName)); dropErr != nil {
+			if IsReadOnlyError(dropErr.Error()) {
+				return fmt.Errorf("DROP put server into read-only mode: %w", dropErr)
+			}
+		}
+		_ = serverExecSQLCity(cityPath, fmt.Sprintf("DELETE FROM dolt_branch_control WHERE `database` = '%s'", dbName))
+	}
+
+	if err := os.RemoveAll(dbPath); err != nil {
+		return fmt.Errorf("removing database directory: %w", err)
+	}
+
+	return nil
+}
+
+// serverExecSQLCity runs a SQL statement against the city's dolt server.
+func serverExecSQLCity(cityPath, query string) error {
+	config := GasCityConfig(cityPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := buildDoltSQLCmd(ctx, config, "-q", query)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// databaseHasUserTablesCity checks if a database has tables beyond Dolt system tables,
+// using the city's dolt config.
+func databaseHasUserTablesCity(cityPath, dbName string) (bool, error) {
+	config := GasCityConfig(cityPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	query := fmt.Sprintf("USE `%s`; SHOW TABLES", dbName)
+	cmd := buildDoltSQLCmd(ctx, config, "-r", "csv", "-q", query)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+
+	for _, line := range strings.Split(string(output), "\n") {
+		table := strings.TrimSpace(line)
+		if table == "" || table == "Tables_in_"+dbName || table == "Table" {
+			continue
+		}
+		if !strings.HasPrefix(table, "dolt_") {
+			return true, nil
+		}
+	}
+	return false, nil
+}

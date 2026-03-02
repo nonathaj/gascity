@@ -431,7 +431,8 @@ func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 		})
 	}
 
-	if count != 1 {
-		t.Errorf("found %d formula files, want 1 (mol-shutdown-dance)", count)
+	// 8 formulas: mol-shutdown-dance + 7 dog infrastructure formulas
+	if count != 8 {
+		t.Errorf("found %d formula files, want 8", count)
 	}
 }

@@ -34,10 +34,7 @@ created=0
 skipped=0
 failed=0
 
-# 1. Sync (best-effort).
-"$WL_BIN" sync 2>/dev/null || true
-
-# 2. Parse project map (if set).
+# 1. Parse project map (if set).
 declare -A project_map
 if [[ -n "$WL_PROJECT_MAP" ]]; then
   IFS=',' read -ra mappings <<< "$WL_PROJECT_MAP"
@@ -80,7 +77,7 @@ dispatch_item() {
     --title "$item_title" \
     --labels "wasteland:${item_id}" \
     --metadata "{\"wasteland_id\":\"${item_id}\",\"wasteland_type\":\"${item_type}\",\"wasteland_project\":\"${item_project}\"}" \
-    2>/dev/null) || bead_id=""
+    --json 2>/dev/null | jq -r '.id // empty') || bead_id=""
 
   if [[ -z "$bead_id" ]]; then
     failed=$((failed + 1))

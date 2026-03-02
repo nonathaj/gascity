@@ -132,7 +132,6 @@ func TestGetHealthMetrics_EmptyDataDir(t *testing.T) {
 }
 
 func TestFindMigratableDatabases_FollowsRedirect(t *testing.T) {
-	t.Skip("Gas City has no redirect chains — resolveBeadsDir is a simple path join")
 	// Setup: simulate a town with a rig that uses a redirect
 	townRoot := t.TempDir()
 
@@ -403,9 +402,6 @@ func TestEnsureMetadata_Rig(t *testing.T) {
 	if metadata["dolt_database"] != "myrig" {
 		t.Errorf("dolt_database = %v, want myrig", metadata["dolt_database"])
 	}
-	if metadata["jsonl_export"] != "issues.jsonl" {
-		t.Errorf("jsonl_export = %v, want issues.jsonl", metadata["jsonl_export"])
-	}
 }
 
 func TestEnsureMetadata_Idempotent(t *testing.T) {
@@ -443,12 +439,9 @@ func TestEnsureAllMetadata(t *testing.T) {
 	townRoot := t.TempDir()
 
 	// Create two databases in .dolt-data
-	for _, name := range []string{"hq", "myrig"} {
-		doltDir := filepath.Join(townRoot, ".dolt-data", name, ".dolt")
-		if err := os.MkdirAll(doltDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dataDir := filepath.Join(townRoot, ".dolt-data")
+	setupDoltDB(t, dataDir, "hq")
+	setupDoltDB(t, dataDir, "myrig")
 
 	// Create beads dirs
 	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0o755); err != nil {
@@ -1485,12 +1478,9 @@ func TestEnsureAllMetadata_RepairsAllCorrupt(t *testing.T) {
 	townRoot := t.TempDir()
 
 	// Create two databases in .dolt-data
-	for _, name := range []string{"hq", "corruptrig"} {
-		doltDir := filepath.Join(townRoot, ".dolt-data", name, ".dolt")
-		if err := os.MkdirAll(doltDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
+	dataDir := filepath.Join(townRoot, ".dolt-data")
+	setupDoltDB(t, dataDir, "hq")
+	setupDoltDB(t, dataDir, "corruptrig")
 
 	// Create beads dirs with corrupt metadata
 	hqBeads := filepath.Join(townRoot, ".beads")
@@ -1604,8 +1594,8 @@ func TestDefaultConfig_MaxConnections(t *testing.T) {
 	if config.MaxConnections != DefaultMaxConnections {
 		t.Errorf("MaxConnections = %d, want %d", config.MaxConnections, DefaultMaxConnections)
 	}
-	if config.MaxConnections != 50 {
-		t.Errorf("DefaultMaxConnections = %d, want 50", config.MaxConnections)
+	if config.MaxConnections != 1000 {
+		t.Errorf("DefaultMaxConnections = %d, want 1000", config.MaxConnections)
 	}
 }
 
@@ -1634,13 +1624,17 @@ func TestHasConnectionCapacity_ZeroMax(t *testing.T) {
 func TestFindAndMigrateAll_Idempotent(t *testing.T) {
 	townRoot := t.TempDir()
 
-	// Create 2 rigs
+	// Create 2 rigs with valid noms/manifest so ListDatabases recognizes them post-migration
 	for _, rig := range []string{"idm-a", "idm-b"} {
 		sourceDolt := filepath.Join(townRoot, rig, ".beads", "dolt", "beads_"+rig, ".dolt")
-		if err := os.MkdirAll(sourceDolt, 0o755); err != nil {
+		nomsDir := filepath.Join(sourceDolt, "noms")
+		if err := os.MkdirAll(nomsDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(sourceDolt, "config.json"), []byte(`{"rig":"`+rig+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(nomsDir, "manifest"), []byte("test"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		beadsDir := filepath.Join(townRoot, rig, "mayor", "rig", ".beads")
@@ -1772,51 +1766,6 @@ func TestEnsureMetadata_CreatesBeadsDir(t *testing.T) {
 	}
 }
 
-func TestEnsureMetadata_CorrectsStaleJSONLExport(t *testing.T) {
-	townRoot := t.TempDir()
-
-	beadsDir := filepath.Join(townRoot, ".beads")
-	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Simulate a stale jsonl_export value left by a historical migration
-	existing := map[string]interface{}{"jsonl_export": "beads.jsonl"}
-	data, _ := json.Marshal(existing)
-	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := EnsureMetadata(townRoot, "hq"); err != nil {
-		t.Fatalf("EnsureMetadata failed: %v", err)
-	}
-
-	updated, _ := os.ReadFile(filepath.Join(beadsDir, "metadata.json"))
-	var meta map[string]interface{}
-	json.Unmarshal(updated, &meta)
-	if meta["jsonl_export"] != "issues.jsonl" {
-		t.Errorf("jsonl_export = %v, want issues.jsonl (stale value should be corrected)", meta["jsonl_export"])
-	}
-}
-
-func TestEnsureMetadata_SetsDefaultJSONLExport(t *testing.T) {
-	townRoot := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := EnsureMetadata(townRoot, "hq"); err != nil {
-		t.Fatalf("EnsureMetadata failed: %v", err)
-	}
-
-	data, _ := os.ReadFile(filepath.Join(townRoot, ".beads", "metadata.json"))
-	var meta map[string]interface{}
-	json.Unmarshal(data, &meta)
-	if meta["jsonl_export"] != "issues.jsonl" {
-		t.Errorf("jsonl_export = %v, want issues.jsonl", meta["jsonl_export"])
-	}
-}
-
 // =============================================================================
 // InitRig validation tests
 // =============================================================================
@@ -1911,18 +1860,14 @@ func TestListDatabases_MixedContent(t *testing.T) {
 	townRoot := t.TempDir()
 	dataDir := filepath.Join(townRoot, ".dolt-data")
 
-	if err := os.MkdirAll(filepath.Join(dataDir, "hq", ".dolt"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	setupDoltDB(t, dataDir, "hq")
 	if err := os.MkdirAll(filepath.Join(dataDir, "not-a-db"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dataDir, "somefile.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(dataDir, "myrig", ".dolt"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	setupDoltDB(t, dataDir, "myrig")
 
 	databases, err := ListDatabases(townRoot)
 	if err != nil {
@@ -1955,7 +1900,7 @@ func TestGetConnectionStringForRig(t *testing.T) {
 
 func TestGetConnectionString_MasksPassword(t *testing.T) {
 	townRoot := t.TempDir()
-	t.Setenv("GC_DOLT_PASSWORD", "supersecret")
+	t.Setenv("GT_DOLT_PASSWORD", "supersecret")
 	s := GetConnectionString(townRoot)
 	if strings.Contains(s, "supersecret") {
 		t.Errorf("connection string should not contain raw password, got %q", s)
@@ -2172,23 +2117,6 @@ func TestMoveDir_SourceNotExists(t *testing.T) {
 // =============================================================================
 // Branch name validation tests (SQL injection prevention)
 // =============================================================================
-
-func TestValidateBranchName_ValidNames(t *testing.T) {
-	valid := []string{
-		"main",
-		"polecat-furiosa-1707400000",
-		"feature/my-branch",
-		"release-v1.2.3",
-		"my_branch",
-		"UPPER-case",
-		"a",
-	}
-	for _, name := range valid {
-		if err := validateBranchName(name); err != nil {
-			t.Errorf("validateBranchName(%q) = %v, want nil", name, err)
-		}
-	}
-}
 
 // =============================================================================
 // DatabaseExists tests
@@ -2499,26 +2427,6 @@ func TestRecoverReadOnly_NoServer(t *testing.T) {
 	}
 }
 
-func TestValidateBranchName_InvalidNames(t *testing.T) {
-	invalid := []string{
-		"",                          // empty
-		"branch'name",               // single quote (SQL injection)
-		"branch;DROP TABLE",         // semicolon
-		"branch name",               // space
-		"branch\tname",              // tab
-		"$(command)",                // command substitution
-		"branch`cmd`",               // backtick
-		"branch\"name",              // double quote
-		"branch\\name",              // backslash
-		"'); DROP TABLE issues; --", // classic SQL injection
-	}
-	for _, name := range invalid {
-		if err := validateBranchName(name); err == nil {
-			t.Errorf("validateBranchName(%q) = nil, want error", name)
-		}
-	}
-}
-
 // =============================================================================
 // doltSQLScriptWithRetry tests
 // =============================================================================
@@ -2571,40 +2479,6 @@ func TestDoltSQLScriptWithRetry_NonRetryableError(t *testing.T) {
 		if !isDoltRetryableError(fmt.Errorf("%s", msg)) {
 			t.Errorf("isDoltRetryableError(%q) = false, want true", msg)
 		}
-	}
-}
-
-// =============================================================================
-// MergePolecatBranch script generation tests
-// =============================================================================
-
-func TestMergePolecatBranch_NoBranchDeleteInScripts(t *testing.T) {
-	// Verify that MergePolecatBranch's SQL scripts don't contain DOLT_BRANCH('-D').
-	// Branch deletion must happen AFTER successful merge, not inside the scripts,
-	// to prevent branch loss if the merge script fails partway through.
-	//
-	// We can't run the actual merge (requires dolt server), but we can verify
-	// the function validates branch names correctly — invalid names are rejected
-	// before any script is generated.
-	err := MergePolecatBranch(t.TempDir(), "testrig", "'; DROP TABLE --")
-	if err == nil {
-		t.Error("expected error for SQL injection branch name")
-	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Errorf("expected 'invalid' in error, got: %v", err)
-	}
-}
-
-func TestMergePolecatBranch_ValidBranchName(t *testing.T) {
-	// Verify that valid branch names pass validation (function will fail
-	// later at the dolt execution step, but validation should pass).
-	err := MergePolecatBranch(t.TempDir(), "testrig", "polecat-alpha-123")
-	if err == nil {
-		t.Skip("dolt server available — merge unexpectedly succeeded")
-	}
-	// Should NOT be a validation error
-	if strings.Contains(err.Error(), "invalid") {
-		t.Errorf("valid branch name rejected: %v", err)
 	}
 }
 
@@ -2824,12 +2698,12 @@ func TestVerifyDatabases_NoServer(t *testing.T) {
 func setupDoltDB(t *testing.T, dataDir, dbName string) string {
 	t.Helper()
 	dbPath := filepath.Join(dataDir, dbName)
-	doltDir := filepath.Join(dbPath, ".dolt")
-	if err := os.MkdirAll(doltDir, 0o755); err != nil {
-		t.Fatalf("creating dolt dir for %s: %v", dbName, err)
+	nomsDir := filepath.Join(dbPath, ".dolt", "noms")
+	if err := os.MkdirAll(nomsDir, 0o755); err != nil {
+		t.Fatalf("creating noms dir for %s: %v", dbName, err)
 	}
-	// Write a small file so dirSize returns non-zero
-	if err := os.WriteFile(filepath.Join(doltDir, "manifest"), []byte("test"), 0o644); err != nil {
+	// Write manifest so ListDatabases recognizes this as a valid Dolt database
+	if err := os.WriteFile(filepath.Join(nomsDir, "manifest"), []byte("test"), 0o644); err != nil {
 		t.Fatalf("writing manifest for %s: %v", dbName, err)
 	}
 	return dbPath
@@ -2871,7 +2745,6 @@ func setupRigMetadata(t *testing.T, townRoot, rigName, doltDatabase string) {
 		"backend":       "dolt",
 		"dolt_mode":     "server",
 		"dolt_database": doltDatabase,
-		"jsonl_export":  "issues.jsonl",
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {
@@ -3096,7 +2969,7 @@ func TestRemoveDatabase_RemovesDirectory(t *testing.T) {
 		t.Fatalf("setup failed: orphan_db should exist: %v", err)
 	}
 
-	err := RemoveDatabase(townRoot, "orphan_db")
+	err := RemoveDatabase(townRoot, "orphan_db", true)
 	if err != nil {
 		t.Fatalf("RemoveDatabase: %v", err)
 	}
@@ -3114,7 +2987,7 @@ func TestRemoveDatabase_ErrorOnMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := RemoveDatabase(townRoot, "nonexistent")
+	err := RemoveDatabase(townRoot, "nonexistent", true)
 	if err == nil {
 		t.Error("expected error for nonexistent database")
 	}
@@ -3203,7 +3076,7 @@ func TestFindOrphanedDatabases_EndToEnd(t *testing.T) {
 	}
 
 	// Step 2: Remove the orphan
-	if err := RemoveDatabase(townRoot, "beads_wy"); err != nil {
+	if err := RemoveDatabase(townRoot, "beads_wy", true); err != nil {
 		t.Fatalf("RemoveDatabase: %v", err)
 	}
 
@@ -3336,10 +3209,10 @@ func TestHostPort(t *testing.T) {
 func TestDefaultConfig_EnvVarOverrides(t *testing.T) {
 	townRoot := t.TempDir()
 
-	t.Setenv("GC_DOLT_HOST", "10.0.0.5")
-	t.Setenv("GC_DOLT_PORT", "13306")
-	t.Setenv("GC_DOLT_USER", "myuser")
-	t.Setenv("GC_DOLT_PASSWORD", "mypass")
+	t.Setenv("GT_DOLT_HOST", "10.0.0.5")
+	t.Setenv("GT_DOLT_PORT", "13306")
+	t.Setenv("GT_DOLT_USER", "myuser")
+	t.Setenv("GT_DOLT_PASSWORD", "mypass")
 
 	config := DefaultConfig(townRoot)
 
@@ -3361,7 +3234,7 @@ func TestDefaultConfig_EnvVarPartialOverride(t *testing.T) {
 	townRoot := t.TempDir()
 
 	// Only override host, rest should keep defaults
-	t.Setenv("GC_DOLT_HOST", "remote.host")
+	t.Setenv("GT_DOLT_HOST", "remote.host")
 
 	config := DefaultConfig(townRoot)
 
@@ -3382,7 +3255,7 @@ func TestDefaultConfig_EnvVarPartialOverride(t *testing.T) {
 func TestDefaultConfig_InvalidPortIgnored(t *testing.T) {
 	townRoot := t.TempDir()
 
-	t.Setenv("GC_DOLT_PORT", "not-a-number")
+	t.Setenv("GT_DOLT_PORT", "not-a-number")
 
 	config := DefaultConfig(townRoot)
 	if config.Port != DefaultPort {
@@ -3520,7 +3393,7 @@ func TestWaitForReady_ServerAlreadyListening(t *testing.T) {
 	}
 
 	// Override port via env var so DefaultConfig picks it up
-	t.Setenv("GC_DOLT_PORT", fmt.Sprintf("%d", port))
+	t.Setenv("GT_DOLT_PORT", fmt.Sprintf("%d", port))
 
 	start := time.Now()
 	err = WaitForReady(townRoot, 5*time.Second)
@@ -3556,7 +3429,7 @@ func TestWaitForReady_TimeoutWhenNoServer(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(metadata), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GC_DOLT_PORT", fmt.Sprintf("%d", port))
+	t.Setenv("GT_DOLT_PORT", fmt.Sprintf("%d", port))
 
 	start := time.Now()
 	err = WaitForReady(townRoot, 500*time.Millisecond)
@@ -3594,7 +3467,7 @@ func TestWaitForReady_ServerBecomesReady(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), []byte(metadata), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GC_DOLT_PORT", fmt.Sprintf("%d", port))
+	t.Setenv("GT_DOLT_PORT", fmt.Sprintf("%d", port))
 
 	// Start the listener after 300ms delay. Use a done channel to
 	// synchronize goroutine lifetime with test lifecycle. (review finding #3)

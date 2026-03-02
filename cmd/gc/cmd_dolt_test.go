@@ -111,7 +111,7 @@ func TestDoltCmdHelp(t *testing.T) {
 		t.Fatalf("gc dolt --help exited %d; stderr: %s", code, stderr.String())
 	}
 	out := stdout.String()
-	for _, sub := range []string{"logs", "sql", "list", "recover", "sync", "rollback"} {
+	for _, sub := range []string{"logs", "sql", "list", "recover", "sync", "rollback", "cleanup"} {
 		if !strings.Contains(out, sub) {
 			t.Errorf("gc dolt --help missing subcommand %q in:\n%s", sub, out)
 		}
@@ -269,5 +269,126 @@ func TestDoltRollbackByTimestamp(t *testing.T) {
 	code := doDoltRollback(dir, "20250101-120000", true, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doDoltRollback by timestamp = %d, want 0; stderr: %s", code, stderr.String())
+	}
+}
+
+// --- gc dolt cleanup ---
+
+// createFakeDoltDB creates a fake dolt database directory for testing.
+func createFakeDoltDB(t *testing.T, dataDir, name string) {
+	t.Helper()
+	dbDir := filepath.Join(dataDir, name)
+	if err := os.MkdirAll(filepath.Join(dbDir, ".dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dbDir, "data.bin"), []byte("testdata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDoltCleanup_NoOrphans(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc", "dolt-data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+	t.Setenv("GC_DOLT", "skip")
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltCleanup(false, 50, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doDoltCleanup = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "No orphaned databases found") {
+		t.Errorf("stdout = %q, want 'No orphaned databases found'", stdout.String())
+	}
+}
+
+func TestDoltCleanup_DryRun(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, ".gc", "dolt-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an orphan (not referenced by any metadata).
+	createFakeDoltDB(t, dataDir, "orphan-db")
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+	t.Setenv("GC_DOLT", "skip")
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltCleanup(false, 50, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doDoltCleanup dry-run = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "orphan-db") {
+		t.Errorf("stdout missing orphan name: %q", out)
+	}
+	if !strings.Contains(out, "Use --force to remove") {
+		t.Errorf("stdout missing --force hint: %q", out)
+	}
+
+	// Verify the database was NOT removed (dry-run).
+	if _, err := os.Stat(filepath.Join(dataDir, "orphan-db")); err != nil {
+		t.Error("orphan database was removed during dry-run")
+	}
+}
+
+func TestDoltCleanup_Force(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, ".gc", "dolt-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	createFakeDoltDB(t, dataDir, "orphan-db")
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+	t.Setenv("GC_DOLT", "skip")
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltCleanup(true, 50, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doDoltCleanup --force = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Removed orphan-db") {
+		t.Errorf("stdout missing removal message: %q", stdout.String())
+	}
+
+	// Verify the database was actually removed.
+	if _, err := os.Stat(filepath.Join(dataDir, "orphan-db")); !os.IsNotExist(err) {
+		t.Error("orphan database was not removed after --force")
+	}
+}
+
+func TestDoltCleanup_MaxExceeded(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, ".gc", "dolt-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create 3 orphans but set max to 2.
+	createFakeDoltDB(t, dataDir, "orphan1")
+	createFakeDoltDB(t, dataDir, "orphan2")
+	createFakeDoltDB(t, dataDir, "orphan3")
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+	t.Setenv("GC_DOLT", "skip")
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltCleanup(true, 2, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("doDoltCleanup max exceeded = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "exceeds --max") {
+		t.Errorf("stderr = %q, want 'exceeds --max'", stderr.String())
 	}
 }

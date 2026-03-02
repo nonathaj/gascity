@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/beads"
 	"github.com/steveyegge/gascity/internal/dolt"
 )
 
@@ -24,7 +23,7 @@ These commands help inspect, recover, and sync the database.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc dolt: missing subcommand (logs, sql, list, recover, sync, rollback)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc dolt: missing subcommand (logs, sql, list, recover, sync, rollback, cleanup)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc dolt: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -38,6 +37,7 @@ These commands help inspect, recover, and sync the database.`,
 		newDoltRecoverCmd(stdout, stderr),
 		newDoltSyncCmd(stdout, stderr),
 		newDoltRollbackCmd(stdout, stderr),
+		newDoltCleanupCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -307,12 +307,11 @@ func doDoltSync(dryRun, force, gc bool, dbFilter string, stdout, stderr io.Write
 			fmt.Fprintf(stderr, "gc dolt sync: listing databases for gc: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
-		store := beads.NewBdStore(cityPath, beads.ExecCommandRunner())
 		for _, db := range databases {
 			if dbFilter != "" && db != dbFilter {
 				continue
 			}
-			purged, err := dolt.PurgeClosedEphemerals(store, cityPath, db, dryRun)
+			purged, err := dolt.PurgeClosedEphemerals(cityPath, db, dryRun)
 			if err != nil {
 				fmt.Fprintf(stderr, "gc dolt sync: purge %s: %v\n", db, err) //nolint:errcheck // best-effort stderr
 				// Non-fatal — continue with sync.
@@ -453,6 +452,102 @@ func doDoltRollback(cityPath, target string, force bool, stdout, stderr io.Write
 		fmt.Fprintf(stdout, "Skipped rig: %s\n", rig) //nolint:errcheck // best-effort stdout
 	}
 	return 0
+}
+
+// --- gc dolt cleanup ---
+
+func newDoltCleanupCmd(stdout, stderr io.Writer) *cobra.Command {
+	var force bool
+	var maxOrphans int
+	cmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Find and remove orphaned Dolt databases",
+		Long: `Find Dolt databases that are not referenced by any rig's metadata.
+
+By default, lists orphaned databases (dry-run). Use --force to remove them.
+Use --max to set a safety limit (refuses if more orphans than --max).`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if doDoltCleanup(force, maxOrphans, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "actually remove orphaned databases")
+	cmd.Flags().IntVar(&maxOrphans, "max", 50, "refuse if more than this many orphans (safety limit)")
+	return cmd
+}
+
+// doDoltCleanup finds and optionally removes orphaned databases.
+func doDoltCleanup(force bool, maxOrphans int, stdout, stderr io.Writer) int {
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc dolt cleanup: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	orphans, err := dolt.FindOrphanedDatabasesCity(cityPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc dolt cleanup: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	if len(orphans) == 0 {
+		fmt.Fprintln(stdout, "No orphaned databases found.") //nolint:errcheck // best-effort stdout
+		return 0
+	}
+
+	// Print orphan table.
+	fmt.Fprintf(stdout, "%-30s  %s\n", "NAME", "SIZE") //nolint:errcheck // best-effort stdout
+	for _, o := range orphans {
+		fmt.Fprintf(stdout, "%-30s  %s\n", o.Name, formatBytesSimple(o.SizeBytes)) //nolint:errcheck // best-effort stdout
+	}
+
+	// Safety limit.
+	if len(orphans) > maxOrphans {
+		fmt.Fprintf(stderr, "\ngc dolt cleanup: %d orphans exceeds --max %d; remove manually or increase --max\n", //nolint:errcheck // best-effort stderr
+			len(orphans), maxOrphans)
+		return 1
+	}
+
+	if !force {
+		fmt.Fprintf(stdout, "\n%d orphaned database(s). Use --force to remove.\n", len(orphans)) //nolint:errcheck // best-effort stdout
+		return 0
+	}
+
+	// Remove each orphan.
+	removed := 0
+	for _, o := range orphans {
+		if err := dolt.RemoveDatabaseCity(cityPath, o.Name, force); err != nil {
+			fmt.Fprintf(stderr, "  %s: ERROR: %v\n", o.Name, err) //nolint:errcheck // best-effort stderr
+		} else {
+			fmt.Fprintf(stdout, "  Removed %s\n", o.Name) //nolint:errcheck // best-effort stdout
+			removed++
+		}
+	}
+
+	fmt.Fprintf(stdout, "\nRemoved %d of %d orphaned database(s).\n", removed, len(orphans)) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// formatBytesSimple formats byte counts for human display.
+func formatBytesSimple(b int64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case b >= gb:
+		return fmt.Sprintf("%.1f GB", float64(b)/float64(gb))
+	case b >= mb:
+		return fmt.Sprintf("%.1f MB", float64(b)/float64(mb))
+	case b >= kb:
+		return fmt.Sprintf("%.1f KB", float64(b)/float64(kb))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // doltSummary returns a human-readable one-liner of sync results.

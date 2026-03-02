@@ -14,6 +14,13 @@ cd "$GC_DIR"
 
 AGENT_SHORT=$(basename "$GC_AGENT")
 
+# Pool label is the agent name without the instance suffix (-1, -2, etc.).
+# For pool max=1 the name has no suffix, so we only strip if it ends in -N.
+POOL_LABEL="$GC_AGENT"
+if [[ "$POOL_LABEL" =~ -[0-9]+$ ]]; then
+    POOL_LABEL="${POOL_LABEL%-*}"
+fi
+
 echo "[$AGENT_SHORT] Starting up..."
 # Jitter startup to avoid pool members racing on the same bead.
 JITTER=$(( RANDOM % 3 ))
@@ -39,7 +46,7 @@ for attempt in $(seq 1 30); do
     # Try to claim from the ready queue.
     # bd ready output: ○ dr-5bd ● P2 Title...  (bead ID is field 2)
     # Match on bead ID pattern (locale-independent, works in Docker).
-    ready=$(bd ready --label=pool:coder 2>/dev/null || true)
+    ready=$(bd ready --label="pool:$POOL_LABEL" 2>/dev/null || true)
     if echo "$ready" | grep -qE '[a-z]{2}-[a-z0-9]'; then
         BEAD_ID=$(echo "$ready" | head -1 | awk '{print $2}')
         # Atomic claim: sets assignee + status=in_progress, fails if taken.

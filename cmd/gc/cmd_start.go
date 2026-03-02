@@ -445,7 +445,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 				if rigName != "" {
 					agentEnv["GC_RIG"] = rigName
 				}
-				env := mergeEnv(passthroughEnv(), resolved.Env, c.Agents[i].Env, agentEnv)
+				env := mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(c.Agents[i].Env), agentEnv)
 				// Expand session_setup templates with session context.
 				sessName := sessionName(cityName, c.Agents[i].QualifiedName(), c.Workspace.SessionTemplate)
 				configDir := cityPath
@@ -685,6 +685,20 @@ func passthroughEnv() map[string]string {
 
 // mergeEnv combines multiple env maps into one. Later maps override earlier
 // ones for the same key. Returns nil if all inputs are empty.
+// expandEnvMap returns a copy of m with os.ExpandEnv applied to each value.
+// This allows TOML-sourced env blocks to reference the controller's environment,
+// e.g. DOLTHUB_TOKEN = "$DOLTHUB_TOKEN".
+func expandEnvMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = os.ExpandEnv(v)
+	}
+	return out
+}
+
 func mergeEnv(maps ...map[string]string) map[string]string {
 	size := 0
 	for _, m := range maps {

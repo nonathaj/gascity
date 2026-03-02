@@ -21,6 +21,13 @@ git pull --ff-only origin main 2>/dev/null || true
 
 AGENT_SHORT=$(basename "$GC_AGENT")
 
+# Pool label is the agent name without the instance suffix (-1, -2, etc.).
+# For pool max=1 the name has no suffix, so we only strip if it ends in -N.
+POOL_LABEL="$GC_AGENT"
+if [[ "$POOL_LABEL" =~ -[0-9]+$ ]]; then
+    POOL_LABEL="${POOL_LABEL%-*}"
+fi
+
 echo "[$AGENT_SHORT] Starting up in rig dir: $GC_DIR"
 # Jitter startup to avoid pool members racing on the same bead.
 JITTER=$(( RANDOM % 3 ))
@@ -46,7 +53,7 @@ for attempt in $(seq 1 30); do
     # Try to claim from the ready queue.
     # bd ready output: ○ dr-5bd ● P2 Title...  (bead ID is field 2)
     # Match on bead ID pattern (locale-independent, works in Docker).
-    ready=$(bd ready --label=pool:polecat 2>/dev/null || true)
+    ready=$(bd ready --label="pool:$POOL_LABEL" 2>/dev/null || true)
     if echo "$ready" | grep -qE '[a-z]{2}-[a-z0-9]'; then
         BEAD_ID=$(echo "$ready" | head -1 | awk '{print $2}')
         # Atomic claim: sets assignee + status=in_progress, fails if taken.
@@ -135,10 +142,11 @@ echo "[$AGENT_SHORT] Worktree cleaned up. Branch $BRANCH persists."
 
 # ── Step 7: Hand off to refinery ──────────────────────────────────────────
 
-gc mail send --all "READY FOR MERGE: $BRANCH ($BEAD_TITLE)" 2>/dev/null || true
+# Set branch metadata and reassign to the refinery for merge.
+REFINERY="${GC_AGENT%/*}/refinery"
+bd update "$BEAD_ID" --metadata "{\"branch\":\"$BRANCH\"}" --assignee="$REFINERY" 2>/dev/null || true
 
-# Set metadata on the bead so the refinery knows which branch to merge.
-bd update "$BEAD_ID" --metadata "{\"branch\":\"$BRANCH\"}" 2>/dev/null || true
+gc mail send --all "READY FOR MERGE: $BRANCH ($BEAD_TITLE) → $REFINERY" 2>/dev/null || true
 
 echo "[$AGENT_SHORT] Handed off to refinery. Done."
 

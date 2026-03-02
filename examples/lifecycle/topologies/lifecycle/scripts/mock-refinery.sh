@@ -35,8 +35,8 @@ while true; do
     # separate pods; local: branches exist locally, fetch is a no-op).
     git fetch origin 2>/dev/null || true
 
-    # Scan for in_progress beads with branch metadata (set by polecats).
-    MERGE_BEADS=$(bd list --status=in_progress --label=pool:polecat --json 2>/dev/null || echo "[]")
+    # Scan for beads assigned to us (polecats reassign after pushing their branch).
+    MERGE_BEADS=$(bd list --assignee="$GC_AGENT" --status=in_progress --json 2>/dev/null || echo "[]")
 
     if echo "$MERGE_BEADS" | jq -e 'length > 0' >/dev/null 2>&1; then
         # Process each bead that has branch metadata.

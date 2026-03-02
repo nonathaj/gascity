@@ -187,36 +187,49 @@ From batch 3 analysis (session summary).
 ## 8. Infrastructure Dogs (New Formulas)
 
 ### 8a. Existing dogs updated
-- [ ] **d2f9f2af** — JSONL Dog: spike detection + pollution firewall. New
+- [x] **d2f9f2af** — JSONL Dog: spike detection + pollution firewall. New
   `verify` step between export and push. `spike_threshold` variable.
-- [ ] **37d57150** — Reaper Dog: auto-close step for issues > 30 days
+  **Done:** mol-dog-jsonl.formula.toml created with verify step.
+- [x] **37d57150** — Reaper Dog: auto-close step for issues > 30 days
   (excluding epics, P0/P1, active deps). `stale_issue_age` variable.
-  **Note:** Later reverted by ZFC fixes (915f1b7e, f61ff0ac).
-- [ ] **bc9f395a** — Doctor Dog: structured JSON reporting model (advisory).
+  **Done:** mol-dog-reaper.formula.toml created. ZFC revert noted (no
+  auto-close decisions in Go).
+- [x] **bc9f395a** — Doctor Dog: structured JSON reporting model (advisory).
   **Then** 176b4963 re-adds automated actions with 10-min cooldowns.
   **Then** 89ccc218 reverts to configurable advisory recommendations.
-- **Action:** Add JSONL Dog verify step. Doctor Dog should use advisory model.
-  Remove reaper auto-close (ZFC violation per 915f1b7e).
+  **Done:** mol-dog-doctor.formula.toml uses advisory model. References
+  `gc dolt cleanup` for orphan detection.
 
 ### 8b. New dog formulas
-- [ ] **739a36b7** — Janitor Dog: cleans orphan test DBs on Dolt test server.
+- [x] **739a36b7** — Janitor Dog: cleans orphan test DBs on Dolt test server.
   4 steps: scan, clean, verify (production read-only check), report.
-- [ ] **85887e88** — Compactor Dog: flattens Dolt commit history. Steps:
+  **Done:** mol-dog-stale-db.formula.toml. References `gc dolt cleanup --force`.
+- [x] **85887e88** — Compactor Dog: flattens Dolt commit history. Steps:
   inspect, compact, verify, report. Threshold 10,000. Formula-only pattern.
-- [ ] **1123b96c** — Surgical rebase mode for Compactor. `mode` config
+  **Done:** mol-dog-compactor.formula.toml.
+- [x] **1123b96c** — Surgical rebase mode for Compactor. `mode` config
   ('flatten'|'surgical'), `keep_recent` (default 50).
-- [ ] **3924d560** — SQL-based flatten on running server. No downtime.
-- **Action:** Add new dog formulas to maintenance topology if we want full
-  parity. Consider whether all dogs are needed for the SDK example.
+  **Done:** Included in mol-dog-compactor.formula.toml vars.
+- [x] **3924d560** — SQL-based flatten on running server. No downtime.
+  **Done:** mol-dog-compactor.formula.toml uses SQL-based approach.
+- [x] mol-dog-phantom-db.formula.toml — Detect phantom database resurrection.
+- [x] mol-dog-backup.formula.toml — Database backup verification.
 
 ### 8c. Dog lifecycle
-- [ ] **b4ed85bb** — `gt dog done` auto-terminates tmux session after 3s.
+- [x] **b4ed85bb** — `gt dog done` auto-terminates tmux session after 3s.
   Dogs should NOT idle at prompt.
+  **Done:** Dog prompt updated with auto-termination note.
 - [ ] **427c6e8a** — Lifecycle defaults: Wisp Reaper (30m), Compactor (24h),
   Doctor (5m), Janitor (15m), JSONL Backup (15m), FS Backup (15m),
   Maintenance (daily 03:00, threshold 1000).
-- **Action:** Update dog prompt for auto-termination. Add lifecycle defaults
-  to maintenance topology config.
+- **Action:** Add lifecycle defaults to maintenance topology config.
+
+### 8d. CLI: `gc dolt cleanup`
+- [x] `gc dolt cleanup` — List orphaned databases (dry-run).
+- [x] `gc dolt cleanup --force` — Remove orphaned databases.
+- [x] `gc dolt cleanup --max N` — Safety limit (refuse if too many orphans).
+- [x] City-scoped orphan detection: `FindOrphanedDatabasesCity`, `RemoveDatabaseCity`.
+- [x] Dolt package synced from upstream at 117f014f (25 commits of drift resolved).
 
 ---
 

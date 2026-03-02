@@ -352,3 +352,146 @@ func TestInitRigBeads_Idempotent(t *testing.T) {
 		t.Errorf("InitRigBeads() error = %v, want nil (idempotent)", err)
 	}
 }
+
+// ── Orphan detection and cleanup tests ───────────────────────────────
+
+// helper: create a fake dolt database dir with a .dolt marker.
+func createFakeDB(t *testing.T, dataDir, name string) {
+	t.Helper()
+	dbDir := filepath.Join(dataDir, name)
+	if err := os.MkdirAll(filepath.Join(dbDir, ".dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a small file so dirSize returns non-zero.
+	if err := os.WriteFile(filepath.Join(dbDir, "data.bin"), []byte("testdata"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// helper: write metadata.json with a dolt_database field.
+func writeMetadataDB(t *testing.T, beadsDir, dbName string) {
+	t.Helper()
+	if err := os.MkdirAll(beadsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta := map[string]string{"dolt_database": dbName}
+	data, _ := json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(beadsDir, "metadata.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCollectReferencedDatabasesCity(t *testing.T) {
+	cityPath := t.TempDir()
+
+	// HQ metadata
+	writeMetadataDB(t, filepath.Join(cityPath, ".beads"), "hq")
+
+	// Rig metadata via top-level dir scan
+	writeMetadataDB(t, filepath.Join(cityPath, "frontend", ".beads"), "frontend")
+
+	// Route that references a database
+	routesDir := filepath.Join(cityPath, ".beads")
+	routesLine := `{"path":"api"}` + "\n"
+	if err := os.WriteFile(filepath.Join(routesDir, "routes.jsonl"), []byte(routesLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeMetadataDB(t, filepath.Join(cityPath, "api", ".beads"), "api-db")
+
+	refs := collectReferencedDatabasesCity(cityPath)
+
+	for _, want := range []string{"hq", "frontend", "api-db"} {
+		if !refs[want] {
+			t.Errorf("collectReferencedDatabasesCity missing %q, got %v", want, refs)
+		}
+	}
+}
+
+func TestFindOrphanedDatabasesCity(t *testing.T) {
+	cityPath := t.TempDir()
+
+	// Set GC_DOLT=skip so ListDatabasesCity reads from disk.
+	t.Setenv("GC_DOLT", "skip")
+
+	dataDir := filepath.Join(cityPath, ".gc", "dolt-data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create databases: hq (referenced), frontend (referenced), orphan (not referenced).
+	createFakeDB(t, dataDir, "hq")
+	createFakeDB(t, dataDir, "frontend")
+	createFakeDB(t, dataDir, "orphan")
+
+	// Reference hq and frontend via metadata.
+	writeMetadataDB(t, filepath.Join(cityPath, ".beads"), "hq")
+	writeMetadataDB(t, filepath.Join(cityPath, "frontend", ".beads"), "frontend")
+
+	orphans, err := FindOrphanedDatabasesCity(cityPath)
+	if err != nil {
+		t.Fatalf("FindOrphanedDatabasesCity() error = %v", err)
+	}
+
+	if len(orphans) != 1 {
+		t.Fatalf("got %d orphans, want 1", len(orphans))
+	}
+	if orphans[0].Name != "orphan" {
+		t.Errorf("orphan name = %q, want %q", orphans[0].Name, "orphan")
+	}
+	if orphans[0].SizeBytes <= 0 {
+		t.Errorf("orphan size = %d, want > 0", orphans[0].SizeBytes)
+	}
+}
+
+func TestFindOrphanedDatabasesCity_NoDatabases(t *testing.T) {
+	cityPath := t.TempDir()
+	t.Setenv("GC_DOLT", "skip")
+
+	orphans, err := FindOrphanedDatabasesCity(cityPath)
+	if err != nil {
+		t.Fatalf("FindOrphanedDatabasesCity() error = %v", err)
+	}
+	if len(orphans) != 0 {
+		t.Errorf("got %d orphans, want 0 for empty city", len(orphans))
+	}
+}
+
+func TestRemoveDatabaseCity(t *testing.T) {
+	cityPath := t.TempDir()
+	t.Setenv("GC_DOLT", "skip")
+
+	dataDir := filepath.Join(cityPath, ".gc", "dolt-data")
+	createFakeDB(t, dataDir, "orphan")
+
+	// Verify the database exists.
+	if _, err := os.Stat(filepath.Join(dataDir, "orphan", ".dolt")); err != nil {
+		t.Fatalf("setup failed: orphan DB not created: %v", err)
+	}
+
+	// Server is not running, so force=true skips SQL checks.
+	if err := RemoveDatabaseCity(cityPath, "orphan", true); err != nil {
+		t.Fatalf("RemoveDatabaseCity() error = %v", err)
+	}
+
+	// Verify removed.
+	if _, err := os.Stat(filepath.Join(dataDir, "orphan")); !os.IsNotExist(err) {
+		t.Error("orphan database directory still exists after removal")
+	}
+}
+
+func TestRemoveDatabaseCity_NotFound(t *testing.T) {
+	cityPath := t.TempDir()
+	t.Setenv("GC_DOLT", "skip")
+
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "dolt-data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RemoveDatabaseCity(cityPath, "nonexistent", true)
+	if err == nil {
+		t.Fatal("RemoveDatabaseCity() should fail for nonexistent database")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
