@@ -1,0 +1,6 @@
+[automation]
+description = "Reap stale wisps and purge closed molecules"
+formula = "mol-dog-reaper"
+gate = "cooldown"
+interval = "30m"
+pool = "dog"

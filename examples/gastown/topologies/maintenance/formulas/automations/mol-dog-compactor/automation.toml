@@ -1,0 +1,6 @@
+[automation]
+description = "Flatten Dolt commit history to reduce storage"
+formula = "mol-dog-compactor"
+gate = "cooldown"
+interval = "24h"
+pool = "dog"

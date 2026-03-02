@@ -1,0 +1,6 @@
+[automation]
+description = "Export Dolt databases to JSONL git archive"
+formula = "mol-dog-jsonl"
+gate = "cooldown"
+interval = "15m"
+pool = "dog"

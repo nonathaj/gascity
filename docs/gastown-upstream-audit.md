@@ -219,10 +219,12 @@ From batch 3 analysis (session summary).
 - [x] **b4ed85bb** — `gt dog done` auto-terminates tmux session after 3s.
   Dogs should NOT idle at prompt.
   **Done:** Dog prompt updated with auto-termination note.
-- [ ] **427c6e8a** — Lifecycle defaults: Wisp Reaper (30m), Compactor (24h),
+- [x] **427c6e8a** — Lifecycle defaults: Wisp Reaper (30m), Compactor (24h),
   Doctor (5m), Janitor (15m), JSONL Backup (15m), FS Backup (15m),
   Maintenance (daily 03:00, threshold 1000).
-- **Action:** Add lifecycle defaults to maintenance topology config.
+  **Done:** 7 automation wrappers in `maintenance/formulas/automations/mol-dog-*/`
+  dispatch existing dog formulas on cooldown intervals via the generic automation
+  system. No Go code needed — ZFC-compliant.
 
 ### 8d. CLI: `gc dolt cleanup`
 - [x] `gc dolt cleanup` — List orphaned databases (dry-run).
