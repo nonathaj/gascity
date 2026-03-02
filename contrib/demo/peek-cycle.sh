@@ -22,9 +22,6 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 while true; do
-    # Get list of running agents.
-    # gc agent list outputs "cityname:\n  agent1\n  agent2  (annotations)\n"
-    # Extract agent names: skip header line, trim leading whitespace, take first field.
     agents=$(gc agent list 2>/dev/null | tail -n +2 | awk '{print $1}' || true)
 
     if [ -z "$agents" ]; then
@@ -36,7 +33,7 @@ while true; do
 
     for agent in $agents; do
         clear
-        echo -e "${CYAN}${BOLD}═══ $agent ═══${NC}"
+        echo -e "${CYAN}${BOLD}=== $agent ===${NC}"
         echo ""
         gc agent peek "$agent" --lines "$LINES" 2>/dev/null || echo -e "${DIM}(no output)${NC}"
         sleep "$DELAY"

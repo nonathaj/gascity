@@ -1,157 +1,59 @@
-# Gas City Demo
+# Gas City Lifecycle Demo
 
-Two demo modes: the original **Three Stacks** provider demo, and a
-**Four-Act Recording** that showcases provider pluggability, topology
-comparison, Wasteland federation, and hyperscale K8s.
+Deterministic three-act demo showcasing Gas City's architecture built on
+the best of Erlang/OTP, Kubernetes, and OCI. All agents are bash scripts —
+no Claude API calls, fully reproducible.
+
+**Audience**: The Gas Town team. They wrote it, they use it daily.
+**Thesis**: Everything hardcoded in Gas Town is a swappable interface in Gas City.
 
 ## Quick start
 
 ```bash
-# Original provider demo (interactive):
-./contrib/demo/run-demo.sh local
+DEMO_SCRIPTS=~/lifecycle-demo/demo-repo/.claude/worktrees/demo-updates/contrib/demo
 
-# Full 4-act recording:
-./contrib/demo/demo-recording.sh all
+# Full 3-act run:
+$DEMO_SCRIPTS/run-lifecycle-demo.sh all
 
 # Individual acts:
-./contrib/demo/demo-recording.sh act1   # Provider pluggability
-./contrib/demo/demo-recording.sh act2   # Topology comparison
-./contrib/demo/demo-recording.sh act4   # 100-agent hyperscale
+$DEMO_SCRIPTS/run-lifecycle-demo.sh act1   # Topology escalation
+$DEMO_SCRIPTS/run-lifecycle-demo.sh act2   # Provider swap (local → Docker)
+$DEMO_SCRIPTS/run-lifecycle-demo.sh act3   # EKS scale-up
 ```
 
-## Four-Act Recording
+## Three Acts
 
-Structure: 4 independent act scripts + a top-level orchestrator with
-narration pause points between acts. Each act can be recorded separately.
+### Act 1: Topology Escalation
 
-### Act 1: Provider Pluggability
+**Script**: `act1-topology-escalation.sh`
 
-**Script**: `act1-providers.sh`
+Three manual edits to city.toml, three capability levels on a running city.
+The daemon live-reconciles on every save via fsnotify.
 
-Runs gastown topology on all 3 provider combos. Same `city.toml`,
-different env vars.
+1. **Wasteland-feeder only** — no rigs, no agents, just a global inference automation
+2. **Uncomment `[[rigs]]` block** — coder pool + merger appear (swarm topology)
+3. **Change `swarm-lifecycle` → `lifecycle`** — polecats + refinery (full Gas Town)
 
-| # | Session | Beads | Events |
-|---|---------|-------|--------|
-| 1 | Local tmux | bd (dolt) | File JSONL |
-| 2 | Docker containers | br (beads_rust) | File JSONL |
-| 3 | K8s pods (native client-go) | Dolt StatefulSet | K8s ConfigMaps |
+### Act 2: Provider Swap
 
-Key visual: identical events stream across all 3 combos. Local uses
-`.gc/events.jsonl`, K8s uses ConfigMaps — same `gc events --watch`
-command, different storage backends.
+**Script**: `act2-provider-swap.sh`
 
-### Act 2: Topology Comparison
+Same lifecycle topology from Act 1, swapped from local tmux to Docker
+containers. Uncomment the `[session]` block in city.toml, save, restart
+the daemon, and agents move from tmux sessions into Docker containers.
+Same beads, same topology — filesystem mounts keep everything in sync.
 
-**Script**: `act2-topologies.sh`
+### Act 3: EKS Scale-Up
 
-Runs gastown (hierarchical) then swarm (flat peer) on local tmux. Shows
-different orchestration shapes on the same SDK.
+**Script**: `act3-eks-scaleup.sh`
 
-- **Gastown**: mayor -> deacon -> polecat pool (formula dispatch)
-- **Swarm**: flat coder pool (self-organizing peers, no formulas)
-
-### Act 3: Wasteland Auto-Claim
-
-**Script**: `act3-wasteland.sh`
-
-**Prerequisite**: Real `wl` binary installed and a Wasteland instance running.
-
-Shows the wasteland-feeder automation chain:
-1. Poll fires, `wl sync` + `wl browse` finds open inference items
-2. Auto-claim via `wl claim`
-3. `gc sling` dispatches to polecat pool
-4. Polecat spawns, picks up work, runs inference
-5. Bead closed, polecat exits
-
-### Act 4: 100-Agent Hyperscale
-
-**Script**: `act4-hyperscale.sh`
+Start with 5 agents on EKS. New project approved, new budget. Edit
+`pool.max` from 5 to 200 in city.toml. Save. Watch 200 pods materialize
+and drain the queue. One number change.
 
 **Prerequisite**: K8s cluster with `gc` namespace.
 
-Spawns 100 worker pods on K8s. The visual: a wall of pods materializing,
-events streaming, work completing.
-
-3-pane tmux layout:
-```
-+------------------------+------------------------+
-| Controller logs        | Pod watch              |
-|                        | kubectl get pods -w    |
-+------------------------+------------------------+
-| Progress: 42/100 complete                       |
-+-------------------------------------------------+
-```
-
-Options:
-- `GC_HYPERSCALE_MOCK=true` — uses shell mock instead of Claude (no API cost)
-- `ACT4_TIMEOUT=300` — auto-teardown seconds
-
-## Three Stacks Demo (Original)
-
-Demonstrates Gas City's pluggable provider architecture by running the
-full Gas Town topology (8 roles, formulas, events) across 3 radically
-different infrastructure stacks. **Same city.toml, different env vars.**
-
-| # | Session | Beads | Events | Character |
-|---|---------|-------|--------|-----------|
-| 1 | Local tmux | bd (dolt) | File JSONL | Laptop dev |
-| 2 | Docker containers | br (beads_rust) | File JSONL | Containerized |
-| 3 | K8s pods (native client-go) | K8s dolt StatefulSet | K8s ConfigMaps | Production |
-
-### Prerequisites
-
-All combos need:
-- `gc` binary in PATH
-- `tmux` installed
-- `ANTHROPIC_API_KEY` set (for Claude agents)
-
-#### Docker combo
-
-```bash
-make docker-base docker-agent
-```
-
-#### K8s combo
-
-```bash
-kubectl apply -f contrib/k8s/namespace.yaml
-kubectl apply -f contrib/k8s/rbac.yaml
-kubectl apply -f contrib/k8s/controller-rbac.yaml
-kubectl apply -f contrib/k8s/dolt-statefulset.yaml
-kubectl apply -f contrib/k8s/dolt-service.yaml
-
-gc build-image examples/gastown --tag gc-agent:latest
-make docker-controller
-```
-
-### Running
-
-```bash
-# With flags:
-./contrib/demo/run-demo.sh local
-./contrib/demo/run-demo.sh --quick local         # auto-dispatch + auto-teardown
-./contrib/demo/run-demo.sh --topology examples/swarm local  # different topology
-./contrib/demo/run-demo.sh --quick --topology examples/swarm docker
-```
-
-### Dispatching work
-
-```bash
-gc sling polecat polecat-work --formula --nudge
-```
-
-### Terminal layout
-
-```
-+----------------------------+----------------------------+
-| 1: Controller              | 2: Events Stream           |
-| gc start --foreground      | gc events --watch           |
-+----------------------------+----------------------------+
-| 3: Mail Traffic            | 4: Agent Peek              |
-| watch gc mail inbox      | peek-cycle.sh              |
-+----------------------------+----------------------------+
-```
+Set `GC_HYPERSCALE_MOCK=true` (default) to avoid Claude API costs.
 
 ## Helper scripts
 
@@ -162,36 +64,20 @@ gc sling polecat polecat-work --formula --nudge
 | `seed-hyperscale.sh` | Seeds N work beads for the hyperscale pool |
 | `peek-cycle.sh` | "Security camera" view cycling through agent sessions |
 
-## Hyperscale example
+## Presenter notes
 
-The `examples/hyperscale/` topology provides a minimal single-pool config
-for the 100-agent demo:
+See [SCRIPT.md](SCRIPT.md) for the full presenter script with talking
+points, transitions, and the Erlang/K8s/OCI framing.
 
-```
-examples/hyperscale/
-  city.toml                                  # K8s session, minimal resources
-  topologies/hyperscale/
-    topology.toml                            # worker pool, max=100
-    prompts/worker.md.tmpl                   # pick up bead, close it, exit
-```
+## Environment variables
 
-Build the prebaked image:
-```bash
-gc build-image examples/hyperscale --tag gc-hyperscale:latest
-```
-
-## Troubleshooting
-
-**Controller exits immediately:** Check `gc doctor` for common issues.
-
-**Docker agents fail to start:** Ensure `gc-agent:latest` image is built.
-
-**K8s pods stuck in Pending:** Check node resources, image pull policy.
-
-**Events pane empty:** Verify the provider env vars are set correctly.
-
-**Act 3 (Wasteland) fails:** Ensure `wl` binary is installed and Wasteland
-instance is reachable. Set `WL_BIN=/path/to/wl` if not in PATH.
-
-**Act 4 (Hyperscale) too expensive:** Set `GC_HYPERSCALE_MOCK=true` to
-avoid Claude API costs — workers use shell commands instead.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GC_SRC` | `/data/projects/gascity` | Path to gascity source tree |
+| `DEMO_CITY` | `~/demo-city` | City directory for acts 1-2 |
+| `ACT2_TIMEOUT` | `120` | Auto-teardown seconds for act 2 |
+| `ACT3_TIMEOUT` | `300` | Auto-teardown seconds for act 3 |
+| `GC_DOCKER_IMAGE` | `gc-agent:latest` | Docker image for act 2 (needs bash/git/tmux) |
+| `GC_K8S_NAMESPACE` | `gc` | K8s namespace for act 3 |
+| `GC_HYPERSCALE_MOCK` | `true` (via orchestrator) | Use shell mock for hyperscale |
+| `EDITOR` | `nano` | Editor for live city.toml edits |

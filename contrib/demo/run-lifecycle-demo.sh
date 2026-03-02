@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# run-lifecycle-demo.sh — Top-level orchestrator for the deterministic 4-act demo.
+# run-lifecycle-demo.sh — Top-level orchestrator for the 3-act demo.
 #
-# Mirrors demo-recording.sh but uses deterministic bash agents throughout.
-# No Claude API calls — fully reproducible, cheap, and predictable.
+# All agents are deterministic bash scripts — no Claude API calls,
+# fully reproducible, zero cost.
 #
 # Usage:
-#   ./run-lifecycle-demo.sh [act1|act2|act3|act4|all]
+#   ./run-lifecycle-demo.sh [act1|act2|act3|all]
 #
 # Acts:
-#   Act 1: Provider Pluggability — lifecycle topology across 3 stacks
-#   Act 2: Topology Comparison   — lifecycle (hierarchical) vs swarm-lifecycle (flat)
-#   Act 3: Wasteland Auto-Claim  — deterministic wasteland intake pipeline
-#   Act 4: 100-Agent Hyperscale  — K8s pod storm
+#   Act 1: Topology Escalation    — wasteland → swarm → lifecycle (manual edits)
+#   Act 2: Provider Swap           — same topology, local tmux → Docker containers
+#   Act 3: EKS Scale-Up           — 5 agents → 200 agents, one config edit
 
 set -euo pipefail
 
@@ -26,34 +25,35 @@ ACT="${1:-all}"
 cleanup_between_acts() {
     tmux kill-session -t gc-demo 2>/dev/null || true
     tmux kill-session -t gc-lifecycle 2>/dev/null || true
-    tmux kill-session -t gc-hyperscale 2>/dev/null || true
+    tmux kill-session -t gc-provider 2>/dev/null || true
+    tmux kill-session -t gc-eks 2>/dev/null || true
 
-    local demo_city="${DEMO_CITY:-$HOME/lifecycle-demo}"
+    local demo_city="${DEMO_CITY:-$HOME/demo-city}"
     if [ -d "$demo_city" ]; then
         (cd "$demo_city" && gc stop 2>/dev/null) || true
+        (cd "$demo_city" && gc daemon stop 2>/dev/null) || true
     fi
+
+    # Stop any Docker containers from act 2.
+    docker ps -q --filter label=gc 2>/dev/null | xargs -r docker stop 2>/dev/null || true
+    docker ps -aq --filter label=gc 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 }
 
 # ── Act runners ───────────────────────────────────────────────────────────
 
 run_act1() {
-    "$SCRIPT_DIR/act1-lifecycle-providers.sh"
+    "$SCRIPT_DIR/act1-topology-escalation.sh"
     cleanup_between_acts
 }
 
 run_act2() {
-    "$SCRIPT_DIR/act2-lifecycle-topologies.sh"
+    "$SCRIPT_DIR/act2-provider-swap.sh"
     cleanup_between_acts
 }
 
 run_act3() {
-    "$SCRIPT_DIR/act3-lifecycle-wasteland.sh"
-    cleanup_between_acts
-}
-
-run_act4() {
     GC_HYPERSCALE_MOCK="${GC_HYPERSCALE_MOCK:-true}" \
-        "$SCRIPT_DIR/act4-hyperscale.sh" "${2:-100}"
+        "$SCRIPT_DIR/act3-eks-scaleup.sh" "${2:-5}" "${3:-200}"
     cleanup_between_acts
 }
 
@@ -69,50 +69,41 @@ case "$ACT" in
     act3)
         run_act3
         ;;
-    act4)
-        run_act4
-        ;;
     all)
-        narrate "Deterministic Lifecycle Demo" --sub "Four acts, one SDK, zero API calls"
-        echo "  Act 1: Provider Pluggability — lifecycle topology, 3 stacks"
-        echo "  Act 2: Topology Comparison   — lifecycle vs swarm-lifecycle"
-        echo "  Act 3: Wasteland Auto-Claim  — deterministic external intake"
-        echo "  Act 4: 100-Agent Hyperscale  — K8s pod storm"
+        narrate "Gas City Lifecycle Demo" --sub "Three acts, one SDK, zero API calls"
+        echo "  Act 1: Topology Escalation    — wasteland → swarm → lifecycle"
+        echo "  Act 2: Provider Swap          — same topology, local → Docker"
+        echo "  Act 3: EKS Scale-Up           — 5 → 200 agents, one config edit"
         echo ""
-        pause "Press Enter to begin recording..."
+        pause "Press Enter to begin..."
 
         # ── Act 1 ──
         run_act1
 
-        narrate "Act 1 done" --sub "Next: Topology Comparison"
+        narrate "Act 1 done" --sub "Next: Provider Swap"
         pause
 
         # ── Act 2 ──
         run_act2
 
-        narrate "Act 2 done" --sub "Next: Wasteland Auto-Claim"
+        narrate "Act 2 done" --sub "Next: EKS Scale-Up"
         pause
 
         # ── Act 3 ──
         run_act3
 
-        narrate "Act 3 done" --sub "Next: 100-Agent Hyperscale"
-        pause
-
-        # ── Act 4 ──
-        run_act4
-
         # ── Finale ──
-        narrate "Demo Recording Complete" --sub "Gas City: orchestration as configuration"
-        echo "  Four capabilities demonstrated:"
-        echo "    1. Provider pluggability — tmux, Docker, K8s"
-        echo "    2. Topology comparison  — hierarchical vs flat peer"
-        echo "    3. External work intake  — Wasteland federation"
-        echo "    4. Hyperscale            — 100 agents, one controller"
+        narrate "Demo Complete" --sub "Gas City: orchestration as configuration"
+        echo "  Three capabilities demonstrated:"
+        echo "    1. Topology escalation    — wasteland → swarm → lifecycle"
+        echo "    2. Provider swap          — local → Docker, same topology"
+        echo "    3. EKS scale-up           — 5 → 200 agents, one edit"
+        echo ""
+        echo "  Same beads. Same daemon. Configuration changes only."
         echo ""
         ;;
     *)
-        echo "Usage: run-lifecycle-demo.sh [act1|act2|act3|act4|all]" >&2
+        echo "Usage: run-lifecycle-demo.sh [act1|act2|act3|all]" >&2
         exit 1
         ;;
 esac
