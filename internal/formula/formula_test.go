@@ -51,6 +51,45 @@ needs = ["dry", "wet"]
 	}
 }
 
+func TestParsePourTrue(t *testing.T) {
+	data := []byte(`
+formula = "release"
+version = 2
+pour = true
+
+[[steps]]
+id = "build"
+title = "Build release"
+`)
+	f, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !f.Pour {
+		t.Error("Pour = false, want true")
+	}
+	if f.Version != 2 {
+		t.Errorf("Version = %d, want 2", f.Version)
+	}
+}
+
+func TestParsePourDefaultFalse(t *testing.T) {
+	data := []byte(`
+formula = "patrol"
+
+[[steps]]
+id = "scan"
+title = "Scan"
+`)
+	f, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if f.Pour {
+		t.Error("Pour = true, want false (default)")
+	}
+}
+
 func TestParseInvalid(t *testing.T) {
 	_, err := Parse([]byte(`not valid toml {{{}}`))
 	if err == nil {

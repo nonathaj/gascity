@@ -111,7 +111,7 @@ func TestDoltCmdHelp(t *testing.T) {
 		t.Fatalf("gc dolt --help exited %d; stderr: %s", code, stderr.String())
 	}
 	out := stdout.String()
-	for _, sub := range []string{"logs", "sql", "list", "recover", "sync", "rollback", "cleanup"} {
+	for _, sub := range []string{"logs", "sql", "list", "recover", "sync", "rollback", "cleanup", "health"} {
 		if !strings.Contains(out, sub) {
 			t.Errorf("gc dolt --help missing subcommand %q in:\n%s", sub, out)
 		}
@@ -287,6 +287,50 @@ func createFakeDoltDB(t *testing.T, dataDir, name string) {
 	}
 	if err := os.WriteFile(filepath.Join(dbDir, "data.bin"), []byte("testdata"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// --- gc dolt health ---
+
+func TestDoltHealth_NoServer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltHealth(false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doDoltHealth = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "not running") {
+		t.Errorf("expected 'not running' in output, got:\n%s", stdout.String())
+	}
+}
+
+func TestDoltHealth_JSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cityFlag = dir
+	defer func() { cityFlag = "" }()
+
+	var stdout, stderr bytes.Buffer
+	code := doDoltHealth(true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doDoltHealth --json = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"running"`) {
+		t.Errorf("expected JSON with 'running' field, got:\n%s", out)
+	}
+	if !strings.Contains(out, `"timestamp"`) {
+		t.Errorf("expected JSON with 'timestamp' field, got:\n%s", out)
 	}
 }
 

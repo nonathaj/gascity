@@ -1,7 +1,9 @@
 # Gas Town Upstream Audit — Parity Tracking
 
-Audit of 574 commits from `gastown:upstream/main` since Gas City was created
-(2026-02-22). Organized by theme so we can review together and decide actions.
+Audit of 574 + 151 commits from `gastown:upstream/main` since Gas City was
+created (2026-02-22). Delta 1: 574 commits through 2026-03-01. Delta 2: 151
+non-merge, non-backup commits 977953d8..04e7ed7c (2026-03-01 to 2026-03-03).
+Organized by theme so we can review together and decide actions.
 
 **Legend:** `[ ]` = pending review, `[x]` = addressed, `[-]` = skipped (N/A), `[~]` = deferred
 
@@ -415,6 +417,287 @@ Go code making decisions that belong in prompts — moved to prompts.
 
 ---
 
+## Delta 2: Commits 977953d8..04e7ed7c (2026-03-01 to 2026-03-03)
+
+151 non-merge, non-backup commits. Organized by theme for triage.
+Cross-references to Delta 1 sections (S1-S13) where themes continue.
+
+---
+
+## 14. ZFC Fixes (Delta 2)
+
+Extends Section 11. Go code making decisions that belong in prompts or
+formulas — refactored or removed.
+
+- [-] **ee0cef89** — Remove `IsBeadActivelyWorked()` (ZFC violation). Go was
+  deciding whether a bead was "actively worked" — a judgment call that belongs
+  in the agent prompt via bead state inspection.
+  N/A — Gas City never had this function. Witness prompt already handles
+  orphaned bead recovery and dedup at the prompt layer (lines 85-104).
+- [-] **7e7ec1dd** — Doctor Dog delegated to formula. 565 lines of Go decision
+  logic replaced with formula-driven advisory model. The Go code only provides
+  data; the formula makes decisions.
+  N/A — Gas City was formula-first for Doctor Dog. `mol-dog-doctor.formula.toml`
+  in `dolt-health/` topology already uses the advisory model upstream is
+  converging toward. No imperative Go health checks ever existed.
+- [-] **efcb72a8** — Wisp reaper restructured as thin orchestrator. Decision
+  logic (which wisps to reap, when) moved to formula; Go code only executes
+  the mechanical reap operation.
+  N/A — Gas City has no wisp reaper Go code. Our `mol-dog-reaper.formula.toml`
+  already has the 5-step formula (scan → reap → purge → auto-close → report)
+  that upstream's Go is converging toward.
+- [-] **1057946b** — Convoy stuck classification. Replaced Go heuristics for
+  "is this convoy stuck?" with raw data surfacing. Agent reads convoy state
+  and decides.
+  N/A — Gas City has no convoy Go code. Convoys are an open design item
+  (FUTURE.md). When built, will surface raw data per ZFC from the start.
+- [-] **4cc3d231** — Replace hardcoded role strings with constants. Removes
+  string literals like `"polecat"`, `"witness"` from Go logic paths.
+  N/A — Gas City has zero hardcoded roles by design. Upstream centralizes
+  role names as Go constants; Gas City eliminates them entirely. The
+  `roleEmoji` map remains a known deferred item from S11.
+- [-] **a54bf93a** — Centralize formula names as constants. Formula name
+  strings gathered into a single constants file instead of scattered literals.
+  N/A — Gas City discovers formula names from TOML files at runtime.
+  Formula names live in config, not Go constants.
+- [-] **1cae020a** — Typed `ZombieClassification` replaces string matching.
+  Go switches on typed enum instead of `if classification == "zombie"`.
+  N/A — Gas City has no compiled zombie classifier. Witness handles
+  zombie/stuck detection via prompt-level judgment.
+- [x] **376ca2ef** — Compactor ZFC exemption documented. Compactor's Go-level
+  decisions (when to compact, threshold checks) explicitly documented as
+  acceptable ZFC exceptions with rationale.
+  Done: `mol-dog-compactor.formula.toml` updated to v2 — added surgical mode,
+  ZFC exemption section, concurrent write safety docs, `mode`/`keep_recent`
+  vars, `dolt_gc` in compact step, pre-flight row count verification.
+  Also updated `mol-dog-reaper.formula.toml` to v2 — added anomaly detection,
+  mail purging, parent-check in reap query, `mail_delete_age`/`alert_threshold`/
+  `dry_run`/`databases`/`dolt_port` vars.
+
+---
+
+## 15. Config-Driven Thresholds (Delta 2)
+
+Extends Section 12c. More hardcoded thresholds moved to config.
+
+- [-] **f71e914b** — Witness patrol thresholds config-driven (batch 1).
+  Heartbeat staleness, idle detection, and escalation thresholds now read
+  from config instead of Go constants.
+  N/A — Gas City was config-first from inception. `[daemon]` section has
+  `max_restarts`, `restart_window`, `idle_timeout`, `health_check_interval`
+  all configurable. Thresholds were never hardcoded.
+- [-] **a3e646e3** — Daemon/boot/deacon thresholds config-driven (batch 2).
+  Boot triage intervals, deacon patrol frequency, and daemon restart windows
+  all configurable.
+  N/A — same as above. Gas City daemon config covers these knobs.
+
+---
+
+## 16. Formula & Molecule Evolution (Delta 2)
+
+Extends Sections 8 and 10. New formula capabilities and molecule lifecycle
+improvements.
+
+- [x] **ecc6a9af** — `pour` flag for step materialization. When set, formula
+  steps are materialized as child beads (opt-in). Default remains root-only
+  wisps per Section 7.
+  Done: Added `Pour` and `Version` fields to `Formula` struct in
+  `internal/formula/formula.go`. Parser preserves the field; schema
+  regenerated. Behavioral use (creating child beads) deferred until
+  molecule creation supports it.
+- [x] **8744c5d7** — `dolt-health` step added to deacon patrol formula.
+  Deacon checks Dolt server health as part of its regular patrol cycle.
+  Done: Added `gc dolt health` command (`--json` for machine-readable output)
+  to `internal/dolt/health.go` + `cmd/gc/cmd_dolt.go`. Checks server status,
+  per-DB commit counts, backup freshness, orphan DBs, zombie processes.
+  Added `dolt-health` step to deacon patrol formula with threshold table
+  and remediation actions (compactor dispatch, backup nudge, orphan cleanup).
+  Existing `system-health` step (gc doctor) retained as a separate step.
+- [~] **f11e10c3** — Patrol step self-audit in cycle reports. Patrol formulas
+  emit a summary of which steps ran, skipped, or errored at end of cycle.
+  Deferred: requires `gc patrol report --steps` (no patrol reporting CLI yet).
+  Concept is valuable — implement when patrol reporting infrastructure exists.
+- [x] **3accc203** — Deacon Capability Ledger. Already at parity: all 6 role
+  templates include `shared/capability-ledger.md.tmpl` (work/patrol/merge
+  variants). Hooked/pinned terminology also already correct in propulsion
+  templates. Gas City factored upstream's inline approach into shared fragments.
+- [x] **117f014f** — Auto-burn stale molecules on re-dispatch. Confirmed Gas
+  City had the same bug: stale wisps from failed mid-batch dispatch blocked
+  re-sling. Fixed: `checkNoMoleculeChildren` and `checkBatchNoMoleculeChildren`
+  now skip closed molecules and auto-burn open molecules on unassigned beads.
+- [ ] **9b4e67a2** — Burn previous root wisps before new patrol. Patrol
+  agents (witness, deacon) burn their old wisp before creating a new one,
+  preventing wisp accumulation.
+- [ ] **53abdc44** — Pass `--root-only` to `autoSpawnPatrol`. Ensures
+  auto-spawned patrols use root-only wisps consistently.
+- [ ] **5b9aafc3** + **5769ea01** — Wisp orphan prevention. Two-commit fix
+  ensuring wisps are properly parented and cleaned up when their owning
+  agent terminates.
+
+---
+
+## 17. Witness & Health Patrol (Delta 2)
+
+Extends Section 6. Witness patrol behavioral improvements and health
+monitoring enhancements.
+
+- [ ] **cee8763f** + **35353a80** — Handoff cooldown. After a bead is handed
+  off between agents, a cooldown period prevents immediate re-handoff.
+  Crew and mayor are exempt (they always accept handoffs).
+- [ ] **ac859828** — Verify work on main before resetting abandoned beads.
+  Witness checks whether the abandoned bead's branch was already merged to
+  main before resetting it to the pool (prevents duplicate work).
+- [ ] **a237024a** — Spawning state in witness action table. Agents in
+  "spawning" state are now tracked separately from "idle" and "active" in
+  the witness survey, preventing premature intervention.
+- [ ] **c5d486e2** — Heartbeat v2: agent-reported state. Agents write their
+  own state to their agent bead (active, idle, blocked) instead of witness
+  inferring state from external signals.
+- [-] **33536975** — Witness race conditions. Gas Town-internal fix for
+  concurrent witness patrol runs conflicting on Dolt writes. N/A — Gas City
+  uses filesystem beads with atomic writes.
+- [-] **1cd600fc** + **21ec786e** — Structural identity checks. Gas Town
+  internal validation that agent identity matches expected role assignment.
+  N/A — Gas City agents are identified by config name, not role.
+
+---
+
+## 18. Sling & Dispatch (Delta 2)
+
+Extends Section 12b. Dispatch improvements and error handling.
+
+- [ ] **a6fa0b91** + **5c9c749a** + **65ee6d6d** — Per-bead respawn circuit
+  breaker. Three-commit series adding a circuit breaker that prevents a
+  single bead from being respawned indefinitely. After N respawns (configurable),
+  the bead is escalated instead of retried.
+- [ ] **783cbf77** — `--agent` override for formula run + convoy per-leg
+  routing. Allows forcing a specific agent to run a formula, and convoys
+  can route individual legs to specific agents.
+- [ ] **d980d0dc** — Resolve rig-prefixed beads in sling. Sling can now
+  dispatch beads that reference a specific rig (e.g., `myrig:bead-123`)
+  to agents in that rig's context.
+- [-] **9f33b97d** — Nil `cobra.Command` guard. Gas Town internal defensive
+  check. N/A.
+- [-] **5d9406e1** — Prevent duplicate polecat spawns. Gas Town internal
+  race condition in spawn path. N/A — Gas City's reconciler handles this
+  via config-driven pool sizing.
+
+---
+
+## 19. Convoy Improvements (Delta 2)
+
+New theme. Convoy is Gas Town's multi-leg work coordination mechanism
+(a molecule whose steps route to different agents).
+
+- [ ] **22254cca** + **c9f2d264** — Custom convoy statuses: `staged_ready`
+  and `staged_warnings`. Allows convoys to be staged for review before
+  final dispatch, with optional warning annotations.
+- [ ] **860cd03a** — Non-slingable blockers in wave computation. When
+  computing which convoy legs can run in parallel, legs blocked by
+  non-dispatchable beads are excluded from the current wave.
+- [-] **85b75405** — Capture `bd` stderr in convoy ops. Gas Town internal
+  error handling improvement. N/A.
+
+---
+
+## 20. Pre-Verification & Merge Queue (Delta 2)
+
+Extends Section 4. Adds a pre-verification step before merge queue entry.
+
+- [ ] **2966c074** — Pre-verify step in polecat work v8 formula. Before
+  submitting to refinery, polecat runs a verification pass (build + targeted
+  tests) to catch obvious failures early.
+- [ ] **73d4edfe** — `gt done --pre-verified` flag. Polecat signals that
+  pre-verification passed, so refinery can fast-path the merge queue entry.
+- [ ] **5fe1b0f6** — Refinery pre-verification fast-path. When a bead
+  arrives with `pre_verified=true`, refinery skips its own verification
+  step and proceeds directly to merge.
+- [ ] **07b890d0** — `MRPreVerification` bead fields. New metadata fields
+  on MR beads to track pre-verification status and results.
+- [ ] **b24df9ea** — Remove "reject back to polecat" from refinery template.
+  Pre-verification means fewer rejections; the rejection path is simplified.
+- [-] **33364623**, **45541103**, **e2695fd6** — Gas Town internal MR/refinery
+  fixes. Bug fixes in MR state machine. N/A.
+
+---
+
+## 21. Persistent Polecat Pool (Delta 2)
+
+Extends Section 1. Incremental improvements to the persistent polecat model.
+
+- [ ] **4037bc86** — Unified `DoneIntentGracePeriod` constant. Consolidates
+  scattered grace period values into a single constant controlling how long
+  the system waits after a polecat signals "done" before considering it idle.
+- [ ] **e09073eb** — Idle sandbox detection matches actual `cleanupStatus`.
+  Fixes mismatch where witness was checking a different field than what
+  `gt done` actually sets, causing false "dirty sandbox" alerts.
+- [ ] **082fbedc** + **5fa9dc2b** — Docs: remove "Idle Polecat Heresy".
+  Documentation updated to reflect that idle polecats are the normal,
+  expected state — not a heresy to be corrected.
+- [ ] **c6173cd7** — `gt done` closes hooked bead regardless of status.
+  Previously, `gt done` only closed the bead if it was in "active" status.
+  Now it closes it unconditionally, preventing orphaned active beads when
+  a polecat completes work on a bead that was concurrently modified.
+
+---
+
+## 22. Low-Relevance / Gas Town Internal
+
+Bulk N/A items grouped by sub-theme for fast scanning. These are Gas Town
+implementation details that don't affect Gas City's architecture or
+configuration patterns.
+
+### 22a. TOCTOU race fixes
+- [-] ~7 commits fixing time-of-check/time-of-use races in compiled Go code.
+  Gas Town-specific concurrency bugs in daemon, witness, and sling hot paths.
+  N/A — Gas City's architecture avoids these patterns (filesystem beads with
+  atomic rename, no concurrent Dolt writes).
+
+### 22b. OTel / Telemetry
+- [-] ~10 commits adding/refining OpenTelemetry spans, trace propagation,
+  and metrics collection. Gas City has no OTel integration. N/A.
+
+### 22c. Dolt operational
+- [-] ~10 commits for Dolt SQL admin operations, server restart logic,
+  connection pool tuning, and query optimization. Gas City uses filesystem
+  beads, not Dolt. N/A.
+
+### 22d. Daemon PID / lifecycle
+- [-] ~7 commits improving daemon PID file handling, process discovery,
+  and graceful shutdown sequencing. Gas City's controller uses `flock(2)`
+  for singleton enforcement and direct process table queries. N/A.
+
+### 22e. Proxy / mTLS sandbox
+- [-] ~3 commits for sandbox proxy mTLS certificate rotation and proxy
+  health checks. Gas Town infrastructure for isolated polecat networking.
+  N/A — Gas City sandboxes are local worktrees.
+
+### 22f. Namepool custom themes
+- [-] ~6 commits adding themed name pools (e.g., mythology, astronomy) for
+  agent naming. Gas Town-specific flavor. N/A — Gas City uses config-defined
+  agent names.
+
+### 22g. Agent memory
+- [~] ~3 commits for `gt remember` / `gt forget` commands — persistent
+  agent memory across sessions. Deferred — interesting capability but
+  requires `gc remember`/`gc forget` CLI commands and agent bead metadata
+  fields. Low priority vs core SDK work.
+
+### 22h. Cross-platform / build / CI / deps
+- [-] ~12 commits for Windows/macOS compatibility, CI pipeline fixes,
+  dependency updates, and build system changes. Gas Town build infrastructure.
+  N/A.
+
+### 22i. Misc operational
+- [-] ~15 commits for miscellaneous Gas Town bug fixes: tmux session cleanup,
+  log rotation, error message improvements, CLI help text updates. N/A.
+
+### 22j. Docs
+- [-] ~2 commits: agent API inventory and internal architecture docs.
+  Informational only — already captured in Gas City's spec documents.
+
+---
+
 ## Review Order (Suggested)
 
 1. [~] **Persistent Polecat Pool** (Section 1) — deferred, requires sling + `gc done` + idle state infrastructure
@@ -428,3 +711,10 @@ Go code making decisions that belong in prompts — moved to prompts.
 9. [x] **Config/Operational** (Section 12) — SDK-level features
 10. [-] **Formula System** (Section 10) — N/A, designed minimal-first
 11. [~] Remaining sections (5, 7, 13) — 5+7 done; 13.4-5 done; 13.1-3 deferred (blocked on S1/S2)
+12. [ ] **ZFC Fixes Delta 2** (S14) — IsBeadActivelyWorked removal, Doctor Dog formula delegation, typed enums
+13. [ ] **Formula/Molecule Delta 2** (S16) — pour flag, auto-burn, patrol audit, capability ledger
+14. [ ] **Witness/Health Delta 2** (S17) — handoff cooldown, heartbeat v2, verify-before-reset
+15. [ ] **Sling/Dispatch Delta 2** (S18) — respawn circuit breaker, per-leg routing
+16. [ ] **Pre-verification Delta 2** (S20) — polecat pre-verify, refinery fast-path
+17. [ ] **Persistent Polecat Delta 2** (S21) — done-intent, idle sandbox, heresy removal
+18. [-] **Low-relevance bulk** (S22) — TOCTOU, OTel, Dolt, daemon, proxy, namepool, build/CI

@@ -13,6 +13,14 @@
           "type": "string",
           "description": "Description explains what this formula does."
         },
+        "version": {
+          "type": "integer",
+          "description": "Version is the formula schema version."
+        },
+        "pour": {
+          "type": "boolean",
+          "description": "Pour controls step materialization. When true, steps are created as\nindividual child beads (checkpointed, recoverable on crash). When\nfalse (default), a single root-only wisp is created and the agent\nreads step descriptions inline from the formula text."
+        },
         "steps": {
           "items": {
             "$ref": "#/$defs/Step"

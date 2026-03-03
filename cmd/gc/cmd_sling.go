@@ -286,7 +286,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 	// If --on, attach a wisp to the bead and route the original bead.
 	if opts.OnFormula != "" {
 		method = "on-formula"
-		if err := checkNoMoleculeChildren(querier, beadID); err != nil {
+		if err := checkNoMoleculeChildren(querier, beadID, deps.Store, deps.Stderr); err != nil {
 			fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 			return 1
 		}
@@ -302,7 +302,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 	// Apply default formula if target has one and no explicit formula/--no-formula.
 	if opts.OnFormula == "" && !opts.IsFormula && !opts.NoFormula && a.DefaultSlingFormula != "" {
 		method = "default-on-formula"
-		if err := checkNoMoleculeChildren(querier, beadID); err != nil {
+		if err := checkNoMoleculeChildren(querier, beadID, deps.Store, deps.Stderr); err != nil {
 			fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 			return 1
 		}
@@ -442,7 +442,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 		useFormula = a.DefaultSlingFormula
 	}
 	if useFormula != "" {
-		if err := checkBatchNoMoleculeChildren(querier, open); err != nil {
+		if err := checkBatchNoMoleculeChildren(querier, open, deps.Store, deps.Stderr); err != nil {
 			fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 			return 1
 		}
@@ -572,9 +572,10 @@ func printCrossRigSection(w func(string), beadID string, a config.Agent, cfg *co
 }
 
 // checkNoMoleculeChildren returns an error if the bead already has an attached
-// molecule or wisp child. Best-effort: skips check if the querier doesn't
-// support Children or if the query fails.
-func checkNoMoleculeChildren(q BeadQuerier, beadID string) error {
+// molecule or wisp child that is still open. Closed molecules are skipped
+// (defense-in-depth). Open molecules on unassigned beads are auto-burned
+// (closed) to unblock re-dispatch after mid-sling failures.
+func checkNoMoleculeChildren(q BeadQuerier, beadID string, store beads.Store, w io.Writer) error {
 	cq, ok := q.(BeadChildQuerier)
 	if !ok || cq == nil {
 		return nil // best-effort: can't check children
@@ -583,28 +584,59 @@ func checkNoMoleculeChildren(q BeadQuerier, beadID string) error {
 	if err != nil {
 		return nil // best-effort: query failed
 	}
+	// Check if parent bead is unassigned (stale wisp indicator).
+	parent, parentErr := q.Get(beadID)
+	parentUnassigned := parentErr == nil && parent.Assignee == ""
+
 	for _, c := range children {
-		if beads.IsMoleculeType(c.Type) {
-			return fmt.Errorf("bead %s already has attached %s %s", beadID, c.Type, c.ID)
+		if !beads.IsMoleculeType(c.Type) {
+			continue
 		}
+		// Skip closed molecules — they're done.
+		if c.Status == "closed" {
+			continue
+		}
+		// Auto-burn stale molecules on unassigned beads.
+		if parentUnassigned && store != nil {
+			if burnErr := store.Close(c.ID); burnErr == nil {
+				fmt.Fprintf(w, "Auto-burned stale %s %s on unassigned bead %s\n", c.Type, c.ID, beadID) //nolint:errcheck // best-effort
+				continue
+			}
+			// Close failed — fall through to error.
+		}
+		return fmt.Errorf("bead %s already has attached %s %s", beadID, c.Type, c.ID)
 	}
 	return nil
 }
 
 // checkBatchNoMoleculeChildren checks all open children for existing molecule
-// attachments before any wisps are created. Returns an error listing all
-// problematic beads if any have attached molecules.
-func checkBatchNoMoleculeChildren(q BeadChildQuerier, open []beads.Bead) error {
+// attachments before any wisps are created. Closed molecules are skipped.
+// Open molecules on unassigned beads are auto-burned to unblock re-dispatch.
+// Returns an error listing all problematic beads if any have live molecules.
+func checkBatchNoMoleculeChildren(q BeadChildQuerier, open []beads.Bead, store beads.Store, w io.Writer) error {
 	var problems []string
 	for _, child := range open {
 		children, err := q.Children(child.ID)
 		if err != nil {
 			continue // best-effort per-child
 		}
+		childUnassigned := child.Assignee == ""
 		for _, c := range children {
-			if beads.IsMoleculeType(c.Type) {
-				problems = append(problems, fmt.Sprintf("%s (has %s %s)", child.ID, c.Type, c.ID))
+			if !beads.IsMoleculeType(c.Type) {
+				continue
 			}
+			// Skip closed molecules — they're done.
+			if c.Status == "closed" {
+				continue
+			}
+			// Auto-burn stale molecules on unassigned beads.
+			if childUnassigned && store != nil {
+				if burnErr := store.Close(c.ID); burnErr == nil {
+					fmt.Fprintf(w, "Auto-burned stale %s %s on unassigned bead %s\n", c.Type, c.ID, child.ID) //nolint:errcheck // best-effort
+					continue
+				}
+			}
+			problems = append(problems, fmt.Sprintf("%s (has %s %s)", child.ID, c.Type, c.ID))
 		}
 	}
 	if len(problems) > 0 {
@@ -806,7 +838,7 @@ func dryRunSingle(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 
 		// Attach formula section (--on or default).
 		if opts.OnFormula != "" {
-			if err := checkNoMoleculeChildren(querier, opts.BeadOrFormula); err != nil {
+			if err := checkNoMoleculeChildren(querier, opts.BeadOrFormula, deps.Store, deps.Stderr); err != nil {
 				fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 				return 1
 			}
@@ -825,7 +857,7 @@ func dryRunSingle(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			w("  Pre-check: " + opts.BeadOrFormula + " has no existing molecule/wisp children ✓")
 			w("")
 		} else if !opts.NoFormula && a.DefaultSlingFormula != "" {
-			if err := checkNoMoleculeChildren(querier, opts.BeadOrFormula); err != nil {
+			if err := checkNoMoleculeChildren(querier, opts.BeadOrFormula, deps.Store, deps.Stderr); err != nil {
 				fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 				return 1
 			}

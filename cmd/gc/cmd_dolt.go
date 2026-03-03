@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -38,6 +39,7 @@ These commands help inspect, recover, and sync the database.`,
 		newDoltSyncCmd(stdout, stderr),
 		newDoltRollbackCmd(stdout, stderr),
 		newDoltCleanupCmd(stdout, stderr),
+		newDoltHealthCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -528,6 +530,94 @@ func doDoltCleanup(force bool, maxOrphans int, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintf(stdout, "\nRemoved %d of %d orphaned database(s).\n", removed, len(orphans)) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// --- gc dolt health ---
+
+func newDoltHealthCmd(stdout, stderr io.Writer) *cobra.Command {
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check Dolt data-plane health",
+		Long: `Lightweight Dolt data-plane health report for patrol cycles.
+
+Checks server status and latency, per-database commit counts and open
+beads, backup freshness, orphan databases, and zombie Dolt processes.
+
+Use --json for machine-readable output (consumed by deacon patrol).`,
+		Example: `  gc dolt health
+  gc dolt health --json`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if doDoltHealth(jsonOutput, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON")
+	return cmd
+}
+
+// doDoltHealth runs a lightweight data-plane health check.
+func doDoltHealth(jsonOutput bool, stdout, stderr io.Writer) int {
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc dolt health: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	report := dolt.RunHealthCheck(cityPath)
+
+	if jsonOutput {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(report); err != nil {
+			fmt.Fprintf(stderr, "gc dolt health: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		return 0
+	}
+
+	// Human-readable output.
+	if report.Server.Running {
+		fmt.Fprintf(stdout, "Server: running (PID %d, port %d, latency %dms)\n", //nolint:errcheck // best-effort stdout
+			report.Server.PID, report.Server.Port, report.Server.LatencyMs)
+	} else {
+		fmt.Fprintln(stdout, "Server: not running") //nolint:errcheck // best-effort stdout
+	}
+
+	if len(report.Databases) > 0 {
+		fmt.Fprintln(stdout, "\nDatabases:") //nolint:errcheck // best-effort stdout
+		for _, db := range report.Databases {
+			fmt.Fprintf(stdout, "  %s: %d commits, %d open beads\n", //nolint:errcheck // best-effort stdout
+				db.Name, db.Commits, db.OpenBeads)
+		}
+	}
+
+	if report.Backups.DoltFreshness != "" {
+		stale := ""
+		if report.Backups.DoltStale {
+			stale = " [STALE]"
+		}
+		fmt.Fprintf(stdout, "\nBackups: %s ago%s\n", report.Backups.DoltFreshness, stale) //nolint:errcheck // best-effort stdout
+	} else {
+		fmt.Fprintln(stdout, "\nBackups: none found") //nolint:errcheck // best-effort stdout
+	}
+
+	if len(report.Orphans) > 0 {
+		fmt.Fprintf(stdout, "\nOrphans: %d\n", len(report.Orphans)) //nolint:errcheck // best-effort stdout
+		for _, o := range report.Orphans {
+			fmt.Fprintf(stdout, "  %s (%s)\n", o.Name, o.Size) //nolint:errcheck // best-effort stdout
+		}
+	}
+
+	if report.Processes.ZombieCount > 0 {
+		fmt.Fprintf(stdout, "\nZombie processes: %d (PIDs: %v)\n", //nolint:errcheck // best-effort stdout
+			report.Processes.ZombieCount, report.Processes.ZombiePIDs)
+	}
+
 	return 0
 }
 

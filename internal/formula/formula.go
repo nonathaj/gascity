@@ -17,6 +17,13 @@ type Formula struct {
 	Name string `toml:"formula" jsonschema:"required"`
 	// Description explains what this formula does.
 	Description string `toml:"description,omitempty"`
+	// Version is the formula schema version.
+	Version int `toml:"version,omitempty"`
+	// Pour controls step materialization. When true, steps are created as
+	// individual child beads (checkpointed, recoverable on crash). When
+	// false (default), a single root-only wisp is created and the agent
+	// reads step descriptions inline from the formula text.
+	Pour bool `toml:"pour,omitempty"`
 	// Steps defines the ordered sequence of work items in this formula.
 	Steps []Step `toml:"steps" jsonschema:"minItems=1"`
 }

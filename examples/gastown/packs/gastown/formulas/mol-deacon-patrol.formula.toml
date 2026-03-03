@@ -212,11 +212,86 @@ escalate to mayor.
 Close this step after assessment."""
 
 [[steps]]
-id = "system-health"
-title = "Run system diagnostics"
+id = "dolt-health"
+title = "Run Dolt data-plane health check"
 needs = ["utility-agent-health"]
 description = """
-Run `gc doctor` for a quick system health check.
+Run `gc dolt health --json` to inspect the Dolt data plane and flag anomalies.
+
+This step surfaces problems that individual patrol steps won't catch:
+commit bloat (compactor dog may have failed), stale backups (backup dog
+may have failed), orphan databases, and zombie Dolt server processes.
+
+**Step 1: Run the health check**
+```bash
+gc dolt health --json
+```
+
+Parse the JSON output (HealthReport schema):
+- `server`: running, pid, port, latency_ms
+- `databases[]`: name, commits, open_beads
+- `backups`: dolt_freshness, dolt_age_seconds, dolt_stale
+- `processes`: zombie_count, zombie_pids
+- `orphans[]`: name, size
+
+**Step 2: Evaluate thresholds**
+
+| Signal | Threshold | Meaning |
+|--------|-----------|---------|
+| `server.running == false` | — | Dolt server is down (CRITICAL) |
+| `server.latency_ms > 5000` | 5 s | Server may be overloaded |
+| `databases[].commits > 50000` | 50 k | Compactor dog may have stalled |
+| `backups.dolt_stale == true` | >30 min | Backup dog may have failed |
+| `processes.zombie_count > 0` | any | Zombie Dolt servers detected |
+| `orphans` non-empty | any | Orphan databases accumulating |
+
+**Step 3: React to alerts**
+
+**Server down (CRITICAL):**
+```bash
+gc mail send mayor/ -s "ESCALATION: Dolt server unreachable [CRITICAL]" \\
+  -m "gc dolt health reports server not running"
+```
+
+**Commit bloat (commits > 50k in any DB):**
+The compactor dog (`mol-dog-compactor`) may have failed. Log for awareness.
+If the compactor automation is configured, it will self-dispatch. Otherwise
+nudge the dog pool:
+```bash
+gc nudge dog/ "Compactor needed: <db_name> has <count> commits"
+```
+
+**Stale backups:**
+The backup dog (`mol-dog-backup`) may have failed. Same pattern — log and
+nudge if automation hasn't self-healed:
+```bash
+gc nudge dog/ "Backup needed: dolt backup is <age> old"
+```
+
+**Zombie processes:**
+Kill zombie Dolt servers not on the expected port:
+```bash
+kill <zombie_pid>
+```
+
+**Orphan DBs:**
+Run cleanup:
+```bash
+gc dolt cleanup
+```
+If orphan count exceeds safety limit, escalate to mayor.
+
+**If everything is healthy:**
+Log `Dolt health: OK` and move on.
+
+**Exit criteria:** Health check run, alerts handled or escalated."""
+
+[[steps]]
+id = "system-health"
+title = "Run system diagnostics"
+needs = ["dolt-health"]
+description = """
+Run `gc doctor` for a quick workspace health check.
 
 ```bash
 gc doctor

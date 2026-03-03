@@ -777,6 +777,7 @@ gc dolt
 | Subcommand | Description |
 |------------|-------------|
 | [gc dolt cleanup](#gc-dolt-cleanup) | Find and remove orphaned Dolt databases |
+| [gc dolt health](#gc-dolt-health) | Check Dolt data-plane health |
 | [gc dolt list](#gc-dolt-list) | List Dolt databases |
 | [gc dolt logs](#gc-dolt-logs) | Tail the Dolt server log file |
 | [gc dolt recover](#gc-dolt-recover) | Recover Dolt from read-only state |
@@ -799,6 +800,30 @@ gc dolt cleanup [flags]
 |------|------|---------|-------------|
 | `--force` | bool |  | actually remove orphaned databases |
 | `--max` | int | `50` | refuse if more than this many orphans (safety limit) |
+
+## gc dolt health
+
+Lightweight Dolt data-plane health report for patrol cycles.
+
+Checks server status and latency, per-database commit counts and open
+beads, backup freshness, orphan databases, and zombie Dolt processes.
+
+Use --json for machine-readable output (consumed by deacon patrol).
+
+```
+gc dolt health [flags]
+```
+
+**Example:**
+
+```
+gc dolt health
+  gc dolt health --json
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool |  | output as JSON |
 
 ## gc dolt list
 

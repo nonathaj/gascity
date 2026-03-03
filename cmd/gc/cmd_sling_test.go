@@ -1228,7 +1228,8 @@ func TestOnFormulaExistingMoleculeErrors(t *testing.T) {
 	a := config.Agent{Name: "mayor"}
 
 	q := newFakeChildQuerier()
-	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open"}
+	// Assigned bead — molecule is legitimate, should NOT be auto-burned.
+	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open", Assignee: "other-agent"}
 	q.childrenOf["BL-42"] = []beads.Bead{
 		{ID: "MOL-1", Type: "molecule", Status: "open"},
 	}
@@ -1257,7 +1258,8 @@ func TestOnFormulaExistingWispErrors(t *testing.T) {
 	a := config.Agent{Name: "mayor"}
 
 	q := newFakeChildQuerier()
-	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open"}
+	// Assigned bead — wisp is legitimate, should NOT be auto-burned.
+	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open", Assignee: "other-agent"}
 	q.childrenOf["BL-42"] = []beads.Bead{
 		{ID: "WP-5", Type: "wisp", Status: "open"},
 	}
@@ -1272,6 +1274,59 @@ func TestOnFormulaExistingWispErrors(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "already has attached wisp WP-5") {
 		t.Errorf("stderr = %q, want wisp error", stderr.String())
+	}
+}
+
+func TestOnFormulaAutoBurnStaleMolecule(t *testing.T) {
+	runner := newFakeRunner()
+	sp := session.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor"}
+
+	q := newFakeChildQuerier()
+	// Unassigned bead — molecule is stale from failed dispatch, should be auto-burned.
+	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open", Assignee: ""}
+	q.childrenOf["BL-42"] = []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "open"},
+	}
+
+	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	// Seed store with MOL-1 so Close can find it by ID.
+	deps.Store = beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "open"},
+	})
+
+	opts := testOpts(a, "BL-42")
+	opts.OnFormula = "code-review"
+	code := doSling(opts, deps, q)
+
+	if code != 0 {
+		t.Fatalf("doSling returned %d, want 0 (auto-burn should unblock); stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Auto-burned stale molecule MOL-1") {
+		t.Errorf("stderr = %q, want auto-burn message", stderr.String())
+	}
+}
+
+func TestOnFormulaSkipsClosedMolecule(t *testing.T) {
+	runner := newFakeRunner()
+	sp := session.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor"}
+
+	q := newFakeChildQuerier()
+	q.beadsByID["BL-42"] = beads.Bead{ID: "BL-42", Type: "task", Status: "open", Assignee: "other-agent"}
+	q.childrenOf["BL-42"] = []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "closed"}, // closed — should be skipped
+	}
+
+	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	opts := testOpts(a, "BL-42")
+	opts.OnFormula = "code-review"
+	code := doSling(opts, deps, q)
+
+	if code != 0 {
+		t.Fatalf("doSling returned %d, want 0 (closed molecule should be skipped); stderr: %s", code, stderr.String())
 	}
 }
 
@@ -1402,9 +1457,9 @@ func TestBatchOnFailFastMolecule(t *testing.T) {
 	q.beadsByID["CVY-1"] = beads.Bead{ID: "CVY-1", Type: "convoy", Status: "open"}
 	q.childrenOf["CVY-1"] = []beads.Bead{
 		{ID: "BL-1", Status: "open"},
-		{ID: "BL-2", Status: "open"},
+		{ID: "BL-2", Status: "open", Assignee: "other-agent"},
 	}
-	// BL-2 has an existing molecule child.
+	// BL-2 has an existing molecule child AND is assigned — legitimate, should block.
 	q.childrenOf["BL-2"] = []beads.Bead{
 		{ID: "MOL-1", Type: "molecule", Status: "open"},
 	}
@@ -1426,6 +1481,67 @@ func TestBatchOnFailFastMolecule(t *testing.T) {
 	// Nothing should be routed — fail-fast.
 	if len(runner.calls) != 0 {
 		t.Errorf("got %d runner calls, want 0 (fail-fast)", len(runner.calls))
+	}
+}
+
+func TestBatchAutoBurnStaleMolecules(t *testing.T) {
+	runner := newFakeRunner()
+	sp := session.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor"}
+
+	q := newFakeChildQuerier()
+	q.beadsByID["CVY-1"] = beads.Bead{ID: "CVY-1", Type: "convoy", Status: "open"}
+	q.childrenOf["CVY-1"] = []beads.Bead{
+		{ID: "BL-1", Status: "open"},
+		{ID: "BL-2", Status: "open"}, // unassigned — stale molecule
+	}
+	// BL-2 has a stale molecule from a failed previous dispatch.
+	q.childrenOf["BL-2"] = []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "open"},
+	}
+
+	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	// Seed store with MOL-1 so Close can find it by ID.
+	deps.Store = beads.NewMemStoreFrom(0, []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "open"},
+	})
+
+	opts := testOpts(a, "CVY-1")
+	opts.OnFormula = "code-review"
+	code := doSlingBatch(opts, deps, q)
+
+	if code != 0 {
+		t.Fatalf("doSlingBatch returned %d, want 0 (auto-burn should unblock); stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Auto-burned stale molecule MOL-1") {
+		t.Errorf("stderr = %q, want auto-burn message", stderr.String())
+	}
+}
+
+func TestBatchSkipsClosedMolecules(t *testing.T) {
+	runner := newFakeRunner()
+	sp := session.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor"}
+
+	q := newFakeChildQuerier()
+	q.beadsByID["CVY-1"] = beads.Bead{ID: "CVY-1", Type: "convoy", Status: "open"}
+	q.childrenOf["CVY-1"] = []beads.Bead{
+		{ID: "BL-1", Status: "open", Assignee: "other-agent"},
+	}
+	// BL-1 has a closed molecule — should be skipped, not block dispatch.
+	q.childrenOf["BL-1"] = []beads.Bead{
+		{ID: "MOL-1", Type: "molecule", Status: "closed"},
+	}
+
+	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	opts := testOpts(a, "CVY-1")
+	opts.OnFormula = "code-review"
+	code := doSlingBatch(opts, deps, q)
+
+	if code != 0 {
+		t.Fatalf("doSlingBatch returned %d, want 0 (closed molecule should be skipped); stderr: %s", code, stderr.String())
 	}
 }
 

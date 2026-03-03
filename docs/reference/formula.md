@@ -12,6 +12,8 @@ Formula is a parsed formula definition from a *.formula.toml file.
 |-------|------|----------|---------|-------------|
 | `formula` | string | **yes** |  | Name is the unique identifier for this formula. |
 | `description` | string |  |  | Description explains what this formula does. |
+| `version` | integer |  |  | Version is the formula schema version. |
+| `pour` | boolean |  |  | Pour controls step materialization. When true, steps are created as individual child beads (checkpointed, recoverable on crash). When false (default), a single root-only wisp is created and the agent reads step descriptions inline from the formula text. |
 | `steps` | []Step | **yes** |  | Steps defines the ordered sequence of work items in this formula. |
 
 ## Step
