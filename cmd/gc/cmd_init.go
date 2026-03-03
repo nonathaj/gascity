@@ -292,7 +292,7 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 		return 1
 	}
 	// Install Claude Code hooks (settings.json).
-	if code := installClaudeHooks(fs, cityPath); code != 0 {
+	if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 		return code
 	}
 
@@ -354,7 +354,7 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		return 1
 	}
 	// Install Claude Code hooks (settings.json).
-	if code := installClaudeHooks(fs, cityPath); code != 0 {
+	if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 		return code
 	}
 
@@ -413,8 +413,9 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 
 // installClaudeHooks writes Claude Code hook settings for the city.
 // Delegates to hooks.Install which is idempotent (won't overwrite existing files).
-func installClaudeHooks(fs fsys.FS, cityPath string) int {
+func installClaudeHooks(fs fsys.FS, cityPath string, stderr io.Writer) int {
 	if err := hooks.Install(fs, cityPath, cityPath, []string{"claude"}); err != nil {
+		fmt.Fprintf(stderr, "gc init: installing claude hooks: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	return 0
@@ -580,7 +581,7 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 	}
 
 	// Install Claude Code hooks.
-	if code := installClaudeHooks(fs, cityPath); code != 0 {
+	if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 		return code
 	}
 

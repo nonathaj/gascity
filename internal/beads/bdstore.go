@@ -228,14 +228,25 @@ func execPurge(dir string, env, args []string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// extractJSON finds the first JSON object in raw output that may contain
-// non-JSON preamble (warnings, debug lines).
+// extractJSON finds the first JSON value (object or array) in raw output
+// that may contain non-JSON preamble (warnings, debug lines).
 func extractJSON(data []byte) []byte {
-	start := bytes.IndexByte(data, '{')
-	if start < 0 {
+	objStart := bytes.IndexByte(data, '{')
+	arrStart := bytes.IndexByte(data, '[')
+
+	switch {
+	case objStart >= 0 && arrStart >= 0:
+		if arrStart < objStart {
+			return data[arrStart:]
+		}
+		return data[objStart:]
+	case objStart >= 0:
+		return data[objStart:]
+	case arrStart >= 0:
+		return data[arrStart:]
+	default:
 		return data
 	}
-	return data[start:]
 }
 
 // envWithout returns a copy of environ with all entries for the given key removed.
@@ -309,7 +320,7 @@ func (s *BdStore) Create(b Bead) (Bead, error) {
 		return Bead{}, fmt.Errorf("bd create: %w", err)
 	}
 	var issue bdIssue
-	if err := json.Unmarshal(out, &issue); err != nil {
+	if err := json.Unmarshal(extractJSON(out), &issue); err != nil {
 		return Bead{}, fmt.Errorf("bd create: parsing JSON: %w", err)
 	}
 	return issue.toBead(), nil
@@ -322,7 +333,7 @@ func (s *BdStore) Get(id string) (Bead, error) {
 		return Bead{}, fmt.Errorf("getting bead %q: %w", id, err)
 	}
 	var issues []bdIssue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(extractJSON(out), &issues); err != nil {
 		return Bead{}, fmt.Errorf("bd show: parsing JSON: %w", err)
 	}
 	if len(issues) == 0 {
@@ -376,7 +387,7 @@ func (s *BdStore) List() ([]Bead, error) {
 		return nil, fmt.Errorf("bd list: %w", err)
 	}
 	var issues []bdIssue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(extractJSON(out), &issues); err != nil {
 		return nil, fmt.Errorf("bd list: parsing JSON: %w", err)
 	}
 	result := make([]Bead, len(issues))
@@ -396,7 +407,7 @@ func (s *BdStore) ListByLabel(label string, limit int) ([]Bead, error) {
 		return nil, fmt.Errorf("bd list: %w", err)
 	}
 	var issues []bdIssue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(extractJSON(out), &issues); err != nil {
 		return nil, fmt.Errorf("bd list: parsing JSON: %w", err)
 	}
 	result := make([]Bead, len(issues))
@@ -430,7 +441,7 @@ func (s *BdStore) Ready() ([]Bead, error) {
 		return nil, fmt.Errorf("bd ready: %w", err)
 	}
 	var issues []bdIssue
-	if err := json.Unmarshal(out, &issues); err != nil {
+	if err := json.Unmarshal(extractJSON(out), &issues); err != nil {
 		return nil, fmt.Errorf("bd ready: parsing JSON: %w", err)
 	}
 	result := make([]Bead, len(issues))

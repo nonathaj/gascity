@@ -121,7 +121,22 @@ func buildIdleTracker(cfg *config.City, cityName string, sp session.Provider) id
 	it := newIdleTracker(sp)
 	for _, a := range cfg.Agents {
 		timeout := a.IdleTimeoutDuration()
-		if timeout > 0 {
+		if timeout <= 0 {
+			continue
+		}
+		pool := a.EffectivePool()
+		if a.IsPool() && pool.Max > 1 {
+			// Register each pool instance (worker-1, worker-2, ...).
+			for i := 1; i <= pool.Max; i++ {
+				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
+				qualifiedInstance := instanceName
+				if a.Dir != "" {
+					qualifiedInstance = a.Dir + "/" + instanceName
+				}
+				sn := agent.SessionNameFor(cityName, qualifiedInstance, st)
+				it.setTimeout(sn, timeout)
+			}
+		} else {
 			sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
 			it.setTimeout(sn, timeout)
 		}

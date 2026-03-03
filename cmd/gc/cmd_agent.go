@@ -754,8 +754,11 @@ func doAgentList(fs fsys.FS, cityPath, dirFilter string, stdout, stderr io.Write
 		if a.Suspended {
 			annotations = append(annotations, "suspended")
 		} else if a.Dir != "" && len(suspendedRigPaths) > 0 {
-			workDir, err := resolveAgentDir(cityPath, a.Dir)
-			if err == nil && suspendedRigPaths[filepath.Clean(workDir)] {
+			workDir := a.Dir
+			if !filepath.IsAbs(workDir) {
+				workDir = filepath.Join(cityPath, workDir)
+			}
+			if suspendedRigPaths[filepath.Clean(workDir)] {
 				annotations = append(annotations, "rig suspended")
 			}
 		}

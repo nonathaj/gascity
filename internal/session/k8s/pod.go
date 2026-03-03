@@ -48,13 +48,16 @@ func buildPod(name string, cfg session.Config, p *Provider) *corev1.Pod {
 	cmdB64 := base64.StdEncoding.EncodeToString([]byte(agentCmd))
 
 	// Pod entrypoint: wait for workspace ready → pre_start → tmux → keepalive.
+	// Each pre_start command is base64-encoded and decoded at runtime to prevent
+	// shell metacharacter injection from user-supplied commands.
 	var preStartCmds string
 	for _, cmd := range cfg.PreStart {
 		c := cmd
 		if ctrlCity != "" {
 			c = strings.ReplaceAll(c, ctrlCity, "/workspace")
 		}
-		preStartCmds += c + "; "
+		b64 := base64.StdEncoding.EncodeToString([]byte(c))
+		preStartCmds += fmt.Sprintf("echo '%s' | base64 -d | sh; ", b64)
 	}
 
 	credCopy := `mkdir -p $HOME/.claude && cp -rL /tmp/claude-secret/. $HOME/.claude/ 2>/dev/null; git config --global --add safe.directory '*' 2>/dev/null; `

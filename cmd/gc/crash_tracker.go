@@ -20,6 +20,10 @@ type crashTracker interface {
 	// clearHistory removes all tracking for a session (used when an agent
 	// is removed from config so orphan cleanup doesn't leave stale tracking).
 	clearHistory(sessionName string)
+
+	// limits returns the current maxRestarts and restartWindow so the
+	// controller can detect config changes and rebuild the tracker.
+	limits() (maxRestarts int, window time.Duration)
 }
 
 // memoryCrashTracker is the production implementation of crashTracker.
@@ -62,6 +66,10 @@ func (m *memoryCrashTracker) clearHistory(sessionName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.starts, sessionName)
+}
+
+func (m *memoryCrashTracker) limits() (int, time.Duration) {
+	return m.maxRestarts, m.restartWindow
 }
 
 // prune removes entries older than the restart window to bound memory.

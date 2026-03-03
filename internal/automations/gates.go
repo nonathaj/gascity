@@ -1,6 +1,7 @@
 package automations
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -129,9 +130,16 @@ func cronFieldMatches(field string, value int) bool {
 }
 
 // checkCondition runs the check command and returns due if exit code is 0.
+// Uses a timeout to prevent hanging check scripts from blocking gate evaluation.
 func checkCondition(a Automation) GateResult {
-	cmd := exec.Command("sh", "-c", a.Check)
+	timeout := a.TimeoutOrDefault()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", a.Check)
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return GateResult{Due: false, Reason: fmt.Sprintf("check command timed out after %s", timeout)}
+		}
 		return GateResult{Due: false, Reason: fmt.Sprintf("check command failed: %v", err)}
 	}
 	return GateResult{Due: true, Reason: "condition: check passed (exit 0)"}

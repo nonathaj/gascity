@@ -179,10 +179,19 @@ func (p *Provider) Interrupt(name string) error {
 	p.mu.Lock()
 	pr, ok := p.procs[name]
 	p.mu.Unlock()
-	if !ok {
-		return nil // idempotent
+	if ok {
+		return pr.cmd.Process.Signal(syscall.SIGINT)
 	}
-	return pr.cmd.Process.Signal(syscall.SIGINT)
+
+	// Fall back to PID file (cross-process case).
+	pid, err := p.readPID(name)
+	if err != nil {
+		return nil // no PID file — nothing to interrupt (idempotent)
+	}
+	if syscall.Kill(pid, 0) != nil {
+		return nil // process already dead
+	}
+	return syscall.Kill(pid, syscall.SIGINT)
 }
 
 // IsRunning reports whether the named session has a live process.

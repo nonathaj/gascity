@@ -22,6 +22,7 @@ const (
 	BeadUpdated         = "bead.updated"
 	MailSent            = "mail.sent"
 	MailRead            = "mail.read"
+	MailArchived        = "mail.archived"
 	AgentDraining       = "agent.draining"
 	AgentUndrained      = "agent.undrained"
 	AgentQuarantined    = "agent.quarantined"

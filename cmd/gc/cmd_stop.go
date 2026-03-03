@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -136,7 +137,10 @@ func tryStopController(cityPath string, stdout io.Writer) bool {
 	conn.Write([]byte("stop\n"))                           //nolint:errcheck // best-effort
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck // best-effort
 	buf := make([]byte, 64)
-	conn.Read(buf)                                 //nolint:errcheck // best-effort
+	n, readErr := conn.Read(buf)
+	if readErr != nil || !strings.Contains(string(buf[:n]), "ok") {
+		return false // controller did not acknowledge — fall through to direct cleanup
+	}
 	fmt.Fprintln(stdout, "Controller stopping...") //nolint:errcheck // best-effort stdout
 	return true
 }

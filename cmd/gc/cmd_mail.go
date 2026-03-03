@@ -96,7 +96,7 @@ func doMailArchive(mp mail.Provider, rec events.Recorder, args []string, stdout,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.MailRead,
+		Type:    events.MailArchived,
 		Actor:   eventActor(),
 		Subject: id,
 	})
@@ -247,6 +247,7 @@ Use --all to broadcast to all agents (excluding sender and "human").`,
 	cmd.Flags().StringVar(&to, "to", "", "recipient address (alternative to positional argument)")
 	cmd.Flags().StringVarP(&subject, "subject", "s", "", "message subject line")
 	cmd.Flags().StringVarP(&message, "message", "m", "", "message body text")
+	cmd.MarkFlagsMutuallyExclusive("to", "all")
 	return cmd
 }
 
@@ -393,7 +394,7 @@ func doMailSend(mp mail.Provider, rec events.Recorder, validRecipients map[strin
 		return 1
 	}
 	to := args[0]
-	body := args[1]
+	body := strings.Join(args[1:], " ")
 
 	if validRecipients != nil && !validRecipients[to] {
 		fmt.Fprintf(stderr, "gc mail send: unknown recipient %q\n", to) //nolint:errcheck // best-effort stderr

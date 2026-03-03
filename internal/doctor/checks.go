@@ -937,8 +937,9 @@ func (c *SystemFormulasCheck) Fix(_ *CheckContext) error {
 // fails with EWOULDBLOCK, the controller holds the lock.
 func IsControllerRunning(cityPath string) bool {
 	path := filepath.Join(cityPath, ".gc", "controller.lock")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR, 0o600)
 	if err != nil {
+		// Lock file doesn't exist — no controller is running.
 		return false
 	}
 	defer f.Close() //nolint:errcheck // probe only

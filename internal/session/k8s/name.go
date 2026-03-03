@@ -40,6 +40,11 @@ func SanitizeName(name string) string {
 	// Trim trailing dashes.
 	s = strings.TrimRight(s, "-")
 
+	// Return "unknown" for non-empty input that sanitized to nothing
+	// (e.g., all-special-char input). Empty input returns empty.
+	if s == "" && name != "" {
+		return "unknown"
+	}
 	return s
 }
 

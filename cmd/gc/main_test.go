@@ -607,7 +607,7 @@ func TestDoInitDoesNotOverwriteExistingSettings(t *testing.T) {
 	f.Dirs[filepath.Join("/city", ".gc")] = true
 	f.Files[settingsPath] = []byte(`{"custom": true}`)
 
-	code := installClaudeHooks(f, "/city")
+	code := installClaudeHooks(f, "/city", &bytes.Buffer{})
 	if code != 0 {
 		t.Fatalf("installClaudeHooks = %d, want 0", code)
 	}

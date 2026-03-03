@@ -162,9 +162,15 @@ type fakeDirEntry struct {
 	dir  bool
 }
 
-func (de fakeDirEntry) Name() string      { return de.name }
-func (de fakeDirEntry) IsDir() bool       { return de.dir }
-func (de fakeDirEntry) Type() fs.FileMode { return 0 }
+func (de fakeDirEntry) Name() string { return de.name }
+func (de fakeDirEntry) IsDir() bool  { return de.dir }
+func (de fakeDirEntry) Type() fs.FileMode {
+	if de.dir {
+		return fs.ModeDir
+	}
+	return 0
+}
+
 func (de fakeDirEntry) Info() (fs.FileInfo, error) {
 	return fakeFileInfo(de), nil
 }

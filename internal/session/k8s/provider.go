@@ -2,6 +2,8 @@ package k8s
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -593,19 +595,43 @@ func initBeadsInPod(ctx context.Context, ops k8sOps, podName string, cfg session
 	// Patch the host-side Dolt address in the beads metadata to point at the
 	// in-cluster service. This preserves the correct database name from the
 	// host config while fixing the server address for the pod.
+	//
+	// Build the patch JSON in Go and base64-encode it to avoid shell injection
+	// from environment variables containing shell metacharacters.
+	portNum, _ := strconv.Atoi(doltPort)
+	patchJSON, err := json.Marshal(map[string]any{
+		"dolt_server_host": doltHost,
+		"dolt_server_port": portNum,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling beads patch: %w", err)
+	}
+	patchB64 := base64.StdEncoding.EncodeToString(patchJSON)
+	prefixB64 := base64.StdEncoding.EncodeToString([]byte(prefix.String()))
+	workDirB64 := base64.StdEncoding.EncodeToString([]byte(workDir))
+
+	// The shell command decodes the base64 values, so no user-controlled
+	// content is ever interpreted as shell syntax.
 	patchCmd := fmt.Sprintf(
-		`cd %s && if [ -f .beads/metadata.json ]; then `+
+		`WD=$(echo '%s' | base64 -d) && cd "$WD" && PATCH=$(echo '%s' | base64 -d) && `+
+			`if [ -f .beads/metadata.json ]; then `+
 			`python3 -c "import json,sys; `+
 			`m=json.load(open('.beads/metadata.json')); `+
-			`m['dolt_server_host']='%s'; `+
-			`m['dolt_server_port']=%s; `+
-			`json.dump(m,open('.beads/metadata.json','w'),indent=2)" 2>/dev/null || `+
-			`sed -i 's/"dolt_server_host":.*/"dolt_server_host": "%s",/' .beads/metadata.json && `+
-			`sed -i 's/"dolt_server_port":.*/"dolt_server_port": %s/' .beads/metadata.json; `+
-			`else yes | bd init --server --server-host %s --server-port %s -p %s --skip-hooks; fi`,
-		workDir, doltHost, doltPort, doltHost, doltPort, doltHost, doltPort, prefix.String(),
+			`p=json.loads(sys.argv[1]); m.update(p); `+
+			`json.dump(m,open('.beads/metadata.json','w'),indent=2)" "$PATCH" 2>/dev/null || `+
+			`python3 -c "import json,sys; `+
+			`m=json.load(open('.beads/metadata.json')); `+
+			`p=json.loads(sys.stdin.read()); m.update(p); `+
+			`json.dump(m,open('.beads/metadata.json','w'),indent=2)" <<< "$PATCH"; `+
+			`else PREFIX=$(echo '%s' | base64 -d) && `+
+			`DOLT_HOST=$(echo '%s' | base64 -d) && `+
+			`DOLT_PORT=$(echo '%s' | base64 -d) && `+
+			`yes | bd init --server --server-host "$DOLT_HOST" --server-port "$DOLT_PORT" -p "$PREFIX" --skip-hooks; fi`,
+		workDirB64, patchB64, prefixB64,
+		base64.StdEncoding.EncodeToString([]byte(doltHost)),
+		base64.StdEncoding.EncodeToString([]byte(doltPort)),
 	)
-	_, err := ops.execInPod(ctx, podName, "agent",
+	_, err = ops.execInPod(ctx, podName, "agent",
 		[]string{"sh", "-c", patchCmd}, nil)
 	return err
 }

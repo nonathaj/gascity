@@ -43,9 +43,11 @@ func excludedPath(rel string) bool {
 	if strings.HasPrefix(rel, ".gc/agents/") {
 		return true
 	}
-	// Secrets.
+	// Secrets: match exact base names and specific extensions, not substrings.
 	base := filepath.Base(rel)
-	if base == ".env" || strings.Contains(base, "credentials") || strings.Contains(base, "secret") {
+	ext := filepath.Ext(base)
+	if base == ".env" || base == "credentials.json" || base == "credentials.yaml" ||
+		base == "credentials.yml" || ext == ".secret" || ext == ".pem" || ext == ".key" {
 		return true
 	}
 	return false

@@ -75,7 +75,16 @@ func doReconcileAgents(agents []agent.Agent,
 	driftDrainTimeout time.Duration,
 	startupTimeout time.Duration,
 	stdout, stderr io.Writer,
+	ctxOpts ...context.Context,
 ) int {
+	// Optional parent context for cancellation propagation. When called from
+	// the controller loop, the controller's context is passed so that shutdown
+	// cancels in-flight agent starts. When omitted (one-shot or tests),
+	// context.Background() is used as a safe default.
+	parentCtx := context.Background()
+	if len(ctxOpts) > 0 && ctxOpts[0] != nil {
+		parentCtx = ctxOpts[0]
+	}
 	// Build desired session name set for orphan detection.
 	desired := make(map[string]bool, len(agents))
 
@@ -349,10 +358,10 @@ func doReconcileAgents(agents []agent.Agent,
 		go func(idx int, a agent.Agent, reason string) {
 			defer wg.Done()
 			t0 := time.Now()
-			ctx := context.Background()
+			ctx := parentCtx
 			if startupTimeout > 0 {
 				var cancel context.CancelFunc
-				ctx, cancel = context.WithTimeout(ctx, startupTimeout)
+				ctx, cancel = context.WithTimeout(parentCtx, startupTimeout)
 				defer cancel()
 			}
 			err := a.Start(ctx)

@@ -31,6 +31,10 @@ func (f *fakeCrashTracker) clearHistory(sessionName string) {
 	delete(f.quarantined, sessionName)
 }
 
+func (f *fakeCrashTracker) limits() (int, time.Duration) {
+	return 0, 0 // fake: limits not used in tests
+}
+
 // --- memoryCrashTracker unit tests ---
 
 func TestCrashTrackerNoQuarantineUnderLimit(t *testing.T) {

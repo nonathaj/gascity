@@ -204,7 +204,27 @@ func gracefulStopAll(
 	fmt.Fprintf(stdout, "Sent interrupt to %d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
 		len(names), timeout)
 
-	time.Sleep(timeout)
+	// Poll until all agents exit or timeout expires (avoid sleeping full duration).
+	pollInterval := 500 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		allExited := true
+		for _, name := range names {
+			if sp.IsRunning(name) {
+				allExited = false
+				break
+			}
+		}
+		if allExited {
+			break
+		}
+		remaining := time.Until(deadline)
+		if remaining < pollInterval {
+			time.Sleep(remaining)
+		} else {
+			time.Sleep(pollInterval)
+		}
+	}
 
 	// Pass 2: kill survivors.
 	for _, name := range names {
@@ -274,7 +294,7 @@ func controllerLoop(
 
 	// Initial reconciliation.
 	agents := buildFn(cfg, sp)
-	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr)
+	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
 	cityRoot := filepath.Dir(tomlPath)
@@ -357,12 +377,19 @@ func controllerLoop(
 					suspendedNames = computeSuspendedNames(cfg, cityName, cityRoot)
 					// Rebuild crash tracker only if config values changed.
 					newMaxR := cfg.Daemon.MaxRestartsOrDefault()
-					if newMaxR <= 0 {
+					newWindow := cfg.Daemon.RestartWindowDuration()
+					switch {
+					case newMaxR <= 0:
 						ct = nil
-					} else if ct == nil {
-						ct = newCrashTracker(newMaxR, cfg.Daemon.RestartWindowDuration())
+					case ct == nil:
+						ct = newCrashTracker(newMaxR, newWindow)
+					default:
+						// Compare against existing tracker limits; rebuild if changed.
+						oldMaxR, oldWindow := ct.limits()
+						if newMaxR != oldMaxR || newWindow != oldWindow {
+							ct = newCrashTracker(newMaxR, newWindow)
+						}
 					}
-					// If ct exists and limits are unchanged, keep it (preserves crash history).
 					// Rebuild idle tracker with new config timeouts.
 					it = buildIdleTracker(cfg, cityName, sp)
 					// Rebuild wisp GC from new config.
@@ -381,7 +408,7 @@ func controllerLoop(
 				}
 			}
 			agents = buildFn(cfg, sp)
-			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr)
+			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
 				purged, gcErr := wg.runGC(filepath.Dir(tomlPath), time.Now())

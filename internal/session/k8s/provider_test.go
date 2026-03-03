@@ -2,7 +2,9 @@ package k8s
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -705,18 +707,21 @@ func TestInitBeadsInPod(t *testing.T) {
 		t.Fatalf("initBeadsInPod: %v", err)
 	}
 
-	// Verify bd init was called with correct args.
+	// Verify bd init was called with correct args (base64-encoded to prevent
+	// shell injection). Decode the base64 tokens in the script and verify they
+	// contain the expected values.
 	found := false
 	for _, c := range fake.calls {
 		if c.method == "execInPod" && len(c.cmd) >= 3 {
 			if c.cmd[0] == "sh" && c.cmd[1] == "-c" {
 				script := c.cmd[2]
-				// Should contain cd, bd init, correct host/port, and prefix "dr" (demo-repo → d+r).
-				if containsStr(script, "cd /workspace/demo-repo") &&
-					containsStr(script, "bd init --server") &&
-					containsStr(script, "--server-host dolt.gc.svc.cluster.local") &&
-					containsStr(script, "--server-port 3307") &&
-					containsStr(script, "-p dr") {
+				// The script uses base64-encoded values. Verify they decode correctly.
+				if containsStr(script, "bd init --server") &&
+					containsStr(script, "base64 -d") &&
+					scriptContainsB64(script, "/workspace/demo-repo") &&
+					scriptContainsB64(script, "dolt.gc.svc.cluster.local") &&
+					scriptContainsB64(script, "3307") &&
+					scriptContainsB64(script, "dr") {
 					found = true
 				}
 			}
@@ -753,7 +758,7 @@ func TestInitBeadsInPodPrefixDerivation(t *testing.T) {
 			found := false
 			for _, c := range fake.calls {
 				if c.method == "execInPod" && len(c.cmd) >= 3 && c.cmd[0] == "sh" {
-					if containsStr(c.cmd[2], "-p "+tt.wantPrefix) {
+					if scriptContainsB64(c.cmd[2], tt.wantPrefix) {
 						found = true
 					}
 				}
@@ -837,4 +842,12 @@ func containsStr(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// scriptContainsB64 checks that the base64 encoding of want appears as a
+// single-quoted token in the shell script. This verifies that base64-encoded
+// values in the initBeadsInPod script decode to expected values.
+func scriptContainsB64(script, want string) bool {
+	encoded := base64.StdEncoding.EncodeToString([]byte(want))
+	return strings.Contains(script, "'"+encoded+"'")
 }
