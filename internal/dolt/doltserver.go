@@ -267,12 +267,14 @@ func (c *Config) HostPort() string {
 
 // buildDoltSQLCmd constructs a dolt sql command that works for both local and remote servers.
 // For local: runs from config.DataDir so dolt auto-detects the running server.
-// For remote: prepends connection flags and passes password via DOLT_CLI_PASSWORD env var.
+// For remote: prepends connection flags BEFORE "sql" (they are global dolt flags)
+// and passes password via DOLT_CLI_PASSWORD env var.
 func buildDoltSQLCmd(ctx context.Context, config *Config, args ...string) *exec.Cmd {
 	sqlArgs := config.SQLArgs()
 	fullArgs := make([]string, 0, len(sqlArgs)+1+len(args))
-	fullArgs = append(fullArgs, "sql")
+	// Global flags (--host, --port, etc.) must come before the subcommand.
 	fullArgs = append(fullArgs, sqlArgs...)
+	fullArgs = append(fullArgs, "sql")
 	fullArgs = append(fullArgs, args...)
 
 	cmd := exec.CommandContext(ctx, "dolt", fullArgs...)
@@ -281,7 +283,9 @@ func buildDoltSQLCmd(ctx context.Context, config *Config, args ...string) *exec.
 		cmd.Dir = config.DataDir
 	}
 
-	if config.IsRemote() && config.Password != "" {
+	// Always set DOLT_CLI_PASSWORD for remote connections to suppress the
+	// interactive password prompt (which fails without a TTY).
+	if config.IsRemote() {
 		cmd.Env = envWithout(os.Environ(), "DOLT_CLI_PASSWORD")
 		cmd.Env = append(cmd.Env, "DOLT_CLI_PASSWORD="+config.Password)
 	}

@@ -16,6 +16,21 @@ cd "$GC_DIR"
 # Disable git credential prompts (K8s pods have no TTY for interactive input).
 export GIT_TERMINAL_PROMPT=0
 
+# Disable GPG signing (containers don't have the host's GPG keys).
+git config --global commit.gpgsign false 2>/dev/null || true
+git config --global tag.gpgsign false 2>/dev/null || true
+
+# Set up git credentials from GITHUB_TOKEN if available (K8s pods).
+# Docker containers use the host's gh credential helper via mounted $HOME.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    echo "machine github.com login x-access-token password $GITHUB_TOKEN" > "$HOME/.netrc"
+    chmod 600 "$HOME/.netrc"
+fi
+
+# Set git identity if not configured (K8s pods have no host .gitconfig).
+git config --global user.email 2>/dev/null || git config --global user.email "gc-agent@gascity.local"
+git config --global user.name 2>/dev/null || git config --global user.name "gc-agent"
+
 # Pull latest from origin (K8s: repo is baked in, pull gets updates).
 git pull --ff-only origin main 2>/dev/null || true
 

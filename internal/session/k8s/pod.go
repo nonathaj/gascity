@@ -214,6 +214,18 @@ func buildPodEnv(cfgEnv map[string]string, podWorkDir string) []corev1.EnvVar {
 		})
 	}
 
+	// Inject GITHUB_TOKEN from optional K8s secret for git push in pods.
+	env = append(env, corev1.EnvVar{
+		Name: "GITHUB_TOKEN",
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "git-credentials"},
+				Key:                  "token",
+				Optional:             boolPtr(true),
+			},
+		},
+	})
+
 	return env
 }
 
