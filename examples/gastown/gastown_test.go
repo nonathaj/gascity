@@ -273,10 +273,11 @@ func TestCombinedTopologyParses(t *testing.T) {
 		t.Errorf("[topology] schema = %d, want 1", tc.Topology.Schema)
 	}
 
-	// Expect 6 agents (dog moved to maintenance topology).
+	// Expect 7 agents: gastown's own 6 + themed dog (overrides maintenance fallback).
 	want := map[string]bool{
 		"mayor": false, "deacon": false, "boot": false,
 		"witness": false, "refinery": false, "polecat": false,
+		"dog": false,
 	}
 	for _, a := range tc.Agents {
 		if _, ok := want[a.Name]; ok {
@@ -290,11 +291,11 @@ func TestCombinedTopologyParses(t *testing.T) {
 			t.Errorf("missing topology agent %q", name)
 		}
 	}
-	if len(tc.Agents) != 6 {
-		t.Errorf("topology has %d agents, want 6", len(tc.Agents))
+	if len(tc.Agents) != 7 {
+		t.Errorf("topology has %d agents, want 7", len(tc.Agents))
 	}
 
-	// Verify city_agents list (dog included from maintenance topology).
+	// Verify city_agents list (dog from gastown overrides maintenance fallback).
 	cityAgents := map[string]bool{
 		"mayor": false, "deacon": false, "boot": false, "dog": false,
 	}
