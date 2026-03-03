@@ -129,7 +129,7 @@ Every mail creates a permanent Dolt commit. Nudges are free (tmux send-keys).
 Fundamental change to refinery processing model.
 
 - [-] **7097b85b** — Batch-then-bisect merge queue. SDK-level Go machinery.
-  Our event-driven one-branch-per-wisp model is intentional. N/A for topology.
+  Our event-driven one-branch-per-wisp model is intentional. N/A for pack.
 - [-] **c39372f4** — `gt mq post-merge` replaces multi-step cleanup. Our direct
   work-bead model (no MR beads) already handles this atomically. N/A.
 - [x] **048a73fe** — Duplicate bug check before filing pre-existing test failures.
@@ -161,7 +161,7 @@ Support for integration branches (not just always merging to main).
 ### 6b. Spawn storm detection
 - [x] **70c1cbf8** — Track bead respawn count, escalate on threshold.
   **Disposition:** Implemented as exec automation `spawn-storm-detect` in
-  maintenance topology. Script tracks reset counts in a ledger, mails mayor
+  maintenance pack. Script tracks reset counts in a ledger, mails mayor
   when any bead exceeds threshold. Witness sets `metadata.recovered=true`
   on reset beads to feed the detector.
 
@@ -250,15 +250,15 @@ From batch 3 analysis (session summary).
 - [x] City-scoped orphan detection: `FindOrphanedDatabasesCity`, `RemoveDatabaseCity`.
 - [x] Dolt package synced from upstream at 117f014f (25 commits of drift resolved).
 
-### 8e. Dolt-health topology extraction
+### 8e. Dolt-health pack extraction
 - [x] Dolt health formulas extracted from gastown into standalone reusable
-  topology at `examples/dolt-health/`. Dog formulas + exec automations.
-- [x] Fallback agents (`fallback = true`) — topology composition primitive.
+  pack at `examples/dolt-health/`. Dog formulas + exec automations.
+- [x] Fallback agents (`fallback = true`) — pack composition primitive.
   Non-fallback wins silently over fallback; two fallbacks keep first loaded.
   `resolveFallbackAgents()` runs before collision detection.
-- [x] Dolt-health topology ships a `fallback = true` dog pool so it works
+- [x] Dolt-health pack ships a `fallback = true` dog pool so it works
   standalone. When composed with maintenance (non-fallback dog), maintenance wins.
-- [x] `topology.requires` validation at city scope via `validateCityRequirements()`.
+- [x] `pack.requires` validation at city scope via `validateCityRequirements()`.
 - [x] Hybrid session provider (`internal/session/hybrid/`) — routes sessions
   to tmux (local) or k8s (remote) based on name matching. Registered as
   `provider = "hybrid"` in providers.go.

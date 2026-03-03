@@ -288,7 +288,7 @@ All Health Patrol implementation lives in `cmd/gc/`:
 | `cmd/gc/idle_tracker.go` | `idleTracker` interface, `memoryIdleTracker` (per-agent timeout + GetLastActivity query) |
 | `cmd/gc/automation_dispatch.go` | `automationDispatcher` interface, `memoryAutomationDispatcher` (gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle) |
 | `internal/config/config.go` | `DaemonConfig` struct with `PatrolIntervalDuration()`, `MaxRestartsOrDefault()`, `RestartWindowDuration()`, `ShutdownTimeoutDuration()` |
-| `internal/config/revision.go` | `Revision()` (SHA-256 bundle hash of all config sources + topology dirs), `WatchDirs()` |
+| `internal/config/revision.go` | `Revision()` (SHA-256 bundle hash of all config sources + pack dirs), `WatchDirs()` |
 | `internal/session/fingerprint.go` | `ConfigFingerprint()` (SHA-256 of command + env + extras for drift detection) |
 | `internal/automations/gates.go` | `CheckGate()` with cooldown, cron, condition, event, and manual gate evaluators |
 | `internal/automations/automation.go` | `Automation` struct definition, `Scan()` for discovery |

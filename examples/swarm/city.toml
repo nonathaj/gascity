@@ -1,4 +1,4 @@
-# Swarm — flat peer topology with shared-directory rigs.
+# Swarm — flat peer pack with shared-directory rigs.
 #
 # A mayor coordinates, a deacon patrols health, dogs handle infrastructure.
 # Per-rig: N coders self-organize via beads and mail, a dedicated committer
@@ -14,7 +14,7 @@
 [workspace]
 name = "swarm"
 provider = "claude"
-topology = "topologies/swarm"
+pack = "packs/swarm"
 
 [daemon]
 patrol_interval = "30s"
@@ -26,4 +26,4 @@ shutdown_timeout = "5s"
 # [[rigs]]
 # name = "myproject"
 # path = "/path/to/your/project"
-# topology = "topologies/swarm"
+# pack = "packs/swarm"

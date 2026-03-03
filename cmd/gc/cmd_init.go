@@ -585,7 +585,7 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	// Resolve formulas from topology layers.
+	// Resolve formulas from pack layers.
 	expandedCfg, _, loadErr := config.LoadWithIncludes(fsys.OSFS{}, copiedToml)
 	if loadErr == nil && len(expandedCfg.FormulaLayers.City) > 0 {
 		formulasDir := filepath.Join(cityPath, ".gc", "formulas")

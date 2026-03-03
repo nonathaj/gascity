@@ -152,7 +152,7 @@ func newStartCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Start the city by launching all configured agent sessions.
 
 Auto-initializes the city if no .gc/ directory exists. Fetches remote
-topologies, resolves providers, installs hooks, and starts agent sessions
+packs, resolves providers, installs hooks, and starts agent sessions
 via one-shot reconciliation. Use --foreground for a persistent controller
 that continuously reconciles agent state.`,
 		Example: `  gc start
@@ -219,10 +219,10 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	// Auto-fetch remote topologies before full config load.
-	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Topologies) > 0 {
-		if fErr := config.FetchTopologies(quickCfg.Topologies, cityPath); fErr != nil {
-			fmt.Fprintf(stderr, "gc start: fetching topologies: %v\n", fErr) //nolint:errcheck // best-effort stderr
+	// Auto-fetch remote packs before full config load.
+	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Packs) > 0 {
+		if fErr := config.FetchPacks(quickCfg.Packs, cityPath); fErr != nil {
+			fmt.Fprintf(stderr, "gc start: fetching packs: %v\n", fErr) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 	}

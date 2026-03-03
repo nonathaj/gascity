@@ -1,4 +1,4 @@
-# Lifecycle — hierarchical topology with deterministic bash agents.
+# Lifecycle — hierarchical pack with deterministic bash agents.
 #
 # Polecats work in isolated worktrees on feature branches. When done,
 # they hand off to the refinery which merges to main. Same lifecycle as
@@ -12,8 +12,8 @@
 [workspace]
 name = "lifecycle-demo"
 start_command = "true"
-# No workspace topology — all agents are rig-scoped.
-# Use: gc rig add <repo> --topology topologies/lifecycle
+# No workspace pack — all agents are rig-scoped.
+# Use: gc rig add <repo> --pack packs/lifecycle
 
 [daemon]
 patrol_interval = "10s"

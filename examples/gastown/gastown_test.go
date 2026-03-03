@@ -23,7 +23,7 @@ func exampleDir() string {
 	return filepath.Dir(filename)
 }
 
-// loadExpanded loads city.toml with full topology expansion.
+// loadExpanded loads city.toml with full pack expansion.
 func loadExpanded(t *testing.T) *config.City {
 	t.Helper()
 	dir := exampleDir()
@@ -43,8 +43,8 @@ func TestCityTomlParses(t *testing.T) {
 	if cfg.Workspace.Name != "gastown" {
 		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "gastown")
 	}
-	if cfg.Workspace.Topology != "topologies/gastown" {
-		t.Errorf("Workspace.Topology = %q, want %q", cfg.Workspace.Topology, "topologies/gastown")
+	if cfg.Workspace.Pack != "packs/gastown" {
+		t.Errorf("Workspace.Pack = %q, want %q", cfg.Workspace.Pack, "packs/gastown")
 	}
 }
 
@@ -71,7 +71,7 @@ func TestPromptFilesExist(t *testing.T) {
 
 func TestAllFormulasParseAndValidate(t *testing.T) {
 	dir := exampleDir()
-	formulaDir := filepath.Join(dir, "topologies", "gastown", "formulas")
+	formulaDir := filepath.Join(dir, "packs", "gastown", "formulas")
 
 	entries, err := os.ReadDir(formulaDir)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestAllFormulasParseAndValidate(t *testing.T) {
 
 func TestAllPromptTemplatesExist(t *testing.T) {
 	dir := exampleDir()
-	promptDir := filepath.Join(dir, "topologies", "gastown", "prompts")
+	promptDir := filepath.Join(dir, "packs", "gastown", "prompts")
 
 	entries, err := os.ReadDir(promptDir)
 	if err != nil {
@@ -152,15 +152,15 @@ func TestAgentNudgeField(t *testing.T) {
 
 func TestFormulasDir(t *testing.T) {
 	cfg := loadExpanded(t)
-	// Formulas come from topologies, not from city.toml directly.
-	// FormulaLayers.City should have formula dirs from both topologies.
+	// Formulas come from packs, not from city.toml directly.
+	// FormulaLayers.City should have formula dirs from both packs.
 	if len(cfg.FormulaLayers.City) == 0 {
-		t.Fatal("FormulaLayers.City is empty, want topology formulas layers")
+		t.Fatal("FormulaLayers.City is empty, want pack formulas layers")
 	}
 	wantSuffixes := []string{
-		filepath.Join("topologies", "maintenance", "formulas"),
+		filepath.Join("packs", "maintenance", "formulas"),
 		filepath.Join("dolt-health", "formulas"),
-		filepath.Join("topologies", "gastown", "formulas"),
+		filepath.Join("packs", "gastown", "formulas"),
 	}
 	for _, suffix := range wantSuffixes {
 		found := false
@@ -176,32 +176,32 @@ func TestFormulasDir(t *testing.T) {
 	}
 }
 
-func TestTopologyDirsPopulated(t *testing.T) {
+func TestPackDirsPopulated(t *testing.T) {
 	cfg := loadExpanded(t)
-	if len(cfg.TopologyDirs) == 0 {
-		t.Fatal("TopologyDirs is empty after expansion")
+	if len(cfg.PackDirs) == 0 {
+		t.Fatal("PackDirs is empty after expansion")
 	}
-	// Should have topology dirs from maintenance, dolt-health, and gastown topologies.
+	// Should have pack dirs from maintenance, dolt-health, and gastown packs.
 	var hasMaintenance, hasDoltHealth, hasGastown bool
-	for _, d := range cfg.TopologyDirs {
-		if strings.HasSuffix(d, filepath.Join("topologies", "maintenance")) {
+	for _, d := range cfg.PackDirs {
+		if strings.HasSuffix(d, filepath.Join("packs", "maintenance")) {
 			hasMaintenance = true
 		}
 		if strings.HasSuffix(d, "dolt-health") {
 			hasDoltHealth = true
 		}
-		if strings.HasSuffix(d, filepath.Join("topologies", "gastown")) {
+		if strings.HasSuffix(d, filepath.Join("packs", "gastown")) {
 			hasGastown = true
 		}
 	}
 	if !hasMaintenance {
-		t.Errorf("TopologyDirs missing maintenance: %v", cfg.TopologyDirs)
+		t.Errorf("PackDirs missing maintenance: %v", cfg.PackDirs)
 	}
 	if !hasDoltHealth {
-		t.Errorf("TopologyDirs missing dolt-health: %v", cfg.TopologyDirs)
+		t.Errorf("PackDirs missing dolt-health: %v", cfg.PackDirs)
 	}
 	if !hasGastown {
-		t.Errorf("TopologyDirs missing gastown: %v", cfg.TopologyDirs)
+		t.Errorf("PackDirs missing gastown: %v", cfg.PackDirs)
 	}
 }
 
@@ -246,31 +246,31 @@ func TestDaemonConfig(t *testing.T) {
 	}
 }
 
-// topologyFileConfig mirrors the topology.toml structure for test parsing.
-type topologyFileConfig struct {
-	Topology config.TopologyMeta `toml:"topology"`
-	Agents   []config.Agent      `toml:"agents"`
+// packFileConfig mirrors the pack.toml structure for test parsing.
+type packFileConfig struct {
+	Pack   config.PackMeta `toml:"pack"`
+	Agents []config.Agent  `toml:"agents"`
 }
 
-func TestCombinedTopologyParses(t *testing.T) {
+func TestCombinedPackParses(t *testing.T) {
 	dir := exampleDir()
-	topoPath := filepath.Join(dir, "topologies", "gastown", "topology.toml")
+	topoPath := filepath.Join(dir, "packs", "gastown", "pack.toml")
 
 	data, err := os.ReadFile(topoPath)
 	if err != nil {
-		t.Fatalf("reading topology.toml: %v", err)
+		t.Fatalf("reading pack.toml: %v", err)
 	}
 
-	var tc topologyFileConfig
+	var tc packFileConfig
 	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing topology.toml: %v", err)
+		t.Fatalf("parsing pack.toml: %v", err)
 	}
 
-	if tc.Topology.Name != "gastown" {
-		t.Errorf("[topology] name = %q, want %q", tc.Topology.Name, "gastown")
+	if tc.Pack.Name != "gastown" {
+		t.Errorf("[pack] name = %q, want %q", tc.Pack.Name, "gastown")
 	}
-	if tc.Topology.Schema != 1 {
-		t.Errorf("[topology] schema = %d, want 1", tc.Topology.Schema)
+	if tc.Pack.Schema != 1 {
+		t.Errorf("[pack] schema = %d, want 1", tc.Pack.Schema)
 	}
 
 	// Expect 7 agents: gastown's own 6 + themed dog (overrides maintenance fallback).
@@ -283,23 +283,23 @@ func TestCombinedTopologyParses(t *testing.T) {
 		if _, ok := want[a.Name]; ok {
 			want[a.Name] = true
 		} else {
-			t.Errorf("unexpected topology agent %q", a.Name)
+			t.Errorf("unexpected pack agent %q", a.Name)
 		}
 	}
 	for name, found := range want {
 		if !found {
-			t.Errorf("missing topology agent %q", name)
+			t.Errorf("missing pack agent %q", name)
 		}
 	}
 	if len(tc.Agents) != 7 {
-		t.Errorf("topology has %d agents, want 7", len(tc.Agents))
+		t.Errorf("pack has %d agents, want 7", len(tc.Agents))
 	}
 
 	// Verify city_agents list (dog from gastown overrides maintenance fallback).
 	cityAgents := map[string]bool{
 		"mayor": false, "deacon": false, "boot": false, "dog": false,
 	}
-	for _, ca := range tc.Topology.CityAgents {
+	for _, ca := range tc.Pack.CityAgents {
 		if _, ok := cityAgents[ca]; ok {
 			cityAgents[ca] = true
 		} else {
@@ -313,26 +313,26 @@ func TestCombinedTopologyParses(t *testing.T) {
 	}
 }
 
-func TestTopologyPromptFilesExist(t *testing.T) {
+func TestPackPromptFilesExist(t *testing.T) {
 	dir := exampleDir()
-	topoDir := filepath.Join(dir, "topologies", "gastown")
-	topoPath := filepath.Join(topoDir, "topology.toml")
+	topoDir := filepath.Join(dir, "packs", "gastown")
+	topoPath := filepath.Join(topoDir, "pack.toml")
 
 	data, err := os.ReadFile(topoPath)
 	if err != nil {
-		t.Fatalf("reading topology.toml: %v", err)
+		t.Fatalf("reading pack.toml: %v", err)
 	}
 
-	var tc topologyFileConfig
+	var tc packFileConfig
 	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing topology.toml: %v", err)
+		t.Fatalf("parsing pack.toml: %v", err)
 	}
 
 	for _, a := range tc.Agents {
 		if a.PromptTemplate == "" {
 			continue
 		}
-		// Paths in topology are relative to topology dir.
+		// Paths in pack are relative to pack dir.
 		path := filepath.Join(topoDir, a.PromptTemplate)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("agent %q: prompt_template %q resolves to %q: %v",
@@ -342,7 +342,7 @@ func TestTopologyPromptFilesExist(t *testing.T) {
 }
 
 func TestCityAgentsFilter(t *testing.T) {
-	// Verify config.LoadWithIncludes with both topologies produces
+	// Verify config.LoadWithIncludes with both packs produces
 	// only city-scoped agents when no rigs are registered.
 	// Dog from maintenance + mayor/deacon/boot from gastown = 4.
 	cfg := loadExpanded(t)
@@ -361,38 +361,38 @@ func TestCityAgentsFilter(t *testing.T) {
 	}
 }
 
-func TestMaintenanceTopologyParses(t *testing.T) {
+func TestMaintenancePackParses(t *testing.T) {
 	dir := exampleDir()
-	topoPath := filepath.Join(dir, "topologies", "maintenance", "topology.toml")
+	topoPath := filepath.Join(dir, "packs", "maintenance", "pack.toml")
 
 	data, err := os.ReadFile(topoPath)
 	if err != nil {
-		t.Fatalf("reading topology.toml: %v", err)
+		t.Fatalf("reading pack.toml: %v", err)
 	}
 
-	var tc topologyFileConfig
+	var tc packFileConfig
 	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing topology.toml: %v", err)
+		t.Fatalf("parsing pack.toml: %v", err)
 	}
 
-	if tc.Topology.Name != "maintenance" {
-		t.Errorf("[topology] name = %q, want %q", tc.Topology.Name, "maintenance")
+	if tc.Pack.Name != "maintenance" {
+		t.Errorf("[pack] name = %q, want %q", tc.Pack.Name, "maintenance")
 	}
-	if tc.Topology.Schema != 1 {
-		t.Errorf("[topology] schema = %d, want 1", tc.Topology.Schema)
+	if tc.Pack.Schema != 1 {
+		t.Errorf("[pack] schema = %d, want 1", tc.Pack.Schema)
 	}
 
 	// Maintenance has 1 agent: dog.
 	if len(tc.Agents) != 1 {
-		t.Errorf("topology has %d agents, want 1", len(tc.Agents))
+		t.Errorf("pack has %d agents, want 1", len(tc.Agents))
 	}
 	if len(tc.Agents) > 0 && tc.Agents[0].Name != "dog" {
 		t.Errorf("agent name = %q, want %q", tc.Agents[0].Name, "dog")
 	}
 
 	// city_agents should be ["dog"].
-	if len(tc.Topology.CityAgents) != 1 || tc.Topology.CityAgents[0] != "dog" {
-		t.Errorf("city_agents = %v, want [dog]", tc.Topology.CityAgents)
+	if len(tc.Pack.CityAgents) != 1 || tc.Pack.CityAgents[0] != "dog" {
+		t.Errorf("city_agents = %v, want [dog]", tc.Pack.CityAgents)
 	}
 
 	// Verify prompt file exists.
@@ -400,7 +400,7 @@ func TestMaintenanceTopologyParses(t *testing.T) {
 		if a.PromptTemplate == "" {
 			continue
 		}
-		topoDir := filepath.Join(dir, "topologies", "maintenance")
+		topoDir := filepath.Join(dir, "packs", "maintenance")
 		path := filepath.Join(topoDir, a.PromptTemplate)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("agent %q: prompt_template %q resolves to %q: %v",
@@ -411,7 +411,7 @@ func TestMaintenanceTopologyParses(t *testing.T) {
 
 func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 	dir := exampleDir()
-	formulaDir := filepath.Join(dir, "topologies", "maintenance", "formulas")
+	formulaDir := filepath.Join(dir, "packs", "maintenance", "formulas")
 
 	entries, err := os.ReadDir(formulaDir)
 	if err != nil {

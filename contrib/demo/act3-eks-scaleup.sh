@@ -131,7 +131,7 @@ start_command = "true"
 [[agents]]
 name = "worker"
 scope = "rig"
-prompt_template = "topologies/hyperscale/prompts/worker.md.tmpl"
+prompt_template = "packs/hyperscale/prompts/worker.md.tmpl"
 start_command = "{{.ConfigDir}}/scripts/mock-worker.sh"
 nudge = "Pick up a bead, process it, close it."
 idle_timeout = "5m"

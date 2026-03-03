@@ -35,6 +35,7 @@ gc [flags]
 | [gc hook](#gc-hook) | Check for available work (use --inject for Stop hook output) |
 | [gc init](#gc-init) | Initialize a new city |
 | [gc mail](#gc-mail) | Send and receive messages between agents and humans |
+| [gc pack](#gc-pack) | Manage remote pack sources |
 | [gc prime](#gc-prime) | Output the behavioral prompt for an agent |
 | [gc restart](#gc-restart) | Restart all agent sessions in the city |
 | [gc resume](#gc-resume) | Resume a suspended city |
@@ -44,7 +45,6 @@ gc [flags]
 | [gc status](#gc-status) | Show city-wide status overview |
 | [gc stop](#gc-stop) | Stop all agent sessions in the city |
 | [gc suspend](#gc-suspend) | Suspend the city (all agents effectively suspended) |
-| [gc topology](#gc-topology) | Manage remote topology sources |
 | [gc version](#gc-version) | Print gc version information |
 
 ## gc agent
@@ -446,7 +446,7 @@ gc build-image [city-path] [flags]
 Inspect, validate, and debug the resolved city configuration.
 
 The config system supports multi-file composition with includes,
-topologies, patches, and overrides. Use "show" to dump the resolved
+packs, patches, and overrides. Use "show" to dump the resolved
 config and "explain" to see where each value originated.
 
 ```
@@ -490,7 +490,7 @@ gc config explain
 
 Dump the fully resolved city configuration as TOML.
 
-Loads city.toml with all includes, topologies, patches, and overrides,
+Loads city.toml with all includes, packs, patches, and overrides,
 then outputs the merged result. Use --validate to check for errors
 without printing. Use --provenance to see which file contributed each
 config element. Use -f to layer additional config files.
@@ -1053,7 +1053,7 @@ gc hook [agent] [flags]
 Create a new Gas City workspace in the given directory (or cwd).
 
 Runs an interactive wizard to choose a config template and coding agent
-provider. Creates the .gc/ runtime directory, rigs/ directory, default
+provider. Creates the .gc/ runtime directory, default
 prompts and formulas, and writes city.toml. Use --file to skip the
 wizard and initialize from an existing TOML config file.
 
@@ -1190,6 +1190,46 @@ gc mail send mayor "Build is green"
 | `-s`, `--subject` | string |  | message subject line |
 | `--to` | string |  | recipient address (alternative to positional argument) |
 
+## gc pack
+
+Manage remote pack sources that provide agent configurations.
+
+Packs are git repositories containing pack.toml files that
+define agent configurations for rigs. They are cached locally and
+can be pinned to specific git refs.
+
+```
+gc pack
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| [gc pack fetch](#gc-pack-fetch) | Clone missing and update existing remote packs |
+| [gc pack list](#gc-pack-list) | Show remote pack sources and cache status |
+
+## gc pack fetch
+
+Clone missing and update existing remote pack caches.
+
+Fetches all configured pack sources from their git repositories,
+updates the local cache, and writes a lockfile with commit hashes
+for reproducibility. Automatically called during "gc start".
+
+```
+gc pack fetch
+```
+
+## gc pack list
+
+Show configured pack sources with their cache status.
+
+Displays each pack's name, source URL, git ref, cache status,
+and locked commit hash (if available).
+
+```
+gc pack list
+```
+
 ## gc prime
 
 Outputs the behavioral prompt for an agent.
@@ -1256,8 +1296,8 @@ Register an external project directory as a rig.
 
 Initializes beads database, installs agent hooks if configured,
 generates cross-rig routes, and appends the rig to city.toml.
-If the target directory doesn't exist, it is created. Use --topology
-to apply a topology directory that defines the rig's agent configuration.
+If the target directory doesn't exist, it is created. Use --pack
+to apply a pack directory that defines the rig's agent configuration.
 
 Use --start-suspended to add the rig in a suspended state (dormant-by-default).
 The rig's agents won't spawn until explicitly resumed with "gc rig resume".
@@ -1270,14 +1310,14 @@ gc rig add <path> [flags]
 
 ```
 gc rig add /path/to/project
-  gc rig add ./my-project --topology topologies/gastown
-  gc rig add ./my-project --topology topologies/gastown --start-suspended
+  gc rig add ./my-project --pack packs/gastown
+  gc rig add ./my-project --pack packs/gastown --start-suspended
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--pack` | string |  | pack directory for rig agents |
 | `--start-suspended` | bool |  | add rig in suspended state (dormant-by-default) |
-| `--topology` | string |  | topology directory for rig agents |
 
 ## gc rig list
 
@@ -1367,7 +1407,7 @@ gc sling [target] <bead-or-formula> [flags]
 Start the city by launching all configured agent sessions.
 
 Auto-initializes the city if no .gc/ directory exists. Fetches remote
-topologies, resolves providers, installs hooks, and starts agent sessions
+packs, resolves providers, installs hooks, and starts agent sessions
 via one-shot reconciliation. Use --foreground for a persistent controller
 that continuously reconciles agent state.
 
@@ -1425,46 +1465,6 @@ Use "gc resume" to restore.
 
 ```
 gc suspend [path]
-```
-
-## gc topology
-
-Manage remote topology sources that provide agent configurations.
-
-Topologies are git repositories containing topology.toml files that
-define agent configurations for rigs. They are cached locally and
-can be pinned to specific git refs.
-
-```
-gc topology
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc topology fetch](#gc-topology-fetch) | Clone missing and update existing remote topologies |
-| [gc topology list](#gc-topology-list) | Show remote topology sources and cache status |
-
-## gc topology fetch
-
-Clone missing and update existing remote topology caches.
-
-Fetches all configured topology sources from their git repositories,
-updates the local cache, and writes a lockfile with commit hashes
-for reproducibility. Automatically called during "gc start".
-
-```
-gc topology fetch
-```
-
-## gc topology list
-
-Show configured topology sources with their cache status.
-
-Displays each topology's name, source URL, git ref, cache status,
-and locked commit hash (if available).
-
-```
-gc topology list
 ```
 
 ## gc version

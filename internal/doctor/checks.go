@@ -711,50 +711,50 @@ func (c *RigBeadsCheck) CanFix() bool { return false }
 // Fix is a no-op.
 func (c *RigBeadsCheck) Fix(_ *CheckContext) error { return nil }
 
-// --- Topology cache checks ---
+// --- Pack cache checks ---
 
-// TopologyCacheCheck verifies all remote topology caches are present.
-type TopologyCacheCheck struct {
-	topologies map[string]config.TopologySource
-	cityPath   string
+// PackCacheCheck verifies all remote pack caches are present.
+type PackCacheCheck struct {
+	packs    map[string]config.PackSource
+	cityPath string
 }
 
-// NewTopologyCacheCheck creates a check for topology cache completeness.
-func NewTopologyCacheCheck(topologies map[string]config.TopologySource, cityPath string) *TopologyCacheCheck {
-	return &TopologyCacheCheck{topologies: topologies, cityPath: cityPath}
+// NewPackCacheCheck creates a check for pack cache completeness.
+func NewPackCacheCheck(packs map[string]config.PackSource, cityPath string) *PackCacheCheck {
+	return &PackCacheCheck{packs: packs, cityPath: cityPath}
 }
 
 // Name returns the check identifier.
-func (c *TopologyCacheCheck) Name() string { return "topology-cache" }
+func (c *PackCacheCheck) Name() string { return "pack-cache" }
 
-// Run checks that each configured topology has a cached topology.toml.
-func (c *TopologyCacheCheck) Run(_ *CheckContext) *CheckResult {
+// Run checks that each configured pack has a cached pack.toml.
+func (c *PackCacheCheck) Run(_ *CheckContext) *CheckResult {
 	r := &CheckResult{Name: c.Name()}
 	var missing []string
-	for name, src := range c.topologies {
-		cachePath := config.TopologyCachePath(c.cityPath, name, src)
-		topoFile := filepath.Join(cachePath, "topology.toml")
+	for name, src := range c.packs {
+		cachePath := config.PackCachePath(c.cityPath, name, src)
+		topoFile := filepath.Join(cachePath, "pack.toml")
 		if _, err := os.Stat(topoFile); err != nil {
 			missing = append(missing, name)
 		}
 	}
 	if len(missing) == 0 {
 		r.Status = StatusOK
-		r.Message = fmt.Sprintf("all %d topology cache(s) present", len(c.topologies))
+		r.Message = fmt.Sprintf("all %d pack cache(s) present", len(c.packs))
 		return r
 	}
 	r.Status = StatusError
-	r.Message = fmt.Sprintf("%d topology cache(s) missing", len(missing))
+	r.Message = fmt.Sprintf("%d pack cache(s) missing", len(missing))
 	r.Details = missing
-	r.FixHint = "run gc topology fetch"
+	r.FixHint = "run gc pack fetch"
 	return r
 }
 
-// CanFix returns false — use gc topology fetch to populate caches.
-func (c *TopologyCacheCheck) CanFix() bool { return false }
+// CanFix returns false — use gc pack fetch to populate caches.
+func (c *PackCacheCheck) CanFix() bool { return false }
 
 // Fix is a no-op.
-func (c *TopologyCacheCheck) Fix(_ *CheckContext) error { return nil }
+func (c *PackCacheCheck) Fix(_ *CheckContext) error { return nil }
 
 // --- Worktree checks ---
 

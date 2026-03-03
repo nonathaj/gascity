@@ -99,7 +99,7 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newFormulaCmd(stdout, stderr),
 		newAutomationCmd(stdout, stderr),
 		newConfigCmd(stdout, stderr),
-		newTopologyCmd(stdout, stderr),
+		newPackCmd(stdout, stderr),
 		newDoctorCmd(stdout, stderr),
 		newHookCmd(stdout, stderr),
 		newSlingCmd(stdout, stderr),

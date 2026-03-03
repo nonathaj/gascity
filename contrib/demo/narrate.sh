@@ -5,7 +5,7 @@
 #
 # Usage:
 #   source "$(dirname "$0")/narrate.sh"
-#   narrate "Same topology, three stacks"
+#   narrate "Same pack, three stacks"
 #   pause
 #   narrate "Act complete" --sub "Switching to next act..."
 

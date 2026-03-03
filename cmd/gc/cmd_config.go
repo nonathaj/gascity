@@ -18,7 +18,7 @@ func newConfigCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Inspect, validate, and debug the resolved city configuration.
 
 The config system supports multi-file composition with includes,
-topologies, patches, and overrides. Use "show" to dump the resolved
+packs, patches, and overrides. Use "show" to dump the resolved
 config and "explain" to see where each value originated.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -38,7 +38,7 @@ func newConfigShowCmd(stdout, stderr io.Writer) *cobra.Command {
 		Short: "Dump the resolved city configuration as TOML",
 		Long: `Dump the fully resolved city configuration as TOML.
 
-Loads city.toml with all includes, topologies, patches, and overrides,
+Loads city.toml with all includes, packs, patches, and overrides,
 then outputs the merged result. Use --validate to check for errors
 without printing. Use --provenance to see which file contributed each
 config element. Use -f to layer additional config files.`,
@@ -70,10 +70,10 @@ func doConfigShow(validate, showProvenance bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Auto-fetch remote topologies before full config load.
-	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Topologies) > 0 {
-		if fErr := config.FetchTopologies(quickCfg.Topologies, cityPath); fErr != nil {
-			fmt.Fprintf(stderr, "gc config show: fetching topologies: %v\n", fErr) //nolint:errcheck // best-effort stderr
+	// Auto-fetch remote packs before full config load.
+	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Packs) > 0 {
+		if fErr := config.FetchPacks(quickCfg.Packs, cityPath); fErr != nil {
+			fmt.Fprintf(stderr, "gc config show: fetching packs: %v\n", fErr) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 	}
@@ -172,10 +172,10 @@ func doConfigExplain(rigFilter, agentFilter string, stdout, stderr io.Writer) in
 		return 1
 	}
 
-	// Auto-fetch remote topologies before full config load.
-	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Topologies) > 0 {
-		if fErr := config.FetchTopologies(quickCfg.Topologies, cityPath); fErr != nil {
-			fmt.Fprintf(stderr, "gc config explain: fetching topologies: %v\n", fErr) //nolint:errcheck // best-effort stderr
+	// Auto-fetch remote packs before full config load.
+	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && len(quickCfg.Packs) > 0 {
+		if fErr := config.FetchPacks(quickCfg.Packs, cityPath); fErr != nil {
+			fmt.Fprintf(stderr, "gc config explain: fetching packs: %v\n", fErr) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 	}

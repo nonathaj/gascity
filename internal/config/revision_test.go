@@ -79,12 +79,12 @@ name = "worker"
 	}
 }
 
-func TestRevision_IncludesTopology(t *testing.T) {
+func TestRevision_IncludesPack(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "city.toml", `[workspace]
 name = "test"
 `)
-	writeFile(t, dir, "topologies/gt/topology.toml", `[topology]
+	writeFile(t, dir, "packs/gt/pack.toml", `[pack]
 name = "gastown"
 schema = 1
 `)
@@ -92,45 +92,45 @@ schema = 1
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}}
+	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Pack: "packs/gt"}}}
 
 	h1 := Revision(fsys.OSFS{}, prov, cfg, dir)
 
-	// Change topology file.
-	writeFile(t, dir, "topologies/gt/topology.toml", `[topology]
+	// Change pack file.
+	writeFile(t, dir, "packs/gt/pack.toml", `[pack]
 name = "gastown-v2"
 schema = 1
 `)
 
 	h2 := Revision(fsys.OSFS{}, prov, cfg, dir)
 	if h1 == h2 {
-		t.Error("hash should change when topology file changes")
+		t.Error("hash should change when pack file changes")
 	}
 }
 
-func TestRevision_IncludesCityTopology(t *testing.T) {
+func TestRevision_IncludesCityPack(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "city.toml", `[workspace]
 name = "test"
 `)
-	writeFile(t, dir, "topologies/shared/agents.toml", `[[agents]]
+	writeFile(t, dir, "packs/shared/agents.toml", `[[agents]]
 name = "worker"
 `)
 
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	cfg := &City{Workspace: Workspace{Topology: "topologies/shared"}}
+	cfg := &City{Workspace: Workspace{Pack: "packs/shared"}}
 
 	h1 := Revision(fsys.OSFS{}, prov, cfg, dir)
 
-	writeFile(t, dir, "topologies/shared/agents.toml", `[[agents]]
+	writeFile(t, dir, "packs/shared/agents.toml", `[[agents]]
 name = "worker-v2"
 `)
 
 	h2 := Revision(fsys.OSFS{}, prov, cfg, dir)
 	if h1 == h2 {
-		t.Error("hash should change when city topology file changes")
+		t.Error("hash should change when city pack file changes")
 	}
 }
 
@@ -176,48 +176,48 @@ func TestWatchDirs_WithFragments(t *testing.T) {
 	}
 }
 
-func TestWatchDirs_WithTopology(t *testing.T) {
+func TestWatchDirs_WithPack(t *testing.T) {
 	dir := t.TempDir()
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}}
+	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Pack: "packs/gt"}}}
 
 	dirs := WatchDirs(prov, cfg, dir)
 
-	// Should include city dir + topology dir.
+	// Should include city dir + pack dir.
 	if len(dirs) != 2 {
 		t.Fatalf("got %d dirs, want 2: %v", len(dirs), dirs)
 	}
 
 	found := false
 	for _, d := range dirs {
-		if d == filepath.Join(dir, "topologies", "gt") {
+		if d == filepath.Join(dir, "packs", "gt") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("topology dir not in watch list: %v", dirs)
+		t.Errorf("pack dir not in watch list: %v", dirs)
 	}
 }
 
-func TestWatchDirs_WithCityTopology(t *testing.T) {
+func TestWatchDirs_WithCityPack(t *testing.T) {
 	dir := t.TempDir()
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	cfg := &City{Workspace: Workspace{Topology: "topologies/shared"}}
+	cfg := &City{Workspace: Workspace{Pack: "packs/shared"}}
 
 	dirs := WatchDirs(prov, cfg, dir)
 
 	found := false
 	for _, d := range dirs {
-		if d == filepath.Join(dir, "topologies", "shared") {
+		if d == filepath.Join(dir, "packs", "shared") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("city topology dir not in watch list: %v", dirs)
+		t.Errorf("city pack dir not in watch list: %v", dirs)
 	}
 }
 

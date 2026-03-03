@@ -491,7 +491,7 @@ case "$op" in
     if [ -n "$city_dir" ] && [ -d "$city_dir" ]; then
       "${KUBECTL[@]}" exec "$pod" -- mkdir -p /tmp/city-src || true
       # Use tar -h to dereference symlinks (formula files are symlinked from
-      # topologies/) and --exclude='.gc' to skip sockets/locks.
+      # packs/) and --exclude='.gc' to skip sockets/locks.
       tar chf - -C "$city_dir" --exclude='.gc' . | \
         "${KUBECTL[@]}" exec -i "$pod" -- tar xf - -C /tmp/city-src || \
         echo "start: warning: failed to copy city dir" >&2

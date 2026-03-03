@@ -33,14 +33,14 @@ type PromptContext struct {
 // renderPrompt reads a prompt template file and renders it with the given
 // context. cityName is used internally by template functions (e.g. session)
 // but not exposed as a template variable. sessionTemplate is the custom
-// session naming template (empty = default). topologyDirs are the ordered
-// topology directories; each may contain prompts/shared/ subdirectories
-// loaded as cross-topology shared templates (lower priority than the
+// session naming template (empty = default). packDirs are the ordered
+// pack directories; each may contain prompts/shared/ subdirectories
+// loaded as cross-pack shared templates (lower priority than the
 // sibling shared/ dir). injectFragments are named templates to append to
 // the output after rendering. Returns empty string if templatePath is empty
 // or the file doesn't exist. On parse or execute error, logs a warning to
 // stderr and returns the raw text (graceful fallback).
-func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, topologyDirs []string, injectFragments []string) string {
+func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, packDirs []string, injectFragments []string) string {
 	if templatePath == "" {
 		return ""
 	}
@@ -54,15 +54,15 @@ func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx Promp
 		Funcs(promptFuncMap(cityName, sessionTemplate)).
 		Option("missingkey=zero")
 
-	// Load shared templates from topology dirs (lower priority).
-	// Each topology directory may contain a prompts/shared/ subdirectory.
-	for _, dir := range topologyDirs {
+	// Load shared templates from pack dirs (lower priority).
+	// Each pack directory may contain a prompts/shared/ subdirectory.
+	for _, dir := range packDirs {
 		sharedDir := filepath.Join(dir, "prompts", "shared")
 		loadSharedTemplates(fs, tmpl, sharedDir, stderr)
 	}
 
 	// Load shared templates from sibling shared/ directory (highest priority —
-	// wins on name collision with cross-topology templates).
+	// wins on name collision with cross-pack templates).
 	sharedDir := filepath.Join(cityPath, filepath.Dir(templatePath), "shared")
 	loadSharedTemplates(fs, tmpl, sharedDir, stderr)
 

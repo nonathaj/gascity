@@ -670,19 +670,19 @@ func TestIsControllerRunning_UnlockedFile(t *testing.T) {
 	}
 }
 
-// --- TopologyCacheCheck ---
+// --- PackCacheCheck ---
 
-func TestTopologyCacheCheck_OK(t *testing.T) {
+func TestPackCacheCheck_OK(t *testing.T) {
 	dir := t.TempDir()
-	cacheDir := filepath.Join(dir, ".gc", "topologies", "gastown")
+	cacheDir := filepath.Join(dir, ".gc", "packs", "gastown")
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, "topology.toml"), []byte("[topology]\nname=\"gastown\"\nschema=1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cacheDir, "pack.toml"), []byte("[pack]\nname=\"gastown\"\nschema=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	c := NewTopologyCacheCheck(map[string]config.TopologySource{
+	c := NewPackCacheCheck(map[string]config.PackSource{
 		"gastown": {Source: "https://example.com/gastown"},
 	}, dir)
 	ctx := &CheckContext{CityPath: dir}
@@ -692,11 +692,11 @@ func TestTopologyCacheCheck_OK(t *testing.T) {
 	}
 }
 
-func TestTopologyCacheCheck_Missing(t *testing.T) {
+func TestPackCacheCheck_Missing(t *testing.T) {
 	dir := t.TempDir()
 	// No cache created.
 
-	c := NewTopologyCacheCheck(map[string]config.TopologySource{
+	c := NewPackCacheCheck(map[string]config.PackSource{
 		"gastown": {Source: "https://example.com/gastown"},
 	}, dir)
 	ctx := &CheckContext{CityPath: dir}
@@ -709,17 +709,17 @@ func TestTopologyCacheCheck_Missing(t *testing.T) {
 	}
 }
 
-func TestTopologyCacheCheck_WithPath(t *testing.T) {
+func TestPackCacheCheck_WithPath(t *testing.T) {
 	dir := t.TempDir()
-	cacheDir := filepath.Join(dir, ".gc", "topologies", "mono", "packages", "topo")
+	cacheDir := filepath.Join(dir, ".gc", "packs", "mono", "packages", "topo")
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cacheDir, "topology.toml"), []byte("[topology]\nname=\"mono\"\nschema=1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cacheDir, "pack.toml"), []byte("[pack]\nname=\"mono\"\nschema=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	c := NewTopologyCacheCheck(map[string]config.TopologySource{
+	c := NewPackCacheCheck(map[string]config.PackSource{
 		"mono": {Source: "https://example.com/mono", Path: "packages/topo"},
 	}, dir)
 	ctx := &CheckContext{CityPath: dir}

@@ -120,7 +120,7 @@ prompt dynamically customized to its deployment context.
 - `cmd/gc/cmd_prime.go` — `gc prime` command (outputs rendered prompt)
 
 Template files are user-supplied, not SDK code. See example templates
-in `examples/gastown/topologies/gastown/prompts/`.
+in `examples/gastown/packs/gastown/prompts/`.
 
 ## Configuration
 

@@ -388,13 +388,13 @@ func TestExpandSessionSetup_ConfigDir(t *testing.T) {
 		CityRoot:  "/home/user/city",
 		CityName:  "bright-lights",
 		WorkDir:   "/home/user/city",
-		ConfigDir: "/home/user/city/topologies/gastown",
+		ConfigDir: "/home/user/city/packs/gastown",
 	}
 	cmds := []string{
 		"{{.ConfigDir}}/scripts/status-line.sh {{.Agent}}",
 	}
 	got := expandSessionSetup(cmds, ctx)
-	want := "/home/user/city/topologies/gastown/scripts/status-line.sh mayor"
+	want := "/home/user/city/packs/gastown/scripts/status-line.sh mayor"
 	if got[0] != want {
 		t.Errorf("got %q, want %q", got[0], want)
 	}
@@ -405,7 +405,7 @@ func TestPoolAgentsConfigDir(t *testing.T) {
 		Name:         "worker",
 		StartCommand: "echo hello",
 		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
-		SourceDir:    "/city/topologies/gt",
+		SourceDir:    "/city/packs/gt",
 		SessionSetup: []string{
 			"{{.ConfigDir}}/scripts/setup.sh {{.Agent}}",
 		},
@@ -420,7 +420,7 @@ func TestPoolAgentsConfigDir(t *testing.T) {
 	}
 	cfg := agents[0].SessionConfig()
 	// ConfigDir should use SourceDir, not CityRoot.
-	want := "/city/topologies/gt/scripts/setup.sh worker"
+	want := "/city/packs/gt/scripts/setup.sh worker"
 	if len(cfg.SessionSetup) != 1 || cfg.SessionSetup[0] != want {
 		t.Errorf("SessionSetup = %v, want [%q]", cfg.SessionSetup, want)
 	}

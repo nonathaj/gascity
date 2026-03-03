@@ -2252,35 +2252,35 @@ func TestValidateAgentsSameNameCityWide(t *testing.T) {
 func TestValidateAgentsDupNameWithProvenance(t *testing.T) {
 	// When both agents have SourceDir set, the error should include provenance.
 	agents := []Agent{
-		{Name: "worker", Dir: "myrig", SourceDir: "topologies/base"},
-		{Name: "worker", Dir: "myrig", SourceDir: "topologies/extras"},
+		{Name: "worker", Dir: "myrig", SourceDir: "packs/base"},
+		{Name: "worker", Dir: "myrig", SourceDir: "packs/extras"},
 	}
 	err := ValidateAgents(agents)
 	if err == nil {
 		t.Fatal("expected error for duplicate name")
 	}
 	errStr := err.Error()
-	if !strings.Contains(errStr, "topologies/base") {
+	if !strings.Contains(errStr, "packs/base") {
 		t.Errorf("error should include first source dir, got: %s", errStr)
 	}
-	if !strings.Contains(errStr, "topologies/extras") {
+	if !strings.Contains(errStr, "packs/extras") {
 		t.Errorf("error should include second source dir, got: %s", errStr)
 	}
 }
 
 func TestValidateAgentsDupNameMixedProvenance(t *testing.T) {
-	// Inline agent (no SourceDir) colliding with topology agent (has SourceDir)
+	// Inline agent (no SourceDir) colliding with pack agent (has SourceDir)
 	// should still include the available provenance.
 	agents := []Agent{
 		{Name: "worker"},
-		{Name: "worker", SourceDir: "topologies/extras"},
+		{Name: "worker", SourceDir: "packs/extras"},
 	}
 	err := ValidateAgents(agents)
 	if err == nil {
 		t.Fatal("expected error for duplicate name")
 	}
 	errStr := err.Error()
-	if !strings.Contains(errStr, "topologies/extras") {
+	if !strings.Contains(errStr, "packs/extras") {
 		t.Errorf("error should include source dir, got: %s", errStr)
 	}
 }

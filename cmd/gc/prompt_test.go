@@ -390,27 +390,27 @@ func TestRenderPromptSharedIgnoresNonTemplate(t *testing.T) {
 	}
 }
 
-func TestRenderPromptCrossTopologyShared(t *testing.T) {
+func TestRenderPromptCrossPackShared(t *testing.T) {
 	f := fsys.NewFake()
-	// Topology dir with prompts/shared/ containing a named template.
+	// Pack dir with prompts/shared/ containing a named template.
 	f.Dirs["/extra/prompts/shared"] = true
 	f.Files["/extra/prompts/shared/greet.md.tmpl"] = []byte(
-		`{{ define "greet" }}Hi from cross-topology!{{ end }}`)
+		`{{ define "greet" }}Hi from cross-pack!{{ end }}`)
 	// Main template references it.
 	f.Files["/city/prompts/test.md.tmpl"] = []byte(`{{ template "greet" . }}`)
 	got := renderPrompt(f, "/city", "", "prompts/test.md.tmpl", PromptContext{}, "", io.Discard,
 		[]string{"/extra"}, nil)
-	if got != "Hi from cross-topology!" {
-		t.Errorf("cross-topology shared = %q, want %q", got, "Hi from cross-topology!")
+	if got != "Hi from cross-pack!" {
+		t.Errorf("cross-pack shared = %q, want %q", got, "Hi from cross-pack!")
 	}
 }
 
-func TestRenderPromptCrossTopologyPriority(t *testing.T) {
+func TestRenderPromptCrossPackPriority(t *testing.T) {
 	f := fsys.NewFake()
-	// Topology dir with prompts/shared/ defining "info".
+	// Pack dir with prompts/shared/ defining "info".
 	f.Dirs["/extra/prompts/shared"] = true
 	f.Files["/extra/prompts/shared/info.md.tmpl"] = []byte(
-		`{{ define "info" }}cross-topology{{ end }}`)
+		`{{ define "info" }}cross-pack{{ end }}`)
 	// Sibling shared dir also defines "info" — should win.
 	f.Files["/city/prompts/shared/info.md.tmpl"] = []byte(
 		`{{ define "info" }}sibling{{ end }}`)

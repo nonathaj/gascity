@@ -241,7 +241,7 @@ pool = { min = 1, max = 3, check = "echo 2" }
 
 System formulas are embedded in the `gc` binary and materialized to
 `.gc/system-formulas/` at startup. They form the lowest-priority formula
-layer (Layer 0) in the formula resolution stack. Topology and city-level
+layer (Layer 0) in the formula resolution stack. Pack and city-level
 formulas override system formulas by name.
 
 ## Testing

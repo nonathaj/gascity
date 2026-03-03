@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Topology doctor check: verify Dolt binary and optional server reachability.
+# Pack doctor check: verify Dolt binary and optional server reachability.
 #
 # Exit codes: 0=OK, 1=Warning, 2=Error
 # stdout: first line=message, rest=details

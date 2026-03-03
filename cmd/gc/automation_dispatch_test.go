@@ -643,10 +643,10 @@ func TestQualifyPool(t *testing.T) {
 	}
 }
 
-// --- city topology layer tests ---
+// --- city pack layer tests ---
 
-func TestBuildAutomationDispatcherCityTopologyLayers(t *testing.T) {
-	// Simulate system formulas + topology formulas as two city layers.
+func TestBuildAutomationDispatcherCityPackLayers(t *testing.T) {
+	// Simulate system formulas + pack formulas as two city layers.
 	sysDir := t.TempDir()
 	topoDir := t.TempDir()
 
@@ -661,7 +661,7 @@ gate = "cooldown"
 interval = "30s"
 `)
 
-	// Topology dir: wasteland-poll automation.
+	// Pack dir: wasteland-poll automation.
 	topoAutoDir := topoDir + "/automations/wasteland-poll"
 	if err := mkdirAll(topoAutoDir); err != nil {
 		t.Fatal(err)
@@ -701,7 +701,7 @@ interval = "2m"
 	}
 }
 
-func TestBuildAutomationDispatcherCityTopologyWithOverride(t *testing.T) {
+func TestBuildAutomationDispatcherCityPackWithOverride(t *testing.T) {
 	// Same two-layer setup, plus a config override on wasteland-poll interval.
 	sysDir := t.TempDir()
 	topoDir := t.TempDir()

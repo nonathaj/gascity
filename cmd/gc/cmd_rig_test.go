@@ -459,7 +459,7 @@ func TestDoAgentListShowsRigSuspended(t *testing.T) {
 	}
 }
 
-func TestDoRigAdd_WithTopology(t *testing.T) {
+func TestDoRigAdd_WithPack(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
@@ -478,17 +478,17 @@ func TestDoRigAdd_WithTopology(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 
 	var stdout, stderr bytes.Buffer
-	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "topologies/gastown", false, &stdout, &stderr)
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "packs/gastown", false, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doRigAdd returned %d, stderr: %s", code, stderr.String())
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "Topology: topologies/gastown") {
-		t.Errorf("output missing topology: %s", output)
+	if !strings.Contains(output, "Pack: packs/gastown") {
+		t.Errorf("output missing pack: %s", output)
 	}
 
-	// Verify city.toml has topology field.
+	// Verify city.toml has pack field.
 	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		t.Fatal(err)
@@ -500,12 +500,12 @@ func TestDoRigAdd_WithTopology(t *testing.T) {
 	if len(cfg.Rigs) != 1 {
 		t.Fatalf("expected 1 rig, got %d", len(cfg.Rigs))
 	}
-	if cfg.Rigs[0].Topology != "topologies/gastown" {
-		t.Errorf("rig topology = %q, want %q; city.toml:\n%s", cfg.Rigs[0].Topology, "topologies/gastown", data)
+	if cfg.Rigs[0].Pack != "packs/gastown" {
+		t.Errorf("rig pack = %q, want %q; city.toml:\n%s", cfg.Rigs[0].Pack, "packs/gastown", data)
 	}
 }
 
-func TestDoRigAdd_WithoutTopology(t *testing.T) {
+func TestDoRigAdd_WithoutPack(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
@@ -530,8 +530,8 @@ func TestDoRigAdd_WithoutTopology(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if strings.Contains(output, "Topology:") {
-		t.Errorf("output should not contain topology line when not set: %s", output)
+	if strings.Contains(output, "Pack:") {
+		t.Errorf("output should not contain pack line when not set: %s", output)
 	}
 
 	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
@@ -541,8 +541,8 @@ func TestDoRigAdd_WithoutTopology(t *testing.T) {
 	if len(cfg.Rigs) != 1 {
 		t.Fatalf("expected 1 rig, got %d", len(cfg.Rigs))
 	}
-	if cfg.Rigs[0].Topology != "" {
-		t.Errorf("rig topology should be empty, got %q", cfg.Rigs[0].Topology)
+	if cfg.Rigs[0].Pack != "" {
+		t.Errorf("rig pack should be empty, got %q", cfg.Rigs[0].Pack)
 	}
 }
 

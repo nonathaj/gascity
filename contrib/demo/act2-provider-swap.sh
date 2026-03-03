@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # act2-provider-swap.sh — Act 2: Provider Swap (Local tmux → Docker containers)
 #
-# Demonstrates: Same lifecycle topology, different infrastructure.
-# The audience just saw Act 1 end with a running lifecycle topology
-# on local tmux. Now we show the same topology in Docker containers —
+# Demonstrates: Same lifecycle pack, different infrastructure.
+# The audience just saw Act 1 end with a running lifecycle pack
+# on local tmux. Now we show the same pack in Docker containers —
 # same beads, same gc commands, different provider config.
 #
 # The presenter uncomments a [session] block in city.toml, saves, and
@@ -44,10 +44,10 @@ command -v tmux >/dev/null 2>&1 || { echo "ERROR: tmux not found in PATH" >&2; e
 
 # ── Act 2 ─────────────────────────────────────────────────────────────────
 
-narrate "Act 2: Provider Swap" --sub "Same lifecycle topology — local tmux → Docker containers"
+narrate "Act 2: Provider Swap" --sub "Same lifecycle pack — local tmux → Docker containers"
 
 echo "  Act 1 ended with lifecycle running on local tmux."
-echo "  Now: same topology, same beads — running in Docker containers."
+echo "  Now: same pack, same beads — running in Docker containers."
 echo "  The only change: uncomment the [session] block in city.toml."
 echo ""
 pause
@@ -78,23 +78,23 @@ rm -rf "$DEMO_CITY"
 docker ps -q --filter label=gc.managed=true 2>/dev/null | xargs -r docker stop 2>/dev/null || true
 docker ps -aq --filter label=gc.managed=true 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 
-# ── Set up city with lifecycle topology ──────────────────────────────────
+# ── Set up city with lifecycle pack ──────────────────────────────────
 
 # BEADS_DOLT_AUTO_START=0 prevents gc init / gc rig add from spawning their
 # own dolt server + idle-monitor on port 3307. gc start will start the city
 # dolt later with the correct data-dir.
 export BEADS_DOLT_AUTO_START=0
 
-step "Initializing city with lifecycle topology..."
+step "Initializing city with lifecycle pack..."
 gc init --from "$GC_SRC/examples/lifecycle" "$DEMO_CITY"
 
 # Clone demo repo.
 DEMO_REPO="$DEMO_CITY/demo-repo"
 git clone -q https://github.com/julianknutsen/gc-demo-repo "$DEMO_REPO"
 
-# Register rig (routes, hooks, topology config).
+# Register rig (routes, hooks, pack config).
 # Beads init fails (no dolt, auto-start disabled) — gc start handles it.
-(cd "$DEMO_CITY" && gc rig add "$DEMO_REPO" --topology topologies/lifecycle) || true
+(cd "$DEMO_CITY" && gc rig add "$DEMO_REPO" --pack packs/lifecycle) || true
 
 # Remove partial metadata so gc start re-initializes on the city dolt.
 rm -f "$DEMO_CITY/.beads/metadata.json"
@@ -110,7 +110,7 @@ chmod +x "$DEMO_CITY/scripts/gc-session-docker"
 # Export image for the Docker provider script.
 export GC_DOCKER_IMAGE
 
-step "City ready with lifecycle topology + Docker provider script"
+step "City ready with lifecycle pack + Docker provider script"
 
 # ── Write city.toml with Docker session block commented out ──────────────
 
@@ -131,7 +131,7 @@ start_command = "true"
 [[rigs]]
 name = "demo-repo"
 path = "$DEMO_REPO_ABS"
-includes = ["topologies/lifecycle"]
+includes = ["packs/lifecycle"]
 
 [daemon]
 patrol_interval = "10s"
@@ -262,7 +262,7 @@ echo "           Save. The controller hot-reloads — no Ctrl-C needed."
 echo "           Watch agents stop on tmux and start in Docker containers."
 echo "           Check containers: docker ps --filter label=gc.managed=true"
 echo ""
-echo "  Same topology. Same beads. Different infrastructure."
+echo "  Same pack. Same beads. Different infrastructure."
 echo ""
 echo "  Detach: Ctrl-b d"
 echo ""
@@ -282,7 +282,7 @@ tmux kill-session -t "$DEMO_SESSION" 2>/dev/null || true
 
 # ── Done ────────────────────────────────────────────────────────────────
 
-narrate "Act 2 Complete" --sub "Same topology, tmux → Docker — one config line"
+narrate "Act 2 Complete" --sub "Same pack, tmux → Docker — one config line"
 
 echo "  Local providers:  tmux sessions, bd beads, file events"
 echo "  Docker providers: containers with mounted work_dir, same beads"

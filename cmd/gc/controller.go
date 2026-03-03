@@ -137,10 +137,10 @@ type reloadResult struct {
 // should keep the old config on error. Warnings are written to stderr;
 // --strict makes them fatal.
 func tryReloadConfig(tomlPath, lockedCityName, cityRoot string, stderr io.Writer) (*reloadResult, error) {
-	// Auto-fetch remote topologies before full config load (mirrors cmd_start).
-	if quickCfg, qErr := config.Load(fsys.OSFS{}, tomlPath); qErr == nil && len(quickCfg.Topologies) > 0 {
-		if fErr := config.FetchTopologies(quickCfg.Topologies, cityRoot); fErr != nil {
-			return nil, fmt.Errorf("fetching topologies: %w", fErr)
+	// Auto-fetch remote packs before full config load (mirrors cmd_start).
+	if quickCfg, qErr := config.Load(fsys.OSFS{}, tomlPath); qErr == nil && len(quickCfg.Packs) > 0 {
+		if fErr := config.FetchPacks(quickCfg.Packs, cityRoot); fErr != nil {
+			return nil, fmt.Errorf("fetching packs: %w", fErr)
 		}
 	}
 
@@ -360,7 +360,7 @@ func controllerLoop(
 					if err := startBeadsLifecycle(cityRoot, cityName, cfg, stderr); err != nil {
 						fmt.Fprintf(stderr, "gc start: config reload: %v\n", err) //nolint:errcheck // best-effort stderr
 					}
-					// Resolve formula symlinks for newly activated topologies.
+					// Resolve formula symlinks for newly activated packs.
 					if len(cfg.FormulaLayers.City) > 0 {
 						if err := ResolveFormulas(cityRoot, cfg.FormulaLayers.City); err != nil {
 							fmt.Fprintf(stderr, "gc start: config reload: city formulas: %v\n", err) //nolint:errcheck // best-effort stderr

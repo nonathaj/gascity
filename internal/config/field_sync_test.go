@@ -10,7 +10,7 @@ import (
 // have the same set of overridable fields. When a new field is added to Agent,
 // it must also be added to AgentPatch and AgentOverride (or explicitly excluded
 // below). This prevents the common bug where a new config field works in
-// city.toml but is silently ignored by patches and topology overrides.
+// city.toml but is silently ignored by patches and pack overrides.
 //
 // See CLAUDE.md "Adding agent config fields" for the convention.
 func TestAgentFieldSync(t *testing.T) {
@@ -30,8 +30,8 @@ func TestAgentFieldSync(t *testing.T) {
 		"EmitsPermissionWarning": "provider field, set via ResolveProvider",
 		"WorkQuery":              "agent-specific, derived from name — not a patch concern",
 		"SlingQuery":             "agent-specific, derived from name/pool — not a patch concern",
-		"SourceDir":              "runtime-only, set during topology/fragment loading",
-		"Fallback":               "topology composition hint, not overridable at runtime",
+		"SourceDir":              "runtime-only, set during pack/fragment loading",
+		"Fallback":               "pack composition hint, not overridable at runtime",
 	}
 
 	// Fields on AgentOverride/AgentPatch that don't map 1:1 to Agent fields.

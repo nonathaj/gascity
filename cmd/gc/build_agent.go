@@ -29,7 +29,7 @@ type agentBuildParams struct {
 	rigs            []config.Rig
 	sessionTemplate string
 	beaconTime      time.Time
-	topologyDirs    []string
+	packDirs        []string
 	globalFragments []string
 	stderr          io.Writer
 }
@@ -114,7 +114,7 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 			WorkQuery:     cfgAgent.EffectiveWorkQuery(),
 			SlingQuery:    cfgAgent.EffectiveSlingQuery(),
 			Env:           cfgAgent.Env,
-		}, p.sessionTemplate, p.stderr, p.topologyDirs, fragments)
+		}, p.sessionTemplate, p.stderr, p.packDirs, fragments)
 		hasHooks := config.AgentHasHooks(cfgAgent, p.workspace, resolved.Name)
 		beacon := session.FormatBeaconAt(p.cityName, qualifiedName, !hasHooks, p.beaconTime)
 		if prompt != "" {
@@ -178,7 +178,7 @@ func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp session
 		rigs:            cfg.Rigs,
 		sessionTemplate: cfg.Workspace.SessionTemplate,
 		beaconTime:      beaconTime,
-		topologyDirs:    cfg.TopologyDirs,
+		packDirs:        cfg.PackDirs,
 		globalFragments: cfg.Workspace.GlobalFragments,
 		stderr:          stderr,
 	}

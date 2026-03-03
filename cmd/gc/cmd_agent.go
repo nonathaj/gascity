@@ -18,11 +18,11 @@ import (
 	"github.com/steveyegge/gascity/internal/session"
 )
 
-// loadCityConfig loads the city configuration with full topology expansion.
+// loadCityConfig loads the city configuration with full pack expansion.
 // Most CLI commands need this instead of config.Load so that agents defined
-// via topologies are visible. The only exceptions are quick pre-fetch checks
+// via packs are visible. The only exceptions are quick pre-fetch checks
 // in cmd_config.go and cmd_start.go that intentionally use config.Load to
-// discover remote topologies before fetching them.
+// discover remote packs before fetching them.
 func loadCityConfig(cityPath string) (*config.City, error) {
 	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	return cfg, err

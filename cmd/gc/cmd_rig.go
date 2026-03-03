@@ -43,7 +43,7 @@ are scoped to rigs via their "dir" field.`,
 }
 
 func newRigAddCmd(stdout, stderr io.Writer) *cobra.Command {
-	var topology string
+	var pack string
 	var startSuspended bool
 	cmd := &cobra.Command{
 		Use:   "add <path>",
@@ -52,23 +52,23 @@ func newRigAddCmd(stdout, stderr io.Writer) *cobra.Command {
 
 Initializes beads database, installs agent hooks if configured,
 generates cross-rig routes, and appends the rig to city.toml.
-If the target directory doesn't exist, it is created. Use --topology
-to apply a topology directory that defines the rig's agent configuration.
+If the target directory doesn't exist, it is created. Use --pack
+to apply a pack directory that defines the rig's agent configuration.
 
 Use --start-suspended to add the rig in a suspended state (dormant-by-default).
 The rig's agents won't spawn until explicitly resumed with "gc rig resume".`,
 		Example: `  gc rig add /path/to/project
-  gc rig add ./my-project --topology topologies/gastown
-  gc rig add ./my-project --topology topologies/gastown --start-suspended`,
+  gc rig add ./my-project --pack packs/gastown
+  gc rig add ./my-project --pack packs/gastown --start-suspended`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdRigAdd(args, topology, startSuspended, stdout, stderr) != 0 {
+			if cmdRigAdd(args, pack, startSuspended, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&topology, "topology", "", "topology directory for rig agents")
+	cmd.Flags().StringVar(&pack, "pack", "", "pack directory for rig agents")
 	cmd.Flags().BoolVar(&startSuspended, "start-suspended", false, "add rig in suspended state (dormant-by-default)")
 	return cmd
 }
@@ -92,7 +92,7 @@ displays its bead ID prefix and whether its beads database is initialized.`,
 }
 
 // cmdRigAdd registers an external project directory as a rig in the city.
-func cmdRigAdd(args []string, topology string, startSuspended bool, stdout, stderr io.Writer) int {
+func cmdRigAdd(args []string, pack string, startSuspended bool, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "gc rig add: missing path") //nolint:errcheck // best-effort stderr
 		return 1
@@ -109,14 +109,14 @@ func cmdRigAdd(args []string, topology string, startSuspended bool, stdout, stde
 		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	return doRigAdd(fsys.OSFS{}, cityPath, rigPath, topology, startSuspended, stdout, stderr)
+	return doRigAdd(fsys.OSFS{}, cityPath, rigPath, pack, startSuspended, stdout, stderr)
 }
 
 // doRigAdd is the pure logic for "gc rig add". Operations are ordered so that
 // city.toml is written last — if any earlier step fails, config is unchanged.
 // This prevents partial-state bugs where city.toml lists a rig but the rig's
 // infrastructure (beads, routes) was never created.
-func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended bool, stdout, stderr io.Writer) int {
+func doRigAdd(fs fsys.FS, cityPath, rigPath, pack string, startSuspended bool, stdout, stderr io.Writer) int {
 	fi, err := fs.Stat(rigPath)
 	if err != nil {
 		// Directory doesn't exist — create it.
@@ -162,8 +162,8 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended boo
 		w(fmt.Sprintf("  Detected git repo at %s", rigPath))
 	}
 	w(fmt.Sprintf("  Prefix: %s", prefix))
-	if topology != "" {
-		w(fmt.Sprintf("  Topology: %s", topology))
+	if pack != "" {
+		w(fmt.Sprintf("  Pack: %s", pack))
 	}
 
 	// Initialize beads for the rig (ensure-ready → init → hooks).
@@ -195,8 +195,8 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended boo
 		Path:      rigPath,
 		Suspended: startSuspended,
 	}
-	if topology != "" {
-		rig.Topology = topology
+	if pack != "" {
+		rig.Pack = pack
 	}
 	cfg.Rigs = append(cfg.Rigs, rig)
 	cityName := cfg.Workspace.Name

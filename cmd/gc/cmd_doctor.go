@@ -90,9 +90,9 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 		})
 	}
 
-	// Topology cache check (if config has remote topologies).
-	if cfgErr == nil && len(cfg.Topologies) > 0 {
-		d.Register(doctor.NewTopologyCacheCheck(cfg.Topologies, cityPath))
+	// Pack cache check (if config has remote packs).
+	if cfgErr == nil && len(cfg.Packs) > 0 {
+		d.Register(doctor.NewPackCacheCheck(cfg.Packs, cityPath))
 	}
 
 	// Infrastructure checks.
@@ -153,16 +153,16 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	// Worktree integrity check.
 	d.Register(&doctor.WorktreeCheck{})
 
-	// Topology doctor checks — scripts shipped with topologies.
+	// Pack doctor checks — scripts shipped with packs.
 	if cfgErr == nil {
-		allTopoDirs := collectTopologyDirs(cfg)
-		entries := config.LoadTopologyDoctorEntries(fsys.OSFS{}, allTopoDirs)
+		allPackDirs := collectPackDirs(cfg)
+		entries := config.LoadPackDoctorEntries(fsys.OSFS{}, allPackDirs)
 		for _, info := range entries {
 			scriptPath := filepath.Join(info.TopoDir, info.Entry.Script)
-			d.Register(&doctor.TopologyScriptCheck{
-				CheckName:   info.TopologyName + ":" + info.Entry.Name,
-				Script:      scriptPath,
-				TopologyDir: info.TopoDir,
+			d.Register(&doctor.PackScriptCheck{
+				CheckName: info.PackName + ":" + info.Entry.Name,
+				Script:    scriptPath,
+				PackDir:   info.TopoDir,
 			})
 		}
 	}
@@ -176,18 +176,18 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// collectTopologyDirs returns all unique topology directories from the city
-// config (both city-level and per-rig). Used to discover topology doctor checks.
-func collectTopologyDirs(cfg *config.City) []string {
+// collectPackDirs returns all unique pack directories from the city
+// config (both city-level and per-rig). Used to discover pack doctor checks.
+func collectPackDirs(cfg *config.City) []string {
 	seen := make(map[string]bool)
 	var result []string
-	for _, dir := range cfg.TopologyDirs {
+	for _, dir := range cfg.PackDirs {
 		if !seen[dir] {
 			seen[dir] = true
 			result = append(result, dir)
 		}
 	}
-	for _, dirs := range cfg.RigTopologyDirs {
+	for _, dirs := range cfg.RigPackDirs {
 		for _, dir := range dirs {
 			if !seen[dir] {
 				seen[dir] = true

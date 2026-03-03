@@ -2,7 +2,7 @@
 //
 // This test ensures the example stays valid as the SDK evolves:
 // city.toml parses and validates, prompt template files exist, and
-// the topology has the expected agents.
+// the pack has the expected agents.
 package swarm_test
 
 import (
@@ -22,7 +22,7 @@ func exampleDir() string {
 	return filepath.Dir(filename)
 }
 
-// loadExpanded loads city.toml with full topology expansion.
+// loadExpanded loads city.toml with full pack expansion.
 func loadExpanded(t *testing.T) *config.City {
 	t.Helper()
 	dir := exampleDir()
@@ -42,8 +42,8 @@ func TestCityTomlParses(t *testing.T) {
 	if cfg.Workspace.Name != "swarm" {
 		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "swarm")
 	}
-	if cfg.Workspace.Topology != "topologies/swarm" {
-		t.Errorf("Workspace.Topology = %q, want %q", cfg.Workspace.Topology, "topologies/swarm")
+	if cfg.Workspace.Pack != "packs/swarm" {
+		t.Errorf("Workspace.Pack = %q, want %q", cfg.Workspace.Pack, "packs/swarm")
 	}
 }
 
@@ -68,31 +68,31 @@ func TestPromptFilesExist(t *testing.T) {
 	}
 }
 
-// topologyFileConfig mirrors the topology.toml structure for test parsing.
-type topologyFileConfig struct {
-	Topology config.TopologyMeta `toml:"topology"`
-	Agents   []config.Agent      `toml:"agents"`
+// packFileConfig mirrors the pack.toml structure for test parsing.
+type packFileConfig struct {
+	Pack   config.PackMeta `toml:"pack"`
+	Agents []config.Agent  `toml:"agents"`
 }
 
-func TestCombinedTopologyParses(t *testing.T) {
+func TestCombinedPackParses(t *testing.T) {
 	dir := exampleDir()
-	topoPath := filepath.Join(dir, "topologies", "swarm", "topology.toml")
+	topoPath := filepath.Join(dir, "packs", "swarm", "pack.toml")
 
 	data, err := os.ReadFile(topoPath)
 	if err != nil {
-		t.Fatalf("reading topology.toml: %v", err)
+		t.Fatalf("reading pack.toml: %v", err)
 	}
 
-	var tc topologyFileConfig
+	var tc packFileConfig
 	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing topology.toml: %v", err)
+		t.Fatalf("parsing pack.toml: %v", err)
 	}
 
-	if tc.Topology.Name != "swarm" {
-		t.Errorf("[topology] name = %q, want %q", tc.Topology.Name, "swarm")
+	if tc.Pack.Name != "swarm" {
+		t.Errorf("[pack] name = %q, want %q", tc.Pack.Name, "swarm")
 	}
-	if tc.Topology.Schema != 1 {
-		t.Errorf("[topology] schema = %d, want 1", tc.Topology.Schema)
+	if tc.Pack.Schema != 1 {
+		t.Errorf("[pack] schema = %d, want 1", tc.Pack.Schema)
 	}
 
 	// Expect 5 agents: mayor, deacon, dog (city), coder, committer (rig).
@@ -104,23 +104,23 @@ func TestCombinedTopologyParses(t *testing.T) {
 		if _, ok := want[a.Name]; ok {
 			want[a.Name] = true
 		} else {
-			t.Errorf("unexpected topology agent %q", a.Name)
+			t.Errorf("unexpected pack agent %q", a.Name)
 		}
 	}
 	for name, found := range want {
 		if !found {
-			t.Errorf("missing topology agent %q", name)
+			t.Errorf("missing pack agent %q", name)
 		}
 	}
 	if len(tc.Agents) != 5 {
-		t.Errorf("topology has %d agents, want 5", len(tc.Agents))
+		t.Errorf("pack has %d agents, want 5", len(tc.Agents))
 	}
 
 	// Verify city_agents list.
 	cityAgents := map[string]bool{
 		"mayor": false, "deacon": false, "dog": false,
 	}
-	for _, ca := range tc.Topology.CityAgents {
+	for _, ca := range tc.Pack.CityAgents {
 		if _, ok := cityAgents[ca]; ok {
 			cityAgents[ca] = true
 		} else {
@@ -188,7 +188,7 @@ func TestDaemonConfig(t *testing.T) {
 
 func TestAllPromptTemplatesExist(t *testing.T) {
 	dir := exampleDir()
-	promptDir := filepath.Join(dir, "topologies", "swarm", "prompts")
+	promptDir := filepath.Join(dir, "packs", "swarm", "prompts")
 
 	entries, err := os.ReadDir(promptDir)
 	if err != nil {
@@ -217,19 +217,19 @@ func TestAllPromptTemplatesExist(t *testing.T) {
 	}
 }
 
-func TestTopologyPromptFilesExist(t *testing.T) {
+func TestPackPromptFilesExist(t *testing.T) {
 	dir := exampleDir()
-	topoDir := filepath.Join(dir, "topologies", "swarm")
-	topoPath := filepath.Join(topoDir, "topology.toml")
+	topoDir := filepath.Join(dir, "packs", "swarm")
+	topoPath := filepath.Join(topoDir, "pack.toml")
 
 	data, err := os.ReadFile(topoPath)
 	if err != nil {
-		t.Fatalf("reading topology.toml: %v", err)
+		t.Fatalf("reading pack.toml: %v", err)
 	}
 
-	var tc topologyFileConfig
+	var tc packFileConfig
 	if _, err := toml.Decode(string(data), &tc); err != nil {
-		t.Fatalf("parsing topology.toml: %v", err)
+		t.Fatalf("parsing pack.toml: %v", err)
 	}
 
 	for _, a := range tc.Agents {

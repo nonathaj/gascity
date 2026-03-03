@@ -11,7 +11,7 @@ or EXCLUDE — with rationale.
 - Gas City has ZERO hardcoded roles. Anything role-specific is config.
 - The Primitive Test (`docs/primitive-test.md`) applies: Atomicity +
   Bitter Lesson + ZFC.
-- "Worth porting" means it's infrastructure that ANY topology needs.
+- "Worth porting" means it's infrastructure that ANY pack needs.
 - "Gastown-specific" means it assumes Gas Town's particular role set.
 
 ---
@@ -139,7 +139,7 @@ a time, others queued as waiters. Used to serialize merge operations
 so only one agent merges at a time.
 
 **Why EXCLUDE:** Domain pattern, not a primitive. Only used by
-gastown's refinery/polecat merge pipeline. A topology that needs
+gastown's refinery/polecat merge pipeline. A pack that needs
 serialized operations can compose this from a bead (type=slot) +
 claim semantics. No SDK support needed.
 
@@ -241,7 +241,7 @@ lists and retention policies. 460 lines.
 
 **Why EXCLUDE:** Domain pattern. Pub/sub can be composed from beads
 (type=channel) + labels (subscribers) + formulas (retention). Adding
-it to the SDK would be premature abstraction. If a topology needs
+it to the SDK would be premature abstraction. If a pack needs
 channels, it builds them from beads.
 
 ---

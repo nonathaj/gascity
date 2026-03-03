@@ -13,7 +13,7 @@ City is the top-level configuration for a Gas City instance.
 | `include` | []string |  |  | Include lists config fragment files to merge into this config. Processed by LoadWithIncludes; not recursive (fragments cannot include). |
 | `workspace` | Workspace | **yes** |  | Workspace holds city-level metadata (name, default provider). |
 | `providers` | map[string]ProviderSpec |  |  | Providers defines named provider presets for agent startup. |
-| `topologies` | map[string]TopologySource |  |  | Topologies defines named remote topology sources fetched via git. |
+| `packs` | map[string]PackSource |  |  | Packs defines named remote pack sources fetched via git. |
 | `agents` | []Agent | **yes** |  | Agents lists all configured agents in this city. |
 | `rigs` | []Rig |  |  | Rigs lists external projects registered in the city. |
 | `patches` | Patches |  |  | Patches holds targeted modifications applied after fragment merge. |
@@ -34,7 +34,7 @@ Agent defines a configured agent in the city.
 |-------|------|----------|---------|-------------|
 | `name` | string | **yes** |  | Name is the unique identifier for this agent. |
 | `dir` | string |  |  | Dir is the working directory for the agent session. |
-| `scope` | string |  |  | Scope defines where this agent is instantiated: "city" (one per city) or "rig" (one per rig, the default). Only meaningful for topology-defined agents; inline agents in city.toml use Dir directly. When set, replaces the older city_agents list mechanism. Enum: `city`, `rig` |
+| `scope` | string |  |  | Scope defines where this agent is instantiated: "city" (one per city) or "rig" (one per rig, the default). Only meaningful for pack-defined agents; inline agents in city.toml use Dir directly. When set, replaces the older city_agents list mechanism. Enum: `city`, `rig` |
 | `suspended` | boolean |  |  | Suspended prevents the reconciler from spawning this agent. Toggle with gc agent suspend/resume. |
 | `pre_start` | []string |  |  | PreStart is a list of shell commands run before session creation. Commands run on the target filesystem: locally for tmux, inside the pod/container for exec providers. Template variables same as session_setup. |
 | `prompt_template` | string |  |  | PromptTemplate is the path to this agent's prompt template file. Relative paths resolve against the city directory. |
@@ -57,18 +57,18 @@ Agent defines a configured agent in the city.
 | `hooks_installed` | boolean |  |  | HooksInstalled overrides automatic hook detection. Set to true when hooks are manually installed (e.g., merged into the project's own hook config) and auto-installation via install_agent_hooks is not desired. When true, the agent is treated as hook-enabled for startup behavior: no prime instruction in beacon and no delayed nudge. Interacts with install_agent_hooks — set this instead when hooks are pre-installed. |
 | `session_setup` | []string |  |  | SessionSetup is a list of shell commands run after session creation. Each command is a template string supporting placeholders: {{.Session}}, {{.Agent}}, {{.Rig}}, {{.CityRoot}}, {{.CityName}}, {{.WorkDir}}. Commands run in gc's process (not inside the agent session) via sh -c. |
 | `session_setup_script` | string |  |  | SessionSetupScript is the path to a script run after session_setup commands. Relative paths resolve against the city directory. The script receives context via environment variables (GC_SESSION plus existing GC_* vars). |
-| `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (topology-safe). |
+| `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (pack-safe). |
 | `default_sling_formula` | string |  |  | DefaultSlingFormula is the formula name automatically applied via --on when beads are slung to this agent, unless --no-formula is set. Example: "mol-polecat-work" |
-| `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded topologies. Each name must match a {{ define "name" }} block. |
-| `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During topology composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
+| `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded packs. Each name must match a {{ define "name" }} block. |
+| `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 
 ## AgentOverride
 
-AgentOverride modifies a topology-stamped agent for a specific rig.
+AgentOverride modifies a pack-stamped agent for a specific rig.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `agent` | string | **yes** |  | Agent is the name of the topology agent to override (required). |
+| `agent` | string | **yes** |  | Agent is the name of the pack agent to override (required). |
 | `dir` | string |  |  | Dir overrides the stamped dir (default: rig name). |
 | `scope` | string |  |  | Scope overrides the agent's scope ("city" or "rig"). |
 | `suspended` | boolean |  |  | Suspended sets the agent's suspended state. |
@@ -221,6 +221,16 @@ MailConfig holds mail provider settings.
 |-------|------|----------|---------|-------------|
 | `provider` | string |  |  | Provider selects the mail backend: "fake", "fail", "exec:<script>", or "" (default: beadmail). |
 
+## PackSource
+
+PackSource defines a remote pack repository.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `source` | string | **yes** |  | Source is the git repository URL. |
+| `ref` | string |  |  | Ref is the git ref to checkout (branch, tag, or commit). Defaults to HEAD. |
+| `path` | string |  |  | Path is a subdirectory within the repo containing the pack files. |
+
 ## Patches
 
 Patches holds all patch blocks from composition.
@@ -296,11 +306,11 @@ Rig defines an external project registered in the city.
 | `path` | string | **yes** |  | Path is the absolute filesystem path to the rig's repository. |
 | `prefix` | string |  |  | Prefix overrides the auto-derived bead ID prefix for this rig. |
 | `suspended` | boolean |  |  | Suspended prevents the reconciler from spawning agents in this rig. Toggle with gc rig suspend/resume. |
-| `topology` | string |  |  | Topology is the path to a topology directory to stamp agents from. Relative paths resolve against the declaring config file's directory. |
-| `topologies` | []string |  |  | RigTopologies lists multiple topology directories for this rig. Each is loaded and expanded like Topology. When both Topology and RigTopologies are set, Topology is prepended to the list. |
-| `formulas_dir` | string |  |  | FormulasDir is a rig-local formula directory (Layer 4). Overrides topology formulas for this rig by filename. Relative paths resolve against the city directory. |
-| `includes` | []string |  |  | Includes lists topology directories or URLs for this rig. Replaces the older topology/topologies fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
-| `overrides` | []AgentOverride |  |  | Overrides are per-agent patches applied after topology expansion. |
+| `pack` | string |  |  | Pack is the path to a pack directory to stamp agents from. Relative paths resolve against the declaring config file's directory. |
+| `packs` | []string |  |  | RigPacks lists multiple pack directories for this rig. Each is loaded and expanded like Pack. When both Pack and RigPacks are set, Pack is prepended to the list. |
+| `formulas_dir` | string |  |  | FormulasDir is a rig-local formula directory (Layer 4). Overrides pack formulas for this rig by filename. Relative paths resolve against the city directory. |
+| `includes` | []string |  |  | Includes lists pack directories or URLs for this rig. Replaces the older pack/packs fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
+| `overrides` | []AgentOverride |  |  | Overrides are per-agent patches applied after pack expansion. |
 | `default_sling_target` | string |  |  | DefaultSlingTarget is the agent qualified name used when gc sling is invoked with only a bead ID (no explicit target). Resolved via resolveAgentIdentity. Example: "rig/polecat" |
 
 ## RigPatch
@@ -332,16 +342,6 @@ SessionConfig holds session provider settings.
 | `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L <socket>" to connect to a dedicated server. Empty means use the default tmux server. Typical usage: set to the city name (e.g., "bright-lights"). |
 | `remote_match` | string |  |  | RemoteMatch is a substring pattern for the hybrid provider to route sessions to the remote (K8s) backend. Sessions whose names contain this pattern go to K8s; all others stay local (tmux). Overridden by the GC_HYBRID_REMOTE_MATCH env var if set. |
 
-## TopologySource
-
-TopologySource defines a remote topology repository.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `source` | string | **yes** |  | Source is the git repository URL. |
-| `ref` | string |  |  | Ref is the git ref to checkout (branch, tag, or commit). Defaults to HEAD. |
-| `path` | string |  |  | Path is a subdirectory within the repo containing the topology files. |
-
 ## Workspace
 
 Workspace holds city-level metadata and optional defaults that apply to all agents unless overridden per-agent.
@@ -354,8 +354,8 @@ Workspace holds city-level metadata and optional defaults that apply to all agen
 | `suspended` | boolean |  |  | Suspended controls whether the city is suspended. When true, all agents are effectively suspended: the reconciler won't spawn them, and gc hook/prime return empty. Inherits downward — individual agent/rig suspended fields are checked independently. |
 | `session_template` | string |  |  | SessionTemplate is a template string supporting placeholders: {{.City}}, {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming. Default (empty): "gc-{{.City}}-{{.Agent}}". |
 | `install_agent_hooks` | []string |  |  | InstallAgentHooks lists provider names whose hooks should be installed into agent working directories. Agent-level overrides workspace-level (replace, not additive). Supported: "claude", "gemini", "opencode", "copilot". |
-| `topology` | string |  |  | Topology is the path to a city-level topology directory. Stamps agents with dir="" (city-scoped). Resolved like rig topologies. Combined with rig-level topologies — city topology agents get dir="" while rig topology agents inherit the rig name as their dir. |
-| `topologies` | []string |  |  | CityTopologies lists multiple city-level topology directories. Each is loaded and expanded like Topology. When both Topology and CityTopologies are set, Topology is prepended to the list. Agents from the first topology come first (deterministic ordering). |
-| `global_fragments` | []string |  |  | GlobalFragments lists named template fragments injected into every agent's rendered prompt. Applied before per-agent InjectFragments. Each name must match a {{ define "name" }} block from a topology's prompts/shared/ directory. |
-| `includes` | []string |  |  | Includes lists topology directories or URLs to compose into this workspace. Replaces the older topology/topologies fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
+| `pack` | string |  |  | Pack is the path to a city-level pack directory. Stamps agents with dir="" (city-scoped). Resolved like rig packs. Combined with rig-level packs — city pack agents get dir="" while rig pack agents inherit the rig name as their dir. |
+| `packs` | []string |  |  | CityPacks lists multiple city-level pack directories. Each is loaded and expanded like Pack. When both Pack and CityPacks are set, Pack is prepended to the list. Agents from the first pack come first (deterministic ordering). |
+| `global_fragments` | []string |  |  | GlobalFragments lists named template fragments injected into every agent's rendered prompt. Applied before per-agent InjectFragments. Each name must match a {{ define "name" }} block from a pack's prompts/shared/ directory. |
+| `includes` | []string |  |  | Includes lists pack directories or URLs to compose into this workspace. Replaces the older pack/packs fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
 

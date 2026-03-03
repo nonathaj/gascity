@@ -19,7 +19,7 @@
             "city",
             "rig"
           ],
-          "description": "Scope defines where this agent is instantiated: \"city\" (one per city)\nor \"rig\" (one per rig, the default). Only meaningful for topology-defined\nagents; inline agents in city.toml use Dir directly. When set, replaces\nthe older city_agents list mechanism."
+          "description": "Scope defines where this agent is instantiated: \"city\" (one per city)\nor \"rig\" (one per rig, the default). Only meaningful for pack-defined\nagents; inline agents in city.toml use Dir directly. When set, replaces\nthe older city_agents list mechanism."
         },
         "suspended": {
           "type": "boolean",
@@ -136,7 +136,7 @@
         },
         "overlay_dir": {
           "type": "string",
-          "description": "OverlayDir is a directory whose contents are recursively copied (additive)\ninto the agent's working directory at startup. Existing files are not\noverwritten. Relative paths resolve against the declaring config file's\ndirectory (topology-safe)."
+          "description": "OverlayDir is a directory whose contents are recursively copied (additive)\ninto the agent's working directory at startup. Existing files are not\noverwritten. Relative paths resolve against the declaring config file's\ndirectory (pack-safe)."
         },
         "default_sling_formula": {
           "type": "string",
@@ -147,11 +147,11 @@
             "type": "string"
           },
           "type": "array",
-          "description": "InjectFragments lists named template fragments to append to this agent's\nrendered prompt. Fragments come from shared template directories across\nall loaded topologies. Each name must match a {{ define \"name\" }} block."
+          "description": "InjectFragments lists named template fragments to append to this agent's\nrendered prompt. Fragments come from shared template directories across\nall loaded packs. Each name must match a {{ define \"name\" }} block."
         },
         "fallback": {
           "type": "boolean",
-          "description": "Fallback marks this agent as a fallback definition. During topology\ncomposition, a non-fallback agent with the same name wins silently.\nWhen two fallbacks collide, the first loaded (depth-first) wins."
+          "description": "Fallback marks this agent as a fallback definition. During pack\ncomposition, a non-fallback agent with the same name wins silently.\nWhen two fallbacks collide, the first loaded (depth-first) wins."
         }
       },
       "additionalProperties": false,
@@ -165,7 +165,7 @@
       "properties": {
         "agent": {
           "type": "string",
-          "description": "Agent is the name of the topology agent to override (required)."
+          "description": "Agent is the name of the pack agent to override (required)."
         },
         "dir": {
           "type": "string",
@@ -295,7 +295,7 @@
       "required": [
         "agent"
       ],
-      "description": "AgentOverride modifies a topology-stamped agent for a specific rig."
+      "description": "AgentOverride modifies a pack-stamped agent for a specific rig."
     },
     "AgentPatch": {
       "properties": {
@@ -541,12 +541,12 @@
           "type": "object",
           "description": "Providers defines named provider presets for agent startup."
         },
-        "topologies": {
+        "packs": {
           "additionalProperties": {
-            "$ref": "#/$defs/TopologySource"
+            "$ref": "#/$defs/PackSource"
           },
           "type": "object",
-          "description": "Topologies defines named remote topology sources fetched via git."
+          "description": "Packs defines named remote pack sources fetched via git."
         },
         "agents": {
           "items": {
@@ -741,6 +741,28 @@
       "additionalProperties": false,
       "type": "object",
       "description": "MailConfig holds mail provider settings."
+    },
+    "PackSource": {
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source is the git repository URL."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Ref is the git ref to checkout (branch, tag, or commit). Defaults to HEAD."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is a subdirectory within the repo containing the pack files."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "description": "PackSource defines a remote pack repository."
     },
     "Patches": {
       "properties": {
@@ -966,34 +988,34 @@
           "type": "boolean",
           "description": "Suspended prevents the reconciler from spawning agents in this rig. Toggle with gc rig suspend/resume."
         },
-        "topology": {
+        "pack": {
           "type": "string",
-          "description": "Topology is the path to a topology directory to stamp agents from.\nRelative paths resolve against the declaring config file's directory."
+          "description": "Pack is the path to a pack directory to stamp agents from.\nRelative paths resolve against the declaring config file's directory."
         },
-        "topologies": {
+        "packs": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "RigTopologies lists multiple topology directories for this rig.\nEach is loaded and expanded like Topology. When both Topology and\nRigTopologies are set, Topology is prepended to the list."
+          "description": "RigPacks lists multiple pack directories for this rig.\nEach is loaded and expanded like Pack. When both Pack and\nRigPacks are set, Pack is prepended to the list."
         },
         "formulas_dir": {
           "type": "string",
-          "description": "FormulasDir is a rig-local formula directory (Layer 4). Overrides\ntopology formulas for this rig by filename.\nRelative paths resolve against the city directory."
+          "description": "FormulasDir is a rig-local formula directory (Layer 4). Overrides\npack formulas for this rig by filename.\nRelative paths resolve against the city directory."
         },
         "includes": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Includes lists topology directories or URLs for this rig.\nReplaces the older topology/topologies fields. Each entry is a\nlocal path, a git source//sub#ref URL, or a GitHub tree URL."
+          "description": "Includes lists pack directories or URLs for this rig.\nReplaces the older pack/packs fields. Each entry is a\nlocal path, a git source//sub#ref URL, or a GitHub tree URL."
         },
         "overrides": {
           "items": {
             "$ref": "#/$defs/AgentOverride"
           },
           "type": "array",
-          "description": "Overrides are per-agent patches applied after topology expansion."
+          "description": "Overrides are per-agent patches applied after pack expansion."
         },
         "default_sling_target": {
           "type": "string",
@@ -1092,28 +1114,6 @@
       "type": "object",
       "description": "SessionConfig holds session provider settings."
     },
-    "TopologySource": {
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "Source is the git repository URL."
-        },
-        "ref": {
-          "type": "string",
-          "description": "Ref is the git ref to checkout (branch, tag, or commit). Defaults to HEAD."
-        },
-        "path": {
-          "type": "string",
-          "description": "Path is a subdirectory within the repo containing the topology files."
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "source"
-      ],
-      "description": "TopologySource defines a remote topology repository."
-    },
     "Workspace": {
       "properties": {
         "name": {
@@ -1143,30 +1143,30 @@
           "type": "array",
           "description": "InstallAgentHooks lists provider names whose hooks should be installed\ninto agent working directories. Agent-level overrides workspace-level\n(replace, not additive). Supported: \"claude\", \"gemini\", \"opencode\", \"copilot\"."
         },
-        "topology": {
+        "pack": {
           "type": "string",
-          "description": "Topology is the path to a city-level topology directory.\nStamps agents with dir=\"\" (city-scoped). Resolved like rig topologies.\nCombined with rig-level topologies — city topology agents get dir=\"\"\nwhile rig topology agents inherit the rig name as their dir."
+          "description": "Pack is the path to a city-level pack directory.\nStamps agents with dir=\"\" (city-scoped). Resolved like rig packs.\nCombined with rig-level packs — city pack agents get dir=\"\"\nwhile rig pack agents inherit the rig name as their dir."
         },
-        "topologies": {
+        "packs": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "CityTopologies lists multiple city-level topology directories.\nEach is loaded and expanded like Topology. When both Topology and\nCityTopologies are set, Topology is prepended to the list.\nAgents from the first topology come first (deterministic ordering)."
+          "description": "CityPacks lists multiple city-level pack directories.\nEach is loaded and expanded like Pack. When both Pack and\nCityPacks are set, Pack is prepended to the list.\nAgents from the first pack come first (deterministic ordering)."
         },
         "global_fragments": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "GlobalFragments lists named template fragments injected into every\nagent's rendered prompt. Applied before per-agent InjectFragments.\nEach name must match a {{ define \"name\" }} block from a topology's\nprompts/shared/ directory."
+          "description": "GlobalFragments lists named template fragments injected into every\nagent's rendered prompt. Applied before per-agent InjectFragments.\nEach name must match a {{ define \"name\" }} block from a pack's\nprompts/shared/ directory."
         },
         "includes": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Includes lists topology directories or URLs to compose into this\nworkspace. Replaces the older topology/topologies fields. Each entry\nis a local path, a git source//sub#ref URL, or a GitHub tree URL."
+          "description": "Includes lists pack directories or URLs to compose into this\nworkspace. Replaces the older pack/packs fields. Each entry\nis a local path, a git source//sub#ref URL, or a GitHub tree URL."
         }
       },
       "additionalProperties": false,

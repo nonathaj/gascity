@@ -8,8 +8,8 @@
 #   ./run-lifecycle-demo.sh [act1|act2|act3|all]
 #
 # Acts:
-#   Act 1: Topology Escalation    — wasteland → swarm → lifecycle (manual edits)
-#   Act 2: Provider Swap           — same topology, local tmux → Docker containers
+#   Act 1: Pack Escalation    — wasteland → swarm → lifecycle (manual edits)
+#   Act 2: Provider Swap           — same pack, local tmux → Docker containers
 #   Act 3: EKS Scale-Up           — 5 agents → 200 agents, one config edit
 
 set -euo pipefail
@@ -42,7 +42,7 @@ cleanup_between_acts() {
 # ── Act runners ───────────────────────────────────────────────────────────
 
 run_act1() {
-    "$SCRIPT_DIR/act1-topology-escalation.sh"
+    "$SCRIPT_DIR/act1-pack-escalation.sh"
     cleanup_between_acts
 }
 
@@ -71,8 +71,8 @@ case "$ACT" in
         ;;
     all)
         narrate "Gas City Lifecycle Demo" --sub "Three acts, one SDK, zero API calls"
-        echo "  Act 1: Topology Escalation    — wasteland → swarm → lifecycle"
-        echo "  Act 2: Provider Swap          — same topology, local → Docker"
+        echo "  Act 1: Pack Escalation    — wasteland → swarm → lifecycle"
+        echo "  Act 2: Provider Swap          — same pack, local → Docker"
         echo "  Act 3: EKS Scale-Up           — 5 → 200 agents, one config edit"
         echo ""
         pause "Press Enter to begin..."
@@ -95,8 +95,8 @@ case "$ACT" in
         # ── Finale ──
         narrate "Demo Complete" --sub "Gas City: orchestration as configuration"
         echo "  Three capabilities demonstrated:"
-        echo "    1. Topology escalation    — wasteland → swarm → lifecycle"
-        echo "    2. Provider swap          — local → Docker, same topology"
+        echo "    1. Pack escalation    — wasteland → swarm → lifecycle"
+        echo "    2. Provider swap          — local → Docker, same pack"
         echo "    3. EKS scale-up           — 5 → 200 agents, one edit"
         echo ""
         echo "  Same beads. Same daemon. Configuration changes only."

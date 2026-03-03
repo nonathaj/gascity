@@ -6,19 +6,19 @@ import (
 	"github.com/steveyegge/gascity/internal/config"
 )
 
-func TestCollectTopologyDirsEmpty(t *testing.T) {
+func TestCollectPackDirsEmpty(t *testing.T) {
 	cfg := &config.City{}
-	dirs := collectTopologyDirs(cfg)
+	dirs := collectPackDirs(cfg)
 	if len(dirs) != 0 {
 		t.Errorf("expected no dirs, got %v", dirs)
 	}
 }
 
-func TestCollectTopologyDirsCityLevel(t *testing.T) {
+func TestCollectPackDirsCityLevel(t *testing.T) {
 	cfg := &config.City{
-		TopologyDirs: []string{"/a", "/b"},
+		PackDirs: []string{"/a", "/b"},
 	}
-	dirs := collectTopologyDirs(cfg)
+	dirs := collectPackDirs(cfg)
 	if len(dirs) != 2 {
 		t.Fatalf("expected 2 dirs, got %d: %v", len(dirs), dirs)
 	}
@@ -27,27 +27,27 @@ func TestCollectTopologyDirsCityLevel(t *testing.T) {
 	}
 }
 
-func TestCollectTopologyDirsRigLevel(t *testing.T) {
+func TestCollectPackDirsRigLevel(t *testing.T) {
 	cfg := &config.City{
-		RigTopologyDirs: map[string][]string{
+		RigPackDirs: map[string][]string{
 			"rig1": {"/x", "/y"},
 			"rig2": {"/z"},
 		},
 	}
-	dirs := collectTopologyDirs(cfg)
+	dirs := collectPackDirs(cfg)
 	if len(dirs) != 3 {
 		t.Fatalf("expected 3 dirs, got %d: %v", len(dirs), dirs)
 	}
 }
 
-func TestCollectTopologyDirsDeduplicates(t *testing.T) {
+func TestCollectPackDirsDeduplicates(t *testing.T) {
 	cfg := &config.City{
-		TopologyDirs: []string{"/shared", "/a"},
-		RigTopologyDirs: map[string][]string{
+		PackDirs: []string{"/shared", "/a"},
+		RigPackDirs: map[string][]string{
 			"rig1": {"/shared", "/b"}, // /shared is a duplicate
 		},
 	}
-	dirs := collectTopologyDirs(cfg)
+	dirs := collectPackDirs(cfg)
 	// /shared should appear only once.
 	count := 0
 	for _, d := range dirs {
@@ -63,14 +63,14 @@ func TestCollectTopologyDirsDeduplicates(t *testing.T) {
 	}
 }
 
-func TestCollectTopologyDirsMixed(t *testing.T) {
+func TestCollectPackDirsMixed(t *testing.T) {
 	cfg := &config.City{
-		TopologyDirs: []string{"/city-topo"},
-		RigTopologyDirs: map[string][]string{
+		PackDirs: []string{"/city-topo"},
+		RigPackDirs: map[string][]string{
 			"rig1": {"/rig-topo"},
 		},
 	}
-	dirs := collectTopologyDirs(cfg)
+	dirs := collectPackDirs(cfg)
 	if len(dirs) != 2 {
 		t.Fatalf("expected 2 dirs, got %d: %v", len(dirs), dirs)
 	}

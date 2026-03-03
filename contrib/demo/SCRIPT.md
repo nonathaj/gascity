@@ -30,7 +30,7 @@ fully reproducible, zero cost. Every agent is a `start_command` script.
 
 ## Act 1 — "Simple to Advanced" (4 min)
 
-**Script**: `act1-topology-escalation.sh`
+**Script**: `act1-pack-escalation.sh`
 
 **Goal**: Three config changes, three capability levels. Start from nothing,
 end at full Gas Town. The daemon live-reconciles on every save.
@@ -41,23 +41,23 @@ end at full Gas Town. The daemon live-reconciles on every save.
 ```toml
 [workspace]
 name = "my-city"
-includes = ["topologies/wasteland-feeder"]
+includes = ["packs/wasteland-feeder"]
 ```
 Just an automation. Polls Wasteland, contributes inference. Anyone can join.
 
-**Step 2: Uncomment the `[[rigs]]` block** (swarm topology)
+**Step 2: Uncomment the `[[rigs]]` block** (swarm pack)
 ```toml
 [[rigs]]
 name = "demo-repo"
 path = "/path/to/demo-repo"
-includes = ["topologies/swarm-lifecycle"]
+includes = ["packs/swarm-lifecycle"]
 ```
 Now you have a coder pool + merger. Flat peers, shared dir, batch commits.
 The daemon detects the city.toml change and spins up agents.
 
 **Step 3: Change `swarm-lifecycle` → `lifecycle`**
 ```
-includes = ["topologies/swarm-lifecycle"]  →  includes = ["topologies/lifecycle"]
+includes = ["packs/swarm-lifecycle"]  →  includes = ["packs/lifecycle"]
 ```
 Save. Daemon tears down coders + merger, spins up polecats + refinery.
 Branches, worktrees, merge handoff. Full Gas Town.
@@ -82,24 +82,24 @@ Branches, worktrees, merge handoff. Full Gas Town.
 > the city.toml change, reconciles, and now I have five coders and a merger.
 > Flat peers, shared directory, batch commits."
 
-> "Step 3: I change one line — the topology reference. Save. The daemon
+> "Step 3: I change one line — the pack reference. Save. The daemon
 > tears down the swarm agents and spins up polecats and a refinery.
 > Feature branches, worktrees, merge coordination. **Full Gas Town.
 > Three config changes from zero.**"
 
 Show `gc config explain` at each step — provenance shifts from
-`swarm-lifecycle/topology.toml` to `lifecycle/topology.toml`.
+`swarm-lifecycle/pack.toml` to `lifecycle/pack.toml`.
 
 **[PAUSE — the jaw-drop: three saves, zero to Gas Town]**
 
 ---
 
-## Act 2 — "Same Topology, Different Infrastructure" (2 min)
+## Act 2 — "Same Pack, Different Infrastructure" (2 min)
 
 **Script**: `act2-provider-swap.sh`
 
 **Goal**: The audience just saw lifecycle running on local tmux. Now show
-the same topology in Docker containers — same beads, same gc commands,
+the same pack in Docker containers — same beads, same gc commands,
 different provider config. One config line change.
 
 ### Screen Layout
@@ -119,19 +119,19 @@ different provider config. One config line change.
 1. City starts with local providers — tmux sessions, bd beads, file events.
 2. Presenter uncomments the `[session]` block in city.toml. Saves.
 3. Presenter runs `gc stop` — the auto-restart loop picks up the Docker provider.
-4. Agents restart inside Docker containers. Same topology, same beads.
+4. Agents restart inside Docker containers. Same pack, same beads.
 
 ### What to Say
 
-> "You just saw lifecycle running on tmux. Same topology, same beads.
+> "You just saw lifecycle running on tmux. Same pack, same beads.
 > Now watch — I uncomment one config line. The session provider."
 
 > "Save. Stop the daemon. It auto-restarts with the Docker provider.
 > Same polecat pool, same refinery, same merge coordination —
 > now running in Docker containers with mounted work directories.
-> **The topology doesn't know or care what's underneath.**"
+> **The pack doesn't know or care what's underneath.**"
 
-> "Same topology, tmux to Docker — one config line."
+> "Same pack, tmux to Docker — one config line."
 
 **[PAUSE — familiar pattern, unfamiliar flexibility]**
 
@@ -197,11 +197,11 @@ drain the queue. One number change.
 
 > "Three acts. Three things you couldn't do with Gas Town."
 
-> "Act 1: Three edits, zero to Gas Town. The topology layer is composable.
+> "Act 1: Three edits, zero to Gas Town. The pack layer is composable.
 > Wasteland federation is a one-line opt-in. Development patterns are
 > config, not code."
 
-> "Act 2: Same topology, different infrastructure. The provider layer is
+> "Act 2: Same pack, different infrastructure. The provider layer is
 > pluggable. New provider? Config change. Custom exec adapter? Write a
 > script. If it proves itself, promote it to a built-in."
 
@@ -219,8 +219,8 @@ drain the queue. One number change.
 | Source | Gas City Concept | What It Gives Us |
 |--------|-----------------|------------------|
 | **Erlang/OTP** | Convoys (supervision trees), drain/resume, mail (message passing), max_restarts + restart_window | Self-healing, graceful lifecycle, crash isolation |
-| **Kubernetes** | Daemon (controller), patrol loop (reconciliation), pools (ReplicaSets), topologies (Helm charts), fsnotify config watch, `gc config explain` (provenance) | Declarative desired-state convergence, live reconciliation |
-| **OCI** | Formulas (portable work units), `gc build-image` (container images), remote topologies (registries) | Portable, versioned, shareable work definitions |
+| **Kubernetes** | Daemon (controller), patrol loop (reconciliation), pools (ReplicaSets), packs (Helm charts), fsnotify config watch, `gc config explain` (provenance) | Declarative desired-state convergence, live reconciliation |
+| **OCI** | Formulas (portable work units), `gc build-image` (container images), remote packs (registries) | Portable, versioned, shareable work definitions |
 
 ---
 
@@ -229,7 +229,7 @@ drain the queue. One number change.
 | Script | Purpose |
 |--------|---------|
 | `run-lifecycle-demo.sh` | Top-level 3-act orchestrator |
-| `act1-topology-escalation.sh` | Act 1: Topology escalation (wasteland → swarm → lifecycle) |
+| `act1-pack-escalation.sh` | Act 1: Pack escalation (wasteland → swarm → lifecycle) |
 | `act2-provider-swap.sh` | Act 2: Provider swap (local → Docker) |
 | `act3-eks-scaleup.sh` | Act 3: EKS scale-up, 5 → 200 agents |
 | `narrate.sh` | Source for `narrate()`, `pause()`, `step()`, `countdown()` |

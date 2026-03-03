@@ -569,7 +569,7 @@ provider = "claude"
 	}
 }
 
-func TestLoadWithIncludes_MergeTopologies(t *testing.T) {
+func TestLoadWithIncludes_MergePacks(t *testing.T) {
 	fs := fsys.NewFake()
 	fs.Files["/city/city.toml"] = []byte(`
 include = ["remote.toml"]
@@ -577,12 +577,12 @@ include = ["remote.toml"]
 [workspace]
 name = "test"
 
-[topologies.gastown]
+[packs.gastown]
 source = "https://github.com/example/gastown"
 ref = "v1.0.0"
 `)
 	fs.Files["/city/remote.toml"] = []byte(`
-[topologies.ralph]
+[packs.ralph]
 source = "https://github.com/example/ralph"
 ref = "main"
 `)
@@ -590,21 +590,21 @@ ref = "main"
 	if err != nil {
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
-	if len(cfg.Topologies) != 2 {
-		t.Fatalf("len(Topologies) = %d, want 2", len(cfg.Topologies))
+	if len(cfg.Packs) != 2 {
+		t.Fatalf("len(Packs) = %d, want 2", len(cfg.Packs))
 	}
-	if cfg.Topologies["gastown"].Source != "https://github.com/example/gastown" {
-		t.Errorf("gastown source = %q", cfg.Topologies["gastown"].Source)
+	if cfg.Packs["gastown"].Source != "https://github.com/example/gastown" {
+		t.Errorf("gastown source = %q", cfg.Packs["gastown"].Source)
 	}
-	if cfg.Topologies["ralph"].Source != "https://github.com/example/ralph" {
-		t.Errorf("ralph source = %q", cfg.Topologies["ralph"].Source)
+	if cfg.Packs["ralph"].Source != "https://github.com/example/ralph" {
+		t.Errorf("ralph source = %q", cfg.Packs["ralph"].Source)
 	}
 	if len(prov.Warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", prov.Warnings)
 	}
 }
 
-func TestLoadWithIncludes_MergeTopologies_Collision(t *testing.T) {
+func TestLoadWithIncludes_MergePacks_Collision(t *testing.T) {
 	fs := fsys.NewFake()
 	fs.Files["/city/city.toml"] = []byte(`
 include = ["override.toml"]
@@ -612,12 +612,12 @@ include = ["override.toml"]
 [workspace]
 name = "test"
 
-[topologies.gastown]
+[packs.gastown]
 source = "https://github.com/example/gastown"
 ref = "v1.0.0"
 `)
 	fs.Files["/city/override.toml"] = []byte(`
-[topologies.gastown]
+[packs.gastown]
 source = "https://github.com/other/gastown"
 ref = "v2.0.0"
 `)
@@ -626,8 +626,8 @@ ref = "v2.0.0"
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
 	// Last writer wins.
-	if cfg.Topologies["gastown"].Ref != "v2.0.0" {
-		t.Errorf("gastown ref = %q, want v2.0.0", cfg.Topologies["gastown"].Ref)
+	if cfg.Packs["gastown"].Ref != "v2.0.0" {
+		t.Errorf("gastown ref = %q, want v2.0.0", cfg.Packs["gastown"].Ref)
 	}
 	// Collision warning.
 	found := false
@@ -755,18 +755,18 @@ func TestAdjustAgentPaths_OverlayDirAdjusted(t *testing.T) {
 	}
 }
 
-func TestLoadWithIncludes_MultipleCityTopologies(t *testing.T) {
+func TestLoadWithIncludes_MultipleCityPacks(t *testing.T) {
 	fs := fsys.NewFake()
-	fs.Files["/city/topologies/alpha/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/alpha/pack.toml"] = []byte(`
+[pack]
 name = "alpha"
 schema = 1
 
 [[agents]]
 name = "agent-a"
 `)
-	fs.Files["/city/topologies/beta/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/beta/pack.toml"] = []byte(`
+[pack]
 name = "beta"
 schema = 1
 
@@ -776,7 +776,7 @@ name = "agent-b"
 	fs.Files["/city/city.toml"] = []byte(`
 [workspace]
 name = "test"
-topologies = ["topologies/alpha", "topologies/beta"]
+packs = ["packs/alpha", "packs/beta"]
 
 [[agents]]
 name = "existing"
@@ -786,7 +786,7 @@ name = "existing"
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
 
-	// Should have 3 agents: agent-a, agent-b (from topologies), then existing.
+	// Should have 3 agents: agent-a, agent-b (from packs), then existing.
 	if len(cfg.Agents) != 3 {
 		t.Fatalf("got %d agents, want 3", len(cfg.Agents))
 	}
@@ -800,7 +800,7 @@ name = "existing"
 		t.Errorf("third agent = %q, want existing", cfg.Agents[2].Name)
 	}
 
-	// Provenance should track city topology agents.
+	// Provenance should track city pack agents.
 	if _, ok := prov.Agents["agent-a"]; !ok {
 		t.Error("provenance should track agent-a")
 	}
@@ -809,18 +809,18 @@ name = "existing"
 	}
 }
 
-func TestLoadWithIncludes_MultipleRigTopologies(t *testing.T) {
+func TestLoadWithIncludes_MultipleRigPacks(t *testing.T) {
 	fs := fsys.NewFake()
-	fs.Files["/city/topologies/alpha/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/alpha/pack.toml"] = []byte(`
+[pack]
 name = "alpha"
 schema = 1
 
 [[agents]]
 name = "worker-a"
 `)
-	fs.Files["/city/topologies/beta/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/beta/pack.toml"] = []byte(`
+[pack]
 name = "beta"
 schema = 1
 
@@ -837,14 +837,14 @@ name = "mayor"
 [[rigs]]
 name = "hw"
 path = "/home/user/hw"
-topologies = ["topologies/alpha", "topologies/beta"]
+packs = ["packs/alpha", "packs/beta"]
 `)
 	cfg, prov, err := LoadWithIncludes(fs, "/city/city.toml")
 	if err != nil {
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
 
-	// Should have 3 agents: mayor, then worker-a and worker-b from rig topologies.
+	// Should have 3 agents: mayor, then worker-a and worker-b from rig packs.
 	if len(cfg.Agents) != 3 {
 		t.Fatalf("got %d agents, want 3", len(cfg.Agents))
 	}
@@ -858,7 +858,7 @@ topologies = ["topologies/alpha", "topologies/beta"]
 		t.Errorf("third agent: name=%q dir=%q, want worker-b/hw", cfg.Agents[2].Name, cfg.Agents[2].Dir)
 	}
 
-	// Provenance should track rig topology agents.
+	// Provenance should track rig pack agents.
 	if _, ok := prov.Agents["hw/worker-a"]; !ok {
 		t.Error("provenance should track hw/worker-a")
 	}
@@ -867,18 +867,18 @@ topologies = ["topologies/alpha", "topologies/beta"]
 	}
 }
 
-func TestLoadWithIncludes_BothSingularAndPluralTopologies(t *testing.T) {
+func TestLoadWithIncludes_BothSingularAndPluralPacks(t *testing.T) {
 	fs := fsys.NewFake()
-	fs.Files["/city/topologies/singular/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/singular/pack.toml"] = []byte(`
+[pack]
 name = "singular"
 schema = 1
 
 [[agents]]
 name = "from-singular"
 `)
-	fs.Files["/city/topologies/plural/topology.toml"] = []byte(`
-[topology]
+	fs.Files["/city/packs/plural/pack.toml"] = []byte(`
+[pack]
 name = "plural"
 schema = 1
 
@@ -888,15 +888,15 @@ name = "from-plural"
 	fs.Files["/city/city.toml"] = []byte(`
 [workspace]
 name = "test"
-topology = "topologies/singular"
-topologies = ["topologies/plural"]
+pack = "packs/singular"
+packs = ["packs/plural"]
 `)
 	cfg, _, err := LoadWithIncludes(fs, "/city/city.toml")
 	if err != nil {
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
 
-	// Should have 2 agents: from-singular (topology field prepended), then from-plural.
+	// Should have 2 agents: from-singular (pack field prepended), then from-plural.
 	if len(cfg.Agents) != 2 {
 		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
 	}

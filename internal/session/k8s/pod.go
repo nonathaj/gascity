@@ -41,7 +41,7 @@ func buildPod(name string, cfg session.Config, p *Provider) *corev1.Pod {
 	}
 	// Remap controller-side city path references to pod-side /workspace.
 	// The controller expands {{.ConfigDir}} templates using its own city path
-	// (e.g. /city/topologies/...) but pods have files at /workspace/....
+	// (e.g. /city/packs/...) but pods have files at /workspace/....
 	if ctrlCity != "" {
 		agentCmd = strings.ReplaceAll(agentCmd, ctrlCity, "/workspace")
 	}

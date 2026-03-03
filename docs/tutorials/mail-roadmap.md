@@ -60,7 +60,7 @@ When health patrol exists and can act on priority.
 
 ## Phase 5 — Routing & Groups
 
-When multi-project and team topologies exist.
+When multi-project and team packs exist.
 
 | Feature | Why deferred |
 |---------|-------------|

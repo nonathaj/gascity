@@ -47,8 +47,8 @@ type City struct {
 	Workspace Workspace `toml:"workspace"`
 	// Providers defines named provider presets for agent startup.
 	Providers map[string]ProviderSpec `toml:"providers,omitempty"`
-	// Topologies defines named remote topology sources fetched via git.
-	Topologies map[string]TopologySource `toml:"topologies,omitempty"`
+	// Packs defines named remote pack sources fetched via git.
+	Packs map[string]PackSource `toml:"packs,omitempty"`
 	// Agents lists all configured agents in this city.
 	Agents []Agent `toml:"agents"`
 	// Rigs lists external projects registered in the city.
@@ -73,19 +73,19 @@ type City struct {
 	Automations AutomationsConfig `toml:"automations,omitempty"`
 
 	// FormulaLayers holds the resolved formula directories per scope.
-	// Populated during topology expansion in LoadWithIncludes. Not from TOML.
+	// Populated during pack expansion in LoadWithIncludes. Not from TOML.
 	FormulaLayers FormulaLayers `toml:"-" json:"-"`
-	// TopologyDirs is the ordered, deduplicated list of topology directories
-	// from all loaded city topologies (includes resolved). Consumers derive
+	// PackDirs is the ordered, deduplicated list of pack directories
+	// from all loaded city packs (includes resolved). Consumers derive
 	// resource-specific search paths by scanning subdirectories:
 	//   prompts/shared/  — shared prompt templates
 	//   formulas/        — formula definitions
-	// Populated during topology expansion. Not from TOML.
-	TopologyDirs []string `toml:"-" json:"-"`
-	// RigTopologyDirs maps rig name to its ordered topology directories.
-	// Used when rig topologies differ from city topologies.
-	// Populated during topology expansion. Not from TOML.
-	RigTopologyDirs map[string][]string `toml:"-" json:"-"`
+	// Populated during pack expansion. Not from TOML.
+	PackDirs []string `toml:"-" json:"-"`
+	// RigPackDirs maps rig name to its ordered pack directories.
+	// Used when rig packs differ from city packs.
+	// Populated during pack expansion. Not from TOML.
+	RigPackDirs map[string][]string `toml:"-" json:"-"`
 }
 
 // FormulaLayers holds resolved formula directories for symlink materialization.
@@ -110,22 +110,22 @@ type Rig struct {
 	Prefix string `toml:"prefix,omitempty"`
 	// Suspended prevents the reconciler from spawning agents in this rig. Toggle with gc rig suspend/resume.
 	Suspended bool `toml:"suspended,omitempty"`
-	// Topology is the path to a topology directory to stamp agents from.
+	// Pack is the path to a pack directory to stamp agents from.
 	// Relative paths resolve against the declaring config file's directory.
-	Topology string `toml:"topology,omitempty"`
-	// RigTopologies lists multiple topology directories for this rig.
-	// Each is loaded and expanded like Topology. When both Topology and
-	// RigTopologies are set, Topology is prepended to the list.
-	RigTopologies []string `toml:"topologies,omitempty"`
+	Pack string `toml:"pack,omitempty"`
+	// RigPacks lists multiple pack directories for this rig.
+	// Each is loaded and expanded like Pack. When both Pack and
+	// RigPacks are set, Pack is prepended to the list.
+	RigPacks []string `toml:"packs,omitempty"`
 	// FormulasDir is a rig-local formula directory (Layer 4). Overrides
-	// topology formulas for this rig by filename.
+	// pack formulas for this rig by filename.
 	// Relative paths resolve against the city directory.
 	FormulasDir string `toml:"formulas_dir,omitempty"`
-	// Includes lists topology directories or URLs for this rig.
-	// Replaces the older topology/topologies fields. Each entry is a
+	// Includes lists pack directories or URLs for this rig.
+	// Replaces the older pack/packs fields. Each entry is a
 	// local path, a git source//sub#ref URL, or a GitHub tree URL.
 	Includes []string `toml:"includes,omitempty"`
-	// Overrides are per-agent patches applied after topology expansion.
+	// Overrides are per-agent patches applied after pack expansion.
 	Overrides []AgentOverride `toml:"overrides,omitempty"`
 	// DefaultSlingTarget is the agent qualified name used when gc sling is
 	// invoked with only a bead ID (no explicit target). Resolved via
@@ -133,10 +133,10 @@ type Rig struct {
 	DefaultSlingTarget string `toml:"default_sling_target,omitempty"`
 }
 
-// AgentOverride modifies a topology-stamped agent for a specific rig.
+// AgentOverride modifies a pack-stamped agent for a specific rig.
 // Uses pointer fields to distinguish "not set" from "set to zero value."
 type AgentOverride struct {
-	// Agent is the name of the topology agent to override (required).
+	// Agent is the name of the pack agent to override (required).
 	Agent string `toml:"agent" jsonschema:"required"`
 	// Dir overrides the stamped dir (default: rig name).
 	Dir *string `toml:"dir,omitempty"`
@@ -191,58 +191,58 @@ type AgentOverride struct {
 	InjectFragmentsAppend []string `toml:"inject_fragments_append,omitempty"`
 }
 
-// TopologySource defines a remote topology repository.
-// Referenced by name in rig topology fields and fetched into the cache.
-type TopologySource struct {
+// PackSource defines a remote pack repository.
+// Referenced by name in rig pack fields and fetched into the cache.
+type PackSource struct {
 	// Source is the git repository URL.
 	Source string `toml:"source" jsonschema:"required"`
 	// Ref is the git ref to checkout (branch, tag, or commit). Defaults to HEAD.
 	Ref string `toml:"ref,omitempty"`
-	// Path is a subdirectory within the repo containing the topology files.
+	// Path is a subdirectory within the repo containing the pack files.
 	Path string `toml:"path,omitempty"`
 }
 
-// TopologyMeta holds metadata from a topology's [topology] header.
-type TopologyMeta struct {
-	// Name is the topology's identifier.
+// PackMeta holds metadata from a pack's [pack] header.
+type PackMeta struct {
+	// Name is the pack's identifier.
 	Name string `toml:"name" jsonschema:"required"`
 	// Version is a semver-style version string.
 	Version string `toml:"version"`
-	// Schema is the topology format version (currently 1).
+	// Schema is the pack format version (currently 1).
 	Schema int `toml:"schema" jsonschema:"required"`
 	// RequiresGC is an optional minimum gc version requirement.
 	RequiresGC string `toml:"requires_gc,omitempty"`
 	// CityAgents is deprecated — use scope="city" on agents instead.
-	// Kept for backward compatibility during migration. New topologies should
+	// Kept for backward compatibility during migration. New packs should
 	// use scope="city" on each agent definition.
 	CityAgents []string `toml:"city_agents,omitempty"`
-	// Includes lists other topologies to compose into this one.
+	// Includes lists other packs to compose into this one.
 	// Each entry is a local relative path (e.g. "../maintenance") or a
 	// remote git URL (SSH or HTTPS) with optional //subpath and #ref.
 	Includes []string `toml:"includes,omitempty"`
 	// Requires declares agents that must exist in the expanded config
-	// for this topology's formulas/automations to function. Validated
-	// after all topologies are expanded.
-	Requires []TopologyRequirement `toml:"requires,omitempty"`
+	// for this pack's formulas/automations to function. Validated
+	// after all packs are expanded.
+	Requires []PackRequirement `toml:"requires,omitempty"`
 }
 
-// TopologyRequirement declares an agent that must exist in the
-// expanded config for this topology's formulas/automations to function.
-type TopologyRequirement struct {
+// PackRequirement declares an agent that must exist in the
+// expanded config for this pack's formulas/automations to function.
+type PackRequirement struct {
 	// Scope is the agent scope: "city" or "rig".
 	Scope string `toml:"scope" jsonschema:"required,enum=city,enum=rig"`
 	// Agent is the name of the required agent.
 	Agent string `toml:"agent" jsonschema:"required"`
 }
 
-// TopologyDoctorEntry declares a diagnostic check shipped with a topology.
-// The script is executed by gc doctor to validate topology-specific
+// PackDoctorEntry declares a diagnostic check shipped with a pack.
+// The script is executed by gc doctor to validate pack-specific
 // prerequisites (binaries, permissions, directory structures, etc.).
-type TopologyDoctorEntry struct {
+type PackDoctorEntry struct {
 	// Name is a short identifier for the check (e.g. "check-binaries").
-	// The full check name shown in doctor output is "<topology>:<name>".
+	// The full check name shown in doctor output is "<pack>:<name>".
 	Name string `toml:"name" jsonschema:"required"`
-	// Script is the path to the check script, relative to the topology
+	// Script is the path to the check script, relative to the pack
 	// directory. The script must be executable and follow the exit-code
 	// protocol: 0=OK, 1=Warning, 2=Error. First line of stdout is the
 	// message; remaining lines are details (shown in verbose mode).
@@ -342,23 +342,23 @@ type Workspace struct {
 	// into agent working directories. Agent-level overrides workspace-level
 	// (replace, not additive). Supported: "claude", "gemini", "opencode", "copilot".
 	InstallAgentHooks []string `toml:"install_agent_hooks,omitempty"`
-	// Topology is the path to a city-level topology directory.
-	// Stamps agents with dir="" (city-scoped). Resolved like rig topologies.
-	// Combined with rig-level topologies — city topology agents get dir=""
-	// while rig topology agents inherit the rig name as their dir.
-	Topology string `toml:"topology,omitempty"`
-	// CityTopologies lists multiple city-level topology directories.
-	// Each is loaded and expanded like Topology. When both Topology and
-	// CityTopologies are set, Topology is prepended to the list.
-	// Agents from the first topology come first (deterministic ordering).
-	CityTopologies []string `toml:"topologies,omitempty"`
+	// Pack is the path to a city-level pack directory.
+	// Stamps agents with dir="" (city-scoped). Resolved like rig packs.
+	// Combined with rig-level packs — city pack agents get dir=""
+	// while rig pack agents inherit the rig name as their dir.
+	Pack string `toml:"pack,omitempty"`
+	// CityPacks lists multiple city-level pack directories.
+	// Each is loaded and expanded like Pack. When both Pack and
+	// CityPacks are set, Pack is prepended to the list.
+	// Agents from the first pack come first (deterministic ordering).
+	CityPacks []string `toml:"packs,omitempty"`
 	// GlobalFragments lists named template fragments injected into every
 	// agent's rendered prompt. Applied before per-agent InjectFragments.
-	// Each name must match a {{ define "name" }} block from a topology's
+	// Each name must match a {{ define "name" }} block from a pack's
 	// prompts/shared/ directory.
 	GlobalFragments []string `toml:"global_fragments,omitempty"`
-	// Includes lists topology directories or URLs to compose into this
-	// workspace. Replaces the older topology/topologies fields. Each entry
+	// Includes lists pack directories or URLs to compose into this
+	// workspace. Replaces the older pack/packs fields. Each entry
 	// is a local path, a git source//sub#ref URL, or a GitHub tree URL.
 	Includes []string `toml:"includes,omitempty"`
 }
@@ -761,7 +761,7 @@ type Agent struct {
 	// Dir is the working directory for the agent session.
 	Dir string `toml:"dir,omitempty"`
 	// Scope defines where this agent is instantiated: "city" (one per city)
-	// or "rig" (one per rig, the default). Only meaningful for topology-defined
+	// or "rig" (one per rig, the default). Only meaningful for pack-defined
 	// agents; inline agents in city.toml use Dir directly. When set, replaces
 	// the older city_agents list mechanism.
 	Scope string `toml:"scope,omitempty" jsonschema:"enum=city,enum=rig"`
@@ -838,10 +838,10 @@ type Agent struct {
 	// OverlayDir is a directory whose contents are recursively copied (additive)
 	// into the agent's working directory at startup. Existing files are not
 	// overwritten. Relative paths resolve against the declaring config file's
-	// directory (topology-safe).
+	// directory (pack-safe).
 	OverlayDir string `toml:"overlay_dir,omitempty"`
 	// SourceDir is the directory where this agent's config was defined.
-	// Set during topology/fragment loading; empty for inline agents.
+	// Set during pack/fragment loading; empty for inline agents.
 	// Runtime-only — not persisted to TOML or JSON.
 	SourceDir string `toml:"-" json:"-"`
 	// DefaultSlingFormula is the formula name automatically applied via --on
@@ -850,9 +850,9 @@ type Agent struct {
 	DefaultSlingFormula string `toml:"default_sling_formula,omitempty"`
 	// InjectFragments lists named template fragments to append to this agent's
 	// rendered prompt. Fragments come from shared template directories across
-	// all loaded topologies. Each name must match a {{ define "name" }} block.
+	// all loaded packs. Each name must match a {{ define "name" }} block.
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
-	// Fallback marks this agent as a fallback definition. During topology
+	// Fallback marks this agent as a fallback definition. During pack
 	// composition, a non-fallback agent with the same name wins silently.
 	// When two fallbacks collide, the first loaded (depth-first) wins.
 	Fallback bool `toml:"fallback,omitempty"`

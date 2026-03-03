@@ -1,4 +1,4 @@
-# Hyperscale — 100-agent K8s demo topology.
+# Hyperscale — 100-agent K8s demo pack.
 #
 # A single worker pool that scales to 100 pods. Each worker picks up one
 # bead, marks it done, and exits. Designed for the "shock and awe" demo:
@@ -13,7 +13,7 @@
 [workspace]
 name = "hyperscale"
 provider = "claude"
-topology = "topologies/hyperscale"
+pack = "packs/hyperscale"
 isolation = "none"
 
 [session]

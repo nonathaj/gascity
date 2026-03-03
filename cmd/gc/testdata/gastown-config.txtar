@@ -1,7 +1,7 @@
 # Gas Town config integrity — validates the gastown example configuration
 # through the CLI surface.
 #
-# Tests: city.toml parsing, topology expansion, agent listing,
+# Tests: city.toml parsing, pack expansion, agent listing,
 # formula listing, config validation.
 
 env GC_BEADS=file

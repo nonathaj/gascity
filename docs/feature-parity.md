@@ -11,7 +11,7 @@ differently.
 
 **Key constraint:** Gas City has ZERO hardcoded roles. Every gastown
 command that references mayor/deacon/witness/refinery/polecat/crew must
-become role-agnostic infrastructure that any topology can use.
+become role-agnostic infrastructure that any pack can use.
 
 ---
 
@@ -36,7 +36,7 @@ become role-agnostic infrastructure that any topology can use.
 | `gt start [path]` | `gc start [path]` | **DONE** | One-shot + controller modes |
 | `gt down` / `gt stop` | `gc stop [path]` | **DONE** | Graceful shutdown + orphan cleanup |
 | `gt up` | `gc start` | **DONE** | gt up is idempotent boot; gc start one-shot reconcile is equivalent |
-| `gt shutdown` | `gc stop` + `gc worktree clean` | **N/A** | WONTFIX: `gc stop` + `gc worktree clean --all` covers it. Graceful handoff wait and uncommitted work protection are domain-layer concerns for the topology config. |
+| `gt shutdown` | `gc stop` + `gc worktree clean` | **N/A** | WONTFIX: `gc stop` + `gc worktree clean --all` covers it. Graceful handoff wait and uncommitted work protection are domain-layer concerns for the pack config. |
 | `gt restart` | `gc restart [path]` | **DONE** | Stop then start |
 | `gt status` | `gc status [path]` | **DONE** | City-wide overview: controller, suspended state, all agents/pools, rigs, summary count. |
 | `gt enable` / `gt disable` | `gc suspend` / `gc resume` | **DONE** | City-level suspend: hook injection becomes no-op. Also supports `GC_SUSPENDED=1` env override. |
@@ -415,8 +415,8 @@ become role-agnostic infrastructure that any topology can use.
 | `gt config cost-tier` | — | **REMAP** | Provider per agent is config |
 | `gt config default-agent` | — | **REMAP** | `workspace.provider` |
 | `gt config agent-email-domain` | — | **REMAP** | Agent env config |
-| Remote topology fetch | Remote topology fetch | **DONE** | `gc topology fetch/list` |
-| Topology lock file | Topology lock file | **DONE** | `.gc/topology.lock` |
+| Remote pack fetch | Remote pack fetch | **DONE** | `gc pack fetch/list` |
+| Pack lock file | Pack lock file | **DONE** | `.gc/pack.lock` |
 | Config provenance tracking | Config provenance | **DONE** | Which file, which line |
 | Config revision hash | Config revision hash | **DONE** | For change detection |
 | Config --strict mode | Config --strict mode | **DONE** | Promote warnings to errors |

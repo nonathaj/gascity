@@ -16,32 +16,32 @@ DEMO_SCRIPTS=~/lifecycle-demo/demo-repo/.claude/worktrees/demo-updates/contrib/d
 $DEMO_SCRIPTS/run-lifecycle-demo.sh all
 
 # Individual acts:
-$DEMO_SCRIPTS/run-lifecycle-demo.sh act1   # Topology escalation
+$DEMO_SCRIPTS/run-lifecycle-demo.sh act1   # Pack escalation
 $DEMO_SCRIPTS/run-lifecycle-demo.sh act2   # Provider swap (local → Docker)
 $DEMO_SCRIPTS/run-lifecycle-demo.sh act3   # EKS scale-up
 ```
 
 ## Three Acts
 
-### Act 1: Topology Escalation
+### Act 1: Pack Escalation
 
-**Script**: `act1-topology-escalation.sh`
+**Script**: `act1-pack-escalation.sh`
 
 Three manual edits to city.toml, three capability levels on a running city.
 The daemon live-reconciles on every save via fsnotify.
 
 1. **Wasteland-feeder only** — no rigs, no agents, just a global inference automation
-2. **Uncomment `[[rigs]]` block** — coder pool + merger appear (swarm topology)
+2. **Uncomment `[[rigs]]` block** — coder pool + merger appear (swarm pack)
 3. **Change `swarm-lifecycle` → `lifecycle`** — polecats + refinery (full Gas Town)
 
 ### Act 2: Provider Swap
 
 **Script**: `act2-provider-swap.sh`
 
-Same lifecycle topology from Act 1, swapped from local tmux to Docker
+Same lifecycle pack from Act 1, swapped from local tmux to Docker
 containers. Uncomment the `[session]` block in city.toml, save, restart
 the daemon, and agents move from tmux sessions into Docker containers.
-Same beads, same topology — filesystem mounts keep everything in sync.
+Same beads, same pack — filesystem mounts keep everything in sync.
 
 ### Act 3: EKS Scale-Up
 
