@@ -6,8 +6,7 @@
 # This is Gas Town-specific. It knows the role names and grouping rules:
 #   Town group:    mayor ↔ deacon
 #   Dog pool:      dog-1 ↔ dog-2 ↔ dog-3
-#   Rig infra:     {rig}--witness ↔ {rig}--refinery  (per rig)
-#   Polecat pool:  {rig}--polecat-1 ↔ {rig}--polecat-2  (per rig)
+#   Rig ops:       {rig}--witness ↔ {rig}--refinery ↔ {rig}--polecat-*  (per rig)
 #   Crew:          {rig}--{name} members  (per rig, excluding witness/refinery/polecat)
 #
 # Session name format: gc-{city}-{agent}
@@ -22,15 +21,10 @@ client="$3"
 
 # Determine the group filter pattern based on known Gas Town roles.
 case "$current" in
-    # Rig infra: witness ↔ refinery in same rig.
-    *--witness|*--refinery)
+    # Rig ops: witness ↔ refinery ↔ polecats in same rig.
+    *--witness|*--refinery|*--polecat-*)
         rig="${current%%--*}"
-        pattern="^${rig}--\(witness\|refinery\)$"
-        ;;
-    # Polecat pool: cycle polecats in same rig.
-    *--polecat-*)
-        rig="${current%%--*}"
-        pattern="^${rig}--polecat-"
+        pattern="^${rig}--\(witness\|refinery\|polecat-\)"
         ;;
     # Other rig-scoped (crew, etc): cycle all same-rig non-infra agents.
     *--*)
