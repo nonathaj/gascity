@@ -50,10 +50,11 @@ func newRigAddCmd(stdout, stderr io.Writer) *cobra.Command {
 		Short: "Register a project as a rig",
 		Long: `Register an external project directory as a rig.
 
-Creates rig infrastructure (rigs/ directory, rig.toml, beads database),
-installs agent hooks if configured, generates cross-rig routes, and
-appends the rig to city.toml. Use --topology to apply a topology
-directory that defines the rig's agent configuration.
+Creates rig infrastructure (rig.toml, beads database), installs agent
+hooks if configured, generates cross-rig routes, and appends the rig
+to city.toml. If the target directory doesn't exist, it is created.
+Use --topology to apply a topology directory that defines the rig's
+agent configuration.
 
 Use --start-suspended to add the rig in a suspended state (dormant-by-default).
 The rig's agents won't spawn until explicitly resumed with "gc rig resume".`,
@@ -115,14 +116,16 @@ func cmdRigAdd(args []string, topology string, startSuspended bool, stdout, stde
 // doRigAdd is the pure logic for "gc rig add". Operations are ordered so that
 // city.toml is written last — if any earlier step fails, config is unchanged.
 // This prevents partial-state bugs where city.toml lists a rig but the rig's
-// infrastructure (rigs/ dir, beads, routes) was never created.
+// infrastructure (beads, routes) was never created.
 func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended bool, stdout, stderr io.Writer) int {
 	fi, err := fs.Stat(rigPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if !fi.IsDir() {
+		// Directory doesn't exist — create it.
+		if err := fs.MkdirAll(rigPath, 0o755); err != nil {
+			fmt.Fprintf(stderr, "gc rig add: creating %s: %v\n", rigPath, err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+	} else if !fi.IsDir() {
 		fmt.Fprintf(stderr, "gc rig add: %s is not a directory\n", rigPath) //nolint:errcheck // best-effort stderr
 		return 1
 	}

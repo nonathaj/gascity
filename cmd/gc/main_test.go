@@ -241,17 +241,46 @@ func TestAgentAttachAttachError(t *testing.T) {
 
 // --- doRigAdd (with fsys.Fake) ---
 
-func TestDoRigAddStatFails(t *testing.T) {
+func TestDoRigAddCreatesDirIfMissing(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(t.TempDir(), "newproject") // does not exist yet
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"),
+		[]byte("[workspace]\nname = \"test\"\n\n[[agents]]\nname = \"mayor\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	// Verify the rig directory was created.
+	fi, err := os.Stat(rigPath)
+	if err != nil {
+		t.Fatalf("rig dir not created: %v", err)
+	}
+	if !fi.IsDir() {
+		t.Error("rig path is not a directory")
+	}
+}
+
+func TestDoRigAddMkdirRigPathFails(t *testing.T) {
 	f := fsys.NewFake()
-	// rigPath doesn't exist in the fake → Stat returns not-exist error.
+	// rigPath doesn't exist and MkdirAll will fail.
+	f.Errors["/projects/myapp"] = fmt.Errorf("permission denied")
 
 	var stderr bytes.Buffer
 	code := doRigAdd(f, "/city", "/projects/myapp", "", false, &bytes.Buffer{}, &stderr)
 	if code != 1 {
 		t.Errorf("doRigAdd = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "gc rig add") {
-		t.Errorf("stderr = %q, want 'gc rig add' prefix", stderr.String())
+	if !strings.Contains(stderr.String(), "permission denied") {
+		t.Errorf("stderr = %q, want 'permission denied'", stderr.String())
 	}
 }
 
@@ -452,12 +481,12 @@ func TestDoInitSuccess(t *testing.T) {
 		t.Errorf("stdout missing city name: %q", out)
 	}
 
-	// Verify .gc/, rigs/, and prompts/ were created.
+	// Verify .gc/ and prompts/ were created (no rigs/ — created on demand by gc rig add).
 	if !f.Dirs[filepath.Join("/bright-lights", ".gc")] {
 		t.Error(".gc/ not created")
 	}
-	if !f.Dirs[filepath.Join("/bright-lights", "rigs")] {
-		t.Error("rigs/ not created")
+	if f.Dirs[filepath.Join("/bright-lights", "rigs")] {
+		t.Error("rigs/ should not be created by init")
 	}
 	if !f.Dirs[filepath.Join("/bright-lights", ".gc", "prompts")] {
 		t.Error(".gc/prompts/ not created")
@@ -539,20 +568,6 @@ func TestDoInitMkdirGCFails(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "permission denied") {
 		t.Errorf("stderr = %q, want 'permission denied'", stderr.String())
-	}
-}
-
-func TestDoInitMkdirRigsFails(t *testing.T) {
-	f := fsys.NewFake()
-	f.Errors[filepath.Join("/city", "rigs")] = fmt.Errorf("disk full")
-
-	var stderr bytes.Buffer
-	code := doInit(f, "/city", defaultWizardConfig(), &bytes.Buffer{}, &stderr)
-	if code != 1 {
-		t.Errorf("doInit = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "disk full") {
-		t.Errorf("stderr = %q, want 'disk full'", stderr.String())
 	}
 }
 

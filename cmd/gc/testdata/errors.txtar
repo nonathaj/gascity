@@ -33,10 +33,6 @@ cd $WORK/err-city
 ! exec gc rig add
 stderr 'missing path'
 
-# gc rig add with non-existent path.
-! exec gc rig add $WORK/nonexistent
-stderr 'no such file'
-
 # gc rig add not a directory.
 ! exec gc rig add $WORK/err-city/city.toml
 stderr 'is not a directory'

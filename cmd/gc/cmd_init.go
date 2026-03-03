@@ -161,7 +161,7 @@ func newInitCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Create a new Gas City workspace in the given directory (or cwd).
 
 Runs an interactive wizard to choose a config template and coding agent
-provider. Creates the .gc/ runtime directory, rigs/ directory, default
+provider. Creates the .gc/ runtime directory, default
 prompts and formulas, and writes city.toml. Use --file to skip the
 wizard and initialize from an existing TOML config file.`,
 		Example: `  gc init
@@ -195,7 +195,7 @@ wizard and initialize from an existing TOML config file.`,
 
 // cmdInit initializes a new city at the given path (or cwd if no path given).
 // Runs the interactive wizard to choose a config template and provider.
-// Creates .gc/, rigs/, and city.toml. If the bead provider is "bd", also
+// Creates .gc/ and city.toml. If the bead provider is "bd", also
 // runs bd init.
 func cmdInit(args []string, stdout, stderr io.Writer) int {
 	var cityPath string
@@ -256,7 +256,7 @@ func cmdInitFromFile(fileArg string, args []string, stdout, stderr io.Writer) in
 }
 
 // cmdInitFromTOMLFile initializes a city by copying a user-provided TOML
-// file as city.toml. Creates .gc/, rigs/, .gc/prompts/, and runs bead init.
+// file as city.toml. Creates .gc/, .gc/prompts/, and runs bead init.
 func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io.Writer) int {
 	// Validate the source file parses as a valid city config.
 	data, err := os.ReadFile(tomlSrc)
@@ -291,11 +291,6 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	if err := fs.MkdirAll(filepath.Join(cityPath, "rigs"), 0o755); err != nil {
-		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
 	// Install Claude Code hooks (settings.json).
 	if code := installClaudeHooks(fs, cityPath); code != 0 {
 		return code
@@ -340,7 +335,7 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 }
 
 // doInit is the pure logic for "gc init". It creates the city directory
-// structure (.gc/, rigs/) and writes city.toml. When wiz.interactive is true,
+// structure (.gc/) and writes city.toml. When wiz.interactive is true,
 // uses WizardCity (one agent + provider); otherwise uses DefaultCity (one
 // mayor, no provider). Errors if .gc/ already exists. Accepts an injected FS
 // for testability.
@@ -358,11 +353,6 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	if err := fs.MkdirAll(filepath.Join(cityPath, "rigs"), 0o755); err != nil {
-		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
 	// Install Claude Code hooks (settings.json).
 	if code := installClaudeHooks(fs, cityPath); code != 0 {
 		return code
