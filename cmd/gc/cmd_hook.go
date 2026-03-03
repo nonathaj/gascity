@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -99,8 +101,11 @@ func cmdHook(args []string, inject bool, stdout, stderr io.Writer) int {
 type WorkQueryRunner func(command string) (string, error)
 
 // shellWorkQuery runs a work query command via sh -c and returns stdout.
+// Times out after 30 seconds.
 func shellWorkQuery(command string) (string, error) {
-	out, err := exec.Command("sh", "-c", command).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sh", "-c", command).Output()
 	if err != nil {
 		return "", fmt.Errorf("running work query %q: %w", command, err)
 	}

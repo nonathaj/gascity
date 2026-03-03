@@ -201,7 +201,9 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 	// Run session_setup_script.
 	if cfg.SessionSetupScript != "" {
 		script, err := os.ReadFile(cfg.SessionSetupScript)
-		if err == nil {
+		if err != nil {
+			fmt.Fprintf(p.stderr, "gc: warning: reading session_setup_script %q for %s: %v\n", cfg.SessionSetupScript, podName, err) //nolint:errcheck
+		} else {
 			_, _ = p.ops.execInPod(ctx, podName, "agent",
 				[]string{"sh"}, strings.NewReader(string(script)))
 		}
@@ -644,7 +646,10 @@ func initBeadsInPod(ctx context.Context, ops k8sOps, podName string, cfg session
 	//
 	// Build the patch JSON in Go and base64-encode it to avoid shell injection
 	// from environment variables containing shell metacharacters.
-	portNum, _ := strconv.Atoi(doltPort)
+	portNum, err := strconv.Atoi(doltPort)
+	if err != nil {
+		return fmt.Errorf("invalid GC_K8S_DOLT_PORT %q: %w", doltPort, err)
+	}
 	patchJSON, err := json.Marshal(map[string]any{
 		"dolt_server_host": doltHost,
 		"dolt_server_port": portNum,

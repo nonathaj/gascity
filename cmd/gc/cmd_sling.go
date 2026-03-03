@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gascity/internal/agent"
@@ -124,8 +125,11 @@ type slingDeps struct {
 type SlingRunner func(command string) (string, error)
 
 // shellSlingRunner runs a command via sh -c and returns stdout.
+// Times out after 30 seconds.
 func shellSlingRunner(command string) (string, error) {
-	out, err := exec.Command("sh", "-c", command).CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("running %q: %w", command, err)
 	}

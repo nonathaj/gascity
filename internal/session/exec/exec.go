@@ -208,7 +208,7 @@ func (p *Provider) ListRunning(prefix string) ([]string, error) {
 		return nil, err
 	}
 	if out == "" {
-		return nil, nil
+		return []string{}, nil
 	}
 	return strings.Split(out, "\n"), nil
 }

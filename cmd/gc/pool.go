@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/steveyegge/gascity/internal/agent"
 	"github.com/steveyegge/gascity/internal/config"
@@ -19,9 +21,11 @@ import (
 type ScaleCheckRunner func(command, dir string) (string, error)
 
 // shellScaleCheck runs a scale_check command via sh -c and returns stdout.
-// dir sets the command's working directory.
+// dir sets the command's working directory. Times out after 30 seconds.
 func shellScaleCheck(command, dir string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	if dir != "" {
 		cmd.Dir = dir
 	}

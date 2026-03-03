@@ -58,6 +58,19 @@ func ComposeMolCook(store beads.Store, resolver Resolver, formulaName, title str
 
 	f = SubstituteVars(f, vars)
 
+	// Validate that all Needs references point to actual step IDs.
+	stepIDs := make(map[string]bool, len(f.Steps))
+	for _, step := range f.Steps {
+		stepIDs[step.ID] = true
+	}
+	for _, step := range f.Steps {
+		for _, need := range step.Needs {
+			if !stepIDs[need] {
+				return "", fmt.Errorf("composing molecule %q: step %q references unknown need %q", formulaName, step.ID, need)
+			}
+		}
+	}
+
 	if title == "" {
 		title = formulaName
 	}
