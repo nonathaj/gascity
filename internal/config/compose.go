@@ -38,13 +38,14 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 		return nil, nil, fmt.Errorf("loading config %q: %w", path, err)
 	}
 
-	root, rootMeta, err := parseWithMeta(data)
+	root, rootMeta, rootWarnings, err := parseWithMeta(data, path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading config %q: %w", path, err)
 	}
 
 	cityRoot := filepath.Dir(path)
 	prov := newProvenance(path)
+	prov.Warnings = append(prov.Warnings, rootWarnings...)
 
 	// Track root's resources.
 	trackAgents(prov, root.Agents, path)
@@ -73,10 +74,11 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 			return nil, nil, fmt.Errorf("loading fragment %q: %w", inc, err)
 		}
 
-		frag, fragMeta, err := parseWithMeta(fragData)
+		frag, fragMeta, fragWarnings, err := parseWithMeta(fragData, fragPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fragment %q: %w", inc, err)
 		}
+		prov.Warnings = append(prov.Warnings, fragWarnings...)
 
 		// Fragments cannot include other fragments.
 		if len(frag.Include) > 0 {
@@ -483,14 +485,15 @@ func adjustFragmentPath(p, fragDir, cityRoot string) string {
 }
 
 // parseWithMeta parses TOML data into a City, preserving metadata for
-// field-level merge decisions.
-func parseWithMeta(data []byte) (*City, toml.MetaData, error) {
+// field-level merge decisions. Also returns warnings for unknown keys.
+func parseWithMeta(data []byte, source string) (*City, toml.MetaData, []string, error) {
 	var cfg City
 	md, err := toml.Decode(string(data), &cfg)
 	if err != nil {
-		return nil, md, fmt.Errorf("parsing config: %w", err)
+		return nil, md, nil, fmt.Errorf("parsing config: %w", err)
 	}
-	return &cfg, md, nil
+	warnings := CheckUndecodedKeys(md, source)
+	return &cfg, md, warnings, nil
 }
 
 func newProvenance(rootPath string) *Provenance {

@@ -125,6 +125,73 @@ func (c *ConfigValidCheck) CanFix() bool { return false }
 // Fix is a no-op.
 func (c *ConfigValidCheck) Fix(_ *CheckContext) error { return nil }
 
+// ConfigRefsCheck validates that file/directory paths referenced in agent
+// config (prompt_template, session_setup_script, overlay_dir) actually exist,
+// and that provider names reference defined providers.
+type ConfigRefsCheck struct {
+	cfg      *config.City
+	cityPath string
+}
+
+// NewConfigRefsCheck creates a check for config reference validity.
+func NewConfigRefsCheck(cfg *config.City, cityPath string) *ConfigRefsCheck {
+	return &ConfigRefsCheck{cfg: cfg, cityPath: cityPath}
+}
+
+// Name returns the check identifier.
+func (c *ConfigRefsCheck) Name() string { return "config-refs" }
+
+// Run validates that referenced paths exist and provider names are defined.
+func (c *ConfigRefsCheck) Run(_ *CheckContext) *CheckResult {
+	r := &CheckResult{Name: c.Name()}
+	var issues []string
+
+	for _, a := range c.cfg.Agents {
+		qn := a.QualifiedName()
+		if a.PromptTemplate != "" {
+			path := filepath.Join(c.cityPath, a.PromptTemplate)
+			if _, err := os.Stat(path); err != nil {
+				issues = append(issues, fmt.Sprintf("agent %q: prompt_template %q not found", qn, a.PromptTemplate))
+			}
+		}
+		if a.SessionSetupScript != "" {
+			path := filepath.Join(c.cityPath, a.SessionSetupScript)
+			if _, err := os.Stat(path); err != nil {
+				issues = append(issues, fmt.Sprintf("agent %q: session_setup_script %q not found", qn, a.SessionSetupScript))
+			}
+		}
+		if a.OverlayDir != "" {
+			path := filepath.Join(c.cityPath, a.OverlayDir)
+			if fi, err := os.Stat(path); err != nil {
+				issues = append(issues, fmt.Sprintf("agent %q: overlay_dir %q not found", qn, a.OverlayDir))
+			} else if !fi.IsDir() {
+				issues = append(issues, fmt.Sprintf("agent %q: overlay_dir %q is not a directory", qn, a.OverlayDir))
+			}
+		}
+		if a.Provider != "" && len(c.cfg.Providers) > 0 {
+			if _, ok := c.cfg.Providers[a.Provider]; !ok {
+				issues = append(issues, fmt.Sprintf("agent %q: provider %q not defined in [providers]", qn, a.Provider))
+			}
+		}
+	}
+
+	if len(issues) == 0 {
+		r.Status = StatusOK
+		r.Message = "all config references valid"
+		return r
+	}
+	r.Status = StatusWarning
+	r.Message = fmt.Sprintf("%d config reference issue(s)", len(issues))
+	r.Details = issues
+	return r
+}
+
+// CanFix returns false — missing files must be created by the user.
+func (c *ConfigRefsCheck) CanFix() bool { return false }
+
+// Fix is a no-op.
+func (c *ConfigRefsCheck) Fix(_ *CheckContext) error { return nil }
+
 // --- Infrastructure checks ---
 
 // LookPathFunc is the function used to find binaries. Defaults to exec.LookPath.

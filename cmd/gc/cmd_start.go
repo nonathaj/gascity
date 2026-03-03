@@ -100,6 +100,9 @@ var extraConfigFiles []string
 // strictMode promotes composition collision warnings to errors.
 var strictMode bool
 
+// dryRunMode previews what agents would start without actually starting them.
+var dryRunMode bool
+
 // buildIdleTracker creates an idleTracker from the config, populating
 // timeouts for agents that have idle_timeout set. Returns nil if no
 // agents use idle timeout (disabled).
@@ -159,6 +162,8 @@ that continuously reconciles agent state.`,
 		"additional config files to layer (can be repeated)")
 	cmd.Flags().BoolVar(&strictMode, "strict", false,
 		"promote config collision warnings to errors")
+	cmd.Flags().BoolVarP(&dryRunMode, "dry-run", "n", false,
+		"preview what agents would start without starting them")
 	return cmd
 }
 
@@ -459,6 +464,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// --dry-run: build agents and print preview without starting.
+	if dryRunMode {
+		agents := buildAgents(cfg)
+		printDryRunPreview(agents, cfg, cityName, stdout)
+		return 0
+	}
+
 	tomlPath := filepath.Join(cityPath, "city.toml")
 	if controllerMode {
 		poolSessions := computePoolSessions(cfg, cityName)
@@ -477,6 +489,38 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 	}
 	return code
+}
+
+// printDryRunPreview prints what agents would be started without starting them.
+func printDryRunPreview(agents []agent.Agent, cfg *config.City, cityName string, stdout io.Writer) {
+	st := cfg.Workspace.SessionTemplate
+	fmt.Fprintf(stdout, "Dry-run: %d agent(s) would start in city %q\n\n", len(agents), cityName) //nolint:errcheck // best-effort stdout
+
+	if len(agents) == 0 {
+		fmt.Fprintln(stdout, "  (no agents to start)") //nolint:errcheck // best-effort stdout
+		return
+	}
+
+	for _, a := range agents {
+		session := a.SessionName()
+		if session == "" {
+			session = agent.SessionNameFor(cityName, a.Name(), st)
+		}
+		fmt.Fprintf(stdout, "  %-30s  session=%s\n", a.Name(), session) //nolint:errcheck // best-effort stdout
+	}
+
+	// Summary by suspension.
+	var suspended int
+	for _, a := range cfg.Agents {
+		if a.Suspended {
+			suspended++
+		}
+	}
+	fmt.Fprintln(stdout) //nolint:errcheck // best-effort stdout
+	if suspended > 0 {
+		fmt.Fprintf(stdout, "  %d agent(s) suspended (not shown above)\n", suspended) //nolint:errcheck // best-effort stdout
+	}
+	fmt.Fprintln(stdout, "No side effects executed (--dry-run).") //nolint:errcheck // best-effort stdout
 }
 
 // settingsArgs returns "--settings <path>" to append to a Claude command

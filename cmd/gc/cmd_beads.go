@@ -76,10 +76,49 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 	}
 
 	provider := beadsProvider(cityPath)
+	ops := doltHealthOps{
+		hostPort: dolt.GasCityConfig(cityPath).HostPort(),
+		dialTCP: func(addr string) error {
+			conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+			if err == nil {
+				_ = conn.Close()
+			}
+			return err
+		},
+		queryProbe:     func() error { return dolt.HealthCheckQuery(cityPath) },
+		writeProbe:     func() error { return dolt.HealthCheckWrite(cityPath) },
+		isUnhealthy:    func() (bool, string) { return dolt.IsUnhealthy(cityPath) },
+		setUnhealthy:   func(reason string) { dolt.SetUnhealthy(cityPath, reason) },
+		clearUnhealthy: func() { dolt.ClearUnhealthy(cityPath) },
+		recover:        func() error { return dolt.RecoverDolt(cityPath) },
+	}
 
-	// For non-bd providers, delegate to healthBeadsProvider directly.
-	if provider != "bd" || os.Getenv("GC_DOLT") == "skip" {
-		if err := healthBeadsProvider(cityPath); err != nil {
+	return doBdHealthCheck(provider, os.Getenv("GC_DOLT") == "skip", ops,
+		func() error { return healthBeadsProvider(cityPath) },
+		quiet, stdout, stderr)
+}
+
+// doltHealthOps bundles the external operations needed by the bd health check,
+// allowing tests to inject fakes.
+type doltHealthOps struct {
+	hostPort       string
+	dialTCP        func(addr string) error
+	queryProbe     func() error
+	writeProbe     func() error
+	isUnhealthy    func() (bool, string)
+	setUnhealthy   func(reason string)
+	clearUnhealthy func()
+	recover        func() error
+}
+
+// doBdHealthCheck runs the beads health check logic with injectable
+// dependencies. Extracted from doBeadsHealth for testability.
+func doBdHealthCheck(provider string, doltSkip bool, ops doltHealthOps,
+	healthFn func() error, quiet bool, stdout, stderr io.Writer,
+) int {
+	// For non-bd providers, delegate to healthFn directly.
+	if provider != "bd" || doltSkip {
+		if err := healthFn(); err != nil {
 			fmt.Fprintf(stderr, "gc beads health: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
@@ -90,21 +129,19 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 	}
 
 	// bd provider: run per-tier checks with verbose output.
-	config := dolt.GasCityConfig(cityPath)
 	allOK := true
 
 	// Tier 1: TCP reachability.
 	tcpOK := false
-	conn, tcpErr := net.DialTimeout("tcp", config.HostPort(), 2*time.Second)
+	tcpErr := ops.dialTCP(ops.hostPort)
 	if tcpErr == nil {
-		_ = conn.Close()
 		tcpOK = true
 	}
 	if !quiet {
 		if tcpOK {
-			fmt.Fprintf(stdout, "TCP (%s): ok\n", config.HostPort()) //nolint:errcheck // best-effort stdout
+			fmt.Fprintf(stdout, "TCP (%s): ok\n", ops.hostPort) //nolint:errcheck // best-effort stdout
 		} else {
-			fmt.Fprintf(stdout, "TCP (%s): FAIL (%v)\n", config.HostPort(), tcpErr) //nolint:errcheck // best-effort stdout
+			fmt.Fprintf(stdout, "TCP (%s): FAIL (%v)\n", ops.hostPort, tcpErr) //nolint:errcheck // best-effort stdout
 		}
 	}
 	if !tcpOK {
@@ -114,7 +151,7 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 	// Tier 2: Query probe.
 	queryOK := false
 	if tcpOK {
-		queryErr := dolt.HealthCheckQuery(cityPath)
+		queryErr := ops.queryProbe()
 		queryOK = queryErr == nil
 		if !quiet {
 			if queryOK {
@@ -130,7 +167,7 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 
 	// Tier 3: Write probe.
 	if queryOK {
-		writeErr := dolt.HealthCheckWrite(cityPath)
+		writeErr := ops.writeProbe()
 		writeOK := writeErr == nil
 		if !quiet {
 			if writeOK {
@@ -145,7 +182,7 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 	}
 
 	// Report DOLT_UNHEALTHY signal status.
-	unhealthy, reason := dolt.IsUnhealthy(cityPath)
+	unhealthy, reason := ops.isUnhealthy()
 	if !quiet && unhealthy {
 		fmt.Fprintf(stdout, "DOLT_UNHEALTHY: %s\n", reason) //nolint:errcheck // best-effort stdout
 	}
@@ -155,12 +192,12 @@ func doBeadsHealth(quiet bool, stdout, stderr io.Writer) int {
 		if !quiet {
 			fmt.Fprintln(stdout, "Attempting recovery...") //nolint:errcheck // best-effort stdout
 		}
-		dolt.SetUnhealthy(cityPath, "health check failed")
-		if recErr := dolt.RecoverDolt(cityPath); recErr != nil {
+		ops.setUnhealthy("health check failed")
+		if recErr := ops.recover(); recErr != nil {
 			fmt.Fprintf(stderr, "gc beads health: recovery failed: %v\n", recErr) //nolint:errcheck // best-effort stderr
 			return 1
 		}
-		dolt.ClearUnhealthy(cityPath)
+		ops.clearUnhealthy()
 		if !quiet {
 			fmt.Fprintln(stdout, "Recovery successful.") //nolint:errcheck // best-effort stdout
 		}

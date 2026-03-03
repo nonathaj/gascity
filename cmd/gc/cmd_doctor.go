@@ -63,6 +63,7 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	cfg, cfgErr := loadCityConfig(cityPath)
 	if cfgErr == nil {
 		d.Register(doctor.NewConfigValidCheck(cfg))
+		d.Register(doctor.NewConfigRefsCheck(cfg, cityPath))
 	}
 
 	// System formulas check.

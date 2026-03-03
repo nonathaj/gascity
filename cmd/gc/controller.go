@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -288,6 +289,8 @@ func controllerLoop(
 					fmt.Fprintf(stderr, "gc start: config reload: %v (keeping old config)\n", err) //nolint:errcheck // best-effort stderr
 					telemetry.RecordConfigReload(ctx, "", err)
 				} else {
+					oldAgentCount := len(cfg.Agents)
+					oldRigCount := len(cfg.Rigs)
 					cfg = result.Cfg
 					// Detect session provider change.
 					newProviderName := cfg.Session.Provider
@@ -369,7 +372,9 @@ func controllerLoop(
 					}
 					// Rebuild automation dispatcher from new config.
 					ad = buildAutomationDispatcher(cityRoot, cfg, beads.ExecCommandRunner(), rec, stderr)
-					fmt.Fprintf(stdout, "Config reloaded (rev %s).\n", shortRev(result.Revision)) //nolint:errcheck // best-effort stdout
+					fmt.Fprintf(stdout, "Config reloaded: %s (rev %s)\n", //nolint:errcheck // best-effort stdout
+						configReloadSummary(oldAgentCount, oldRigCount, len(cfg.Agents), len(cfg.Rigs)),
+						shortRev(result.Revision))
 					telemetry.RecordConfigReload(ctx, result.Revision, nil)
 				}
 			}
@@ -400,6 +405,29 @@ func shortRev(rev string) string {
 		return rev[:12]
 	}
 	return rev
+}
+
+// configReloadSummary returns a human-readable summary of what changed
+// between config reloads.
+func configReloadSummary(oldAgents, oldRigs, newAgents, newRigs int) string {
+	var parts []string
+	switch {
+	case newAgents > oldAgents:
+		parts = append(parts, fmt.Sprintf("%d agents (+%d)", newAgents, newAgents-oldAgents))
+	case newAgents < oldAgents:
+		parts = append(parts, fmt.Sprintf("%d agents (-%d)", newAgents, oldAgents-newAgents))
+	default:
+		parts = append(parts, fmt.Sprintf("%d agents", newAgents))
+	}
+	switch {
+	case newRigs > oldRigs:
+		parts = append(parts, fmt.Sprintf("%d rigs (+%d)", newRigs, newRigs-oldRigs))
+	case newRigs < oldRigs:
+		parts = append(parts, fmt.Sprintf("%d rigs (-%d)", newRigs, oldRigs-newRigs))
+	default:
+		parts = append(parts, fmt.Sprintf("%d rigs", newRigs))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // runController runs the persistent controller loop. It acquires a lock,

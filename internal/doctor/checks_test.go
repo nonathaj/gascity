@@ -130,6 +130,141 @@ func TestConfigValidCheck_BadRig(t *testing.T) {
 	}
 }
 
+// --- ConfigRefsCheck ---
+
+func TestConfigRefsCheck_AllValid(t *testing.T) {
+	dir := t.TempDir()
+	// Create referenced files.
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "mayor.md"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "setup.sh"), []byte("#!/bin/sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "overlay"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{
+		Providers: map[string]config.ProviderSpec{"claude": {}},
+		Agents: []config.Agent{
+			{
+				Name:               "mayor",
+				PromptTemplate:     "prompts/mayor.md",
+				SessionSetupScript: "setup.sh",
+				OverlayDir:         "overlay",
+				Provider:           "claude",
+			},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Errorf("status = %d, want OK; msg = %s; details = %v", r.Status, r.Message, r.Details)
+	}
+}
+
+func TestConfigRefsCheck_MissingPromptTemplate(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "mayor", PromptTemplate: "prompts/missing.md"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusWarning {
+		t.Errorf("status = %d, want Warning; msg = %s", r.Status, r.Message)
+	}
+	if len(r.Details) != 1 {
+		t.Errorf("expected 1 issue, got %d: %v", len(r.Details), r.Details)
+	}
+}
+
+func TestConfigRefsCheck_MissingSessionSetupScript(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", SessionSetupScript: "scripts/nonexistent.sh"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusWarning {
+		t.Errorf("status = %d, want Warning", r.Status)
+	}
+}
+
+func TestConfigRefsCheck_OverlayDirNotDir(t *testing.T) {
+	dir := t.TempDir()
+	// Create a file where a directory is expected.
+	if err := os.WriteFile(filepath.Join(dir, "not-a-dir"), []byte("file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", OverlayDir: "not-a-dir"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusWarning {
+		t.Errorf("status = %d, want Warning", r.Status)
+	}
+}
+
+func TestConfigRefsCheck_UndefinedProvider(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.City{
+		Providers: map[string]config.ProviderSpec{"claude": {}},
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "nonexistent"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusWarning {
+		t.Errorf("status = %d, want Warning", r.Status)
+	}
+}
+
+func TestConfigRefsCheck_NoProvidersDefined(t *testing.T) {
+	// When no providers section exists, agent provider refs are not checked.
+	dir := t.TempDir()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "claude"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Errorf("status = %d, want OK (no providers defined = skip check); msg = %s", r.Status, r.Message)
+	}
+}
+
+func TestConfigRefsCheck_MultipleIssues(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.City{
+		Providers: map[string]config.ProviderSpec{"claude": {}},
+		Agents: []config.Agent{
+			{Name: "a1", PromptTemplate: "missing.md"},
+			{Name: "a2", Provider: "bogus"},
+		},
+	}
+	c := NewConfigRefsCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusWarning {
+		t.Errorf("status = %d, want Warning", r.Status)
+	}
+	if len(r.Details) != 2 {
+		t.Errorf("expected 2 issues, got %d: %v", len(r.Details), r.Details)
+	}
+}
+
 // --- BinaryCheck ---
 
 func TestBinaryCheck_Found(t *testing.T) {

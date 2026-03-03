@@ -360,6 +360,33 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 	}
 }
 
+func TestConfigReloadSummary(t *testing.T) {
+	tests := []struct {
+		name                           string
+		oldAgents, oldRigs, newA, newR int
+		wantAgents, wantRigs           string
+	}{
+		{"no change", 3, 2, 3, 2, "3 agents", "2 rigs"},
+		{"agents added", 2, 1, 5, 1, "5 agents (+3)", "1 rigs"},
+		{"agents removed", 5, 1, 3, 1, "3 agents (-2)", "1 rigs"},
+		{"rigs added", 1, 0, 1, 2, "1 agents", "2 rigs (+2)"},
+		{"rigs removed", 1, 3, 1, 1, "1 agents", "1 rigs (-2)"},
+		{"both changed", 2, 3, 4, 1, "4 agents (+2)", "1 rigs (-2)"},
+		{"zero to zero", 0, 0, 0, 0, "0 agents", "0 rigs"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := configReloadSummary(tt.oldAgents, tt.oldRigs, tt.newA, tt.newR)
+			if !strings.Contains(got, tt.wantAgents) {
+				t.Errorf("agents: got %q, want substring %q", got, tt.wantAgents)
+			}
+			if !strings.Contains(got, tt.wantRigs) {
+				t.Errorf("rigs: got %q, want substring %q", got, tt.wantRigs)
+			}
+		})
+	}
+}
+
 // osFS is a minimal fsys.FS for test helpers that delegates to the os package.
 type osFS struct{}
 
