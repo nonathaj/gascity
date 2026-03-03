@@ -580,6 +580,11 @@ type DaemonConfig struct {
 	// Duration string (e.g., "24h", "7d"). Wisp GC is disabled unless both
 	// WispGCInterval and WispTTL are set.
 	WispTTL string `toml:"wisp_ttl,omitempty"`
+	// DriftDrainTimeout is the maximum time to wait for an agent to acknowledge
+	// a drain signal during a config-drift restart. If the agent doesn't ack
+	// within this window, the controller force-kills and restarts it.
+	// Duration string (e.g., "2m", "5m"). Defaults to "2m".
+	DriftDrainTimeout string `toml:"drift_drain_timeout,omitempty" jsonschema:"default=2m"`
 }
 
 // PatrolIntervalDuration returns the patrol interval as a time.Duration.
@@ -626,6 +631,19 @@ func (d *DaemonConfig) ShutdownTimeoutDuration() time.Duration {
 	dur, err := time.ParseDuration(d.ShutdownTimeout)
 	if err != nil {
 		return 5 * time.Second
+	}
+	return dur
+}
+
+// DriftDrainTimeoutDuration returns the drift drain timeout as a time.Duration.
+// Defaults to 2m if empty or unparseable.
+func (d *DaemonConfig) DriftDrainTimeoutDuration() time.Duration {
+	if d.DriftDrainTimeout == "" {
+		return 2 * time.Minute
+	}
+	dur, err := time.ParseDuration(d.DriftDrainTimeout)
+	if err != nil {
+		return 2 * time.Minute
 	}
 	return dur
 }

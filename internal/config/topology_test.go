@@ -3162,3 +3162,184 @@ name = "polecat"
 		t.Errorf("SessionSetup = %v, want [tmux set mouse on]", a.SessionSetup)
 	}
 }
+
+// --- Topology-level patches tests ---
+
+func TestTopologyLevelPatches_Agent(t *testing.T) {
+	dir := t.TempDir()
+	// Base topology with one agent.
+	writeFile(t, dir, "topologies/base/topology.toml", `
+[topology]
+name = "base"
+schema = 1
+
+[[agents]]
+name = "worker"
+nudge = "do work"
+`)
+	// Overlay topology includes base and patches the agent's session_setup_script.
+	writeFile(t, dir, "topologies/overlay/topology.toml", `
+[topology]
+name = "overlay"
+schema = 1
+includes = ["../base"]
+
+[[patches.agents]]
+name = "worker"
+session_setup_script = "scripts/theme.sh"
+`)
+	writeFile(t, dir, "topologies/overlay/scripts/theme.sh", "#!/bin/sh\necho themed")
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/overlay"},
+	}
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+	a := cfg.Agents[0]
+	if a.Name != "worker" {
+		t.Errorf("name = %q, want worker", a.Name)
+	}
+	// session_setup_script should be set (resolved path).
+	if a.SessionSetupScript == "" {
+		t.Fatal("SessionSetupScript not set by patch")
+	}
+	if !strings.Contains(a.SessionSetupScript, "scripts/theme.sh") {
+		t.Errorf("SessionSetupScript = %q, want to contain scripts/theme.sh", a.SessionSetupScript)
+	}
+	// Nudge should be inherited from base (not cleared by patch).
+	if a.Nudge != "do work" {
+		t.Errorf("Nudge = %q, want %q (inherited from base)", a.Nudge, "do work")
+	}
+}
+
+func TestTopologyLevelPatches_PathResolution(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/base/topology.toml", `
+[topology]
+name = "base"
+schema = 1
+
+[[agents]]
+name = "agent1"
+`)
+	// Overlay with relative script path — should resolve to overlay dir.
+	writeFile(t, dir, "topologies/overlay/topology.toml", `
+[topology]
+name = "overlay"
+schema = 1
+includes = ["../base"]
+
+[[patches.agents]]
+name = "agent1"
+session_setup_script = "scripts/neon.sh"
+prompt_template = "prompts/custom.md"
+overlay_dir = "overlays/custom"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/overlay"},
+	}
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+	a := cfg.Agents[0]
+	// Paths should be resolved relative to the overlay topology dir.
+	wantScript := "topologies/overlay/scripts/neon.sh"
+	if a.SessionSetupScript != wantScript {
+		t.Errorf("SessionSetupScript = %q, want %q", a.SessionSetupScript, wantScript)
+	}
+	wantTemplate := "topologies/overlay/prompts/custom.md"
+	if a.PromptTemplate != wantTemplate {
+		t.Errorf("PromptTemplate = %q, want %q", a.PromptTemplate, wantTemplate)
+	}
+	wantOverlay := "topologies/overlay/overlays/custom"
+	if a.OverlayDir != wantOverlay {
+		t.Errorf("OverlayDir = %q, want %q", a.OverlayDir, wantOverlay)
+	}
+}
+
+func TestTopologyLevelPatches_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/base/topology.toml", `
+[topology]
+name = "base"
+schema = 1
+
+[[agents]]
+name = "worker"
+`)
+	// Patch targets nonexistent agent.
+	writeFile(t, dir, "topologies/overlay/topology.toml", `
+[topology]
+name = "overlay"
+schema = 1
+includes = ["../base"]
+
+[[patches.agents]]
+name = "ghost"
+nudge = "boo"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/overlay"},
+	}
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err == nil {
+		t.Fatal("expected error for patch targeting nonexistent agent")
+	}
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("error = %q, want mention of 'ghost'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want mention of 'not found'", err.Error())
+	}
+}
+
+func TestTopologyLevelPatches_AppendFields(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/base/topology.toml", `
+[topology]
+name = "base"
+schema = 1
+
+[[agents]]
+name = "worker"
+session_setup = ["tmux set status on"]
+pre_start = ["init.sh"]
+`)
+	// Patch uses _append variants to add to existing lists.
+	writeFile(t, dir, "topologies/overlay/topology.toml", `
+[topology]
+name = "overlay"
+schema = 1
+includes = ["../base"]
+
+[[patches.agents]]
+name = "worker"
+session_setup_append = ["tmux set mouse on"]
+pre_start_append = ["extra.sh"]
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/overlay"},
+	}
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+	a := cfg.Agents[0]
+	wantSetup := []string{"tmux set status on", "tmux set mouse on"}
+	if !sliceEqual(a.SessionSetup, wantSetup) {
+		t.Errorf("SessionSetup = %v, want %v", a.SessionSetup, wantSetup)
+	}
+	wantPreStart := []string{"init.sh", "extra.sh"}
+	if !sliceEqual(a.PreStart, wantPreStart) {
+		t.Errorf("PreStart = %v, want %v", a.PreStart, wantPreStart)
+	}
+}

@@ -9,12 +9,13 @@ import (
 
 // ConfigFingerprint returns a deterministic hash of the Config fields that
 // define an agent's behavioral identity. Changes to these fields indicate
-// the agent should be restarted.
+// the agent should be restarted (via drain when drain ops are available).
 //
-// Included: Command, Env, FingerprintExtra (pool config, etc.)
+// Included: Command, Env, FingerprintExtra (pool config, etc.),
+// Nudge, PreStart, SessionSetup, SessionSetupScript, OverlayDir, CopyFiles.
 //
 // Excluded (observation-only hints): WorkDir, ReadyPromptPrefix,
-// ReadyDelayMs, ProcessNames, EmitsPermissionWarning, Nudge.
+// ReadyDelayMs, ProcessNames, EmitsPermissionWarning.
 //
 // The hash is a hex-encoded SHA-256. Same config always produces the same
 // hash regardless of map iteration order.
@@ -33,6 +34,37 @@ func ConfigFingerprint(cfg Config) string {
 		h.Write([]byte("fp")) //nolint:errcheck // hash.Write never errors
 		h.Write([]byte{0})    //nolint:errcheck // hash.Write never errors
 		hashSortedMap(h, cfg.FingerprintExtra)
+	}
+
+	// Nudge
+	h.Write([]byte(cfg.Nudge)) //nolint:errcheck // hash.Write never errors
+	h.Write([]byte{0})         //nolint:errcheck // hash.Write never errors
+
+	// PreStart
+	for _, ps := range cfg.PreStart {
+		h.Write([]byte(ps)) //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})  //nolint:errcheck // hash.Write never errors
+	}
+	h.Write([]byte{1}) //nolint:errcheck // sentinel between slices
+
+	// SessionSetup
+	for _, ss := range cfg.SessionSetup {
+		h.Write([]byte(ss)) //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})  //nolint:errcheck // hash.Write never errors
+	}
+	h.Write([]byte{1}) //nolint:errcheck // sentinel between slices
+
+	h.Write([]byte(cfg.SessionSetupScript)) //nolint:errcheck // hash.Write never errors
+	h.Write([]byte{0})                      //nolint:errcheck // hash.Write never errors
+
+	h.Write([]byte(cfg.OverlayDir)) //nolint:errcheck // hash.Write never errors
+	h.Write([]byte{0})              //nolint:errcheck // hash.Write never errors
+
+	// CopyFiles
+	for _, cf := range cfg.CopyFiles {
+		h.Write([]byte(cf.Src))    //nolint:errcheck // hash.Write never errors
+		h.Write([]byte(cf.RelDst)) //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})         //nolint:errcheck // hash.Write never errors
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))

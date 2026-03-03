@@ -19,6 +19,7 @@ type fakeDrainOps struct {
 	drainTimes       map[string]time.Time // when drain was set
 	acked            map[string]bool
 	restartRequested map[string]bool
+	driftRestart     map[string]bool
 	err              error // injected error for all ops
 	setDrainCalls    []string
 	clearDrainCalls  []string
@@ -30,6 +31,7 @@ func newFakeDrainOps() *fakeDrainOps {
 		drainTimes:       make(map[string]time.Time),
 		acked:            make(map[string]bool),
 		restartRequested: make(map[string]bool),
+		driftRestart:     make(map[string]bool),
 	}
 }
 
@@ -106,6 +108,29 @@ func (f *fakeDrainOps) clearRestartRequested(sessionName string) error {
 		return f.err
 	}
 	delete(f.restartRequested, sessionName)
+	return nil
+}
+
+func (f *fakeDrainOps) setDriftRestart(sessionName string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.driftRestart[sessionName] = true
+	return nil
+}
+
+func (f *fakeDrainOps) isDriftRestart(sessionName string) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.driftRestart[sessionName], nil
+}
+
+func (f *fakeDrainOps) clearDriftRestart(sessionName string) error {
+	if f.err != nil {
+		return f.err
+	}
+	delete(f.driftRestart, sessionName)
 	return nil
 }
 
@@ -411,6 +436,36 @@ func TestProviderDrainOpsRestartRequestedRoundTrip(t *testing.T) {
 	requested, _ = dops.isRestartRequested("gc-city-worker")
 	if requested {
 		t.Error("should not be restart-requested after clear")
+	}
+}
+
+func TestProviderDrainOpsDriftRestartRoundTrip(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start("gc-city-worker", session.Config{})
+	dops := newDrainOps(sp)
+
+	// Not drift-restart initially.
+	isDrift, _ := dops.isDriftRestart("gc-city-worker")
+	if isDrift {
+		t.Error("should not be drift-restart initially")
+	}
+
+	// Set drift restart.
+	if err := dops.setDriftRestart("gc-city-worker"); err != nil {
+		t.Fatalf("setDriftRestart: %v", err)
+	}
+	isDrift, _ = dops.isDriftRestart("gc-city-worker")
+	if !isDrift {
+		t.Error("should be drift-restart after set")
+	}
+
+	// Clear drift restart.
+	if err := dops.clearDriftRestart("gc-city-worker"); err != nil {
+		t.Fatalf("clearDriftRestart: %v", err)
+	}
+	isDrift, _ = dops.isDriftRestart("gc-city-worker")
+	if isDrift {
+		t.Error("should not be drift-restart after clear")
 	}
 }
 

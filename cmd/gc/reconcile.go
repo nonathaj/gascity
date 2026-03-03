@@ -72,6 +72,7 @@ func doReconcileAgents(agents []agent.Agent,
 	rec events.Recorder, cityPrefix string,
 	poolSessions map[string]time.Duration,
 	suspendedNames map[string]bool,
+	driftDrainTimeout time.Duration,
 	stdout, stderr io.Writer,
 ) int {
 	// Build desired session name set for orphan detection.
@@ -158,9 +159,12 @@ func doReconcileAgents(agents []agent.Agent,
 
 		// Running — clear drain if this desired agent was previously being drained
 		// (handles scale-back-up: agent returns to desired set while draining).
+		// Skip clearing if this is a drift-restart drain (we initiated it).
 		if dops != nil {
 			if draining, _ := dops.isDraining(a.SessionName()); draining {
-				_ = dops.clearDrain(a.SessionName())
+				if isDrift, _ := dops.isDriftRestart(a.SessionName()); !isDrift {
+					_ = dops.clearDrain(a.SessionName())
+				}
 			}
 		}
 
@@ -235,6 +239,47 @@ func doReconcileAgents(agents []agent.Agent,
 			continue
 		}
 
+		// Running — check pending drift restart (drain-then-restart in progress).
+		if dops != nil {
+			if isDrift, _ := dops.isDriftRestart(a.SessionName()); isDrift {
+				acked, _ := dops.isDrainAcked(a.SessionName())
+				timedOut := false
+				if !acked && driftDrainTimeout > 0 {
+					if started, err := dops.drainStartTime(a.SessionName()); err == nil {
+						timedOut = time.Since(started) > driftDrainTimeout
+					}
+				}
+				if acked || timedOut {
+					// Drain complete → stop + start with new config.
+					_ = dops.clearDriftRestart(a.SessionName())
+					_ = dops.clearDrain(a.SessionName())
+					if err := a.Stop(); err != nil {
+						fmt.Fprintf(stderr, "gc start: stopping %s for drift restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+						continue
+					}
+					if err := a.Start(); err != nil {
+						fmt.Fprintf(stderr, "gc start: restarting %s after drift drain: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+						continue
+					}
+					_ = sp.ClearScrollback(a.SessionName())
+					fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+					rec.Record(events.Event{
+						Type:    events.AgentStarted,
+						Actor:   "gc",
+						Subject: a.Name(),
+					})
+					if ct != nil {
+						ct.recordStart(a.SessionName(), time.Now())
+					}
+					if rops != nil {
+						hash := session.ConfigFingerprint(a.SessionConfig())
+						_ = rops.storeConfigHash(a.SessionName(), hash)
+					}
+				}
+				continue // skip normal drift check — already handling it
+			}
+		}
+
 		// Running — check for drift if reconcile ops available.
 		if rops == nil {
 			continue // Row 2: no reconcile ops, skip.
@@ -251,25 +296,38 @@ func doReconcileAgents(agents []agent.Agent,
 			continue // Row 2: hash matches, healthy.
 		}
 
-		// Row 5: drift detected → stop + start.
-		fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
-		if err := a.Stop(); err != nil {
-			fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
-			continue
+		// Row 5: drift detected → drain for graceful restart.
+		if dops != nil {
+			_ = dops.setDrain(a.SessionName())
+			_ = dops.setDriftRestart(a.SessionName())
+			fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", a.Name()) //nolint:errcheck // best-effort stdout
+			rec.Record(events.Event{
+				Type:    events.AgentDraining,
+				Actor:   "gc",
+				Subject: a.Name(),
+				Message: "config drift detected",
+			})
+		} else {
+			// No drain ops — fall back to hard restart (backward compat).
+			fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
+			if err := a.Stop(); err != nil {
+				fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				continue
+			}
+			if err := a.Start(); err != nil {
+				fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				continue
+			}
+			_ = sp.ClearScrollback(a.SessionName())
+			fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+			rec.Record(events.Event{
+				Type:    events.AgentStarted,
+				Actor:   "gc",
+				Subject: a.Name(),
+			})
+			hash := session.ConfigFingerprint(a.SessionConfig())
+			_ = rops.storeConfigHash(a.SessionName(), hash)
 		}
-		if err := a.Start(); err != nil {
-			fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
-			continue
-		}
-		_ = sp.ClearScrollback(a.SessionName())                 // best-effort: clean slate after restart
-		fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
-		rec.Record(events.Event{
-			Type:    events.AgentStarted,
-			Actor:   "gc",
-			Subject: a.Name(),
-		})
-		hash := session.ConfigFingerprint(a.SessionConfig())
-		_ = rops.storeConfigHash(a.SessionName(), hash) // best-effort
 	}
 
 	// Phase 1b (parallel): Start all pending agents concurrently.

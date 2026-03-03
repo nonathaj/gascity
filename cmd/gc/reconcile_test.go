@@ -68,7 +68,7 @@ func TestReconcileStartsNewAgents(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -99,7 +99,7 @@ func TestReconcileSkipsHealthy(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -124,7 +124,7 @@ func TestReconcileStopsOrphans(t *testing.T) {
 	sp.Calls = nil // reset spy
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -157,7 +157,7 @@ func TestReconcileRestartsOnDrift(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -203,7 +203,7 @@ func TestReconcileNoDriftWithoutHash(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -216,6 +216,263 @@ func TestReconcileNoDriftWithoutHash(t *testing.T) {
 	}
 }
 
+// TestReconcileDriftDrainSignal verifies that drift with dops available
+// sets drain + driftRestart instead of hard-restarting.
+func TestReconcileDriftDrainSignal(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+	dops := newFakeDrainOps()
+	rec := events.NewFake()
+
+	var stdout, stderr bytes.Buffer
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, rec, "gc-city-", nil, nil, 2*time.Minute, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	// Should NOT have stopped or started yet (drain in progress).
+	for _, c := range f.Calls {
+		if c.Method == "Stop" || c.Method == "Start" {
+			t.Errorf("unexpected call: %s (drift should drain, not hard restart)", c.Method)
+		}
+	}
+	// Drain and drift-restart flags should be set.
+	if !dops.draining["gc-city-mayor"] {
+		t.Error("drain flag not set")
+	}
+	if !dops.driftRestart["gc-city-mayor"] {
+		t.Error("driftRestart flag not set")
+	}
+	// Should have printed drain message.
+	if !strings.Contains(stdout.String(), "draining for restart") {
+		t.Errorf("stdout missing drain message: %q", stdout.String())
+	}
+	// Should have recorded a draining event.
+	if len(rec.Events) != 1 || rec.Events[0].Type != events.AgentDraining {
+		t.Errorf("events = %v, want one AgentDraining event", rec.Events)
+	}
+	// Hash should NOT be updated yet (restart hasn't completed).
+	oldHash := session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	if rops.hashes["gc-city-mayor"] != oldHash {
+		t.Error("hash should not change until restart completes")
+	}
+}
+
+// TestReconcileDriftDrainAcked verifies that after drift drain is acked,
+// the agent is stopped, restarted, and the new hash is stored.
+func TestReconcileDriftDrainAcked(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+	dops := newFakeDrainOps()
+	// Simulate: drain was set previously and agent acked.
+	dops.draining["gc-city-mayor"] = true
+	dops.drainTimes["gc-city-mayor"] = time.Now().Add(-30 * time.Second)
+	dops.driftRestart["gc-city-mayor"] = true
+	dops.acked["gc-city-mayor"] = true
+
+	var stdout, stderr bytes.Buffer
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 2*time.Minute, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	// Should have stopped and restarted.
+	var sawStop, sawStart bool
+	for _, c := range f.Calls {
+		if c.Method == "Stop" {
+			sawStop = true
+		}
+		if c.Method == "Start" {
+			sawStart = true
+		}
+	}
+	if !sawStop {
+		t.Error("expected Stop call after drain ack")
+	}
+	if !sawStart {
+		t.Error("expected Start call after drain ack")
+	}
+	// Drift restart and drain flags should be cleared.
+	if dops.driftRestart["gc-city-mayor"] {
+		t.Error("driftRestart flag should be cleared")
+	}
+	if dops.draining["gc-city-mayor"] {
+		t.Error("drain flag should be cleared")
+	}
+	// New hash should be stored.
+	expected := session.ConfigFingerprint(session.Config{Command: "claude --new-flag"})
+	if rops.hashes["gc-city-mayor"] != expected {
+		t.Errorf("hash after restart = %q, want %q", rops.hashes["gc-city-mayor"], expected)
+	}
+}
+
+// TestReconcileDriftDrainTimeout verifies that when drain ack times out,
+// the agent is force-restarted.
+func TestReconcileDriftDrainTimeout(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+	dops := newFakeDrainOps()
+	// Simulate: drain was set long ago, no ack.
+	dops.draining["gc-city-mayor"] = true
+	dops.drainTimes["gc-city-mayor"] = time.Now().Add(-5 * time.Minute)
+	dops.driftRestart["gc-city-mayor"] = true
+
+	var stdout, stderr bytes.Buffer
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 2*time.Minute, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	// Should have force-restarted (timeout expired).
+	var sawStop, sawStart bool
+	for _, c := range f.Calls {
+		if c.Method == "Stop" {
+			sawStop = true
+		}
+		if c.Method == "Start" {
+			sawStart = true
+		}
+	}
+	if !sawStop {
+		t.Error("expected Stop call on drift drain timeout")
+	}
+	if !sawStart {
+		t.Error("expected Start call on drift drain timeout")
+	}
+	// Flags should be cleared.
+	if dops.driftRestart["gc-city-mayor"] {
+		t.Error("driftRestart flag should be cleared after timeout")
+	}
+	if dops.draining["gc-city-mayor"] {
+		t.Error("drain flag should be cleared after timeout")
+	}
+}
+
+// TestReconcileDriftDrainWaiting verifies that while draining (no ack, no
+// timeout), the agent is left alone.
+func TestReconcileDriftDrainWaiting(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+	dops := newFakeDrainOps()
+	// Simulate: drain set recently, no ack yet.
+	dops.draining["gc-city-mayor"] = true
+	dops.drainTimes["gc-city-mayor"] = time.Now().Add(-10 * time.Second)
+	dops.driftRestart["gc-city-mayor"] = true
+
+	var stdout, stderr bytes.Buffer
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 2*time.Minute, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	// Should NOT have stopped or started (still waiting for drain).
+	for _, c := range f.Calls {
+		if c.Method == "Stop" || c.Method == "Start" {
+			t.Errorf("unexpected call: %s (should wait for drain)", c.Method)
+		}
+	}
+	// Flags should still be set.
+	if !dops.driftRestart["gc-city-mayor"] {
+		t.Error("driftRestart flag should still be set")
+	}
+	if !dops.draining["gc-city-mayor"] {
+		t.Error("drain flag should still be set")
+	}
+}
+
+// TestReconcileDriftNoDopsHardRestart verifies backward compatibility:
+// when dops is nil, drift does a hard stop+start.
+func TestReconcileDriftNoDopsHardRestart(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+
+	var stdout, stderr bytes.Buffer
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+
+	// With nil dops, should hard restart.
+	var sawStop, sawStart bool
+	for _, c := range f.Calls {
+		if c.Method == "Stop" {
+			sawStop = true
+		}
+		if c.Method == "Start" {
+			sawStart = true
+		}
+	}
+	if !sawStop {
+		t.Error("expected Stop call for hard restart (nil dops)")
+	}
+	if !sawStart {
+		t.Error("expected Start call for hard restart (nil dops)")
+	}
+	if !strings.Contains(stdout.String(), "Config changed") {
+		t.Errorf("stdout missing drift message: %q", stdout.String())
+	}
+}
+
+// TestReconcileDriftDrainNotClearedByDesiredSet verifies that the
+// "clear drain if desired" logic does NOT clear drift-restart drains.
+func TestReconcileDriftDrainNotClearedByDesiredSet(t *testing.T) {
+	f := agent.NewFake("mayor", "gc-city-mayor")
+	f.Running = true
+	f.FakeSessionConfig = session.Config{Command: "claude --new-flag"}
+
+	rops := newFakeReconcileOps()
+	rops.running["gc-city-mayor"] = true
+	rops.hashes["gc-city-mayor"] = session.ConfigFingerprint(session.Config{Command: "claude --old-flag"})
+	sp := session.NewFake()
+	dops := newFakeDrainOps()
+	// Simulate: drift drain in progress (draining + driftRestart set).
+	dops.draining["gc-city-mayor"] = true
+	dops.drainTimes["gc-city-mayor"] = time.Now().Add(-10 * time.Second)
+	dops.driftRestart["gc-city-mayor"] = true
+
+	var stdout, stderr bytes.Buffer
+	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 2*time.Minute, &stdout, &stderr)
+
+	// The agent is in the desired set AND draining for drift.
+	// The clear-drain logic should NOT clear it (because it's a drift restart).
+	if !dops.draining["gc-city-mayor"] {
+		t.Error("drift-restart drain should not be cleared by desired-set logic")
+	}
+	if !dops.driftRestart["gc-city-mayor"] {
+		t.Error("driftRestart flag should not be cleared by desired-set logic")
+	}
+}
+
 func TestReconcileStartErrorNonFatal(t *testing.T) {
 	f := agent.NewFake("mayor", "gc-city-mayor")
 	f.StartErr = fmt.Errorf("boom")
@@ -223,7 +480,7 @@ func TestReconcileStartErrorNonFatal(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0 (errors are non-fatal)", code)
 	}
@@ -239,7 +496,7 @@ func TestReconcileOrphanStopErrorNonFatal(t *testing.T) {
 	sp := session.NewFailFake() // Stop will fail.
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0 (errors are non-fatal)", code)
 	}
@@ -254,7 +511,7 @@ func TestReconcileNilReconcileOps(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, nil, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, nil, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -329,7 +586,7 @@ func TestReconcileConfigHashErrorSkipsDrift(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -350,7 +607,7 @@ func TestReconcileStoreHashErrorNonFatal(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -377,7 +634,7 @@ func TestReconcileDriftStopErrorSkipsRestart(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0 (non-fatal)", code)
 	}
@@ -401,7 +658,7 @@ func TestReconcileListRunningError(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -440,7 +697,7 @@ func TestReconcileMixedStates(t *testing.T) {
 
 	agents := []agent.Agent{newAgent, healthy, drifted}
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -483,7 +740,7 @@ func TestReconcileRecordsStartEvent(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -515,7 +772,7 @@ func TestReconcileRecordsEventOnDriftRestart(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -545,7 +802,7 @@ func TestReconcileNoEventOnSkip(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -564,7 +821,7 @@ func TestReconcileNoEventOnStartError(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	if len(rec.Events) != 0 {
 		t.Errorf("got %d events, want 0 (failed start should not record)", len(rec.Events))
@@ -591,7 +848,7 @@ func TestReconcileZombieCaptureEmitsEvent(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	// Should have emitted an agent.crashed event with the pane output.
 	var crashEvent *events.Event
@@ -629,7 +886,7 @@ func TestReconcileNoZombieEventWhenSessionMissing(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	// No agent.crashed event.
 	for _, e := range rec.Events {
@@ -659,7 +916,7 @@ func TestReconcileZombieEmptyPeekIgnored(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	// No agent.crashed event for empty output.
 	for _, e := range rec.Events {
@@ -758,7 +1015,7 @@ func TestReconcileDrainsExcessPool(t *testing.T) {
 
 	agents := []agent.Agent{w1, w2}
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(agents, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(agents, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -795,7 +1052,7 @@ func TestReconcileKillsTrueOrphan(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -823,7 +1080,7 @@ func TestReconcileAlreadyDraining(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -855,7 +1112,7 @@ func TestReconcileDrainAckReap(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -883,7 +1140,7 @@ func TestReconcileUndrainOnScaleUp(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{w3}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{w3}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -910,7 +1167,7 @@ func TestReconcileNilDrainOpsFallback(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -931,7 +1188,7 @@ func TestReconcilePoolSessionsNil(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -959,7 +1216,7 @@ func TestReconcileDrainTimeout(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -988,7 +1245,7 @@ func TestReconcileDrainNotTimedOut(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1017,7 +1274,7 @@ func TestReconcileDrainTimeoutZero(t *testing.T) {
 	sp.Calls = nil
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, dops, nil, nil, events.Discard, "gc-city-", poolSessions, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1046,7 +1303,7 @@ func TestReconcileQuarantineSkipsStart(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1071,7 +1328,7 @@ func TestReconcileNilCrashTrackerNoQuarantine(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1091,7 +1348,7 @@ func TestReconcileRecordsStartAndQuarantine(t *testing.T) {
 	rec := events.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1163,7 +1420,7 @@ func TestReconcileSuspendedAgentMessaging(t *testing.T) {
 
 	suspended := map[string]bool{"gc-city-builder": true}
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, rec, "gc-city-", nil, suspended, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, rec, "gc-city-", nil, suspended, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1194,7 +1451,7 @@ func TestReconcileOrphanNotSuspended(t *testing.T) {
 
 	// Empty suspended set — everything is an orphan.
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(nil, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1223,7 +1480,7 @@ func TestReconcileRestartRequestedRestartsAgent(t *testing.T) {
 	dops.restartRequested["gc-city-mayor"] = true
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1272,7 +1529,7 @@ func TestReconcileRestartRequestedNotSet(t *testing.T) {
 	// restartRequested NOT set
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1299,7 +1556,7 @@ func TestReconcileRestartRequestedRecordsCrashTracker(t *testing.T) {
 	ct := newFakeCrashTracker()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, ct, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, ct, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	if len(ct.starts["gc-city-mayor"]) != 1 {
 		t.Errorf("crash tracker starts = %d, want 1", len(ct.starts["gc-city-mayor"]))
@@ -1318,7 +1575,7 @@ func TestReconcileRestartRequestedNilDops(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1347,7 +1604,7 @@ func TestReconcileIdleAgentRestarted(t *testing.T) {
 	it.idle["gc-city-mayor"] = true
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, rec, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, rec, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1386,7 +1643,7 @@ func TestReconcileNonIdleAgentLeftAlone(t *testing.T) {
 	// idle["gc-city-mayor"] not set → not idle
 
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1408,7 +1665,7 @@ func TestReconcileNilIdleTrackerSkips(t *testing.T) {
 
 	// nil idle tracker → backward compatible, no idle check.
 	var stdout, stderr bytes.Buffer
-	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -1433,7 +1690,7 @@ func TestReconcileIdleKillCountsAsRestart(t *testing.T) {
 	it.idle["gc-city-mayor"] = true
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, it, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, ct, it, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	// Crash tracker should have recorded a start for this session.
 	if len(ct.starts["gc-city-mayor"]) != 1 {
@@ -1653,7 +1910,7 @@ func TestReconcileClearScrollbackOnDrift(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	// ClearScrollback should have been called for the restarted agent.
 	var found bool
@@ -1681,7 +1938,7 @@ func TestReconcileClearScrollbackOnRestartRequested(t *testing.T) {
 	dops.restartRequested["gc-city-mayor"] = true
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	var found bool
 	for _, c := range sp.Calls {
@@ -1708,7 +1965,7 @@ func TestReconcileClearScrollbackOnIdleRestart(t *testing.T) {
 	it.idle["gc-city-mayor"] = true
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	var found bool
 	for _, c := range sp.Calls {
@@ -1739,7 +1996,7 @@ func TestReconcileParallelStart(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	start := time.Now()
-	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 	elapsed := time.Since(start)
 
 	if code != 0 {
@@ -1767,7 +2024,7 @@ func TestReconcileNoClearScrollbackOnFreshStart(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, &stdout, &stderr)
+	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, "gc-city-", nil, nil, 0, &stdout, &stderr)
 
 	for _, c := range sp.Calls {
 		if c.Method == "ClearScrollback" {

@@ -132,10 +132,58 @@ func TestConfigFingerprintNilVsEmptyExtra(t *testing.T) {
 	}
 }
 
-func TestConfigFingerprintIgnoresNudge(t *testing.T) {
+func TestConfigFingerprintIncludesNudge(t *testing.T) {
 	a := Config{Command: "claude", Nudge: ""}
 	b := Config{Command: "claude", Nudge: "hello agent"}
-	if ConfigFingerprint(a) != ConfigFingerprint(b) {
-		t.Error("Nudge should not affect hash")
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different Nudge should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintIncludesPreStart(t *testing.T) {
+	a := Config{Command: "claude"}
+	b := Config{Command: "claude", PreStart: []string{"mkdir -p /tmp/work"}}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different PreStart should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintIncludesSessionSetup(t *testing.T) {
+	a := Config{Command: "claude"}
+	b := Config{Command: "claude", SessionSetup: []string{"tmux set-option -t {{.Session}} remain-on-exit on"}}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different SessionSetup should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintIncludesSessionSetupScript(t *testing.T) {
+	a := Config{Command: "claude"}
+	b := Config{Command: "claude", SessionSetupScript: "/path/to/setup.sh"}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different SessionSetupScript should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintIncludesOverlayDir(t *testing.T) {
+	a := Config{Command: "claude"}
+	b := Config{Command: "claude", OverlayDir: "/path/to/overlay"}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different OverlayDir should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintIncludesCopyFiles(t *testing.T) {
+	a := Config{Command: "claude"}
+	b := Config{Command: "claude", CopyFiles: []CopyEntry{{Src: "/tmp/foo", RelDst: "bar"}}}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different CopyFiles should produce different hashes")
+	}
+}
+
+func TestConfigFingerprintPreStartOrderMatters(t *testing.T) {
+	a := Config{Command: "claude", PreStart: []string{"a", "b"}}
+	b := Config{Command: "claude", PreStart: []string{"b", "a"}}
+	if ConfigFingerprint(a) == ConfigFingerprint(b) {
+		t.Error("different PreStart order should produce different hashes")
 	}
 }

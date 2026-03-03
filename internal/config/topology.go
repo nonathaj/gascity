@@ -25,6 +25,7 @@ type topologyConfig struct {
 	Agents    []Agent                 `toml:"agents"`
 	Providers map[string]ProviderSpec `toml:"providers,omitempty"`
 	Formulas  FormulasConfig          `toml:"formulas,omitempty"`
+	Patches   Patches                 `toml:"patches,omitempty"`
 }
 
 // ExpandTopologies resolves topology references on all rigs. For each rig
@@ -517,6 +518,14 @@ func loadTopology(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen 
 	// Merge: included agents first (base), then parent agents (override).
 	includedAgents = append(includedAgents, agents...)
 
+	// Apply topology-level patches to the merged agent list.
+	if !tc.Patches.IsEmpty() {
+		adjustTopologyPatchPaths(&tc.Patches, topoDir, cityRoot)
+		if err := applyTopologyAgentPatches(includedAgents, tc.Patches.Agents); err != nil {
+			return nil, nil, nil, nil, err
+		}
+	}
+
 	// Merge providers: parent wins over included.
 	mergedProviders := includedProviders
 	for name, spec := range tc.Providers {
@@ -530,6 +539,49 @@ func loadTopology(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen 
 	topoDirs = append(topoDirs, topoDir)
 
 	return includedAgents, mergedProviders, topoDirs, allRequires, nil
+}
+
+// adjustTopologyPatchPaths resolves file-path fields in patches relative to
+// the topology directory, matching how agent fields are resolved during
+// topology loading.
+func adjustTopologyPatchPaths(patches *Patches, topoDir, cityRoot string) {
+	for i := range patches.Agents {
+		p := &patches.Agents[i]
+		if p.SessionSetupScript != nil && *p.SessionSetupScript != "" {
+			v := adjustFragmentPath(*p.SessionSetupScript, topoDir, cityRoot)
+			p.SessionSetupScript = &v
+		}
+		if p.PromptTemplate != nil && *p.PromptTemplate != "" {
+			v := adjustFragmentPath(*p.PromptTemplate, topoDir, cityRoot)
+			p.PromptTemplate = &v
+		}
+		if p.OverlayDir != nil && *p.OverlayDir != "" {
+			v := adjustFragmentPath(*p.OverlayDir, topoDir, cityRoot)
+			p.OverlayDir = &v
+		}
+	}
+}
+
+// applyTopologyAgentPatches applies agent patches to a merged agent slice.
+// Patches target agents by name (dir is empty at topology level since agents
+// haven't been rig-stamped yet). Returns an error if a patch targets a
+// nonexistent agent.
+func applyTopologyAgentPatches(agents []Agent, patches []AgentPatch) error {
+	for i, p := range patches {
+		target := qualifiedNameFromPatch(p.Dir, p.Name)
+		found := false
+		for j := range agents {
+			if agents[j].Dir == p.Dir && agents[j].Name == p.Name {
+				applyAgentPatchFields(&agents[j], &patches[i])
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("patches.agents[%d]: agent %q not found in topology", i, target)
+		}
+	}
+	return nil
 }
 
 // validateTopologyMeta checks the [topology] header for required fields

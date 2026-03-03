@@ -1687,6 +1687,56 @@ name = "mayor"
 	}
 }
 
+// --- DriftDrainTimeout tests ---
+
+func TestDaemonDriftDrainTimeoutDefault(t *testing.T) {
+	d := DaemonConfig{}
+	got := d.DriftDrainTimeoutDuration()
+	if got != 2*time.Minute {
+		t.Errorf("DriftDrainTimeoutDuration() = %v, want 2m", got)
+	}
+}
+
+func TestDaemonDriftDrainTimeoutCustom(t *testing.T) {
+	d := DaemonConfig{DriftDrainTimeout: "5m"}
+	got := d.DriftDrainTimeoutDuration()
+	if got != 5*time.Minute {
+		t.Errorf("DriftDrainTimeoutDuration() = %v, want 5m", got)
+	}
+}
+
+func TestDaemonDriftDrainTimeoutInvalid(t *testing.T) {
+	d := DaemonConfig{DriftDrainTimeout: "not-a-duration"}
+	got := d.DriftDrainTimeoutDuration()
+	if got != 2*time.Minute {
+		t.Errorf("DriftDrainTimeoutDuration() = %v, want 2m (default for invalid)", got)
+	}
+}
+
+func TestParseDriftDrainTimeout(t *testing.T) {
+	data := []byte(`
+[workspace]
+name = "test"
+
+[daemon]
+drift_drain_timeout = "3m"
+
+[[agents]]
+name = "mayor"
+`)
+	cfg, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.Daemon.DriftDrainTimeout != "3m" {
+		t.Errorf("Daemon.DriftDrainTimeout = %q, want %q", cfg.Daemon.DriftDrainTimeout, "3m")
+	}
+	got := cfg.Daemon.DriftDrainTimeoutDuration()
+	if got != 3*time.Minute {
+		t.Errorf("DriftDrainTimeoutDuration() = %v, want 3m", got)
+	}
+}
+
 // --- DrainTimeout tests ---
 
 func TestDrainTimeoutDefault(t *testing.T) {

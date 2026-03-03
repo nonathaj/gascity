@@ -636,6 +636,11 @@
         "wisp_ttl": {
           "type": "string",
           "description": "WispTTL is how long a closed molecule survives before being purged.\nDuration string (e.g., \"24h\", \"7d\"). Wisp GC is disabled unless both\nWispGCInterval and WispTTL are set."
+        },
+        "drift_drain_timeout": {
+          "type": "string",
+          "description": "DriftDrainTimeout is the maximum time to wait for an agent to acknowledge\na drain signal during a config-drift restart. If the agent doesn't ack\nwithin this window, the controller force-kills and restarts it.\nDuration string (e.g., \"2m\", \"5m\"). Defaults to \"2m\".",
+          "default": "2m"
         }
       },
       "additionalProperties": false,

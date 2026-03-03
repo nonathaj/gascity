@@ -24,6 +24,9 @@ type drainOps interface {
 	setRestartRequested(sessionName string) error
 	isRestartRequested(sessionName string) (bool, error)
 	clearRestartRequested(sessionName string) error
+	setDriftRestart(sessionName string) error
+	isDriftRestart(sessionName string) (bool, error)
+	clearDriftRestart(sessionName string) error
 }
 
 // providerDrainOps implements drainOps using session.Provider metadata.
@@ -89,6 +92,22 @@ func (o *providerDrainOps) isRestartRequested(sessionName string) (bool, error) 
 
 func (o *providerDrainOps) clearRestartRequested(sessionName string) error {
 	return o.sp.RemoveMeta(sessionName, "GC_RESTART_REQUESTED")
+}
+
+func (o *providerDrainOps) setDriftRestart(sessionName string) error {
+	return o.sp.SetMeta(sessionName, "GC_DRIFT_RESTART", "1")
+}
+
+func (o *providerDrainOps) isDriftRestart(sessionName string) (bool, error) {
+	val, err := o.sp.GetMeta(sessionName, "GC_DRIFT_RESTART")
+	if err != nil {
+		return false, nil
+	}
+	return val == "1", nil
+}
+
+func (o *providerDrainOps) clearDriftRestart(sessionName string) error {
+	return o.sp.RemoveMeta(sessionName, "GC_DRIFT_RESTART")
 }
 
 // newDrainOps creates a drainOps from a session.Provider.

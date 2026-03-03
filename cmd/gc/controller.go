@@ -272,7 +272,7 @@ func controllerLoop(
 
 	// Initial reconciliation.
 	agents := buildFn(cfg)
-	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, stdout, stderr)
+	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), stdout, stderr)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
 	cityRoot := filepath.Dir(tomlPath)
@@ -374,7 +374,7 @@ func controllerLoop(
 				}
 			}
 			agents = buildFn(cfg)
-			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, stdout, stderr)
+			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), stdout, stderr)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
 				purged, gcErr := wg.runGC(filepath.Dir(tomlPath), time.Now())
