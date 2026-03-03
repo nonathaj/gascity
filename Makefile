@@ -9,7 +9,7 @@ GOLANGCI_LINT := $(BIN_DIR)/golangci-lint
 
 BINARY     := gc
 BUILD_DIR  := bin
-INSTALL_DIR := $(HOME)/.local/bin
+INSTALL_DIR := $(BIN_DIR)
 
 # Version metadata injected via ldflags.
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -30,18 +30,16 @@ ifeq ($(shell uname),Darwin)
 	@echo "Signed $(BINARY) for macOS"
 endif
 
-## install: build and install gc to ~/.local/bin
+## install: build and install gc to GOPATH/bin (same location as go install)
 install: build
 	@mkdir -p $(INSTALL_DIR)
 	@rm -f $(INSTALL_DIR)/$(BINARY)
 	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@# Remove stale binaries that shadow the canonical location
-	@for bad in $(HOME)/go/bin/$(BINARY) $(HOME)/bin/$(BINARY); do \
-		if [ -f "$$bad" ]; then \
-			echo "Removing stale $$bad (use make install, not go install)"; \
-			rm -f "$$bad"; \
-		fi; \
-	done
+	@# Remove stale binary from the old install location
+	@if [ -f "$(HOME)/.local/bin/$(BINARY)" ] && [ "$(INSTALL_DIR)" != "$(HOME)/.local/bin" ]; then \
+		echo "Removing stale $(HOME)/.local/bin/$(BINARY)"; \
+		rm -f "$(HOME)/.local/bin/$(BINARY)"; \
+	fi
 	@echo "Installed $(BINARY) to $(INSTALL_DIR)/$(BINARY)"
 
 ## generate: regenerate JSON schemas and reference docs
