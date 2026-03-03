@@ -26,6 +26,7 @@ type topologyConfig struct {
 	Providers map[string]ProviderSpec `toml:"providers,omitempty"`
 	Formulas  FormulasConfig          `toml:"formulas,omitempty"`
 	Patches   Patches                 `toml:"patches,omitempty"`
+	Doctor    []TopologyDoctorEntry   `toml:"doctor,omitempty"`
 }
 
 // ExpandTopologies resolves topology references on all rigs. For each rig
@@ -957,4 +958,56 @@ func topologySummaryOne(fs fsys.FS, ref, cityRoot string) string {
 	}
 	parts = append(parts, "("+short+")")
 	return strings.Join(parts, " ")
+}
+
+// TopologyDoctorInfo pairs a doctor entry with its resolved context.
+type TopologyDoctorInfo struct {
+	// TopologyName is the topology's [topology] name.
+	TopologyName string
+	// Entry is the parsed [[doctor]] entry.
+	Entry TopologyDoctorEntry
+	// TopoDir is the absolute topology directory (for resolving script paths).
+	TopoDir string
+}
+
+// LoadTopologyDoctorEntries reads topology.toml files from each topology
+// directory, extracts [[doctor]] entries, and returns them with resolved
+// context. Directories are deduplicated by absolute path. Errors in
+// individual topologies are silently skipped (the topology may have been
+// validated elsewhere; doctor should be best-effort).
+func LoadTopologyDoctorEntries(fs fsys.FS, topoDirs []string) []TopologyDoctorInfo {
+	seen := make(map[string]bool)
+	var result []TopologyDoctorInfo
+
+	for _, dir := range topoDirs {
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			absDir = dir
+		}
+		if seen[absDir] {
+			continue
+		}
+		seen[absDir] = true
+
+		topoPath := filepath.Join(dir, topologyFile)
+		data, err := fs.ReadFile(topoPath)
+		if err != nil {
+			continue
+		}
+
+		var tc topologyConfig
+		if _, err := toml.Decode(string(data), &tc); err != nil {
+			continue
+		}
+
+		for _, entry := range tc.Doctor {
+			result = append(result, TopologyDoctorInfo{
+				TopologyName: tc.Topology.Name,
+				Entry:        entry,
+				TopoDir:      dir,
+			})
+		}
+	}
+
+	return result
 }

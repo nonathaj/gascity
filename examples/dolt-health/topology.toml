@@ -8,6 +8,11 @@
 name = "dolt-health"
 schema = 1
 
+[[doctor]]
+name = "check-dolt"
+script = "doctor/check-dolt.sh"
+description = "Verify Dolt binary is available"
+
 [formulas]
 dir = "formulas"
 

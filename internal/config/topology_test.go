@@ -3343,3 +3343,145 @@ pre_start_append = ["extra.sh"]
 		t.Errorf("PreStart = %v, want %v", a.PreStart, wantPreStart)
 	}
 }
+
+func TestTopologyDoctorEntriesParsed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topology.toml", `
+[topology]
+name = "test-topo"
+schema = 1
+
+[[doctor]]
+name = "check-binaries"
+script = "doctor/check-binaries.sh"
+description = "Verify required binaries"
+
+[[doctor]]
+name = "check-config"
+script = "doctor/check-config.sh"
+
+[[agents]]
+name = "worker"
+`)
+
+	entries := LoadTopologyDoctorEntries(fsys.OSFS{}, []string{dir})
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+
+	if entries[0].TopologyName != "test-topo" {
+		t.Errorf("TopologyName = %q, want %q", entries[0].TopologyName, "test-topo")
+	}
+	if entries[0].Entry.Name != "check-binaries" {
+		t.Errorf("Entry.Name = %q, want %q", entries[0].Entry.Name, "check-binaries")
+	}
+	if entries[0].Entry.Script != "doctor/check-binaries.sh" {
+		t.Errorf("Entry.Script = %q, want %q", entries[0].Entry.Script, "doctor/check-binaries.sh")
+	}
+	if entries[0].Entry.Description != "Verify required binaries" {
+		t.Errorf("Entry.Description = %q, want %q", entries[0].Entry.Description, "Verify required binaries")
+	}
+	if entries[0].TopoDir != dir {
+		t.Errorf("TopoDir = %q, want %q", entries[0].TopoDir, dir)
+	}
+
+	// Second entry should have empty description (optional field).
+	if entries[1].Entry.Name != "check-config" {
+		t.Errorf("second Entry.Name = %q, want %q", entries[1].Entry.Name, "check-config")
+	}
+	if entries[1].Entry.Description != "" {
+		t.Errorf("second Entry.Description = %q, want empty", entries[1].Entry.Description)
+	}
+}
+
+func TestTopologyDoctorEntriesDeduplicatesDirs(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topology.toml", `
+[topology]
+name = "test-topo"
+schema = 1
+
+[[doctor]]
+name = "check-foo"
+script = "doctor/check-foo.sh"
+`)
+
+	// Pass the same directory twice.
+	entries := LoadTopologyDoctorEntries(fsys.OSFS{}, []string{dir, dir})
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (deduplication)", len(entries))
+	}
+}
+
+func TestTopologyDoctorEntriesNoDoctorSection(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "topology.toml", `
+[topology]
+name = "bare"
+schema = 1
+
+[[agents]]
+name = "worker"
+`)
+
+	entries := LoadTopologyDoctorEntries(fsys.OSFS{}, []string{dir})
+	if len(entries) != 0 {
+		t.Fatalf("got %d entries, want 0 for topology without [[doctor]]", len(entries))
+	}
+}
+
+func TestTopologyDoctorEntriesSkipsBadDir(t *testing.T) {
+	goodDir := t.TempDir()
+	writeFile(t, goodDir, "topology.toml", `
+[topology]
+name = "good"
+schema = 1
+
+[[doctor]]
+name = "check-a"
+script = "doctor/a.sh"
+`)
+
+	entries := LoadTopologyDoctorEntries(fsys.OSFS{}, []string{"/nonexistent/dir", goodDir})
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1 (bad dir skipped)", len(entries))
+	}
+	if entries[0].TopologyName != "good" {
+		t.Errorf("TopologyName = %q, want %q", entries[0].TopologyName, "good")
+	}
+}
+
+func TestTopologyDoctorEntriesMultipleTopologies(t *testing.T) {
+	dir1 := t.TempDir()
+	writeFile(t, dir1, "topology.toml", `
+[topology]
+name = "alpha"
+schema = 1
+
+[[doctor]]
+name = "check-a"
+script = "doctor/a.sh"
+`)
+
+	dir2 := t.TempDir()
+	writeFile(t, dir2, "topology.toml", `
+[topology]
+name = "beta"
+schema = 1
+
+[[doctor]]
+name = "check-b"
+script = "doctor/b.sh"
+`)
+
+	entries := LoadTopologyDoctorEntries(fsys.OSFS{}, []string{dir1, dir2})
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	if entries[0].TopologyName != "alpha" {
+		t.Errorf("first TopologyName = %q, want %q", entries[0].TopologyName, "alpha")
+	}
+	if entries[1].TopologyName != "beta" {
+		t.Errorf("second TopologyName = %q, want %q", entries[1].TopologyName, "beta")
+	}
+}

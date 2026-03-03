@@ -235,6 +235,22 @@ type TopologyRequirement struct {
 	Agent string `toml:"agent" jsonschema:"required"`
 }
 
+// TopologyDoctorEntry declares a diagnostic check shipped with a topology.
+// The script is executed by gc doctor to validate topology-specific
+// prerequisites (binaries, permissions, directory structures, etc.).
+type TopologyDoctorEntry struct {
+	// Name is a short identifier for the check (e.g. "check-binaries").
+	// The full check name shown in doctor output is "<topology>:<name>".
+	Name string `toml:"name" jsonschema:"required"`
+	// Script is the path to the check script, relative to the topology
+	// directory. The script must be executable and follow the exit-code
+	// protocol: 0=OK, 1=Warning, 2=Error. First line of stdout is the
+	// message; remaining lines are details (shown in verbose mode).
+	Script string `toml:"script" jsonschema:"required"`
+	// Description is an optional human-readable description of the check.
+	Description string `toml:"description,omitempty"`
+}
+
 // EffectivePrefix returns the bead ID prefix for this rig. Uses the
 // explicit Prefix if set, otherwise derives one from the Name.
 func (r *Rig) EffectivePrefix() string {

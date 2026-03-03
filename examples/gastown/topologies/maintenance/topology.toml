@@ -12,6 +12,11 @@ name = "maintenance"
 schema = 1
 city_agents = ["dog"]
 
+[[doctor]]
+name = "check-binaries"
+script = "doctor/check-binaries.sh"
+description = "Verify required binaries (jq, gh) are available"
+
 [formulas]
 dir = "formulas"
 

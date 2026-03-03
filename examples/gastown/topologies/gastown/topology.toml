@@ -17,6 +17,11 @@ schema = 1
 includes = ["../maintenance", "../../../dolt-health"]
 city_agents = ["mayor", "deacon", "boot", "dog"]
 
+[[doctor]]
+name = "check-scripts"
+script = "doctor/check-scripts.sh"
+description = "Verify topology scripts are executable"
+
 [formulas]
 dir = "formulas"
 

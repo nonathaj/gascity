@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gascity/internal/beads"
 	beadsexec "github.com/steveyegge/gascity/internal/beads/exec"
+	"github.com/steveyegge/gascity/internal/config"
 	"github.com/steveyegge/gascity/internal/doctor"
 	"github.com/steveyegge/gascity/internal/fsys"
 )
@@ -149,6 +150,20 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	// Worktree integrity check.
 	d.Register(&doctor.WorktreeCheck{})
 
+	// Topology doctor checks — scripts shipped with topologies.
+	if cfgErr == nil {
+		allTopoDirs := collectTopologyDirs(cfg)
+		entries := config.LoadTopologyDoctorEntries(fsys.OSFS{}, allTopoDirs)
+		for _, info := range entries {
+			scriptPath := filepath.Join(info.TopoDir, info.Entry.Script)
+			d.Register(&doctor.TopologyScriptCheck{
+				CheckName:   info.TopologyName + ":" + info.Entry.Name,
+				Script:      scriptPath,
+				TopologyDir: info.TopoDir,
+			})
+		}
+	}
+
 	report := d.Run(ctx, stdout, fix)
 	doctor.PrintSummary(stdout, report)
 
@@ -156,6 +171,28 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// collectTopologyDirs returns all unique topology directories from the city
+// config (both city-level and per-rig). Used to discover topology doctor checks.
+func collectTopologyDirs(cfg *config.City) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, dir := range cfg.TopologyDirs {
+		if !seen[dir] {
+			seen[dir] = true
+			result = append(result, dir)
+		}
+	}
+	for _, dirs := range cfg.RigTopologyDirs {
+		for _, dir := range dirs {
+			if !seen[dir] {
+				seen[dir] = true
+				result = append(result, dir)
+			}
+		}
+	}
+	return result
 }
 
 // openStore creates a beads.Store from a directory path. Used as a factory
