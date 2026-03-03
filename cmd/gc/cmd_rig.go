@@ -50,11 +50,10 @@ func newRigAddCmd(stdout, stderr io.Writer) *cobra.Command {
 		Short: "Register a project as a rig",
 		Long: `Register an external project directory as a rig.
 
-Creates rig infrastructure (rig.toml, beads database), installs agent
-hooks if configured, generates cross-rig routes, and appends the rig
-to city.toml. If the target directory doesn't exist, it is created.
-Use --topology to apply a topology directory that defines the rig's
-agent configuration.
+Initializes beads database, installs agent hooks if configured,
+generates cross-rig routes, and appends the rig to city.toml.
+If the target directory doesn't exist, it is created. Use --topology
+to apply a topology directory that defines the rig's agent configuration.
 
 Use --start-suspended to add the rig in a suspended state (dormant-by-default).
 The rig's agents won't spawn until explicitly resumed with "gc rig resume".`,
@@ -156,18 +155,6 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended boo
 	prefix := config.DeriveBeadsPrefix(name)
 
 	// --- Phase 1: Infrastructure (all fallible, before touching city.toml) ---
-
-	// Create rig directory and write rig.toml.
-	rigDir := filepath.Join(cityPath, "rigs", name)
-	if err := fs.MkdirAll(rigDir, 0o755); err != nil {
-		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	rigToml := fmt.Sprintf("[rig]\npath = %q\n", rigPath)
-	if err := fs.WriteFile(filepath.Join(rigDir, "rig.toml"), []byte(rigToml), 0o644); err != nil {
-		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
 
 	w := func(s string) { fmt.Fprintln(stdout, s) } //nolint:errcheck // best-effort stdout
 	w(fmt.Sprintf("Adding rig '%s'...", name))

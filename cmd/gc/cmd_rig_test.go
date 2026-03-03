@@ -46,12 +46,6 @@ func TestDoRigAdd_Basic(t *testing.T) {
 		t.Errorf("output missing completion: %s", output)
 	}
 
-	// Verify rig.toml was created.
-	rigTomlPath := filepath.Join(cityPath, "rigs", "my-frontend", "rig.toml")
-	if _, err := os.Stat(rigTomlPath); err != nil {
-		t.Errorf("rig.toml not created: %v", err)
-	}
-
 	// Verify city.toml was updated with [[rigs]] entry.
 	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
 	if err != nil {
@@ -162,12 +156,11 @@ func TestDoRigAdd_ConfigUnchangedOnInfraFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Use a fake FS that fails on MkdirAll for the rigs/ directory.
+	// Use a fake FS that fails on beads init for the rig.
 	f := fsys.NewFake()
 	f.Dirs["/fake-rig"] = true
 	f.Files[tomlPath] = []byte(originalToml)
-	rigDir := filepath.Join(cityPath, "rigs", "fake-rig")
-	f.Errors[rigDir] = os.ErrPermission
+	f.Errors[filepath.Join("/fake-rig", ".beads")] = os.ErrPermission
 
 	var stdout, stderr bytes.Buffer
 	code := doRigAdd(f, cityPath, "/fake-rig", "", false, &stdout, &stderr)

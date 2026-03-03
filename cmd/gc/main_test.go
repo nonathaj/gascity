@@ -299,44 +299,6 @@ func TestDoRigAddNotADirectory(t *testing.T) {
 	}
 }
 
-func TestDoRigAddMkdirFails(t *testing.T) {
-	t.Setenv("GC_BEADS", "file")
-	t.Setenv("GC_DOLT", "skip")
-	f := fsys.NewFake()
-	f.Dirs["/projects/myapp"] = true
-	f.Files["/city/city.toml"] = []byte("[workspace]\nname = \"test\"\n\n[[agents]]\nname = \"mayor\"\n")
-	rigDir := filepath.Join("/city", "rigs", "myapp")
-	f.Errors[rigDir] = fmt.Errorf("permission denied")
-
-	var stderr bytes.Buffer
-	code := doRigAdd(f, "/city", "/projects/myapp", "", false, &bytes.Buffer{}, &stderr)
-	if code != 1 {
-		t.Errorf("doRigAdd = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "permission denied") {
-		t.Errorf("stderr = %q, want 'permission denied'", stderr.String())
-	}
-}
-
-func TestDoRigAddWriteTomlFails(t *testing.T) {
-	t.Setenv("GC_BEADS", "file")
-	t.Setenv("GC_DOLT", "skip")
-	f := fsys.NewFake()
-	f.Dirs["/projects/myapp"] = true
-	f.Files["/city/city.toml"] = []byte("[workspace]\nname = \"test\"\n\n[[agents]]\nname = \"mayor\"\n")
-	rigToml := filepath.Join("/city", "rigs", "myapp", "rig.toml")
-	f.Errors[rigToml] = fmt.Errorf("disk full")
-
-	var stderr bytes.Buffer
-	code := doRigAdd(f, "/city", "/projects/myapp", "", false, &bytes.Buffer{}, &stderr)
-	if code != 1 {
-		t.Errorf("doRigAdd = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "disk full") {
-		t.Errorf("stderr = %q, want 'disk full'", stderr.String())
-	}
-}
-
 func TestDoRigAddWithGit(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")

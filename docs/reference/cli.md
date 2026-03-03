@@ -1254,10 +1254,10 @@ gc rig
 
 Register an external project directory as a rig.
 
-Creates rig infrastructure (rigs/ directory, rig.toml, beads database),
-installs agent hooks if configured, generates cross-rig routes, and
-appends the rig to city.toml. Use --topology to apply a topology
-directory that defines the rig's agent configuration.
+Initializes beads database, installs agent hooks if configured,
+generates cross-rig routes, and appends the rig to city.toml.
+If the target directory doesn't exist, it is created. Use --topology
+to apply a topology directory that defines the rig's agent configuration.
 
 Use --start-suspended to add the rig in a suspended state (dormant-by-default).
 The rig's agents won't spawn until explicitly resumed with "gc rig resume".
