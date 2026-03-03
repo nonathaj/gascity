@@ -187,6 +187,7 @@ func poolAgents(cfgAgent *config.Agent, desired int, cityName, cityPath string,
 			SessionSetupScript:     cfgAgent.SessionSetupScript,
 			OverlayDir:             cfgAgent.OverlayDir,
 			SourceDir:              cfgAgent.SourceDir,
+			Fallback:               cfgAgent.Fallback,
 		}
 		if len(cfgAgent.Args) > 0 {
 			instanceAgent.Args = make([]string, len(cfgAgent.Args))

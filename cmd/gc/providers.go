@@ -15,6 +15,7 @@ import (
 	mailexec "github.com/steveyegge/gascity/internal/mail/exec"
 	"github.com/steveyegge/gascity/internal/session"
 	sessionexec "github.com/steveyegge/gascity/internal/session/exec"
+	sessionhybrid "github.com/steveyegge/gascity/internal/session/hybrid"
 	sessionk8s "github.com/steveyegge/gascity/internal/session/k8s"
 	sessionsubprocess "github.com/steveyegge/gascity/internal/session/subprocess"
 	sessiontmux "github.com/steveyegge/gascity/internal/session/tmux"
@@ -56,6 +57,8 @@ func newSessionProviderByName(name string) (session.Provider, error) {
 		return sessionsubprocess.NewProvider(), nil
 	case "k8s":
 		return sessionk8s.NewProvider()
+	case "hybrid":
+		return newHybridProvider()
 	default:
 		return sessiontmux.NewProvider(), nil
 	}
@@ -217,4 +220,22 @@ func openCityEventsProvider(stderr io.Writer, cmdName string) (events.Provider, 
 		return nil, 1
 	}
 	return p, 0
+}
+
+// newHybridProvider constructs a composite provider that routes sessions to
+// tmux (local) or k8s (remote) based on session name. The GC_HYBRID_REMOTE_MATCH
+// env var controls which sessions go to k8s (default: "polecat").
+func newHybridProvider() (session.Provider, error) {
+	local := sessiontmux.NewProvider()
+	remote, err := sessionk8s.NewProvider()
+	if err != nil {
+		return nil, fmt.Errorf("hybrid: k8s backend: %w", err)
+	}
+	pattern := os.Getenv("GC_HYBRID_REMOTE_MATCH")
+	if pattern == "" {
+		pattern = "polecat"
+	}
+	return sessionhybrid.New(local, remote, func(name string) bool {
+		return strings.Contains(name, pattern)
+	}), nil
 }

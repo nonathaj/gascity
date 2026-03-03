@@ -27,13 +27,10 @@ queued formula.
 | Formula | Purpose |
 |---------|---------|
 | `mol-shutdown-dance` | Interrogation protocol for stuck agents |
-| `mol-dog-doctor` | Dolt health probe (connectivity, latency, resources) |
-| `mol-dog-stale-db` | Detect and clean orphaned test databases |
-| `mol-dog-phantom-db` | Detect phantom database resurrection |
-| `mol-dog-compactor` | Compact beads databases |
 | `mol-dog-jsonl` | Export beads to JSONL for backup/analysis |
-| `mol-dog-backup` | Database backup verification |
 | `mol-dog-reaper` | Clean up stale sessions and processes |
+
+Additional formulas available from included topologies (e.g. dolt-health).
 
 ---
 
@@ -122,4 +119,4 @@ gc nudge {{requester}}/ "DOG_DONE: <target> — <outcome>"
 
 Working directory: {{ .WorkDir }}
 Mail identity: dog/{{ basename .AgentName }}
-Formulas: mol-shutdown-dance, mol-dog-doctor, mol-dog-stale-db, mol-dog-phantom-db, mol-dog-compactor, mol-dog-jsonl, mol-dog-backup, mol-dog-reaper
+Formulas: mol-shutdown-dance, mol-dog-jsonl, mol-dog-reaper

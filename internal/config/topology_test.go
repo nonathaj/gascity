@@ -886,7 +886,7 @@ name = "agent-b"
 		Agents: []Agent{{Name: "existing"}},
 	}
 
-	dirs, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	dirs, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -944,7 +944,7 @@ name = "agent-b"
 		}},
 	}
 
-	dirs, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	dirs, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -965,7 +965,7 @@ func TestExpandCityTopologies_Empty(t *testing.T) {
 		Agents: []Agent{{Name: "mayor"}},
 	}
 
-	dirs, err := ExpandCityTopologies(cfg, fsys.OSFS{}, "/tmp")
+	dirs, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, "/tmp")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -992,7 +992,7 @@ name = "mayor"
 		Workspace: Workspace{Topology: "topologies/gt"},
 	}
 
-	dirs, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	dirs, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -1042,7 +1042,7 @@ name = "agent-b"
 		},
 	}
 
-	_, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -1655,7 +1655,7 @@ name = "deacon"
 name = "witness"
 `)
 
-	agents, _, _, err := loadTopology(
+	agents, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/combined/topology.toml"),
 		filepath.Join(dir, "topologies/combined"),
@@ -1693,7 +1693,7 @@ name = "mayor"
 name = "witness"
 `)
 
-	_, _, _, err := loadTopology(
+	_, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/bad/topology.toml"),
 		filepath.Join(dir, "topologies/bad"),
@@ -1912,7 +1912,7 @@ name = "overseer"
 		},
 	}
 
-	_, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err == nil {
 		t.Fatal("expected error for duplicate agent across city topologies")
 	}
@@ -2024,7 +2024,7 @@ includes = ["../maintenance"]
 name = "mayor"
 `)
 
-	agents, _, _, err := loadTopology(
+	agents, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/gastown/topology.toml"),
 		filepath.Join(dir, "topologies/gastown"),
@@ -2071,7 +2071,7 @@ city_agents = ["mayor"]
 name = "mayor"
 `)
 
-	agents, _, _, err := loadTopology(
+	agents, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/gastown/topology.toml"),
 		filepath.Join(dir, "topologies/gastown"),
@@ -2128,7 +2128,7 @@ name = "mayor"
 `)
 	writeFile(t, dir, "topologies/gastown/formulas/.keep", "")
 
-	_, _, topoDirs, err := loadTopology(
+	_, _, topoDirs, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/gastown/topology.toml"),
 		filepath.Join(dir, "topologies/gastown"),
@@ -2172,7 +2172,7 @@ includes = ["../a"]
 name = "beta"
 `)
 
-	_, _, _, err := loadTopology(
+	_, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/a/topology.toml"),
 		filepath.Join(dir, "topologies/a"),
@@ -2198,7 +2198,7 @@ includes = ["../nonexistent"]
 name = "alpha"
 `)
 
-	_, _, _, err := loadTopology(
+	_, _, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/main/topology.toml"),
 		filepath.Join(dir, "topologies/main"),
@@ -2241,7 +2241,7 @@ command = "main-claude"
 name = "boss"
 `)
 
-	_, providers, _, err := loadTopology(
+	_, providers, _, _, err := loadTopology(
 		fsys.OSFS{},
 		filepath.Join(dir, "topologies/main/topology.toml"),
 		filepath.Join(dir, "topologies/main"),
@@ -2295,7 +2295,7 @@ name = "witness"
 	cfg := &City{
 		Workspace: Workspace{Topology: "topologies/gastown"},
 	}
-	formulaDirs, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	formulaDirs, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -2387,7 +2387,7 @@ name = "polecat"
 scope = "rig"
 `)
 
-	agents, _, _, err := loadTopology(
+	agents, _, _, _, err := loadTopology(
 		fsys.OSFS{}, filepath.Join(dir, "topologies/test/topology.toml"),
 		filepath.Join(dir, "topologies/test"), dir, "myrig", nil)
 	if err != nil {
@@ -2433,7 +2433,7 @@ name = "polecat"
 scope = "rig"
 `)
 
-	agents, _, _, err := loadTopology(
+	agents, _, _, _, err := loadTopology(
 		fsys.OSFS{}, filepath.Join(dir, "topologies/test/topology.toml"),
 		filepath.Join(dir, "topologies/test"), dir, "myrig", nil)
 	if err != nil {
@@ -2469,7 +2469,7 @@ name = "polecat"
 scope = "rig"
 `)
 
-	_, _, _, err := loadTopology(
+	_, _, _, _, err := loadTopology(
 		fsys.OSFS{}, filepath.Join(dir, "topologies/test/topology.toml"),
 		filepath.Join(dir, "topologies/test"), dir, "myrig", nil)
 	if err == nil {
@@ -2502,7 +2502,7 @@ scope = "rig"
 		},
 	}
 
-	_, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -2619,7 +2619,7 @@ name = "mayor"
 		},
 	}
 
-	_, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
 	if err != nil {
 		t.Fatalf("ExpandCityTopologies: %v", err)
 	}
@@ -2656,5 +2656,399 @@ name = "polecat"
 	}
 	if cfg.Agents[0].Dir != "myrig" {
 		t.Errorf("agent dir = %q, want myrig", cfg.Agents[0].Dir)
+	}
+}
+
+// --- topology.requires tests ---
+
+func TestTopologyRequires_CitySatisfied(t *testing.T) {
+	dir := t.TempDir()
+
+	// provider topology provides "dog" agent
+	writeFile(t, dir, "topologies/provider/topology.toml", `
+[topology]
+name = "provider"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+`)
+	// consumer topology requires "dog" agent
+	writeFile(t, dir, "topologies/consumer/topology.toml", `
+[topology]
+name = "consumer"
+schema = 1
+includes = ["../provider"]
+
+[[topology.requires]]
+scope = "city"
+agent = "dog"
+
+[[agents]]
+name = "worker"
+scope = "city"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/consumer"},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+
+	// Should have 2 city agents: dog (from provider) + worker (from consumer).
+	if len(cfg.Agents) != 2 {
+		t.Errorf("got %d agents, want 2", len(cfg.Agents))
+	}
+}
+
+func TestTopologyRequires_CityUnsatisfied(t *testing.T) {
+	dir := t.TempDir()
+
+	// Topology requires "dog" but no topology provides it.
+	writeFile(t, dir, "topologies/consumer/topology.toml", `
+[topology]
+name = "consumer"
+schema = 1
+
+[[topology.requires]]
+scope = "city"
+agent = "dog"
+
+[[agents]]
+name = "worker"
+scope = "city"
+`)
+
+	// Use LoadWithIncludes to trigger the city requirement validation.
+	writeFile(t, dir, "city.toml", `
+[workspace]
+name = "test"
+topology = "topologies/consumer"
+`)
+	_, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(dir, "city.toml"))
+	if err == nil {
+		t.Fatal("expected error for unsatisfied city requirement, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires city agent") {
+		t.Errorf("error = %q, want mention of requires city agent", err.Error())
+	}
+	if !strings.Contains(err.Error(), "dog") {
+		t.Errorf("error = %q, want mention of dog", err.Error())
+	}
+}
+
+func TestTopologyRequires_RigSatisfied(t *testing.T) {
+	dir := t.TempDir()
+
+	// provider topology provides "helper" agent
+	writeFile(t, dir, "topologies/provider/topology.toml", `
+[topology]
+name = "provider"
+schema = 1
+
+[[agents]]
+name = "helper"
+scope = "rig"
+`)
+	// consumer topology requires "helper" agent at rig scope
+	writeFile(t, dir, "topologies/consumer/topology.toml", `
+[topology]
+name = "consumer"
+schema = 1
+includes = ["../provider"]
+
+[[topology.requires]]
+scope = "rig"
+agent = "helper"
+
+[[agents]]
+name = "worker"
+scope = "rig"
+`)
+
+	cfg := &City{
+		Rigs: []Rig{
+			{Name: "myrig", Path: "/tmp/myrig", Topology: "topologies/consumer"},
+		},
+	}
+
+	if err := ExpandTopologies(cfg, fsys.OSFS{}, dir, nil); err != nil {
+		t.Fatalf("ExpandTopologies: %v", err)
+	}
+
+	// Should have 2 rig agents: helper + worker.
+	if len(cfg.Agents) != 2 {
+		t.Errorf("got %d agents, want 2", len(cfg.Agents))
+	}
+}
+
+func TestTopologyRequires_RigUnsatisfied(t *testing.T) {
+	dir := t.TempDir()
+
+	// Topology requires rig agent "helper" but no topology provides it.
+	writeFile(t, dir, "topologies/consumer/topology.toml", `
+[topology]
+name = "consumer"
+schema = 1
+
+[[topology.requires]]
+scope = "rig"
+agent = "helper"
+
+[[agents]]
+name = "worker"
+scope = "rig"
+`)
+
+	cfg := &City{
+		Rigs: []Rig{
+			{Name: "myrig", Path: "/tmp/myrig", Topology: "topologies/consumer"},
+		},
+	}
+
+	err := ExpandTopologies(cfg, fsys.OSFS{}, dir, nil)
+	if err == nil {
+		t.Fatal("expected error for unsatisfied rig requirement, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires rig agent") {
+		t.Errorf("error = %q, want mention of requires rig agent", err.Error())
+	}
+	if !strings.Contains(err.Error(), "helper") {
+		t.Errorf("error = %q, want mention of helper", err.Error())
+	}
+}
+
+func TestTopologyRequires_InvalidScope(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "topologies/bad/topology.toml", `
+[topology]
+name = "bad"
+schema = 1
+
+[[topology.requires]]
+scope = "invalid"
+agent = "dog"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/bad"},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err == nil {
+		t.Fatal("expected error for invalid scope, got nil")
+	}
+	if !strings.Contains(err.Error(), "scope must be") {
+		t.Errorf("error = %q, want mention of scope", err.Error())
+	}
+}
+
+func TestTopologyRequires_MissingAgent(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, dir, "topologies/bad/topology.toml", `
+[topology]
+name = "bad"
+schema = 1
+
+[[topology.requires]]
+scope = "city"
+agent = ""
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/bad"},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err == nil {
+		t.Fatal("expected error for empty agent, got nil")
+	}
+	if !strings.Contains(err.Error(), "agent is required") {
+		t.Errorf("error = %q, want mention of agent required", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Fallback agent tests
+// ---------------------------------------------------------------------------
+
+func TestFallbackAgent_NonFallbackWins(t *testing.T) {
+	// Non-fallback dog from topology A, fallback dog from topology B.
+	// Only A's dog should survive.
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/maintenance/topology.toml", `
+[topology]
+name = "maintenance"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+nudge = "full dog"
+`)
+	writeFile(t, dir, "topologies/dolt-health/topology.toml", `
+[topology]
+name = "dolt-health"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+fallback = true
+nudge = "fallback dog"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{
+			CityTopologies: []string{"topologies/maintenance", "topologies/dolt-health"},
+		},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+
+	// Only the non-fallback dog should remain.
+	var dogs []Agent
+	for _, a := range cfg.Agents {
+		if a.Name == "dog" {
+			dogs = append(dogs, a)
+		}
+	}
+	if len(dogs) != 1 {
+		t.Fatalf("got %d dogs, want 1", len(dogs))
+	}
+	if dogs[0].Nudge != "full dog" {
+		t.Errorf("surviving dog nudge = %q, want %q", dogs[0].Nudge, "full dog")
+	}
+}
+
+func TestFallbackAgent_BothFallback_FirstWins(t *testing.T) {
+	// Two fallback dogs from different topologies. First loaded wins.
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/alpha/topology.toml", `
+[topology]
+name = "alpha"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+fallback = true
+nudge = "alpha dog"
+`)
+	writeFile(t, dir, "topologies/beta/topology.toml", `
+[topology]
+name = "beta"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+fallback = true
+nudge = "beta dog"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{
+			CityTopologies: []string{"topologies/alpha", "topologies/beta"},
+		},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+
+	var dogs []Agent
+	for _, a := range cfg.Agents {
+		if a.Name == "dog" {
+			dogs = append(dogs, a)
+		}
+	}
+	if len(dogs) != 1 {
+		t.Fatalf("got %d dogs, want 1", len(dogs))
+	}
+	if dogs[0].Nudge != "alpha dog" {
+		t.Errorf("surviving dog nudge = %q, want %q (first loaded wins)", dogs[0].Nudge, "alpha dog")
+	}
+}
+
+func TestFallbackAgent_NeitherFallback_CollisionError(t *testing.T) {
+	// Two non-fallback dogs from different topologies. Should still error.
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/alpha/topology.toml", `
+[topology]
+name = "alpha"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+`)
+	writeFile(t, dir, "topologies/beta/topology.toml", `
+[topology]
+name = "beta"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{
+			CityTopologies: []string{"topologies/alpha", "topologies/beta"},
+		},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err == nil {
+		t.Fatal("expected collision error for two non-fallback dogs")
+	}
+	if !strings.Contains(err.Error(), "duplicate agent") {
+		t.Errorf("error = %q, want 'duplicate agent'", err.Error())
+	}
+}
+
+func TestFallbackAgent_StandaloneWorks(t *testing.T) {
+	// Single fallback agent, no collision — should be kept normally.
+	dir := t.TempDir()
+	writeFile(t, dir, "topologies/health/topology.toml", `
+[topology]
+name = "health"
+schema = 1
+
+[[agents]]
+name = "dog"
+scope = "city"
+fallback = true
+nudge = "standalone fallback"
+`)
+
+	cfg := &City{
+		Workspace: Workspace{Topology: "topologies/health"},
+	}
+
+	_, _, err := ExpandCityTopologies(cfg, fsys.OSFS{}, dir)
+	if err != nil {
+		t.Fatalf("ExpandCityTopologies: %v", err)
+	}
+
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+	if cfg.Agents[0].Name != "dog" {
+		t.Errorf("agent name = %q, want dog", cfg.Agents[0].Name)
+	}
+	if !cfg.Agents[0].Fallback {
+		t.Error("agent should have Fallback = true")
 	}
 }

@@ -1,12 +1,14 @@
 # Gas Town — expressed as a Gas City configuration.
 #
 # This proves the Gas City thesis: any orchestration topology is pure config.
-# Two composable topologies:
-#   maintenance — generic infrastructure: dog pool, shutdown dance, exec
-#                 automations (gate-sweep, orphan-sweep, prune-branches,
-#                 wisp-compact)
-#   gastown     — domain-specific coding workflow: mayor, deacon, boot,
-#                 witness, refinery, polecat, crew + dolt/digest automations
+# Three composable topologies:
+#   maintenance  — generic infrastructure: dog pool, shutdown dance, exec
+#                  automations (gate-sweep, orphan-sweep, prune-branches,
+#                  wisp-compact)
+#   dolt-health  — reusable Dolt database health monitoring (dog formulas
+#                  + exec automations), requires a dog pool from maintenance
+#   gastown      — domain-specific coding workflow: mayor, deacon, boot,
+#                  witness, refinery, polecat, crew + digest automations
 #
 # City-scoped agents come from both topologies: dog (maintenance) + mayor,
 # deacon, boot (gastown). Rig-scoped agents (witness, refinery, polecat)

@@ -776,12 +776,29 @@ gc dolt
 
 | Subcommand | Description |
 |------------|-------------|
+| [gc dolt cleanup](#gc-dolt-cleanup) | Find and remove orphaned Dolt databases |
 | [gc dolt list](#gc-dolt-list) | List Dolt databases |
 | [gc dolt logs](#gc-dolt-logs) | Tail the Dolt server log file |
 | [gc dolt recover](#gc-dolt-recover) | Recover Dolt from read-only state |
 | [gc dolt rollback](#gc-dolt-rollback) | List or restore from migration backups |
 | [gc dolt sql](#gc-dolt-sql) | Open an interactive Dolt SQL shell |
 | [gc dolt sync](#gc-dolt-sync) | Push databases to configured remotes |
+
+## gc dolt cleanup
+
+Find Dolt databases that are not referenced by any rig's metadata.
+
+By default, lists orphaned databases (dry-run). Use --force to remove them.
+Use --max to set a safety limit (refuses if more orphans than --max).
+
+```
+gc dolt cleanup [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--force` | bool |  | actually remove orphaned databases |
+| `--max` | int | `50` | refuse if more than this many orphans (safety limit) |
 
 ## gc dolt list
 

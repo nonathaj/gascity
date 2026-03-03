@@ -205,6 +205,19 @@ type TopologyMeta struct {
 	// Each entry is a local relative path (e.g. "../maintenance") or a
 	// remote git URL (SSH or HTTPS) with optional //subpath and #ref.
 	Includes []string `toml:"includes,omitempty"`
+	// Requires declares agents that must exist in the expanded config
+	// for this topology's formulas/automations to function. Validated
+	// after all topologies are expanded.
+	Requires []TopologyRequirement `toml:"requires,omitempty"`
+}
+
+// TopologyRequirement declares an agent that must exist in the
+// expanded config for this topology's formulas/automations to function.
+type TopologyRequirement struct {
+	// Scope is the agent scope: "city" or "rig".
+	Scope string `toml:"scope" jsonschema:"required,enum=city,enum=rig"`
+	// Agent is the name of the required agent.
+	Agent string `toml:"agent" jsonschema:"required"`
 }
 
 // EffectivePrefix returns the bead ID prefix for this rig. Uses the
@@ -676,6 +689,10 @@ type Agent struct {
 	// rendered prompt. Fragments come from shared template directories across
 	// all loaded topologies. Each name must match a {{ define "name" }} block.
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
+	// Fallback marks this agent as a fallback definition. During topology
+	// composition, a non-fallback agent with the same name wins silently.
+	// When two fallbacks collide, the first loaded (depth-first) wins.
+	Fallback bool `toml:"fallback,omitempty"`
 }
 
 // IdleTimeoutDuration returns the idle timeout as a time.Duration.

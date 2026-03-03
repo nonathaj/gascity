@@ -88,7 +88,7 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	resolveNamedTopologies(root, cityRoot)
 
 	// Expand city topologies before patches (so patches can target city-topo agents).
-	cityTopoFormulas, ctErr := ExpandCityTopologies(root, fs, cityRoot)
+	cityTopoFormulas, cityReqs, ctErr := ExpandCityTopologies(root, fs, cityRoot)
 	if ctErr != nil {
 		return nil, nil, ctErr
 	}
@@ -134,6 +134,11 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 		}
 	}
 
+	// Validate city-scoped topology requirements.
+	if err := validateCityRequirements(cityReqs, root.Agents); err != nil {
+		return nil, nil, err
+	}
+
 	// Compute formula layers from all sources.
 	cityLocalFormulas := ""
 	if root.Formulas.Dir != "" {
@@ -143,6 +148,27 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 		cityTopoFormulas, cityLocalFormulas, rigFormulaDirs, root.Rigs, cityRoot)
 
 	return root, prov, nil
+}
+
+// validateCityRequirements checks that all city-scoped topology requirements
+// are satisfied by the expanded agent list.
+func validateCityRequirements(reqs []TopologyRequirement, agents []Agent) error {
+	for _, req := range reqs {
+		if req.Scope != "city" {
+			continue
+		}
+		found := false
+		for _, a := range agents {
+			if a.Name == req.Agent {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("topology requires city agent %q — include a topology that provides it", req.Agent)
+		}
+	}
+	return nil
 }
 
 // mergeFragment merges a fragment into the base config in-place.

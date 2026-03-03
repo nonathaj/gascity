@@ -31,6 +31,7 @@ func TestAgentFieldSync(t *testing.T) {
 		"WorkQuery":              "agent-specific, derived from name — not a patch concern",
 		"SlingQuery":             "agent-specific, derived from name/pool — not a patch concern",
 		"SourceDir":              "runtime-only, set during topology/fragment loading",
+		"Fallback":               "topology composition hint, not overridable at runtime",
 	}
 
 	// Fields on AgentOverride/AgentPatch that don't map 1:1 to Agent fields.

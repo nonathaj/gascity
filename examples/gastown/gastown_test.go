@@ -99,8 +99,8 @@ func TestAllFormulasParseAndValidate(t *testing.T) {
 		})
 	}
 
-	if count != 7 {
-		t.Errorf("found %d formula files, want 7", count)
+	if count != 5 {
+		t.Errorf("found %d formula files, want 5", count)
 	}
 }
 
@@ -159,6 +159,7 @@ func TestFormulasDir(t *testing.T) {
 	}
 	wantSuffixes := []string{
 		filepath.Join("topologies", "maintenance", "formulas"),
+		filepath.Join("dolt-health", "formulas"),
 		filepath.Join("topologies", "gastown", "formulas"),
 	}
 	for _, suffix := range wantSuffixes {
@@ -180,11 +181,14 @@ func TestTopologyDirsPopulated(t *testing.T) {
 	if len(cfg.TopologyDirs) == 0 {
 		t.Fatal("TopologyDirs is empty after expansion")
 	}
-	// Should have topology dirs from both maintenance and gastown topologies.
-	var hasMaintenance, hasGastown bool
+	// Should have topology dirs from maintenance, dolt-health, and gastown topologies.
+	var hasMaintenance, hasDoltHealth, hasGastown bool
 	for _, d := range cfg.TopologyDirs {
 		if strings.HasSuffix(d, filepath.Join("topologies", "maintenance")) {
 			hasMaintenance = true
+		}
+		if strings.HasSuffix(d, "dolt-health") {
+			hasDoltHealth = true
 		}
 		if strings.HasSuffix(d, filepath.Join("topologies", "gastown")) {
 			hasGastown = true
@@ -192,6 +196,9 @@ func TestTopologyDirsPopulated(t *testing.T) {
 	}
 	if !hasMaintenance {
 		t.Errorf("TopologyDirs missing maintenance: %v", cfg.TopologyDirs)
+	}
+	if !hasDoltHealth {
+		t.Errorf("TopologyDirs missing dolt-health: %v", cfg.TopologyDirs)
 	}
 	if !hasGastown {
 		t.Errorf("TopologyDirs missing gastown: %v", cfg.TopologyDirs)
@@ -431,8 +438,44 @@ func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 		})
 	}
 
-	// 8 formulas: mol-shutdown-dance + 7 dog infrastructure formulas
-	if count != 8 {
-		t.Errorf("found %d formula files, want 8", count)
+	// 3 formulas: mol-shutdown-dance + mol-dog-jsonl + mol-dog-reaper
+	if count != 3 {
+		t.Errorf("found %d formula files, want 3", count)
+	}
+}
+
+func TestDoltHealthFormulasParseAndValidate(t *testing.T) {
+	dir := exampleDir()
+	formulaDir := filepath.Join(dir, "..", "dolt-health", "formulas")
+
+	entries, err := os.ReadDir(formulaDir)
+	if err != nil {
+		t.Fatalf("reading dolt-health formulas dir: %v", err)
+	}
+
+	var count int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".formula.toml") {
+			continue
+		}
+		count++
+		t.Run(e.Name(), func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(formulaDir, e.Name()))
+			if err != nil {
+				t.Fatalf("reading %s: %v", e.Name(), err)
+			}
+			f, err := formula.Parse(data)
+			if err != nil {
+				t.Fatalf("Parse(%s): %v", e.Name(), err)
+			}
+			if err := formula.Validate(f); err != nil {
+				t.Errorf("Validate(%s): %v", e.Name(), err)
+			}
+		})
+	}
+
+	// 7 formulas: 5 dog infrastructure + 2 exec (dolt-health, dolt-remotes-patrol)
+	if count != 7 {
+		t.Errorf("found %d formula files, want 7", count)
 	}
 }

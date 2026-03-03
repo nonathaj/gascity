@@ -60,6 +60,7 @@ Agent defines a configured agent in the city.
 | `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (topology-safe). |
 | `default_sling_formula` | string |  |  | DefaultSlingFormula is the formula name automatically applied via --on when beads are slung to this agent, unless --no-formula is set. Example: "mol-polecat-work" |
 | `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded topologies. Each name must match a {{ define "name" }} block. |
+| `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During topology composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 
 ## AgentOverride
 

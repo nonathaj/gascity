@@ -14,7 +14,7 @@
 [topology]
 name = "gastown"
 schema = 1
-includes = ["../maintenance"]
+includes = ["../maintenance", "../../../dolt-health"]
 city_agents = ["mayor", "deacon", "boot", "dog"]
 
 [formulas]
