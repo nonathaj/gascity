@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -333,6 +332,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			return nil
 		}
 
+		bp := newAgentBuildParams(cityName, cityPath, c, sp, beaconTime, stderr)
+
 		// Pre-compute suspended rig paths so we can skip agents in suspended rigs.
 		suspendedRigPaths := make(map[string]bool)
 		for _, r := range c.Rigs {
@@ -362,13 +363,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			}
 
 			if pool.Max == 1 && !c.Agents[i].IsPool() {
-				// Fixed agent (no explicit pool config): resolve and build single agent.
-				resolved, err := config.ResolveProvider(&c.Agents[i], &c.Workspace, c.Providers, exec.LookPath)
-				if err != nil {
-					fmt.Fprintf(stderr, "gc start: agent %q: %v (skipping)\n", c.Agents[i].QualifiedName(), err) //nolint:errcheck // best-effort stderr
-					continue
-				}
-				// Expand dir templates (e.g. ".gc/worktrees/{{.Rig}}/{{.Agent}}").
+				// Fixed agent: check rig suspension, then build via shared path.
 				expandedDir := expandDirTemplate(c.Agents[i].Dir, SessionSetupContext{
 					Agent:    c.Agents[i].QualifiedName(),
 					Rig:      c.Agents[i].Dir,
@@ -384,120 +379,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 					continue // Agent's rig is suspended — skip.
 				}
 
-				// Install provider hooks if configured.
-				if ih := config.ResolveInstallHooks(&c.Agents[i], &c.Workspace); len(ih) > 0 {
-					if hErr := hooks.Install(fsys.OSFS{}, cityPath, workDir, ih); hErr != nil {
-						fmt.Fprintf(stderr, "gc start: agent %q: hooks: %v\n", c.Agents[i].QualifiedName(), hErr) //nolint:errcheck // best-effort stderr
-					}
-				}
-
-				// Resolve overlay directory path (provider handles the copy).
-				overlayDir := resolveOverlayDir(c.Agents[i].OverlayDir, cityPath)
-
-				// Stage settings.json when referenced so the agent can find it.
-				var copyFiles []session.CopyEntry
-				command := resolved.CommandString()
-				if sa := settingsArgs(cityPath, resolved.Name); sa != "" {
-					command = command + " " + sa
-					settingsFile := filepath.Join(cityPath, ".gc", "settings.json")
-					copyFiles = append(copyFiles, session.CopyEntry{Src: settingsFile, RelDst: filepath.Join(".gc", "settings.json")})
-				}
-				// Stage .gc/scripts/ if present so agent scripts resolve inside
-				// container providers (K8s, Docker) that don't bind-mount host paths.
-				scriptsDir := filepath.Join(cityPath, ".gc", "scripts")
-				if info, err := os.Stat(scriptsDir); err == nil && info.IsDir() {
-					copyFiles = append(copyFiles, session.CopyEntry{Src: scriptsDir, RelDst: filepath.Join(".gc", "scripts")})
-				}
-				// Stage hook files for container providers (K8s uses emptyDir,
-				// not bind-mounts). hooks.Install() writes to host filesystem;
-				// container pods need explicit staging via copy_files.
-				copyFiles = stageHookFiles(copyFiles, cityPath, workDir)
-				rigName := resolveRigForAgent(workDir, c.Rigs)
-				var prompt string
-				if resolved.PromptMode != "none" {
-					fragments := mergeFragmentLists(c.Workspace.GlobalFragments, c.Agents[i].InjectFragments)
-					prompt = renderPrompt(fsys.OSFS{}, cityPath, cityName, c.Agents[i].PromptTemplate, PromptContext{
-						CityRoot:      cityPath,
-						AgentName:     c.Agents[i].QualifiedName(),
-						TemplateName:  c.Agents[i].Name,
-						RigName:       rigName,
-						WorkDir:       workDir,
-						IssuePrefix:   findRigPrefix(rigName, c.Rigs),
-						DefaultBranch: defaultBranchFor(workDir),
-						WorkQuery:     c.Agents[i].EffectiveWorkQuery(),
-						SlingQuery:    c.Agents[i].EffectiveSlingQuery(),
-						Env:           c.Agents[i].Env,
-					}, c.Workspace.SessionTemplate, stderr,
-						c.TopologyDirs, fragments)
-					hasHooks := config.AgentHasHooks(&c.Agents[i], &c.Workspace, resolved.Name)
-					beacon := session.FormatBeaconAt(cityName, c.Agents[i].QualifiedName(), !hasHooks, beaconTime)
-					if prompt != "" {
-						prompt = beacon + "\n\n" + prompt
-					} else {
-						prompt = beacon
-					}
-				}
-				agentEnv := map[string]string{
-					"GC_AGENT": c.Agents[i].QualifiedName(),
-					"GC_CITY":  cityPath,
-					"GC_DIR":   workDir,
-				}
-				if rigName != "" {
-					agentEnv["GC_RIG"] = rigName
-				}
-				env := mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(c.Agents[i].Env), agentEnv)
-				// Expand session_setup templates with session context.
-				sessName := sessionName(cityName, c.Agents[i].QualifiedName(), c.Workspace.SessionTemplate)
-				configDir := cityPath
-				if c.Agents[i].SourceDir != "" {
-					configDir = c.Agents[i].SourceDir
-				}
-				// Expand Go templates in start_command (e.g. {{.ConfigDir}}).
-				if strings.Contains(command, "{{") {
-					expanded := expandSessionSetup([]string{command}, SessionSetupContext{
-						Session:   sessName,
-						Agent:     c.Agents[i].QualifiedName(),
-						Rig:       rigName,
-						CityRoot:  cityPath,
-						CityName:  cityName,
-						WorkDir:   workDir,
-						ConfigDir: configDir,
-					})
-					command = expanded[0]
-				}
-				expandedSetup := expandSessionSetup(c.Agents[i].SessionSetup, SessionSetupContext{
-					Session:   sessName,
-					Agent:     c.Agents[i].QualifiedName(),
-					Rig:       rigName,
-					CityRoot:  cityPath,
-					CityName:  cityName,
-					WorkDir:   workDir,
-					ConfigDir: configDir,
-				})
-				resolvedScript := resolveSetupScript(c.Agents[i].SessionSetupScript, cityPath)
-				expandedPreStart := expandSessionSetup(c.Agents[i].PreStart, SessionSetupContext{
-					Session:   sessName,
-					Agent:     c.Agents[i].QualifiedName(),
-					Rig:       rigName,
-					CityRoot:  cityPath,
-					CityName:  cityName,
-					WorkDir:   workDir,
-					ConfigDir: configDir,
-				})
-				hints := agent.StartupHints{
-					ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
-					ReadyDelayMs:           resolved.ReadyDelayMs,
-					ProcessNames:           resolved.ProcessNames,
-					EmitsPermissionWarning: resolved.EmitsPermissionWarning,
-					Nudge:                  c.Agents[i].Nudge,
-					PreStart:               expandedPreStart,
-					SessionSetup:           expandedSetup,
-					SessionSetupScript:     resolvedScript,
-					OverlayDir:             overlayDir,
-					CopyFiles:              copyFiles,
-				}
 				fpExtra := buildFingerprintExtra(&c.Agents[i])
-				agents = append(agents, agent.New(c.Agents[i].QualifiedName(), cityName, command, prompt, env, hints, workDir, c.Workspace.SessionTemplate, fpExtra, sp))
+				a, err := buildOneAgent(bp, &c.Agents[i], c.Agents[i].QualifiedName(), fpExtra)
+				if err != nil {
+					fmt.Fprintf(stderr, "gc start: %v (skipping)\n", err) //nolint:errcheck // best-effort stderr
+					continue
+				}
+				agents = append(agents, a)
 				continue
 			}
 
@@ -549,9 +437,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 				fmt.Fprintf(stderr, "Pool '%s': check returned %d, %d running → scaling %s\n", //nolint:errcheck // best-effort stderr
 					c.Agents[pw.agentIdx].Name, pr.desired, running, scaleDirection(running, pr.desired))
 			}
-			pa, err := poolAgents(&c.Agents[pw.agentIdx], pr.desired, cityName, cityPath,
-				&c.Workspace, c.Providers, exec.LookPath, fsys.OSFS{}, sp, c.Rigs, c.Workspace.SessionTemplate, c.FormulaLayers, beaconTime,
-				c.TopologyDirs, c.Workspace.GlobalFragments)
+			pa, err := poolAgents(bp, &c.Agents[pw.agentIdx], pr.desired)
 			if err != nil {
 				fmt.Fprintf(stderr, "gc start: %v (skipping pool)\n", err) //nolint:errcheck // best-effort stderr
 				continue

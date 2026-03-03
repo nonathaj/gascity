@@ -1,0 +1,185 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/steveyegge/gascity/internal/agent"
+	"github.com/steveyegge/gascity/internal/config"
+	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/steveyegge/gascity/internal/hooks"
+	"github.com/steveyegge/gascity/internal/session"
+)
+
+// agentBuildParams holds shared, per-city parameters for building agents.
+// These are constant across all agents in a single buildAgents call.
+type agentBuildParams struct {
+	cityName        string
+	cityPath        string
+	workspace       *config.Workspace
+	providers       map[string]config.ProviderSpec
+	lookPath        config.LookPathFunc
+	fs              fsys.FS
+	sp              session.Provider
+	rigs            []config.Rig
+	sessionTemplate string
+	beaconTime      time.Time
+	topologyDirs    []string
+	globalFragments []string
+	stderr          io.Writer
+}
+
+// buildOneAgent resolves a config.Agent into an agent.Agent. This is the
+// single canonical path for building agents — both fixed agents and pool
+// instances flow through here. The caller is responsible for setting the
+// correct Name and Dir on cfgAgent (pool callers modify these for each
+// instance before calling).
+//
+// qualifiedName is the agent's canonical identity (e.g., "mayor" or
+// "hello-world/polecat-2"). fpExtra carries additional data for config
+// fingerprinting (e.g., pool bounds); pass nil for pool instances.
+func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName string, fpExtra map[string]string) (agent.Agent, error) {
+	// Resolve provider preset.
+	resolved, err := config.ResolveProvider(cfgAgent, p.workspace, p.providers, p.lookPath)
+	if err != nil {
+		return nil, fmt.Errorf("agent %q: %w", qualifiedName, err)
+	}
+
+	// Expand dir template (e.g. ".gc/worktrees/{{.Rig}}/{{.Agent}}").
+	expandedDir := expandDirTemplate(cfgAgent.Dir, SessionSetupContext{
+		Agent:    qualifiedName,
+		Rig:      cfgAgent.Dir,
+		CityRoot: p.cityPath,
+		CityName: p.cityName,
+	})
+	workDir, err := resolveAgentDir(p.cityPath, expandedDir)
+	if err != nil {
+		return nil, fmt.Errorf("agent %q: %w", qualifiedName, err)
+	}
+
+	// Install provider hooks if configured.
+	if ih := config.ResolveInstallHooks(cfgAgent, p.workspace); len(ih) > 0 {
+		if hErr := hooks.Install(p.fs, p.cityPath, workDir, ih); hErr != nil {
+			fmt.Fprintf(p.stderr, "agent %q: hooks: %v\n", qualifiedName, hErr) //nolint:errcheck // best-effort stderr
+		}
+	}
+
+	// Resolve overlay directory path (provider handles the copy).
+	overlayDir := resolveOverlayDir(cfgAgent.OverlayDir, p.cityPath)
+
+	// Build copy_files for container providers.
+	var copyFiles []session.CopyEntry
+	command := resolved.CommandString()
+	if sa := settingsArgs(p.cityPath, resolved.Name); sa != "" {
+		command = command + " " + sa
+		settingsFile := filepath.Join(p.cityPath, ".gc", "settings.json")
+		copyFiles = append(copyFiles, session.CopyEntry{Src: settingsFile, RelDst: filepath.Join(".gc", "settings.json")})
+	}
+	scriptsDir := filepath.Join(p.cityPath, ".gc", "scripts")
+	if info, sErr := os.Stat(scriptsDir); sErr == nil && info.IsDir() {
+		copyFiles = append(copyFiles, session.CopyEntry{Src: scriptsDir, RelDst: filepath.Join(".gc", "scripts")})
+	}
+	copyFiles = stageHookFiles(copyFiles, p.cityPath, workDir)
+
+	// Resolve rig association for prompt context.
+	rigName := resolveRigForAgent(workDir, p.rigs)
+
+	// Build agent environment.
+	agentEnv := map[string]string{
+		"GC_AGENT": qualifiedName,
+		"GC_CITY":  p.cityPath,
+		"GC_DIR":   workDir,
+	}
+	if rigName != "" {
+		agentEnv["GC_RIG"] = rigName
+	}
+
+	// Render prompt with beacon.
+	var prompt string
+	if resolved.PromptMode != "none" {
+		fragments := mergeFragmentLists(p.globalFragments, cfgAgent.InjectFragments)
+		prompt = renderPrompt(p.fs, p.cityPath, p.cityName, cfgAgent.PromptTemplate, PromptContext{
+			CityRoot:      p.cityPath,
+			AgentName:     qualifiedName,
+			TemplateName:  cfgAgent.Name,
+			RigName:       rigName,
+			WorkDir:       workDir,
+			IssuePrefix:   findRigPrefix(rigName, p.rigs),
+			DefaultBranch: defaultBranchFor(workDir),
+			WorkQuery:     cfgAgent.EffectiveWorkQuery(),
+			SlingQuery:    cfgAgent.EffectiveSlingQuery(),
+			Env:           cfgAgent.Env,
+		}, p.sessionTemplate, p.stderr, p.topologyDirs, fragments)
+		hasHooks := config.AgentHasHooks(cfgAgent, p.workspace, resolved.Name)
+		beacon := session.FormatBeaconAt(p.cityName, qualifiedName, !hasHooks, p.beaconTime)
+		if prompt != "" {
+			prompt = beacon + "\n\n" + prompt
+		} else {
+			prompt = beacon
+		}
+	}
+
+	// Merge environment layers.
+	env := mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(cfgAgent.Env), agentEnv)
+
+	// Expand session-related templates.
+	sessName := agent.SessionNameFor(p.cityName, qualifiedName, p.sessionTemplate)
+	configDir := p.cityPath
+	if cfgAgent.SourceDir != "" {
+		configDir = cfgAgent.SourceDir
+	}
+	setupCtx := SessionSetupContext{
+		Session:   sessName,
+		Agent:     qualifiedName,
+		Rig:       rigName,
+		CityRoot:  p.cityPath,
+		CityName:  p.cityName,
+		WorkDir:   workDir,
+		ConfigDir: configDir,
+	}
+	if strings.Contains(command, "{{") {
+		expanded := expandSessionSetup([]string{command}, setupCtx)
+		command = expanded[0]
+	}
+	expandedSetup := expandSessionSetup(cfgAgent.SessionSetup, setupCtx)
+	resolvedScript := resolveSetupScript(cfgAgent.SessionSetupScript, p.cityPath)
+	expandedPreStart := expandSessionSetup(cfgAgent.PreStart, setupCtx)
+
+	hints := agent.StartupHints{
+		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
+		ReadyDelayMs:           resolved.ReadyDelayMs,
+		ProcessNames:           resolved.ProcessNames,
+		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
+		Nudge:                  cfgAgent.Nudge,
+		PreStart:               expandedPreStart,
+		SessionSetup:           expandedSetup,
+		SessionSetupScript:     resolvedScript,
+		OverlayDir:             overlayDir,
+		CopyFiles:              copyFiles,
+	}
+	return agent.New(qualifiedName, p.cityName, command, prompt, env, hints, workDir, p.sessionTemplate, fpExtra, p.sp), nil
+}
+
+// newAgentBuildParams constructs agentBuildParams from the common startup values.
+func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp session.Provider, beaconTime time.Time, stderr io.Writer) *agentBuildParams {
+	return &agentBuildParams{
+		cityName:        cityName,
+		cityPath:        cityPath,
+		workspace:       &cfg.Workspace,
+		providers:       cfg.Providers,
+		lookPath:        exec.LookPath,
+		fs:              fsys.OSFS{},
+		sp:              sp,
+		rigs:            cfg.Rigs,
+		sessionTemplate: cfg.Workspace.SessionTemplate,
+		beaconTime:      beaconTime,
+		topologyDirs:    cfg.TopologyDirs,
+		globalFragments: cfg.Workspace.GlobalFragments,
+		stderr:          stderr,
+	}
+}

@@ -2,13 +2,27 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"reflect"
 	"testing"
-	"time"
 
 	"github.com/steveyegge/gascity/internal/config"
 	"github.com/steveyegge/gascity/internal/fsys"
 	"github.com/steveyegge/gascity/internal/session"
 )
+
+// testBuildParams returns agentBuildParams suitable for unit tests.
+func testBuildParams(sp session.Provider) *agentBuildParams {
+	return &agentBuildParams{
+		cityName:  "city",
+		cityPath:  "/tmp/city",
+		workspace: &config.Workspace{Name: "city"},
+		lookPath:  fakeLookPath,
+		fs:        fsys.NewFake(),
+		sp:        sp,
+		stderr:    io.Discard,
+	}
+}
 
 func TestEvaluatePoolSuccess(t *testing.T) {
 	pool := config.PoolConfig{Min: 0, Max: 10, Check: "echo 5"}
@@ -125,8 +139,7 @@ func TestPoolAgentsNaming(t *testing.T) {
 		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 3"},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 3, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 3)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -148,8 +161,7 @@ func TestPoolAgentsSessionNames(t *testing.T) {
 		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 3"},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 3, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 3)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -168,8 +180,7 @@ func TestPoolAgentsZeroDesired(t *testing.T) {
 		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 0"},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 0, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 0)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -186,8 +197,7 @@ func TestPoolAgentsEnv(t *testing.T) {
 		Env:          map[string]string{"POOL_VAR": "yes"},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 2, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 2)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -217,8 +227,7 @@ func TestPoolAgentsMaxOneNoSuffix(t *testing.T) {
 		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 1, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -347,8 +356,7 @@ func TestPoolAgentsSessionSetup(t *testing.T) {
 		SessionSetupScript: "scripts/setup.sh",
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 1, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -402,8 +410,7 @@ func TestPoolAgentsConfigDir(t *testing.T) {
 		},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 1, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -428,8 +435,7 @@ func TestPoolAgentsConfigDir_DefaultsToCityPath(t *testing.T) {
 		},
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 1, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -450,8 +456,7 @@ func TestPoolAgentsOverlayDirCopied(t *testing.T) {
 		OverlayDir:   "overlays/worker",
 	}
 	sp := session.NewFake()
-	agents, err := poolAgents(cfgAgent, 2, "city", "/tmp/city",
-		&config.Workspace{Name: "city"}, nil, fakeLookPath, fsys.NewFake(), sp, nil, "", config.FormulaLayers{}, time.Time{}, nil, nil)
+	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 2)
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
@@ -492,6 +497,113 @@ func TestCountRunningPoolInstancesNoneRunning(t *testing.T) {
 	count := countRunningPoolInstances("worker", "", 10, "city", "", sp)
 	if count != 0 {
 		t.Errorf("count = %d, want 0", count)
+	}
+}
+
+// TestDeepCopyAgentCoversAllFields verifies that deepCopyAgent copies every
+// field from config.Agent. Uses reflection to detect fields added to Agent
+// but not handled in the deep-copy, preventing silent data loss for pool
+// instances.
+func TestDeepCopyAgentCoversAllFields(t *testing.T) {
+	trueVal := true
+	intVal := 42
+	src := config.Agent{
+		Name:                   "original",
+		Dir:                    "original-dir",
+		Scope:                  "city",
+		Suspended:              true,
+		PreStart:               []string{"pre-cmd"},
+		PromptTemplate:         "prompts/test.md",
+		Nudge:                  "nudge text",
+		Provider:               "claude",
+		StartCommand:           "claude --dangerously",
+		Args:                   []string{"--arg1"},
+		PromptMode:             "flag",
+		PromptFlag:             "--prompt",
+		ReadyDelayMs:           &intVal,
+		ReadyPromptPrefix:      "ready>",
+		ProcessNames:           []string{"claude"},
+		EmitsPermissionWarning: &trueVal,
+		Env:                    map[string]string{"K": "V"},
+		Pool:                   &config.PoolConfig{Min: 1, Max: 5, Check: "echo 3"},
+		WorkQuery:              "bd ready",
+		SlingQuery:             "bd update {}",
+		IdleTimeout:            "15m",
+		InstallAgentHooks:      []string{"claude"},
+		HooksInstalled:         &trueVal,
+		SessionSetup:           []string{"setup-cmd"},
+		SessionSetupScript:     "scripts/setup.sh",
+		OverlayDir:             "overlays/test",
+		SourceDir:              "/src",
+		DefaultSlingFormula:    "mol-work",
+		InjectFragments:        []string{"frag1"},
+		Fallback:               true,
+	}
+
+	// Verify every Agent field is set (non-zero) in the test data.
+	sv := reflect.ValueOf(src)
+	st := sv.Type()
+	for i := 0; i < st.NumField(); i++ {
+		if sv.Field(i).IsZero() {
+			t.Fatalf("Agent field %q is zero in test data — add it to the test source", st.Field(i).Name)
+		}
+	}
+
+	dst := deepCopyAgent(&src, "copy-name", "copy-dir")
+
+	// Name and Dir should be the overridden values.
+	if dst.Name != "copy-name" {
+		t.Errorf("Name = %q, want %q", dst.Name, "copy-name")
+	}
+	if dst.Dir != "copy-dir" {
+		t.Errorf("Dir = %q, want %q", dst.Dir, "copy-dir")
+	}
+
+	// All other fields should match the source.
+	dv := reflect.ValueOf(dst)
+	for i := 0; i < st.NumField(); i++ {
+		fname := st.Field(i).Name
+		if fname == "Name" || fname == "Dir" {
+			continue // Intentionally overridden.
+		}
+		if dv.Field(i).IsZero() {
+			t.Errorf("deepCopyAgent did not copy field %q", fname)
+		}
+	}
+
+	// Verify deep independence: mutating src slices/maps should not affect dst.
+	src.PreStart[0] = "MUTATED"
+	src.Env["K"] = "MUTATED"
+	src.SessionSetup[0] = "MUTATED"
+	src.Args[0] = "MUTATED"
+	src.ProcessNames[0] = "MUTATED"
+	src.InjectFragments[0] = "MUTATED"
+	src.InstallAgentHooks[0] = "MUTATED"
+	src.Pool.Min = 999
+
+	if dst.PreStart[0] == "MUTATED" {
+		t.Error("PreStart is not a deep copy")
+	}
+	if dst.Env["K"] == "MUTATED" {
+		t.Error("Env is not a deep copy")
+	}
+	if dst.SessionSetup[0] == "MUTATED" {
+		t.Error("SessionSetup is not a deep copy")
+	}
+	if dst.Args[0] == "MUTATED" {
+		t.Error("Args is not a deep copy")
+	}
+	if dst.ProcessNames[0] == "MUTATED" {
+		t.Error("ProcessNames is not a deep copy")
+	}
+	if dst.InjectFragments[0] == "MUTATED" {
+		t.Error("InjectFragments is not a deep copy")
+	}
+	if dst.InstallAgentHooks[0] == "MUTATED" {
+		t.Error("InstallAgentHooks is not a deep copy")
+	}
+	if dst.Pool.Min == 999 {
+		t.Error("Pool is not a deep copy")
 	}
 }
 

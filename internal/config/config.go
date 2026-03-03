@@ -4,6 +4,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -11,6 +12,11 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/steveyegge/gascity/internal/fsys"
 )
+
+// validAgentName matches names safe for use in session identifiers.
+// Must start with a letter or digit, followed by letters, digits, hyphens,
+// or underscores. Slashes, spaces, and dots are not allowed.
+var validAgentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 // QualifiedName returns the agent's canonical identity.
 // Rig-scoped: "hello-world/polecat". City-wide: "mayor".
@@ -874,6 +880,9 @@ func ValidateAgents(agents []Agent) error {
 	for i, a := range agents {
 		if a.Name == "" {
 			return fmt.Errorf("agent[%d]: name is required", i)
+		}
+		if !validAgentName.MatchString(a.Name) {
+			return fmt.Errorf("agent %q: name must match [a-zA-Z0-9][a-zA-Z0-9_-]* (no spaces, slashes, or dots)", a.Name)
 		}
 		key := agentKey{dir: a.Dir, name: a.Name}
 		if seen[key] {

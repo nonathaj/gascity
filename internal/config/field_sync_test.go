@@ -102,6 +102,215 @@ func TestAgentFieldSync(t *testing.T) {
 	}
 }
 
+// TestApplyAgentPatchCoversAllFields verifies that applyAgentPatchFields
+// actually handles every field on AgentPatch. If a new field is added to
+// AgentPatch but not wired into applyAgentPatchFields, this test catches it.
+func TestApplyAgentPatchCoversAllFields(t *testing.T) {
+	trueVal := true
+	strVal := func(s string) *string { return &s }
+	intVal := func(n int) *int { return &n }
+
+	patch := AgentPatch{
+		Dir:                     "target-dir",
+		Name:                    "target-name",
+		Scope:                   strVal("city"),
+		Suspended:               &trueVal,
+		Pool:                    &PoolOverride{Min: intVal(2), Max: intVal(10), Check: strVal("echo 5")},
+		Env:                     map[string]string{"KEY": "val"},
+		PreStart:                []string{"pre-cmd"},
+		PromptTemplate:          strVal("prompts/test.md"),
+		Provider:                strVal("claude"),
+		StartCommand:            strVal("claude --dangerously"),
+		Nudge:                   strVal("wake up"),
+		IdleTimeout:             strVal("15m"),
+		InstallAgentHooks:       []string{"claude"},
+		HooksInstalled:          &trueVal,
+		SessionSetup:            []string{"setup-cmd"},
+		SessionSetupScript:      strVal("scripts/setup.sh"),
+		OverlayDir:              strVal("overlays/test"),
+		DefaultSlingFormula:     strVal("mol-work"),
+		InjectFragments:         []string{"frag1"},
+		PreStartAppend:          []string{"pre-append"},
+		SessionSetupAppend:      []string{"setup-append"},
+		InstallAgentHooksAppend: []string{"gemini"},
+		InjectFragmentsAppend:   []string{"frag2"},
+		EnvRemove:               []string{"REMOVE_ME"},
+	}
+
+	// Verify every AgentPatch field is set (non-zero).
+	pv := reflect.ValueOf(patch)
+	pt := pv.Type()
+	for i := 0; i < pt.NumField(); i++ {
+		f := pt.Field(i)
+		if pv.Field(i).IsZero() {
+			t.Errorf("AgentPatch field %q is zero in test data — add it to the test patch", f.Name)
+		}
+	}
+
+	// Apply the patch to a zero-valued agent.
+	agent := Agent{Env: map[string]string{"REMOVE_ME": "gone"}}
+	applyAgentPatchFields(&agent, &patch)
+
+	// Fields on AgentPatch that target the agent (Dir/Name are targeting keys,
+	// not applied to the agent). EnvRemove removes keys. *Append modifiers
+	// append to the base list set by the non-Append field.
+	targeting := map[string]bool{"Dir": true, "Name": true}
+	modifiers := map[string]bool{
+		"EnvRemove":               true,
+		"PreStartAppend":          true,
+		"SessionSetupAppend":      true,
+		"InstallAgentHooksAppend": true,
+		"InjectFragmentsAppend":   true,
+	}
+
+	// Check that all non-targeting, non-modifier fields were applied.
+	av := reflect.ValueOf(agent)
+	at := av.Type()
+	agentFieldByName := make(map[string]int, at.NumField())
+	for i := 0; i < at.NumField(); i++ {
+		agentFieldByName[at.Field(i).Name] = i
+	}
+
+	for i := 0; i < pt.NumField(); i++ {
+		fname := pt.Field(i).Name
+		if targeting[fname] || modifiers[fname] {
+			continue
+		}
+		// Env and Pool are handled specially (not a direct field copy).
+		if fname == "Env" || fname == "Pool" {
+			continue
+		}
+		idx, ok := agentFieldByName[fname]
+		if !ok {
+			continue // patchOnly field
+		}
+		if av.Field(idx).IsZero() {
+			t.Errorf("applyAgentPatchFields did not apply field %q to Agent", fname)
+		}
+	}
+
+	// Verify Env was merged.
+	if agent.Env["KEY"] != "val" {
+		t.Errorf("Env[KEY] = %q, want %q", agent.Env["KEY"], "val")
+	}
+	// Verify EnvRemove worked.
+	if _, exists := agent.Env["REMOVE_ME"]; exists {
+		t.Error("EnvRemove did not remove REMOVE_ME from Env")
+	}
+	// Verify Pool was applied.
+	if agent.Pool == nil || agent.Pool.Min != 2 || agent.Pool.Max != 10 {
+		t.Errorf("Pool not applied correctly: %+v", agent.Pool)
+	}
+	// Verify append modifiers extended the lists (not replaced).
+	if len(agent.PreStart) != 2 || agent.PreStart[1] != "pre-append" {
+		t.Errorf("PreStartAppend not applied: %v", agent.PreStart)
+	}
+	if len(agent.SessionSetup) != 2 || agent.SessionSetup[1] != "setup-append" {
+		t.Errorf("SessionSetupAppend not applied: %v", agent.SessionSetup)
+	}
+	if len(agent.InstallAgentHooks) != 2 || agent.InstallAgentHooks[1] != "gemini" {
+		t.Errorf("InstallAgentHooksAppend not applied: %v", agent.InstallAgentHooks)
+	}
+	if len(agent.InjectFragments) != 2 || agent.InjectFragments[1] != "frag2" {
+		t.Errorf("InjectFragmentsAppend not applied: %v", agent.InjectFragments)
+	}
+}
+
+// TestApplyAgentOverrideCoversAllFields verifies that applyAgentOverride
+// actually handles every field on AgentOverride. Same approach as the patch
+// test: set every field, apply, check no Agent field is left at zero.
+func TestApplyAgentOverrideCoversAllFields(t *testing.T) {
+	trueVal := true
+	strVal := func(s string) *string { return &s }
+	intVal := func(n int) *int { return &n }
+
+	override := AgentOverride{
+		Agent:                   "target",
+		Dir:                     strVal("new-dir"),
+		Scope:                   strVal("city"),
+		Suspended:               &trueVal,
+		Pool:                    &PoolOverride{Min: intVal(2), Max: intVal(10), Check: strVal("echo 5")},
+		Env:                     map[string]string{"KEY": "val"},
+		EnvRemove:               []string{"REMOVE_ME"},
+		PreStart:                []string{"pre-cmd"},
+		PromptTemplate:          strVal("prompts/test.md"),
+		Provider:                strVal("claude"),
+		StartCommand:            strVal("claude --dangerously"),
+		Nudge:                   strVal("wake up"),
+		IdleTimeout:             strVal("15m"),
+		InstallAgentHooks:       []string{"claude"},
+		HooksInstalled:          &trueVal,
+		SessionSetup:            []string{"setup-cmd"},
+		SessionSetupScript:      strVal("scripts/setup.sh"),
+		OverlayDir:              strVal("overlays/test"),
+		DefaultSlingFormula:     strVal("mol-work"),
+		InjectFragments:         []string{"frag1"},
+		PreStartAppend:          []string{"pre-append"},
+		SessionSetupAppend:      []string{"setup-append"},
+		InstallAgentHooksAppend: []string{"gemini"},
+		InjectFragmentsAppend:   []string{"frag2"},
+	}
+
+	// Verify every AgentOverride field is set (non-zero).
+	ov := reflect.ValueOf(override)
+	ot := ov.Type()
+	for i := 0; i < ot.NumField(); i++ {
+		f := ot.Field(i)
+		if ov.Field(i).IsZero() {
+			t.Errorf("AgentOverride field %q is zero in test data — add it to the test override", f.Name)
+		}
+	}
+
+	// Apply the override to a zero-valued agent.
+	agent := Agent{Env: map[string]string{"REMOVE_ME": "gone"}}
+	applyAgentOverride(&agent, &override)
+
+	// "Agent" is the targeting key, not applied to the agent.
+	targeting := map[string]bool{"Agent": true}
+	modifiers := map[string]bool{
+		"EnvRemove":               true,
+		"PreStartAppend":          true,
+		"SessionSetupAppend":      true,
+		"InstallAgentHooksAppend": true,
+		"InjectFragmentsAppend":   true,
+	}
+
+	av := reflect.ValueOf(agent)
+	at := av.Type()
+	agentFieldByName := make(map[string]int, at.NumField())
+	for i := 0; i < at.NumField(); i++ {
+		agentFieldByName[at.Field(i).Name] = i
+	}
+
+	for i := 0; i < ot.NumField(); i++ {
+		fname := ot.Field(i).Name
+		if targeting[fname] || modifiers[fname] {
+			continue
+		}
+		if fname == "Env" || fname == "Pool" {
+			continue
+		}
+		idx, ok := agentFieldByName[fname]
+		if !ok {
+			continue
+		}
+		if av.Field(idx).IsZero() {
+			t.Errorf("applyAgentOverride did not apply field %q to Agent", fname)
+		}
+	}
+
+	// Verify Env was merged.
+	if agent.Env["KEY"] != "val" {
+		t.Errorf("Env[KEY] = %q, want %q", agent.Env["KEY"], "val")
+	}
+	if _, exists := agent.Env["REMOVE_ME"]; exists {
+		t.Error("EnvRemove did not remove REMOVE_ME from Env")
+	}
+	if agent.Pool == nil || agent.Pool.Min != 2 || agent.Pool.Max != 10 {
+		t.Errorf("Pool not applied correctly: %+v", agent.Pool)
+	}
+}
+
 func structFields(t reflect.Type) []string {
 	var names []string
 	for i := 0; i < t.NumField(); i++ {

@@ -3,20 +3,14 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/steveyegge/gascity/internal/agent"
 	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/hooks"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
@@ -122,27 +116,81 @@ func resolveSetupScript(script, cityPath string) string {
 	return filepath.Join(cityPath, script)
 }
 
+// deepCopyAgent creates a deep copy of a config.Agent with a new name and dir.
+// Slice and map fields are independently allocated so mutations to the copy
+// don't affect the original.
+func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
+	dst := config.Agent{
+		Name:                   name,
+		Dir:                    dir,
+		Scope:                  src.Scope,
+		Provider:               src.Provider,
+		PromptTemplate:         src.PromptTemplate,
+		Nudge:                  src.Nudge,
+		StartCommand:           src.StartCommand,
+		PromptMode:             src.PromptMode,
+		PromptFlag:             src.PromptFlag,
+		ReadyDelayMs:           src.ReadyDelayMs,
+		ReadyPromptPrefix:      src.ReadyPromptPrefix,
+		EmitsPermissionWarning: src.EmitsPermissionWarning,
+		HooksInstalled:         src.HooksInstalled,
+		DefaultSlingFormula:    src.DefaultSlingFormula,
+		WorkQuery:              src.WorkQuery,
+		SlingQuery:             src.SlingQuery,
+		SessionSetupScript:     src.SessionSetupScript,
+		OverlayDir:             src.OverlayDir,
+		SourceDir:              src.SourceDir,
+		Fallback:               src.Fallback,
+		IdleTimeout:            src.IdleTimeout,
+		Suspended:              src.Suspended,
+	}
+	if len(src.Args) > 0 {
+		dst.Args = make([]string, len(src.Args))
+		copy(dst.Args, src.Args)
+	}
+	if len(src.ProcessNames) > 0 {
+		dst.ProcessNames = make([]string, len(src.ProcessNames))
+		copy(dst.ProcessNames, src.ProcessNames)
+	}
+	if len(src.Env) > 0 {
+		dst.Env = make(map[string]string, len(src.Env))
+		for k, v := range src.Env {
+			dst.Env[k] = v
+		}
+	}
+	if len(src.PreStart) > 0 {
+		dst.PreStart = make([]string, len(src.PreStart))
+		copy(dst.PreStart, src.PreStart)
+	}
+	if len(src.SessionSetup) > 0 {
+		dst.SessionSetup = make([]string, len(src.SessionSetup))
+		copy(dst.SessionSetup, src.SessionSetup)
+	}
+	if len(src.InjectFragments) > 0 {
+		dst.InjectFragments = make([]string, len(src.InjectFragments))
+		copy(dst.InjectFragments, src.InjectFragments)
+	}
+	if len(src.InstallAgentHooks) > 0 {
+		dst.InstallAgentHooks = make([]string, len(src.InstallAgentHooks))
+		copy(dst.InstallAgentHooks, src.InstallAgentHooks)
+	}
+	if src.Pool != nil {
+		poolCopy := *src.Pool
+		dst.Pool = &poolCopy
+	}
+	return dst
+}
+
 // poolAgents builds agent.Agent instances for a pool at the desired count.
 // If pool.Max == 1, uses the bare agent name (no suffix).
 // If pool.Max > 1, names follow the pattern {name}-{n} (1-indexed).
 // Sessions follow the session naming template (default: gc-{city}-{name}).
-func poolAgents(cfgAgent *config.Agent, desired int, cityName, cityPath string,
-	ws *config.Workspace, providers map[string]config.ProviderSpec,
-	lookPath config.LookPathFunc, fs fsys.FS, sp session.Provider,
-	rigs []config.Rig, sessionTemplate string, _ config.FormulaLayers,
-	beaconTime time.Time,
-	topologyDirs, globalFragments []string,
-) ([]agent.Agent, error) {
+func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]agent.Agent, error) {
 	if desired <= 0 {
 		return nil, nil
 	}
 
 	pool := cfgAgent.EffectivePool()
-
-	workDir, err := resolveAgentDir(cityPath, cfgAgent.Dir)
-	if err != nil {
-		return nil, fmt.Errorf("agent %q: %w", cfgAgent.QualifiedName(), err)
-	}
 
 	var agents []agent.Agent
 	for i := 1; i <= desired; i++ {
@@ -158,190 +206,12 @@ func poolAgents(cfgAgent *config.Agent, desired int, cityName, cityPath string,
 			qualifiedInstance = cfgAgent.Dir + "/" + name
 		}
 
-		// Expand dir template for pool instance (e.g. ".gc/worktrees/{{.Rig}}/{{.Agent}}").
-		expandedDir := expandDirTemplate(cfgAgent.Dir, SessionSetupContext{
-			Agent:    qualifiedInstance,
-			Rig:      cfgAgent.Dir,
-			CityRoot: cityPath,
-			CityName: cityName,
-		})
-
-		// Deep-copy the agent config for instance resolution.
-		instanceAgent := config.Agent{
-			Name:                   name,
-			Dir:                    expandedDir,
-			Scope:                  cfgAgent.Scope,
-			Provider:               cfgAgent.Provider,
-			PromptTemplate:         cfgAgent.PromptTemplate,
-			Nudge:                  cfgAgent.Nudge,
-			StartCommand:           cfgAgent.StartCommand,
-			PromptMode:             cfgAgent.PromptMode,
-			PromptFlag:             cfgAgent.PromptFlag,
-			ReadyDelayMs:           cfgAgent.ReadyDelayMs,
-			ReadyPromptPrefix:      cfgAgent.ReadyPromptPrefix,
-			EmitsPermissionWarning: cfgAgent.EmitsPermissionWarning,
-			HooksInstalled:         cfgAgent.HooksInstalled,
-			DefaultSlingFormula:    cfgAgent.DefaultSlingFormula,
-			WorkQuery:              cfgAgent.WorkQuery,
-			SlingQuery:             cfgAgent.SlingQuery,
-			SessionSetupScript:     cfgAgent.SessionSetupScript,
-			OverlayDir:             cfgAgent.OverlayDir,
-			SourceDir:              cfgAgent.SourceDir,
-			Fallback:               cfgAgent.Fallback,
-		}
-		if len(cfgAgent.Args) > 0 {
-			instanceAgent.Args = make([]string, len(cfgAgent.Args))
-			copy(instanceAgent.Args, cfgAgent.Args)
-		}
-		if len(cfgAgent.ProcessNames) > 0 {
-			instanceAgent.ProcessNames = make([]string, len(cfgAgent.ProcessNames))
-			copy(instanceAgent.ProcessNames, cfgAgent.ProcessNames)
-		}
-		if len(cfgAgent.Env) > 0 {
-			instanceAgent.Env = make(map[string]string, len(cfgAgent.Env))
-			for k, v := range cfgAgent.Env {
-				instanceAgent.Env[k] = v
-			}
-		}
-		if len(cfgAgent.PreStart) > 0 {
-			instanceAgent.PreStart = make([]string, len(cfgAgent.PreStart))
-			copy(instanceAgent.PreStart, cfgAgent.PreStart)
-		}
-		if len(cfgAgent.SessionSetup) > 0 {
-			instanceAgent.SessionSetup = make([]string, len(cfgAgent.SessionSetup))
-			copy(instanceAgent.SessionSetup, cfgAgent.SessionSetup)
-		}
-		if len(cfgAgent.InjectFragments) > 0 {
-			instanceAgent.InjectFragments = make([]string, len(cfgAgent.InjectFragments))
-			copy(instanceAgent.InjectFragments, cfgAgent.InjectFragments)
-		}
-
-		resolved, err := config.ResolveProvider(&instanceAgent, ws, providers, lookPath)
+		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
+		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, nil)
 		if err != nil {
 			return nil, fmt.Errorf("agent %q instance %q: %w", cfgAgent.QualifiedName(), name, err)
 		}
-
-		// Resolve per-instance working directory (may differ from base if dir has templates).
-		instanceWorkDir := workDir
-		if expandedDir != cfgAgent.Dir {
-			iwd, iwdErr := resolveAgentDir(cityPath, expandedDir)
-			if iwdErr != nil {
-				return nil, fmt.Errorf("agent %q instance %q: %w", cfgAgent.QualifiedName(), name, iwdErr)
-			}
-			instanceWorkDir = iwd
-		}
-		agentEnv := map[string]string{
-			"GC_AGENT": qualifiedInstance,
-			"GC_CITY":  cityPath,
-			"GC_DIR":   instanceWorkDir,
-		}
-
-		// Install provider hooks if configured.
-		if ih := config.ResolveInstallHooks(cfgAgent, ws); len(ih) > 0 {
-			if hErr := hooks.Install(fs, cityPath, instanceWorkDir, ih); hErr != nil {
-				// Non-fatal for pool instances.
-				_ = hErr
-			}
-		}
-
-		// Resolve overlay directory path (provider handles the copy).
-		overlayDir := resolveOverlayDir(cfgAgent.OverlayDir, cityPath)
-
-		var copyFiles []session.CopyEntry
-		command := resolved.CommandString()
-		if sa := settingsArgs(cityPath, resolved.Name); sa != "" {
-			command = command + " " + sa
-			settingsFile := filepath.Join(cityPath, ".gc", "settings.json")
-			copyFiles = append(copyFiles, session.CopyEntry{Src: settingsFile, RelDst: filepath.Join(".gc", "settings.json")})
-		}
-		// Stage .gc/scripts/ if present so agent scripts resolve inside
-		// container providers (K8s, Docker) that don't bind-mount host paths.
-		scriptsDir := filepath.Join(cityPath, ".gc", "scripts")
-		if info, sErr := os.Stat(scriptsDir); sErr == nil && info.IsDir() {
-			copyFiles = append(copyFiles, session.CopyEntry{Src: scriptsDir, RelDst: filepath.Join(".gc", "scripts")})
-		}
-		// Stage hook files for container providers.
-		copyFiles = stageHookFiles(copyFiles, cityPath, instanceWorkDir)
-		rigName := resolveRigForAgent(instanceWorkDir, rigs)
-		if rigName != "" {
-			agentEnv["GC_RIG"] = rigName
-		}
-		var prompt string
-		if resolved.PromptMode != "none" {
-			fragments := mergeFragmentLists(globalFragments, cfgAgent.InjectFragments)
-			prompt = renderPrompt(fs, cityPath, cityName, cfgAgent.PromptTemplate, PromptContext{
-				CityRoot:      cityPath,
-				AgentName:     qualifiedInstance,
-				TemplateName:  cfgAgent.Name,
-				RigName:       rigName,
-				WorkDir:       instanceWorkDir,
-				IssuePrefix:   findRigPrefix(rigName, rigs),
-				DefaultBranch: defaultBranchFor(instanceWorkDir),
-				WorkQuery:     cfgAgent.EffectiveWorkQuery(),
-				SlingQuery:    cfgAgent.EffectiveSlingQuery(),
-				Env:           cfgAgent.Env,
-			}, sessionTemplate, io.Discard,
-				topologyDirs, fragments)
-			hasHooks := config.AgentHasHooks(cfgAgent, ws, resolved.Name)
-			beacon := session.FormatBeaconAt(cityName, qualifiedInstance, !hasHooks, beaconTime)
-			if prompt != "" {
-				prompt = beacon + "\n\n" + prompt
-			} else {
-				prompt = beacon
-			}
-		}
-		env := mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(cfgAgent.Env), agentEnv)
-		// Expand session_setup templates with session context.
-		sessName := agent.SessionNameFor(cityName, qualifiedInstance, sessionTemplate)
-		configDir := cityPath
-		if cfgAgent.SourceDir != "" {
-			configDir = cfgAgent.SourceDir
-		}
-		// Expand Go templates in start_command (e.g. {{.ConfigDir}}).
-		if strings.Contains(command, "{{") {
-			expanded := expandSessionSetup([]string{command}, SessionSetupContext{
-				Session:   sessName,
-				Agent:     qualifiedInstance,
-				Rig:       rigName,
-				CityRoot:  cityPath,
-				CityName:  cityName,
-				WorkDir:   instanceWorkDir,
-				ConfigDir: configDir,
-			})
-			command = expanded[0]
-		}
-		expandedSetup := expandSessionSetup(instanceAgent.SessionSetup, SessionSetupContext{
-			Session:   sessName,
-			Agent:     qualifiedInstance,
-			Rig:       rigName,
-			CityRoot:  cityPath,
-			CityName:  cityName,
-			WorkDir:   instanceWorkDir,
-			ConfigDir: configDir,
-		})
-		resolvedScript := resolveSetupScript(instanceAgent.SessionSetupScript, cityPath)
-		expandedPreStart := expandSessionSetup(instanceAgent.PreStart, SessionSetupContext{
-			Session:   sessName,
-			Agent:     qualifiedInstance,
-			Rig:       rigName,
-			CityRoot:  cityPath,
-			CityName:  cityName,
-			WorkDir:   instanceWorkDir,
-			ConfigDir: configDir,
-		})
-		hints := agent.StartupHints{
-			ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
-			ReadyDelayMs:           resolved.ReadyDelayMs,
-			ProcessNames:           resolved.ProcessNames,
-			EmitsPermissionWarning: resolved.EmitsPermissionWarning,
-			Nudge:                  cfgAgent.Nudge,
-			PreStart:               expandedPreStart,
-			SessionSetup:           expandedSetup,
-			SessionSetupScript:     resolvedScript,
-			OverlayDir:             overlayDir,
-			CopyFiles:              copyFiles,
-		}
-		agents = append(agents, agent.New(qualifiedInstance, cityName, command, prompt, env, hints, instanceWorkDir, sessionTemplate, nil, sp))
+		agents = append(agents, a)
 	}
 	return agents, nil
 }

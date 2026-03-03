@@ -1144,7 +1144,7 @@ func TestValidateAgentsPoolMatchedPair(t *testing.T) {
 	agents := []Agent{{
 		Name:       "polecat",
 		Dir:        "rig",
-		Pool:       &PoolConfig{Min: 1, Max: 3},
+		Pool:       &PoolConfig{Min: 1, Max: 3, Check: "echo 1"},
 		WorkQuery:  "custom-query",
 		SlingQuery: "custom-sling {}",
 	}}
@@ -1156,7 +1156,7 @@ func TestValidateAgentsPoolMatchedPair(t *testing.T) {
 	agents = []Agent{{
 		Name: "polecat",
 		Dir:  "rig",
-		Pool: &PoolConfig{Min: 1, Max: 3},
+		Pool: &PoolConfig{Min: 1, Max: 3, Check: "echo 1"},
 	}}
 	if err := ValidateAgents(agents); err != nil {
 		t.Errorf("neither set: unexpected error: %v", err)
@@ -1166,7 +1166,7 @@ func TestValidateAgentsPoolMatchedPair(t *testing.T) {
 	agents = []Agent{{
 		Name:       "polecat",
 		Dir:        "rig",
-		Pool:       &PoolConfig{Min: 1, Max: 3},
+		Pool:       &PoolConfig{Min: 1, Max: 3, Check: "echo 1"},
 		SlingQuery: "custom-sling {}",
 	}}
 	if err := ValidateAgents(agents); err == nil {
@@ -1177,7 +1177,7 @@ func TestValidateAgentsPoolMatchedPair(t *testing.T) {
 	agents = []Agent{{
 		Name:      "polecat",
 		Dir:       "rig",
-		Pool:      &PoolConfig{Min: 1, Max: 3},
+		Pool:      &PoolConfig{Min: 1, Max: 3, Check: "echo 1"},
 		WorkQuery: "custom-query",
 	}}
 	if err := ValidateAgents(agents); err == nil {
@@ -1379,6 +1379,62 @@ func TestValidateAgentsMissingName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "name is required") {
 		t.Errorf("error = %q, want 'name is required'", err)
+	}
+}
+
+func TestValidateAgentsInvalidName(t *testing.T) {
+	tests := []struct {
+		name    string
+		agent   string
+		wantErr string
+	}{
+		{"spaces", "my agent", "name must match"},
+		{"slash", "a/b", "name must match"},
+		{"dot", "agent.1", "name must match"},
+		{"empty start", "", "name is required"},
+		{"starts with hyphen", "-agent", "name must match"},
+		{"starts with underscore", "_agent", "name must match"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAgents([]Agent{{Name: tt.agent}})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateAgentsValidNames(t *testing.T) {
+	// These should all pass.
+	for _, name := range []string{"mayor", "worker-1", "agent_A", "X", "a1"} {
+		err := ValidateAgents([]Agent{{Name: name}})
+		if err != nil {
+			t.Errorf("ValidateAgents(%q): unexpected error: %v", name, err)
+		}
+	}
+}
+
+func TestValidateAgentsPoolMaxZeroIsValid(t *testing.T) {
+	// pool.Max == 0 is valid — used to intentionally disable an agent.
+	agents := []Agent{
+		{Name: "worker", Pool: &PoolConfig{Min: 0, Max: 0}},
+	}
+	if err := ValidateAgents(agents); err != nil {
+		t.Errorf("ValidateAgents: unexpected error: %v", err)
+	}
+}
+
+func TestValidateAgentsPoolCheckEmptyIsValid(t *testing.T) {
+	// Empty check is valid — EffectivePool() provides a default check command.
+	agents := []Agent{
+		{Name: "worker", Pool: &PoolConfig{Min: 0, Max: 5}},
+	}
+	if err := ValidateAgents(agents); err != nil {
+		t.Errorf("ValidateAgents: unexpected error for empty check: %v", err)
 	}
 }
 

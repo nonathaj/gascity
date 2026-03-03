@@ -244,7 +244,8 @@ func openCityEventsProvider(stderr io.Writer, cmdName string) (events.Provider, 
 
 // newHybridProvider constructs a composite provider that routes sessions to
 // tmux (local) or k8s (remote) based on session name. The GC_HYBRID_REMOTE_MATCH
-// env var controls which sessions go to k8s (default: "polecat").
+// env var controls which sessions go to k8s. If unset, all sessions route to
+// local tmux.
 func newHybridProvider(sc config.SessionConfig) (session.Provider, error) {
 	local := sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc))
 	remote, err := sessionk8s.NewProvider()
@@ -252,10 +253,7 @@ func newHybridProvider(sc config.SessionConfig) (session.Provider, error) {
 		return nil, fmt.Errorf("hybrid: k8s backend: %w", err)
 	}
 	pattern := os.Getenv("GC_HYBRID_REMOTE_MATCH")
-	if pattern == "" {
-		pattern = "polecat"
-	}
 	return sessionhybrid.New(local, remote, func(name string) bool {
-		return strings.Contains(name, pattern)
+		return pattern != "" && strings.Contains(name, pattern)
 	}), nil
 }
