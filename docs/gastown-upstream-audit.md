@@ -233,6 +233,19 @@ From batch 3 analysis (session summary).
 - [x] City-scoped orphan detection: `FindOrphanedDatabasesCity`, `RemoveDatabaseCity`.
 - [x] Dolt package synced from upstream at 117f014f (25 commits of drift resolved).
 
+### 8e. Dolt-health topology extraction
+- [x] Dolt health formulas extracted from gastown into standalone reusable
+  topology at `examples/dolt-health/`. Dog formulas + exec automations.
+- [x] Fallback agents (`fallback = true`) — topology composition primitive.
+  Non-fallback wins silently over fallback; two fallbacks keep first loaded.
+  `resolveFallbackAgents()` runs before collision detection.
+- [x] Dolt-health topology ships a `fallback = true` dog pool so it works
+  standalone. When composed with maintenance (non-fallback dog), maintenance wins.
+- [x] `topology.requires` validation at city scope via `validateCityRequirements()`.
+- [x] Hybrid session provider (`internal/session/hybrid/`) — routes sessions
+  to tmux (local) or k8s (remote) based on name matching. Registered as
+  `provider = "hybrid"` in providers.go.
+
 ---
 
 ## 9. Prompt Template Updates
@@ -299,19 +312,21 @@ Go code making decisions that belong in prompts — moved to prompts.
 ## 12. Configuration / Operational
 
 ### 12a. Per-role config
-- [ ] **bd8df1e8** — Dog recognized as role in AgentEnv(). Supports
-  `role_agents.dog` overrides.
-- [ ] **e060349b** — `worker_agents` map for per-crew-member agent overrides.
-  Resolution: worker_agents[name] > role_agents[crew] > defaults.
-- [ ] **2484936a** — Role registry: `autonomous` and `emoji` properties per role.
-- **Action:** Document `worker_agents` and `role_agents` config in city.toml.
+- [-] **bd8df1e8** — Dog recognized as role in AgentEnv(). N/A — Gas City
+  has no role concept; per-agent config via `[[agents]]` entries.
+- [-] **e060349b** — `worker_agents` map. N/A — crew members are individual
+  `[[agents]]` entries with full config blocks.
+- [-] **2484936a** — Role registry (`autonomous`, `emoji`). N/A — `autonomous`
+  is prompt-level (propulsion.md.tmpl). `emoji` field on Agent would remove
+  the hardcoded roleEmoji map in tmux.go (ZFC violation) — deferred, low priority.
 
 ### 12b. Rig lifecycle
-- [ ] **95eff925** — `auto_start_on_boot` per-rig config. Sling blocked for
-  docked rigs. `IsRigParkedOrDocked` enforcement.
-- [ ] **d2350f27** — Polecat pool: `gt polecat pool-init <rig>`,
-  `polecat_pool_size` config, local branch cleanup in done.
-- **Action:** Document rig lifecycle config options.
+- [x] **95eff925** — `auto_start_on_boot` per-rig config. Gas City already has
+  `rig.Suspended`. Added `gc rig add --start-suspended` for dormant-by-default.
+  Sling enforcement deferred (prompt-level: mayor undocks rigs).
+- [x] **d2350f27** — Polecat pool: `pool-init` maps to `pool.min` (reconciler
+  pre-spawns). Local branch cleanup added to mol-polecat-work submit step
+  (detach + delete local branch after push, before refinery assignment).
 
 ### 12c. Operational thresholds (ZFC)
 - [ ] **3c1a9182 + 8325ebff** — OperationalConfig: 30+ hardcoded thresholds
@@ -351,14 +366,14 @@ Go code making decisions that belong in prompts — moved to prompts.
 
 ## Review Order (Suggested)
 
-1. **Persistent Polecat Pool** (Section 1) — foundational, affects everything
-2. **Polecat Work Formula v7** (Section 2) — directly updates a key formula
-3. **Communication Hygiene** (Section 3) — affects all role prompts
-4. **Batch-then-Bisect MQ** (Section 4) — refinery formula rewrite
-5. **Witness Patrol** (Section 6) — many behavioral changes
-6. **Prompt Updates** (Section 9) — role-by-role prompt updates
-7. **ZFC Fixes** (Section 11) — ensure no Go-level decisions leak in
-8. **Infrastructure Dogs** (Section 8) — new formulas to consider
-9. **Config/Operational** (Section 12) — SDK-level features
-10. **Formula System** (Section 10) — new capabilities
-11. Remaining sections as needed
+1. [ ] **Persistent Polecat Pool** (Section 1) — foundational, affects everything
+2. [ ] **Polecat Work Formula v7** (Section 2) — directly updates a key formula
+3. [ ] **Communication Hygiene** (Section 3) — affects all role prompts
+4. [x] **Batch-then-Bisect MQ** (Section 4) — refinery formula rewrite
+5. [x] **Witness Patrol** (Section 6) — many behavioral changes
+6. [ ] **Prompt Updates** (Section 9) — role-by-role prompt updates
+7. [ ] **ZFC Fixes** (Section 11) — ensure no Go-level decisions leak in
+8. [x] **Infrastructure Dogs** (Section 8) — new formulas + dolt-health extraction + fallback agents
+9. [ ] **Config/Operational** (Section 12) — SDK-level features ← **NEXT**
+10. [ ] **Formula System** (Section 10) — new capabilities
+11. [ ] Remaining sections (5, 7, 13) as needed

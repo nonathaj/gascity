@@ -382,18 +382,23 @@ but we never push with untracked work left behind.
 git push origin HEAD
 ```
 
-**3. Update metadata on the work bead:**
+**3. Clean up local branch (prevent stale branch accumulation):**
 ```bash
 BRANCH=$(git branch --show-current)
+git checkout --detach                 # Detach so we can delete the branch
+git branch -D "$BRANCH"              # Branch is pushed; refinery owns it now
+```
+
+**4. Update metadata on the work bead:**
+```bash
 bd update {{issue}} \
-  --set-metadata branch=$BRANCH \
   --set-metadata target={{base_branch}} \
   --notes "Implemented: <brief summary>"
 ```
-Branch was recorded early in branch-setup; this updates it (may have
-changed after rebase) and adds the target for the refinery.
+Branch was recorded in branch-setup and is already in metadata.
+This adds the target for the refinery.
 
-**4. Reassign to refinery:**
+**5. Reassign to refinery:**
 ```bash
 bd update {{issue}} --status=open --assignee=<rig>/refinery
 ```
@@ -403,7 +408,7 @@ merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
-**5. Exit immediately.**
+**6. Exit immediately.**
 ```bash
 exit
 ```
