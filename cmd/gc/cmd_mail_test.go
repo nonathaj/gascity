@@ -485,6 +485,70 @@ func TestMailSendWithoutNotify(t *testing.T) {
 	}
 }
 
+// --- gc mail send -s/-m ---
+
+func TestAssembleMailBody(t *testing.T) {
+	tests := []struct {
+		name, subject, message, want string
+	}{
+		{"both", "ESCALATION: Auth broken", "Token refresh fails after 30min", "ESCALATION: Auth broken\n\nToken refresh fails after 30min"},
+		{"subject only", "Build is green", "", "Build is green"},
+		{"message only", "", "Detailed body text", "Detailed body text"},
+		{"neither", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := assembleMailBody(tt.subject, tt.message)
+			if got != tt.want {
+				t.Errorf("assembleMailBody(%q, %q) = %q, want %q", tt.subject, tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMailSendSubjectFlag(t *testing.T) {
+	store := beads.NewMemStore()
+	mp := beadmail.New(store)
+	recipients := map[string]bool{"human": true, "mayor": true}
+
+	body := assembleMailBody("Build is green", "")
+	var stdout bytes.Buffer
+	code := doMailSend(mp, events.Discard, recipients, "human", []string{"mayor", body}, nil, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("doMailSend = %d, want 0", code)
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Title != "Build is green" {
+		t.Errorf("bead Title = %q, want %q", b.Title, "Build is green")
+	}
+}
+
+func TestMailSendSubjectAndMessage(t *testing.T) {
+	store := beads.NewMemStore()
+	mp := beadmail.New(store)
+	recipients := map[string]bool{"human": true, "mayor": true}
+
+	body := assembleMailBody("ESCALATION: Auth broken", "Token refresh fails after 30min")
+	var stdout bytes.Buffer
+	code := doMailSend(mp, events.Discard, recipients, "witness", []string{"mayor", body}, nil, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("doMailSend = %d, want 0", code)
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "ESCALATION: Auth broken\n\nToken refresh fails after 30min"
+	if b.Title != want {
+		t.Errorf("bead Title = %q, want %q", b.Title, want)
+	}
+}
+
 // --- gc mail send --from ---
 
 func TestMailSendFromFlag(t *testing.T) {
