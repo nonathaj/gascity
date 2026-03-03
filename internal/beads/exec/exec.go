@@ -296,6 +296,9 @@ func (s *Store) MolCookOn(formulaName, beadID, title string, vars []string) (str
 	}
 	out, err := s.run(data, "mol-cook-on")
 	if err != nil {
+		if isNotFoundError(err) {
+			return "", fmt.Errorf("exec beads mol-cook-on: bead %q: %w", beadID, beads.ErrNotFound)
+		}
 		return "", fmt.Errorf("exec beads mol-cook-on: %w", err)
 	}
 	rootID := strings.TrimSpace(out)
