@@ -18,8 +18,8 @@ name = "test"
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
 
-	h1 := Revision(fsys.OSFS{}, prov, nil, dir)
-	h2 := Revision(fsys.OSFS{}, prov, nil, dir)
+	h1 := Revision(fsys.OSFS{}, prov, &City{}, dir)
+	h2 := Revision(fsys.OSFS{}, prov, &City{}, dir)
 	if h1 != h2 {
 		t.Errorf("not deterministic: %q vs %q", h1, h2)
 	}
@@ -38,13 +38,13 @@ name = "test"
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
 
-	h1 := Revision(fsys.OSFS{}, prov, nil, dir)
+	h1 := Revision(fsys.OSFS{}, prov, &City{}, dir)
 
 	writeFile(t, dir, "city.toml", `[workspace]
 name = "changed"
 `)
 
-	h2 := Revision(fsys.OSFS{}, prov, nil, dir)
+	h2 := Revision(fsys.OSFS{}, prov, &City{}, dir)
 	if h1 == h2 {
 		t.Error("hash should change when file content changes")
 	}
@@ -66,14 +66,14 @@ name = "mayor"
 		},
 	}
 
-	h1 := Revision(fsys.OSFS{}, prov, nil, dir)
+	h1 := Revision(fsys.OSFS{}, prov, &City{}, dir)
 
 	// Change fragment.
 	writeFile(t, dir, "agents.toml", `[[agents]]
 name = "worker"
 `)
 
-	h2 := Revision(fsys.OSFS{}, prov, nil, dir)
+	h2 := Revision(fsys.OSFS{}, prov, &City{}, dir)
 	if h1 == h2 {
 		t.Error("hash should change when fragment changes")
 	}
@@ -92,9 +92,9 @@ schema = 1
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	rigs := []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}
+	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}}
 
-	h1 := Revision(fsys.OSFS{}, prov, rigs, dir)
+	h1 := Revision(fsys.OSFS{}, prov, cfg, dir)
 
 	// Change topology file.
 	writeFile(t, dir, "topologies/gt/topology.toml", `[topology]
@@ -102,9 +102,35 @@ name = "gastown-v2"
 schema = 1
 `)
 
-	h2 := Revision(fsys.OSFS{}, prov, rigs, dir)
+	h2 := Revision(fsys.OSFS{}, prov, cfg, dir)
 	if h1 == h2 {
 		t.Error("hash should change when topology file changes")
+	}
+}
+
+func TestRevision_IncludesCityTopology(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "city.toml", `[workspace]
+name = "test"
+`)
+	writeFile(t, dir, "topologies/shared/agents.toml", `[[agents]]
+name = "worker"
+`)
+
+	prov := &Provenance{
+		Sources: []string{filepath.Join(dir, "city.toml")},
+	}
+	cfg := &City{Workspace: Workspace{Topology: "topologies/shared"}}
+
+	h1 := Revision(fsys.OSFS{}, prov, cfg, dir)
+
+	writeFile(t, dir, "topologies/shared/agents.toml", `[[agents]]
+name = "worker-v2"
+`)
+
+	h2 := Revision(fsys.OSFS{}, prov, cfg, dir)
+	if h1 == h2 {
+		t.Error("hash should change when city topology file changes")
 	}
 }
 
@@ -114,7 +140,7 @@ func TestWatchDirs_ConfigOnly(t *testing.T) {
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
 
-	dirs := WatchDirs(prov, nil, dir)
+	dirs := WatchDirs(prov, &City{}, dir)
 	if len(dirs) != 1 {
 		t.Fatalf("got %d dirs, want 1", len(dirs))
 	}
@@ -134,7 +160,7 @@ func TestWatchDirs_WithFragments(t *testing.T) {
 		},
 	}
 
-	dirs := WatchDirs(prov, nil, dir)
+	dirs := WatchDirs(prov, &City{}, dir)
 	sort.Strings(dirs)
 
 	expected := []string{dir, filepath.Join(dir, "conf")}
@@ -155,9 +181,9 @@ func TestWatchDirs_WithTopology(t *testing.T) {
 	prov := &Provenance{
 		Sources: []string{filepath.Join(dir, "city.toml")},
 	}
-	rigs := []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}
+	cfg := &City{Rigs: []Rig{{Name: "hw", Path: "/hw", Topology: "topologies/gt"}}}
 
-	dirs := WatchDirs(prov, rigs, dir)
+	dirs := WatchDirs(prov, cfg, dir)
 
 	// Should include city dir + topology dir.
 	if len(dirs) != 2 {
@@ -175,6 +201,26 @@ func TestWatchDirs_WithTopology(t *testing.T) {
 	}
 }
 
+func TestWatchDirs_WithCityTopology(t *testing.T) {
+	dir := t.TempDir()
+	prov := &Provenance{
+		Sources: []string{filepath.Join(dir, "city.toml")},
+	}
+	cfg := &City{Workspace: Workspace{Topology: "topologies/shared"}}
+
+	dirs := WatchDirs(prov, cfg, dir)
+
+	found := false
+	for _, d := range dirs {
+		if d == filepath.Join(dir, "topologies", "shared") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("city topology dir not in watch list: %v", dirs)
+	}
+}
+
 func TestWatchDirs_Deduplicates(t *testing.T) {
 	dir := t.TempDir()
 	prov := &Provenance{
@@ -184,7 +230,7 @@ func TestWatchDirs_Deduplicates(t *testing.T) {
 		},
 	}
 
-	dirs := WatchDirs(prov, nil, dir)
+	dirs := WatchDirs(prov, &City{}, dir)
 	if len(dirs) != 1 {
 		t.Errorf("got %d dirs, want 1 (deduplicated): %v", len(dirs), dirs)
 	}

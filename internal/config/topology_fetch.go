@@ -175,16 +175,19 @@ func LockFromCache(topologies map[string]TopologySource, cityRoot string) (*Topo
 // topologyDirHash computes a SHA-256 hash of all files in a directory (recursive).
 func topologyDirHash(dir string) string {
 	var paths []string
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error { //nolint:errcheck
-		if err != nil || info.IsDir() {
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error { //nolint:errcheck
+		if err != nil {
+			return nil
+		}
+		// Skip .git directories entirely.
+		if d.IsDir() && d.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
 		if err != nil {
-			return nil
-		}
-		// Skip .git directory contents.
-		if strings.HasPrefix(rel, ".git") {
 			return nil
 		}
 		paths = append(paths, rel)

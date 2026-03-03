@@ -390,6 +390,11 @@ func ListDatabasesCity(cityPath string) ([]string, error) {
 		}
 		doltDir := filepath.Join(config.DataDir, entry.Name(), ".dolt")
 		if _, err := os.Stat(doltDir); err == nil {
+			// Validate noms/manifest exists — skip corrupt DBs.
+			manifest := filepath.Join(doltDir, "noms", "manifest")
+			if _, err := os.Stat(manifest); err != nil {
+				continue
+			}
 			databases = append(databases, entry.Name())
 		}
 	}
@@ -786,13 +791,13 @@ func startCityServer(config *Config, _ io.Writer) error {
 			break // Process exited — don't keep retrying.
 		}
 
-		if err := CheckServerReachable(config.TownRoot); err == nil {
+		if err := HealthCheckTCP(config.TownRoot); err == nil {
 			return nil // Server is ready.
 		}
 	}
 
 	// Check one more time before giving up — another server may be handling the port.
-	if err := CheckServerReachable(config.TownRoot); err == nil {
+	if err := HealthCheckTCP(config.TownRoot); err == nil {
 		return nil
 	}
 

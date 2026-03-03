@@ -14,8 +14,9 @@ import (
 // changes, the effective config may have changed and a reload is warranted.
 //
 // The hash covers the content of all source files listed in Provenance,
-// plus topology directory contents for any rigs with topologies.
-func Revision(fs fsys.FS, prov *Provenance, rigs []Rig, cityRoot string) string {
+// plus topology directory contents for any rigs with topologies (including
+// plural topology lists and city-level topologies).
+func Revision(fs fsys.FS, prov *Provenance, cfg *City, cityRoot string) string {
 	h := sha256.New()
 
 	// Hash all config source files in stable order.
@@ -33,26 +34,37 @@ func Revision(fs fsys.FS, prov *Provenance, rigs []Rig, cityRoot string) string 
 		h.Write([]byte{0})    //nolint:errcheck // hash.Write never errors
 	}
 
-	// Hash topology directory contents.
+	// Hash rig topology directory contents (all topology sources).
+	rigs := cfg.Rigs
 	for _, r := range rigs {
-		if r.Topology == "" {
-			continue
+		for _, ref := range EffectiveRigTopologies(r) {
+			topoDir := resolveConfigPath(ref, cityRoot, cityRoot)
+			topoHash := TopologyContentHashRecursive(fs, topoDir)
+			h.Write([]byte("topo:" + r.Name + ":" + ref)) //nolint:errcheck // hash.Write never errors
+			h.Write([]byte{0})                            //nolint:errcheck // hash.Write never errors
+			h.Write([]byte(topoHash))                     //nolint:errcheck // hash.Write never errors
+			h.Write([]byte{0})                            //nolint:errcheck // hash.Write never errors
 		}
-		topoDir := resolveConfigPath(r.Topology, cityRoot, cityRoot)
+	}
+
+	// Hash city-level topology directory contents.
+	for _, ref := range EffectiveCityTopologies(cfg.Workspace) {
+		topoDir := resolveConfigPath(ref, cityRoot, cityRoot)
 		topoHash := TopologyContentHashRecursive(fs, topoDir)
-		h.Write([]byte("topo:" + r.Name)) //nolint:errcheck // hash.Write never errors
-		h.Write([]byte{0})                //nolint:errcheck // hash.Write never errors
-		h.Write([]byte(topoHash))         //nolint:errcheck // hash.Write never errors
-		h.Write([]byte{0})                //nolint:errcheck // hash.Write never errors
+		h.Write([]byte("city-topo:" + ref)) //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})                  //nolint:errcheck // hash.Write never errors
+		h.Write([]byte(topoHash))           //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})                  //nolint:errcheck // hash.Write never errors
 	}
 
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 // WatchDirs returns the set of directories that should be watched for
-// config changes. This includes the directory of each source file and
-// topology root directories. Returns deduplicated, sorted paths.
-func WatchDirs(prov *Provenance, rigs []Rig, cityRoot string) []string {
+// config changes. This includes the directory of each source file,
+// rig topology directories, and city-level topology directories.
+// Returns deduplicated, sorted paths.
+func WatchDirs(prov *Provenance, cfg *City, cityRoot string) []string {
 	seen := make(map[string]bool)
 	var dirs []string
 
@@ -68,12 +80,17 @@ func WatchDirs(prov *Provenance, rigs []Rig, cityRoot string) []string {
 		addDir(filepath.Dir(src))
 	}
 
-	// Topology root directories.
-	for _, r := range rigs {
-		if r.Topology == "" {
-			continue
+	// Rig topology directories (all topology sources).
+	for _, r := range cfg.Rigs {
+		for _, ref := range EffectiveRigTopologies(r) {
+			topoDir := resolveConfigPath(ref, cityRoot, cityRoot)
+			addDir(topoDir)
 		}
-		topoDir := resolveConfigPath(r.Topology, cityRoot, cityRoot)
+	}
+
+	// City-level topology directories.
+	for _, ref := range EffectiveCityTopologies(cfg.Workspace) {
+		topoDir := resolveConfigPath(ref, cityRoot, cityRoot)
 		addDir(topoDir)
 	}
 

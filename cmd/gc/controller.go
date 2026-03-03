@@ -166,7 +166,7 @@ func tryReloadConfig(tomlPath, lockedCityName, cityRoot string, stderr io.Writer
 	if newName != lockedCityName {
 		return nil, fmt.Errorf("workspace.name changed from %q to %q (restart controller to apply)", lockedCityName, newName)
 	}
-	rev := config.Revision(fsys.OSFS{}, prov, newCfg.Rigs, cityRoot)
+	rev := config.Revision(fsys.OSFS{}, prov, newCfg, cityRoot)
 	return &reloadResult{Cfg: newCfg, Prov: prov, Revision: rev}, nil
 }
 
@@ -238,7 +238,7 @@ func controllerLoop(
 	cityName string,
 	tomlPath string,
 	watchDirs []string,
-	buildFn func(*config.City) []agent.Agent,
+	buildFn func(*config.City, session.Provider) []agent.Agent,
 	sp session.Provider,
 	rops reconcileOps,
 	dops drainOps,
@@ -272,7 +272,7 @@ func controllerLoop(
 	}
 
 	// Initial reconciliation.
-	agents := buildFn(cfg)
+	agents := buildFn(cfg, sp)
 	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), stdout, stderr)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
@@ -378,7 +378,7 @@ func controllerLoop(
 					telemetry.RecordConfigReload(ctx, result.Revision, nil)
 				}
 			}
-			agents = buildFn(cfg)
+			agents = buildFn(cfg, sp)
 			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), stdout, stderr)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
@@ -438,7 +438,7 @@ func runController(
 	cityPath string,
 	tomlPath string,
 	cfg *config.City,
-	buildFn func(*config.City) []agent.Agent,
+	buildFn func(*config.City, session.Provider) []agent.Agent,
 	sp session.Provider,
 	dops drainOps,
 	poolSessions map[string]time.Duration,
@@ -522,7 +522,7 @@ func runController(
 		gracefulStopAll(running, sp, timeout, rec, stdout, stderr)
 	} else {
 		var names []string
-		for _, a := range buildFn(cfg) {
+		for _, a := range buildFn(cfg, sp) {
 			if a.IsRunning() {
 				names = append(names, a.SessionName())
 			}

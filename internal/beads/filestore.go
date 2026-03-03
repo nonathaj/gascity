@@ -101,10 +101,12 @@ func (fs *FileStore) MolCookOn(formula, beadID, title string, vars []string) (st
 }
 
 // save writes the full store state to disk atomically (temp file + rename).
+// Holds the mutex for the entire operation (snapshot + write + rename) to
+// prevent concurrent saves from interleaving and corrupting the file.
 func (fs *FileStore) save() error {
 	fs.mu.Lock()
+	defer fs.mu.Unlock()
 	seq, beads := fs.snapshot()
-	fs.mu.Unlock()
 
 	fd := fileData{Seq: seq, Beads: beads}
 	data, err := json.MarshalIndent(fd, "", "  ")

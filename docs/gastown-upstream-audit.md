@@ -329,27 +329,34 @@ Go code making decisions that belong in prompts — moved to prompts.
   (detach + delete local branch after push, before refinery assignment).
 
 ### 12c. Operational thresholds (ZFC)
-- [ ] **3c1a9182 + 8325ebff** — OperationalConfig: 30+ hardcoded thresholds
+- [-] **3c1a9182 + 8325ebff** — OperationalConfig: 30+ hardcoded thresholds
   now configurable via config sub-sections (session, nudge, daemon, deacon,
   polecat, dolt, mail, web).
-- **Action:** Consider documenting available threshold config.
+- N/A — Gas City was designed config-first; thresholds were never hardcoded.
+  `[session]`, `[daemon]`, `[dolt]`, `[automations]` cover all operational
+  knobs. JSON schema (via `genschema`) documents all fields with defaults.
 
 ### 12d. Multi-instance isolation
-- [ ] **33362a75** — Per-city tmux sockets via `tmux -L <cityname>`. Prevents
+- [x] **33362a75** — Per-city tmux sockets via `tmux -L <cityname>`. Prevents
   session name collisions across cities.
-- **Action:** SDK-level change. Verify Gas City uses per-city tmux sockets.
+- **Done:** `[session] socket` config field. `SocketName` flows through tmux
+  `run()`, `Attach()`, and `Start()`. Executor interface + fakeExecutor tests.
 
 ### 12e. Misc operational
-- [ ] **dab8af94** — `GIT_LFS_SKIP_SMUDGE=1` during worktree add. Reduces
+- [x] **dab8af94** — `GIT_LFS_SKIP_SMUDGE=1` during worktree add. Reduces
   polecat spawn from ~87s to ~15s.
-- [ ] **a4b381de** — Unified rig ops cycle group: witness, refinery, polecats
+  **Done:** Added to worktree-setup.sh.
+- [x] **a4b381de** — Unified rig ops cycle group: witness, refinery, polecats
   share one n/p cycle group.
-- [ ] **6ab5046a** — Town-root CLAUDE.md template with operational awareness
+  **Done:** cycle.sh updated with unified rig ops group.
+- [x] **6ab5046a** — Town-root CLAUDE.md template with operational awareness
   guidance for all agents.
-- [ ] **b06df94d** — `--to` flag for mail send. Accepts well-known role addresses.
-- [ ] **9a242b6c** — Path references fixed: `~/.gt/` to `$GT_TOWN_ROOT/`.
-- **Action:** Add LFS skip to worktree-setup.sh. Check cycle.sh for unified
-  cycling. Consider CLAUDE.md template for examples/gastown.
+  **Done:** `operational-awareness` global fragment with identity guard + Dolt
+  diagnostics-before-restart protocol.
+- [x] **b06df94d** — `--to` flag for mail send. Accepts well-known role addresses.
+  **Done:** `--to` flag added. Recipients validated against config agents (ZFC).
+- [-] **9a242b6c** — Path references fixed: `~/.gt/` to `$GT_TOWN_ROOT/`.
+  N/A — Gas Town-only path fix. Gas City uses `{{ .CityRoot }}` template vars.
 
 ---
 
@@ -374,6 +381,6 @@ Go code making decisions that belong in prompts — moved to prompts.
 6. [ ] **Prompt Updates** (Section 9) — role-by-role prompt updates
 7. [ ] **ZFC Fixes** (Section 11) — ensure no Go-level decisions leak in
 8. [x] **Infrastructure Dogs** (Section 8) — new formulas + dolt-health extraction + fallback agents
-9. [ ] **Config/Operational** (Section 12) — SDK-level features ← **NEXT**
+9. [x] **Config/Operational** (Section 12) — SDK-level features
 10. [ ] **Formula System** (Section 10) — new capabilities
 11. [ ] Remaining sections (5, 7, 13) as needed

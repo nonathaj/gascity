@@ -143,8 +143,9 @@ func TestBdStoreGet(t *testing.T) {
 }
 
 func TestBdStoreGetNotFound(t *testing.T) {
+	// Real "not found" scenario: bd show returns an empty JSON array.
 	runner := func(_, _ string, _ ...string) ([]byte, error) {
-		return nil, fmt.Errorf("exit status 1")
+		return []byte(`[]`), nil
 	}
 	s := beads.NewBdStore("/city", runner)
 	_, err := s.Get("nonexistent-999")
@@ -153,6 +154,21 @@ func TestBdStoreGetNotFound(t *testing.T) {
 	}
 	if !errors.Is(err, beads.ErrNotFound) {
 		t.Errorf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestBdStoreGetCLIError(t *testing.T) {
+	// CLI error should NOT be wrapped as ErrNotFound.
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		return nil, fmt.Errorf("exit status 1")
+	}
+	s := beads.NewBdStore("/city", runner)
+	_, err := s.Get("nonexistent-999")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("CLI error should not be ErrNotFound, got %v", err)
 	}
 }
 
@@ -202,6 +218,9 @@ func TestBdStoreClose(t *testing.T) {
 }
 
 func TestBdStoreCloseNotFound(t *testing.T) {
+	// Close "not found" is hard to simulate since bd close doesn't return
+	// an empty array — it returns an error. We just verify the error is
+	// propagated (not masked as ErrNotFound).
 	runner := func(_, _ string, _ ...string) ([]byte, error) {
 		return nil, fmt.Errorf("exit status 1")
 	}
@@ -210,8 +229,26 @@ func TestBdStoreCloseNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, beads.ErrNotFound) {
-		t.Errorf("error = %v, want ErrNotFound", err)
+	if errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("CLI error should not be ErrNotFound, got %v", err)
+	}
+}
+
+func TestBdStoreCloseCLIError(t *testing.T) {
+	// CLI error should NOT be wrapped as ErrNotFound.
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		return nil, fmt.Errorf("connection refused")
+	}
+	s := beads.NewBdStore("/city", runner)
+	err := s.Close("bd-abc-123")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("CLI error should not be ErrNotFound, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error should contain original message, got %v", err)
 	}
 }
 

@@ -278,7 +278,11 @@ func TestDoltRollbackByTimestamp(t *testing.T) {
 func createFakeDoltDB(t *testing.T, dataDir, name string) {
 	t.Helper()
 	dbDir := filepath.Join(dataDir, name)
-	if err := os.MkdirAll(filepath.Join(dbDir, ".dolt"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dbDir, ".dolt", "noms"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create noms/manifest so ListDatabasesCity considers it valid.
+	if err := os.WriteFile(filepath.Join(dbDir, ".dolt", "noms", "manifest"), []byte("fake-manifest"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dbDir, "data.bin"), []byte("testdata"), 0o644); err != nil {

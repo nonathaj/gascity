@@ -252,6 +252,9 @@ func (t *Tmux) NewSessionWithCommand(name, workDir, command string) error {
 // but -e provides defense-in-depth for the initial shell environment.
 // Requires tmux >= 3.2.
 func (t *Tmux) NewSessionWithCommandAndEnv(name, workDir, command string, env map[string]string) error {
+	if err := validateSessionName(name); err != nil {
+		return err
+	}
 	args := []string{"new-session", "-d", "-s", name}
 	if workDir != "" {
 		args = append(args, "-c", workDir)
@@ -1638,18 +1641,19 @@ func (t *Tmux) DisplayMessageDefault(session, message string) error {
 // This interrupts the terminal to ensure the notification is seen.
 // Uses echo to print a boxed banner with the notification details.
 func (t *Tmux) SendNotificationBanner(session, from, subject string) error {
-	// Sanitize inputs to prevent output manipulation
-	from = strings.ReplaceAll(from, "\n", " ")
-	from = strings.ReplaceAll(from, "\r", " ")
-	subject = strings.ReplaceAll(subject, "\n", " ")
-	subject = strings.ReplaceAll(subject, "\r", " ")
+	// Sanitize inputs for shell safety — proper shell single-quote escaping.
+	for _, p := range []*string{&from, &subject} {
+		*p = strings.ReplaceAll(*p, "\n", " ")
+		*p = strings.ReplaceAll(*p, "\r", " ")
+		*p = strings.ReplaceAll(*p, "'", `'\''`)
+	}
 
 	// Build the banner text
 	banner := fmt.Sprintf(`echo '
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📬 NEW MAIL from %s
 Subject: %s
-Run: gt mail inbox
+Run: gc mail inbox
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 '`, from, subject)
 

@@ -319,7 +319,7 @@ func (s *BdStore) Create(b Bead) (Bead, error) {
 func (s *BdStore) Get(id string) (Bead, error) {
 	out, err := s.runner(s.dir, "bd", "show", "--json", id)
 	if err != nil {
-		return Bead{}, fmt.Errorf("getting bead %q: %w", id, ErrNotFound)
+		return Bead{}, fmt.Errorf("getting bead %q: %w", id, err)
 	}
 	var issues []bdIssue
 	if err := json.Unmarshal(out, &issues); err != nil {
@@ -364,7 +364,7 @@ func (s *BdStore) SetMetadata(id, key, value string) error {
 func (s *BdStore) Close(id string) error {
 	_, err := s.runner(s.dir, "bd", "close", "--json", id)
 	if err != nil {
-		return fmt.Errorf("closing bead %q: %w", id, ErrNotFound)
+		return fmt.Errorf("closing bead %q: %w", id, err)
 	}
 	return nil
 }

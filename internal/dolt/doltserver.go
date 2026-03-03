@@ -1200,7 +1200,7 @@ func listDatabasesRemote(config *Config) ([]string, error) {
 	var databases []string
 	for _, row := range result.Rows {
 		db := row.Database
-		if db != "information_schema" && db != "mysql" {
+		if !IsSystemDatabase(db) {
 			databases = append(databases, db)
 		}
 	}
@@ -2586,7 +2586,7 @@ func waitForCatalog(townRoot, dbName string) error {
 	const baseBackoff = 100 * time.Millisecond
 	const maxBackoff = 2 * time.Second
 
-	query := fmt.Sprintf("USE %s", dbName)
+	query := fmt.Sprintf("USE `%s`", dbName)
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if err := serverExecSQL(townRoot, query); err != nil {
@@ -2623,7 +2623,7 @@ func doltSQL(townRoot, rigDB, query string) error {
 	defer cancel()
 
 	// Prepend USE <db> to select the target database.
-	fullQuery := fmt.Sprintf("USE %s; %s", rigDB, query)
+	fullQuery := fmt.Sprintf("USE `%s`; %s", rigDB, query)
 	cmd := buildDoltSQLCmd(ctx, config, "-q", fullQuery)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -2693,7 +2693,7 @@ func CommitServerWorkingSet(townRoot, rigDB, message string) error {
 	if err := doltSQLWithRecovery(townRoot, rigDB, "CALL DOLT_ADD('-A')"); err != nil {
 		return fmt.Errorf("staging working set in %s: %w", rigDB, err)
 	}
-	escaped := strings.ReplaceAll(message, "'", "''")
+	escaped := EscapeSQL(message)
 	query := fmt.Sprintf("CALL DOLT_COMMIT('--allow-empty', '-m', '%s')", escaped)
 	if err := doltSQLWithRecovery(townRoot, rigDB, query); err != nil {
 		return fmt.Errorf("committing working set in %s: %w", rigDB, err)

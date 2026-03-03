@@ -211,7 +211,7 @@ func openCityStore(stderr io.Writer, cmdName string) (beads.Store, int) {
 	provider := beadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		s := beadsexec.NewStore(strings.TrimPrefix(provider, "exec:"))
-		s.SetFormulaResolver(formula.DirResolver(filepath.Join(cityPath, "formulas")))
+		s.SetFormulaResolver(formula.DirResolver(filepath.Join(cityPath, ".gc", "formulas")))
 		return s, 0
 	}
 	switch provider {

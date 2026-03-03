@@ -331,13 +331,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	// Called once for one-shot, or on each tick for controller mode.
 	// Pool check commands are re-evaluated each call. Accepts a *config.City
 	// parameter so the controller loop can pass freshly-reloaded config.
-	buildAgents := func(c *config.City) []agent.Agent {
+	buildAgents := func(c *config.City, currentSP session.Provider) []agent.Agent {
 		// City-level suspension: no agents should start.
 		if c.Workspace.Suspended {
 			return nil
 		}
 
-		bp := newAgentBuildParams(cityName, cityPath, c, sp, beaconTime, stderr)
+		bp := newAgentBuildParams(cityName, cityPath, c, currentSP, beaconTime, stderr)
 
 		// Pre-compute suspended rig paths so we can skip agents in suspended rigs.
 		suspendedRigPaths := make(map[string]bool)
@@ -437,7 +437,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			if pr.err != nil {
 				fmt.Fprintf(stderr, "gc start: %v (using min=%d)\n", pr.err, pw.pool.Min) //nolint:errcheck // best-effort stderr
 			}
-			running := countRunningPoolInstances(c.Agents[pw.agentIdx].Name, c.Agents[pw.agentIdx].Dir, pw.pool.Max, cityName, c.Workspace.SessionTemplate, sp)
+			running := countRunningPoolInstances(c.Agents[pw.agentIdx].Name, c.Agents[pw.agentIdx].Dir, pw.pool.Max, cityName, c.Workspace.SessionTemplate, currentSP)
 			if pr.desired != running {
 				fmt.Fprintf(stderr, "Pool '%s': check returned %d, %d running → scaling %s\n", //nolint:errcheck // best-effort stderr
 					c.Agents[pw.agentIdx].Name, pr.desired, running, scaleDirection(running, pr.desired))
@@ -466,7 +466,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	// --dry-run: build agents and print preview without starting.
 	if dryRunMode {
-		agents := buildAgents(cfg)
+		agents := buildAgents(cfg, sp)
 		printDryRunPreview(agents, cfg, cityName, stdout)
 		return 0
 	}
@@ -474,13 +474,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	tomlPath := filepath.Join(cityPath, "city.toml")
 	if controllerMode {
 		poolSessions := computePoolSessions(cfg, cityName)
-		watchDirs := config.WatchDirs(prov, cfg.Rigs, cityPath)
+		watchDirs := config.WatchDirs(prov, cfg, cityPath)
 		return runController(cityPath, tomlPath, cfg, buildAgents, sp,
 			newDrainOps(sp), poolSessions, watchDirs, recorder, stdout, stderr)
 	}
 
 	// One-shot reconciliation (default): no drain (kill is fine).
-	agents := buildAgents(cfg)
+	agents := buildAgents(cfg, sp)
 	cityPrefix := "gc-" + cityName + "-"
 	rops := newReconcileOps(sp)
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)

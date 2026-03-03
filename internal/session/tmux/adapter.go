@@ -131,11 +131,16 @@ func (p *Provider) SetMeta(name, key, value string) error {
 }
 
 // GetMeta retrieves a value from the named session's tmux environment.
-// Returns ("", nil) if the key is not set.
+// Returns ("", nil) if the key is not set. Propagates session-not-found
+// and no-server errors so callers can distinguish "key absent" from
+// "session gone."
 func (p *Provider) GetMeta(name, key string) (string, error) {
 	val, err := p.tm.GetEnvironment(name, key)
 	if err != nil {
-		return "", nil // not set
+		if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer) {
+			return "", err
+		}
+		return "", nil // key not set
 	}
 	return val, nil
 }

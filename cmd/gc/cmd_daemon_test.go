@@ -415,7 +415,7 @@ func TestControllerWritesPIDFile(t *testing.T) {
 	writeCityTOML(t, dir, "test", "worker")
 
 	sp := session.NewFake()
-	buildFn := func(_ *config.City) []agent.Agent {
+	buildFn := func(_ *config.City, _ session.Provider) []agent.Agent {
 		return []agent.Agent{agent.New("worker", "test", "echo hi", "", nil, agent.StartupHints{}, "", "", nil, sp)}
 	}
 

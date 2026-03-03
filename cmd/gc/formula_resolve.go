@@ -42,12 +42,13 @@ func ResolveFormulas(targetDir string, layers []string) error {
 		}
 	}
 
+	symlinkDir := filepath.Join(targetDir, ".beads", "formulas")
+
 	if len(winners) == 0 {
-		return nil
+		return cleanStaleFormulaSymlinks(symlinkDir, winners)
 	}
 
 	// Ensure target symlink directory exists.
-	symlinkDir := filepath.Join(targetDir, ".beads", "formulas")
 	if err := os.MkdirAll(symlinkDir, 0o755); err != nil {
 		return fmt.Errorf("creating formula symlink dir: %w", err)
 	}
@@ -77,8 +78,12 @@ func ResolveFormulas(targetDir string, layers []string) error {
 		}
 	}
 
-	// Remove stale symlinks (symlinks in target dir that no longer appear
-	// in any layer).
+	return cleanStaleFormulaSymlinks(symlinkDir, winners)
+}
+
+// cleanStaleFormulaSymlinks removes symlinks in symlinkDir that are not in winners.
+// Skips non-symlinks and non-formula files. No-op if symlinkDir doesn't exist.
+func cleanStaleFormulaSymlinks(symlinkDir string, winners map[string]string) error {
 	entries, err := os.ReadDir(symlinkDir)
 	if err != nil {
 		return nil // Can't read — nothing to clean up.
