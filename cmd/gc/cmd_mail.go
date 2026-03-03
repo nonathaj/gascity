@@ -211,22 +211,25 @@ func newMailSendCmd(stdout, stderr io.Writer) *cobra.Command {
 	var notify bool
 	var all bool
 	var from string
+	var to string
 	cmd := &cobra.Command{
-		Use:   "send <to> <body>",
+		Use:   "send [<to>] <body>",
 		Short: "Send a message to an agent or human",
 		Long: `Send a message to an agent or human.
 
 Creates a message bead addressed to the recipient. The sender defaults
 to $GC_AGENT (in agent sessions) or "human". Use --notify to nudge
 the recipient after sending. Use --from to override the sender identity.
+Use --to as an alternative to the positional <to> argument.
 Use --all to broadcast to all agents (excluding sender and "human").`,
 		Example: `  gc mail send mayor "Build is green"
+  gc mail send --to mayor "Build is green"
   gc mail send human "Review needed for PR #42"
   gc mail send polecat "Priority task" --notify
   gc mail send --all "Status update: tests passing"`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdMailSend(args, notify, all, from, stdout, stderr) != 0 {
+			if cmdMailSend(args, notify, all, from, to, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -235,6 +238,7 @@ Use --all to broadcast to all agents (excluding sender and "human").`,
 	cmd.Flags().BoolVar(&notify, "notify", false, "nudge the recipient after sending")
 	cmd.Flags().BoolVar(&all, "all", false, "broadcast to all agents (excludes sender and human)")
 	cmd.Flags().StringVar(&from, "from", "", "sender identity (default: $GC_AGENT or \"human\")")
+	cmd.Flags().StringVar(&to, "to", "", "recipient address (alternative to positional argument)")
 	return cmd
 }
 
@@ -277,7 +281,8 @@ or inbox results.`,
 
 // cmdMailSend is the CLI entry point for sending mail. It opens the provider,
 // loads config for recipient validation, and delegates to doMailSend.
-func cmdMailSend(args []string, notify bool, all bool, from string, stdout, stderr io.Writer) int {
+// The to parameter is the --to flag value (empty if not set).
+func cmdMailSend(args []string, notify bool, all bool, from string, to string, stdout, stderr io.Writer) int {
 	mp, code := openCityMailProvider(stderr, "gc mail send")
 	if mp == nil {
 		return code
@@ -329,6 +334,11 @@ func cmdMailSend(args []string, notify bool, all bool, from string, stdout, stde
 		}
 	}
 
+	// When --to is set, prepend it to args so doMailSend sees [to, body].
+	if to != "" && !all {
+		args = append([]string{to}, args...)
+	}
+
 	if all {
 		rec := openCityRecorder(stderr)
 		return doMailSendAll(mp, rec, validRecipients, sender, args, nf, stdout, stderr)
@@ -345,7 +355,7 @@ func cmdMailSend(args []string, notify bool, all bool, from string, stdout, stde
 // recorder, recipient set, and nudge callback for testability.
 func doMailSend(mp mail.Provider, rec events.Recorder, validRecipients map[string]bool, sender string, args []string, nudgeFn nudgeFunc, stdout, stderr io.Writer) int {
 	if len(args) < 2 {
-		fmt.Fprintln(stderr, "gc mail send: usage: gc mail send <to> <body>") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc mail send: usage: gc mail send [--to <recipient>] <to> <body>") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	to := args[0]

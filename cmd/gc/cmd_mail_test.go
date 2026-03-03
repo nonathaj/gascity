@@ -548,6 +548,58 @@ func TestMailSendFromDefault(t *testing.T) {
 	}
 }
 
+// --- gc mail send --to ---
+
+func TestMailSendToFlag(t *testing.T) {
+	// --to flag sets recipient, body is the only positional arg.
+	// cmdMailSend prepends --to value to args, so doMailSend sees [to, body].
+	store := beads.NewMemStore()
+	mp := beadmail.New(store)
+	recipients := map[string]bool{"human": true, "mayor": true}
+
+	var stdout, stderr bytes.Buffer
+	// Simulate what cmdMailSend does: prepend "mayor" from --to flag to args ["hello"].
+	code := doMailSend(mp, events.Discard, recipients, "human", []string{"mayor", "hello from --to"}, nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doMailSend = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Assignee != "mayor" {
+		t.Errorf("bead Assignee = %q, want %q", b.Assignee, "mayor")
+	}
+	if b.Title != "hello from --to" {
+		t.Errorf("bead Title = %q, want %q", b.Title, "hello from --to")
+	}
+}
+
+func TestMailSendToFlagConflictsWithPositional(t *testing.T) {
+	// When --to is set and positional args also include a recipient,
+	// the --to value takes priority (it becomes args[0], original args shift).
+	store := beads.NewMemStore()
+	mp := beadmail.New(store)
+	recipients := map[string]bool{"human": true, "mayor": true, "worker": true}
+
+	var stdout bytes.Buffer
+	// --to="mayor", positional args=["worker", "body"] → after prepend: ["mayor", "worker", "body"]
+	// doMailSend takes args[0]=mayor, args[1]=worker (as body).
+	code := doMailSend(mp, events.Discard, recipients, "human", []string{"mayor", "worker"}, nil, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("doMailSend = %d, want 0", code)
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Assignee != "mayor" {
+		t.Errorf("bead Assignee = %q, want %q (--to takes priority)", b.Assignee, "mayor")
+	}
+}
+
 // --- gc mail send --all ---
 
 func TestMailSendAll(t *testing.T) {
