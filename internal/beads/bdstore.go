@@ -264,13 +264,18 @@ func envWithout(environ []string, key string) []string {
 // bdIssue is the JSON shape returned by bd CLI commands. We decode only the
 // fields Gas City cares about; all others are silently ignored.
 type bdIssue struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	IssueType string    `json:"issue_type"`
-	CreatedAt time.Time `json:"created_at"`
-	Assignee  string    `json:"assignee"`
-	Labels    []string  `json:"labels"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Status      string    `json:"status"`
+	IssueType   string    `json:"issue_type"`
+	CreatedAt   time.Time `json:"created_at"`
+	Assignee    string    `json:"assignee"`
+	From        string    `json:"from"`
+	ParentID    string    `json:"parent_id"`
+	Ref         string    `json:"ref"`
+	Needs       []string  `json:"needs"`
+	Description string    `json:"description"`
+	Labels      []string  `json:"labels"`
 }
 
 // toBead converts a bdIssue to a Gas City Bead. CreatedAt is truncated to
@@ -278,13 +283,18 @@ type bdIssue struct {
 // bd create may return sub-second precision that bd show then truncates.
 func (b *bdIssue) toBead() Bead {
 	return Bead{
-		ID:        b.ID,
-		Title:     b.Title,
-		Status:    mapBdStatus(b.Status),
-		Type:      b.IssueType,
-		CreatedAt: b.CreatedAt.Truncate(time.Second),
-		Assignee:  b.Assignee,
-		Labels:    b.Labels,
+		ID:          b.ID,
+		Title:       b.Title,
+		Status:      mapBdStatus(b.Status),
+		Type:        b.IssueType,
+		CreatedAt:   b.CreatedAt.Truncate(time.Second),
+		Assignee:    b.Assignee,
+		From:        b.From,
+		ParentID:    b.ParentID,
+		Ref:         b.Ref,
+		Needs:       b.Needs,
+		Description: b.Description,
+		Labels:      b.Labels,
 	}
 }
 

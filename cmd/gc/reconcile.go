@@ -219,7 +219,7 @@ func doReconcileAgents(agents []agent.Agent,
 					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				if err := a.Start(context.Background()); err != nil {
+				if err := a.Start(parentCtx); err != nil {
 					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
@@ -255,7 +255,7 @@ func doReconcileAgents(agents []agent.Agent,
 				fmt.Fprintf(stderr, "gc start: stopping idle %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 				continue
 			}
-			if err := a.Start(context.Background()); err != nil {
+			if err := a.Start(parentCtx); err != nil {
 				fmt.Fprintf(stderr, "gc start: restarting idle %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 				continue
 			}
@@ -296,7 +296,7 @@ func doReconcileAgents(agents []agent.Agent,
 						fmt.Fprintf(stderr, "gc start: stopping %s for drift restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
-					if err := a.Start(context.Background()); err != nil {
+					if err := a.Start(parentCtx); err != nil {
 						fmt.Fprintf(stderr, "gc start: restarting %s after drift drain: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
@@ -352,7 +352,7 @@ func doReconcileAgents(agents []agent.Agent,
 					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				if err := a.Start(context.Background()); err != nil {
+				if err := a.Start(parentCtx); err != nil {
 					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}

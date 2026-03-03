@@ -139,6 +139,7 @@ func (w *beadWire) toBead() beads.Bead {
 		Type:        w.Type,
 		CreatedAt:   w.CreatedAt,
 		Assignee:    w.Assignee,
+		From:        w.From,
 		ParentID:    w.ParentID,
 		Ref:         w.Ref,
 		Needs:       w.Needs,
@@ -171,7 +172,10 @@ func (s *Store) Create(b beads.Bead) (beads.Bead, error) {
 func (s *Store) Get(id string) (beads.Bead, error) {
 	out, err := s.run(nil, "get", id)
 	if err != nil {
-		return beads.Bead{}, fmt.Errorf("getting bead %q: %w", id, beads.ErrNotFound)
+		if isNotFoundError(err) {
+			return beads.Bead{}, fmt.Errorf("getting bead %q: %w", id, beads.ErrNotFound)
+		}
+		return beads.Bead{}, fmt.Errorf("getting bead %q: %w", id, err)
 	}
 	result, err := parseBead(out)
 	if err != nil {

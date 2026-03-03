@@ -80,7 +80,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 // RunLive re-applies session_live commands to a running session.
 // Called by the reconciler when only session_live config has changed.
 func (p *Provider) RunLive(name string, cfg session.Config) error {
-	runSessionLive(&tmuxStartOps{tm: p.tm}, name, cfg, os.Stderr, p.cfg.SetupTimeout)
+	runSessionLive(context.Background(), &tmuxStartOps{tm: p.tm}, name, cfg, os.Stderr, p.cfg.SetupTimeout)
 	return nil
 }
 
@@ -391,7 +391,7 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg session.
 	}
 
 	// Step 6.5: Run session_live commands (idempotent, re-applicable).
-	runSessionLive(ops, name, cfg, os.Stderr, setupTimeout)
+	runSessionLive(ctx, ops, name, cfg, os.Stderr, setupTimeout)
 
 	return nil
 }
@@ -428,7 +428,7 @@ func runSessionSetup(ctx context.Context, ops startOps, name string, cfg session
 // runSessionLive runs session_live commands (idempotent, re-applicable).
 // Called at startup after nudge, and by the reconciler on live-only drift.
 // Non-fatal: warnings on failure, session still works.
-func runSessionLive(ops startOps, name string, cfg session.Config, stderr io.Writer, setupTimeout time.Duration) {
+func runSessionLive(ctx context.Context, ops startOps, name string, cfg session.Config, stderr io.Writer, setupTimeout time.Duration) {
 	if len(cfg.SessionLive) == 0 {
 		return
 	}
@@ -441,7 +441,7 @@ func runSessionLive(ops startOps, name string, cfg session.Config, stderr io.Wri
 	setupEnv["GC_SESSION"] = name
 
 	for i, cmd := range cfg.SessionLive {
-		if err := ops.runSetupCommand(context.TODO(), cmd, setupEnv, setupTimeout); err != nil {
+		if err := ops.runSetupCommand(ctx, cmd, setupEnv, setupTimeout); err != nil {
 			_, _ = fmt.Fprintf(stderr, "gc: session_live[%d] warning: %v\n", i, err)
 		}
 	}

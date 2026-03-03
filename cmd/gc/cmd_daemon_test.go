@@ -37,54 +37,16 @@ func TestSanitizeServiceName(t *testing.T) {
 	}
 }
 
-func TestReadDaemonPID(t *testing.T) {
+func TestControllerAliveNoSocket(t *testing.T) {
 	dir := t.TempDir()
 	gcDir := filepath.Join(dir, ".gc")
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Missing PID file returns 0.
-	if got := readDaemonPID(dir); got != 0 {
-		t.Errorf("readDaemonPID (missing) = %d, want 0", got)
-	}
-
-	// Valid PID file.
-	if err := os.WriteFile(filepath.Join(gcDir, "daemon.pid"), []byte("12345"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readDaemonPID(dir); got != 12345 {
-		t.Errorf("readDaemonPID = %d, want 12345", got)
-	}
-
-	// PID with trailing newline.
-	if err := os.WriteFile(filepath.Join(gcDir, "daemon.pid"), []byte("67890\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readDaemonPID(dir); got != 67890 {
-		t.Errorf("readDaemonPID (newline) = %d, want 67890", got)
-	}
-
-	// Garbage content returns 0.
-	if err := os.WriteFile(filepath.Join(gcDir, "daemon.pid"), []byte("not-a-pid"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readDaemonPID(dir); got != 0 {
-		t.Errorf("readDaemonPID (garbage) = %d, want 0", got)
-	}
-}
-
-func TestReadDaemonPIDEmpty(t *testing.T) {
-	dir := t.TempDir()
-	gcDir := filepath.Join(dir, ".gc")
-	if err := os.MkdirAll(gcDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(gcDir, "daemon.pid"), []byte(""), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got := readDaemonPID(dir); got != 0 {
-		t.Errorf("readDaemonPID (empty) = %d, want 0", got)
+	// No socket → returns 0.
+	if got := controllerAlive(dir); got != 0 {
+		t.Errorf("controllerAlive (no socket) = %d, want 0", got)
 	}
 }
 
@@ -144,28 +106,21 @@ func TestDoDaemonStatusNotRunning(t *testing.T) {
 	}
 }
 
-func TestDoDaemonStatusStalePIDCleanup(t *testing.T) {
+func TestDoDaemonStatusNoSocket(t *testing.T) {
 	dir := t.TempDir()
 	gcDir := filepath.Join(dir, ".gc")
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write a PID file for a process that doesn't exist.
-	pidPath := filepath.Join(gcDir, "daemon.pid")
-	if err := os.WriteFile(pidPath, []byte("999999999"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
+	// No controller socket → status reports not running.
 	var stdout, stderr bytes.Buffer
 	code := doDaemonStatus([]string{dir}, &stdout, &stderr)
 	if code != 1 {
-		t.Errorf("doDaemonStatus (stale PID) code = %d, want 1", code)
+		t.Errorf("doDaemonStatus (no socket) code = %d, want 1", code)
 	}
-
-	// Stale PID file should be cleaned up.
-	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-		t.Error("stale PID file should have been removed")
+	if !strings.Contains(stdout.String(), "not running") {
+		t.Errorf("expected 'not running' in stdout, got: %s", stdout.String())
 	}
 }
 
@@ -404,7 +359,7 @@ func TestDaemonRunCreatesLogFile(t *testing.T) {
 	}
 }
 
-func TestControllerWritesPIDFile(t *testing.T) {
+func TestControllerSocketPing(t *testing.T) {
 	dir := t.TempDir()
 	gcDir := filepath.Join(dir, ".gc")
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {
@@ -431,24 +386,24 @@ func TestControllerWritesPIDFile(t *testing.T) {
 		done <- runController(dir, "", cfg, buildFn, sp, nil, nil, nil, events.Discard, &stdout, &stderr)
 	}()
 
-	// Wait for PID file to appear.
-	pidPath := filepath.Join(gcDir, "daemon.pid")
+	// Wait for controller socket to become responsive.
 	deadline := time.After(3 * time.Second)
+	var pid int
 	for {
-		if _, err := os.Stat(pidPath); err == nil {
+		pid = controllerAlive(dir)
+		if pid != 0 {
 			break
 		}
 		select {
 		case <-deadline:
-			t.Fatal("PID file not created within deadline")
+			t.Fatal("controller socket not responsive within deadline")
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
-	pid := readDaemonPID(dir)
 	if pid != os.Getpid() {
-		t.Errorf("PID file contains %d, want %d", pid, os.Getpid())
+		t.Errorf("controllerAlive PID = %d, want %d", pid, os.Getpid())
 	}
 
 	// Stop the controller.
@@ -459,9 +414,10 @@ func TestControllerWritesPIDFile(t *testing.T) {
 		t.Fatal("controller didn't stop")
 	}
 
-	// PID file should be cleaned up after shutdown.
-	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
-		t.Error("PID file should be removed after controller shutdown")
+	// Socket should be cleaned up after shutdown.
+	sockPath := filepath.Join(gcDir, "controller.sock")
+	if _, err := os.Stat(sockPath); !os.IsNotExist(err) {
+		t.Error("controller.sock should be removed after controller shutdown")
 	}
 }
 

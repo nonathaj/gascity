@@ -76,9 +76,8 @@ func doCityStatus(
 	// Header: city name and path.
 	fmt.Fprintf(stdout, "%s  %s\n", cityName, cityPath) //nolint:errcheck // best-effort stdout
 
-	// Controller status.
-	pid := readDaemonPID(cityPath)
-	if pid != 0 && isDaemonAlive(pid) {
+	// Controller status — determined by controller.sock liveness, not PID file.
+	if pid := controllerAlive(cityPath); pid != 0 {
 		fmt.Fprintf(stdout, "  Controller: running (PID %d)\n", pid) //nolint:errcheck // best-effort stdout
 	} else {
 		fmt.Fprintf(stdout, "  Controller: stopped\n") //nolint:errcheck // best-effort stdout

@@ -383,11 +383,6 @@ func handleSessionConn(conn net.Conn, cmd *exec.Cmd) {
 	case "stop":
 		_ = cmd.Process.Signal(syscall.SIGTERM)
 		// Wait up to 5s for graceful exit, then SIGKILL.
-		done := make(chan struct{})
-		go func() {
-			_ = cmd.Process.Signal(syscall.Signal(0)) // dummy, just to not use cmd.Wait here
-			close(done)
-		}()
 		deadline := time.After(5 * time.Second)
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()

@@ -129,12 +129,18 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 		return fmt.Errorf("creating pod for session %q: %w", name, err)
 	}
 
+	// cleanup deletes the pod on any startup failure after creation.
+	cleanup := func(_ string) {
+		_ = p.ops.deletePod(ctx, podName, 5)
+	}
+
 	ctrlCity := cfg.Env["GC_CITY"]
 
 	if !p.prebaked {
 		// Stage files via init container if needed.
 		if needsStaging(cfg, ctrlCity) {
 			if err := stageFiles(ctx, p.ops, podName, cfg, ctrlCity, p.stderr); err != nil {
+				cleanup("staging failed")
 				return fmt.Errorf("staging files for session %q: %w", name, err)
 			}
 		}
@@ -142,6 +148,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 
 	// Wait for main container to be running.
 	if err := waitForPodRunning(ctx, p.ops, podName, 120*time.Second); err != nil {
+		cleanup("pod not running")
 		return fmt.Errorf("waiting for pod %q: %w", podName, err)
 	}
 
@@ -174,6 +181,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 
 	// Wait for tmux session.
 	if err := waitForTmux(ctx, p.ops, podName, 60*time.Second); err != nil {
+		cleanup("tmux not ready")
 		return fmt.Errorf("waiting for tmux in pod %q: %w", podName, err)
 	}
 
@@ -297,6 +305,8 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 }
 
 // Nudge types a message into the tmux session followed by Enter.
+// Uses -l (literal mode) so tmux key names in the message text are not
+// interpreted as keystrokes.
 func (p *Provider) Nudge(name, message string) error {
 	ctx := context.Background()
 	podName, err := p.findRunningPod(ctx, name)
@@ -304,7 +314,9 @@ func (p *Provider) Nudge(name, message string) error {
 		return nil // best-effort
 	}
 	_, _ = p.ops.execInPod(ctx, podName, "agent",
-		[]string{"tmux", "send-keys", "-t", tmuxSession, message, "Enter"}, nil)
+		[]string{"tmux", "send-keys", "-t", tmuxSession, "-l", message}, nil)
+	_, _ = p.ops.execInPod(ctx, podName, "agent",
+		[]string{"tmux", "send-keys", "-t", tmuxSession, "Enter"}, nil)
 	return nil
 }
 
@@ -499,11 +511,20 @@ func (p *Provider) findPod(ctx context.Context, name string) (string, error) {
 func waitForDeletion(ctx context.Context, ops k8sOps, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		_, err := ops.getPod(ctx, name)
 		if err != nil {
 			return nil // gone
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	return fmt.Errorf("pod %s not deleted after %s", name, timeout)
 }
@@ -512,9 +533,18 @@ func waitForDeletion(ctx context.Context, ops k8sOps, name string, timeout time.
 func waitForPodRunning(ctx context.Context, ops k8sOps, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		pod, err := ops.getPod(ctx, name)
 		if err != nil {
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 		switch pod.Status.Phase {
@@ -523,7 +553,11 @@ func waitForPodRunning(ctx context.Context, ops k8sOps, name string, timeout tim
 		case corev1.PodFailed:
 			return fmt.Errorf("pod %s failed", name)
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	return fmt.Errorf("pod %s not running after %s", name, timeout)
 }
@@ -532,12 +566,21 @@ func waitForPodRunning(ctx context.Context, ops k8sOps, name string, timeout tim
 func waitForTmux(ctx context.Context, ops k8sOps, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		_, err := ops.execInPod(ctx, name, "agent",
 			[]string{"tmux", "has-session", "-t", tmuxSession}, nil)
 		if err == nil {
 			return nil
 		}
-		time.Sleep(time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
 	}
 	return fmt.Errorf("tmux session not ready in pod %s after %s", name, timeout)
 }

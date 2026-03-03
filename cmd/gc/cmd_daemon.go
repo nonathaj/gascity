@@ -168,8 +168,8 @@ func doDaemonStart(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Verify PID file matches the child we spawned.
-	pid := readDaemonPID(dir)
+	// Verify controller is alive via socket ping.
+	pid := controllerAlive(dir)
 	if pid != 0 && pid != childPID {
 		fmt.Fprintf(stderr, "gc daemon start: PID mismatch (expected %d, got %d)\n", childPID, pid) //nolint:errcheck // best-effort stderr
 		return 1
@@ -249,12 +249,8 @@ func doDaemonStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	pid := readDaemonPID(cityPath)
-	if pid == 0 || !isDaemonAlive(pid) {
-		// Clean stale PID file if present.
-		if pid != 0 {
-			os.Remove(filepath.Join(cityPath, ".gc", "daemon.pid")) //nolint:errcheck // best-effort cleanup
-		}
+	pid := controllerAlive(cityPath)
+	if pid == 0 {
 		fmt.Fprintln(stdout, "Daemon is not running") //nolint:errcheck // best-effort stdout
 		return 1
 	}
@@ -438,20 +434,6 @@ func resolveDaemonDir(args []string) (string, error) {
 	default:
 		return os.Getwd()
 	}
-}
-
-// readDaemonPID reads the PID from .gc/daemon.pid. Returns 0 if the file
-// is missing, empty, or unparseable.
-func readDaemonPID(cityPath string) int {
-	data, err := os.ReadFile(filepath.Join(cityPath, ".gc", "daemon.pid"))
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0
-	}
-	return pid
 }
 
 // lastControllerStarted scans events.jsonl for the most recent

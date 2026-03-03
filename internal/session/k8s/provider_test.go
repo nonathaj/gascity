@@ -113,21 +113,29 @@ func TestNudge(t *testing.T) {
 		t.Fatalf("Nudge: %v", err)
 	}
 
-	// Verify exec was called with correct args.
-	// Args: ["tmux", "send-keys", "-t", "main", "hello world", "Enter"]
-	found := false
+	// Verify exec was called with literal mode:
+	// Call 1: ["tmux", "send-keys", "-t", "main", "-l", "hello world"]
+	// Call 2: ["tmux", "send-keys", "-t", "main", "Enter"]
+	foundLiteral := false
+	foundEnter := false
 	for _, c := range fake.calls {
-		if c.method == "execInPod" && len(c.cmd) >= 6 {
-			if c.cmd[0] == "tmux" && c.cmd[1] == "send-keys" && c.cmd[5] == "Enter" {
-				found = true
-				if c.cmd[4] != "hello world" {
-					t.Errorf("nudge message = %q, want %q", c.cmd[4], "hello world")
-				}
-			}
+		if c.method != "execInPod" {
+			continue
+		}
+		if len(c.cmd) >= 6 && c.cmd[0] == "tmux" && c.cmd[1] == "send-keys" &&
+			c.cmd[4] == "-l" && c.cmd[5] == "hello world" {
+			foundLiteral = true
+		}
+		if len(c.cmd) >= 5 && c.cmd[0] == "tmux" && c.cmd[1] == "send-keys" &&
+			c.cmd[4] == "Enter" {
+			foundEnter = true
 		}
 	}
-	if !found {
-		t.Error("no tmux send-keys call recorded for Nudge")
+	if !foundLiteral {
+		t.Error("no tmux send-keys -l call recorded for Nudge")
+	}
+	if !foundEnter {
+		t.Error("no tmux send-keys Enter call recorded for Nudge")
 	}
 }
 

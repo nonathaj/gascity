@@ -64,18 +64,45 @@ func startControllerSocket(cityPath string, cancelFn context.CancelFunc) (net.Li
 	return lis, nil
 }
 
-// handleControllerConn reads from a connection and calls cancelFn if
-// the client sends "stop".
+// handleControllerConn reads from a connection and dispatches commands.
+// Supported commands: "stop" (shutdown), "ping" (liveness check, returns PID).
 func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc) {
 	defer conn.Close()                                     //nolint:errcheck // best-effort cleanup
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck // best-effort deadline
 	scanner := bufio.NewScanner(conn)
 	if scanner.Scan() {
-		if scanner.Text() == "stop" {
+		switch scanner.Text() {
+		case "stop":
 			cancelFn()
 			conn.Write([]byte("ok\n")) //nolint:errcheck // best-effort ack
+		case "ping":
+			fmt.Fprintf(conn, "%d\n", os.Getpid()) //nolint:errcheck // best-effort
 		}
 	}
+}
+
+// controllerAlive checks whether a controller is running by connecting
+// to the controller.sock and sending a "ping". Returns the PID if alive,
+// or 0 if not reachable.
+func controllerAlive(cityPath string) int {
+	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
+	conn, err := net.DialTimeout("unix", sockPath, 500*time.Millisecond)
+	if err != nil {
+		return 0
+	}
+	defer conn.Close()                                    //nolint:errcheck // best-effort
+	conn.Write([]byte("ping\n"))                          //nolint:errcheck // best-effort
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck // best-effort
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	if err != nil || n == 0 {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(buf[:n])))
+	if err != nil {
+		return 0
+	}
+	return pid
 }
 
 // debounceDelay is the coalesce window for filesystem events. Multiple
@@ -480,11 +507,6 @@ func runController(
 		return 1
 	}
 	defer lock.Close() //nolint:errcheck // best-effort cleanup
-
-	// Write PID file so gc daemon status can find us.
-	pidPath := filepath.Join(cityPath, ".gc", "daemon.pid")
-	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600)
-	defer os.Remove(pidPath) //nolint:errcheck // best-effort cleanup
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

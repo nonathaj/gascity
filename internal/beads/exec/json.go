@@ -47,6 +47,7 @@ type beadWire struct {
 	Type        string    `json:"type"`
 	CreatedAt   time.Time `json:"created_at"`
 	Assignee    string    `json:"assignee"`
+	From        string    `json:"from"`
 	ParentID    string    `json:"parent_id"`
 	Ref         string    `json:"ref"`
 	Needs       []string  `json:"needs"`

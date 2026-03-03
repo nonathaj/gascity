@@ -89,8 +89,9 @@ func hashCoreFields(h hash.Hash, cfg Config) {
 	// CopyFiles
 	for _, cf := range cfg.CopyFiles {
 		h.Write([]byte(cf.Src))    //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})         //nolint:errcheck // separator between Src and RelDst
 		h.Write([]byte(cf.RelDst)) //nolint:errcheck // hash.Write never errors
-		h.Write([]byte{0})         //nolint:errcheck // hash.Write never errors
+		h.Write([]byte{0})         //nolint:errcheck // separator between entries
 	}
 }
 

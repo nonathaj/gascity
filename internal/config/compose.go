@@ -356,17 +356,20 @@ func deepMergeProvider(base, frag ProviderSpec, name string, fragMeta toml.MetaD
 	}
 
 	// Env merges additively (individual keys override).
+	// Clone the map to avoid mutating the original base Env.
 	if fragMeta.IsDefined("providers", name, "env") {
-		if result.Env == nil {
-			result.Env = make(map[string]string)
+		cloned := make(map[string]string, len(result.Env)+len(frag.Env))
+		for k, v := range result.Env {
+			cloned[k] = v
 		}
 		for k, v := range frag.Env {
 			if _, exists := base.Env[k]; exists {
 				prov.Warnings = append(prov.Warnings,
 					fmt.Sprintf("provider %q.env.%s redefined by %q", name, k, fragPath))
 			}
-			result.Env[k] = v
+			cloned[k] = v
 		}
+		result.Env = cloned
 	}
 
 	return result
