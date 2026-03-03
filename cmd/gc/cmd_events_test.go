@@ -43,7 +43,7 @@ func TestEventsShowsAll(t *testing.T) {
 	dir := t.TempDir()
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1", Message: "Build Tower of Hanoi"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor", Message: "gc-bright-lights-mayor"})
+	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor", Message: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEvents(ep, "", "", nil, &stdout, &stderr)

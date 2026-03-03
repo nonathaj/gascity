@@ -17,7 +17,7 @@ func TestHandoffSuccess(t *testing.T) {
 	dops := newFakeDrainOps()
 	var stdout, stderr bytes.Buffer
 
-	code := doHandoff(store, rec, dops, "mayor", "gc-city-mayor",
+	code := doHandoff(store, rec, dops, "mayor", "mayor",
 		[]string{"HANDOFF: context full"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
@@ -46,7 +46,7 @@ func TestHandoffSuccess(t *testing.T) {
 	}
 
 	// Verify restart-requested flag set.
-	if !dops.restartRequested["gc-city-mayor"] {
+	if !dops.restartRequested["mayor"] {
 		t.Error("restart-requested flag not set")
 	}
 

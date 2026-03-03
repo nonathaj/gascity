@@ -16,18 +16,18 @@ import (
 
 func TestDoAgentKill(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 
 	rec := events.NewFake()
 	var stdout, stderr bytes.Buffer
-	code := doAgentKill(sp, rec, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentKill(sp, rec, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	// Session should be stopped.
-	if sp.IsRunning("gc-city-worker") {
+	if sp.IsRunning("worker") {
 		t.Error("session still running after kill")
 	}
 	// Event recorded.
@@ -47,7 +47,7 @@ func TestDoAgentKillNotRunning(t *testing.T) {
 	sp := session.NewFake() // no sessions started
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentKill(sp, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentKill(sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -61,7 +61,7 @@ func TestDoAgentKillStopError(t *testing.T) {
 	// FailFake returns false for IsRunning, so we need a custom approach.
 	// Use a regular fake and inject a stop error via a wrapper.
 	sp2 := session.NewFake()
-	if err := sp2.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp2.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	_ = sp // unused
@@ -70,7 +70,7 @@ func TestDoAgentKillStopError(t *testing.T) {
 	wrapper := &stopErrorProvider{Fake: sp2, stopErr: errors.New("tmux borked")}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentKill(wrapper, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentKill(wrapper, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}

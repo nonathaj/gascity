@@ -142,17 +142,17 @@ func (f *fakeDrainOps) clearDriftRestart(sessionName string) error {
 func TestDoAgentDrain(t *testing.T) {
 	dops := newFakeDrainOps()
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 
 	rec := events.NewFake()
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, rec, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentDrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !dops.draining["gc-city-worker"] {
+	if !dops.draining["worker"] {
 		t.Error("drain flag not set")
 	}
 	if got := stdout.String(); got != "Draining agent 'worker'\n" {
@@ -171,7 +171,7 @@ func TestDoAgentDrainNotRunning(t *testing.T) {
 	sp := session.NewFake() // no sessions started
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -184,12 +184,12 @@ func TestDoAgentDrainSetError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -204,19 +204,19 @@ func TestDoAgentDrainSetError(t *testing.T) {
 
 func TestDoAgentUndrain(t *testing.T) {
 	dops := newFakeDrainOps()
-	dops.draining["gc-city-worker"] = true
+	dops.draining["worker"] = true
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 
 	rec := events.NewFake()
 	var stdout, stderr bytes.Buffer
-	code := doAgentUndrain(dops, sp, rec, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentUndrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if dops.draining["gc-city-worker"] {
+	if dops.draining["worker"] {
 		t.Error("drain flag still set after undrain")
 	}
 	if got := stdout.String(); got != "Undrained agent 'worker'\n" {
@@ -232,7 +232,7 @@ func TestDoAgentUndrainNotRunning(t *testing.T) {
 	sp := session.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentUndrain(dops, sp, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentUndrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -247,9 +247,9 @@ func TestDoAgentUndrainNotRunning(t *testing.T) {
 
 func TestDoAgentDrainCheck(t *testing.T) {
 	dops := newFakeDrainOps()
-	dops.draining["gc-city-worker"] = true
+	dops.draining["worker"] = true
 
-	code := doAgentDrainCheck(dops, "gc-city-worker")
+	code := doAgentDrainCheck(dops, "worker")
 	if code != 0 {
 		t.Errorf("code = %d, want 0 (draining)", code)
 	}
@@ -258,7 +258,7 @@ func TestDoAgentDrainCheck(t *testing.T) {
 func TestDoAgentDrainCheckNotDraining(t *testing.T) {
 	dops := newFakeDrainOps()
 
-	code := doAgentDrainCheck(dops, "gc-city-worker")
+	code := doAgentDrainCheck(dops, "worker")
 	if code != 1 {
 		t.Errorf("code = %d, want 1 (not draining)", code)
 	}
@@ -268,7 +268,7 @@ func TestDoAgentDrainCheckError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux gone")
 
-	code := doAgentDrainCheck(dops, "gc-city-worker")
+	code := doAgentDrainCheck(dops, "worker")
 	if code != 1 {
 		t.Errorf("code = %d, want 1 (error → not draining)", code)
 	}
@@ -281,11 +281,11 @@ func TestDoAgentDrainCheckError(t *testing.T) {
 func TestDoAgentDrainAck(t *testing.T) {
 	dops := newFakeDrainOps()
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrainAck(dops, "gc-city-worker", &stdout, &stderr)
+	code := doAgentDrainAck(dops, "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !dops.acked["gc-city-worker"] {
+	if !dops.acked["worker"] {
 		t.Error("drain ack flag not set")
 	}
 	if got := stdout.String(); got != "Drain acknowledged. Controller will stop this session.\n" {
@@ -297,7 +297,7 @@ func TestDoAgentDrainAckError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrainAck(dops, "gc-city-worker", &stdout, &stderr)
+	code := doAgentDrainAck(dops, "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -325,26 +325,26 @@ func TestNewDrainOpsAlwaysReturnsNonNil(t *testing.T) {
 func TestProviderDrainOpsRoundTrip(t *testing.T) {
 	// Verify drain ops work through Provider meta interface.
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-worker", session.Config{})
+	_ = sp.Start(context.Background(), "worker", session.Config{})
 	dops := newDrainOps(sp)
 
 	// Not draining initially.
-	draining, _ := dops.isDraining("gc-city-worker")
+	draining, _ := dops.isDraining("worker")
 	if draining {
 		t.Error("should not be draining initially")
 	}
 
 	// Set drain.
-	if err := dops.setDrain("gc-city-worker"); err != nil {
+	if err := dops.setDrain("worker"); err != nil {
 		t.Fatalf("setDrain: %v", err)
 	}
-	draining, _ = dops.isDraining("gc-city-worker")
+	draining, _ = dops.isDraining("worker")
 	if !draining {
 		t.Error("should be draining after setDrain")
 	}
 
 	// Drain start time should be parseable.
-	ts, err := dops.drainStartTime("gc-city-worker")
+	ts, err := dops.drainStartTime("worker")
 	if err != nil {
 		t.Fatalf("drainStartTime: %v", err)
 	}
@@ -353,23 +353,23 @@ func TestProviderDrainOpsRoundTrip(t *testing.T) {
 	}
 
 	// Set and check ack.
-	if err := dops.setDrainAck("gc-city-worker"); err != nil {
+	if err := dops.setDrainAck("worker"); err != nil {
 		t.Fatalf("setDrainAck: %v", err)
 	}
-	acked, _ := dops.isDrainAcked("gc-city-worker")
+	acked, _ := dops.isDrainAcked("worker")
 	if !acked {
 		t.Error("should be acked after setDrainAck")
 	}
 
 	// Clear drain (also clears ack).
-	if err := dops.clearDrain("gc-city-worker"); err != nil {
+	if err := dops.clearDrain("worker"); err != nil {
 		t.Fatalf("clearDrain: %v", err)
 	}
-	draining, _ = dops.isDraining("gc-city-worker")
+	draining, _ = dops.isDraining("worker")
 	if draining {
 		t.Error("should not be draining after clearDrain")
 	}
-	acked, _ = dops.isDrainAcked("gc-city-worker")
+	acked, _ = dops.isDrainAcked("worker")
 	if acked {
 		t.Error("ack should be cleared after clearDrain")
 	}
@@ -383,7 +383,7 @@ func TestDoAgentRequestRestartError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	var stdout, stderr bytes.Buffer
-	code := doAgentRequestRestart(dops, events.Discard, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentRequestRestart(dops, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -412,29 +412,29 @@ func TestRequestRestartAcceptsNoArgs(t *testing.T) {
 
 func TestProviderDrainOpsRestartRequestedRoundTrip(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-worker", session.Config{})
+	_ = sp.Start(context.Background(), "worker", session.Config{})
 	dops := newDrainOps(sp)
 
 	// Not requested initially.
-	requested, _ := dops.isRestartRequested("gc-city-worker")
+	requested, _ := dops.isRestartRequested("worker")
 	if requested {
 		t.Error("should not be restart-requested initially")
 	}
 
 	// Set restart requested.
-	if err := dops.setRestartRequested("gc-city-worker"); err != nil {
+	if err := dops.setRestartRequested("worker"); err != nil {
 		t.Fatalf("setRestartRequested: %v", err)
 	}
-	requested, _ = dops.isRestartRequested("gc-city-worker")
+	requested, _ = dops.isRestartRequested("worker")
 	if !requested {
 		t.Error("should be restart-requested after set")
 	}
 
 	// Clear restart requested.
-	if err := dops.clearRestartRequested("gc-city-worker"); err != nil {
+	if err := dops.clearRestartRequested("worker"); err != nil {
 		t.Fatalf("clearRestartRequested: %v", err)
 	}
-	requested, _ = dops.isRestartRequested("gc-city-worker")
+	requested, _ = dops.isRestartRequested("worker")
 	if requested {
 		t.Error("should not be restart-requested after clear")
 	}
@@ -442,29 +442,29 @@ func TestProviderDrainOpsRestartRequestedRoundTrip(t *testing.T) {
 
 func TestProviderDrainOpsDriftRestartRoundTrip(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-worker", session.Config{})
+	_ = sp.Start(context.Background(), "worker", session.Config{})
 	dops := newDrainOps(sp)
 
 	// Not drift-restart initially.
-	isDrift, _ := dops.isDriftRestart("gc-city-worker")
+	isDrift, _ := dops.isDriftRestart("worker")
 	if isDrift {
 		t.Error("should not be drift-restart initially")
 	}
 
 	// Set drift restart.
-	if err := dops.setDriftRestart("gc-city-worker"); err != nil {
+	if err := dops.setDriftRestart("worker"); err != nil {
 		t.Fatalf("setDriftRestart: %v", err)
 	}
-	isDrift, _ = dops.isDriftRestart("gc-city-worker")
+	isDrift, _ = dops.isDriftRestart("worker")
 	if !isDrift {
 		t.Error("should be drift-restart after set")
 	}
 
 	// Clear drift restart.
-	if err := dops.clearDriftRestart("gc-city-worker"); err != nil {
+	if err := dops.clearDriftRestart("worker"); err != nil {
 		t.Fatalf("clearDriftRestart: %v", err)
 	}
-	isDrift, _ = dops.isDriftRestart("gc-city-worker")
+	isDrift, _ = dops.isDriftRestart("worker")
 	if isDrift {
 		t.Error("should not be drift-restart after clear")
 	}

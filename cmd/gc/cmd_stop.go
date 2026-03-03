@@ -111,9 +111,8 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 
 	// Clean up orphan sessions (sessions with the city prefix that are
 	// not in the current config).
-	cityPrefix := "gc-" + cityName + "-"
 	rops := newReconcileOps(sp)
-	doStopOrphans(sp, rops, desired, cityPrefix, cfg.Daemon.ShutdownTimeoutDuration(), recorder, stdout, stderr)
+	doStopOrphans(sp, rops, desired, cfg.Daemon.ShutdownTimeoutDuration(), recorder, stdout, stderr)
 
 	// Stop bead store's backing service after agents.
 	if err := shutdownBeadsProvider(cityPath); err != nil {

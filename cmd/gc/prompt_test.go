@@ -96,8 +96,8 @@ func TestRenderPromptSessionFunction(t *testing.T) {
 	f := fsys.NewFake()
 	f.Files["/city/prompts/test.md.tmpl"] = []byte(`Session: {{ session "deacon" }}`)
 	got := renderPrompt(f, "/city", "gastown", "prompts/test.md.tmpl", PromptContext{}, "", io.Discard, nil, nil)
-	if got != "Session: gc-gastown-deacon" {
-		t.Errorf("renderPrompt(session) = %q, want %q", got, "Session: gc-gastown-deacon")
+	if got != "Session: deacon" {
+		t.Errorf("renderPrompt(session) = %q, want %q", got, "Session: deacon")
 	}
 }
 
@@ -225,7 +225,7 @@ Custom: {{ .DefaultBranch }}
 	if !strings.Contains(got, "Branch: feature/foo") {
 		t.Errorf("missing branch: %q", got)
 	}
-	if !strings.Contains(got, "Session: gc-gastown-deacon") {
+	if !strings.Contains(got, "Session: deacon") {
 		t.Errorf("missing session: %q", got)
 	}
 	if !strings.Contains(got, "Custom: main") {

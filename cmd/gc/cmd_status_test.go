@@ -16,14 +16,14 @@ import (
 
 func TestDoAgentStatus(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	dops := newFakeDrainOps()
 	cfgAgent := config.Agent{Name: "worker"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentStatus(sp, dops, cfgAgent, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentStatus(sp, dops, cfgAgent, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -37,8 +37,8 @@ func TestDoAgentStatus(t *testing.T) {
 	if !strings.Contains(out, "Draining:   no") {
 		t.Errorf("stdout missing 'Draining:   no', got:\n%s", out)
 	}
-	if !strings.Contains(out, "Session:    gc-city-worker") {
-		t.Errorf("stdout missing 'Session:    gc-city-worker', got:\n%s", out)
+	if !strings.Contains(out, "Session:    worker") {
+		t.Errorf("stdout missing 'Session:    worker', got:\n%s", out)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestDoAgentStatusStopped(t *testing.T) {
 	cfgAgent := config.Agent{Name: "worker"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentStatus(sp, dops, cfgAgent, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentStatus(sp, dops, cfgAgent, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -60,15 +60,15 @@ func TestDoAgentStatusStopped(t *testing.T) {
 
 func TestDoAgentStatusDraining(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	dops := newFakeDrainOps()
-	dops.draining["gc-city-worker"] = true
+	dops.draining["worker"] = true
 	cfgAgent := config.Agent{Name: "worker"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentStatus(sp, dops, cfgAgent, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentStatus(sp, dops, cfgAgent, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -87,7 +87,7 @@ func TestDoAgentStatusSuspended(t *testing.T) {
 	cfgAgent := config.Agent{Name: "worker", Suspended: true}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentStatus(sp, dops, cfgAgent, "worker", "gc-city-worker", &stdout, &stderr)
+	code := doAgentStatus(sp, dops, cfgAgent, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -103,7 +103,7 @@ func TestDoAgentStatusSuspended(t *testing.T) {
 
 func TestDoRigStatus(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-frontend--polecat", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--polecat", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	// worker is NOT running.
@@ -163,11 +163,11 @@ func TestDoRigStatusSuspendedRig(t *testing.T) {
 
 func TestDoRigStatusWithDraining(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-frontend--worker-1", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--worker-1", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	dops := newFakeDrainOps()
-	dops.draining["gc-city-frontend--worker-1"] = true
+	dops.draining["frontend--worker-1"] = true
 
 	rig := config.Rig{Name: "frontend", Path: "/tmp/frontend"}
 	agents := []config.Agent{

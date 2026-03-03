@@ -16,10 +16,10 @@ func TestDoRigRestart(t *testing.T) {
 	sp := session.NewFake()
 	// Start 2 sessions for agents in the rig.
 	// SessionNameFor replaces "/" with "--".
-	if err := sp.Start(context.Background(), "gc-city-frontend--polecat", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--polecat", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sp.Start(context.Background(), "gc-city-frontend--worker", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--worker", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,10 +36,10 @@ func TestDoRigRestart(t *testing.T) {
 	}
 
 	// Both sessions should be stopped.
-	if sp.IsRunning("gc-city-frontend--polecat") {
+	if sp.IsRunning("frontend--polecat") {
 		t.Error("polecat session still running")
 	}
-	if sp.IsRunning("gc-city-frontend--worker") {
+	if sp.IsRunning("frontend--worker") {
 		t.Error("worker session still running")
 	}
 
@@ -83,10 +83,10 @@ func TestDoRigRestartWithPool(t *testing.T) {
 	sp := session.NewFake()
 	// Pool agent with Max=3, only 2 running.
 	// SessionNameFor replaces "/" with "--".
-	if err := sp.Start(context.Background(), "gc-city-frontend--worker-1", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--worker-1", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sp.Start(context.Background(), "gc-city-frontend--worker-2", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--worker-2", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	// worker-3 is NOT running.
@@ -103,10 +103,10 @@ func TestDoRigRestartWithPool(t *testing.T) {
 	}
 
 	// Both running instances should be stopped.
-	if sp.IsRunning("gc-city-frontend--worker-1") {
+	if sp.IsRunning("frontend--worker-1") {
 		t.Error("worker-1 still running")
 	}
-	if sp.IsRunning("gc-city-frontend--worker-2") {
+	if sp.IsRunning("frontend--worker-2") {
 		t.Error("worker-2 still running")
 	}
 
@@ -124,7 +124,7 @@ func TestDoRigRestartWithPool(t *testing.T) {
 func TestDoRigRestartStopError(t *testing.T) {
 	// When Stop fails, the agent is skipped but the command still succeeds.
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-city-frontend--polecat", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "frontend--polecat", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	wrapper := &stopErrorProvider{Fake: sp, stopErr: fmt.Errorf("tmux borked")}

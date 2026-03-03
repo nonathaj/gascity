@@ -44,7 +44,7 @@ func TestCityStatusEmptyCity(t *testing.T) {
 func TestCityStatusWithAgents(t *testing.T) {
 	sp := session.NewFake()
 	// Start one agent session.
-	if err := sp.Start(context.Background(), "gc-city-mayor", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	dops := newFakeDrainOps()
@@ -99,14 +99,14 @@ func TestCityStatusSuspended(t *testing.T) {
 func TestCityStatusPoolExpansion(t *testing.T) {
 	sp := session.NewFake()
 	// Start 2 of 3 pool instances.
-	if err := sp.Start(context.Background(), "gc-city-hw--polecat-1", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "hw--polecat-1", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sp.Start(context.Background(), "gc-city-hw--polecat-2", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "hw--polecat-2", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
 	dops := newFakeDrainOps()
-	dops.draining["gc-city-hw--polecat-2"] = true
+	dops.draining["hw--polecat-2"] = true
 
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "city"},

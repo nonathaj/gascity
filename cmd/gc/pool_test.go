@@ -166,7 +166,7 @@ func TestPoolAgentsSessionNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("poolAgents: %v", err)
 	}
-	want := []string{"gc-city-worker-1", "gc-city-worker-2", "gc-city-worker-3"}
+	want := []string{"worker-1", "worker-2", "worker-3"}
 	for i, a := range agents {
 		if a.SessionName() != want[i] {
 			t.Errorf("agents[%d].SessionName() = %q, want %q", i, a.SessionName(), want[i])
@@ -238,8 +238,8 @@ func TestPoolAgentsMaxOneNoSuffix(t *testing.T) {
 	if agents[0].Name() != "refinery" {
 		t.Errorf("Name() = %q, want %q (bare name, no suffix)", agents[0].Name(), "refinery")
 	}
-	if agents[0].SessionName() != "gc-city-refinery" {
-		t.Errorf("SessionName() = %q, want %q", agents[0].SessionName(), "gc-city-refinery")
+	if agents[0].SessionName() != "refinery" {
+		t.Errorf("SessionName() = %q, want %q", agents[0].SessionName(), "refinery")
 	}
 }
 
@@ -249,7 +249,7 @@ func TestPoolAgentsMaxOneNoSuffix(t *testing.T) {
 
 func TestExpandSessionSetup_Basic(t *testing.T) {
 	ctx := SessionSetupContext{
-		Session:  "gc-city-mayor",
+		Session:  "mayor",
 		Agent:    "mayor",
 		Rig:      "",
 		CityRoot: "/home/user/city",
@@ -264,17 +264,17 @@ func TestExpandSessionSetup_Basic(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}
-	if got[0] != "tmux set-option -t gc-city-mayor status-style 'bg=blue'" {
+	if got[0] != "tmux set-option -t mayor status-style 'bg=blue'" {
 		t.Errorf("cmd[0] = %q", got[0])
 	}
-	if got[1] != "tmux set-option -t gc-city-mayor status-left ' mayor '" {
+	if got[1] != "tmux set-option -t mayor status-left ' mayor '" {
 		t.Errorf("cmd[1] = %q", got[1])
 	}
 }
 
 func TestExpandSessionSetup_AllVariables(t *testing.T) {
 	ctx := SessionSetupContext{
-		Session:  "gc-bl-hw--polecat",
+		Session:  "hw--polecat",
 		Agent:    "hw/polecat",
 		Rig:      "hello-world",
 		CityRoot: "/city",
@@ -285,7 +285,7 @@ func TestExpandSessionSetup_AllVariables(t *testing.T) {
 		"echo {{.Session}} {{.Agent}} {{.Rig}} {{.CityRoot}} {{.CityName}} {{.WorkDir}}",
 	}
 	got := expandSessionSetup(cmds, ctx)
-	want := "echo gc-bl-hw--polecat hw/polecat hello-world /city bl /city/.gc/worktrees/polecat"
+	want := "echo hw--polecat hw/polecat hello-world /city bl /city/.gc/worktrees/polecat"
 	if got[0] != want {
 		t.Errorf("got %q, want %q", got[0], want)
 	}
@@ -370,7 +370,7 @@ func TestPoolAgentsSessionSetup(t *testing.T) {
 	if len(cfg.SessionSetup) != 1 {
 		t.Fatalf("SessionSetup len = %d, want 1", len(cfg.SessionSetup))
 	}
-	want := "tmux set-option -t gc-city-worker status-left ' worker '"
+	want := "tmux set-option -t worker status-left ' worker '"
 	if cfg.SessionSetup[0] != want {
 		t.Errorf("SessionSetup[0] = %q, want %q", cfg.SessionSetup[0], want)
 	}
@@ -383,7 +383,7 @@ func TestPoolAgentsSessionSetup(t *testing.T) {
 
 func TestExpandSessionSetup_ConfigDir(t *testing.T) {
 	ctx := SessionSetupContext{
-		Session:   "gc-city-mayor",
+		Session:   "mayor",
 		Agent:     "mayor",
 		CityRoot:  "/home/user/city",
 		CityName:  "bright-lights",
@@ -471,9 +471,9 @@ func TestPoolAgentsOverlayDirCopied(t *testing.T) {
 func TestCountRunningPoolInstancesUsesListRunning(t *testing.T) {
 	sp := session.NewFake()
 	// Start 3 out of 5 pool instances.
-	_ = sp.Start(context.Background(), "gc-city-worker-1", session.Config{})
-	_ = sp.Start(context.Background(), "gc-city-worker-3", session.Config{})
-	_ = sp.Start(context.Background(), "gc-city-worker-5", session.Config{})
+	_ = sp.Start(context.Background(), "worker-1", session.Config{})
+	_ = sp.Start(context.Background(), "worker-3", session.Config{})
+	_ = sp.Start(context.Background(), "worker-5", session.Config{})
 
 	count := countRunningPoolInstances("worker", "", 5, "city", "", sp)
 	if count != 3 {
@@ -484,8 +484,8 @@ func TestCountRunningPoolInstancesUsesListRunning(t *testing.T) {
 func TestCountRunningPoolInstancesWithDir(t *testing.T) {
 	sp := session.NewFake()
 	// Rig-scoped pool: dir/name pattern.
-	_ = sp.Start(context.Background(), "gc-city-myrig--worker-1", session.Config{})
-	_ = sp.Start(context.Background(), "gc-city-myrig--worker-2", session.Config{})
+	_ = sp.Start(context.Background(), "myrig--worker-1", session.Config{})
+	_ = sp.Start(context.Background(), "myrig--worker-2", session.Config{})
 
 	count := countRunningPoolInstances("worker", "myrig", 3, "city", "", sp)
 	if count != 2 {

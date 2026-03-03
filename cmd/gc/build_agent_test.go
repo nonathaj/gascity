@@ -26,8 +26,8 @@ func TestBuildOneAgentMinimal(t *testing.T) {
 	if a.Name() != "worker" {
 		t.Errorf("Name() = %q, want %q", a.Name(), "worker")
 	}
-	if a.SessionName() != "gc-city-worker" {
-		t.Errorf("SessionName() = %q, want %q", a.SessionName(), "gc-city-worker")
+	if a.SessionName() != "worker" {
+		t.Errorf("SessionName() = %q, want %q", a.SessionName(), "worker")
 	}
 }
 
@@ -164,8 +164,8 @@ func TestBuildOneAgentQualifiedName(t *testing.T) {
 	if a.Name() != "myrig/polecat" {
 		t.Errorf("Name() = %q, want %q", a.Name(), "myrig/polecat")
 	}
-	if a.SessionName() != "gc-city-myrig--polecat" {
-		t.Errorf("SessionName() = %q, want %q", a.SessionName(), "gc-city-myrig--polecat")
+	if a.SessionName() != "myrig--polecat" {
+		t.Errorf("SessionName() = %q, want %q", a.SessionName(), "myrig--polecat")
 	}
 }
 

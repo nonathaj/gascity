@@ -303,7 +303,7 @@ func TestBinaryCheck_Skipped(t *testing.T) {
 
 func TestAgentSessionsCheck_AllRunning(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -349,7 +349,7 @@ func TestAgentSessionsCheck_SkipsSuspended(t *testing.T) {
 
 func TestZombieSessionsCheck_NoZombies(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -365,10 +365,10 @@ func TestZombieSessionsCheck_NoZombies(t *testing.T) {
 
 func TestZombieSessionsCheck_Found(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	sp.Zombies["gc-test-mayor"] = true
+	sp.Zombies["mayor"] = true
 
 	cfg := &config.City{
 		Agents: []config.Agent{{Name: "mayor", ProcessNames: []string{"claude"}}},
@@ -382,10 +382,10 @@ func TestZombieSessionsCheck_Found(t *testing.T) {
 
 func TestZombieSessionsCheck_Fix(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	sp.Zombies["gc-test-mayor"] = true
+	sp.Zombies["mayor"] = true
 
 	cfg := &config.City{
 		Agents: []config.Agent{{Name: "mayor", ProcessNames: []string{"claude"}}},
@@ -395,17 +395,17 @@ func TestZombieSessionsCheck_Fix(t *testing.T) {
 		t.Fatalf("Fix() error: %v", err)
 	}
 	// After fix, session should be stopped.
-	if sp.IsRunning("gc-test-mayor") {
+	if sp.IsRunning("mayor") {
 		t.Error("zombie session still running after fix")
 	}
 }
 
 func TestZombieSessionsCheck_SkipsNoProcessNames(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	sp.Zombies["gc-test-mayor"] = true // zombie but no process_names to check
+	sp.Zombies["mayor"] = true // zombie but no process_names to check
 
 	cfg := &config.City{
 		Agents: []config.Agent{{Name: "mayor"}}, // no ProcessNames
@@ -421,7 +421,7 @@ func TestZombieSessionsCheck_SkipsNoProcessNames(t *testing.T) {
 
 func TestOrphanSessionsCheck_NoOrphans(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -437,10 +437,10 @@ func TestOrphanSessionsCheck_NoOrphans(t *testing.T) {
 
 func TestOrphanSessionsCheck_Found(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sp.Start(context.Background(), "gc-test-stale-worker", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "stale-worker", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -456,10 +456,10 @@ func TestOrphanSessionsCheck_Found(t *testing.T) {
 
 func TestOrphanSessionsCheck_Fix(t *testing.T) {
 	sp := session.NewFake()
-	if err := sp.Start(context.Background(), "gc-test-mayor", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "mayor", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := sp.Start(context.Background(), "gc-test-stale-worker", session.Config{}); err != nil {
+	if err := sp.Start(context.Background(), "stale-worker", session.Config{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -470,10 +470,10 @@ func TestOrphanSessionsCheck_Fix(t *testing.T) {
 	if err := c.Fix(&CheckContext{}); err != nil {
 		t.Fatalf("Fix() error: %v", err)
 	}
-	if sp.IsRunning("gc-test-stale-worker") {
+	if sp.IsRunning("stale-worker") {
 		t.Error("orphan session still running after fix")
 	}
-	if !sp.IsRunning("gc-test-mayor") {
+	if !sp.IsRunning("mayor") {
 		t.Error("legitimate session was killed by fix")
 	}
 }

@@ -15,7 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestDoAgentAttachStartsThenAttaches(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAttach(f, &stdout, &stderr)
@@ -41,7 +41,7 @@ func TestDoAgentAttachStartsThenAttaches(t *testing.T) {
 }
 
 func TestDoAgentAttachSkipsStartWhenRunning(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
@@ -58,7 +58,7 @@ func TestDoAgentAttachSkipsStartWhenRunning(t *testing.T) {
 }
 
 func TestDoAgentAttachStartFailure(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.StartErr = errors.New("tmux crashed")
 
 	var stdout, stderr bytes.Buffer
@@ -72,7 +72,7 @@ func TestDoAgentAttachStartFailure(t *testing.T) {
 }
 
 func TestDoAgentAttachFailure(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.AttachErr = errors.New("terminal gone")
 
 	var stdout, stderr bytes.Buffer
@@ -178,7 +178,7 @@ name = "test-city"
 // ---------------------------------------------------------------------------
 
 func TestDoAgentPeekPassesLineCount(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.FakePeekOutput = "output"
 
 	var stdout, stderr bytes.Buffer

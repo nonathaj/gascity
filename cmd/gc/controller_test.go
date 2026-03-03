@@ -38,13 +38,13 @@ func TestControllerLoopCancel(t *testing.T) {
 		cancel()
 	}()
 
-	controllerLoop(ctx, time.Hour, cfg, "test", "", nil, buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, "gc-test-", nil, nil, &stdout, &stderr)
+	controllerLoop(ctx, time.Hour, cfg, "test", "", nil, buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, &stdout, &stderr)
 
 	if reconcileCount.Load() < 1 {
 		t.Error("expected at least one reconciliation")
 	}
 	// Agent should have been started by reconciliation.
-	if !sp.IsRunning("gc-test-mayor") {
+	if !sp.IsRunning("mayor") {
 		t.Error("agent should be running after initial reconcile")
 	}
 }
@@ -72,7 +72,7 @@ func TestControllerLoopTick(t *testing.T) {
 		cancel()
 	}()
 
-	controllerLoop(ctx, 10*time.Millisecond, cfg, "test", "", nil, buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, "gc-test-", nil, nil, &stdout, &stderr)
+	controllerLoop(ctx, 10*time.Millisecond, cfg, "test", "", nil, buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, &stdout, &stderr)
 
 	if got := reconcileCount.Load(); got < 2 {
 		t.Errorf("reconcile count = %d, want >= 2", got)
@@ -103,7 +103,7 @@ func TestControllerLockExclusion(t *testing.T) {
 func TestControllerShutdown(t *testing.T) {
 	sp := session.NewFake()
 	// Pre-start an agent to verify shutdown stops it.
-	_ = sp.Start(context.Background(), "gc-test-mayor", session.Config{Command: "echo hello"})
+	_ = sp.Start(context.Background(), "mayor", session.Config{Command: "echo hello"})
 	a := agent.New("mayor", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp)
 
 	buildFn := func(_ *config.City, _ session.Provider) []agent.Agent {
@@ -146,7 +146,7 @@ func TestControllerShutdown(t *testing.T) {
 	}
 
 	// Agent should have been stopped during shutdown.
-	if sp.IsRunning("gc-test-mayor") {
+	if sp.IsRunning("mayor") {
 		t.Error("agent should be stopped after controller shutdown")
 	}
 }
@@ -202,7 +202,7 @@ func TestControllerReloadsConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	go controllerLoop(ctx, 20*time.Millisecond, cfg, "test", tomlPath, nil,
-		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, "gc-test-", nil, nil, &stdout, &stderr)
+		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, &stdout, &stderr)
 
 	// Wait for initial reconcile.
 	for reconcileCount.Load() < 1 {
@@ -265,7 +265,7 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	go controllerLoop(ctx, 20*time.Millisecond, cfg, "test", tomlPath, nil,
-		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, "gc-test-", nil, nil, &stdout, &stderr)
+		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, &stdout, &stderr)
 
 	// Wait for initial reconcile.
 	for reconcileCount.Load() < 1 {
@@ -328,7 +328,7 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	go controllerLoop(ctx, 20*time.Millisecond, cfg, "test", tomlPath, nil,
-		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, "gc-test-", nil, nil, &stdout, &stderr)
+		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, &stdout, &stderr)
 
 	// Wait for initial reconcile.
 	for reconcileCount.Load() < 1 {

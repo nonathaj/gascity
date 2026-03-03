@@ -336,7 +336,8 @@ type Workspace struct {
 	Suspended bool `toml:"suspended,omitempty"`
 	// SessionTemplate is a template string supporting placeholders: {{.City}},
 	// {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming.
-	// Default (empty): "gc-{{.City}}-{{.Agent}}".
+	// Default (empty): "{{.Agent}}" — just the sanitized agent name. Per-city
+	// tmux socket isolation makes a city prefix unnecessary.
 	SessionTemplate string `toml:"session_template,omitempty"`
 	// InstallAgentHooks lists provider names whose hooks should be installed
 	// into agent working directories. Agent-level overrides workspace-level
@@ -400,8 +401,9 @@ type SessionConfig struct {
 	StartupTimeout string `toml:"startup_timeout,omitempty" jsonschema:"default=60s"`
 	// Socket specifies the tmux socket name for per-city isolation.
 	// When set, all tmux commands use "tmux -L <socket>" to connect to
-	// a dedicated server. Empty means use the default tmux server.
-	// Typical usage: set to the city name (e.g., "bright-lights").
+	// a dedicated server. When empty, defaults to the city name
+	// (workspace.name) — giving every city its own tmux server
+	// automatically. Set explicitly to override.
 	Socket string `toml:"socket,omitempty"`
 	// RemoteMatch is a substring pattern for the hybrid provider to route
 	// sessions to the remote (K8s) backend. Sessions whose names contain

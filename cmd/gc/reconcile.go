@@ -69,7 +69,7 @@ func newReconcileOps(sp session.Provider) reconcileOps {
 func doReconcileAgents(agents []agent.Agent,
 	sp session.Provider, rops reconcileOps, dops drainOps,
 	ct crashTracker, it idleTracker,
-	rec events.Recorder, cityPrefix string,
+	rec events.Recorder,
 	poolSessions map[string]time.Duration,
 	suspendedNames map[string]bool,
 	driftDrainTimeout time.Duration,
@@ -95,7 +95,7 @@ func doReconcileAgents(agents []agent.Agent,
 	var allRunning []string
 	var runningSet map[string]bool
 	if rops != nil {
-		if names, err := rops.listRunning(cityPrefix); err == nil {
+		if names, err := rops.listRunning(""); err == nil {
 			allRunning = names
 			runningSet = make(map[string]bool, len(names))
 			for _, name := range names {
@@ -416,7 +416,7 @@ func doReconcileAgents(agents []agent.Agent,
 		running := allRunning
 		if running == nil {
 			var err error
-			running, err = rops.listRunning(cityPrefix)
+			running, err = rops.listRunning("")
 			if err != nil {
 				fmt.Fprintf(stderr, "gc start: listing sessions: %v\n", err) //nolint:errcheck // best-effort stderr
 			}
@@ -487,16 +487,17 @@ func doReconcileAgents(agents []agent.Agent,
 	return 0
 }
 
-// doStopOrphans stops sessions with the city prefix that are not in the
-// desired set. Used by gc stop to clean up orphans after stopping config agents.
+// doStopOrphans stops sessions that are not in the desired set. Used by gc stop
+// to clean up orphans after stopping config agents. With per-city socket
+// isolation, all sessions on the socket belong to this city.
 // Uses gracefulStopAll for two-pass shutdown.
 func doStopOrphans(sp session.Provider, rops reconcileOps, desired map[string]bool,
-	cityPrefix string, timeout time.Duration, rec events.Recorder, stdout, stderr io.Writer,
+	timeout time.Duration, rec events.Recorder, stdout, stderr io.Writer,
 ) {
 	if rops == nil {
 		return
 	}
-	running, err := rops.listRunning(cityPrefix)
+	running, err := rops.listRunning("")
 	if err != nil {
 		fmt.Fprintf(stderr, "gc stop: listing sessions: %v\n", err) //nolint:errcheck // best-effort stderr
 		return

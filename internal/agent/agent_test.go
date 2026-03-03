@@ -13,10 +13,10 @@ func TestSessionNameFor(t *testing.T) {
 		agent string
 		want  string
 	}{
-		{"bright-lights", "mayor", "gc-bright-lights-mayor"},
-		{"bright-lights", "hello-world/polecat", "gc-bright-lights-hello-world--polecat"},
-		{"bright-lights", "backend/worker-1", "gc-bright-lights-backend--worker-1"},
-		{"city", "worker-3", "gc-city-worker-3"},
+		{"bright-lights", "mayor", "mayor"},
+		{"bright-lights", "hello-world/polecat", "hello-world--polecat"},
+		{"bright-lights", "backend/worker-1", "backend--worker-1"},
+		{"city", "worker-3", "worker-3"},
 	}
 	for _, tt := range tests {
 		got := SessionNameFor(tt.city, tt.agent, "")
@@ -89,9 +89,9 @@ func TestSessionNameForCustomTemplate(t *testing.T) {
 }
 
 func TestSessionNameForInvalidTemplate(t *testing.T) {
-	// Invalid template syntax → falls back to default.
+	// Invalid template syntax → falls back to default (just sanitized name).
 	got := SessionNameFor("city", "mayor", "{{.Unclosed")
-	want := "gc-city-mayor"
+	want := "mayor"
 	if got != want {
 		t.Errorf("SessionNameFor with bad template = %q, want %q", got, want)
 	}
@@ -117,8 +117,8 @@ func TestManagedName(t *testing.T) {
 func TestManagedSessionName(t *testing.T) {
 	sp := session.NewFake()
 	a := New("mayor", "city", "claude", "", nil, StartupHints{}, "", "", nil, sp)
-	if got := a.SessionName(); got != "gc-city-mayor" {
-		t.Errorf("SessionName() = %q, want %q", got, "gc-city-mayor")
+	if got := a.SessionName(); got != "mayor" {
+		t.Errorf("SessionName() = %q, want %q", got, "mayor")
 	}
 }
 
@@ -146,8 +146,8 @@ func TestManagedStart(t *testing.T) {
 	if c.Method != "Start" {
 		t.Errorf("Method = %q, want %q", c.Method, "Start")
 	}
-	if c.Name != "gc-city-mayor" {
-		t.Errorf("Name = %q, want %q", c.Name, "gc-city-mayor")
+	if c.Name != "mayor" {
+		t.Errorf("Name = %q, want %q", c.Name, "mayor")
 	}
 	if c.Config.Command != "claude --skip" {
 		t.Errorf("Config.Command = %q, want %q", c.Config.Command, "claude --skip")
@@ -429,7 +429,7 @@ func TestShellQuote(t *testing.T) {
 
 func TestManagedStop(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
 	sp.Calls = nil
 
 	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
@@ -443,8 +443,8 @@ func TestManagedStop(t *testing.T) {
 	if sp.Calls[0].Method != "Stop" {
 		t.Errorf("Method = %q, want %q", sp.Calls[0].Method, "Stop")
 	}
-	if sp.Calls[0].Name != "gc-city-mayor" {
-		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "gc-city-mayor")
+	if sp.Calls[0].Name != "mayor" {
+		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "mayor")
 	}
 }
 
@@ -456,7 +456,7 @@ func TestManagedIsRunning(t *testing.T) {
 		t.Error("IsRunning() = true before Start, want false")
 	}
 
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
 	sp.Calls = nil
 
 	if !a.IsRunning() {
@@ -479,8 +479,8 @@ func TestManagedIsRunningZombie(t *testing.T) {
 	a := New("mayor", "city", "claude", "", nil, hints, "", "", nil, sp)
 
 	// Start the session, then mark it as zombie.
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
-	sp.Zombies["gc-city-mayor"] = true
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	sp.Zombies["mayor"] = true
 
 	if a.IsRunning() {
 		t.Error("IsRunning() = true for zombie session, want false")
@@ -492,7 +492,7 @@ func TestManagedIsRunningHealthy(t *testing.T) {
 	hints := StartupHints{ProcessNames: []string{"claude", "node"}}
 	a := New("mayor", "city", "claude", "", nil, hints, "", "", nil, sp)
 
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
 
 	if !a.IsRunning() {
 		t.Error("IsRunning() = false for healthy session, want true")
@@ -503,8 +503,8 @@ func TestManagedIsRunningNoProcessNames(t *testing.T) {
 	sp := session.NewFake()
 	a := New("mayor", "city", "claude", "", nil, StartupHints{}, "", "", nil, sp)
 
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
-	sp.Zombies["gc-city-mayor"] = true // zombie, but no process names configured
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	sp.Zombies["mayor"] = true // zombie, but no process names configured
 
 	if !a.IsRunning() {
 		t.Error("IsRunning() = false with no process names, want true (can't check deeper)")
@@ -513,7 +513,7 @@ func TestManagedIsRunningNoProcessNames(t *testing.T) {
 
 func TestManagedNudge(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
 	sp.Calls = nil
 
 	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
@@ -528,8 +528,8 @@ func TestManagedNudge(t *testing.T) {
 	if c.Method != "Nudge" {
 		t.Errorf("Method = %q, want %q", c.Method, "Nudge")
 	}
-	if c.Name != "gc-city-mayor" {
-		t.Errorf("Name = %q, want %q", c.Name, "gc-city-mayor")
+	if c.Name != "mayor" {
+		t.Errorf("Name = %q, want %q", c.Name, "mayor")
 	}
 	if c.Message != "wake up" {
 		t.Errorf("Message = %q, want %q", c.Message, "wake up")
@@ -548,7 +548,7 @@ func TestManagedNudgeError(t *testing.T) {
 
 func TestManagedAttach(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
 	sp.Calls = nil
 
 	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
@@ -562,7 +562,7 @@ func TestManagedAttach(t *testing.T) {
 	if sp.Calls[0].Method != "Attach" {
 		t.Errorf("Method = %q, want %q", sp.Calls[0].Method, "Attach")
 	}
-	if sp.Calls[0].Name != "gc-city-mayor" {
-		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "gc-city-mayor")
+	if sp.Calls[0].Name != "mayor" {
+		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "mayor")
 	}
 }

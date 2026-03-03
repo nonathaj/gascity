@@ -1103,7 +1103,7 @@
         },
         "socket": {
           "type": "string",
-          "description": "Socket specifies the tmux socket name for per-city isolation.\nWhen set, all tmux commands use \"tmux -L \u003csocket\u003e\" to connect to\na dedicated server. Empty means use the default tmux server.\nTypical usage: set to the city name (e.g., \"bright-lights\")."
+          "description": "Socket specifies the tmux socket name for per-city isolation.\nWhen set, all tmux commands use \"tmux -L \u003csocket\u003e\" to connect to\na dedicated server. When empty, defaults to the city name\n(workspace.name) — giving every city its own tmux server\nautomatically. Set explicitly to override."
         },
         "remote_match": {
           "type": "string",
@@ -1134,7 +1134,7 @@
         },
         "session_template": {
           "type": "string",
-          "description": "SessionTemplate is a template string supporting placeholders: {{.City}},\n{{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming.\nDefault (empty): \"gc-{{.City}}-{{.Agent}}\"."
+          "description": "SessionTemplate is a template string supporting placeholders: {{.City}},\n{{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming.\nDefault (empty): \"{{.Agent}}\" — just the sanitized agent name. Per-city\ntmux socket isolation makes a city prefix unnecessary."
         },
         "install_agent_hooks": {
           "items": {

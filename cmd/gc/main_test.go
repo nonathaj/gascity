@@ -166,7 +166,7 @@ func TestResolveCityFlag(t *testing.T) {
 // --- doAgentAttach ---
 
 func TestAgentAttachStartsAndAttaches(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAttach(f, &stdout, &stderr)
@@ -190,7 +190,7 @@ func TestAgentAttachStartsAndAttaches(t *testing.T) {
 }
 
 func TestAgentAttachExistingSession(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
@@ -212,7 +212,7 @@ func TestAgentAttachExistingSession(t *testing.T) {
 }
 
 func TestAgentAttachStartError(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.StartErr = fmt.Errorf("boom")
 
 	var stderr bytes.Buffer
@@ -226,7 +226,7 @@ func TestAgentAttachStartError(t *testing.T) {
 }
 
 func TestAgentAttachAttachError(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.Running = true
 	f.AttachErr = fmt.Errorf("attach boom")
 
@@ -401,7 +401,7 @@ func TestDoRigListSuccess(t *testing.T) {
 
 func TestSessionName(t *testing.T) {
 	got := sessionName("bright-lights", "mayor", "")
-	want := "gc-bright-lights-mayor"
+	want := "mayor"
 	if got != want {
 		t.Errorf("sessionName = %q, want %q", got, want)
 	}
@@ -1316,8 +1316,8 @@ func TestInitFromSkip(t *testing.T) {
 
 func TestDoStopOneAgentRunning(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-bright-lights-mayor", session.Config{})
-	f := agent.NewFake("mayor", "gc-bright-lights-mayor")
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	f := agent.NewFake("mayor", "mayor")
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
@@ -1329,7 +1329,7 @@ func TestDoStopOneAgentRunning(t *testing.T) {
 		t.Errorf("unexpected stderr: %q", stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "Stopped agent 'gc-bright-lights-mayor'") {
+	if !strings.Contains(out, "Stopped agent 'mayor'") {
 		t.Errorf("stdout missing stop message: %q", out)
 	}
 	if !strings.Contains(out, "City stopped.") {
@@ -1356,7 +1356,7 @@ func TestDoStopNoAgents(t *testing.T) {
 
 func TestDoStopAgentNotRunning(t *testing.T) {
 	sp := session.NewFake()
-	f := agent.NewFake("mayor", "gc-bright-lights-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	// Running defaults to false — agent is not running.
 
 	var stdout, stderr bytes.Buffer
@@ -1376,11 +1376,11 @@ func TestDoStopAgentNotRunning(t *testing.T) {
 
 func TestDoStopMultipleAgents(t *testing.T) {
 	sp := session.NewFake()
-	_ = sp.Start(context.Background(), "gc-city-mayor", session.Config{})
-	_ = sp.Start(context.Background(), "gc-city-worker", session.Config{})
-	mayor := agent.NewFake("mayor", "gc-city-mayor")
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	_ = sp.Start(context.Background(), "worker", session.Config{})
+	mayor := agent.NewFake("mayor", "mayor")
 	mayor.Running = true
-	worker := agent.NewFake("worker", "gc-city-worker")
+	worker := agent.NewFake("worker", "worker")
 	worker.Running = true
 
 	var stdout, stderr bytes.Buffer
@@ -1389,10 +1389,10 @@ func TestDoStopMultipleAgents(t *testing.T) {
 		t.Fatalf("doStop = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "Stopped agent 'gc-city-mayor'") {
+	if !strings.Contains(out, "Stopped agent 'mayor'") {
 		t.Errorf("stdout missing stop message for mayor: %q", out)
 	}
-	if !strings.Contains(out, "Stopped agent 'gc-city-worker'") {
+	if !strings.Contains(out, "Stopped agent 'worker'") {
 		t.Errorf("stdout missing stop message for worker: %q", out)
 	}
 	if !strings.Contains(out, "City stopped.") {
@@ -1402,7 +1402,7 @@ func TestDoStopMultipleAgents(t *testing.T) {
 
 func TestDoStopStopError(t *testing.T) {
 	sp := session.NewFailFake() // Stop will fail
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
@@ -1702,7 +1702,7 @@ func TestDoAgentAddWithPromptTemplate(t *testing.T) {
 // --- doAgentNudge ---
 
 func TestDoAgentNudgeSuccess(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentNudge(f, "wake up", &stdout, &stderr)
@@ -1733,7 +1733,7 @@ func TestDoAgentNudgeSuccess(t *testing.T) {
 }
 
 func TestDoAgentNudgeBrokenProvider(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.NudgeErr = fmt.Errorf("session unavailable")
 
 	var stderr bytes.Buffer
@@ -1749,7 +1749,7 @@ func TestDoAgentNudgeBrokenProvider(t *testing.T) {
 // --- doAgentPeek ---
 
 func TestDoAgentPeekSuccess(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.FakePeekOutput = "hello world\nprompt> "
 
 	var stdout, stderr bytes.Buffer
@@ -1780,7 +1780,7 @@ func TestDoAgentPeekSuccess(t *testing.T) {
 }
 
 func TestDoAgentPeekBrokenProvider(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 	f.PeekErr = fmt.Errorf("session unavailable")
 
 	var stderr bytes.Buffer
@@ -1794,7 +1794,7 @@ func TestDoAgentPeekBrokenProvider(t *testing.T) {
 }
 
 func TestDoAgentPeekEmptyOutput(t *testing.T) {
-	f := agent.NewFake("mayor", "gc-city-mayor")
+	f := agent.NewFake("mayor", "mayor")
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentPeek(f, 0, &stdout, &stderr)

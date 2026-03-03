@@ -371,7 +371,7 @@ func (c *OrphanSessionsCheck) Name() string { return "orphan-sessions" }
 // Run finds sessions with the city prefix that don't match any configured agent.
 func (c *OrphanSessionsCheck) Run(_ *CheckContext) *CheckResult {
 	r := &CheckResult{Name: c.Name()}
-	prefix := "gc-" + c.cityName + "-"
+	prefix := "" // per-city socket isolation: all sessions belong to this city
 	running, err := c.sp.ListRunning(prefix)
 	if err != nil {
 		r.Status = StatusError
@@ -409,7 +409,7 @@ func (c *OrphanSessionsCheck) CanFix() bool { return true }
 
 // Fix kills all orphaned sessions.
 func (c *OrphanSessionsCheck) Fix(_ *CheckContext) error {
-	prefix := "gc-" + c.cityName + "-"
+	prefix := "" // per-city socket isolation: all sessions belong to this city
 	running, err := c.sp.ListRunning(prefix)
 	if err != nil {
 		return err

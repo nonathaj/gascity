@@ -88,20 +88,22 @@ type sessionData struct {
 // SessionNameFor returns the session name for a city agent.
 // This is the single source of truth for the naming convention.
 // sessionTemplate is a Go text/template string; empty means use the
-// default pattern "gc-{city}-{agent}".
+// default pattern "{agent}" (the sanitized agent name). With per-city
+// tmux socket isolation as the default, the city prefix is unnecessary.
 //
 // For rig-scoped agents (name contains "/"), the dir and name
 // components are joined with "--" to avoid tmux naming issues:
 //
-//	"mayor"               → "gc-bright-lights-mayor"
-//	"hello-world/polecat" → "gc-bright-lights-hello-world--polecat"
+//	"mayor"               → "mayor"
+//	"hello-world/polecat" → "hello-world--polecat"
 func SessionNameFor(cityName, agentName, sessionTemplate string) string {
 	// Pre-sanitize: replace "/" with "--" for tmux safety.
 	sanitized := strings.ReplaceAll(agentName, "/", "--")
 
 	if sessionTemplate == "" {
-		// Default: reproduce hardcoded pattern.
-		return "gc-" + cityName + "-" + sanitized
+		// Default: just the sanitized agent name. Per-city tmux socket
+		// isolation makes a city prefix redundant.
+		return sanitized
 	}
 
 	// Parse dir/name components for template variables.
@@ -116,7 +118,7 @@ func SessionNameFor(cityName, agentName, sessionTemplate string) string {
 	tmpl, err := template.New("session").Parse(sessionTemplate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gc: session_template parse error: %v (using default)\n", err)
-		return "gc-" + cityName + "-" + sanitized
+		return sanitized
 	}
 
 	var buf bytes.Buffer
@@ -128,7 +130,7 @@ func SessionNameFor(cityName, agentName, sessionTemplate string) string {
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		fmt.Fprintf(os.Stderr, "gc: session_template execute error: %v (using default)\n", err)
-		return "gc-" + cityName + "-" + sanitized
+		return sanitized
 	}
 	return buf.String()
 }

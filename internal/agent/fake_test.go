@@ -11,7 +11,7 @@ import (
 var _ Agent = (*Fake)(nil)
 
 func TestFakeStart(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	if err := f.Start(context.Background()); err != nil {
 		t.Fatalf("Start() = %v, want nil", err)
 	}
@@ -30,7 +30,7 @@ func TestFakeStart(t *testing.T) {
 }
 
 func TestFakeStartError(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	f.StartErr = fmt.Errorf("boom")
 
 	err := f.Start(context.Background())
@@ -46,7 +46,7 @@ func TestFakeStartError(t *testing.T) {
 }
 
 func TestFakeStop(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	f.Running = true
 
 	if err := f.Stop(); err != nil {
@@ -64,7 +64,7 @@ func TestFakeStop(t *testing.T) {
 }
 
 func TestFakeStopError(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	f.Running = true
 	f.StopErr = fmt.Errorf("stop boom")
 
@@ -82,7 +82,7 @@ func TestFakeStopError(t *testing.T) {
 }
 
 func TestFakeIsRunning(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 
 	if f.IsRunning() {
 		t.Error("IsRunning() = true, want false")
@@ -105,7 +105,7 @@ func TestFakeIsRunning(t *testing.T) {
 }
 
 func TestFakeAttach(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 
 	if err := f.Attach(); err != nil {
 		t.Fatalf("Attach() = %v, want nil", err)
@@ -119,7 +119,7 @@ func TestFakeAttach(t *testing.T) {
 }
 
 func TestFakeAttachError(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	f.AttachErr = fmt.Errorf("attach boom")
 
 	err := f.Attach()
@@ -132,21 +132,21 @@ func TestFakeAttachError(t *testing.T) {
 }
 
 func TestFakeName(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	if got := f.Name(); got != "mayor" {
 		t.Errorf("Name() = %q, want %q", got, "mayor")
 	}
 }
 
 func TestFakeSessionName(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
-	if got := f.SessionName(); got != "gc-city-mayor" {
-		t.Errorf("SessionName() = %q, want %q", got, "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
+	if got := f.SessionName(); got != "mayor" {
+		t.Errorf("SessionName() = %q, want %q", got, "mayor")
 	}
 }
 
 func TestFakeSessionConfig(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	cfg := session.Config{Command: "claude --skip", Env: map[string]string{"A": "1"}}
 	f.FakeSessionConfig = cfg
 
@@ -168,7 +168,7 @@ func TestFakeSessionConfig(t *testing.T) {
 }
 
 func TestFakeSessionConfigZeroValue(t *testing.T) {
-	f := NewFake("mayor", "gc-city-mayor")
+	f := NewFake("mayor", "mayor")
 	// FakeSessionConfig left at zero value.
 	got := f.SessionConfig()
 	if got.Command != "" {

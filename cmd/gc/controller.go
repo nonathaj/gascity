@@ -268,7 +268,6 @@ func controllerLoop(
 	wg wispGC,
 	ad automationDispatcher,
 	rec events.Recorder,
-	prefix string,
 	poolSessions map[string]time.Duration,
 	suspendedNames map[string]bool,
 	stdout, stderr io.Writer,
@@ -294,7 +293,7 @@ func controllerLoop(
 
 	// Initial reconciliation.
 	agents := buildFn(cfg, sp)
-	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
+	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
 	cityRoot := filepath.Dir(tomlPath)
@@ -320,13 +319,13 @@ func controllerLoop(
 					}
 					if newProviderName != lastProviderName {
 						// Stop all agents on the current provider.
-						if running, lErr := rops.listRunning(prefix); lErr == nil && len(running) > 0 {
+						if running, lErr := rops.listRunning(""); lErr == nil && len(running) > 0 {
 							fmt.Fprintf(stdout, "Provider changed (%s → %s), stopping %d agent(s)...\n", //nolint:errcheck // best-effort stdout
 								displayProviderName(lastProviderName), displayProviderName(newProviderName), len(running))
 							gracefulStopAll(running, sp, cfg.Daemon.ShutdownTimeoutDuration(), rec, stdout, stderr)
 						}
 						// Construct new provider.
-						newSp, spErr := newSessionProviderByName(newProviderName, cfg.Session)
+						newSp, spErr := newSessionProviderByName(newProviderName, cfg.Session, cityName)
 						if spErr != nil {
 							fmt.Fprintf(stderr, "gc start: new session provider %q: %v (keeping old provider)\n", //nolint:errcheck // best-effort stderr
 								newProviderName, spErr)
@@ -408,7 +407,7 @@ func controllerLoop(
 				}
 			}
 			agents = buildFn(cfg, sp)
-			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, prefix, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
+			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
 				purged, gcErr := wg.runGC(filepath.Dir(tomlPath), time.Now())
@@ -511,8 +510,6 @@ func runController(
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
-	cityPrefix := "gc-" + cityName + "-"
-
 	rec.Record(events.Event{Type: events.ControllerStarted, Actor: "gc"})
 	telemetry.RecordControllerLifecycle(context.Background(), "started")
 	fmt.Fprintln(stdout, "Controller started.") //nolint:errcheck // best-effort stdout
@@ -542,12 +539,12 @@ func runController(
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)
 	controllerLoop(ctx, cfg.Daemon.PatrolIntervalDuration(),
 		cfg, cityName, tomlPath, initialWatchDirs,
-		buildFn, sp, rops, dops, ct, it, wg, ad, rec, cityPrefix, poolSessions, suspendedNames, stdout, stderr)
+		buildFn, sp, rops, dops, ct, it, wg, ad, rec, poolSessions, suspendedNames, stdout, stderr)
 
-	// Shutdown: graceful stop all sessions with the city prefix.
+	// Shutdown: graceful stop all sessions on this city's socket.
 	timeout := cfg.Daemon.ShutdownTimeoutDuration()
 	if rops != nil {
-		running, _ := rops.listRunning(cityPrefix)
+		running, _ := rops.listRunning("")
 		gracefulStopAll(running, sp, timeout, rec, stdout, stderr)
 	} else {
 		var names []string

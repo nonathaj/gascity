@@ -37,8 +37,14 @@ func sessionProviderName() string {
 }
 
 // tmuxConfigFromSession converts a config.SessionConfig into a
-// sessiontmux.Config with resolved durations and defaults.
-func tmuxConfigFromSession(sc config.SessionConfig) sessiontmux.Config {
+// sessiontmux.Config with resolved durations and defaults. If the
+// config has no explicit socket name, cityName is used — giving every
+// city its own tmux server automatically.
+func tmuxConfigFromSession(sc config.SessionConfig, cityName string) sessiontmux.Config {
+	socketName := sc.Socket
+	if socketName == "" {
+		socketName = cityName
+	}
 	return sessiontmux.Config{
 		SetupTimeout:       sc.SetupTimeoutDuration(),
 		NudgeReadyTimeout:  sc.NudgeReadyTimeoutDuration(),
@@ -46,11 +52,12 @@ func tmuxConfigFromSession(sc config.SessionConfig) sessiontmux.Config {
 		NudgeLockTimeout:   sc.NudgeLockTimeoutDuration(),
 		DebounceMs:         sc.DebounceMsOrDefault(),
 		DisplayMs:          sc.DisplayMsOrDefault(),
-		SocketName:         sc.Socket,
+		SocketName:         socketName,
 	}
 }
 
 // newSessionProviderByName constructs a session.Provider from a provider name.
+// cityName is used to auto-default the tmux socket when none is configured.
 // Returns error instead of os.Exit, making it safe for the hot-reload path.
 //
 //   - "fake" → in-memory fake (all ops succeed)
@@ -59,7 +66,7 @@ func tmuxConfigFromSession(sc config.SessionConfig) sessiontmux.Config {
 //   - "exec:<script>" → user-supplied script (absolute path or PATH lookup)
 //   - "k8s" → native Kubernetes provider (client-go)
 //   - default → real tmux provider
-func newSessionProviderByName(name string, sc config.SessionConfig) (session.Provider, error) {
+func newSessionProviderByName(name string, sc config.SessionConfig, cityName string) (session.Provider, error) {
 	if strings.HasPrefix(name, "exec:") {
 		return sessionexec.NewProvider(strings.TrimPrefix(name, "exec:")), nil
 	}
@@ -73,9 +80,9 @@ func newSessionProviderByName(name string, sc config.SessionConfig) (session.Pro
 	case "k8s":
 		return sessionk8s.NewProvider()
 	case "hybrid":
-		return newHybridProvider(sc)
+		return newHybridProvider(sc, cityName)
 	default:
-		return sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc)), nil
+		return sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc, cityName)), nil
 	}
 }
 
@@ -84,12 +91,17 @@ func newSessionProviderByName(name string, sc config.SessionConfig) (session.Pro
 // session-dependent commands without real tmux. Startup path — exits on error.
 func newSessionProvider() session.Provider {
 	var sc config.SessionConfig
+	var cityName string
 	if cp, err := resolveCity(); err == nil {
 		if cfg, err := loadCityConfig(cp); err == nil {
 			sc = cfg.Session
+			cityName = cfg.Workspace.Name
+			if cityName == "" {
+				cityName = filepath.Base(cp)
+			}
 		}
 	}
-	sp, err := newSessionProviderByName(sessionProviderName(), sc)
+	sp, err := newSessionProviderByName(sessionProviderName(), sc, cityName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
 		os.Exit(1)
@@ -247,8 +259,8 @@ func openCityEventsProvider(stderr io.Writer, cmdName string) (events.Provider, 
 // tmux (local) or k8s (remote) based on session name. The GC_HYBRID_REMOTE_MATCH
 // env var controls which sessions go to k8s. If unset, all sessions route to
 // local tmux.
-func newHybridProvider(sc config.SessionConfig) (session.Provider, error) {
-	local := sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc))
+func newHybridProvider(sc config.SessionConfig, cityName string) (session.Provider, error) {
+	local := sessiontmux.NewProviderWithConfig(tmuxConfigFromSession(sc, cityName))
 	remote, err := sessionk8s.NewProvider()
 	if err != nil {
 		return nil, fmt.Errorf("hybrid: k8s backend: %w", err)

@@ -496,10 +496,9 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	// One-shot reconciliation (default): no drain (kill is fine).
 	agents := buildAgents(cfg, sp)
-	cityPrefix := "gc-" + cityName + "-"
 	rops := newReconcileOps(sp)
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)
-	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, cityPrefix, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr)
+	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr)
 	if code == 0 {
 		fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 	}
@@ -733,9 +732,9 @@ func countRunningPoolInstances(agentName, agentDir string, poolMax int, cityName
 		expected[sessionName(cityName, qualifiedInstance, sessionTemplate)] = true
 	}
 
-	// Single ListRunning call with city prefix, then intersect with expected set.
-	cityPrefix := "gc-" + cityName + "-"
-	running, err := sp.ListRunning(cityPrefix)
+	// Single ListRunning call, then intersect with expected set.
+	// Per-city socket isolation: all sessions belong to this city.
+	running, err := sp.ListRunning("")
 	if err != nil {
 		// Fallback: individual IsRunning calls (original behavior).
 		count := 0

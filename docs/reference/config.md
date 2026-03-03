@@ -339,7 +339,7 @@ SessionConfig holds session provider settings.
 | `debounce_ms` | integer |  | `500` | DebounceMs is the default debounce interval in milliseconds for send-keys. Defaults to 500. |
 | `display_ms` | integer |  | `5000` | DisplayMs is the default display duration in milliseconds for status messages. Defaults to 5000. |
 | `startup_timeout` | string |  | `60s` | StartupTimeout is how long to wait for each agent's Start() call before treating it as failed. Duration string (e.g., "60s", "2m"). Defaults to "60s". |
-| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L <socket>" to connect to a dedicated server. Empty means use the default tmux server. Typical usage: set to the city name (e.g., "bright-lights"). |
+| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L <socket>" to connect to a dedicated server. When empty, defaults to the city name (workspace.name) — giving every city its own tmux server automatically. Set explicitly to override. |
 | `remote_match` | string |  |  | RemoteMatch is a substring pattern for the hybrid provider to route sessions to the remote (K8s) backend. Sessions whose names contain this pattern go to K8s; all others stay local (tmux). Overridden by the GC_HYBRID_REMOTE_MATCH env var if set. |
 
 ## Workspace
@@ -352,7 +352,7 @@ Workspace holds city-level metadata and optional defaults that apply to all agen
 | `provider` | string |  |  | Provider is the default provider name used by agents that don't specify one. |
 | `start_command` | string |  |  | StartCommand overrides the provider's command for all agents. |
 | `suspended` | boolean |  |  | Suspended controls whether the city is suspended. When true, all agents are effectively suspended: the reconciler won't spawn them, and gc hook/prime return empty. Inherits downward — individual agent/rig suspended fields are checked independently. |
-| `session_template` | string |  |  | SessionTemplate is a template string supporting placeholders: {{.City}}, {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming. Default (empty): "gc-{{.City}}-{{.Agent}}". |
+| `session_template` | string |  |  | SessionTemplate is a template string supporting placeholders: {{.City}}, {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming. Default (empty): "{{.Agent}}" — just the sanitized agent name. Per-city tmux socket isolation makes a city prefix unnecessary. |
 | `install_agent_hooks` | []string |  |  | InstallAgentHooks lists provider names whose hooks should be installed into agent working directories. Agent-level overrides workspace-level (replace, not additive). Supported: "claude", "gemini", "opencode", "copilot". |
 | `pack` | string |  |  | Pack is the path to a city-level pack directory. Stamps agents with dir="" (city-scoped). Resolved like rig packs. Combined with rig-level packs — city pack agents get dir="" while rig pack agents inherit the rig name as their dir. |
 | `packs` | []string |  |  | CityPacks lists multiple city-level pack directories. Each is loaded and expanded like Pack. When both Pack and CityPacks are set, Pack is prepended to the list. Agents from the first pack come first (deterministic ordering). |
