@@ -613,8 +613,6 @@ func passthroughEnv() map[string]string {
 	return m
 }
 
-// mergeEnv combines multiple env maps into one. Later maps override earlier
-// ones for the same key. Returns nil if all inputs are empty.
 // expandEnvMap returns a copy of m with os.ExpandEnv applied to each value.
 // This allows TOML-sourced env blocks to reference the controller's environment,
 // e.g. DOLTHUB_TOKEN = "$DOLTHUB_TOKEN".
@@ -629,6 +627,8 @@ func expandEnvMap(m map[string]string) map[string]string {
 	return out
 }
 
+// mergeEnv combines multiple env maps into one. Later maps override earlier
+// ones for the same key. Returns nil if all inputs are empty.
 func mergeEnv(maps ...map[string]string) map[string]string {
 	size := 0
 	for _, m := range maps {

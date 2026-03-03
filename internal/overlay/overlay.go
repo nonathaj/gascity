@@ -92,6 +92,9 @@ type SkipFunc func(relPath string, isDir bool) bool
 // files — it returns on the first error encountered.
 func CopyDirWithSkip(srcDir, dstDir string, skip SkipFunc, _ io.Writer) error {
 	info, err := os.Stat(srcDir)
+	if os.IsNotExist(err) {
+		return nil // Missing source dir is a no-op (consistent with CopyDir).
+	}
 	if err != nil {
 		return fmt.Errorf("overlay: stat %q: %w", srcDir, err)
 	}

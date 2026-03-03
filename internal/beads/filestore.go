@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/steveyegge/gascity/internal/fsys"
 )
@@ -20,6 +21,7 @@ type fileData struct {
 // write. Fine for Tutorial 01 volumes.
 type FileStore struct {
 	*MemStore
+	fmu  sync.Mutex // guards mutate-then-save atomicity
 	fs   fsys.FS
 	path string
 }
@@ -50,6 +52,8 @@ func OpenFileStore(fs fsys.FS, path string) (*FileStore, error) {
 
 // Create delegates to MemStore.Create and flushes to disk.
 func (fs *FileStore) Create(b Bead) (Bead, error) {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
 	result, err := fs.MemStore.Create(b)
 	if err != nil {
 		return Bead{}, err
@@ -62,6 +66,8 @@ func (fs *FileStore) Create(b Bead) (Bead, error) {
 
 // Update delegates to MemStore.Update and flushes to disk.
 func (fs *FileStore) Update(id string, opts UpdateOpts) error {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
 	if err := fs.MemStore.Update(id, opts); err != nil {
 		return err
 	}
@@ -70,6 +76,8 @@ func (fs *FileStore) Update(id string, opts UpdateOpts) error {
 
 // Close delegates to MemStore.Close and flushes to disk.
 func (fs *FileStore) Close(id string) error {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
 	if err := fs.MemStore.Close(id); err != nil {
 		return err
 	}
@@ -78,6 +86,8 @@ func (fs *FileStore) Close(id string) error {
 
 // MolCook delegates to MemStore.MolCook and flushes to disk.
 func (fs *FileStore) MolCook(formula, title string, vars []string) (string, error) {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
 	id, err := fs.MemStore.MolCook(formula, title, vars)
 	if err != nil {
 		return "", err
@@ -90,6 +100,8 @@ func (fs *FileStore) MolCook(formula, title string, vars []string) (string, erro
 
 // MolCookOn delegates to MemStore.MolCookOn and flushes to disk.
 func (fs *FileStore) MolCookOn(formula, beadID, title string, vars []string) (string, error) {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
 	id, err := fs.MemStore.MolCookOn(formula, beadID, title, vars)
 	if err != nil {
 		return "", err
@@ -101,12 +113,11 @@ func (fs *FileStore) MolCookOn(formula, beadID, title string, vars []string) (st
 }
 
 // save writes the full store state to disk atomically (temp file + rename).
-// Holds the mutex for the entire operation (snapshot + write + rename) to
-// prevent concurrent saves from interleaving and corrupting the file.
+// Called with fmu held, so snapshot under MemStore.mu then release before I/O.
 func (fs *FileStore) save() error {
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
 	seq, beads := fs.snapshot()
+	fs.mu.Unlock()
 
 	fd := fileData{Seq: seq, Beads: beads}
 	data, err := json.MarshalIndent(fd, "", "  ")

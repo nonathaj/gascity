@@ -67,7 +67,8 @@ func startControllerSocket(cityPath string, cancelFn context.CancelFunc) (net.Li
 // handleControllerConn reads from a connection and calls cancelFn if
 // the client sends "stop".
 func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc) {
-	defer conn.Close() //nolint:errcheck // best-effort cleanup
+	defer conn.Close()                                     //nolint:errcheck // best-effort cleanup
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck // best-effort deadline
 	scanner := bufio.NewScanner(conn)
 	if scanner.Scan() {
 		if scanner.Text() == "stop" {
@@ -354,13 +355,14 @@ func controllerLoop(
 					}
 					poolSessions = computePoolSessions(cfg, cityName)
 					suspendedNames = computeSuspendedNames(cfg, cityName, cityRoot)
-					// Rebuild crash tracker if config changed.
-					maxR := cfg.Daemon.MaxRestartsOrDefault()
-					if maxR > 0 {
-						ct = newCrashTracker(maxR, cfg.Daemon.RestartWindowDuration())
-					} else {
+					// Rebuild crash tracker only if config values changed.
+					newMaxR := cfg.Daemon.MaxRestartsOrDefault()
+					if newMaxR <= 0 {
 						ct = nil
+					} else if ct == nil {
+						ct = newCrashTracker(newMaxR, cfg.Daemon.RestartWindowDuration())
 					}
+					// If ct exists and limits are unchanged, keep it (preserves crash history).
 					// Rebuild idle tracker with new config timeouts.
 					it = buildIdleTracker(cfg, cityName, sp)
 					// Rebuild wisp GC from new config.

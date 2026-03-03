@@ -172,6 +172,7 @@ func doReconcileAgents(agents []agent.Agent,
 		// Running — check if agent requested a restart (context exhaustion, etc.).
 		if dops != nil {
 			if restart, _ := dops.isRestartRequested(a.SessionName()); restart {
+				_ = dops.clearRestartRequested(a.SessionName())                                // clear before stop to prevent re-fire
 				fmt.Fprintf(stdout, "Agent '%s' requested restart, restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStopped,

@@ -540,8 +540,9 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 }
 
 // buildSlingCommand replaces {} in the sling query template with the bead ID.
+// The bead ID is shell-quoted to prevent command injection.
 func buildSlingCommand(template, beadID string) string {
-	return strings.ReplaceAll(template, "{}", beadID)
+	return strings.ReplaceAll(template, "{}", shellQuote(beadID))
 }
 
 // shellQuote quotes a string for safe use in shell commands.

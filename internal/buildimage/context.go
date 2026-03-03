@@ -135,19 +135,6 @@ func copyDirFiltered(src, dst string) error {
 			return os.MkdirAll(target, info.Mode())
 		}
 
-		// Handle symlinks by following them.
-		if info.Mode()&os.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return nil // skip broken symlinks
-			}
-			info, err = os.Stat(resolved)
-			if err != nil {
-				return nil
-			}
-			path = resolved
-		}
-
 		return copyFile(path, target, info.Mode())
 	})
 }
@@ -168,8 +155,10 @@ func copyFile(src, dst string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = out.Close() }()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }

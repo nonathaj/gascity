@@ -103,9 +103,9 @@ func TestBuildSlingCommand(t *testing.T) {
 		beadID   string
 		want     string
 	}{
-		{"bd update {} --assignee=mayor", "BL-42", "bd update BL-42 --assignee=mayor"},
-		{"bd update {} --add-label=pool:hw/polecat", "XY-7", "bd update XY-7 --add-label=pool:hw/polecat"},
-		{"custom {} script {}", "ID-1", "custom ID-1 script ID-1"},
+		{"bd update {} --assignee=mayor", "BL-42", "bd update 'BL-42' --assignee=mayor"},
+		{"bd update {} --add-label=pool:hw/polecat", "XY-7", "bd update 'XY-7' --add-label=pool:hw/polecat"},
+		{"custom {} script {}", "ID-1", "custom 'ID-1' script 'ID-1'"},
 	}
 	for _, tt := range tests {
 		got := buildSlingCommand(tt.template, tt.beadID)
@@ -131,7 +131,7 @@ func TestDoSlingBeadToFixedAgent(t *testing.T) {
 	if len(runner.calls) != 1 {
 		t.Fatalf("got %d runner calls, want 1: %v", len(runner.calls), runner.calls)
 	}
-	want := "bd update BL-42 --assignee=mayor"
+	want := "bd update 'BL-42' --assignee=mayor"
 	if runner.calls[0] != want {
 		t.Errorf("runner call = %q, want %q", runner.calls[0], want)
 	}
@@ -157,7 +157,7 @@ func TestDoSlingBeadToPool(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSling returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	want := "bd update HW-7 --add-label=pool:hello-world/polecat"
+	want := "bd update 'HW-7' --add-label=pool:hello-world/polecat"
 	if runner.calls[0] != want {
 		t.Errorf("runner call = %q, want %q", runner.calls[0], want)
 	}
@@ -182,7 +182,7 @@ func TestDoSlingFormulaToAgent(t *testing.T) {
 		t.Fatalf("got %d runner calls, want 1: %v", len(runner.calls), runner.calls)
 	}
 	// The MemStore generates IDs like "gc-1".
-	wantSling := "bd update gc-1 --assignee=mayor"
+	wantSling := "bd update 'gc-1' --assignee=mayor"
 	if runner.calls[0] != wantSling {
 		t.Errorf("runner call = %q, want %q", runner.calls[0], wantSling)
 	}
@@ -485,7 +485,7 @@ func TestDoSlingCustomSlingQuery(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSling returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	want := "custom-dispatch BL-99 --queue=priority"
+	want := "custom-dispatch 'BL-99' --queue=priority"
 	if runner.calls[0] != want {
 		t.Errorf("runner call = %q, want %q", runner.calls[0], want)
 	}
@@ -1136,7 +1136,7 @@ func TestOnFormulaAttachesAndRoutes(t *testing.T) {
 		t.Fatalf("got %d runner calls, want 1: %v", len(runner.calls), runner.calls)
 	}
 	// --on routes the ORIGINAL bead (not the wisp root).
-	wantSling := "bd update BL-42 --assignee=mayor"
+	wantSling := "bd update 'BL-42' --assignee=mayor"
 	if runner.calls[0] != wantSling {
 		t.Errorf("runner call = %q, want %q", runner.calls[0], wantSling)
 	}
@@ -1583,7 +1583,7 @@ func TestDryRunSingleBead(t *testing.T) {
 		t.Errorf("stdout missing bead title: %s", out)
 	}
 	// Route command.
-	if !strings.Contains(out, "bd update BL-42 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-42' --assignee=mayor") {
 		t.Errorf("stdout missing route command: %s", out)
 	}
 	// Footer.
@@ -1621,7 +1621,7 @@ func TestDryRunFormula(t *testing.T) {
 	if !strings.Contains(out, "Would run: bd mol cook --formula=code-review") {
 		t.Errorf("stdout missing cook command: %s", out)
 	}
-	if !strings.Contains(out, "<wisp-root>") {
+	if !strings.Contains(out, "'<wisp-root>'") {
 		t.Errorf("stdout missing wisp-root placeholder: %s", out)
 	}
 	if len(runner.calls) != 0 {
@@ -1657,7 +1657,7 @@ func TestDryRunOnFormula(t *testing.T) {
 	if !strings.Contains(out, "Pre-check: BL-42 has no existing molecule/wisp children") {
 		t.Errorf("stdout missing pre-check: %s", out)
 	}
-	if !strings.Contains(out, "bd update BL-42 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-42' --assignee=mayor") {
 		t.Errorf("stdout missing route command: %s", out)
 	}
 	if len(runner.calls) != 0 {
@@ -1739,13 +1739,13 @@ func TestDryRunConvoy(t *testing.T) {
 		t.Errorf("stdout missing skip indicator: %s", out)
 	}
 	// Route commands.
-	if !strings.Contains(out, "bd update BL-1 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-1' --assignee=mayor") {
 		t.Errorf("stdout missing BL-1 route command: %s", out)
 	}
-	if !strings.Contains(out, "bd update BL-3 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-3' --assignee=mayor") {
 		t.Errorf("stdout missing BL-3 route command: %s", out)
 	}
-	if strings.Contains(out, "bd update BL-2 --assignee=mayor") {
+	if strings.Contains(out, "bd update 'BL-2' --assignee=mayor") {
 		t.Errorf("stdout should not route closed BL-2: %s", out)
 	}
 	// Zero mutations.
@@ -1789,10 +1789,10 @@ func TestDryRunBatchOnFormula(t *testing.T) {
 		t.Errorf("stdout should not cook for closed BL-2: %s", out)
 	}
 	// Route commands.
-	if !strings.Contains(out, "bd update BL-1 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-1' --assignee=mayor") {
 		t.Errorf("stdout missing BL-1 route: %s", out)
 	}
-	if !strings.Contains(out, "bd update BL-3 --assignee=mayor") {
+	if !strings.Contains(out, "bd update 'BL-3' --assignee=mayor") {
 		t.Errorf("stdout missing BL-3 route: %s", out)
 	}
 	if len(runner.calls) != 0 {

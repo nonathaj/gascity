@@ -121,28 +121,25 @@ func resolveSetupScript(script, cityPath string) string {
 // don't affect the original.
 func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 	dst := config.Agent{
-		Name:                   name,
-		Dir:                    dir,
-		Scope:                  src.Scope,
-		Provider:               src.Provider,
-		PromptTemplate:         src.PromptTemplate,
-		Nudge:                  src.Nudge,
-		StartCommand:           src.StartCommand,
-		PromptMode:             src.PromptMode,
-		PromptFlag:             src.PromptFlag,
-		ReadyDelayMs:           src.ReadyDelayMs,
-		ReadyPromptPrefix:      src.ReadyPromptPrefix,
-		EmitsPermissionWarning: src.EmitsPermissionWarning,
-		HooksInstalled:         src.HooksInstalled,
-		DefaultSlingFormula:    src.DefaultSlingFormula,
-		WorkQuery:              src.WorkQuery,
-		SlingQuery:             src.SlingQuery,
-		SessionSetupScript:     src.SessionSetupScript,
-		OverlayDir:             src.OverlayDir,
-		SourceDir:              src.SourceDir,
-		Fallback:               src.Fallback,
-		IdleTimeout:            src.IdleTimeout,
-		Suspended:              src.Suspended,
+		Name:                name,
+		Dir:                 dir,
+		Scope:               src.Scope,
+		Provider:            src.Provider,
+		PromptTemplate:      src.PromptTemplate,
+		Nudge:               src.Nudge,
+		StartCommand:        src.StartCommand,
+		PromptMode:          src.PromptMode,
+		PromptFlag:          src.PromptFlag,
+		ReadyPromptPrefix:   src.ReadyPromptPrefix,
+		DefaultSlingFormula: src.DefaultSlingFormula,
+		WorkQuery:           src.WorkQuery,
+		SlingQuery:          src.SlingQuery,
+		SessionSetupScript:  src.SessionSetupScript,
+		OverlayDir:          src.OverlayDir,
+		SourceDir:           src.SourceDir,
+		Fallback:            src.Fallback,
+		IdleTimeout:         src.IdleTimeout,
+		Suspended:           src.Suspended,
 	}
 	if len(src.Args) > 0 {
 		dst.Args = make([]string, len(src.Args))
@@ -177,6 +174,18 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 	if src.Pool != nil {
 		poolCopy := *src.Pool
 		dst.Pool = &poolCopy
+	}
+	if src.ReadyDelayMs != nil {
+		v := *src.ReadyDelayMs
+		dst.ReadyDelayMs = &v
+	}
+	if src.EmitsPermissionWarning != nil {
+		v := *src.EmitsPermissionWarning
+		dst.EmitsPermissionWarning = &v
+	}
+	if src.HooksInstalled != nil {
+		v := *src.HooksInstalled
+		dst.HooksInstalled = &v
 	}
 	return dst
 }

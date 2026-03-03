@@ -252,12 +252,20 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, topology string, startSuspended boo
 // prefix matching so that subdirectories of a rig are recognized.
 func findEnclosingRig(dir string, rigs []config.Rig) (name, rigPath string, found bool) {
 	cleanDir := filepath.Clean(dir)
+	bestName, bestPath := "", ""
 	for _, r := range rigs {
 		cleanRig := filepath.Clean(r.Path)
 		if cleanDir == cleanRig ||
 			strings.HasPrefix(cleanDir, cleanRig+string(filepath.Separator)) {
-			return r.Name, r.Path, true
+			if len(cleanRig) > len(bestPath) {
+				bestName = r.Name
+				bestPath = cleanRig
+				found = true
+			}
 		}
+	}
+	if found {
+		return bestName, bestPath, true
 	}
 	return "", "", false
 }
