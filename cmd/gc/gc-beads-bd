@@ -1,0 +1,343 @@
+#!/bin/sh
+# gc-beads-bd — exec: beads provider for Dolt-backed beads (bd).
+#
+# Implements the exec beads lifecycle protocol:
+#   gc-beads-bd <operation> [args...]
+#
+# Operations: start, ensure-ready, stop, shutdown, init, health, recover, probe
+# Exit codes: 0 = success, 1 = error, 2 = not needed / not running
+#
+# Environment:
+#   GC_CITY_PATH  — city root directory (required for all operations)
+#   GC_DOLT       — set to "skip" to no-op all operations (exit 2)
+#   GC_DOLT_HOST  — dolt server host (empty = local server)
+#   GC_DOLT_PORT  — dolt server port (default: 3307)
+#   GC_DOLT_USER  — dolt user (default: root)
+#   GC_DOLT_PASSWORD — dolt password (default: empty)
+
+set -e
+
+# --- Configuration ---
+
+DOLT_PORT="${GC_DOLT_PORT:-3307}"
+DOLT_HOST="${GC_DOLT_HOST:-0.0.0.0}"
+DOLT_USER="${GC_DOLT_USER:-root}"
+DOLT_PASSWORD="${GC_DOLT_PASSWORD:-}"
+
+# Derived paths (set after GC_CITY_PATH validation).
+GC_DIR=""
+DATA_DIR=""
+LOG_FILE=""
+
+# --- Helpers ---
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+# is_remote returns 0 (true) if GC_DOLT_HOST is set (non-empty, non-default).
+is_remote() {
+    [ -n "$GC_DOLT_HOST" ] && [ "$GC_DOLT_HOST" != "0.0.0.0" ] && [ "$GC_DOLT_HOST" != "localhost" ] && [ "$GC_DOLT_HOST" != "127.0.0.1" ]
+}
+
+# connect_host returns the host to connect to (localhost for local servers).
+connect_host() {
+    if is_remote; then
+        echo "$GC_DOLT_HOST"
+    else
+        echo "localhost"
+    fi
+}
+
+# tcp_check returns 0 if the dolt port is reachable.
+tcp_check() {
+    local host
+    host=$(connect_host)
+    if command -v nc >/dev/null 2>&1; then
+        nc -z -w2 "$host" "$DOLT_PORT" 2>/dev/null
+    elif command -v bash >/dev/null 2>&1; then
+        bash -c "echo >/dev/tcp/$host/$DOLT_PORT" 2>/dev/null
+    else
+        # Fallback: try a dolt sql-client query.
+        do_query_probe
+    fi
+}
+
+# find_dolt_pid finds the dolt sql-server process using the data dir.
+# Prints the PID or empty string.
+find_dolt_pid() {
+    if [ -z "$DATA_DIR" ]; then
+        return
+    fi
+    # Look for dolt sql-server with our data dir.
+    ps ax -o pid,args 2>/dev/null | grep "dolt sql-server" | grep -- "--data-dir.*$(basename "$DATA_DIR")" | grep -v grep | awk '{print $1}' | head -1
+}
+
+# wait_for_tcp waits up to $1 seconds for the dolt port to become reachable.
+wait_for_tcp() {
+    local timeout="${1:-30}"
+    local elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        if tcp_check; then
+            return 0
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    return 1
+}
+
+# do_query_probe runs a SELECT 1 query against the dolt server.
+do_query_probe() {
+    local host
+    host=$(connect_host)
+    local args=""
+    if [ -n "$DOLT_PASSWORD" ]; then
+        args="-p $DOLT_PASSWORD"
+    fi
+    dolt sql-client --host "$host" --port "$DOLT_PORT" --user "$DOLT_USER" $args -q "SELECT 1" >/dev/null 2>&1
+}
+
+# --- Operations ---
+
+# ensure_dolt_identity ensures dolt has user.name and user.email configured.
+ensure_dolt_identity() {
+    # Check if already configured.
+    if dolt config --global --get user.name >/dev/null 2>&1 && \
+       dolt config --global --get user.email >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Copy from git config.
+    local name email
+    name=$(git config --global user.name 2>/dev/null || true)
+    email=$(git config --global user.email 2>/dev/null || true)
+
+    if [ -z "$name" ]; then
+        die "dolt identity not configured and git user.name not available; run: dolt config --global --add user.name \"Your Name\""
+    fi
+    if [ -z "$email" ]; then
+        die "dolt identity not configured and git user.email not available; run: dolt config --global --add user.email \"you@example.com\""
+    fi
+
+    # Set missing fields.
+    if ! dolt config --global --get user.name >/dev/null 2>&1; then
+        dolt config --global --add user.name "$name" || die "failed to set dolt user.name"
+    fi
+    if ! dolt config --global --get user.email >/dev/null 2>&1; then
+        dolt config --global --add user.email "$email" || die "failed to set dolt user.email"
+    fi
+}
+
+# op_start starts the dolt server if not already running.
+op_start() {
+    if is_remote; then
+        # Remote server — nothing to start locally.
+        exit 2
+    fi
+
+    ensure_dolt_identity
+
+    # Create data dir if needed.
+    mkdir -p "$DATA_DIR"
+
+    # Check if already running.
+    if tcp_check; then
+        exit 0
+    fi
+
+    # Start dolt sql-server.
+    local bind_host="$DOLT_HOST"
+    nohup dolt sql-server \
+        --host "$bind_host" \
+        --port "$DOLT_PORT" \
+        --user "$DOLT_USER" \
+        --data-dir "$DATA_DIR" \
+        --max-connections 1000 \
+        >> "$LOG_FILE" 2>&1 &
+
+    # Wait for TCP readiness.
+    if ! wait_for_tcp 30; then
+        die "dolt server failed to start within 30s (check $LOG_FILE)"
+    fi
+}
+
+# op_ensure_ready is a legacy alias for start.
+op_ensure_ready() {
+    op_start
+}
+
+# op_init initializes beads in a directory.
+# Args: <dir> <prefix>
+op_init() {
+    local dir="$1"
+    local prefix="$2"
+
+    if [ -z "$dir" ] || [ -z "$prefix" ]; then
+        die "usage: gc-beads-bd init <dir> <prefix>"
+    fi
+
+    # Skip if already initialized.
+    if [ -f "$dir/.beads/metadata.json" ]; then
+        exit 0
+    fi
+
+    local host
+    host=$(connect_host)
+
+    # Run bd init in server mode.
+    bd init --server -p "$prefix" --skip-hooks \
+        --server-host "$host" --server-port "$DOLT_PORT" \
+        "$dir" || die "bd init failed for $dir"
+
+    # Set issue_prefix.
+    bd config set issue_prefix "$prefix" --dir "$dir" 2>/dev/null || true
+
+    # Patch metadata.json with SQL connection info.
+    local meta_file="$dir/.beads/metadata.json"
+    if [ -f "$meta_file" ] && command -v jq >/dev/null 2>&1; then
+        local tmp_file
+        tmp_file=$(mktemp)
+        jq --arg mode "server" \
+           --arg host "$host" \
+           --arg port "$DOLT_PORT" \
+           --arg user "$DOLT_USER" \
+           --arg pass "$DOLT_PASSWORD" \
+           '.dolt_mode = $mode | .dolt_host = $host | .dolt_port = ($port | tonumber) | .dolt_user = $user | if $pass != "" then .dolt_password = $pass else . end' \
+           "$meta_file" > "$tmp_file" && mv "$tmp_file" "$meta_file"
+    fi
+}
+
+# op_health checks if the dolt server is healthy (probe only, no recovery).
+op_health() {
+    # TCP check.
+    if ! tcp_check; then
+        die "dolt server not reachable on $(connect_host):$DOLT_PORT"
+    fi
+
+    # Query probe.
+    if ! do_query_probe; then
+        die "dolt query probe failed (SELECT 1)"
+    fi
+}
+
+# op_probe checks if the dolt server is available.
+# Exit 0 = running, exit 2 = not running.
+op_probe() {
+    if is_remote; then
+        # Remote server — check TCP.
+        if tcp_check; then
+            exit 0
+        else
+            exit 2
+        fi
+    fi
+
+    # Local server — check process and TCP.
+    local pid
+    pid=$(find_dolt_pid)
+    if [ -n "$pid" ] && tcp_check; then
+        exit 0
+    fi
+    exit 2
+}
+
+# op_recover stops the dolt server, restarts it, and verifies health.
+op_recover() {
+    if is_remote; then
+        die "recovery not supported for remote dolt servers"
+    fi
+
+    # Stop.
+    op_stop_impl || true
+
+    # Wait a moment for cleanup.
+    sleep 1
+
+    # Restart.
+    op_start
+
+    # Verify health.
+    op_health
+}
+
+# op_stop_impl is the internal stop implementation (no exit on "not running").
+op_stop_impl() {
+    if is_remote; then
+        return 0
+    fi
+
+    local pid
+    pid=$(find_dolt_pid)
+    if [ -z "$pid" ]; then
+        return 0
+    fi
+
+    # SIGTERM and wait.
+    kill "$pid" 2>/dev/null || true
+    local waited=0
+    while [ "$waited" -lt 10 ]; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    # Force kill if still running.
+    kill -9 "$pid" 2>/dev/null || true
+    sleep 1
+}
+
+# op_stop stops the dolt server.
+op_stop() {
+    if is_remote; then
+        exit 2
+    fi
+
+    local pid
+    pid=$(find_dolt_pid)
+    if [ -z "$pid" ]; then
+        exit 2  # Not running.
+    fi
+
+    op_stop_impl
+}
+
+# op_shutdown is a legacy alias for stop.
+op_shutdown() {
+    op_stop
+}
+
+# --- Main ---
+
+# GC_DOLT=skip → no-op for all operations.
+if [ "$GC_DOLT" = "skip" ]; then
+    exit 2
+fi
+
+op="$1"
+shift || true
+
+# Validate GC_CITY_PATH.
+if [ -z "$GC_CITY_PATH" ]; then
+    die "GC_CITY_PATH not set"
+fi
+
+# Set derived paths.
+GC_DIR="$GC_CITY_PATH/.gc"
+DATA_DIR="$GC_DIR/dolt-data"
+LOG_FILE="$GC_DIR/dolt.log"
+
+case "$op" in
+    start)        op_start ;;
+    ensure-ready) op_ensure_ready ;;
+    init)         op_init "$@" ;;
+    health)       op_health ;;
+    probe)        op_probe ;;
+    recover)      op_recover ;;
+    stop)         op_stop ;;
+    shutdown)     op_shutdown ;;
+    *)            exit 2 ;;  # Unknown operation — forward compatible.
+esac

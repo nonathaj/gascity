@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gascity/internal/agent"
 	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/dolt"
 	"github.com/steveyegge/gascity/internal/events"
 	"github.com/steveyegge/gascity/internal/fsys"
 	"github.com/steveyegge/gascity/internal/hooks"
@@ -257,6 +256,19 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Materialize the gc-beads-bd script so the exec: provider can use it.
+	if _, err := MaterializeBeadsBdScript(cityPath); err != nil {
+		fmt.Fprintf(stderr, "gc start: materializing gc-beads-bd: %v\n", err) //nolint:errcheck // best-effort stderr
+		// Non-fatal: only needed if provider = "bd".
+	}
+
+	// Materialize builtin packs (bd + dolt) so doctor checks and commands are available.
+	if err := MaterializeBuiltinPacks(cityPath); err != nil {
+		fmt.Fprintf(stderr, "gc start: materializing builtin packs: %v\n", err) //nolint:errcheck // best-effort stderr
+		// Non-fatal: only needed if provider = "bd".
+	}
+	injectBuiltinPacks(cfg, cityPath)
+
 	// Resolve rig paths and run the full bead store lifecycle:
 	// ensure-ready → init+hooks(city) → init+hooks(rigs) → routes.
 	resolveRigPaths(cityPath, cfg.Rigs)
@@ -265,24 +277,9 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Verify that the Dolt server is actually serving the expected databases.
-	// EnsureRunning only checks TCP reachability; this catches stale servers
-	// or databases that failed to load.
-	if beadsProvider(cityPath) == "bd" && os.Getenv("GC_DOLT") != "skip" {
-		_, missing, verifyErr := dolt.VerifyDatabasesCityWithRetry(cityPath, 3)
-		if verifyErr != nil {
-			fmt.Fprintf(stderr, "gc start: database verification failed: %v\n", verifyErr) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-		if len(missing) > 0 {
-			fmt.Fprintf(stderr, "gc start: Dolt server is not serving expected databases: %s\n", strings.Join(missing, ", ")) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-	}
-
 	// Post-startup health check: baseline probe of the beads provider.
-	// VerifyDatabasesWithRetry validates database content (stale servers,
-	// missing DBs); this validates server liveness (TCP + query + write).
+	// The gc-beads-bd script's health operation validates server liveness
+	// (TCP + query probe). Recovery is attempted on failure.
 	if err := healthBeadsProvider(cityPath); err != nil {
 		fmt.Fprintf(stderr, "gc start: beads health check: %v\n", err) //nolint:errcheck // best-effort stderr
 		// Non-fatal warning — server may recover by the time agents need it.

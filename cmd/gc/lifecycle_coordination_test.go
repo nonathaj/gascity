@@ -104,18 +104,21 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	// start + ensure-ready + init
-	if len(ops) != 3 {
-		t.Fatalf("expected 3 ops after city init, got %d: %v", len(ops), ops)
+	// probe + start + ensure-ready + init
+	if len(ops) != 4 {
+		t.Fatalf("expected 4 ops after city init, got %d: %v", len(ops), ops)
 	}
-	if !strings.HasPrefix(ops[0], "start") {
-		t.Fatalf("expected start first, got: %s", ops[0])
+	if !strings.HasPrefix(ops[0], "probe") {
+		t.Fatalf("expected probe first, got: %s", ops[0])
 	}
-	if !strings.HasPrefix(ops[1], "ensure-ready") {
-		t.Fatalf("expected ensure-ready second, got: %s", ops[1])
+	if !strings.HasPrefix(ops[1], "start") {
+		t.Fatalf("expected start second, got: %s", ops[1])
 	}
-	if !strings.HasPrefix(ops[2], "init "+cityPath) {
-		t.Fatalf("expected init op for city, got: %s", ops[2])
+	if !strings.HasPrefix(ops[2], "ensure-ready") {
+		t.Fatalf("expected ensure-ready third, got: %s", ops[2])
+	}
+	if !strings.HasPrefix(ops[3], "init "+cityPath) {
+		t.Fatalf("expected init op for city, got: %s", ops[3])
 	}
 	assertHooksExist(t, cityPath, "after city init")
 
@@ -130,12 +133,12 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops = readOpLog(t, logFile)
-	// +start + ensure-ready + init (6 total)
-	if len(ops) != 6 {
-		t.Fatalf("expected 6 ops after rig add, got %d: %v", len(ops), ops)
+	// +probe + start + ensure-ready + init (8 total)
+	if len(ops) != 8 {
+		t.Fatalf("expected 8 ops after rig add, got %d: %v", len(ops), ops)
 	}
-	if !strings.HasPrefix(ops[5], "init "+rigPath) {
-		t.Fatalf("expected init op for rig, got: %s", ops[5])
+	if !strings.HasPrefix(ops[7], "init "+rigPath) {
+		t.Fatalf("expected init op for rig, got: %s", ops[7])
 	}
 	assertHooksExist(t, rigPath, "after rig add")
 
@@ -156,9 +159,9 @@ func TestLifecycleCoordination_InitRigAddStart(t *testing.T) {
 	}
 
 	ops = readOpLog(t, logFile)
-	// +start + ensure-ready + init(city) + init(rig) = 10 total
-	if len(ops) != 10 {
-		t.Fatalf("expected 10 ops total, got %d: %v", len(ops), ops)
+	// +start + ensure-ready + init(city) + init(rig) = 12 total
+	if len(ops) != 12 {
+		t.Fatalf("expected 12 ops total, got %d: %v", len(ops), ops)
 	}
 
 	// Verify hooks reinstalled at both paths after start.
@@ -244,11 +247,18 @@ func TestLifecycleCoordination_StopOrder(t *testing.T) {
 
 // TestLifecycleCoordination_InitDirIfReady_BdDeferred verifies that the bd
 // provider returns deferred=true (Dolt isn't running during gc init).
+// With the exec: mapping, bd → gc-beads-bd script → probe exits 2 (GC_DOLT=skip)
+// → deferred=true.
 func TestLifecycleCoordination_InitDirIfReady_BdDeferred(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	MaterializeBeadsBdScript(dir) //nolint:errcheck
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT", "skip")
 
-	deferred, err := initDirIfReady(t.TempDir(), t.TempDir(), "test")
+	deferred, err := initDirIfReady(dir, dir, "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

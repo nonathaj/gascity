@@ -224,6 +224,9 @@ func cmdInit(args []string, stdout, stderr io.Writer) int {
 	if code := doInit(fsys.OSFS{}, cityPath, wiz, stdout, stderr); code != 0 {
 		return code
 	}
+	// Materialize gc-beads-bd before initDirIfReady (may need probe).
+	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
+	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
 	prefix := config.DeriveBeadsPrefix(cityName)
 	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -326,6 +329,8 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 
 	fmt.Fprintf(stdout, "Welcome to Gas City!\n")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(tomlSrc)) //nolint:errcheck // best-effort stdout
+	MaterializeBeadsBdScript(cityPath)                                                      //nolint:errcheck // best-effort; only needed for bd provider
+	MaterializeBuiltinPacks(cityPath)                                                       //nolint:errcheck // best-effort; only needed for bd provider
 	prefix := config.DeriveBeadsPrefix(cityName)
 	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -598,6 +603,8 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Welcome to Gas City!")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(srcDir)) //nolint:errcheck // best-effort stdout
 
+	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
+	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
 	prefix := config.DeriveBeadsPrefix(cityName)
 	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr

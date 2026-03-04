@@ -159,7 +159,7 @@ func TestFormulasDir(t *testing.T) {
 	}
 	wantSuffixes := []string{
 		filepath.Join("packs", "maintenance", "formulas"),
-		filepath.Join("dolt-health", "formulas"),
+		filepath.Join("dolt", "formulas"),
 		filepath.Join("packs", "gastown", "formulas"),
 	}
 	for _, suffix := range wantSuffixes {
@@ -181,14 +181,14 @@ func TestPackDirsPopulated(t *testing.T) {
 	if len(cfg.PackDirs) == 0 {
 		t.Fatal("PackDirs is empty after expansion")
 	}
-	// Should have pack dirs from maintenance, dolt-health, and gastown packs.
-	var hasMaintenance, hasDoltHealth, hasGastown bool
+	// Should have pack dirs from maintenance, dolt, and gastown packs.
+	var hasMaintenance, hasDolt, hasGastown bool
 	for _, d := range cfg.PackDirs {
 		if strings.HasSuffix(d, filepath.Join("packs", "maintenance")) {
 			hasMaintenance = true
 		}
-		if strings.HasSuffix(d, "dolt-health") {
-			hasDoltHealth = true
+		if strings.HasSuffix(d, "dolt") && !strings.HasSuffix(d, "dolt-health") {
+			hasDolt = true
 		}
 		if strings.HasSuffix(d, filepath.Join("packs", "gastown")) {
 			hasGastown = true
@@ -197,8 +197,8 @@ func TestPackDirsPopulated(t *testing.T) {
 	if !hasMaintenance {
 		t.Errorf("PackDirs missing maintenance: %v", cfg.PackDirs)
 	}
-	if !hasDoltHealth {
-		t.Errorf("PackDirs missing dolt-health: %v", cfg.PackDirs)
+	if !hasDolt {
+		t.Errorf("PackDirs missing dolt: %v", cfg.PackDirs)
 	}
 	if !hasGastown {
 		t.Errorf("PackDirs missing gastown: %v", cfg.PackDirs)
@@ -447,11 +447,11 @@ func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 
 func TestDoltHealthFormulasParseAndValidate(t *testing.T) {
 	dir := exampleDir()
-	formulaDir := filepath.Join(dir, "..", "dolt-health", "formulas")
+	formulaDir := filepath.Join(dir, "..", "dolt", "formulas")
 
 	entries, err := os.ReadDir(formulaDir)
 	if err != nil {
-		t.Fatalf("reading dolt-health formulas dir: %v", err)
+		t.Fatalf("reading dolt formulas dir: %v", err)
 	}
 
 	var count int

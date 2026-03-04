@@ -117,15 +117,11 @@ func displayProviderName(name string) string {
 	return name
 }
 
-// beadsProvider returns the bead store provider name.
+// rawBeadsProvider returns the raw bead store provider name from config.
 // Priority: GC_BEADS env var → city.toml [beads].provider → "bd" default.
-//
-// Related env vars:
-//   - GC_DOLT=skip — bypass dolt server lifecycle in init/start/stop.
-//     Used by testscript and integration tests to avoid needing a real
-//     dolt installation. Checked inline in cmd_init.go, cmd_start.go,
-//     and cmd_stop.go.
-func beadsProvider(cityPath string) string {
+// This is the unmodified config value; use beadsProvider() for lifecycle
+// routing which remaps "bd" → exec:.
+func rawBeadsProvider(cityPath string) string {
 	if v := os.Getenv("GC_BEADS"); v != "" {
 		return v
 	}
@@ -135,6 +131,21 @@ func beadsProvider(cityPath string) string {
 		return cfg.Beads.Provider
 	}
 	return "bd"
+}
+
+// beadsProvider returns the bead store provider name for lifecycle operations.
+// Maps "bd" → "exec:<cityPath>/.gc/bin/gc-beads-bd" so all lifecycle operations
+// route through the exec: protocol. Other providers pass through unchanged.
+//
+// Related env vars:
+//   - GC_DOLT=skip — the gc-beads-bd script checks this and exits 2 for all
+//     operations. Used by testscript and integration tests.
+func beadsProvider(cityPath string) string {
+	raw := rawBeadsProvider(cityPath)
+	if raw == "bd" {
+		return "exec:" + filepath.Join(cityPath, ".gc", "bin", "gc-beads-bd")
+	}
+	return raw
 }
 
 // mailProviderName returns the mail provider name.

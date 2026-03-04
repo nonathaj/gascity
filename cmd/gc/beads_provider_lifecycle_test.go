@@ -26,9 +26,14 @@ func TestEnsureBeadsProvider_exec(t *testing.T) {
 
 // TestEnsureBeadsProvider_bd_skip verifies bd provider is no-op when GC_DOLT=skip.
 func TestEnsureBeadsProvider_bd_skip(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	MaterializeBeadsBdScript(dir) //nolint:errcheck
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT", "skip")
-	if err := ensureBeadsProvider(t.TempDir()); err != nil {
+	if err := ensureBeadsProvider(dir); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -53,9 +58,14 @@ func TestShutdownBeadsProvider_exec(t *testing.T) {
 
 // TestShutdownBeadsProvider_bd_skip verifies bd provider is no-op when GC_DOLT=skip.
 func TestShutdownBeadsProvider_bd_skip(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	MaterializeBeadsBdScript(dir) //nolint:errcheck
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT", "skip")
-	if err := shutdownBeadsProvider(t.TempDir()); err != nil {
+	if err := shutdownBeadsProvider(dir); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -80,9 +90,14 @@ func TestInitBeadsForDir_exec(t *testing.T) {
 
 // TestInitBeadsForDir_bd_skip verifies bd provider is no-op when GC_DOLT=skip.
 func TestInitBeadsForDir_bd_skip(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	MaterializeBeadsBdScript(dir) //nolint:errcheck
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT", "skip")
-	if err := initBeadsForDir(t.TempDir(), t.TempDir(), "test"); err != nil {
+	if err := initBeadsForDir(dir, t.TempDir(), "test"); err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
 }
@@ -90,7 +105,7 @@ func TestInitBeadsForDir_bd_skip(t *testing.T) {
 // TestRunProviderOp_exit2 verifies exit 2 is treated as success (not needed).
 func TestRunProviderOp_exit2(t *testing.T) {
 	script := writeTestScript(t, "", 2, "")
-	if err := runProviderOp(script, "ensure-ready"); err != nil {
+	if err := runProviderOp(script, "", "ensure-ready"); err != nil {
 		t.Fatalf("expected nil for exit 2, got %v", err)
 	}
 }
@@ -98,7 +113,7 @@ func TestRunProviderOp_exit2(t *testing.T) {
 // TestRunProviderOp_exit0 verifies exit 0 is success.
 func TestRunProviderOp_exit0(t *testing.T) {
 	script := writeTestScript(t, "", 0, "")
-	if err := runProviderOp(script, "ensure-ready"); err != nil {
+	if err := runProviderOp(script, "", "ensure-ready"); err != nil {
 		t.Fatalf("expected nil for exit 0, got %v", err)
 	}
 }
@@ -106,7 +121,7 @@ func TestRunProviderOp_exit0(t *testing.T) {
 // TestRunProviderOp_error verifies exit 1 propagates the error with stderr.
 func TestRunProviderOp_error(t *testing.T) {
 	script := writeTestScript(t, "", 1, "server crashed")
-	err := runProviderOp(script, "ensure-ready")
+	err := runProviderOp(script, "", "ensure-ready")
 	if err == nil {
 		t.Fatal("expected error for exit 1")
 	}
@@ -118,12 +133,25 @@ func TestRunProviderOp_error(t *testing.T) {
 // TestRunProviderOp_errorNoStderr verifies exit 1 with no stderr uses exec error.
 func TestRunProviderOp_errorNoStderr(t *testing.T) {
 	script := writeTestScript(t, "", 1, "")
-	err := runProviderOp(script, "shutdown")
+	err := runProviderOp(script, "", "shutdown")
 	if err == nil {
 		t.Fatal("expected error for exit 1")
 	}
 	if got := err.Error(); got == "" {
 		t.Fatal("expected non-empty error")
+	}
+}
+
+// TestRunProviderOp_setsGCCityPath verifies GC_CITY_PATH is set in the script env.
+func TestRunProviderOp_setsGCCityPath(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "check-env.sh")
+	content := "#!/bin/sh\nif [ \"$GC_CITY_PATH\" = \"" + dir + "\" ]; then exit 0; else exit 1; fi\n"
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runProviderOp(script, dir, "health"); err != nil {
+		t.Fatalf("expected GC_CITY_PATH to be set, got %v", err)
 	}
 }
 

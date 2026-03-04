@@ -25,7 +25,11 @@ import (
 // discover remote packs before fetching them.
 func loadCityConfig(cityPath string) (*config.City, error) {
 	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
-	return cfg, err
+	if err != nil {
+		return nil, err
+	}
+	injectBuiltinPacks(cfg, cityPath)
+	return cfg, nil
 }
 
 // loadCityConfigFS is the testable variant of loadCityConfig that accepts a

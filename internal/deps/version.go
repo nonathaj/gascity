@@ -1,6 +1,4 @@
-// Package deps provides minimum-version checking for external binary
-// dependencies (dolt, bd). Each dependency defines a minimum compatible
-// version constant and a Check function that verifies the installed binary.
+// Package deps provides semver comparison utilities for version checking.
 package deps
 
 import (

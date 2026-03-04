@@ -5,8 +5,9 @@
 #   maintenance  — generic infrastructure: dog pool, shutdown dance, exec
 #                  automations (gate-sweep, orphan-sweep, prune-branches,
 #                  wisp-compact)
-#   dolt-health  — reusable Dolt database health monitoring (dog formulas
-#                  + exec automations), requires a dog pool from maintenance
+#   dolt         — reusable Dolt database management (dog formulas + exec
+#                  automations + CLI commands), requires a dog pool from
+#                  maintenance
 #   gastown      — domain-specific coding workflow: mayor, deacon, boot,
 #                  witness, refinery, polecat, crew + digest automations
 #

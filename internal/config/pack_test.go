@@ -2892,9 +2892,9 @@ name = "dog"
 scope = "city"
 nudge = "full dog"
 `)
-	writeFile(t, dir, "packs/dolt-health/pack.toml", `
+	writeFile(t, dir, "packs/dolt/pack.toml", `
 [pack]
-name = "dolt-health"
+name = "dolt"
 schema = 1
 
 [[agents]]
@@ -2906,7 +2906,7 @@ nudge = "fallback dog"
 
 	cfg := &City{
 		Workspace: Workspace{
-			CityPacks: []string{"packs/maintenance", "packs/dolt-health"},
+			CityPacks: []string{"packs/maintenance", "packs/dolt"},
 		},
 	}
 

@@ -12,9 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/beads"
 	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/dolt"
 )
 
 // ── Consolidated lifecycle operations ────────────────────────────────────
@@ -72,8 +70,16 @@ func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, _ io.Write
 // skipped init — the caller should tell the user it's deferred to gc start.
 func initDirIfReady(cityPath, dir, prefix string) (deferred bool, err error) {
 	provider := beadsProvider(cityPath)
-	if provider == "bd" || provider == "" {
+	if provider == "" {
 		return true, nil
+	}
+	// For exec: providers, probe to check if the backing service is available.
+	// If not available (exit 2 or error), defer initialization to gc start.
+	if strings.HasPrefix(provider, "exec:") {
+		script := strings.TrimPrefix(provider, "exec:")
+		if !runProviderProbe(script, cityPath) {
+			return true, nil // Not running — defer to gc start.
+		}
 	}
 	if err := ensureBeadsProvider(cityPath); err != nil {
 		return false, fmt.Errorf("bead store: %w", err)
@@ -121,21 +127,12 @@ func resolveRigPaths(cityPath string, rigs []config.Rig) {
 // fall through to "ensure-ready" for backward compatibility.
 func ensureBeadsProvider(cityPath string) error {
 	provider := beadsProvider(cityPath)
-	switch {
-	case strings.HasPrefix(provider, "exec:"):
+	if strings.HasPrefix(provider, "exec:") {
 		script := strings.TrimPrefix(provider, "exec:")
 		// Fire start first (enhanced lifecycle hook).
-		_ = runProviderOp(script, "start")
+		_ = runProviderOp(script, cityPath, "start")
 		// Always fire ensure-ready for backward compat.
-		return runProviderOp(script, "ensure-ready")
-	case provider == "bd":
-		if os.Getenv("GC_DOLT") == "skip" {
-			return nil
-		}
-		if err := dolt.EnsureDoltIdentity(); err != nil {
-			return fmt.Errorf("dolt identity: %w", err)
-		}
-		return dolt.EnsureRunning(cityPath)
+		return runProviderOp(script, cityPath, "ensure-ready")
 	}
 	return nil // file: always available
 }
@@ -145,18 +142,12 @@ func ensureBeadsProvider(cityPath string) error {
 // For exec providers, fires "stop" (enhanced) then "shutdown" (legacy).
 func shutdownBeadsProvider(cityPath string) error {
 	provider := beadsProvider(cityPath)
-	switch {
-	case strings.HasPrefix(provider, "exec:"):
+	if strings.HasPrefix(provider, "exec:") {
 		script := strings.TrimPrefix(provider, "exec:")
 		// Fire stop first (enhanced lifecycle hook).
-		_ = runProviderOp(script, "stop")
+		_ = runProviderOp(script, cityPath, "stop")
 		// Always fire shutdown for backward compat.
-		return runProviderOp(script, "shutdown")
-	case provider == "bd":
-		if os.Getenv("GC_DOLT") == "skip" {
-			return nil
-		}
-		return dolt.StopCity(cityPath)
+		return runProviderOp(script, cityPath, "shutdown")
 	}
 	return nil
 }
@@ -166,16 +157,8 @@ func shutdownBeadsProvider(cityPath string) error {
 // initAndHookDir instead to ensure hooks are installed afterward.
 func initBeadsForDir(cityPath, dir, prefix string) error {
 	provider := beadsProvider(cityPath)
-	switch {
-	case strings.HasPrefix(provider, "exec:"):
-		return runProviderOp(strings.TrimPrefix(provider, "exec:"), "init", dir, prefix)
-	case provider == "bd":
-		if os.Getenv("GC_DOLT") == "skip" {
-			return nil
-		}
-		store := beads.NewBdStore(dir, beads.ExecCommandRunner())
-		cfg := dolt.GasCityConfig(cityPath)
-		return dolt.InitRigBeads(store, dir, prefix, "localhost", cfg.Port)
+	if strings.HasPrefix(provider, "exec:") {
+		return runProviderOp(strings.TrimPrefix(provider, "exec:"), cityPath, "init", dir, prefix)
 	}
 	return nil
 }
@@ -186,37 +169,48 @@ func initBeadsForDir(cityPath, dir, prefix string) error {
 // provider, always healthy (no-op).
 func healthBeadsProvider(cityPath string) error {
 	provider := beadsProvider(cityPath)
-	switch {
-	case strings.HasPrefix(provider, "exec:"):
-		return runProviderOp(strings.TrimPrefix(provider, "exec:"), "health")
-	case provider == "bd":
-		if os.Getenv("GC_DOLT") == "skip" {
-			return nil
-		}
-		if err := dolt.HealthCheckCity(cityPath); err != nil {
-			dolt.SetUnhealthy(cityPath, err.Error())
-			if recErr := dolt.RecoverDolt(cityPath); recErr != nil {
+	if strings.HasPrefix(provider, "exec:") {
+		script := strings.TrimPrefix(provider, "exec:")
+		if err := runProviderOp(script, cityPath, "health"); err != nil {
+			if recErr := runProviderOp(script, cityPath, "recover"); recErr != nil {
 				return fmt.Errorf("unhealthy (%w) and recovery failed: %w", err, recErr)
 			}
-			dolt.ClearUnhealthy(cityPath)
-		} else {
-			// Server is healthy — reset backoff tracker if stable.
-			dolt.ResetBackoffIfHealthy(cityPath)
 		}
 		return nil
 	}
 	return nil // file: always healthy
 }
 
+// runProviderProbe runs a "probe" operation against an exec beads script.
+// Returns true if the backing service is available (exit 0), false if not
+// available (exit 2) or on any error. Unlike runProviderOp, exit 2 means
+// "not running" rather than "not needed."
+func runProviderProbe(script, cityPath string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, script, "probe")
+	cmd.WaitDelay = 2 * time.Second
+	if cityPath != "" {
+		cmd.Env = append(os.Environ(), "GC_CITY_PATH="+cityPath)
+	}
+	return cmd.Run() == nil
+}
+
 // runProviderOp runs a lifecycle operation against an exec beads script.
 // Exit 2 = not needed (treated as success, no-op). Used for start,
-// ensure-ready, init, health, stop, and shutdown operations.
-func runProviderOp(script string, args ...string) error {
+// ensure-ready, init, health, recover, stop, and shutdown operations.
+// cityPath is set as GC_CITY_PATH in the subprocess environment so scripts
+// can locate the city root.
+func runProviderOp(script, cityPath string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, script, args...)
 	cmd.WaitDelay = 2 * time.Second
+	if cityPath != "" {
+		cmd.Env = append(os.Environ(), "GC_CITY_PATH="+cityPath)
+	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

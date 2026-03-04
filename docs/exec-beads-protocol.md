@@ -179,8 +179,13 @@ during `gc init` and `gc dolt sync`, not during normal operation.
 | Operation | Invocation | Stdin | Stdout | Purpose |
 |-----------|-----------|-------|--------|---------|
 | `ensure-ready` | `script ensure-ready` | — | — | Make backing service usable |
-| `shutdown` | `script shutdown` | — | — | Graceful stop |
+| `start` | `script start` | — | — | Enhanced start with backoff/health tracking |
+| `stop` | `script stop` | — | — | Enhanced stop with graceful shutdown |
+| `shutdown` | `script shutdown` | — | — | Legacy graceful stop |
 | `init` | `script init <dir> <prefix>` | — | — | First-time setup for a directory |
+| `health` | `script health` | — | — | Check provider health (probe only, no side effects) |
+| `recover` | `script recover` | — | — | Stop, restart, verify health after failure |
+| `probe` | `script probe` | — | — | Check if backing service is available (exit 0 = yes, 2 = not running) |
 
 These operations are called by `gc start` and `gc stop` to manage the
 bead store's backing service — analogous to Docker Compose starting and
@@ -188,9 +193,15 @@ stopping database containers. They are convenience operations, not part
 of the Store interface contract.
 
 Exit code semantics follow the same convention as other operations:
-0 = success, 1 = error, 2 = not needed. Scripts that have no backing
-service (e.g., `br` which uses an embedded SQLite database) return
-exit 2 for all lifecycle operations.
+0 = success, 1 = error, 2 = not needed/not running. Scripts that have
+no backing service (e.g., `br` which uses an embedded SQLite database)
+return exit 2 for all lifecycle operations.
+
+The `health` operation is a read-only probe — it MUST NOT attempt
+recovery or restarts. The SDK calls `recover` separately on health
+failure. The `probe` operation is a lightweight availability check used
+during `gc init` to decide whether bead initialization can proceed now
+or must be deferred to `gc start`.
 
 ### Wire Format
 

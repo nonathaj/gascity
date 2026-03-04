@@ -15,7 +15,6 @@ import (
 	"github.com/steveyegge/gascity/internal/agent"
 	"github.com/steveyegge/gascity/internal/beads"
 	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/dolt"
 	"github.com/steveyegge/gascity/internal/fsys"
 	"github.com/steveyegge/gascity/internal/session"
 )
@@ -546,32 +545,30 @@ func (c *DoltServerCheck) Run(_ *CheckContext) *CheckResult {
 		r.Message = "skipped (file backend or GC_DOLT=skip)"
 		return r
 	}
-	running, pid, err := dolt.IsRunningCity(c.cityPath)
-	if err != nil {
-		r.Status = StatusError
-		r.Message = fmt.Sprintf("check failed: %v", err)
-		return r
-	}
-	if !running {
-		r.Status = StatusError
-		r.Message = "dolt server not running"
-		r.FixHint = "run gc start to start the dolt server"
-		return r
-	}
 
-	// Verify TCP reachability.
-	cfg := dolt.GasCityConfig(c.cityPath)
-	addr := cfg.HostPort()
+	// Determine host and port from environment (same defaults as gc-beads-bd).
+	host := os.Getenv("GC_DOLT_HOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("GC_DOLT_PORT")
+	if port == "" {
+		port = "3307"
+	}
+	addr := net.JoinHostPort(host, port)
+
+	// Check TCP reachability.
 	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
 		r.Status = StatusError
-		r.Message = fmt.Sprintf("server running (PID %d) but not reachable at %s", pid, addr)
+		r.Message = fmt.Sprintf("dolt server not reachable at %s", addr)
+		r.FixHint = "run gc start to start the dolt server"
 		return r
 	}
 	conn.Close() //nolint:errcheck // best-effort close
 
 	r.Status = StatusOK
-	r.Message = fmt.Sprintf("running (PID %d) on %s", pid, addr)
+	r.Message = fmt.Sprintf("reachable on %s", addr)
 	return r
 }
 

@@ -67,7 +67,7 @@ become role-agnostic infrastructure that any pack can use.
 | Idle timeout enforcement | Idle timeout enforcement | **DONE** | `idleTracker` per agent |
 | Graceful shutdown dance | Graceful shutdown | **DONE** | Interrupt → wait → kill |
 | PID file write/cleanup | PID file write/cleanup | **DONE** | In `runController` |
-| Dolt health check ticker | Dolt `EnsureRunning` + automation `dolt-health` | **DONE** | `EnsureRunning` on start + cooldown automation (30s) for periodic health check and restart. |
+| Dolt health check ticker | Dolt `EnsureRunning` + automation `dolt-health` | **DONE** | `EnsureRunning` via gc-beads-bd script + cooldown automation (30s) for periodic health check and restart. |
 | Dolt remotes patrol | Automation recipe: `dolt-remotes-patrol` | **DONE** | Cooldown automation (15m) runs `gc dolt sync`. Lives in `examples/gastown/formulas/automations/dolt-remotes-patrol/`. |
 | Feed curator | — | **REMAP** | Gastown tails events.jsonl, deduplicates, aggregates, writes curated feed.jsonl. Gas City's tick-based reconciler covers recovery; curated feed is UX polish. |
 | Convoy manager (event polling) | bd on_close hook → `gc convoy autoclose` | **DONE** | Reactive: bd on_close hook triggers `gc convoy autoclose <bead-id>` which checks parent convoy completion. Replaced polling automation `convoy-check`. |

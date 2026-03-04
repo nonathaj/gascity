@@ -13,7 +13,6 @@ import (
 	"github.com/steveyegge/gascity/internal/beads"
 	beadsexec "github.com/steveyegge/gascity/internal/beads/exec"
 	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/deps"
 	"github.com/steveyegge/gascity/internal/doctor"
 	"github.com/steveyegge/gascity/internal/fsys"
 )
@@ -100,23 +99,8 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	d.Register(doctor.NewBinaryCheck("tmux", "", exec.LookPath))
 	d.Register(doctor.NewBinaryCheck("git", "", exec.LookPath))
 
-	beadsProv := beadsProvider(cityPath)
-	doltSkip := os.Getenv("GC_DOLT") == "skip"
-	needsBd := beadsProv == "bd"
-	switch {
-	case beadsProv == "file" || strings.HasPrefix(beadsProv, "exec:"):
-		d.Register(doctor.NewBinaryCheck("bd", fmt.Sprintf("skipped (GC_BEADS=%s)", beadsProv), exec.LookPath))
-		d.Register(doctor.NewBinaryCheck("dolt", fmt.Sprintf("skipped (GC_BEADS=%s)", beadsProv), exec.LookPath))
-	case needsBd:
-		d.Register(doctor.NewVersionedBinaryCheck("bd", "", exec.LookPath,
-			deps.MinBeadsVersion, bdVersion, "go install "+deps.BeadsInstallPath))
-		if doltSkip {
-			d.Register(doctor.NewBinaryCheck("dolt", "skipped (GC_DOLT=skip)", exec.LookPath))
-		} else {
-			d.Register(doctor.NewVersionedBinaryCheck("dolt", "", exec.LookPath,
-				deps.MinDoltVersion, doltVersion, deps.DoltInstallURL))
-		}
-	}
+	// Binary-specific version checks are handled by pack doctor scripts
+	// (check-bd.sh, check-dolt.sh) registered via the pack doctor mechanism below.
 
 	// Controller check + session checks (gated by controller state).
 	controllerRunning := doctor.IsControllerRunning(cityPath)
@@ -139,7 +123,7 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	if cfgErr == nil {
 		d.Register(doctor.NewBeadsStoreCheck(cityPath, openStore))
 	}
-	skipDolt := beadsProv != "bd" || doltSkip
+	skipDolt := rawBeadsProvider(cityPath) != "bd" || os.Getenv("GC_DOLT") == "skip"
 	d.Register(doctor.NewDoltServerCheck(cityPath, skipDolt))
 	d.Register(&doctor.EventsLogCheck{})
 	d.Register(doctor.NewEventLogSizeCheck())
@@ -179,28 +163,6 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// bdVersion returns the installed beads (bd) version using deps.CheckBeads.
-func bdVersion() (string, error) {
-	status, version := deps.CheckBeads()
-	switch status {
-	case deps.BeadsOK, deps.BeadsTooOld:
-		return version, nil
-	default:
-		return "", fmt.Errorf("could not determine bd version")
-	}
-}
-
-// doltVersion returns the installed dolt version using deps.CheckDolt.
-func doltVersion() (string, error) {
-	status, version, _ := deps.CheckDolt()
-	switch status {
-	case deps.DoltOK, deps.DoltTooOld:
-		return version, nil
-	default:
-		return "", fmt.Errorf("could not determine dolt version")
-	}
-}
-
 // collectPackDirs returns all unique pack directories from the city
 // config (both city-level and per-rig). Used to discover pack doctor checks.
 func collectPackDirs(cfg *config.City) []string {
@@ -226,7 +188,7 @@ func collectPackDirs(cfg *config.City) []string {
 // openStore creates a beads.Store from a directory path. Used as a factory
 // for doctor checks that need to verify store accessibility.
 func openStore(dirPath string) (beads.Store, error) {
-	prov := beadsProvider(dirPath)
+	prov := rawBeadsProvider(dirPath)
 	switch {
 	case strings.HasPrefix(prov, "exec:"):
 		return beadsexec.NewStore(strings.TrimPrefix(prov, "exec:")), nil

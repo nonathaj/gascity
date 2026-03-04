@@ -112,7 +112,6 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newPrimeCmd(stdout, stderr),
 		newHandoffCmd(stdout, stderr),
 		newDaemonCmd(stdout, stderr),
-		newDoltCmd(stdout, stderr),
 		newBeadsCmd(stdout, stderr),
 		newBuildImageCmd(stdout, stderr),
 		newVersionCmd(stdout),
@@ -217,7 +216,10 @@ func openCityStore(stderr io.Writer, cmdName string) (beads.Store, int) {
 		return nil, 1
 	}
 
-	provider := beadsProvider(cityPath)
+	// Use rawBeadsProvider for Store selection: "bd" creates a BdStore
+	// (bd CLI for CRUD), while beadsProvider() remaps "bd" → exec: for
+	// lifecycle only.
+	provider := rawBeadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		s := beadsexec.NewStore(strings.TrimPrefix(provider, "exec:"))
 		s.SetFormulaResolver(formula.DirResolver(filepath.Join(cityPath, ".gc", "formulas")))

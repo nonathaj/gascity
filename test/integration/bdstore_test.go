@@ -4,15 +4,16 @@ package integration
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/steveyegge/gascity/internal/beads"
 	"github.com/steveyegge/gascity/internal/beads/beadstest"
-	"github.com/steveyegge/gascity/internal/dolt"
 )
 
 // TestBdStoreConformance runs the beads conformance suite against BdStore
@@ -32,29 +33,24 @@ func TestBdStoreConformance(t *testing.T) {
 		t.Skip("bd not installed")
 	}
 
-	// Set up a shared dolt server. We use a single city for the server
-	// but create separate workspaces (each with their own bd init) so
-	// each newStore() call gets an isolated database.
+	// Ensure dolt identity is configured (mirrors git user.name/email).
+	ensureDoltIdentity(t)
+
+	// Set up a shared dolt server.
 	serverDir := t.TempDir()
 	dataDir := filepath.Join(serverDir, ".gc", "dolt-data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := dolt.EnsureDoltIdentity(); err != nil {
-		t.Fatalf("dolt identity: %v", err)
-	}
-
-	config := dolt.GasCityConfig(serverDir)
-	// Start dolt server by writing state files and launching process.
-	// We use the low-level approach so we control the data dir.
+	port := 3307
 	logFile := filepath.Join(serverDir, ".gc", "dolt.log")
 	if err := os.MkdirAll(filepath.Dir(logFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cmd := exec.Command("dolt", "sql-server",
-		"--port", fmt.Sprintf("%d", config.Port),
+		"--port", fmt.Sprintf("%d", port),
 		"--data-dir", dataDir,
 		"--max-connections", "50",
 	)
@@ -70,25 +66,23 @@ func TestBdStoreConformance(t *testing.T) {
 	}
 	log.Close()
 
-	// Write PID file so IsRunning/Stop work.
-	pidFile := filepath.Join(serverDir, ".gc", "dolt.pid")
-	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0o644)
-
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	})
 
 	// Wait for server to accept connections.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	for i := 0; i < 20; i++ {
-		if err := dolt.CheckServerReachable(serverDir); err == nil {
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
 			break
 		}
 		if i == 19 {
 			t.Fatal("dolt server not reachable after 10s")
 		}
-		// Small sleep between retries.
-		exec.Command("sleep", "0.5").Run()
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	var dbCounter atomic.Int64
@@ -132,4 +126,36 @@ func TestBdStoreConformance(t *testing.T) {
 	// Run conformance suite. We skip RunSequentialIDTests because BdStore
 	// uses bd's ID format (prefix-XXXX), not gc-N sequential format.
 	beadstest.RunStoreTests(t, newStore)
+}
+
+// ensureDoltIdentity ensures dolt has user.name and user.email set.
+// Copies from git config if available, otherwise sets defaults.
+func ensureDoltIdentity(t *testing.T) {
+	t.Helper()
+
+	// Check if dolt identity is already set.
+	name, _ := exec.Command("dolt", "config", "--global", "--get", "user.name").Output()
+	email, _ := exec.Command("dolt", "config", "--global", "--get", "user.email").Output()
+
+	if len(name) > 0 && len(email) > 0 {
+		return
+	}
+
+	// Copy from git config.
+	if len(name) == 0 {
+		gitName, _ := exec.Command("git", "config", "--global", "user.name").Output()
+		if len(gitName) > 0 {
+			exec.Command("dolt", "config", "--global", "--add", "user.name", string(gitName)).Run()
+		} else {
+			exec.Command("dolt", "config", "--global", "--add", "user.name", "test").Run()
+		}
+	}
+	if len(email) == 0 {
+		gitEmail, _ := exec.Command("git", "config", "--global", "user.email").Output()
+		if len(gitEmail) > 0 {
+			exec.Command("dolt", "config", "--global", "--add", "user.email", string(gitEmail)).Run()
+		} else {
+			exec.Command("dolt", "config", "--global", "--add", "user.email", "test@test.com").Run()
+		}
+	}
 }
