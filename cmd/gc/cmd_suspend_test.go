@@ -105,6 +105,56 @@ func TestResumeAlreadyResumed(t *testing.T) {
 	}
 }
 
+// --- Pack preservation: suspend/resume must not expand includes ---
+
+func TestDoSuspendCityPreservesConfig(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files["/city/city.toml"] = []byte(`include = ["packs/mypack/agents.toml"]
+
+[workspace]
+name = "test-city"
+
+[[agents]]
+name = "inline-agent"
+`)
+	f.Files["/city/packs/mypack/agents.toml"] = []byte(`[[agents]]
+name = "pack-worker"
+dir = "myrig"
+`)
+
+	var stdout, stderr bytes.Buffer
+	code := doSuspendCity(f, "/city", true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("suspend code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	data := string(f.Files["/city/city.toml"])
+	if !strings.Contains(data, "packs/mypack/agents.toml") {
+		t.Errorf("city.toml should preserve include directive:\n%s", data)
+	}
+	if strings.Contains(data, "pack-worker") {
+		t.Errorf("city.toml should NOT contain expanded pack agent:\n%s", data)
+	}
+	if !strings.Contains(data, "suspended = true") {
+		t.Errorf("city.toml should contain suspended = true:\n%s", data)
+	}
+
+	// Resume should also preserve.
+	stdout.Reset()
+	stderr.Reset()
+	code = doSuspendCity(f, "/city", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("resume code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	data = string(f.Files["/city/city.toml"])
+	if !strings.Contains(data, "packs/mypack/agents.toml") {
+		t.Errorf("city.toml should preserve include after resume:\n%s", data)
+	}
+	if strings.Contains(data, "pack-worker") {
+		t.Errorf("city.toml should NOT contain pack agent after resume:\n%s", data)
+	}
+}
+
 // --- citySuspended ---
 
 func TestCitySuspendedFromConfig(t *testing.T) {

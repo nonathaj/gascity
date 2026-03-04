@@ -95,7 +95,7 @@ func doSuspendCity(fs fsys.FS, cityPath string, suspend bool, stdout, stderr io.
 	if !suspend {
 		cmd = "gc resume"
 	}
-	cfg, err := loadCityConfigFS(fs, tomlPath)
+	cfg, err := loadCityConfigForEditFS(fs, tomlPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", cmd, err) //nolint:errcheck // best-effort stderr
 		return 1

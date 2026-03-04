@@ -576,3 +576,129 @@ func TestDoRigAdd_PrefixCollision(t *testing.T) {
 		t.Errorf("stderr should mention collision: %s", stderr.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Pack-preservation tests: write-back must NOT expand includes
+// ---------------------------------------------------------------------------
+
+func TestDoRigSuspendPreservesConfig(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files["/city/city.toml"] = []byte(`include = ["packs/mypack/agents.toml"]
+
+[workspace]
+name = "test-city"
+
+[[agents]]
+name = "inline-agent"
+
+[[rigs]]
+name = "frontend"
+path = "/some/path"
+`)
+	f.Files["/city/packs/mypack/agents.toml"] = []byte(`[[agents]]
+name = "pack-worker"
+dir = "myrig"
+`)
+
+	var stdout, stderr bytes.Buffer
+	code := doRigSuspend(f, "/city", "frontend", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	data := string(f.Files["/city/city.toml"])
+	if !strings.Contains(data, "packs/mypack/agents.toml") {
+		t.Errorf("city.toml should preserve include directive:\n%s", data)
+	}
+	if strings.Contains(data, "pack-worker") {
+		t.Errorf("city.toml should NOT contain expanded pack agent:\n%s", data)
+	}
+}
+
+func TestDoRigResumePreservesConfig(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files["/city/city.toml"] = []byte(`include = ["packs/mypack/agents.toml"]
+
+[workspace]
+name = "test-city"
+
+[[agents]]
+name = "inline-agent"
+
+[[rigs]]
+name = "frontend"
+path = "/some/path"
+suspended = true
+`)
+	f.Files["/city/packs/mypack/agents.toml"] = []byte(`[[agents]]
+name = "pack-worker"
+dir = "myrig"
+`)
+
+	var stdout, stderr bytes.Buffer
+	code := doRigResume(f, "/city", "frontend", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	data := string(f.Files["/city/city.toml"])
+	if !strings.Contains(data, "packs/mypack/agents.toml") {
+		t.Errorf("city.toml should preserve include directive:\n%s", data)
+	}
+	if strings.Contains(data, "pack-worker") {
+		t.Errorf("city.toml should NOT contain expanded pack agent:\n%s", data)
+	}
+}
+
+func TestDoRigAddPreservesConfig(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create city.toml with include directive (must be top-level, before any [section]).
+	cityToml := `include = ["packs/mypack/agents.toml"]
+
+[workspace]
+name = "test-city"
+
+[[agents]]
+name = "inline-agent"
+`
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create the pack fragment (so LoadWithIncludes would find it, but we don't use it).
+	packDir := filepath.Join(cityPath, "packs", "mypack")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(packDir, "agents.toml"), []byte("[[agents]]\nname = \"pack-worker\"\ndir = \"myrig\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-rig")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "packs/mypack/agents.toml") {
+		t.Errorf("city.toml should preserve include directive:\n%s", data)
+	}
+	if strings.Contains(string(data), "pack-worker") {
+		t.Errorf("city.toml should NOT contain expanded pack agent:\n%s", data)
+	}
+	if !strings.Contains(string(data), "my-rig") {
+		t.Errorf("city.toml should contain new rig:\n%s", data)
+	}
+}

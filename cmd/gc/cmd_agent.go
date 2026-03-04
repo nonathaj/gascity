@@ -36,6 +36,13 @@ func loadCityConfigFS(fs fsys.FS, tomlPath string) (*config.City, error) {
 	return cfg, err
 }
 
+// loadCityConfigForEditFS loads the raw city config WITHOUT pack/include
+// expansion. Use for commands that modify city.toml and write it back —
+// preserves include directives, pack references, and patches.
+func loadCityConfigForEditFS(fs fsys.FS, tomlPath string) (*config.City, error) {
+	return config.Load(fs, tomlPath)
+}
+
 // resolveAgentIdentity resolves an agent input string to a config.Agent using
 // 2-step resolution:
 //  1. Literal: try the input as-is (e.g., "mayor" or "hello-world/polecat").
@@ -302,7 +309,7 @@ func cmdAgentAdd(name, promptTemplate, dir string, suspended bool, stdout, stder
 // Accepts an injected FS for testability.
 func doAgentAdd(fs fsys.FS, cityPath, name, promptTemplate, dir string, suspended bool, stdout, stderr io.Writer) int {
 	tomlPath := filepath.Join(cityPath, "city.toml")
-	cfg, err := loadCityConfigFS(fs, tomlPath)
+	cfg, err := loadCityConfigForEditFS(fs, tomlPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent add: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -376,46 +383,58 @@ func cmdAgentSuspend(args []string, stdout, stderr io.Writer) int {
 }
 
 // doAgentSuspend sets suspended=true on the named agent in city.toml.
+// Uses raw config (no pack expansion) to preserve includes/patches on write-back.
+// If the agent isn't found in raw config but exists in expanded config, it's
+// pack-derived and the user gets a helpful error directing them to [[patches]].
 // Accepts an injected FS for testability.
 func doAgentSuspend(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) int {
 	tomlPath := filepath.Join(cityPath, "city.toml")
-	cfg, err := loadCityConfigFS(fs, tomlPath)
+
+	// Phase 1: load raw config (no expansion) for safe write-back.
+	cfg, err := loadCityConfigForEditFS(fs, tomlPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	// Resolve the input to find the target agent (supports bare names and qualified names).
+	// Try to find agent in raw config.
 	resolved, ok := resolveAgentIdentity(cfg, name, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent suspend", name, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	found := false
-	for i := range cfg.Agents {
-		if cfg.Agents[i].Dir == resolved.Dir && cfg.Agents[i].Name == resolved.Name {
-			cfg.Agents[i].Suspended = true
-			found = true
-			break
+	if ok {
+		// Found in raw config — toggle and write back.
+		for i := range cfg.Agents {
+			if cfg.Agents[i].Dir == resolved.Dir && cfg.Agents[i].Name == resolved.Name {
+				cfg.Agents[i].Suspended = true
+				break
+			}
 		}
+		content, err := cfg.Marshal()
+		if err != nil {
+			fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
+			fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "Suspended agent '%s'\n", name) //nolint:errcheck // best-effort stdout
+		return 0
 	}
-	if !found {
+
+	// Phase 2: not in raw config — check expanded config for pack-derived agents.
+	expanded, err := loadCityConfigFS(fs, tomlPath)
+	if err != nil {
+		// Fall through to generic not-found using raw cfg.
 		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent suspend", name, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-
-	content, err := cfg.Marshal()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
-		fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+	if _, ok := resolveAgentIdentity(expanded, name, currentRigContext(expanded)); ok {
+		fmt.Fprintf(stderr, "gc agent suspend: agent %q is defined by a pack — use [[patches]] to override\n", name) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Suspended agent '%s'\n", name) //nolint:errcheck // best-effort stdout
-	return 0
+	// Not found anywhere.
+	fmt.Fprintln(stderr, agentNotFoundMsg("gc agent suspend", name, expanded)) //nolint:errcheck // best-effort stderr
+	return 1
 }
 
 func newAgentResumeCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -451,46 +470,58 @@ func cmdAgentResume(args []string, stdout, stderr io.Writer) int {
 }
 
 // doAgentResume clears suspended on the named agent in city.toml.
+// Uses raw config (no pack expansion) to preserve includes/patches on write-back.
+// If the agent isn't found in raw config but exists in expanded config, it's
+// pack-derived and the user gets a helpful error directing them to [[patches]].
 // Accepts an injected FS for testability.
 func doAgentResume(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) int {
 	tomlPath := filepath.Join(cityPath, "city.toml")
-	cfg, err := loadCityConfigFS(fs, tomlPath)
+
+	// Phase 1: load raw config (no expansion) for safe write-back.
+	cfg, err := loadCityConfigForEditFS(fs, tomlPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	// Resolve the input to find the target agent (supports bare names and qualified names).
+	// Try to find agent in raw config.
 	resolved, ok := resolveAgentIdentity(cfg, name, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent resume", name, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	found := false
-	for i := range cfg.Agents {
-		if cfg.Agents[i].Dir == resolved.Dir && cfg.Agents[i].Name == resolved.Name {
-			cfg.Agents[i].Suspended = false
-			found = true
-			break
+	if ok {
+		// Found in raw config — toggle and write back.
+		for i := range cfg.Agents {
+			if cfg.Agents[i].Dir == resolved.Dir && cfg.Agents[i].Name == resolved.Name {
+				cfg.Agents[i].Suspended = false
+				break
+			}
 		}
+		content, err := cfg.Marshal()
+		if err != nil {
+			fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
+			fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "Resumed agent '%s'\n", name) //nolint:errcheck // best-effort stdout
+		return 0
 	}
-	if !found {
+
+	// Phase 2: not in raw config — check expanded config for pack-derived agents.
+	expanded, err := loadCityConfigFS(fs, tomlPath)
+	if err != nil {
+		// Fall through to generic not-found using raw cfg.
 		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent resume", name, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-
-	content, err := cfg.Marshal()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
-		fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
+	if _, ok := resolveAgentIdentity(expanded, name, currentRigContext(expanded)); ok {
+		fmt.Fprintf(stderr, "gc agent resume: agent %q is defined by a pack — use [[patches]] to override\n", name) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Resumed agent '%s'\n", name) //nolint:errcheck // best-effort stdout
-	return 0
+	// Not found anywhere.
+	fmt.Fprintln(stderr, agentNotFoundMsg("gc agent resume", name, expanded)) //nolint:errcheck // best-effort stderr
+	return 1
 }
 
 func newAgentNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
