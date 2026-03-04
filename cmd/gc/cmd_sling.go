@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/session"
-	"github.com/steveyegge/gascity/internal/telemetry"
 )
 
 // BeadQuerier can retrieve a single bead by ID.
@@ -756,8 +756,8 @@ func doSlingNudge(a *config.Agent, cityName string, cfg *config.City,
 			}
 			sn := agent.SessionNameFor(cityName, qn, st)
 			if sp.IsRunning(sn) {
-				nudgeAgent := agent.New(qn, cityName, "", "", nil, agent.StartupHints{}, "", st, nil, sp)
-				if err := nudgeAgent.Nudge("Work slung. Check your hook."); err != nil {
+				h := agent.HandleFor(qn, cityName, st, sp)
+				if err := h.Nudge("Work slung. Check your hook."); err != nil {
 					fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
 				} else {
 					fmt.Fprintf(stdout, "Nudged %s\n", qn) //nolint:errcheck // best-effort
@@ -775,8 +775,8 @@ func doSlingNudge(a *config.Agent, cityName string, cfg *config.City,
 		fmt.Fprintf(stderr, "cannot nudge: agent %q has no running session\n", a.QualifiedName()) //nolint:errcheck // best-effort
 		return
 	}
-	nudgeAgent := agent.New(a.QualifiedName(), cityName, "", "", nil, agent.StartupHints{}, "", st, nil, sp)
-	if err := nudgeAgent.Nudge("Work slung. Check your hook."); err != nil {
+	h := agent.HandleFor(a.QualifiedName(), cityName, st, sp)
+	if err := h.Nudge("Work slung. Check your hook."); err != nil {
 		fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
 	} else {
 		fmt.Fprintf(stdout, "Nudged %s\n", a.QualifiedName()) //nolint:errcheck // best-effort

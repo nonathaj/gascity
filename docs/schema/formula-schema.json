@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/steveyegge/gascity/internal/formula/formula",
+  "$id": "https://github.com/julianknutsen/gascity/internal/formula/formula",
   "$ref": "#/$defs/Formula",
   "$defs": {
     "Formula": {

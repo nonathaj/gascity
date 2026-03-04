@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 // ---------------------------------------------------------------------------

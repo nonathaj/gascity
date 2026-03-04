@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 // Revision computes a deterministic bundle hash from all resolved config

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/events"
 )
 
 func TestDoEventEmitSuccess(t *testing.T) {

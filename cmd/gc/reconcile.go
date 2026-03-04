@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
-	"github.com/steveyegge/gascity/internal/telemetry"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/telemetry"
 )
 
 // reconcileOps provides session-level operations needed by declarative
@@ -166,7 +166,7 @@ func doReconcileAgents(agents []agent.Agent,
 			zombieCaptured := false
 			if sp.IsRunning(a.SessionName()) {
 				zombieCaptured = true
-				output, err := sp.Peek(a.SessionName(), 50)
+				output, err := a.Peek(50)
 				if err == nil && output != "" {
 					rec.Record(events.Event{
 						Type:    events.AgentCrashed,
@@ -223,7 +223,7 @@ func doReconcileAgents(agents []agent.Agent,
 					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				_ = sp.ClearScrollback(a.SessionName())                 // best-effort: clean slate after restart
+				_ = a.ClearScrollback()                                 // best-effort: clean slate after restart
 				fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStarted,
@@ -243,7 +243,7 @@ func doReconcileAgents(agents []agent.Agent,
 		}
 
 		// Running — check idle timeout (opt-in per agent).
-		if it != nil && it.checkIdle(a.SessionName(), time.Now()) {
+		if it != nil && it.checkIdle(a, time.Now()) {
 			fmt.Fprintf(stdout, "Agent '%s' idle too long, restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
 				Type:    events.AgentIdleKilled,
@@ -259,7 +259,7 @@ func doReconcileAgents(agents []agent.Agent,
 				fmt.Fprintf(stderr, "gc start: restarting idle %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 				continue
 			}
-			_ = sp.ClearScrollback(a.SessionName())                 // best-effort: clean slate after restart
+			_ = a.ClearScrollback()                                 // best-effort: clean slate after restart
 			fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
 				Type:    events.AgentStarted,
@@ -300,7 +300,7 @@ func doReconcileAgents(agents []agent.Agent,
 						fmt.Fprintf(stderr, "gc start: restarting %s after drift drain: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
-					_ = sp.ClearScrollback(a.SessionName())
+					_ = a.ClearScrollback()
 					fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
 					rec.Record(events.Event{
 						Type:    events.AgentStarted,
@@ -356,7 +356,7 @@ func doReconcileAgents(agents []agent.Agent,
 					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				_ = sp.ClearScrollback(a.SessionName())
+				_ = a.ClearScrollback()
 				fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStarted,

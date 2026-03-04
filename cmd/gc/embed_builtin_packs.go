@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/steveyegge/gascity/examples/bd"
-	"github.com/steveyegge/gascity/examples/dolt"
-	"github.com/steveyegge/gascity/internal/config"
+	"github.com/julianknutsen/gascity/examples/bd"
+	"github.com/julianknutsen/gascity/examples/dolt"
+	"github.com/julianknutsen/gascity/internal/config"
 )
 
 // builtinPack pairs an embedded FS with the subdirectory name used under .gc/packs/.

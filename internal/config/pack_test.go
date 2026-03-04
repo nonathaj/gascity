@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 // writeFile is a test helper that creates a file in dir.

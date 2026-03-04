@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // testBuildParams returns agentBuildParams suitable for unit tests.
@@ -539,6 +539,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		SourceDir:              "/src",
 		DefaultSlingFormula:    "mol-work",
 		InjectFragments:        []string{"frag1"},
+		Attach:                 &trueVal,
 		Fallback:               true,
 	}
 

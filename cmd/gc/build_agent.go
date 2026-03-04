@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/hooks"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/hooks"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // agentBuildParams holds shared, per-city parameters for building agents.

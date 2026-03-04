@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/test/tmuxtest"
+	"github.com/julianknutsen/gascity/test/tmuxtest"
 )
 
 // agentConfig describes a single agent for setupCity.

@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 func TestHandoffSuccess(t *testing.T) {
@@ -145,12 +146,13 @@ func TestHandoffRemoteRunning(t *testing.T) {
 	rec := events.NewFake()
 	sp := session.NewFake()
 	// Start the target session.
-	if err := sp.Start(context.Background(), "gc-city-deacon", session.Config{Command: "echo"}); err != nil {
+	if err := sp.Start(context.Background(), "deacon", session.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
+	target := agent.HandleFor("deacon", "", "", sp)
 
 	var stdout, stderr bytes.Buffer
-	code := doHandoffRemote(store, rec, sp, "mayor", "deacon", "gc-city-deacon",
+	code := doHandoffRemote(store, rec, target, "mayor",
 		[]string{"Context refresh", "Check beads for current state"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
@@ -173,7 +175,7 @@ func TestHandoffRemoteRunning(t *testing.T) {
 	}
 
 	// Verify session killed.
-	if sp.IsRunning("gc-city-deacon") {
+	if sp.IsRunning("deacon") {
 		t.Error("target session should be stopped")
 	}
 
@@ -198,9 +200,10 @@ func TestHandoffRemoteNotRunning(t *testing.T) {
 	store := beads.NewMemStore()
 	rec := events.NewFake()
 	sp := session.NewFake()
+	target := agent.HandleFor("deacon", "", "", sp)
 
 	var stdout, stderr bytes.Buffer
-	code := doHandoffRemote(store, rec, sp, "human", "deacon", "gc-city-deacon",
+	code := doHandoffRemote(store, rec, target, "human",
 		[]string{"Please check on PR #42"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())

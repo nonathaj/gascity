@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 // drainOps abstracts drain signal operations for testability.

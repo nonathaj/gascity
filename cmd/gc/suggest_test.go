@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/config"
 )
 
 func TestLevenshtein(t *testing.T) {

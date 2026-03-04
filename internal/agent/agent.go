@@ -13,12 +13,16 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
-// Agent represents a managed agent in the city.
-type Agent interface {
+// Handle is the narrow interface for per-agent operations that don't
+// require lifecycle management or session configuration. Use HandleFor()
+// to construct lightweight handles for CLI commands that only need to
+// query, nudge, peek, or stop an agent.
+type Handle interface {
 	// Name returns the agent's configured name.
 	Name() string
 
@@ -28,26 +32,75 @@ type Agent interface {
 	// IsRunning reports whether the agent's session is active.
 	IsRunning() bool
 
-	// Start creates the agent's session. The context controls the startup
-	// deadline — the call returns early with ctx.Err() on cancellation.
-	Start(ctx context.Context) error
-
 	// Stop destroys the agent's session.
 	Stop() error
 
-	// Attach connects the user's terminal to the agent's session.
-	Attach() error
+	// Interrupt sends a soft interrupt signal (e.g., Ctrl-C) to the agent.
+	// Best-effort: returns nil if the session doesn't exist.
+	Interrupt() error
+
+	// Peek captures the last N lines of the agent's session output.
+	Peek(lines int) (string, error)
 
 	// Nudge sends a message to wake or redirect the agent.
 	Nudge(message string) error
 
-	// Peek captures the last N lines of the agent's session output.
-	Peek(lines int) (string, error)
+	// SetMeta stores a key-value pair associated with the agent's session.
+	SetMeta(key, value string) error
+
+	// GetMeta retrieves a previously stored metadata value.
+	GetMeta(key string) (string, error)
+
+	// RemoveMeta removes a metadata key from the agent's session.
+	RemoveMeta(key string) error
+
+	// Events returns a channel of structured observation events from the
+	// agent's session, or nil if no observer is attached.
+	Events() <-chan Event
+}
+
+// Agent is the full interface — Handle plus lifecycle management and
+// session configuration. Use New() to construct full agents for the
+// controller and reconciler.
+type Agent interface {
+	Handle
+
+	// Start creates the agent's session. The context controls the startup
+	// deadline — the call returns early with ctx.Err() on cancellation.
+	Start(ctx context.Context) error
+
+	// Attach connects the user's terminal to the agent's session.
+	Attach() error
 
 	// SessionConfig returns the session.Config this agent would use
 	// when starting. Used by reconciliation to compute config fingerprints
 	// without actually starting the agent.
 	SessionConfig() session.Config
+
+	// ClearScrollback clears the scrollback history of the agent's session.
+	// Best-effort.
+	ClearScrollback() error
+
+	// GetLastActivity returns the time of the last I/O activity in the
+	// agent's session. Returns zero time if unknown or unsupported.
+	GetLastActivity() (time.Time, error)
+
+	// SendKeys sends bare keystrokes to the agent's session.
+	// Unlike Nudge, does not append Enter.
+	SendKeys(keys ...string) error
+
+	// RunLive re-applies session_live commands to the running session.
+	RunLive(cfg session.Config) error
+
+	// ProcessAlive reports whether the agent's session has a live process
+	// matching its configured process names.
+	ProcessAlive() bool
+
+	// SetObserver attaches an ObservationStrategy to the agent. The observer
+	// is independent of the execution runtime — it can read JSONL files,
+	// scrape terminal output, or use any other observation mechanism.
+	// Replaces any previously set observer (closing the old one).
+	SetObserver(obs ObservationStrategy)
 }
 
 // StartupHints carries provider startup behavior from config resolution
@@ -170,6 +223,17 @@ func New(name, cityName, command, prompt string,
 	}
 }
 
+// HandleFor creates a lightweight Handle for an agent. Use this when you
+// only need to query, nudge, peek, or stop an agent — not manage its
+// full lifecycle. Takes 4 params vs New()'s 10.
+func HandleFor(name, cityName, sessionTemplate string, sp session.Provider) Handle {
+	return &managed{
+		name:        name,
+		sessionName: SessionNameFor(cityName, name, sessionTemplate),
+		sp:          sp,
+	}
+}
+
 // managed is the concrete Agent implementation that delegates to a
 // session.Provider using the agent's session name.
 type managed struct {
@@ -182,6 +246,7 @@ type managed struct {
 	workDir     string
 	fpExtra     map[string]string
 	sp          session.Provider
+	observer    ObservationStrategy // nil = no structured observation
 }
 
 func (a *managed) Name() string        { return a.name }
@@ -223,6 +288,30 @@ func (a *managed) SessionConfig() session.Config {
 		CopyFiles:              a.hints.CopyFiles,
 		FingerprintExtra:       a.fpExtra,
 	}
+}
+
+func (a *managed) Interrupt() error                    { return a.sp.Interrupt(a.sessionName) }
+func (a *managed) ProcessAlive() bool                  { return a.sp.ProcessAlive(a.sessionName, a.hints.ProcessNames) }
+func (a *managed) ClearScrollback() error              { return a.sp.ClearScrollback(a.sessionName) }
+func (a *managed) GetLastActivity() (time.Time, error) { return a.sp.GetLastActivity(a.sessionName) }
+func (a *managed) SendKeys(keys ...string) error       { return a.sp.SendKeys(a.sessionName, keys...) }
+func (a *managed) RunLive(cfg session.Config) error    { return a.sp.RunLive(a.sessionName, cfg) }
+func (a *managed) SetMeta(key, value string) error     { return a.sp.SetMeta(a.sessionName, key, value) }
+func (a *managed) GetMeta(key string) (string, error)  { return a.sp.GetMeta(a.sessionName, key) }
+func (a *managed) RemoveMeta(key string) error         { return a.sp.RemoveMeta(a.sessionName, key) }
+
+func (a *managed) Events() <-chan Event {
+	if a.observer == nil {
+		return nil
+	}
+	return a.observer.Events()
+}
+
+func (a *managed) SetObserver(obs ObservationStrategy) {
+	if a.observer != nil {
+		a.observer.Close() //nolint:errcheck // best-effort cleanup
+	}
+	a.observer = obs
 }
 
 func (a *managed) Start(ctx context.Context) error {

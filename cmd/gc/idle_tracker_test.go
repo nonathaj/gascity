@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/agent"
 )
 
 // fakeIdleTracker is a test double for idleTracker.
@@ -16,8 +16,8 @@ func newFakeIdleTracker() *fakeIdleTracker {
 	return &fakeIdleTracker{idle: make(map[string]bool)}
 }
 
-func (f *fakeIdleTracker) checkIdle(sessionName string, _ time.Time) bool {
-	return f.idle[sessionName]
+func (f *fakeIdleTracker) checkIdle(a agent.Agent, _ time.Time) bool {
+	return f.idle[a.SessionName()]
 }
 
 func (f *fakeIdleTracker) setTimeout(_ string, _ time.Duration) {}
@@ -25,97 +25,81 @@ func (f *fakeIdleTracker) setTimeout(_ string, _ time.Duration) {}
 // --- memoryIdleTracker unit tests ---
 
 func TestIdleTrackerNoTimeout(t *testing.T) {
-	sp := session.NewFake()
-	it := newIdleTracker(sp)
+	a := agent.NewFake("mayor", "gc-test-mayor")
+	it := newIdleTracker()
 	// No timeout configured → never idle.
-	if it.checkIdle("gc-test-mayor", time.Now()) {
+	if it.checkIdle(a, time.Now()) {
 		t.Error("should not be idle when no timeout is set")
 	}
 }
 
 func TestIdleTrackerNotIdle(t *testing.T) {
-	sp := session.NewFake()
-	sp.SetActivity("gc-test-mayor", time.Now().Add(-5*time.Minute))
+	a := agent.NewFake("mayor", "gc-test-mayor")
+	a.FakeLastActivity = time.Now().Add(-5 * time.Minute)
 
-	it := newIdleTracker(sp)
+	it := newIdleTracker()
 	it.setTimeout("gc-test-mayor", 15*time.Minute)
 
-	if it.checkIdle("gc-test-mayor", time.Now()) {
+	if it.checkIdle(a, time.Now()) {
 		t.Error("should not be idle: 5m activity < 15m timeout")
 	}
 }
 
 func TestIdleTrackerIdle(t *testing.T) {
-	sp := session.NewFake()
-	sp.SetActivity("gc-test-mayor", time.Now().Add(-30*time.Minute))
+	a := agent.NewFake("mayor", "gc-test-mayor")
+	a.FakeLastActivity = time.Now().Add(-30 * time.Minute)
 
-	it := newIdleTracker(sp)
+	it := newIdleTracker()
 	it.setTimeout("gc-test-mayor", 15*time.Minute)
 
-	if !it.checkIdle("gc-test-mayor", time.Now()) {
+	if !it.checkIdle(a, time.Now()) {
 		t.Error("should be idle: 30m inactivity > 15m timeout")
 	}
 }
 
 func TestIdleTrackerActivityError(t *testing.T) {
-	sp := session.NewFailFake() // all ops return error
+	// Agent that returns zero time (simulates error/unsupported).
+	a := agent.NewFake("mayor", "gc-test-mayor")
+	// FakeLastActivity is zero by default → same as error path.
 
-	it := newIdleTracker(sp)
+	it := newIdleTracker()
 	it.setTimeout("gc-test-mayor", 15*time.Minute)
 
-	// Error from provider → not idle (no false positive).
-	if it.checkIdle("gc-test-mayor", time.Now()) {
-		t.Error("should not be idle when provider returns error")
-	}
-}
-
-func TestIdleTrackerZeroActivity(t *testing.T) {
-	sp := session.NewFake()
-	// Activity not set → zero time returned.
-
-	it := newIdleTracker(sp)
-	it.setTimeout("gc-test-mayor", 15*time.Minute)
-
-	// Zero time from provider → not idle (no false positive).
-	if it.checkIdle("gc-test-mayor", time.Now()) {
-		t.Error("should not be idle when provider returns zero time")
+	// Zero time → not idle (no false positive).
+	if it.checkIdle(a, time.Now()) {
+		t.Error("should not be idle when agent returns zero time")
 	}
 }
 
 func TestIdleTrackerSetTimeoutZeroDisables(t *testing.T) {
-	sp := session.NewFake()
-	sp.SetActivity("gc-test-mayor", time.Now().Add(-30*time.Minute))
+	a := agent.NewFake("mayor", "gc-test-mayor")
+	a.FakeLastActivity = time.Now().Add(-30 * time.Minute)
 
-	it := newIdleTracker(sp)
+	it := newIdleTracker()
 	it.setTimeout("gc-test-mayor", 15*time.Minute)
 	// Now disable.
 	it.setTimeout("gc-test-mayor", 0)
 
-	if it.checkIdle("gc-test-mayor", time.Now()) {
+	if it.checkIdle(a, time.Now()) {
 		t.Error("should not be idle after timeout disabled")
 	}
 }
 
-func TestIdleTrackerNilProvider(t *testing.T) {
-	it := newIdleTracker(nil)
-	if it != nil {
-		t.Error("newIdleTracker(nil) should return nil")
-	}
-}
-
 func TestIdleTrackerDifferentSessions(t *testing.T) {
-	sp := session.NewFake()
-	sp.SetActivity("gc-test-a", time.Now().Add(-30*time.Minute))
-	sp.SetActivity("gc-test-b", time.Now().Add(-2*time.Minute))
+	agentA := agent.NewFake("a", "gc-test-a")
+	agentA.FakeLastActivity = time.Now().Add(-30 * time.Minute)
 
-	it := newIdleTracker(sp)
+	agentB := agent.NewFake("b", "gc-test-b")
+	agentB.FakeLastActivity = time.Now().Add(-2 * time.Minute)
+
+	it := newIdleTracker()
 	it.setTimeout("gc-test-a", 15*time.Minute)
 	it.setTimeout("gc-test-b", 15*time.Minute)
 
-	if !it.checkIdle("gc-test-a", time.Now()) {
+	if !it.checkIdle(agentA, time.Now()) {
 		t.Error("agent A should be idle")
 	}
-	if it.checkIdle("gc-test-b", time.Now()) {
+	if it.checkIdle(agentB, time.Now()) {
 		t.Error("agent B should NOT be idle")
 	}
 }

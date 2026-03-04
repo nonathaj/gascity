@@ -6,9 +6,9 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/events"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/events"
 )
 
 func newConvoyCmd(stdout, stderr io.Writer) *cobra.Command {

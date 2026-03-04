@@ -11,8 +11,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
 )
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
@@ -194,6 +194,10 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 	if src.HooksInstalled != nil {
 		v := *src.HooksInstalled
 		dst.HooksInstalled = &v
+	}
+	if src.Attach != nil {
+		v := *src.Attach
+		dst.Attach = &v
 	}
 	return dst
 }

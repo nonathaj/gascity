@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/events"
 )
 
 // GateResult holds the outcome of a gate check.

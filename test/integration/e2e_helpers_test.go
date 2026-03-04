@@ -13,7 +13,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/steveyegge/gascity/test/tmuxtest"
+	"github.com/julianknutsen/gascity/test/tmuxtest"
 )
 
 // e2eAgent describes an agent for E2E tests with full config control.

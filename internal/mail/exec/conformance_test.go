@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/mail"
-	"github.com/steveyegge/gascity/internal/mail/mailtest"
+	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/julianknutsen/gascity/internal/mail/mailtest"
 )
 
 // statefulScript returns a shell script body that maintains message state

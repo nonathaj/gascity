@@ -5,10 +5,11 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 // newRestartCmd creates the top-level "gc restart" command.
@@ -122,10 +123,10 @@ func doRigRestart(
 		pool := a.EffectivePool()
 		if pool.Max <= 1 {
 			// Single agent.
-			sn := sessionName(cityName, a.QualifiedName(), sessionTemplate)
-			if sp.IsRunning(sn) {
-				if err := sp.Stop(sn); err != nil {
-					fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
+			h := agent.HandleFor(a.QualifiedName(), cityName, sessionTemplate, sp)
+			if h.IsRunning() {
+				if err := h.Stop(); err != nil {
+					fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", h.SessionName(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
 				rec.Record(events.Event{
@@ -143,10 +144,10 @@ func doRigRestart(
 				if a.Dir != "" {
 					qualifiedInstance = a.Dir + "/" + instanceName
 				}
-				sn := sessionName(cityName, qualifiedInstance, sessionTemplate)
-				if sp.IsRunning(sn) {
-					if err := sp.Stop(sn); err != nil {
-						fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
+				h := agent.HandleFor(qualifiedInstance, cityName, sessionTemplate, sp)
+				if h.IsRunning() {
+					if err := h.Stop(); err != nil {
+						fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", h.SessionName(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
 					rec.Record(events.Event{

@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/fsys"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/fsys"
 )
 
 // newSuspendCmd creates the "gc suspend [path]" command.

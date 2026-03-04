@@ -10,11 +10,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/mail"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/mail"
 )
 
 // nudgeFunc is an optional callback for nudging an agent after sending mail.
@@ -466,8 +466,8 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 				return fmt.Errorf("agent %q not found", recipient)
 			}
 			sp := newSessionProvider()
-			a := agent.New(found.QualifiedName(), cityName, "", "", nil, agent.StartupHints{}, "", cfg.Workspace.SessionTemplate, nil, sp)
-			return a.Nudge(fmt.Sprintf("You have mail from %s", sender))
+			h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
+			return h.Nudge(fmt.Sprintf("You have mail from %s", sender))
 		}
 	}
 

@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // Provenance: This file was copied from github.com/steveyegge/gastown

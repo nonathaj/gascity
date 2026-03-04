@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steveyegge/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/config"
 )
 
 // suggestSimilar returns a "did you mean X?" hint for the closest match

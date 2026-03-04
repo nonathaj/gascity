@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 func isRemote(name string) bool { return strings.Contains(name, "polecat") }

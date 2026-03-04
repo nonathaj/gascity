@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 // AgentListEntry is the JSON output format for a single agent in "gc agent list --json".
@@ -590,19 +590,19 @@ func cmdAgentNudge(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Resolve session name and construct a minimal Agent.
+	// Resolve session name and construct a lightweight Handle.
 	cityName := cfg.Workspace.Name
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
 	sp := newSessionProvider()
-	a := agent.New(found.QualifiedName(), cityName, "", "", nil, agent.StartupHints{}, "", cfg.Workspace.SessionTemplate, nil, sp)
-	return doAgentNudge(a, message, stdout, stderr)
+	h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
+	return doAgentNudge(h, message, stdout, stderr)
 }
 
 // doAgentNudge is the pure logic for "gc agent nudge". Accepts an injected
-// Agent for testability.
-func doAgentNudge(a agent.Agent, message string, stdout, stderr io.Writer) int {
+// Handle for testability.
+func doAgentNudge(a agent.Handle, message string, stdout, stderr io.Writer) int {
 	if err := a.Nudge(message); err != nil {
 		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -661,19 +661,19 @@ func cmdAgentPeek(args []string, lines int, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Resolve session name and construct a minimal Agent.
+	// Resolve session name and construct a lightweight Handle.
 	cityName := cfg.Workspace.Name
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
 	sp := newSessionProvider()
-	a := agent.New(found.QualifiedName(), cityName, "", "", nil, agent.StartupHints{}, "", cfg.Workspace.SessionTemplate, nil, sp)
-	return doAgentPeek(a, lines, stdout, stderr)
+	h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
+	return doAgentPeek(h, lines, stdout, stderr)
 }
 
 // doAgentPeek is the pure logic for "gc agent peek". Accepts an injected
-// Agent for testability.
-func doAgentPeek(a agent.Agent, lines int, stdout, stderr io.Writer) int {
+// Handle for testability.
+func doAgentPeek(a agent.Handle, lines int, stdout, stderr io.Writer) int {
 	output, err := a.Peek(lines)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent peek: %v\n", err) //nolint:errcheck // best-effort stderr

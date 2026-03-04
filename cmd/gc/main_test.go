@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/rogpeppe/go-internal/testscript"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 func TestMain(m *testing.M) {
@@ -1321,7 +1321,7 @@ func TestDoStopOneAgentRunning(t *testing.T) {
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
-	code := doStop([]agent.Agent{f}, sp, 0, events.Discard, &stdout, &stderr)
+	code := doStop([]agent.Handle{f}, sp, 0, events.Discard, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doStop = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -1360,7 +1360,7 @@ func TestDoStopAgentNotRunning(t *testing.T) {
 	// Running defaults to false — agent is not running.
 
 	var stdout, stderr bytes.Buffer
-	code := doStop([]agent.Agent{f}, sp, 0, events.Discard, &stdout, &stderr)
+	code := doStop([]agent.Handle{f}, sp, 0, events.Discard, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doStop = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -1384,7 +1384,7 @@ func TestDoStopMultipleAgents(t *testing.T) {
 	worker.Running = true
 
 	var stdout, stderr bytes.Buffer
-	code := doStop([]agent.Agent{mayor, worker}, sp, 0, events.Discard, &stdout, &stderr)
+	code := doStop([]agent.Handle{mayor, worker}, sp, 0, events.Discard, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doStop = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -1406,7 +1406,7 @@ func TestDoStopStopError(t *testing.T) {
 	f.Running = true
 
 	var stdout, stderr bytes.Buffer
-	code := doStop([]agent.Agent{f}, sp, 0, events.Discard, &stdout, &stderr)
+	code := doStop([]agent.Handle{f}, sp, 0, events.Discard, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doStop = %d, want 0 (errors are non-fatal); stderr: %s", code, stderr.String())
 	}

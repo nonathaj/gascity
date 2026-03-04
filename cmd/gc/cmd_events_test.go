@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/events"
 )
 
 // newTestProvider creates a FileRecorder-backed Provider for testing.

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 func TestDefaultCity(t *testing.T) {

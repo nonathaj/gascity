@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/config"
 )
 
 // writeSpyScript creates a shell script that logs operations to a file and

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/steveyegge/gascity/internal/config/city",
+  "$id": "https://github.com/julianknutsen/gascity/internal/config/city",
   "$ref": "#/$defs/City",
   "$defs": {
     "Agent": {
@@ -156,6 +156,10 @@
           "type": "array",
           "description": "InjectFragments lists named template fragments to append to this agent's\nrendered prompt. Fragments come from shared template directories across\nall loaded packs. Each name must match a {{ define \"name\" }} block."
         },
+        "attach": {
+          "type": "boolean",
+          "description": "Attach controls whether the agent's session supports interactive\nattachment (e.g., tmux attach). When false, the agent can use a\nlighter runtime (subprocess instead of tmux). Defaults to true."
+        },
         "fallback": {
           "type": "boolean",
           "description": "Fallback marks this agent as a fallback definition. During pack\ncomposition, a non-fallback agent with the same name wins silently.\nWhen two fallbacks collide, the first loaded (depth-first) wins."
@@ -303,6 +307,10 @@
           "type": "array",
           "description": "InstallAgentHooksAppend appends to the agent's install_agent_hooks list."
         },
+        "attach": {
+          "type": "boolean",
+          "description": "Attach overrides the agent's attach setting."
+        },
         "inject_fragments_append": {
           "items": {
             "type": "string"
@@ -424,6 +432,10 @@
           },
           "type": "array",
           "description": "InjectFragments overrides the agent's inject_fragments list."
+        },
+        "attach": {
+          "type": "boolean",
+          "description": "Attach overrides the agent's attach setting."
         },
         "pre_start_append": {
           "items": {

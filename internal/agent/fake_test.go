@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 var _ Agent = (*Fake)(nil)

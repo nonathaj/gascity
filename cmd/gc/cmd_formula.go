@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/julianknutsen/gascity/internal/formula"
+	"github.com/julianknutsen/gascity/internal/fsys"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/formula"
-	"github.com/steveyegge/gascity/internal/fsys"
 )
 
 func newFormulaCmd(stdout, stderr io.Writer) *cobra.Command {

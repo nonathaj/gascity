@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/beads/beadstest"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/beads/beadstest"
 )
 
 func TestMemStore(t *testing.T) {

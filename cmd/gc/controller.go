@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/session"
-	"github.com/steveyegge/gascity/internal/telemetry"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/telemetry"
 )
 
 // acquireControllerLock takes an exclusive flock on .gc/controller.lock.
@@ -418,7 +418,7 @@ func controllerLoop(
 						}
 					}
 					// Rebuild idle tracker with new config timeouts.
-					it = buildIdleTracker(cfg, cityName, sp)
+					it = buildIdleTracker(cfg, cityName)
 					// Rebuild wisp GC from new config.
 					if cfg.Daemon.WispGCEnabled() {
 						wg = newWispGC(cfg.Daemon.WispGCIntervalDuration(),
@@ -547,7 +547,7 @@ func runController(
 	}
 
 	// Build idle tracker from config.
-	it := buildIdleTracker(cfg, cityName, sp)
+	it := buildIdleTracker(cfg, cityName)
 
 	// Build wisp GC from config.
 	var wg wispGC

@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 // validAgentName matches names safe for use in session identifiers.
@@ -200,6 +200,8 @@ type AgentOverride struct {
 	SessionLiveAppend []string `toml:"session_live_append,omitempty"`
 	// InstallAgentHooksAppend appends to the agent's install_agent_hooks list.
 	InstallAgentHooksAppend []string `toml:"install_agent_hooks_append,omitempty"`
+	// Attach overrides the agent's attach setting.
+	Attach *bool `toml:"attach,omitempty"`
 	// InjectFragmentsAppend appends to the agent's inject_fragments list.
 	InjectFragmentsAppend []string `toml:"inject_fragments_append,omitempty"`
 }
@@ -889,6 +891,10 @@ type Agent struct {
 	// rendered prompt. Fragments come from shared template directories across
 	// all loaded packs. Each name must match a {{ define "name" }} block.
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
+	// Attach controls whether the agent's session supports interactive
+	// attachment (e.g., tmux attach). When false, the agent can use a
+	// lighter runtime (subprocess instead of tmux). Defaults to true.
+	Attach *bool `toml:"attach,omitempty"`
 	// Fallback marks this agent as a fallback definition. During pack
 	// composition, a non-fallback agent with the same name wins silently.
 	// When two fallbacks collide, the first loaded (depth-first) wins.

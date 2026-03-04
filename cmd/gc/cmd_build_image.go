@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/julianknutsen/gascity/internal/buildimage"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/buildimage"
 )
 
 func newBuildImageCmd(stdout, stderr io.Writer) *cobra.Command {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/fsys"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
 )
 
 // registerPackCommands attempts to discover the city, load config, and

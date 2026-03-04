@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/beads"
 )
 
 // --- Parse ---

@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/julianknutsen/gascity/internal/beads"
+	beadsexec "github.com/julianknutsen/gascity/internal/beads/exec"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/doctor"
+	"github.com/julianknutsen/gascity/internal/fsys"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/beads"
-	beadsexec "github.com/steveyegge/gascity/internal/beads/exec"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/doctor"
-	"github.com/steveyegge/gascity/internal/fsys"
 )
 
 func newDoctorCmd(stdout, stderr io.Writer) *cobra.Command {

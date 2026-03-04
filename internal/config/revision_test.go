@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 func TestRevision_Deterministic(t *testing.T) {

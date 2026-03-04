@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 func newStopCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -79,14 +79,14 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 
 	sp := newSessionProvider()
 	st := cfg.Workspace.SessionTemplate
-	var agents []agent.Agent
+	var agents []agent.Handle
 	desired := make(map[string]bool, len(cfg.Agents))
 	for _, a := range cfg.Agents {
 		pool := a.EffectivePool()
 		qn := a.QualifiedName()
 		if pool.Max <= 1 {
 			// Single agent.
-			agents = append(agents, agent.New(qn, cityName, "", "", nil, agent.StartupHints{}, "", st, nil, sp))
+			agents = append(agents, agent.HandleFor(qn, cityName, st, sp))
 			desired[agent.SessionNameFor(cityName, qn, st)] = true
 		} else {
 			// Pool agent: generate {name}-1 through {name}-{max}.
@@ -96,7 +96,7 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 				if a.Dir != "" {
 					qualifiedInstance = a.Dir + "/" + instanceName
 				}
-				agents = append(agents, agent.New(qualifiedInstance, cityName, "", "", nil, agent.StartupHints{}, "", st, nil, sp))
+				agents = append(agents, agent.HandleFor(qualifiedInstance, cityName, st, sp))
 				desired[agent.SessionNameFor(cityName, qualifiedInstance, st)] = true
 			}
 		}
@@ -147,7 +147,7 @@ func tryStopController(cityPath string, stdout io.Writer) bool {
 // doStop is the pure logic for "gc stop". It collects running agents and
 // performs graceful shutdown (interrupt → wait → kill). Accepts pre-built
 // agents, provider, timeout, and recorder for testability.
-func doStop(agents []agent.Agent, sp session.Provider, timeout time.Duration,
+func doStop(agents []agent.Handle, sp session.Provider, timeout time.Duration,
 	rec events.Recorder, stdout, stderr io.Writer,
 ) int {
 	var names []string

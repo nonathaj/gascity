@@ -1,4 +1,4 @@
-module github.com/steveyegge/gascity
+module github.com/julianknutsen/gascity
 
 go 1.25.0
 

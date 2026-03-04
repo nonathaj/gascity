@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // Provider routes session operations to a local or remote provider

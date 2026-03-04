@@ -3,8 +3,9 @@ package agent
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 func TestSessionNameFor(t *testing.T) {
@@ -103,6 +104,44 @@ func TestSessionNameForExecutionError(t *testing.T) {
 	// This should either work or fall back to default; either way shouldn't panic.
 	if got == "" {
 		t.Error("SessionNameFor with tricky template returned empty")
+	}
+}
+
+func TestHandleFor(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+
+	h := HandleFor("mayor", "city", "", sp)
+
+	if got := h.Name(); got != "mayor" {
+		t.Errorf("Name() = %q, want %q", got, "mayor")
+	}
+	if got := h.SessionName(); got != "mayor" {
+		t.Errorf("SessionName() = %q, want %q", got, "mayor")
+	}
+	if !h.IsRunning() {
+		t.Error("IsRunning() = false, want true")
+	}
+	if err := h.Nudge("hello"); err != nil {
+		t.Errorf("Nudge() = %v, want nil", err)
+	}
+	if _, err := h.Peek(10); err != nil {
+		t.Errorf("Peek() error = %v, want nil", err)
+	}
+	if err := h.Stop(); err != nil {
+		t.Errorf("Stop() = %v, want nil", err)
+	}
+	if h.IsRunning() {
+		t.Error("IsRunning() = true after Stop, want false")
+	}
+}
+
+func TestHandleForCustomTemplate(t *testing.T) {
+	sp := session.NewFake()
+	h := HandleFor("mayor", "city", "{{.City}}-{{.Name}}", sp)
+
+	if got := h.SessionName(); got != "city-mayor" {
+		t.Errorf("SessionName() = %q, want %q", got, "city-mayor")
 	}
 }
 
@@ -565,4 +604,210 @@ func TestManagedAttach(t *testing.T) {
 	if sp.Calls[0].Name != "mayor" {
 		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "mayor")
 	}
+}
+
+func TestManagedInterrupt(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	sp.Calls = nil
+
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	if err := a.Interrupt(); err != nil {
+		t.Fatalf("Interrupt() = %v, want nil", err)
+	}
+
+	if len(sp.Calls) != 1 || sp.Calls[0].Method != "Interrupt" {
+		t.Errorf("got calls %+v, want single Interrupt call", sp.Calls)
+	}
+	if sp.Calls[0].Name != "mayor" {
+		t.Errorf("Name = %q, want %q", sp.Calls[0].Name, "mayor")
+	}
+}
+
+func TestManagedProcessAlive(t *testing.T) {
+	sp := session.NewFake()
+	hints := StartupHints{ProcessNames: []string{"claude"}}
+	a := New("mayor", "city", "claude", "", nil, hints, "", "", nil, sp)
+
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+
+	if !a.ProcessAlive() {
+		t.Error("ProcessAlive() = false for healthy session, want true")
+	}
+
+	sp.Zombies["mayor"] = true
+	if a.ProcessAlive() {
+		t.Error("ProcessAlive() = true for zombie session, want false")
+	}
+}
+
+func TestManagedClearScrollback(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	sp.Calls = nil
+
+	if err := a.ClearScrollback(); err != nil {
+		t.Fatalf("ClearScrollback() = %v, want nil", err)
+	}
+
+	if len(sp.Calls) != 1 || sp.Calls[0].Method != "ClearScrollback" {
+		t.Errorf("got calls %+v, want single ClearScrollback call", sp.Calls)
+	}
+}
+
+func TestManagedGetLastActivity(t *testing.T) {
+	sp := session.NewFake()
+	now := time.Now()
+	sp.SetActivity("mayor", now)
+
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	sp.Calls = nil
+
+	got, err := a.GetLastActivity()
+	if err != nil {
+		t.Fatalf("GetLastActivity() error = %v", err)
+	}
+	if !got.Equal(now) {
+		t.Errorf("GetLastActivity() = %v, want %v", got, now)
+	}
+
+	if len(sp.Calls) != 1 || sp.Calls[0].Method != "GetLastActivity" {
+		t.Errorf("got calls %+v, want single GetLastActivity call", sp.Calls)
+	}
+}
+
+func TestManagedSendKeys(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	sp.Calls = nil
+
+	if err := a.SendKeys("Enter", "Down"); err != nil {
+		t.Fatalf("SendKeys() = %v, want nil", err)
+	}
+
+	if len(sp.Calls) != 1 || sp.Calls[0].Method != "SendKeys" {
+		t.Errorf("got calls %+v, want single SendKeys call", sp.Calls)
+	}
+}
+
+func TestManagedRunLive(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	sp.Calls = nil
+
+	cfg := session.Config{SessionLive: []string{"echo hello"}}
+	if err := a.RunLive(cfg); err != nil {
+		t.Fatalf("RunLive() = %v, want nil", err)
+	}
+
+	if len(sp.Calls) != 1 || sp.Calls[0].Method != "RunLive" {
+		t.Errorf("got calls %+v, want single RunLive call", sp.Calls)
+	}
+}
+
+func TestManagedSetGetRemoveMeta(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+	sp.Calls = nil
+
+	// SetMeta
+	if err := a.SetMeta("GC_DRAIN", "12345"); err != nil {
+		t.Fatalf("SetMeta() = %v, want nil", err)
+	}
+
+	// GetMeta
+	val, err := a.GetMeta("GC_DRAIN")
+	if err != nil {
+		t.Fatalf("GetMeta() error = %v", err)
+	}
+	if val != "12345" {
+		t.Errorf("GetMeta() = %q, want %q", val, "12345")
+	}
+
+	// RemoveMeta
+	if err := a.RemoveMeta("GC_DRAIN"); err != nil {
+		t.Fatalf("RemoveMeta() = %v, want nil", err)
+	}
+
+	// Verify removed
+	val, err = a.GetMeta("GC_DRAIN")
+	if err != nil {
+		t.Fatalf("GetMeta() after remove error = %v", err)
+	}
+	if val != "" {
+		t.Errorf("GetMeta() after remove = %q, want empty", val)
+	}
+
+	// Verify correct session name passed through.
+	for _, c := range sp.Calls {
+		if c.Name != "mayor" {
+			t.Errorf("call %q: Name = %q, want %q", c.Method, c.Name, "mayor")
+		}
+	}
+}
+
+func TestManagedEventsNilWithoutObserver(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "echo", "", nil, StartupHints{}, "", "", nil, sp)
+
+	if ch := a.Events(); ch != nil {
+		t.Error("Events() should return nil when no observer is set")
+	}
+}
+
+func TestManagedSetObserverAndEvents(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "echo", "", nil, StartupHints{}, "", "", nil, sp)
+
+	// Create a simple mock observer.
+	ch := make(chan Event, 1)
+	obs := &fakeObserver{ch: ch}
+	a.SetObserver(obs)
+
+	// Events() should return the observer's channel.
+	got := a.Events()
+	if got == nil {
+		t.Fatal("Events() returned nil after SetObserver")
+	}
+
+	// Send an event and verify we receive it.
+	want := Event{Type: EventToolCall, Agent: "mayor", Data: "Bash"}
+	ch <- want
+
+	select {
+	case ev := <-got:
+		if ev.Type != want.Type || ev.Agent != want.Agent || ev.Data != want.Data {
+			t.Errorf("got %+v, want %+v", ev, want)
+		}
+	default:
+		t.Fatal("expected event on channel")
+	}
+}
+
+func TestManagedSetObserverClosesOld(t *testing.T) {
+	sp := session.NewFake()
+	a := New("mayor", "city", "echo", "", nil, StartupHints{}, "", "", nil, sp)
+
+	old := &fakeObserver{ch: make(chan Event)}
+	a.SetObserver(old)
+
+	// Replace with new observer — old should be closed.
+	newObs := &fakeObserver{ch: make(chan Event)}
+	a.SetObserver(newObs)
+
+	if !old.closed {
+		t.Error("old observer should have been closed when replaced")
+	}
+}
+
+// fakeObserver is a test double for ObservationStrategy.
+type fakeObserver struct {
+	ch     chan Event
+	closed bool
+}
+
+func (f *fakeObserver) Events() <-chan Event { return f.ch }
+func (f *fakeObserver) Close() error {
+	f.closed = true
+	return nil
 }

@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/events"
 )
 
 // Provider implements [events.Provider] by delegating to a user-supplied script.

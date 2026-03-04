@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/test/tmuxtest"
+	"github.com/julianknutsen/gascity/test/tmuxtest"
 )
 
 func TestTutorial01_StartCreatesSession(t *testing.T) {

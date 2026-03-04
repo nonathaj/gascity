@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/julianknutsen/gascity/internal/docgen"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/docgen"
 )
 
 // newGenDocCmd creates the hidden "gc gen-doc" subcommand. It writes

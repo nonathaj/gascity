@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/mail"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/mail"
 )
 
 // Provider implements [mail.Provider] using [beads.Store] as the backend.

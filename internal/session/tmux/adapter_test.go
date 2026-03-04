@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/session"
-	"github.com/steveyegge/gascity/internal/session/sessiontest"
+	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session/sessiontest"
 )
 
 // Compile-time check.

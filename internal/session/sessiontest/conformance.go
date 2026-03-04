@@ -15,7 +15,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // Factory creates a (provider, config, sessionName) tuple for a single test.

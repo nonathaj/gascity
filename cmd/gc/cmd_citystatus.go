@@ -6,9 +6,9 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/session"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 // StatusJSON is the JSON output format for "gc status --json".
@@ -111,7 +111,7 @@ func cmdCityStatus(args []string, jsonOutput bool, stdout, stderr io.Writer) int
 }
 
 // doCityStatus prints the city-wide status overview. Accepts injected
-// providers for testability.
+// session.Provider for testability.
 func doCityStatus(
 	sp session.Provider,
 	dops drainOps,

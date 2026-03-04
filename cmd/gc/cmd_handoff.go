@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/events"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
 )
 
 func newHandoffCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -119,7 +119,6 @@ func cmdHandoffRemote(args []string, target string, stdout, stderr io.Writer) in
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
-	sn := sessionName(cityName, targetName, cfg.Workspace.SessionTemplate)
 	sp := newSessionProvider()
 	rec := openCityRecorder(stderr)
 
@@ -128,7 +127,8 @@ func cmdHandoffRemote(args []string, target string, stdout, stderr io.Writer) in
 		sender = "human"
 	}
 
-	return doHandoffRemote(store, rec, sp, sender, targetName, sn, args, stdout, stderr)
+	h := agent.HandleFor(targetName, cityName, cfg.Workspace.SessionTemplate, sp)
+	return doHandoffRemote(store, rec, h, sender, args, stdout, stderr)
 }
 
 // doHandoff sends a handoff mail to self and sets the restart-requested flag.
@@ -178,9 +178,10 @@ func doHandoff(store beads.Store, rec events.Recorder, dops drainOps,
 
 // doHandoffRemote sends handoff mail to a remote agent and kills its session.
 // Non-blocking: returns immediately after killing the session.
-func doHandoffRemote(store beads.Store, rec events.Recorder, sp session.Provider,
-	sender, targetName, sn string, args []string, stdout, stderr io.Writer,
+func doHandoffRemote(store beads.Store, rec events.Recorder, target agent.Handle,
+	sender string, args []string, stdout, stderr io.Writer,
 ) int {
+	targetName := target.Name()
 	subject := args[0]
 	var message string
 	if len(args) > 1 {
@@ -208,11 +209,11 @@ func doHandoffRemote(store beads.Store, rec events.Recorder, sp session.Provider
 	})
 
 	// Kill target session (reconciler restarts it).
-	if !sp.IsRunning(sn) {
+	if !target.IsRunning() {
 		fmt.Fprintf(stdout, "Handoff: sent mail %s to %s (session not running; will be delivered on next start)\n", b.ID, targetName) //nolint:errcheck // best-effort stdout
 		return 0
 	}
-	if err := sp.Stop(sn); err != nil {
+	if err := target.Stop(); err != nil {
 		fmt.Fprintf(stderr, "gc handoff: killing %s: %v\n", targetName, err) //nolint:errcheck // best-effort stderr
 		return 1
 	}

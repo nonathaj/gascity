@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/automations"
-	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/automations"
+	"github.com/julianknutsen/gascity/internal/beads"
 )
 
 // --- gc automation list ---

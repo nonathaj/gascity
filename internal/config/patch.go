@@ -64,6 +64,8 @@ type AgentPatch struct {
 	DefaultSlingFormula *string `toml:"default_sling_formula,omitempty"`
 	// InjectFragments overrides the agent's inject_fragments list.
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
+	// Attach overrides the agent's attach setting.
+	Attach *bool `toml:"attach,omitempty"`
 	// PreStartAppend appends commands to the agent's pre_start list
 	// (instead of replacing). Applied after PreStart if both are set.
 	PreStartAppend []string `toml:"pre_start_append,omitempty"`
@@ -224,6 +226,9 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if p.DefaultSlingFormula != nil {
 		a.DefaultSlingFormula = *p.DefaultSlingFormula
+	}
+	if p.Attach != nil {
+		a.Attach = p.Attach
 	}
 	if len(p.InjectFragments) > 0 {
 		a.InjectFragments = append([]string(nil), p.InjectFragments...)

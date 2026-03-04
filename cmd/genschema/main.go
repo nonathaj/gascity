@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 
 	"github.com/invopop/jsonschema"
-	"github.com/steveyegge/gascity/internal/docgen"
+	"github.com/julianknutsen/gascity/internal/docgen"
 )
 
 func main() {

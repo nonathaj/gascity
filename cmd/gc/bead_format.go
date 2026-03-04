@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/beads"
 )
 
 // parseBeadFormat extracts --format/--json flags from raw args (needed because

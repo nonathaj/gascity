@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/beads"
 )
 
 // Resolver loads a formula by name. Implementations typically read from

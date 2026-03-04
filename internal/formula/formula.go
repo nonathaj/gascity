@@ -8,7 +8,7 @@ package formula
 
 import (
 	"github.com/BurntSushi/toml"
-	"github.com/steveyegge/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/beads"
 )
 
 // Formula is a parsed formula definition from a *.formula.toml file.

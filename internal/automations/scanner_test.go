@@ -3,7 +3,7 @@ package automations
 import (
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 func TestScan(t *testing.T) {

@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/hooks"
+	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/hooks"
-	"github.com/steveyegge/gascity/internal/session"
-	"github.com/steveyegge/gascity/internal/telemetry"
 )
 
 // computeSuspendedNames builds a set of session names for agents marked
@@ -112,7 +112,7 @@ var dryRunMode bool
 // buildIdleTracker creates an idleTracker from the config, populating
 // timeouts for agents that have idle_timeout set. Returns nil if no
 // agents use idle timeout (disabled).
-func buildIdleTracker(cfg *config.City, cityName string, sp session.Provider) idleTracker {
+func buildIdleTracker(cfg *config.City, cityName string) idleTracker {
 	var hasAny bool
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -124,7 +124,7 @@ func buildIdleTracker(cfg *config.City, cityName string, sp session.Provider) id
 	if !hasAny {
 		return nil
 	}
-	it := newIdleTracker(sp)
+	it := newIdleTracker()
 	for _, a := range cfg.Agents {
 		timeout := a.IdleTimeoutDuration()
 		if timeout <= 0 {

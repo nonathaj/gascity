@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/hooks"
+	"github.com/julianknutsen/gascity/internal/overlay"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/fsys"
-	"github.com/steveyegge/gascity/internal/hooks"
-	"github.com/steveyegge/gascity/internal/overlay"
 )
 
 // wizardConfig carries the results of the interactive init wizard (or defaults

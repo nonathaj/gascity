@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/julianknutsen/gascity/internal/events"
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gascity/internal/events"
 )
 
 func newEventCmd(stdout, stderr io.Writer) *cobra.Command {

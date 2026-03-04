@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // errStore wraps a beads.Store and injects errors into MolCook/MolCookOn.

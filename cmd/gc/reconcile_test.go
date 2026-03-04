@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/agent"
-	"github.com/steveyegge/gascity/internal/config"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // fakeReconcileOps is a test double for reconcileOps.
@@ -859,11 +859,11 @@ func TestReconcileZombieCaptureEmitsEvent(t *testing.T) {
 	// Reconcile should peek at the pane output and emit agent.crashed.
 	f := agent.NewFake("worker", "worker")
 	f.Running = false // agent process dead
+	f.FakePeekOutput = "panic: runtime error: index out of range\ngoroutine 1 [running]:"
 
 	sp := session.NewFake()
 	_ = sp.Start(context.Background(), "worker", session.Config{}) // tmux session alive
-	sp.SetPeekOutput("worker", "panic: runtime error: index out of range\ngoroutine 1 [running]:")
-	sp.Calls = nil // reset spy
+	sp.Calls = nil                                                 // reset spy
 
 	rops := newFakeReconcileOps()
 	rops.running["worker"] = true // session exists in provider
@@ -1933,10 +1933,10 @@ func TestReconcileClearScrollbackOnDrift(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, nil, events.Discard, nil, nil, 0, 0, &stdout, &stderr)
 
-	// ClearScrollback should have been called for the restarted agent.
+	// ClearScrollback should have been called on the agent (not provider).
 	var found bool
-	for _, c := range sp.Calls {
-		if c.Method == "ClearScrollback" && c.Name == "mayor" {
+	for _, c := range f.Calls {
+		if c.Method == "ClearScrollback" {
 			found = true
 		}
 	}
@@ -1962,8 +1962,8 @@ func TestReconcileClearScrollbackOnRestartRequested(t *testing.T) {
 	doReconcileAgents([]agent.Agent{f}, sp, rops, dops, nil, nil, events.Discard, nil, nil, 0, 0, &stdout, &stderr)
 
 	var found bool
-	for _, c := range sp.Calls {
-		if c.Method == "ClearScrollback" && c.Name == "mayor" {
+	for _, c := range f.Calls {
+		if c.Method == "ClearScrollback" {
 			found = true
 		}
 	}
@@ -1989,8 +1989,8 @@ func TestReconcileClearScrollbackOnIdleRestart(t *testing.T) {
 	doReconcileAgents([]agent.Agent{f}, sp, rops, nil, nil, it, events.Discard, nil, nil, 0, 0, &stdout, &stderr)
 
 	var found bool
-	for _, c := range sp.Calls {
-		if c.Method == "ClearScrollback" && c.Name == "mayor" {
+	for _, c := range f.Calls {
+		if c.Method == "ClearScrollback" {
 			found = true
 		}
 	}

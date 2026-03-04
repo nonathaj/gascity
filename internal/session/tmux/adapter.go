@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gascity/internal/overlay"
-	"github.com/steveyegge/gascity/internal/session"
+	"github.com/julianknutsen/gascity/internal/overlay"
+	"github.com/julianknutsen/gascity/internal/session"
 )
 
 // Provider adapts [Tmux] to the [session.Provider] interface.

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/beads"
-	"github.com/steveyegge/gascity/internal/events"
-	"github.com/steveyegge/gascity/internal/mail/beadmail"
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/mail/beadmail"
 )
 
 // --- gc mail send ---

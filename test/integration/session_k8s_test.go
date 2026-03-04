@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/steveyegge/gascity/internal/session"
-	sessionexec "github.com/steveyegge/gascity/internal/session/exec"
-	"github.com/steveyegge/gascity/internal/session/sessiontest"
+	"github.com/julianknutsen/gascity/internal/session"
+	sessionexec "github.com/julianknutsen/gascity/internal/session/exec"
+	"github.com/julianknutsen/gascity/internal/session/sessiontest"
 )
 
 // TestK8sSessionConformance runs the session conformance suite against a

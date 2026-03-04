@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/steveyegge/gascity/internal/fsys"
+	"github.com/julianknutsen/gascity/internal/fsys"
 )
 
 // packFile is the expected filename inside a pack directory.
@@ -764,6 +764,9 @@ func applyAgentOverride(a *Agent, ov *AgentOverride) {
 	}
 	if ov.DefaultSlingFormula != nil {
 		a.DefaultSlingFormula = *ov.DefaultSlingFormula
+	}
+	if ov.Attach != nil {
+		a.Attach = ov.Attach
 	}
 	if len(ov.InjectFragments) > 0 {
 		a.InjectFragments = append([]string(nil), ov.InjectFragments...)

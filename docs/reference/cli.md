@@ -26,7 +26,6 @@ gc [flags]
 | [gc convoy](#gc-convoy) | Manage convoys (batch work tracking) |
 | [gc daemon](#gc-daemon) | Manage the city daemon (background controller) |
 | [gc doctor](#gc-doctor) | Check workspace health |
-| [gc dolt](#gc-dolt) | Manage the Dolt SQL server |
 | [gc event](#gc-event) | Event operations |
 | [gc events](#gc-events) | Show the event log |
 | [gc formula](#gc-formula) | Manage formulas (multi-step workflow templates) |
@@ -376,14 +375,9 @@ gc beads
 
 Check beads provider health and attempt recovery on failure.
 
-For the bd (dolt) provider, runs a three-layer health check:
-  1. TCP reachability on the configured port
-  2. Query probe (SELECT 1)
-  3. Write probe (create/write/drop temp table)
-
-If unhealthy, attempts automatic recovery (stop + restart).
-For exec providers, delegates to the provider's "health" operation.
-For the file provider, always succeeds (no-op).
+Delegates to the provider's lifecycle health operation. For exec
+providers (including bd/dolt), the script handles multi-tier checking
+and recovery internally. For the file provider, always succeeds (no-op).
 
 Also used by the beads-health system automation for periodic monitoring.
 
@@ -763,151 +757,6 @@ gc doctor
 |------|------|---------|-------------|
 | `--fix` | bool |  | attempt to fix issues automatically |
 | `-v`, `--verbose` | bool |  | show extra diagnostic details |
-
-## gc dolt
-
-Manage the Dolt SQL server used for bead storage.
-
-Dolt provides the persistent database backing for the beads system.
-These commands help inspect, recover, and sync the database.
-
-```
-gc dolt
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc dolt cleanup](#gc-dolt-cleanup) | Find and remove orphaned Dolt databases |
-| [gc dolt health](#gc-dolt-health) | Check Dolt data-plane health |
-| [gc dolt list](#gc-dolt-list) | List Dolt databases |
-| [gc dolt logs](#gc-dolt-logs) | Tail the Dolt server log file |
-| [gc dolt recover](#gc-dolt-recover) | Recover Dolt from read-only state |
-| [gc dolt rollback](#gc-dolt-rollback) | List or restore from migration backups |
-| [gc dolt sql](#gc-dolt-sql) | Open an interactive Dolt SQL shell |
-| [gc dolt sync](#gc-dolt-sync) | Push databases to configured remotes |
-
-## gc dolt cleanup
-
-Find Dolt databases that are not referenced by any rig's metadata.
-
-By default, lists orphaned databases (dry-run). Use --force to remove them.
-Use --max to set a safety limit (refuses if more orphans than --max).
-
-```
-gc dolt cleanup [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--force` | bool |  | actually remove orphaned databases |
-| `--max` | int | `50` | refuse if more than this many orphans (safety limit) |
-
-## gc dolt health
-
-Lightweight Dolt data-plane health report for patrol cycles.
-
-Checks server status and latency, per-database commit counts and open
-beads, backup freshness, orphan databases, and zombie Dolt processes.
-
-Use --json for machine-readable output (consumed by deacon patrol).
-
-```
-gc dolt health [flags]
-```
-
-**Example:**
-
-```
-gc dolt health
-  gc dolt health --json
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool |  | output as JSON |
-
-## gc dolt list
-
-List all Dolt databases with their filesystem paths.
-
-Shows databases for the HQ (city) and all configured rigs.
-
-```
-gc dolt list
-```
-
-## gc dolt logs
-
-Tail the Dolt server log file.
-
-Shows recent log output with optional follow mode.
-
-```
-gc dolt logs [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-f`, `--follow` | bool |  | follow the log in real time |
-| `-n`, `--lines` | int | `50` | number of lines to show |
-
-## gc dolt recover
-
-Check for and recover from Dolt read-only state.
-
-Dolt can enter read-only mode after certain failures. This command
-detects the condition and attempts automatic recovery by restarting
-the server.
-
-```
-gc dolt recover
-```
-
-## gc dolt rollback
-
-List available migration backups or restore from one.
-
-With no arguments, lists all migration backups (newest first).
-With a backup path or timestamp, restores from that backup.
-Restore is destructive and requires --force.
-
-```
-gc dolt rollback [path-or-timestamp] [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--force` | bool |  | required for destructive restore |
-
-## gc dolt sql
-
-Open an interactive Dolt SQL shell.
-
-Connects to the running Dolt server if available, otherwise opens
-in embedded mode using the first database directory found.
-
-```
-gc dolt sql
-```
-
-## gc dolt sync
-
-Push Dolt databases to their configured remotes.
-
-Stops the server for a clean push, syncs each database, then restarts.
-Use --gc to purge closed ephemeral beads before syncing to reduce
-transfer size. Use --dry-run to preview without pushing.
-
-```
-gc dolt sync [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--db` | string |  | sync only the named database |
-| `--dry-run` | bool |  | show what would be pushed without pushing |
-| `--force` | bool |  | force-push to remotes |
-| `--gc` | bool |  | purge closed ephemeral beads before sync |
 
 ## gc event
 
