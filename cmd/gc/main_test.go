@@ -666,7 +666,7 @@ func TestSettingsArgsMissingFile(t *testing.T) {
 // --- runWizard ---
 
 func TestRunWizardDefaults(t *testing.T) {
-	// Two enters → default template (hello-world) + default agent (claude).
+	// Two enters → default template (tutorial) + default agent (claude).
 	stdin := strings.NewReader("\n\n")
 	var stdout bytes.Buffer
 	wiz := runWizard(stdin, &stdout)
@@ -674,8 +674,8 @@ func TestRunWizardDefaults(t *testing.T) {
 	if !wiz.interactive {
 		t.Error("expected interactive = true")
 	}
-	if wiz.configName != "hello-world" {
-		t.Errorf("configName = %q, want %q", wiz.configName, "hello-world")
+	if wiz.configName != "tutorial" {
+		t.Errorf("configName = %q, want %q", wiz.configName, "tutorial")
 	}
 	if wiz.provider != "claude" {
 		t.Errorf("provider = %q, want %q", wiz.provider, "claude")
@@ -700,8 +700,8 @@ func TestRunWizardNilStdin(t *testing.T) {
 	if wiz.interactive {
 		t.Error("expected interactive = false for nil stdin")
 	}
-	if wiz.configName != "hello-world" {
-		t.Errorf("configName = %q, want %q", wiz.configName, "hello-world")
+	if wiz.configName != "tutorial" {
+		t.Errorf("configName = %q, want %q", wiz.configName, "tutorial")
 	}
 	if wiz.provider != "" {
 		t.Errorf("provider = %q, want empty", wiz.provider)
@@ -808,8 +808,8 @@ func TestRunWizardEOFStdin(t *testing.T) {
 	wiz := runWizard(stdin, &stdout)
 
 	// EOF means default for both questions.
-	if wiz.configName != "hello-world" {
-		t.Errorf("configName = %q, want %q", wiz.configName, "hello-world")
+	if wiz.configName != "tutorial" {
+		t.Errorf("configName = %q, want %q", wiz.configName, "tutorial")
 	}
 	if wiz.provider != "claude" {
 		t.Errorf("provider = %q, want %q", wiz.provider, "claude")
@@ -820,7 +820,7 @@ func TestDoInitWithWizardConfig(t *testing.T) {
 	f := fsys.NewFake()
 	wiz := wizardConfig{
 		interactive: true,
-		configName:  "hello-world",
+		configName:  "tutorial",
 		provider:    "claude",
 	}
 
@@ -835,7 +835,7 @@ func TestDoInitWithWizardConfig(t *testing.T) {
 
 	// Verify output message.
 	out := stdout.String()
-	if !strings.Contains(out, "Created hello-world config") {
+	if !strings.Contains(out, "Created tutorial config") {
 		t.Errorf("stdout missing wizard message: %q", out)
 	}
 
@@ -864,7 +864,7 @@ func TestDoInitWithCustomCommand(t *testing.T) {
 	f := fsys.NewFake()
 	wiz := wizardConfig{
 		interactive:  true,
-		configName:   "hello-world",
+		configName:   "tutorial",
 		startCommand: "my-agent --auto",
 	}
 

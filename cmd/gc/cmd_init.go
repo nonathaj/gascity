@@ -20,15 +20,15 @@ import (
 // for non-interactive paths). doInit uses it to decide which config to write.
 type wizardConfig struct {
 	interactive  bool   // true if the wizard ran with user interaction
-	configName   string // "hello-world" or "custom"
+	configName   string // "tutorial" or "custom"
 	provider     string // "claude", "codex", "gemini", or "" if startCommand set
 	startCommand string // custom start command (workspace-level)
 }
 
 // defaultWizardConfig returns a non-interactive wizardConfig that produces
-// identical output to today — one mayor agent, no provider.
+// a single mayor agent with no provider.
 func defaultWizardConfig() wizardConfig {
-	return wizardConfig{configName: "hello-world"}
+	return wizardConfig{configName: "tutorial"}
 }
 
 // isTerminal reports whether f is connected to a terminal (not a pipe or file).
@@ -60,23 +60,23 @@ func runWizard(stdin io.Reader, stdout io.Writer) wizardConfig {
 
 	br := bufio.NewReader(stdin)
 
-	fmt.Fprintln(stdout, "Welcome to Gas City SDK!")                                   //nolint:errcheck // best-effort stdout
-	fmt.Fprintln(stdout, "")                                                           //nolint:errcheck // best-effort stdout
-	fmt.Fprintln(stdout, "Choose a config template:")                                  //nolint:errcheck // best-effort stdout
-	fmt.Fprintln(stdout, "  1. hello-world  — single mayor agent (default)")           //nolint:errcheck // best-effort stdout
-	fmt.Fprintln(stdout, "  2. custom       — empty workspace, configure it yourself") //nolint:errcheck // best-effort stdout
-	fmt.Fprintf(stdout, "Template [1]: ")                                              //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "Welcome to Gas City SDK!")                                //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "")                                                        //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "Choose a config template:")                               //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "  1. tutorial  — default coding agent (default)")         //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "  2. custom    — empty workspace, configure it yourself") //nolint:errcheck // best-effort stdout
+	fmt.Fprintf(stdout, "Template [1]: ")                                           //nolint:errcheck // best-effort stdout
 
 	configChoice := readLine(br)
-	configName := "hello-world"
+	configName := "tutorial"
 
 	switch configChoice {
-	case "", "1", "hello-world":
-		configName = "hello-world"
+	case "", "1", "tutorial":
+		configName = "tutorial"
 	case "2", "custom":
 		configName = "custom"
 	default:
-		fmt.Fprintf(stdout, "Unknown template %q, using hello-world.\n", configChoice) //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Unknown template %q, using tutorial.\n", configChoice) //nolint:errcheck // best-effort stdout
 	}
 
 	// Custom config → skip agent question, return minimal config.
@@ -125,7 +125,7 @@ func runWizard(stdin io.Reader, stdout io.Writer) wizardConfig {
 
 	return wizardConfig{
 		interactive:  true,
-		configName:   "hello-world",
+		configName:   "tutorial",
 		provider:     provider,
 		startCommand: startCommand,
 	}

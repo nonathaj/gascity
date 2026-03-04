@@ -100,7 +100,11 @@ func computePoolSessions(cfg *config.City, cityName string) map[string]time.Dura
 var extraConfigFiles []string
 
 // strictMode promotes composition collision warnings to errors.
+// Defaults to true; use --no-strict to disable.
 var strictMode bool
+
+// noStrictMode disables strict config checking (opt-out).
+var noStrictMode bool
 
 // dryRunMode previews what agents would start without actually starting them.
 var dryRunMode bool
@@ -160,7 +164,7 @@ that continuously reconciles agent state.`,
 		Example: `  gc start
   gc start ~/my-city
   gc start --foreground
-  gc start -f overlay.toml --strict`,
+  gc start -f overlay.toml --no-strict`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if doStart(args, foregroundMode, stdout, stderr) != 0 {
@@ -177,8 +181,8 @@ that continuously reconciles agent state.`,
 	cmd.Flags().MarkHidden("controller") //nolint:errcheck // flag always exists
 	cmd.Flags().StringArrayVarP(&extraConfigFiles, "file", "f", nil,
 		"additional config files to layer (can be repeated)")
-	cmd.Flags().BoolVar(&strictMode, "strict", false,
-		"promote config collision warnings to errors")
+	cmd.Flags().BoolVar(&noStrictMode, "no-strict", false,
+		"disable strict config collision checking (strict is on by default)")
 	cmd.Flags().BoolVarP(&dryRunMode, "dry-run", "n", false,
 		"preview what agents would start without starting them")
 	return cmd
@@ -189,6 +193,9 @@ that continuously reconciles agent state.`,
 // doInit, then starts all configured agent sessions. When controllerMode is
 // true, enters a persistent reconciliation loop instead of one-shot start.
 func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
+	// Strict mode is on by default; --no-strict disables it.
+	strictMode = !noStrictMode
+
 	var dir string
 	var err error
 	switch {
@@ -234,11 +241,12 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	// --strict promotes composition warnings to errors.
+	// Strict mode (default) promotes composition warnings to errors.
 	if strictMode && len(prov.Warnings) > 0 {
 		for _, w := range prov.Warnings {
 			fmt.Fprintf(stderr, "gc start: strict: %s\n", w) //nolint:errcheck // best-effort stderr
 		}
+		fmt.Fprintln(stderr, "gc start: use --no-strict to disable strict checking") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	for _, w := range prov.Warnings {

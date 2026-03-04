@@ -67,8 +67,8 @@ forks in the background.`,
 	}
 	cmd.Flags().StringArrayVarP(&extraConfigFiles, "file", "f", nil,
 		"additional config files to layer (can be repeated)")
-	cmd.Flags().BoolVar(&strictMode, "strict", false,
-		"promote config collision warnings to errors")
+	cmd.Flags().BoolVar(&noStrictMode, "no-strict", false,
+		"disable strict config collision checking (strict is on by default)")
 	return cmd
 }
 
