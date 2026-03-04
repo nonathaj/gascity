@@ -1,0 +1,20 @@
+Start the gastown web dashboard.
+
+Launches an HTTP server serving an HTMX/SSE dashboard that visualizes
+convoys, agents, mail, rigs, sessions, and events in real time.
+
+The dashboard reads data from:
+  - bd (beads CLI) for convoy, issue, mail, and hook data
+  - gc status/agent/events for city and agent status
+  - tmux for session previews
+  - gh for merge queue data
+
+Usage:
+  gc dashboard serve [flags]
+
+Flags:
+  -port int    HTTP port to listen on (default 8080)
+
+Examples:
+  gc dashboard serve
+  gc dashboard serve -port 3000

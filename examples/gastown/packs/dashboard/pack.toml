@@ -1,0 +1,21 @@
+# Gastown Dashboard — web dashboard for monitoring Gas City orchestration.
+#
+# Provides a single command: `gc dashboard serve` which starts an HTMX/SSE
+# dashboard that visualizes convoys, agents, mail, rigs, and events.
+# Data comes from `bd --json` for bead operations and `gc --json` for
+# agent/city status.
+
+[pack]
+name = "dashboard"
+schema = 1
+
+[[commands]]
+name = "serve"
+description = "Start the gastown web dashboard"
+long_description = "commands/serve-help.txt"
+script = "commands/serve.sh"
+
+[[doctor]]
+name = "check-go"
+script = "doctor/check-go.sh"
+description = "Verify Go is installed for dashboard server"
