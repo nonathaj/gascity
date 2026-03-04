@@ -658,6 +658,10 @@ type DaemonConfig struct {
 	// within this window, the controller force-kills and restarts it.
 	// Duration string (e.g., "2m", "5m"). Defaults to "2m".
 	DriftDrainTimeout string `toml:"drift_drain_timeout,omitempty" jsonschema:"default=2m"`
+	// ObservePaths lists extra directories to search for Claude JSONL session
+	// files (e.g., aimux session paths). The default search path
+	// (~/.claude/projects/) is always included.
+	ObservePaths []string `toml:"observe_paths,omitempty"`
 }
 
 // PatrolIntervalDuration returns the patrol interval as a time.Duration.

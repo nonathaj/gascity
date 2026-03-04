@@ -319,9 +319,13 @@ func controllerLoop(
 		lastProviderName = v
 	}
 
+	// Compute observation search paths for agent event bridging.
+	observePaths := observeSearchPaths(cfg.Daemon.ObservePaths)
+
 	// Initial reconciliation.
 	agents := buildFn(cfg, sp)
 	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
+	ensureObservers(agents, observePaths, rec)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
 	cityRoot := filepath.Dir(tomlPath)
@@ -428,6 +432,7 @@ func controllerLoop(
 					}
 					// Rebuild automation dispatcher from new config.
 					ad = buildAutomationDispatcher(cityRoot, cfg, beads.ExecCommandRunner(), rec, stderr)
+					observePaths = observeSearchPaths(cfg.Daemon.ObservePaths)
 					fmt.Fprintf(stdout, "Config reloaded: %s (rev %s)\n", //nolint:errcheck // best-effort stdout
 						configReloadSummary(oldAgentCount, oldRigCount, len(cfg.Agents), len(cfg.Rigs)),
 						shortRev(result.Revision))
@@ -436,6 +441,7 @@ func controllerLoop(
 			}
 			agents = buildFn(cfg, sp)
 			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
+			ensureObservers(agents, observePaths, rec)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
 				purged, gcErr := wg.runGC(filepath.Dir(tomlPath), time.Now())

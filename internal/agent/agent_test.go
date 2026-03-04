@@ -800,6 +800,43 @@ func TestManagedSetObserverClosesOld(t *testing.T) {
 	}
 }
 
+func TestManagedStopClosesObserver(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+
+	obs := &fakeObserver{ch: make(chan Event)}
+	a.SetObserver(obs)
+
+	if err := a.Stop(); err != nil {
+		t.Fatalf("Stop() = %v, want nil", err)
+	}
+
+	if !obs.closed {
+		t.Error("observer should be closed after Stop()")
+	}
+	if a.Events() != nil {
+		t.Error("Events() should return nil after Stop()")
+	}
+}
+
+func TestManagedDoubleStopSafe(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start(context.Background(), "mayor", session.Config{})
+	a := New("mayor", "city", "", "", nil, StartupHints{}, "", "", nil, sp)
+
+	obs := &fakeObserver{ch: make(chan Event)}
+	a.SetObserver(obs)
+
+	if err := a.Stop(); err != nil {
+		t.Fatalf("first Stop() = %v, want nil", err)
+	}
+	// Second stop should not panic (observer already nil).
+	if err := a.Stop(); err != nil {
+		t.Fatalf("second Stop() = %v, want nil", err)
+	}
+}
+
 // fakeObserver is a test double for ObservationStrategy.
 type fakeObserver struct {
 	ch     chan Event

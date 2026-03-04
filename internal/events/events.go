@@ -43,6 +43,16 @@ const (
 	AutomationCompleted = "automation.completed"
 	AutomationFailed    = "automation.failed"
 	ProviderSwapped     = "provider.swapped"
+
+	// Agent observation events (bridged from agent.Event).
+	AgentMessage    = "agent.message"
+	AgentToolCall   = "agent.tool_call"
+	AgentToolResult = "agent.tool_result"
+	AgentThinking   = "agent.thinking"
+	AgentError      = "agent.error"
+	AgentIdle       = "agent.idle"
+	AgentCompleted  = "agent.completed"
+	AgentOutput     = "agent.output"
 )
 
 // Event is a single recorded occurrence in the system.

@@ -257,7 +257,14 @@ func (a *managed) IsRunning() bool {
 	}
 	return a.sp.ProcessAlive(a.sessionName, a.hints.ProcessNames)
 }
-func (a *managed) Stop() error                { return a.sp.Stop(a.sessionName) }
+
+func (a *managed) Stop() error {
+	if a.observer != nil {
+		a.observer.Close() //nolint:errcheck // best-effort cleanup
+		a.observer = nil
+	}
+	return a.sp.Stop(a.sessionName)
+}
 func (a *managed) Attach() error              { return a.sp.Attach(a.sessionName) }
 func (a *managed) Nudge(message string) error { return a.sp.Nudge(a.sessionName, message) }
 func (a *managed) Peek(lines int) (string, error) {
