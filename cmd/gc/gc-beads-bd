@@ -62,20 +62,18 @@ tcp_check() {
     elif command -v bash >/dev/null 2>&1; then
         bash -c "echo >/dev/tcp/$host/$DOLT_PORT" 2>/dev/null
     else
-        # Fallback: try a dolt sql-client query.
+        # Fallback: try a dolt sql query.
         do_query_probe
     fi
 }
 
 # do_query_probe runs a SELECT 1 query against the dolt server.
+# Uses global flags (--host/--port/--user) before the sql subcommand.
 do_query_probe() {
     local host
     host=$(connect_host)
-    local args=""
-    if [ -n "$DOLT_PASSWORD" ]; then
-        args="-p $DOLT_PASSWORD"
-    fi
-    dolt sql-client --host "$host" --port "$DOLT_PORT" --user "$DOLT_USER" $args -q "SELECT 1" >/dev/null 2>&1
+    dolt --host "$host" --port "$DOLT_PORT" --user "$DOLT_USER" --password "${DOLT_PASSWORD:-}" --no-tls \
+        sql -q "SELECT 1" >/dev/null 2>&1
 }
 
 # wait_for_tcp waits up to $1 seconds for the dolt port to become reachable.
@@ -228,13 +226,9 @@ cleanup_stale_locks() {
 check_read_only() {
     local host
     host=$(connect_host)
-    local args=""
-    if [ -n "$DOLT_PASSWORD" ]; then
-        args="-p $DOLT_PASSWORD"
-    fi
     local output
-    output=$(dolt sql-client --host "$host" --port "$DOLT_PORT" --user "$DOLT_USER" $args \
-        -q "CREATE DATABASE IF NOT EXISTS __gc_probe; USE __gc_probe; CREATE TABLE IF NOT EXISTS __probe (k INT PRIMARY KEY); REPLACE INTO __probe VALUES (1); DROP TABLE __probe; DROP DATABASE __gc_probe;" 2>&1) || true
+    output=$(dolt --host "$host" --port "$DOLT_PORT" --user "$DOLT_USER" --password "${DOLT_PASSWORD:-}" --no-tls \
+        sql -q "CREATE DATABASE IF NOT EXISTS __gc_probe; USE __gc_probe; CREATE TABLE IF NOT EXISTS __probe (k INT PRIMARY KEY); REPLACE INTO __probe VALUES (1); DROP TABLE __probe; DROP DATABASE __gc_probe;" 2>&1) || true
     case "$output" in
         *"read only"*|*"READ ONLY"*|*"Read-only"*)
             return 0  # Is read-only.
@@ -358,11 +352,11 @@ op_start() {
     cleanup_stale_locks
 
     # Start dolt sql-server.
+    # Note: --user/--password removed in dolt 1.83+; use CREATE USER/GRANT instead.
     local bind_host="$DOLT_HOST"
     nohup dolt sql-server \
         --host "$bind_host" \
         --port "$DOLT_PORT" \
-        --user "$DOLT_USER" \
         --data-dir "$DATA_DIR" \
         --max-connections 1000 \
         >> "$LOG_FILE" 2>&1 &
