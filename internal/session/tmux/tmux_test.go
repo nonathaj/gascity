@@ -526,11 +526,16 @@ func TestGetPaneCommand_MultiPane(t *testing.T) {
 	}
 	defer func() { _ = tm.KillSession(sessionName) }()
 
-	// Allow tmux pane command to settle before querying
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify pane 0 shows "sleep"
-	cmd, err := tm.GetPaneCommand(sessionName)
+	// Wait for tmux pane command to settle (CI runners may be slow).
+	var cmd string
+	var err error
+	for i := 0; i < 20; i++ {
+		time.Sleep(200 * time.Millisecond)
+		cmd, err = tm.GetPaneCommand(sessionName)
+		if err == nil && cmd == "sleep" {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("GetPaneCommand before split: %v", err)
 	}

@@ -53,6 +53,9 @@ func setupGasTownCity(t *testing.T, guard *tmuxtest.Guard, agents []gasTownAgent
 		t.Fatalf("gc init failed: %v\noutput: %s", err, out)
 	}
 
+	// Initialize bd so that beads commands work (gc mail, bd create, etc.).
+	initBd(t, cityDir)
+
 	// Write city.toml with gastown-style agents.
 	writeGasTownToml(t, cityDir, cityName, agents)
 

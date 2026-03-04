@@ -172,6 +172,21 @@ func TestBdStoreGetCLIError(t *testing.T) {
 	}
 }
 
+func TestBdStoreGetCLINotFound(t *testing.T) {
+	// bd CLI "not found" error should be wrapped as ErrNotFound.
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		return nil, fmt.Errorf("exit status 1: Error fetching x: no issue found matching \"x\"")
+	}
+	s := beads.NewBdStore("/city", runner)
+	_, err := s.Get("x")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestBdStoreGetBadJSON(t *testing.T) {
 	runner := func(_, _ string, _ ...string) ([]byte, error) {
 		return []byte(`not json`), nil
@@ -218,9 +233,7 @@ func TestBdStoreClose(t *testing.T) {
 }
 
 func TestBdStoreCloseNotFound(t *testing.T) {
-	// Close "not found" is hard to simulate since bd close doesn't return
-	// an empty array — it returns an error. We just verify the error is
-	// propagated (not masked as ErrNotFound).
+	// Generic CLI error without "not found" should NOT be ErrNotFound.
 	runner := func(_, _ string, _ ...string) ([]byte, error) {
 		return nil, fmt.Errorf("exit status 1")
 	}
@@ -230,7 +243,51 @@ func TestBdStoreCloseNotFound(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	if errors.Is(err, beads.ErrNotFound) {
-		t.Errorf("CLI error should not be ErrNotFound, got %v", err)
+		t.Errorf("generic CLI error should not be ErrNotFound, got %v", err)
+	}
+}
+
+func TestBdStoreCloseCLINotFound(t *testing.T) {
+	// bd CLI "issue not found" should be wrapped as ErrNotFound.
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		// close returns "not found", Get also returns "not found" → truly not found.
+		return nil, fmt.Errorf("exit status 1: Error closing x: issue not found: x")
+	}
+	s := beads.NewBdStore("/city", runner)
+	err := s.Close("x")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestBdStoreUpdateCLINotFound(t *testing.T) {
+	// bd CLI "not found" from update should be wrapped as ErrNotFound.
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		return nil, fmt.Errorf("exit status 1: Error resolving x: no issue found matching \"x\"")
+	}
+	s := beads.NewBdStore("/city", runner)
+	desc := "whatever"
+	err := s.Update("x", beads.UpdateOpts{Description: &desc})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, beads.ErrNotFound) {
+		t.Errorf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestBdStoreUpdateEmptyOpts(t *testing.T) {
+	// Update with no fields should be a no-op (no bd call).
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		t.Fatal("runner should not be called for empty update")
+		return nil, nil
+	}
+	s := beads.NewBdStore("/city", runner)
+	if err := s.Update("bd-abc-123", beads.UpdateOpts{}); err != nil {
+		t.Errorf("empty Update should succeed, got %v", err)
 	}
 }
 

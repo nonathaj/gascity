@@ -298,6 +298,16 @@ func (b *bdIssue) toBead() Bead {
 	}
 }
 
+// isBdNotFound returns true if the error from bd CLI indicates a "not found" condition.
+// bd uses several phrasings: "no issue found", "issue not found", "not found".
+func isBdNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "no issue found")
+}
+
 // mapBdStatus maps bd's statuses to Gas City's 3. bd uses: open,
 // in_progress, blocked, review, testing, closed. Gas City uses:
 // open, in_progress, closed.
@@ -340,6 +350,9 @@ func (s *BdStore) Create(b Bead) (Bead, error) {
 func (s *BdStore) Get(id string) (Bead, error) {
 	out, err := s.runner(s.dir, "bd", "show", "--json", id)
 	if err != nil {
+		if isBdNotFound(err) {
+			return Bead{}, fmt.Errorf("getting bead %q: %w", id, ErrNotFound)
+		}
 		return Bead{}, fmt.Errorf("getting bead %q: %w", id, err)
 	}
 	var issues []bdIssue
@@ -367,8 +380,15 @@ func (s *BdStore) Update(id string, opts UpdateOpts) error {
 	for _, l := range opts.RemoveLabels {
 		args = append(args, "--remove-label", l)
 	}
+	// No fields to update — no-op (bd errors on empty update).
+	if len(args) == 3 {
+		return nil
+	}
 	_, err := s.runner(s.dir, "bd", args...)
 	if err != nil {
+		if isBdNotFound(err) {
+			return fmt.Errorf("updating bead %q: %w", id, ErrNotFound)
+		}
 		return fmt.Errorf("updating bead %q: %w", id, err)
 	}
 	return nil
@@ -385,9 +405,17 @@ func (s *BdStore) SetMetadata(id, key, value string) error {
 }
 
 // Close sets a bead's status to closed via bd close.
+// Idempotent: closing an already-closed bead returns nil.
 func (s *BdStore) Close(id string) error {
 	_, err := s.runner(s.dir, "bd", "close", "--json", id)
 	if err != nil {
+		if isBdNotFound(err) {
+			// Check if it's already closed (idempotent close).
+			if b, getErr := s.Get(id); getErr == nil && b.Status == "closed" {
+				return nil
+			}
+			return fmt.Errorf("closing bead %q: %w", id, ErrNotFound)
+		}
 		return fmt.Errorf("closing bead %q: %w", id, err)
 	}
 	return nil
