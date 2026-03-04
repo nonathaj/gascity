@@ -2849,3 +2849,50 @@ name = "a"
 		t.Errorf("DisplayMsOrDefault() = %d, want 8000", got)
 	}
 }
+
+func TestAPIConfigParsing(t *testing.T) {
+	toml := `
+[workspace]
+name = "test"
+
+[api]
+port = 8080
+bind = "0.0.0.0"
+
+[[agents]]
+name = "a"
+`
+	cfg, err := Parse([]byte(toml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.API.Port != 8080 {
+		t.Errorf("API.Port = %d, want 8080", cfg.API.Port)
+	}
+	if cfg.API.Bind != "0.0.0.0" {
+		t.Errorf("API.Bind = %q, want %q", cfg.API.Bind, "0.0.0.0")
+	}
+	if cfg.API.BindOrDefault() != "0.0.0.0" {
+		t.Errorf("BindOrDefault() = %q, want %q", cfg.API.BindOrDefault(), "0.0.0.0")
+	}
+}
+
+func TestAPIConfigDefaults(t *testing.T) {
+	toml := `
+[workspace]
+name = "test"
+
+[[agents]]
+name = "a"
+`
+	cfg, err := Parse([]byte(toml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if cfg.API.Port != 0 {
+		t.Errorf("API.Port = %d, want 0 (disabled)", cfg.API.Port)
+	}
+	if cfg.API.BindOrDefault() != "127.0.0.1" {
+		t.Errorf("BindOrDefault() = %q, want %q", cfg.API.BindOrDefault(), "127.0.0.1")
+	}
+}

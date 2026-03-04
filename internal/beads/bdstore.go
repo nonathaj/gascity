@@ -374,6 +374,9 @@ func (s *BdStore) Update(id string, opts UpdateOpts) error {
 	if opts.ParentID != nil {
 		args = append(args, "--parent", *opts.ParentID)
 	}
+	if opts.Assignee != nil {
+		args = append(args, "--assignee", *opts.Assignee)
+	}
 	for _, l := range opts.Labels {
 		args = append(args, "--add-label", l)
 	}

@@ -88,7 +88,7 @@ func (f *Fake) Watch(ctx context.Context, afterSeq uint64) (Watcher, error) {
 	if f.broken {
 		return nil, fmt.Errorf("events provider unavailable")
 	}
-	return &fakeWatcher{fake: f, afterSeq: afterSeq, ctx: ctx}, nil
+	return &fakeWatcher{fake: f, afterSeq: afterSeq, ctx: ctx, done: make(chan struct{})}, nil
 }
 
 // Close is a no-op for the fake provider.
@@ -98,12 +98,15 @@ func (f *Fake) Close() error {
 
 // fakeWatcher watches the Fake's Events slice for new events.
 type fakeWatcher struct {
-	fake     *Fake
-	afterSeq uint64
-	ctx      context.Context
+	fake      *Fake
+	afterSeq  uint64
+	ctx       context.Context
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Next blocks until the next event with Seq > afterSeq is available.
+// Returns an error when Close is called or the context is canceled.
 func (w *fakeWatcher) Next() (Event, error) {
 	for {
 		// Check in-memory events.
@@ -117,8 +120,10 @@ func (w *fakeWatcher) Next() (Event, error) {
 		}
 		w.fake.mu.Unlock()
 
-		// Wait for notification or context cancel.
+		// Wait for notification, close, or context cancel.
 		select {
+		case <-w.done:
+			return Event{}, fmt.Errorf("watcher closed")
 		case <-w.ctx.Done():
 			return Event{}, w.ctx.Err()
 		case <-w.fake.notify:
@@ -127,7 +132,8 @@ func (w *fakeWatcher) Next() (Event, error) {
 	}
 }
 
-// Close is a no-op for fake watchers.
+// Close stops the watcher, unblocking any pending Next call.
 func (w *fakeWatcher) Close() error {
+	w.closeOnce.Do(func() { close(w.done) })
 	return nil
 }

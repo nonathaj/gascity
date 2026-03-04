@@ -28,6 +28,7 @@ type createRequest struct {
 type updateRequest struct {
 	Description *string  `json:"description,omitempty"`
 	ParentID    *string  `json:"parent_id,omitempty"`
+	Assignee    *string  `json:"assignee,omitempty"`
 	Labels      []string `json:"labels,omitempty"`
 }
 
@@ -70,10 +71,11 @@ func marshalCreate(b beads.Bead) ([]byte, error) {
 }
 
 // marshalUpdate converts update options to JSON for the exec script.
-func marshalUpdate(description, parentID *string, labels []string) ([]byte, error) {
+func marshalUpdate(description, parentID, assignee *string, labels []string) ([]byte, error) {
 	r := updateRequest{
 		Description: description,
 		ParentID:    parentID,
+		Assignee:    assignee,
 		Labels:      labels,
 	}
 	return json.Marshal(r)

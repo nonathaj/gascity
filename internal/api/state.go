@@ -1,0 +1,76 @@
+// Package api implements the GC HTTP API server.
+//
+// The server embeds in the controller process and serves typed JSON
+// endpoints over REST, replacing subprocess-based data access. It
+// activates via [api] port = N in city.toml (progressive activation).
+package api
+
+import (
+	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/julianknutsen/gascity/internal/session"
+)
+
+// State provides read access to controller-managed state.
+// The controller implements this with RWMutex-protected hot-reload.
+type State interface {
+	// Config returns the current city config snapshot.
+	Config() *config.City
+
+	// SessionProvider returns the current session provider.
+	SessionProvider() session.Provider
+
+	// BeadStore returns the bead store for a rig (by name).
+	// Returns nil if the rig doesn't exist.
+	BeadStore(rig string) beads.Store
+
+	// BeadStores returns all rig names and their stores.
+	BeadStores() map[string]beads.Store
+
+	// MailProvider returns the mail provider for a rig.
+	// Returns nil if the rig doesn't exist.
+	MailProvider(rig string) mail.Provider
+
+	// MailProviders returns all rig names and their mail providers.
+	MailProviders() map[string]mail.Provider
+
+	// EventProvider returns the event provider, or nil if events are disabled.
+	EventProvider() events.Provider
+
+	// CityName returns the city name.
+	CityName() string
+
+	// CityPath returns the city root directory.
+	CityPath() string
+}
+
+// StateMutator extends State with write operations for mutation endpoints.
+type StateMutator interface {
+	State
+
+	// SuspendAgent marks an agent as suspended in the config.
+	SuspendAgent(name string) error
+
+	// ResumeAgent marks an agent as no longer suspended.
+	ResumeAgent(name string) error
+
+	// KillAgent force-kills an agent's session (reconciler restarts it).
+	KillAgent(name string) error
+
+	// DrainAgent signals an agent to wind down gracefully.
+	DrainAgent(name string) error
+
+	// UndrainAgent cancels a drain signal.
+	UndrainAgent(name string) error
+
+	// NudgeAgent sends a message to a running agent session.
+	NudgeAgent(name, message string) error
+
+	// SuspendRig suspends all agents in a rig.
+	SuspendRig(name string) error
+
+	// ResumeRig resumes all agents in a rig.
+	ResumeRig(name string) error
+}

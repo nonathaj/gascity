@@ -476,9 +476,11 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	}
 
 	recorder := events.Discard
+	var eventProv events.Provider // nil when events disabled or FileRecorder fails
 	if fr, err := events.NewFileRecorder(
 		filepath.Join(cityPath, ".gc", "events.jsonl"), stderr); err == nil {
 		recorder = fr
+		eventProv = fr
 	}
 
 	// Pre-check container images once (fail fast before N serial starts).
@@ -499,7 +501,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		poolSessions := computePoolSessions(cfg, cityName)
 		watchDirs := config.WatchDirs(prov, cfg, cityPath)
 		return runController(cityPath, tomlPath, cfg, buildAgents, sp,
-			newDrainOps(sp), poolSessions, watchDirs, recorder, stdout, stderr)
+			newDrainOps(sp), poolSessions, watchDirs, recorder, eventProv, stdout, stderr)
 	}
 
 	// One-shot reconciliation (default): no drain (kill is fine).

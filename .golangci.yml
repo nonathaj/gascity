@@ -50,3 +50,8 @@ linters:
         linters:
           - revive
         text: "var-naming"
+      # api is an established package name for the HTTP API server.
+      - path: internal/api/
+        linters:
+          - revive
+        text: "var-naming"

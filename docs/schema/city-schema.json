@@ -3,6 +3,21 @@
   "$id": "https://github.com/julianknutsen/gascity/internal/config/city",
   "$ref": "#/$defs/City",
   "$defs": {
+    "APIConfig": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "Port is the TCP port to listen on. 0 = disabled (default)."
+        },
+        "bind": {
+          "type": "string",
+          "description": "Bind is the address to bind the listener to. Defaults to \"127.0.0.1\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "APIConfig configures the optional HTTP API server."
+    },
     "Agent": {
       "properties": {
         "name": {
@@ -644,6 +659,10 @@
         "automations": {
           "$ref": "#/$defs/AutomationsConfig",
           "description": "Automations configures automation settings (skip list)."
+        },
+        "api": {
+          "$ref": "#/$defs/APIConfig",
+          "description": "API configures the optional HTTP API server."
         }
       },
       "additionalProperties": false,

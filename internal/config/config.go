@@ -71,6 +71,8 @@ type City struct {
 	Daemon DaemonConfig `toml:"daemon,omitempty"`
 	// Automations configures automation settings (skip list).
 	Automations AutomationsConfig `toml:"automations,omitempty"`
+	// API configures the optional HTTP API server.
+	API APIConfig `toml:"api,omitempty"`
 
 	// FormulaLayers holds the resolved formula directories per scope.
 	// Populated during pack expansion in LoadWithIncludes. Not from TOML.
@@ -630,6 +632,23 @@ func (c AutomationsConfig) MaxTimeoutDuration() time.Duration {
 		return 0
 	}
 	return d
+}
+
+// APIConfig configures the optional HTTP API server.
+// Progressive activation: port == 0 or missing [api] section = no server.
+type APIConfig struct {
+	// Port is the TCP port to listen on. 0 = disabled (default).
+	Port int `toml:"port,omitempty"`
+	// Bind is the address to bind the listener to. Defaults to "127.0.0.1".
+	Bind string `toml:"bind,omitempty"`
+}
+
+// BindOrDefault returns the bind address, defaulting to "127.0.0.1".
+func (c APIConfig) BindOrDefault() string {
+	if c.Bind == "" {
+		return "127.0.0.1"
+	}
+	return c.Bind
 }
 
 // DaemonConfig holds controller daemon settings.

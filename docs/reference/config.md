@@ -25,6 +25,16 @@ City is the top-level configuration for a Gas City instance.
 | `formulas` | FormulasConfig |  |  | Formulas configures formula directory settings. |
 | `daemon` | DaemonConfig |  |  | Daemon configures controller daemon settings. |
 | `automations` | AutomationsConfig |  |  | Automations configures automation settings (skip list). |
+| `api` | APIConfig |  |  | API configures the optional HTTP API server. |
+
+## APIConfig
+
+APIConfig configures the optional HTTP API server.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `port` | integer |  |  | Port is the TCP port to listen on. 0 = disabled (default). |
+| `bind` | string |  |  | Bind is the address to bind the listener to. Defaults to "127.0.0.1". |
 
 ## Agent
 

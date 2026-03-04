@@ -31,6 +31,7 @@ type Bead struct {
 type UpdateOpts struct {
 	Description  *string
 	ParentID     *string
+	Assignee     *string  // set assignee (nil = no change)
 	Labels       []string // append these labels (nil = no change)
 	RemoveLabels []string // remove these labels (nil = no change)
 }

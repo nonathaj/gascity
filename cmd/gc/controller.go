@@ -3,9 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/julianknutsen/gascity/internal/api"
 	"github.com/julianknutsen/gascity/internal/beads"
 	"github.com/julianknutsen/gascity/internal/config"
 	"github.com/julianknutsen/gascity/internal/events"
@@ -298,6 +301,7 @@ func controllerLoop(
 	rec events.Recorder,
 	poolSessions map[string]time.Duration,
 	suspendedNames map[string]bool,
+	cs *controllerState, // nil when API disabled
 	stdout, stderr io.Writer,
 ) {
 	dirty := &atomic.Bool{}
@@ -433,6 +437,10 @@ func controllerLoop(
 					// Rebuild automation dispatcher from new config.
 					ad = buildAutomationDispatcher(cityRoot, cfg, beads.ExecCommandRunner(), rec, stderr)
 					observePaths = observeSearchPaths(cfg.Daemon.ObservePaths)
+					// Update API server state if running.
+					if cs != nil {
+						cs.update(cfg, sp)
+					}
 					fmt.Fprintf(stdout, "Config reloaded: %s (rev %s)\n", //nolint:errcheck // best-effort stdout
 						configReloadSummary(oldAgentCount, oldRigCount, len(cfg.Agents), len(cfg.Rigs)),
 						shortRev(result.Revision))
@@ -506,6 +514,7 @@ func runController(
 	poolSessions map[string]time.Duration,
 	initialWatchDirs []string,
 	rec events.Recorder,
+	eventProv events.Provider,
 	stdout, stderr io.Writer,
 ) int {
 	lock, err := acquireControllerLock(cityPath)
@@ -543,6 +552,38 @@ func runController(
 	telemetry.RecordControllerLifecycle(context.Background(), "started")
 	fmt.Fprintln(stdout, "Controller started.") //nolint:errcheck // best-effort stdout
 
+	// Start API server if configured.
+	var cs *controllerState
+	if cfg.API.Port > 0 {
+		cs = newControllerState(cfg, sp, eventProv, cityName, cityPath)
+		bind := cfg.API.BindOrDefault()
+		nonLocal := bind != "127.0.0.1" && bind != "localhost" && bind != "::1"
+		var apiSrv *api.Server
+		if nonLocal {
+			apiSrv = api.NewReadOnly(cs)
+			fmt.Fprintf(stderr, "api: binding to %s — mutation endpoints disabled (non-localhost)\n", bind) //nolint:errcheck
+		} else {
+			apiSrv = api.New(cs)
+		}
+		addr := net.JoinHostPort(bind, strconv.Itoa(cfg.API.Port))
+		apiLis, apiErr := net.Listen("tcp", addr)
+		if apiErr != nil {
+			fmt.Fprintf(stderr, "api: WARNING: listen %s failed: %v — continuing without API server\n", addr, apiErr) //nolint:errcheck // best-effort stderr
+		} else {
+			go func() {
+				if err := apiSrv.Serve(apiLis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					fmt.Fprintf(stderr, "api: %v\n", err) //nolint:errcheck // best-effort stderr
+				}
+			}()
+			defer func() {
+				shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				apiSrv.Shutdown(shutCtx) //nolint:errcheck // best-effort cleanup
+			}()
+			fmt.Fprintf(stdout, "API server listening on http://%s\n", addr) //nolint:errcheck // best-effort stdout
+		}
+	}
+
 	rops := newReconcileOps(sp)
 
 	// Build crash tracker from config.
@@ -568,7 +609,7 @@ func runController(
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)
 	controllerLoop(ctx, cfg.Daemon.PatrolIntervalDuration(),
 		cfg, cityName, tomlPath, initialWatchDirs,
-		buildFn, sp, rops, dops, ct, it, wg, ad, rec, poolSessions, suspendedNames, stdout, stderr)
+		buildFn, sp, rops, dops, ct, it, wg, ad, rec, poolSessions, suspendedNames, cs, stdout, stderr)
 
 	// Shutdown: graceful stop all sessions on this city's socket.
 	timeout := cfg.Daemon.ShutdownTimeoutDuration()

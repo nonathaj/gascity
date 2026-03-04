@@ -99,9 +99,12 @@ type Provider interface {
 type Watcher interface {
 	// Next blocks until the next event is available, the context is
 	// canceled, or the watcher is closed. Returns the event or an error.
+	// Implementations must unblock any in-flight Next call when Close
+	// is called or the parent context is canceled.
 	Next() (Event, error)
 
-	// Close stops the watcher and releases resources.
+	// Close stops the watcher, unblocks any pending Next call, and
+	// releases resources. Safe to call concurrently with Next.
 	Close() error
 }
 

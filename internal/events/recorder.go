@@ -103,6 +103,7 @@ func (r *FileRecorder) Watch(ctx context.Context, afterSeq uint64) (Watcher, err
 		afterSeq: afterSeq,
 		ctx:      ctx,
 		poll:     250 * time.Millisecond,
+		done:     make(chan struct{}),
 	}, nil
 }
 
@@ -115,12 +116,14 @@ func (r *FileRecorder) Close() error {
 
 // fileWatcher polls a JSONL file for new events.
 type fileWatcher struct {
-	path     string
-	afterSeq uint64
-	ctx      context.Context
-	poll     time.Duration
-	offset   int64
-	buf      []Event // buffered events from last poll
+	path      string
+	afterSeq  uint64
+	ctx       context.Context
+	poll      time.Duration
+	offset    int64
+	buf       []Event // buffered events from last poll
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Next blocks until the next event is available or the context is canceled.
@@ -133,10 +136,12 @@ func (w *fileWatcher) Next() (Event, error) {
 			return e, nil
 		}
 
-		// Check context.
+		// Check context and close.
 		select {
 		case <-w.ctx.Done():
 			return Event{}, w.ctx.Err()
+		case <-w.done:
+			return Event{}, fmt.Errorf("watcher closed")
 		default:
 		}
 
@@ -163,12 +168,15 @@ func (w *fileWatcher) Next() (Event, error) {
 		select {
 		case <-w.ctx.Done():
 			return Event{}, w.ctx.Err()
+		case <-w.done:
+			return Event{}, fmt.Errorf("watcher closed")
 		case <-time.After(w.poll):
 		}
 	}
 }
 
-// Close is a no-op for file watchers (context cancellation stops Next).
+// Close unblocks any pending Next call.
 func (w *fileWatcher) Close() error {
+	w.closeOnce.Do(func() { close(w.done) })
 	return nil
 }
