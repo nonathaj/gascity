@@ -541,6 +541,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		InjectFragments:        []string{"frag1"},
 		Attach:                 &trueVal,
 		Fallback:               true,
+		PoolName:               "template/name",
 	}
 
 	// Verify every Agent field is set (non-zero) in the test data.
@@ -607,6 +608,32 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 	}
 	if dst.Pool.Min == 999 {
 		t.Error("Pool is not a deep copy")
+	}
+}
+
+func TestDeepCopyAgentSetsPoolName(t *testing.T) {
+	src := &config.Agent{
+		Name: "dog",
+		Dir:  "hello-world",
+		Pool: &config.PoolConfig{Min: 0, Max: 3},
+	}
+	dst := deepCopyAgent(src, "dog-1", "hello-world")
+	if dst.PoolName != "hello-world/dog" {
+		t.Errorf("PoolName = %q, want %q", dst.PoolName, "hello-world/dog")
+	}
+}
+
+func TestPoolInstanceWorkQueryUsesTemplateName(t *testing.T) {
+	src := &config.Agent{
+		Name: "dog",
+		Dir:  "hello-world",
+		Pool: &config.PoolConfig{Min: 0, Max: 3},
+	}
+	dst := deepCopyAgent(src, "dog-2", "hello-world")
+	got := dst.EffectiveWorkQuery()
+	want := "bd ready --label=pool:hello-world/dog --limit=1"
+	if got != want {
+		t.Errorf("pool instance EffectiveWorkQuery() = %q, want %q", got, want)
 	}
 }
 

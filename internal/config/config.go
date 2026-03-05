@@ -925,6 +925,10 @@ type Agent struct {
 	// composition, a non-fallback agent with the same name wins silently.
 	// When two fallbacks collide, the first loaded (depth-first) wins.
 	Fallback bool `toml:"fallback,omitempty"`
+	// PoolName is the template agent's qualified name, set during pool
+	// expansion. Pool instances use this for label-based work discovery
+	// (e.g., pool:dog) rather than their instance name (e.g., pool:dog-1).
+	PoolName string `toml:"-"`
 }
 
 // IdleTimeoutDuration returns the idle timeout as a time.Duration.
@@ -942,14 +946,22 @@ func (a *Agent) IdleTimeoutDuration() time.Duration {
 
 // EffectiveWorkQuery returns the work query command for this agent.
 // If WorkQuery is set, returns it as-is. Otherwise returns the default:
-//   - Pool agents: "bd ready --label=pool:<qualified-name> --limit=1"
+//   - Pool agents: "bd ready --label=pool:<pool-name> --limit=1"
 //   - Fixed agents: "bd ready --assignee=<qualified-name>"
+//
+// Pool instances use PoolName (the template's qualified name) so all
+// instances in the pool search with the same label (e.g., pool:dog)
+// rather than their instance name (e.g., pool:dog-1).
 func (a *Agent) EffectiveWorkQuery() string {
 	if a.WorkQuery != "" {
 		return a.WorkQuery
 	}
 	if a.IsPool() {
-		return "bd ready --label=pool:" + a.QualifiedName() + " --limit=1"
+		label := a.QualifiedName()
+		if a.PoolName != "" {
+			label = a.PoolName
+		}
+		return "bd ready --label=pool:" + label + " --limit=1"
 	}
 	return "bd ready --assignee=" + a.QualifiedName()
 }
@@ -957,14 +969,21 @@ func (a *Agent) EffectiveWorkQuery() string {
 // EffectiveSlingQuery returns the sling query command template for this agent.
 // The template uses {} as a placeholder for the bead ID.
 // If SlingQuery is set, returns it as-is. Otherwise returns the default:
-//   - Pool agents: "bd update {} --add-label=pool:<qualified-name>"
+//   - Pool agents: "bd update {} --add-label=pool:<pool-name>"
 //   - Fixed agents: "bd update {} --assignee=<qualified-name>"
+//
+// Pool instances use PoolName (the template's qualified name) for label
+// consistency with EffectiveWorkQuery.
 func (a *Agent) EffectiveSlingQuery() string {
 	if a.SlingQuery != "" {
 		return a.SlingQuery
 	}
 	if a.IsPool() {
-		return "bd update {} --add-label=pool:" + a.QualifiedName()
+		label := a.QualifiedName()
+		if a.PoolName != "" {
+			label = a.PoolName
+		}
+		return "bd update {} --add-label=pool:" + label
 	}
 	return "bd update {} --assignee=" + a.QualifiedName()
 }
@@ -985,12 +1004,20 @@ func (a *Agent) EffectivePool() PoolConfig {
 	return p
 }
 
-// defaultPoolCheck returns the default pool check command that counts open
-// and in-progress beads labeled for this pool agent's qualified name.
+// defaultPoolCheck returns the default pool check command that counts
+// actionable work for this pool. Uses bd ready (blocker-aware) for open
+// beads plus bd list --status=in_progress for claimed work. Pool instances
+// use PoolName for label consistency.
 func (a *Agent) defaultPoolCheck() string {
-	qn := a.QualifiedName()
-	return `n=$(bd list --label=pool:` + qn +
-		` --json 2>/dev/null | jq '[.[] | select(.status == "open" or .status == "in_progress")] | length' 2>/dev/null) && echo "${n:-0}" || echo 0`
+	label := a.QualifiedName()
+	if a.PoolName != "" {
+		label = a.PoolName
+	}
+	return `ready=$(bd ready --label=pool:` + label +
+		` --json 2>/dev/null | jq 'length' 2>/dev/null); ` +
+		`active=$(bd list --label=pool:` + label +
+		` --status=in_progress --json 2>/dev/null | jq 'length' 2>/dev/null); ` +
+		`echo "$(( ${ready:-0} + ${active:-0} ))" || echo 0`
 }
 
 // IsPool reports whether this agent has explicit pool configuration.

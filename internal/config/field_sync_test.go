@@ -32,6 +32,7 @@ func TestAgentFieldSync(t *testing.T) {
 		"SlingQuery":             "agent-specific, derived from name/pool — not a patch concern",
 		"SourceDir":              "runtime-only, set during pack/fragment loading",
 		"Fallback":               "pack composition hint, not overridable at runtime",
+		"PoolName":               "internal field set during pool expansion, not user-configurable",
 	}
 
 	// Fields on AgentOverride/AgentPatch that don't map 1:1 to Agent fields.

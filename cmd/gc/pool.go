@@ -144,6 +144,7 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 		Fallback:            src.Fallback,
 		IdleTimeout:         src.IdleTimeout,
 		Suspended:           src.Suspended,
+		PoolName:            src.QualifiedName(),
 	}
 	if len(src.Args) > 0 {
 		dst.Args = make([]string, len(src.Args))

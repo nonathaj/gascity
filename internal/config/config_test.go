@@ -1139,6 +1139,77 @@ func TestEffectiveSlingQueryCustom(t *testing.T) {
 	}
 }
 
+func TestEffectiveWorkQueryPoolNameOverride(t *testing.T) {
+	// Pool instance with PoolName set should use PoolName (template name),
+	// not its own instance name.
+	a := Agent{
+		Name:     "dog-1",
+		Dir:      "hello-world",
+		Pool:     &PoolConfig{Min: 1, Max: 3},
+		PoolName: "hello-world/dog",
+	}
+	got := a.EffectiveWorkQuery()
+	want := "bd ready --label=pool:hello-world/dog --limit=1"
+	if got != want {
+		t.Errorf("EffectiveWorkQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestEffectiveWorkQueryPoolNoPoolName(t *testing.T) {
+	// Pool template (no PoolName) should use QualifiedName as before.
+	a := Agent{Name: "dog", Dir: "hello-world", Pool: &PoolConfig{Min: 1, Max: 3}}
+	got := a.EffectiveWorkQuery()
+	want := "bd ready --label=pool:hello-world/dog --limit=1"
+	if got != want {
+		t.Errorf("EffectiveWorkQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestEffectiveSlingQueryPoolNameOverride(t *testing.T) {
+	a := Agent{
+		Name:     "dog-1",
+		Dir:      "hello-world",
+		Pool:     &PoolConfig{Min: 1, Max: 3},
+		PoolName: "hello-world/dog",
+	}
+	got := a.EffectiveSlingQuery()
+	want := "bd update {} --add-label=pool:hello-world/dog"
+	if got != want {
+		t.Errorf("EffectiveSlingQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultPoolCheckUsesPoolName(t *testing.T) {
+	a := Agent{
+		Name:     "dog-1",
+		Dir:      "hello-world",
+		Pool:     &PoolConfig{Min: 1, Max: 3},
+		PoolName: "hello-world/dog",
+	}
+	check := a.EffectivePool().Check
+	if !strings.Contains(check, "pool:hello-world/dog") {
+		t.Errorf("EffectivePool().Check = %q, want pool label hello-world/dog", check)
+	}
+	if strings.Contains(check, "pool:hello-world/dog-1") {
+		t.Errorf("EffectivePool().Check = %q, should not contain instance name dog-1", check)
+	}
+}
+
+func TestDefaultPoolCheckUsesBdReady(t *testing.T) {
+	a := Agent{
+		Name: "dog",
+		Dir:  "hello-world",
+		Pool: &PoolConfig{Min: 1, Max: 3},
+	}
+	check := a.EffectivePool().Check
+	if !strings.Contains(check, "bd ready") {
+		t.Errorf("EffectivePool().Check = %q, want bd ready for blocker-aware counting", check)
+	}
+	if !strings.Contains(check, "--status=in_progress") {
+		t.Errorf("EffectivePool().Check = %q, want --status=in_progress for active work", check)
+	}
+}
+
 func TestValidateAgentsPoolMatchedPair(t *testing.T) {
 	// Both set: OK
 	agents := []Agent{{
@@ -1240,9 +1311,12 @@ func TestEffectivePoolDefaults(t *testing.T) {
 	if p.Max != 1 {
 		t.Errorf("Max = %d, want 1", p.Max)
 	}
-	want := `n=$(bd list --label=pool:refinery --json 2>/dev/null | jq '[.[] | select(.status == "open" or .status == "in_progress")] | length' 2>/dev/null) && echo "${n:-0}" || echo 0`
-	if p.Check != want {
-		t.Errorf("Check = %q, want %q (default)", p.Check, want)
+	// Default check uses bd ready (blocker-aware) + in_progress count.
+	if !strings.Contains(p.Check, "bd ready --label=pool:refinery") {
+		t.Errorf("Check = %q, want bd ready with pool:refinery label", p.Check)
+	}
+	if !strings.Contains(p.Check, "--status=in_progress") {
+		t.Errorf("Check = %q, want --status=in_progress for active work", p.Check)
 	}
 }
 
@@ -1254,9 +1328,11 @@ func TestEffectivePoolDefaultsQualified(t *testing.T) {
 		Pool: &PoolConfig{Min: 0, Max: 5},
 	}
 	p := a.EffectivePool()
-	want := `n=$(bd list --label=pool:myproject/polecat --json 2>/dev/null | jq '[.[] | select(.status == "open" or .status == "in_progress")] | length' 2>/dev/null) && echo "${n:-0}" || echo 0`
-	if p.Check != want {
-		t.Errorf("Check = %q, want %q", p.Check, want)
+	if !strings.Contains(p.Check, "bd ready --label=pool:myproject/polecat") {
+		t.Errorf("Check = %q, want bd ready with pool:myproject/polecat label", p.Check)
+	}
+	if !strings.Contains(p.Check, "--status=in_progress") {
+		t.Errorf("Check = %q, want --status=in_progress for active work", p.Check)
 	}
 }
 
