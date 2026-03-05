@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // fakeDrainOps is a test double for drainOps.

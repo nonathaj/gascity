@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 // RunStoreTests runs the full conformance suite against a Store implementation.

@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 // createRequest is the JSON wire format sent on stdin for create operations.

@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events"
 	"github.com/spf13/cobra"
 )
 

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 type agentResponse struct {

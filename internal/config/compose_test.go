@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 func TestLoadWithIncludes_NoIncludes(t *testing.T) {

@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 // idleTracker checks for agents that have been idle longer than their

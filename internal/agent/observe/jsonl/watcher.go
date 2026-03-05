@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 // jsonlEntry is the minimal shape of a Claude JSONL session entry.

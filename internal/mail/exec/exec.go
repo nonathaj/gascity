@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail"
 )
 
 // Provider implements [mail.Provider] by delegating to a user-supplied script.

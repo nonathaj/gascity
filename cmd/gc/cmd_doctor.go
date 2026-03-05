@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	beadsexec "github.com/julianknutsen/gascity/internal/beads/exec"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/doctor"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/beads"
+	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/doctor"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/spf13/cobra"
 )
 

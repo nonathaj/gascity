@@ -5,8 +5,8 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/spf13/cobra"
 )
 

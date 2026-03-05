@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/mail"
 )
 
 // --- Send ---

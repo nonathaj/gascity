@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/docgen"
+	"github.com/gastownhall/gascity/internal/docgen"
 )
 
 func TestGenDocProducesMarkdown(t *testing.T) {

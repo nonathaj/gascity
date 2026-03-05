@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 // --- gc formula list ---

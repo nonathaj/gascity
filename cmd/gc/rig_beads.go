@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 // rigRoute pairs a bead prefix with the absolute directory it lives in.

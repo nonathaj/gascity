@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {

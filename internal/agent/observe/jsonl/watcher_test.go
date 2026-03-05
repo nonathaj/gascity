@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 func writeLines(t *testing.T, f *os.File, lines ...string) {

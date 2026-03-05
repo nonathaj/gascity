@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 func (s *Server) handleBeadList(w http.ResponseWriter, r *http.Request) {

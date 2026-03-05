@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // ---------------------------------------------------------------------------

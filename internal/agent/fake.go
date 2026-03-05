@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 var _ Handle = (*Fake)(nil) // Fake satisfies Handle (already satisfies Agent)

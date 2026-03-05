@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/test/tmuxtest"
+	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
 // gasTownAgent describes an agent for Gas Town integration tests.

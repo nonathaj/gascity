@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/invopop/jsonschema"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/formula"
 )
 
 // ModuleRoot finds the repo root by walking up from the current directory
@@ -56,7 +56,7 @@ func newReflector() (*jsonschema.Reflector, error) {
 	r := &jsonschema.Reflector{
 		FieldNameTag: "toml",
 	}
-	if err := r.AddGoComments("github.com/julianknutsen/gascity", "."); err != nil {
+	if err := r.AddGoComments("github.com/gastownhall/gascity", "."); err != nil {
 		return nil, fmt.Errorf("extracting Go comments: %w", err)
 	}
 	return r, nil

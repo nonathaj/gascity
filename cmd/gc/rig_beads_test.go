@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 func TestGenerateRoutesFor(t *testing.T) {

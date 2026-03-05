@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/telemetry"
+	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 // CommandRunner executes a command in the given directory and returns stdout bytes.

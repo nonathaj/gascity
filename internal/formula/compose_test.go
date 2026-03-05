@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 // stubResolver returns a Resolver that returns a fixed formula by name.

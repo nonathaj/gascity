@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/mail"
-	"github.com/julianknutsen/gascity/internal/mail/mailtest"
+	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail/mailtest"
 )
 
 // TestMCPMailConformance runs the mail conformance suite against the

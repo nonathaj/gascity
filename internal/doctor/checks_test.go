@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/fsys"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // helper creates .gc/ and city.toml in a temp dir.

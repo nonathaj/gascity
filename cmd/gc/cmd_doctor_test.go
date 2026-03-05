@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 func TestCollectPackDirsEmpty(t *testing.T) {

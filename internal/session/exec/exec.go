@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // Provider implements [session.Provider] by delegating each operation to

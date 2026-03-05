@@ -13,9 +13,9 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/formula"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 func exampleDir() string {

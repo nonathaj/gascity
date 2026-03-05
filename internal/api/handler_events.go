@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 func (s *Server) handleEventList(w http.ResponseWriter, r *http.Request) {

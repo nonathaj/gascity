@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/beads"
-	beadsexec "github.com/julianknutsen/gascity/internal/beads/exec"
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/formula"
-	"github.com/julianknutsen/gascity/internal/fsys"
-	"github.com/julianknutsen/gascity/internal/telemetry"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 

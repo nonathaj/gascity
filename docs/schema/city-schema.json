@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/julianknutsen/gascity/internal/config/city",
+  "$id": "https://github.com/gastownhall/gascity/internal/config/city",
   "$ref": "#/$defs/City",
   "$defs": {
     "APIConfig": {

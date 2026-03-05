@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 // fakePeeker is a test double that returns canned output.

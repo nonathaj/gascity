@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 func ptrStr(s string) *string { return &s }

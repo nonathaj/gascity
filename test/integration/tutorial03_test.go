@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/test/tmuxtest"
+	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
 // TestTutorial03_BashAgent validates the Tutorial 03 (Ralph Loop) flow:

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 func TestHandoffSuccess(t *testing.T) {

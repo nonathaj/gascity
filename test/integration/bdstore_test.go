@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/beads/beadstest"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads/beadstest"
 )
 
 // TestBdStoreConformance runs the beads conformance suite against BdStore

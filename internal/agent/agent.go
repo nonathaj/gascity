@@ -15,7 +15,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // Handle is the narrow interface for per-agent operations that don't

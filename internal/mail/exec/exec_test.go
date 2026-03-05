@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail"
 )
 
 // writeScript creates an executable shell script in dir and returns its path.

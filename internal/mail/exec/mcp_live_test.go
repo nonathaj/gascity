@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/mail"
-	"github.com/julianknutsen/gascity/internal/mail/mailtest"
+	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail/mailtest"
 )
 
 // TestMCPMailConformanceLive runs the conformance suite against a real

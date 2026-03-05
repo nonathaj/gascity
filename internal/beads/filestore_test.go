@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/beads/beadstest"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads/beadstest"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 func TestFileStore(t *testing.T) {

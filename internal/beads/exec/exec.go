@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/formula"
 )
 
 // Store implements [beads.Store] by delegating each operation to a

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail"
 )
 
 // RunProviderTests runs the full conformance suite against a Provider.

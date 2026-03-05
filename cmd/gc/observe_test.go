@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 func TestClaudeProjectSlug(t *testing.T) {

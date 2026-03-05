@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/test/tmuxtest"
+	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
 // TestMail_BashAgent validates the full mail round-trip using a bash script

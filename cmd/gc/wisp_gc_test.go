@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 func TestWispGC_NilSafe(t *testing.T) {

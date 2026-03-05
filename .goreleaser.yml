@@ -17,10 +17,10 @@ archives:
 
 brews:
   - repository:
-      owner: julianknutsen
+      owner: gastownhall
       name: homebrew-gascity
     directory: Formula
-    homepage: https://github.com/julianknutsen/gascity
+    homepage: https://github.com/gastownhall/gascity
     description: "Gas City CLI — an orchestration-builder SDK for multi-agent coding workflows"
     license: "Apache-2.0"
     install: |

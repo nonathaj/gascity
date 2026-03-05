@@ -90,7 +90,7 @@ gc init --from "$GC_SRC/examples/lifecycle" "$DEMO_CITY"
 
 # Clone demo repo.
 DEMO_REPO="$DEMO_CITY/demo-repo"
-git clone -q https://github.com/julianknutsen/gc-demo-repo "$DEMO_REPO"
+git clone -q https://github.com/gastownhall/gc-demo-repo "$DEMO_REPO"
 
 # Register rig (routes, hooks, pack config).
 # Beads init fails (no dolt, auto-start disabled) — gc start handles it.

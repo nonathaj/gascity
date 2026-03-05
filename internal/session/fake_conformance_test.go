@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/session"
-	"github.com/julianknutsen/gascity/internal/session/sessiontest"
+	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session/sessiontest"
 )
 
 func TestFakeConformance(t *testing.T) {

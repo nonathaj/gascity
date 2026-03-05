@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/deps"
+	"github.com/gastownhall/gascity/internal/deps"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/fsys"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // --- Core checks ---

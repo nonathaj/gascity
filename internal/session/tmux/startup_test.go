@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // startCall records a single invocation on fakeStartOps with full arguments.

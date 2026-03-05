@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/julianknutsen/gascity/test/tmuxtest"
+	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
 // gcBinary is the path to the built gc binary, set by TestMain.

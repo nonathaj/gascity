@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/agent/observe/jsonl"
-	"github.com/julianknutsen/gascity/internal/agent/observe/peek"
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent/observe/jsonl"
+	"github.com/gastownhall/gascity/internal/agent/observe/peek"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 // claudeProjectSlug converts an absolute path to the Claude project

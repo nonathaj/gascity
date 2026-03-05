@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 // RunProviderTests runs the core conformance suite against a Provider implementation.

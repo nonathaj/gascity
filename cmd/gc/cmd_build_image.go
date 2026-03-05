@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/julianknutsen/gascity/internal/buildimage"
+	"github.com/gastownhall/gascity/internal/buildimage"
 	"github.com/spf13/cobra"
 )
 

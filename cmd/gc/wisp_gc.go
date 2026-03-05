@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 // wispGC performs mechanical garbage collection of closed molecules that

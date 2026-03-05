@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 // ── Consolidated lifecycle operations ────────────────────────────────────

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/automations"
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/automations"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 func TestAutomationDispatcherNil(t *testing.T) {

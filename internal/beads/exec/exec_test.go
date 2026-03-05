@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/beads/beadstest"
-	"github.com/julianknutsen/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads/beadstest"
+	"github.com/gastownhall/gascity/internal/formula"
 )
 
 // writeScript creates an executable shell script in dir and returns its path.

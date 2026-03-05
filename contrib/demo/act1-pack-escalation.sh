@@ -102,7 +102,7 @@ cp -r "$GC_SRC/examples/wasteland-feeder" "$DEMO_CITY/packs/"
 
 # Clone demo repo (lifecycle pack needs push/pull).
 DEMO_REPO="$DEMO_CITY/demo-repo"
-git clone -q https://github.com/julianknutsen/gc-demo-repo "$DEMO_REPO"
+git clone -q https://github.com/gastownhall/gc-demo-repo "$DEMO_REPO"
 
 # Register the rig (sets up routes, hooks, pack config).
 # Beads init will fail (no dolt running, auto-start disabled) — that's fine,

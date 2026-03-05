@@ -9,10 +9,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/fsys"
-	"github.com/julianknutsen/gascity/internal/git"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/git"
 )
 
 // PromptContext holds template data for prompt rendering.

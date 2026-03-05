@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/events/eventstest"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events/eventstest"
 )
 
 // writeScript creates an executable shell script in dir and returns its path.

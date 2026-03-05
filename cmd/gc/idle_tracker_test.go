@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 // fakeIdleTracker is a test double for idleTracker.

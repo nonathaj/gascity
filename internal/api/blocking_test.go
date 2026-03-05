@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 func TestParseBlockingParams(t *testing.T) {

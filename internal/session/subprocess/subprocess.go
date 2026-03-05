@@ -31,8 +31,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/overlay"
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/overlay"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // Provider manages agent sessions as child processes.

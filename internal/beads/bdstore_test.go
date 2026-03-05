@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 // fakeRunner returns a CommandRunner that returns canned output for specific

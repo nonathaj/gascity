@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/config"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 func TestDoRigAdd_Basic(t *testing.T) {

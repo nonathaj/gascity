@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
-	"github.com/julianknutsen/gascity/internal/events"
-	"github.com/julianknutsen/gascity/internal/session"
-	"github.com/julianknutsen/gascity/internal/telemetry"
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 // reconcileOps provides session-level operations needed by declarative

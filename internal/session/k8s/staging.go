@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // stageFiles copies overlay, copy_files, and rig workdir into the pod

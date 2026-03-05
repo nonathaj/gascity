@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/julianknutsen/gascity/internal/docgen"
+	"github.com/gastownhall/gascity/internal/docgen"
 	"github.com/spf13/cobra"
 )
 

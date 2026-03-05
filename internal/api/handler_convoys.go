@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/julianknutsen/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/beads"
 )
 
 func (s *Server) handleConvoyList(w http.ResponseWriter, r *http.Request) {

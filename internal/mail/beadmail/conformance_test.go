@@ -3,9 +3,9 @@ package beadmail
 import (
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/beads"
-	"github.com/julianknutsen/gascity/internal/mail"
-	"github.com/julianknutsen/gascity/internal/mail/mailtest"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail/mailtest"
 )
 
 func TestBeadmailConformance(t *testing.T) {

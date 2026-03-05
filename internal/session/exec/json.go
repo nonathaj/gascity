@@ -9,7 +9,7 @@ package exec
 import (
 	"encoding/json"
 
-	"github.com/julianknutsen/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // copyEntry is the JSON wire format for [session.CopyEntry].

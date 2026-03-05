@@ -3,8 +3,8 @@ package mail_test
 import (
 	"testing"
 
-	"github.com/julianknutsen/gascity/internal/mail"
-	"github.com/julianknutsen/gascity/internal/mail/mailtest"
+	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail/mailtest"
 )
 
 func TestFakeConformance(t *testing.T) {

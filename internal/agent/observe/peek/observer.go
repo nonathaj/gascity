@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/agent"
 )
 
 // Peeker is the subset of agent.Agent needed by the observer.

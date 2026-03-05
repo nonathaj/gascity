@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/julianknutsen/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 const sseKeepalive = 15 * time.Second

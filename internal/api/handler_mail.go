@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/julianknutsen/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/mail"
 )
 
 func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {

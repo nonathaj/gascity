@@ -10,7 +10,7 @@ import (
 	"unicode"
 
 	"github.com/BurntSushi/toml"
-	"github.com/julianknutsen/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 // validAgentName matches names safe for use in session identifiers.
