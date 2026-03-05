@@ -99,3 +99,33 @@ func TestPassthroughEnvOmitsUnsetDoltVars(t *testing.T) {
 		}
 	}
 }
+
+func TestPassthroughEnvStripsClaudeNesting(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+
+	got := passthroughEnv()
+
+	// Should be present but empty so tmux -e overrides the inherited server env.
+	if v, ok := got["CLAUDECODE"]; !ok || v != "" {
+		t.Errorf("CLAUDECODE = %q (present=%v), want empty string present", v, ok)
+	}
+	if v, ok := got["CLAUDE_CODE_ENTRYPOINT"]; !ok || v != "" {
+		t.Errorf("CLAUDE_CODE_ENTRYPOINT = %q (present=%v), want empty string present", v, ok)
+	}
+}
+
+func TestPassthroughEnvSkipsClaudeNestingWhenUnset(t *testing.T) {
+	t.Setenv("CLAUDECODE", "")
+	t.Setenv("CLAUDE_CODE_ENTRYPOINT", "")
+
+	got := passthroughEnv()
+
+	// When not set in parent, don't inject them at all.
+	if _, ok := got["CLAUDECODE"]; ok {
+		t.Error("CLAUDECODE should not be present when unset in parent")
+	}
+	if _, ok := got["CLAUDE_CODE_ENTRYPOINT"]; ok {
+		t.Error("CLAUDE_CODE_ENTRYPOINT should not be present when unset in parent")
+	}
+}
