@@ -443,7 +443,7 @@ func (f *APIFetcher) FetchMail() ([]MailRow, error) {
 // FetchHooks returns hooked beads (work pinned to agents).
 func (f *APIFetcher) FetchHooks() ([]HookRow, error) {
 	var beadList []apiBead
-	if err := f.getList("/v0/beads?status=hooked&limit=0", &beadList); err != nil {
+	if err := f.getList("/v0/beads?status=hooked&limit=1000", &beadList); err != nil {
 		return nil, nil
 	}
 

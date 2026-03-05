@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -306,7 +307,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		return string(body), true
+		return prettyJSON(body), true
 
 	case "agent":
 		if len(parts) >= 2 && parts[1] == "list" {
@@ -314,7 +315,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 			if err != nil {
 				return "", false
 			}
-			return string(body), true
+			return prettyJSON(body), true
 		}
 
 	case "list":
@@ -323,7 +324,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		return string(body), true
+		return prettyJSON(body), true
 
 	case "show":
 		// bd show <id>
@@ -332,7 +333,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 			if err != nil {
 				return "", false
 			}
-			return string(body), true
+			return prettyJSON(body), true
 		}
 
 	case "mail":
@@ -343,7 +344,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 				if err != nil {
 					return "", false
 				}
-				return string(body), true
+				return prettyJSON(body), true
 			}
 		}
 
@@ -355,14 +356,14 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 				if err != nil {
 					return "", false
 				}
-				return string(body), true
+				return prettyJSON(body), true
 			case "show", "status":
 				if len(parts) >= 3 {
 					body, err := h.apiGet("/v0/convoy/" + parts[2])
 					if err != nil {
 						return "", false
 					}
-					return string(body), true
+					return prettyJSON(body), true
 				}
 			}
 		}
@@ -373,7 +374,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 			if err != nil {
 				return "", false
 			}
-			return string(body), true
+			return prettyJSON(body), true
 		}
 
 	case "hooks":
@@ -382,23 +383,32 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 			if err != nil {
 				return "", false
 			}
-			return string(body), true
+			return prettyJSON(body), true
 		}
 
 	case "sling":
-		// POST /v0/sling with remaining args
+		// POST /v0/sling — syntax: sling <bead-id> <target-agent> [--rig=X]
+		// API expects: {target (required), bead, rig, formula}
 		payload := map[string]interface{}{}
-		if len(parts) >= 2 {
-			payload["bead"] = parts[1]
+		for _, p := range parts[1:] {
+			if strings.HasPrefix(p, "--rig=") {
+				payload["rig"] = strings.TrimPrefix(p, "--rig=")
+			} else if strings.HasPrefix(p, "--formula=") {
+				payload["formula"] = strings.TrimPrefix(p, "--formula=")
+			} else if _, ok := payload["bead"]; !ok {
+				payload["bead"] = p
+			} else if _, ok := payload["target"]; !ok {
+				payload["target"] = p
+			}
 		}
-		if len(parts) >= 3 {
-			payload["rig"] = parts[2]
+		if _, ok := payload["target"]; !ok {
+			return "", false // target is required by API
 		}
 		body, err := h.apiPost("/v0/sling", payload)
 		if err != nil {
 			return "", false
 		}
-		return string(body), true
+		return prettyJSON(body), true
 	}
 
 	return "", false
@@ -817,8 +827,26 @@ func (h *APIHandler) handleMailRead(w http.ResponseWriter, r *http.Request) {
 		// Mark as read via API.
 		_, _ = h.apiPost("/v0/mail/"+msgID+"/read", nil)
 
+		// Transform mail.Message JSON into dashboard MailMessage shape.
+		var apiMsg apiMailMessage
+		if err := json.Unmarshal(body, &apiMsg); err != nil {
+			h.sendError(w, "Failed to parse message: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		msg := MailMessage{
+			ID:        apiMsg.ID,
+			From:      apiMsg.From,
+			To:        apiMsg.To,
+			Subject:   apiMsg.Subject,
+			Body:      apiMsg.Body,
+			Timestamp: apiMsg.CreatedAt.Format(time.RFC3339),
+			Read:      true, // just marked as read
+			ThreadID:  apiMsg.ThreadID,
+			ReplyTo:   apiMsg.ReplyTo,
+			Priority:  mailPriorityString(apiMsg.Priority),
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
+		_ = json.NewEncoder(w).Encode(msg)
 		return
 	}
 
@@ -879,12 +907,24 @@ func (h *APIHandler) handleMailSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.useAPI() {
-		apiReq := map[string]string{
-			"to":      req.To,
-			"subject": req.Subject,
-			"body":    req.Body,
+		var err error
+		if req.ReplyTo != "" {
+			// Use the reply endpoint for threaded replies.
+			apiReq := map[string]string{
+				"from":    "dashboard",
+				"subject": req.Subject,
+				"body":    req.Body,
+			}
+			_, err = h.apiPost("/v0/mail/"+req.ReplyTo+"/reply", apiReq)
+		} else {
+			apiReq := map[string]string{
+				"from":    "dashboard",
+				"to":      req.To,
+				"subject": req.Subject,
+				"body":    req.Body,
+			}
+			_, err = h.apiPost("/v0/mail", apiReq)
 		}
-		_, err := h.apiPost("/v0/mail", apiReq)
 		if err != nil {
 			h.sendError(w, "Failed to send message: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1101,6 +1141,8 @@ func (h *APIHandler) fetchOptionsAPI() *OptionsResponse {
 				state := "stopped"
 				if a.Running {
 					state = "running"
+				} else if a.Suspended {
+					state = "suspended"
 				}
 				resp.Agents = append(resp.Agents, OptionItem{
 					Name:    a.Name,
@@ -1460,6 +1502,7 @@ type IssueCreateRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
 	Priority    int    `json:"priority,omitempty"` // 1-4, default 2
+	Rig         string `json:"rig,omitempty"`      // required when multiple rigs configured
 }
 
 // IssueCreateResponse is the response from creating an issue.
@@ -1506,6 +1549,9 @@ func (h *APIHandler) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 		apiReq := map[string]interface{}{
 			"title":       req.Title,
 			"description": req.Description,
+		}
+		if req.Rig != "" {
+			apiReq["rig"] = req.Rig
 		}
 		body, err := h.apiPost("/v0/beads", apiReq)
 		resp := IssueCreateResponse{}
@@ -2590,24 +2636,20 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: connected\ndata: ok\n\n")
 	flusher.Flush()
 
-	// Proxy the upstream SSE stream line by line.
-	buf := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			// Rewrite upstream events as dashboard-update events.
-			// The client expects "event: dashboard-update" to trigger re-render.
-			chunk := string(buf[:n])
-			if strings.Contains(chunk, "data:") {
-				fmt.Fprintf(w, "event: dashboard-update\ndata: event\n\n")
-			} else {
-				_, _ = w.Write(buf[:n])
-			}
+	// Proxy the upstream SSE stream using line-based parsing.
+	// The API server emits: "event: <type>\nid: <seq>\ndata: <json>\n\n"
+	// The dashboard client expects: "event: dashboard-update\ndata: event\n\n"
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// A "data:" line means a complete event is being sent. Emit a
+		// dashboard-update event for each upstream data line. This
+		// triggers the browser's EventSource handler to re-render.
+		if strings.HasPrefix(line, "data:") {
+			fmt.Fprintf(w, "event: dashboard-update\ndata: event\n\n")
 			flusher.Flush()
 		}
-		if err != nil {
-			return
-		}
+		// Comments (keepalives) and other lines are silently consumed.
 	}
 }
 
@@ -2704,4 +2746,29 @@ func (h *APIHandler) computeDashboardHash(ctx context.Context) string {
 
 	h256 := sha256.Sum256([]byte(strings.Join(parts, "|")))
 	return fmt.Sprintf("%x", h256[:8])
+}
+
+// mailPriorityString converts numeric mail priority to display string.
+func mailPriorityString(p int) string {
+	switch p {
+	case 0:
+		return "urgent"
+	case 1:
+		return "high"
+	case 2:
+		return "normal"
+	case 3, 4:
+		return "low"
+	default:
+		return "normal"
+	}
+}
+
+// prettyJSON formats raw JSON bytes with indentation for display.
+func prettyJSON(raw []byte) string {
+	var buf bytes.Buffer
+	if json.Indent(&buf, raw, "", "  ") == nil {
+		return buf.String()
+	}
+	return string(raw)
 }
