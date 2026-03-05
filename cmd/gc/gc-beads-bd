@@ -123,7 +123,7 @@ server_sql_retry() {
         fi
 
         if [ "$attempt" -lt "$max_attempts" ]; then
-            sleep "$(echo "scale=3; $backoff_ms / 1000" | bc)"
+            sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
             backoff_ms=$((backoff_ms * 2))
             if [ "$backoff_ms" -gt "$max_backoff_ms" ]; then
                 backoff_ms=$max_backoff_ms
@@ -166,7 +166,7 @@ ensure_database_registered() {
         if server_sql "USE \`$db\`" >/dev/null 2>&1; then
             return 0
         fi
-        sleep "$(echo "scale=3; $backoff_ms / 1000" | bc)"
+        sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
         backoff_ms=$((backoff_ms * 2))
     done
 
@@ -333,12 +333,6 @@ cleanup_stale_locks() {
 # Overwritten on each server start. Without read/write timeouts, CLOSE_WAIT connections
 # accumulate and the server enters unrecoverable read-only mode.
 write_config_yaml() {
-    local host_line=""
-    if [ -n "$DOLT_HOST" ] && [ "$DOLT_HOST" != "0.0.0.0" ]; then
-        host_line="
-  host: $DOLT_HOST"
-    fi
-
     local tmp
     tmp=$(mktemp "$CONFIG_FILE.tmp.XXXXXX")
     cat > "$tmp" <<YAML
@@ -350,7 +344,8 @@ write_config_yaml() {
 log_level: $DOLT_LOGLEVEL
 
 listener:
-  port: $DOLT_PORT$host_line
+  port: $DOLT_PORT
+  host: $DOLT_HOST
   max_connections: 1000
   read_timeout_millis: 300000
   write_timeout_millis: 300000
@@ -432,7 +427,12 @@ find_dolt_pid() {
 
     # 3. ps grep fallback (least reliable) — try --config first, then --data-dir.
     if [ -n "$CONFIG_FILE" ]; then
-        ps ax -o pid,args 2>/dev/null | grep "dolt sql-server" | grep -- "--config.*$CONFIG_FILE" | grep -v grep | awk '{print $1}' | head -1 && return
+        local config_pid
+        config_pid=$(ps ax -o pid,args 2>/dev/null | grep "dolt sql-server" | grep -- "--config.*$CONFIG_FILE" | grep -v grep | awk '{print $1}' | head -1)
+        if [ -n "$config_pid" ]; then
+            echo "$config_pid"
+            return
+        fi
     fi
     ps ax -o pid,args 2>/dev/null | grep "dolt sql-server" | grep -- "--data-dir.*$(basename "$DATA_DIR")" | grep -v grep | awk '{print $1}' | head -1
 }
@@ -576,11 +576,10 @@ op_start() {
     save_state "$server_pid" true
 
     # Wait for server: combined PID alive + TCP reachable check.
-    # 10 iterations × 500ms = 5s max (matches upstream).
+    # 30 iterations × 500ms = 15s max. Upstream uses 5s but large data dirs
+    # with many databases can take 10-20s to start.
     local attempt=0
-    while [ "$attempt" -lt 10 ]; do
-        sleep 0.5 2>/dev/null || sleep 1
-
+    while [ "$attempt" -lt 30 ]; do
         # Fail fast if process crashed during startup.
         if ! kill -0 "$server_pid" 2>/dev/null; then
             rm -f "$PID_FILE"
@@ -592,11 +591,12 @@ op_start() {
         if tcp_check; then
             break
         fi
+        sleep 0.5 2>/dev/null || sleep 1
         attempt=$((attempt + 1))
     done
 
-    if [ "$attempt" -ge 10 ]; then
-        die "dolt server started (PID $server_pid) but not accepting connections after 5s (check $LOG_FILE)"
+    if [ "$attempt" -ge 30 ]; then
+        die "dolt server started (PID $server_pid) but not accepting connections after 15s (check $LOG_FILE)"
     fi
 }
 
@@ -642,20 +642,8 @@ op_init() {
     # Set issue_prefix.
     bd config set issue_prefix "$prefix" --dir "$dir" 2>/dev/null || true
 
-    # Patch metadata.json with SQL connection info.
-    local meta_file="$dir/.beads/metadata.json"
-    if [ -f "$meta_file" ] && command -v jq >/dev/null 2>&1; then
-        local tmp_file
-        tmp_file=$(mktemp)
-        jq --arg mode "server" \
-           --arg host "$host" \
-           --arg port "$DOLT_PORT" \
-           --arg user "$DOLT_USER" \
-           --arg pass "$DOLT_PASSWORD" \
-           --arg prefix "$prefix" \
-           '.database = "dolt" | .backend = "dolt" | .dolt_mode = $mode | .dolt_database = $prefix | .dolt_host = $host | .dolt_port = ($port | tonumber) | .dolt_user = $user | if $pass != "" then .dolt_password = $pass else . end' \
-           "$meta_file" > "$tmp_file" && mv "$tmp_file" "$meta_file"
-    fi
+    # Patch metadata.json with SQL connection info and required fields.
+    ensure_metadata "$dir/.beads/metadata.json" "$prefix"
 }
 
 # op_health checks if the dolt server is healthy (probe only, no recovery).
@@ -687,10 +675,10 @@ op_health() {
     fi
 
     # Connection capacity warning (non-fatal).
-    if ! has_connection_capacity; then
-        local count
-        count=$(get_connection_count 2>/dev/null) || count="unknown"
-        echo "warning: connection count ($count) near capacity (80% of 1000)" >&2
+    local conn_count
+    conn_count=$(get_connection_count 2>/dev/null) || conn_count=""
+    if [ -n "$conn_count" ] && ! has_connection_capacity; then
+        echo "warning: connection count ($conn_count) near capacity (80% of 1000)" >&2
     fi
 }
 
