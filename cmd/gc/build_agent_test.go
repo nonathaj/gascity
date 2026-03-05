@@ -229,8 +229,8 @@ func TestBuildOneAgentClaudeProviderCommand(t *testing.T) {
 	if !strings.Contains(cfg.Command, "bd list") {
 		t.Errorf("command should contain bd list preamble, got %q", cfg.Command)
 	}
-	if !strings.Contains(cfg.Command, "claude --dangerously-skip-permissions") {
-		t.Errorf("command should contain claude --dangerously-skip-permissions, got %q", cfg.Command)
+	if !strings.Contains(cfg.Command, "${GC_CLI:-claude} --dangerously-skip-permissions") {
+		t.Errorf("command should contain ${GC_CLI:-claude} --dangerously-skip-permissions, got %q", cfg.Command)
 	}
 	// GC_AGENT should be set for the preamble to use.
 	if cfg.Env["GC_AGENT"] != "wasteland/polecat" {

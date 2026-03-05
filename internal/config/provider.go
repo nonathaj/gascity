@@ -90,7 +90,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 	return map[string]ProviderSpec{
 		"claude": {
 			DisplayName:            "Claude Code",
-			Command:                `sh -c 'EXTRA=""; if command -v bd >/dev/null 2>&1 && [ -n "$GC_AGENT" ]; then WD=$(bd list --json --assignee="$GC_AGENT" --status=in-progress 2>/dev/null | jq -r ".[0].metadata.worktree_dir // empty" 2>/dev/null); [ -n "$WD" ] && [ -d "$WD" ] && EXTRA="--cwd $WD --continue"; fi; exec claude --dangerously-skip-permissions $EXTRA "$@"' --`,
+			Command:                `sh -c 'EXTRA=""; if command -v bd >/dev/null 2>&1 && [ -n "$GC_AGENT" ]; then WD=$(bd list --json --assignee="$GC_AGENT" --status=in-progress 2>/dev/null | jq -r ".[0].metadata.worktree_dir // empty" 2>/dev/null); [ -n "$WD" ] && [ -d "$WD" ] && EXTRA="--cwd $WD --continue"; fi; exec ${GC_CLI:-claude} --dangerously-skip-permissions $EXTRA "$@"' --`,
 			PathCheck:              "claude",
 			PromptMode:             "arg",
 			ReadyDelayMs:           10000,

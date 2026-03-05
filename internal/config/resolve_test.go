@@ -54,12 +54,12 @@ func TestResolveProviderAgentProvider(t *testing.T) {
 	if rp.Name != "claude" {
 		t.Errorf("Name = %q, want %q", rp.Name, "claude")
 	}
-	if !strings.Contains(rp.Command, "claude --dangerously-skip-permissions") {
-		t.Errorf("Command should contain claude --dangerously-skip-permissions, got %q", rp.Command)
+	if !strings.Contains(rp.Command, "${GC_CLI:-claude} --dangerously-skip-permissions") {
+		t.Errorf("Command should contain ${GC_CLI:-claude} --dangerously-skip-permissions, got %q", rp.Command)
 	}
 	cs := rp.CommandString()
-	if !strings.Contains(cs, "claude --dangerously-skip-permissions") {
-		t.Errorf("CommandString() should contain claude --dangerously-skip-permissions, got %q", cs)
+	if !strings.Contains(cs, "${GC_CLI:-claude} --dangerously-skip-permissions") {
+		t.Errorf("CommandString() should contain ${GC_CLI:-claude} --dangerously-skip-permissions, got %q", cs)
 	}
 }
 
@@ -360,8 +360,8 @@ func TestLookupProviderBuiltin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lookupProvider: %v", err)
 	}
-	if !strings.Contains(spec.Command, "claude --dangerously-skip-permissions") {
-		t.Errorf("Command should contain claude --dangerously-skip-permissions, got %q", spec.Command)
+	if !strings.Contains(spec.Command, "${GC_CLI:-claude} --dangerously-skip-permissions") {
+		t.Errorf("Command should contain ${GC_CLI:-claude} --dangerously-skip-permissions, got %q", spec.Command)
 	}
 }
 

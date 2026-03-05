@@ -49,8 +49,8 @@ func TestBuiltinProviders(t *testing.T) {
 
 func TestBuiltinProvidersClaude(t *testing.T) {
 	p := BuiltinProviders()["claude"]
-	if !strings.Contains(p.Command, "claude --dangerously-skip-permissions") {
-		t.Errorf("Command should contain claude --dangerously-skip-permissions, got %q", p.Command)
+	if !strings.Contains(p.Command, "${GC_CLI:-claude} --dangerously-skip-permissions") {
+		t.Errorf("Command should contain ${GC_CLI:-claude} --dangerously-skip-permissions, got %q", p.Command)
 	}
 	if !strings.Contains(p.Command, "sh -c") {
 		t.Errorf("Command should be a sh -c wrapper, got %q", p.Command)
