@@ -172,15 +172,12 @@ func eventCategory(eventType string) string {
 }
 
 // extractRig extracts the rig name from an actor address like "myrig/polecats/nux".
+// Returns "" for city-scoped agents (no "/" in name).
 func extractRig(actor string) string {
-	if actor == "" {
+	if actor == "" || !strings.Contains(actor, "/") {
 		return ""
 	}
-	parts := strings.SplitN(actor, "/", 2)
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
+	return strings.SplitN(actor, "/", 2)[0]
 }
 
 // eventIcon returns an emoji for an event type.
