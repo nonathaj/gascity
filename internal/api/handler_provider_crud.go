@@ -97,7 +97,7 @@ func (s *Server) handleProviderUpdate(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "not found") {
 			if isBuiltinProvider(name) {
 				writeError(w, http.StatusConflict, "conflict",
-					"provider "+name+" is a builtin; use PATCH /v0/patches/providers to override")
+					"provider "+name+" is a builtin; use PUT /v0/patches/providers to override")
 				return
 			}
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
@@ -125,7 +125,7 @@ func (s *Server) handleProviderDelete(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "not found") {
 			if isBuiltinProvider(name) {
 				writeError(w, http.StatusConflict, "conflict",
-					"provider "+name+" is a builtin; use DELETE /v0/patches/providers to remove overrides")
+					"provider "+name+" is a builtin; use DELETE /v0/patches/provider/"+name+" to remove overrides")
 				return
 			}
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
