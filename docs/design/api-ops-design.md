@@ -1301,20 +1301,58 @@ DELETE /v0/rig/{name}                  # remove rig
 - start/stop/restart/scale actions (remain as existing POST actions)
 - Idempotency keys, dry-run mode
 
-### Phase 2: Providers + Config + Patch Resources
+### Phase 2: Providers + Config + Patch Resources ✅
 
-**Endpoints:** ~25
+**Status:** Delivered. 20 endpoints across 3 commits.
+
+**Endpoints delivered:**
 ```
-Provider CRUD (6)
-Patch resources for agents/rigs/providers (15)
-Config GET/apply/validate/explain (4)
+Provider CRUD (5):
+  GET /v0/providers — list all (builtins + city overrides)
+  GET /v0/provider/{name} — single provider
+  POST /v0/providers — create city-level provider
+  PATCH /v0/provider/{name} — update city-level provider
+  DELETE /v0/provider/{name} — delete city-level provider
+
+Config (3):
+  GET /v0/config — expanded config snapshot
+  GET /v0/config/explain — provenance annotations
+  GET /v0/config/validate — dry-run validation
+
+Patch resources (12):
+  GET/PUT/DELETE agent patches (/v0/patches/agents, /v0/patches/agent/{name})
+  GET/PUT/DELETE rig patches (/v0/patches/rigs, /v0/patches/rig/{name})
+  GET/PUT/DELETE provider patches (/v0/patches/providers, /v0/patches/provider/{name})
 ```
 
 **Implementation:**
-- Provider mutation methods
-- Config diff/merge engine
-- Config explain (provenance annotations)
-- Patch resource handlers
+- `configedit.Editor` methods: CreateProvider, UpdateProvider, DeleteProvider,
+  SetAgentPatch, DeleteAgentPatch, SetRigPatch, DeleteRigPatch,
+  SetProviderPatch, DeleteProviderPatch
+- `api.ProviderUpdate` type with `*string`/`*int` fields
+- `api.StateMutator` extended with provider + patch CRUD
+- `cmd/gc/api_state.go` bridge to configedit
+- Handler tests for all 20 endpoints
+- ConfigEdit unit tests for all 9 new Editor methods
+
+**Files added/changed:**
+- `internal/api/handler_providers.go` — provider list/get
+- `internal/api/handler_provider_crud.go` — provider create/update/delete
+- `internal/api/handler_provider_crud_test.go` — provider tests
+- `internal/api/handler_config.go` — config GET/explain/validate
+- `internal/api/handler_config_test.go` — config tests
+- `internal/api/handler_patches.go` — patch resource handlers
+- `internal/api/handler_patches_test.go` — patch tests
+- `internal/api/state.go` — ProviderUpdate type, extended StateMutator
+- `internal/api/fake_state_test.go` — extended fake
+- `internal/configedit/configedit.go` — 9 new Editor methods
+- `internal/configedit/configedit_test.go` — 15 new tests
+- `cmd/gc/api_state.go` — bridge methods
+
+**Deferred from original design (moved to Phase 3+):**
+- Config apply (POST /v0/config) — complex diff/merge engine
+- PUT (full replace) for providers
+- Optimistic concurrency (ETags)
 
 ### Phase 3: City Lifecycle + Automations + Operations
 
