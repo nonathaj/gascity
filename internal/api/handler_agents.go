@@ -155,16 +155,15 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	cityName := s.state.CityName()
 
 	// Try exact agent match first, then check for sub-resource suffix.
-	// This prevents agent names ending in "/peek" from being misrouted.
 	agentCfg, ok := findAgent(cfg, name)
 	if !ok {
 		// Not found as exact agent — check for sub-resource suffixes.
-		if after, found := strings.CutSuffix(name, "/peek"); found {
-			s.handleAgentPeek(w, r, after)
+		if after, found := strings.CutSuffix(name, "/output/stream"); found {
+			s.handleAgentOutputStream(w, r, after)
 			return
 		}
-		if after, found := strings.CutSuffix(name, "/logs"); found {
-			s.handleAgentLogs(w, r, after)
+		if after, found := strings.CutSuffix(name, "/output"); found {
+			s.handleAgentOutput(w, r, after)
 			return
 		}
 		writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not found")
@@ -219,25 +218,6 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeIndexJSON(w, s.latestIndex(), resp)
-}
-
-func (s *Server) handleAgentPeek(w http.ResponseWriter, _ *http.Request, name string) {
-	sp := s.state.SessionProvider()
-	cfg := s.state.Config()
-	sessionName := agentSessionName(s.state.CityName(), name, cfg.Workspace.SessionTemplate)
-
-	if !sp.IsRunning(sessionName) {
-		writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not running")
-		return
-	}
-
-	output, err := sp.Peek(sessionName, 100)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"output": output})
 }
 
 func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {

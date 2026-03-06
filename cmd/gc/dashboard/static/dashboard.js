@@ -3403,15 +3403,15 @@
         drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
         // Fetch initial logs.
-        fetchAgentLogs(agentName, 1, '', function(data) {
+        fetchAgentOutput(agentName, 1, '', function(data) {
             if (gen !== logDrawerGeneration) return; // stale response
             loadingEl.style.display = 'none';
             if (data.error) {
                 messagesEl.innerHTML = '<div class="empty-state"><p>' + escapeHtml(data.error) + '</p></div>';
                 return;
             }
-            renderLogMessages(messagesEl, data.messages || [], false);
-            countEl.textContent = (data.messages || []).length;
+            renderOutputTurns(messagesEl, data.turns || [], false);
+            countEl.textContent = (data.turns || []).length;
             updateLogDrawerStatus();
             if (data.pagination && data.pagination.has_older_messages) {
                 logDrawerOldestUUID = data.pagination.truncated_before_message;
@@ -3427,13 +3427,13 @@
         logDrawerInterval = setInterval(function() {
             if (gen !== logDrawerGeneration) return; // stale interval
             if (logDrawerHasOlder) return; // suppress polling while older messages are loaded
-            fetchAgentLogs(agentName, 1, '', function(data) {
+            fetchAgentOutput(agentName, 1, '', function(data) {
                 if (gen !== logDrawerGeneration) return; // stale response
                 if (data.error) return;
                 // Re-render with latest data.
-                var msgs = data.messages || [];
+                var msgs = data.turns || [];
                 messagesEl.innerHTML = '';
-                renderLogMessages(messagesEl, msgs, false);
+                renderOutputTurns(messagesEl, msgs, false);
                 countEl.textContent = msgs.length;
                 updateLogDrawerStatus();
                 if (data.pagination && data.pagination.has_older_messages) {
@@ -3478,7 +3478,7 @@
             var btn = document.getElementById('log-drawer-older-btn');
             btn.textContent = 'Loading...';
             btn.disabled = true;
-            fetchAgentLogs(logDrawerAgent, 1, logDrawerOldestUUID, function(data) {
+            fetchAgentOutput(logDrawerAgent, 1, logDrawerOldestUUID, function(data) {
                 if (gen !== logDrawerGeneration) return; // stale response
                 btn.textContent = 'Load older';
                 btn.disabled = false;
@@ -3487,9 +3487,9 @@
                 var messagesEl = document.getElementById('log-drawer-messages');
                 if (!messagesEl) return;
                 // Prepend older messages.
-                var msgs = data.messages || [];
+                var msgs = data.turns || [];
                 if (msgs.length > 0) {
-                    renderLogMessages(messagesEl, msgs, true);
+                    renderOutputTurns(messagesEl, msgs, true);
                     var countEl = document.getElementById('log-drawer-count');
                     if (countEl) {
                         countEl.textContent = messagesEl.querySelectorAll('.log-msg').length;
@@ -3505,8 +3505,8 @@
         }
     });
 
-    function fetchAgentLogs(agentName, tail, before, callback) {
-        var url = '/api/agent/logs?name=' + encodeURIComponent(agentName);
+    function fetchAgentOutput(agentName, tail, before, callback) {
+        var url = '/api/agent/output?name=' + encodeURIComponent(agentName);
         if (tail > 0) url += '&tail=' + tail;
         if (before) url += '&before=' + encodeURIComponent(before);
         fetch(url)
@@ -3526,11 +3526,10 @@
             });
     }
 
-    function renderLogMessages(container, messages, prepend) {
+    function renderOutputTurns(container, turns, prepend) {
         var fragment = document.createDocumentFragment();
-        for (var i = 0; i < messages.length; i++) {
-            var msg = messages[i];
-            var el = renderSingleLogMessage(msg);
+        for (var i = 0; i < turns.length; i++) {
+            var el = renderSingleTurn(turns[i]);
             if (el) fragment.appendChild(el);
         }
         if (prepend && container.firstChild) {
@@ -3540,134 +3539,48 @@
         }
     }
 
-    function renderSingleLogMessage(msg) {
-        // Parse the raw JSONL entry.
-        var entry = null;
-        try {
-            entry = typeof msg.message === 'string' ? JSON.parse(msg.message) : msg.message;
-        } catch (e) {
-            entry = null;
-        }
-
+    function renderSingleTurn(turn) {
         var div = document.createElement('div');
         div.className = 'log-msg';
-        div.setAttribute('data-uuid', msg.uuid || '');
 
         // Compact boundary divider.
-        if (msg.type === 'system' && entry && entry.subtype === 'compact_boundary') {
+        if (turn.role === 'system' && turn.text && turn.text.indexOf('compacted') >= 0) {
             div.className = 'log-compact-divider';
             div.textContent = '── context compacted ──';
             return div;
         }
 
-        // Header: type badge + timestamp.
+        // Header: role badge + timestamp.
         var header = document.createElement('div');
         header.className = 'log-msg-header';
 
         var typeBadge = document.createElement('span');
-        typeBadge.className = 'log-msg-type log-msg-type-' + (msg.type || 'system');
-        typeBadge.textContent = msg.type || '?';
+        typeBadge.className = 'log-msg-type log-msg-type-' + (turn.role || 'system');
+        typeBadge.textContent = turn.role || '?';
         header.appendChild(typeBadge);
 
-        if (msg.timestamp) {
+        if (turn.timestamp) {
             var timeEl = document.createElement('span');
             timeEl.className = 'log-msg-time';
             try {
-                var d = new Date(msg.timestamp);
+                var d = new Date(turn.timestamp);
                 timeEl.textContent = d.toLocaleTimeString();
             } catch (e) {
-                timeEl.textContent = msg.timestamp;
+                timeEl.textContent = turn.timestamp;
             }
             header.appendChild(timeEl);
         }
 
         div.appendChild(header);
 
-        // Body: extract text content from the message.
-        var body = extractMessageBody(msg.type, entry);
-        if (body) {
+        if (turn.text) {
             var bodyEl = document.createElement('div');
             bodyEl.className = 'log-msg-body';
-            bodyEl.textContent = body;
+            bodyEl.textContent = turn.text;
             div.appendChild(bodyEl);
         }
 
-        // Tool calls: show tool names.
-        var tools = extractToolCalls(entry);
-        if (tools) {
-            var toolEl = document.createElement('div');
-            toolEl.className = 'log-msg-tool';
-            toolEl.textContent = tools;
-            div.appendChild(toolEl);
-        }
-
         return div;
-    }
-
-    function extractMessageBody(type, entry) {
-        if (!entry || !entry.message) return null;
-
-        var mc = entry.message;
-        if (typeof mc === 'string') {
-            try { mc = JSON.parse(mc); } catch (e) { return mc; }
-        }
-
-        var content = mc.content;
-        if (!content) return null;
-
-        // Plain string content.
-        if (typeof content === 'string') return content;
-
-        // Array of content blocks — extract text.
-        if (Array.isArray(content)) {
-            var parts = [];
-            for (var i = 0; i < content.length; i++) {
-                var block = content[i];
-                if (block.type === 'text' && block.text) {
-                    parts.push(block.text);
-                } else if (block.type === 'tool_use' && block.name) {
-                    parts.push('[tool_use: ' + block.name + ']');
-                } else if (block.type === 'tool_result') {
-                    var resultText = '';
-                    if (typeof block.content === 'string') {
-                        resultText = block.content;
-                    } else if (Array.isArray(block.content)) {
-                        for (var j = 0; j < block.content.length; j++) {
-                            if (block.content[j].text) resultText += block.content[j].text;
-                        }
-                    }
-                    if (resultText) {
-                        // Truncate long tool results.
-                        if (resultText.length > 500) {
-                            resultText = resultText.substring(0, 500) + '…';
-                        }
-                        parts.push('[result] ' + resultText);
-                    }
-                } else if (block.type === 'thinking') {
-                    parts.push('[thinking]');
-                }
-            }
-            return parts.join('\n') || null;
-        }
-        return null;
-    }
-
-    function extractToolCalls(entry) {
-        if (!entry || !entry.message) return null;
-        var mc = entry.message;
-        if (typeof mc === 'string') {
-            try { mc = JSON.parse(mc); } catch (e) { return null; }
-        }
-        var content = mc.content;
-        if (!Array.isArray(content)) return null;
-
-        var tools = [];
-        for (var i = 0; i < content.length; i++) {
-            if (content[i].type === 'tool_use' && content[i].name) {
-                tools.push(content[i].name);
-            }
-        }
-        return tools.length > 0 ? '🔧 ' + tools.join(', ') : null;
     }
 
     function updateLogDrawerStatus() {

@@ -235,13 +235,13 @@ func TestAgentGetNotFound(t *testing.T) {
 	}
 }
 
-func TestAgentPeek(t *testing.T) {
+func TestAgentOutputPeekFallback(t *testing.T) {
 	state := newFakeState(t)
 	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
 	state.sp.SetPeekOutput("myrig--worker", "Hello from agent")
 	srv := New(state)
 
-	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/peek", nil)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -249,10 +249,22 @@ func TestAgentPeek(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var resp map[string]string
+	var resp agentOutputResponse
 	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
-	if resp["output"] != "Hello from agent" {
-		t.Errorf("output = %q, want %q", resp["output"], "Hello from agent")
+	if resp.Format != "text" {
+		t.Errorf("format = %q, want %q", resp.Format, "text")
+	}
+	if resp.Agent != "myrig/worker" {
+		t.Errorf("agent = %q, want %q", resp.Agent, "myrig/worker")
+	}
+	if len(resp.Turns) != 1 {
+		t.Fatalf("got %d turns, want 1", len(resp.Turns))
+	}
+	if resp.Turns[0].Text != "Hello from agent" {
+		t.Errorf("text = %q, want %q", resp.Turns[0].Text, "Hello from agent")
+	}
+	if resp.Turns[0].Role != "output" {
+		t.Errorf("role = %q, want %q", resp.Turns[0].Role, "output")
 	}
 }
 
@@ -277,11 +289,11 @@ func TestFindAgentPoolMaxZero(t *testing.T) {
 	}
 }
 
-func TestAgentPeekNotRunning(t *testing.T) {
+func TestAgentOutputNotRunning(t *testing.T) {
 	state := newFakeState(t)
 	srv := New(state)
 
-	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/peek", nil)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 

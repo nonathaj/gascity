@@ -755,19 +755,23 @@ func (f *APIFetcher) FetchMergeQueue() ([]MergeQueueRow, error) {
 	return result, nil
 }
 
-// getStatusHint fetches the last non-empty line from an agent's peek output.
+// getStatusHint fetches the last conversation turn from an agent's output.
 func (f *APIFetcher) getStatusHint(agentName string) string {
-	var peekResp struct {
-		Output string `json:"output"`
+	var outputResp struct {
+		Turns []struct {
+			Text string `json:"text"`
+		} `json:"turns"`
 	}
-	if err := f.get("/v0/agent/"+agentName+"/peek", &peekResp); err != nil {
+	if err := f.get("/v0/agent/"+agentName+"/output", &outputResp); err != nil {
 		return ""
 	}
-	if peekResp.Output == "" {
+	if len(outputResp.Turns) == 0 {
 		return ""
 	}
 
-	lines := strings.Split(peekResp.Output, "\n")
+	// Use the last turn's text, find last non-empty line.
+	text := outputResp.Turns[len(outputResp.Turns)-1].Text
+	lines := strings.Split(text, "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line != "" {

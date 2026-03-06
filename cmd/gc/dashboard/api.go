@@ -201,8 +201,8 @@ func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSSE(w, r)
 	case path == "/session/preview" && r.Method == http.MethodGet:
 		h.handleSessionPreview(w, r)
-	case strings.HasPrefix(path, "/agent/logs") && r.Method == http.MethodGet:
-		h.handleAgentLogs(w, r)
+	case strings.HasPrefix(path, "/agent/output") && r.Method == http.MethodGet:
+		h.handleAgentOutput(w, r)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -1438,7 +1438,7 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 
 		// Refine "questions" and "finished" states by peeking at agent output.
 		if state == "questions" || state == "finished" {
-			if h.hasQuestionInPeek(agent.Name) {
+			if h.hasQuestionInOutput(agent.Name) {
 				state = "questions"
 			}
 		}
@@ -1460,26 +1460,31 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// hasQuestionInPeek checks the last lines of an agent's peek output for question indicators.
-func (h *APIHandler) hasQuestionInPeek(agentName string) bool {
-	body, err := h.apiGet("/v0/agent/" + agentName + "/peek")
+// hasQuestionInOutput checks recent agent output for question indicators.
+func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
+	body, err := h.apiGet("/v0/agent/" + agentName + "/output")
 	if err != nil {
 		return false
 	}
-	var peekResp struct {
-		Output string `json:"output"`
+	var outputResp struct {
+		Turns []struct {
+			Text string `json:"text"`
+		} `json:"turns"`
 	}
-	if json.Unmarshal(body, &peekResp) != nil || peekResp.Output == "" {
+	if json.Unmarshal(body, &outputResp) != nil || len(outputResp.Turns) == 0 {
 		return false
 	}
 
-	// Check last 10 lines for question indicators.
-	lines := strings.Split(strings.TrimSpace(peekResp.Output), "\n")
+	// Check text from the last few turns for question indicators.
 	start := 0
-	if len(lines) > 10 {
-		start = len(lines) - 10
+	if len(outputResp.Turns) > 3 {
+		start = len(outputResp.Turns) - 3
 	}
-	lastLines := strings.ToLower(strings.Join(lines[start:], "\n"))
+	var texts []string
+	for _, t := range outputResp.Turns[start:] {
+		texts = append(texts, t.Text)
+	}
+	lastText := strings.ToLower(strings.Join(texts, "\n"))
 
 	for _, indicator := range []string{
 		"?",
@@ -1492,7 +1497,7 @@ func (h *APIHandler) hasQuestionInPeek(agentName string) bool {
 		"your thoughts",
 		"let me know",
 	} {
-		if strings.Contains(lastLines, indicator) {
+		if strings.Contains(lastText, indicator) {
 			return true
 		}
 	}
@@ -1587,19 +1592,28 @@ func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	body, err := h.apiGet("/v0/agent/" + sessionName + "/peek")
+	body, err := h.apiGet("/v0/agent/" + sessionName + "/output")
 	if err != nil {
-		h.sendError(w, "Failed to peek agent: "+err.Error(), http.StatusInternalServerError)
+		h.sendError(w, "Failed to get agent output: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var peekResp struct {
-		Output string `json:"output"`
+	var outputResp struct {
+		Turns []struct {
+			Text string `json:"text"`
+		} `json:"turns"`
 	}
-	if json.Unmarshal(body, &peekResp) == nil {
+	if json.Unmarshal(body, &outputResp) == nil {
+		// Combine turn texts into a single preview.
+		var parts []string
+		for _, t := range outputResp.Turns {
+			if t.Text != "" {
+				parts = append(parts, t.Text)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SessionPreviewResponse{
 			Session:   sessionName,
-			Content:   peekResp.Output,
+			Content:   strings.Join(parts, "\n"),
 			Timestamp: time.Now().Format(time.RFC3339),
 		})
 		return
@@ -1615,8 +1629,8 @@ func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request
 
 // ---------- Agent logs handler ----------
 
-// handleAgentLogs proxies the API server's /v0/agent/{name}/logs endpoint.
-func (h *APIHandler) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
+// handleAgentOutput proxies the API server's /v0/agent/{name}/output endpoint.
+func (h *APIHandler) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
 	agentName := r.URL.Query().Get("name")
 	if agentName == "" {
 		h.sendError(w, "Missing name parameter", http.StatusBadRequest)
@@ -1632,7 +1646,7 @@ func (h *APIHandler) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build upstream URL with query params.
-	upstream := "/v0/agent/" + agentName + "/logs"
+	upstream := "/v0/agent/" + agentName + "/output"
 	sep := "?"
 	if v := r.URL.Query().Get("tail"); v != "" {
 		upstream += sep + "tail=" + url.QueryEscape(v)
@@ -1644,7 +1658,7 @@ func (h *APIHandler) handleAgentLogs(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.apiClient.Get(h.apiURL + upstream)
 	if err != nil {
-		h.sendError(w, "Failed to fetch agent logs", http.StatusBadGateway)
+		h.sendError(w, "Failed to fetch agent output", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close() //nolint:errcheck
