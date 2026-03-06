@@ -612,6 +612,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		PreStart:               []string{"pre-cmd"},
 		PromptTemplate:         "prompts/test.md",
 		Nudge:                  "nudge text",
+		Session:                "acp",
 		Provider:               "claude",
 		StartCommand:           "claude --dangerously",
 		Args:                   []string{"--arg1"},

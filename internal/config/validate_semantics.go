@@ -40,6 +40,15 @@ func ValidateSemantics(cfg *City, source string) []string {
 		}
 	}
 
+	// Check agent session field.
+	for _, a := range cfg.Agents {
+		if a.Session != "" && a.Session != "acp" {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: agent %q: session %q is not a valid session transport (use \"acp\" or omit)",
+				source, a.QualifiedName(), a.Session))
+		}
+	}
+
 	// Check PromptMode on city-defined providers.
 	for name, spec := range cfg.Providers {
 		switch spec.PromptMode {

@@ -330,6 +330,12 @@ func cmdAgentAttach(args []string, stdout, stderr io.Writer) int {
 	}
 	cfgAgent := &found
 
+	// Check for ACP session — attach is not supported.
+	if cfgAgent.Session == "acp" || sessionProviderName() == "acp" {
+		fmt.Fprintf(stderr, "gc agent attach: agent %q uses ACP transport (no terminal to attach to)\n", cfgAgent.QualifiedName()) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
 	// Determine command: agent > workspace > auto-detect.
 	resolved, err := config.ResolveProvider(cfgAgent, &cfg.Workspace, cfg.Providers, exec.LookPath)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/session"
+	sessionauto "github.com/gastownhall/gascity/internal/session/auto"
 )
 
 // agentBuildParams holds shared, per-city parameters for building agents.
@@ -50,6 +51,11 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 	resolved, err := config.ResolveProvider(cfgAgent, p.workspace, p.providers, p.lookPath)
 	if err != nil {
 		return nil, fmt.Errorf("agent %q: %w", qualifiedName, err)
+	}
+
+	// Validate session vs provider compatibility.
+	if cfgAgent.Session == "acp" && !resolved.SupportsACP {
+		return nil, fmt.Errorf("agent %q: session = \"acp\" but provider %q does not support ACP (set supports_acp = true on the provider)", qualifiedName, resolved.Name)
 	}
 
 	// Expand dir template (e.g. ".gc/worktrees/{{.Rig}}/{{.Agent}}").
@@ -131,6 +137,15 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 
 	// Expand session-related templates.
 	sessName := agent.SessionNameFor(p.cityName, qualifiedName, p.sessionTemplate)
+
+	// Register ACP route on the auto provider for dynamic sessions
+	// (e.g., pool instances) not known at newSessionProvider() time.
+	if cfgAgent.Session == "acp" {
+		if autoSP, ok := p.sp.(*sessionauto.Provider); ok {
+			autoSP.RouteACP(sessName)
+		}
+	}
+
 	configDir := p.cityPath
 	if cfgAgent.SourceDir != "" {
 		configDir = cfgAgent.SourceDir

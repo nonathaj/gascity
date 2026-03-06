@@ -125,6 +125,7 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		ReadyDelayMs:           spec.ReadyDelayMs,
 		ReadyPromptPrefix:      spec.ReadyPromptPrefix,
 		EmitsPermissionWarning: spec.EmitsPermissionWarning,
+		SupportsACP:            spec.SupportsACP,
 	}
 	// Copy slices to avoid aliasing.
 	if len(spec.Args) > 0 {

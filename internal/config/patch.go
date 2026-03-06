@@ -37,6 +37,8 @@ type AgentPatch struct {
 	// PromptTemplate overrides the prompt template path.
 	// Relative paths resolve against the city directory.
 	PromptTemplate *string `toml:"prompt_template,omitempty"`
+	// Session overrides the session transport ("acp").
+	Session *string `toml:"session,omitempty"`
 	// Provider overrides the provider name.
 	Provider *string `toml:"provider,omitempty"`
 	// StartCommand overrides the start command.
@@ -190,6 +192,9 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if p.PromptTemplate != nil {
 		a.PromptTemplate = *p.PromptTemplate
+	}
+	if p.Session != nil {
+		a.Session = *p.Session
 	}
 	if p.Provider != nil {
 		a.Provider = *p.Provider

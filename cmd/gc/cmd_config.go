@@ -242,6 +242,9 @@ func explainAgent(w io.Writer, a *config.Agent, prov *config.Provenance) {
 	if a.PromptTemplate != "" {
 		explainField(w, "prompt_template", a.PromptTemplate, source)
 	}
+	if a.Session != "" {
+		explainField(w, "session", a.Session, source)
+	}
 	if a.Provider != "" {
 		explainField(w, "provider", a.Provider, source)
 	}

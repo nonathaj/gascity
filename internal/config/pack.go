@@ -785,6 +785,9 @@ func applyAgentOverride(a *Agent, ov *AgentOverride) {
 	if ov.PromptTemplate != nil {
 		a.PromptTemplate = *ov.PromptTemplate
 	}
+	if ov.Session != nil {
+		a.Session = *ov.Session
+	}
 	if ov.Provider != nil {
 		a.Provider = *ov.Provider
 	}

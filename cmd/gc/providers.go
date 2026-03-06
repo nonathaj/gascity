@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
@@ -16,6 +17,7 @@ import (
 	mailexec "github.com/gastownhall/gascity/internal/mail/exec"
 	"github.com/gastownhall/gascity/internal/session"
 	sessionacp "github.com/gastownhall/gascity/internal/session/acp"
+	sessionauto "github.com/gastownhall/gascity/internal/session/auto"
 	sessionexec "github.com/gastownhall/gascity/internal/session/exec"
 	sessionhybrid "github.com/gastownhall/gascity/internal/session/hybrid"
 	sessionk8s "github.com/gastownhall/gascity/internal/session/k8s"
@@ -95,11 +97,14 @@ func newSessionProviderByName(name string, sc config.SessionConfig, cityName str
 }
 
 // newSessionProvider returns a session.Provider based on the session provider
-// name (env var → city.toml → default). This allows txtar tests to exercise
-// session-dependent commands without real tmux. Startup path — exits on error.
+// name (env var → city.toml → default). When the city-level provider is not
+// "acp" but some agents have session = "acp", returns an auto.Provider that
+// routes per-session. Startup path — exits on error.
 func newSessionProvider() session.Provider {
 	var sc config.SessionConfig
 	var cityName string
+	var agents []config.Agent
+	var sessionTemplate string
 	if cp, err := resolveCity(); err == nil {
 		if cfg, err := loadCityConfig(cp); err == nil {
 			sc = cfg.Session
@@ -107,14 +112,46 @@ func newSessionProvider() session.Provider {
 			if cityName == "" {
 				cityName = filepath.Base(cp)
 			}
+			agents = cfg.Agents
+			sessionTemplate = cfg.Workspace.SessionTemplate
 		}
 	}
-	sp, err := newSessionProviderByName(sessionProviderName(), sc, cityName)
+	provName := sessionProviderName()
+	sp, err := newSessionProviderByName(provName, sc, cityName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
 		os.Exit(1)
 	}
+	// If the city-level provider is not ACP but some agents need ACP,
+	// wrap in an auto provider that routes per-session.
+	if provName != "acp" && hasACPAgents(agents) {
+		acpSP, acpErr := newSessionProviderByName("acp", sc, cityName)
+		if acpErr != nil {
+			fmt.Fprintf(os.Stderr, "acp provider: %v\n", acpErr) //nolint:errcheck // best-effort stderr
+			os.Exit(1)
+		}
+		autoSP := sessionauto.New(sp, acpSP)
+		// Pre-register routes for known ACP agents so one-off commands
+		// (gc status, gc agent nudge, etc.) route correctly.
+		for _, a := range agents {
+			if a.Session == "acp" {
+				sessName := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+				autoSP.RouteACP(sessName)
+			}
+		}
+		return autoSP
+	}
 	return sp
+}
+
+// hasACPAgents reports whether any agent in the config uses session = "acp".
+func hasACPAgents(agents []config.Agent) bool {
+	for _, a := range agents {
+		if a.Session == "acp" {
+			return true
+		}
+	}
+	return false
 }
 
 // displayProviderName returns a human-readable provider name for logging.

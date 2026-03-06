@@ -32,6 +32,10 @@ type ProviderSpec struct {
 	// shell wrapper (e.g. sh -c '...') but we need to verify the real
 	// binary is installed.
 	PathCheck string `toml:"path_check,omitempty"`
+	// SupportsACP indicates the binary speaks the Agent Client Protocol
+	// (JSON-RPC 2.0 over stdio). When an agent sets session = "acp",
+	// its resolved provider must have SupportsACP = true.
+	SupportsACP bool `toml:"supports_acp,omitempty"`
 }
 
 // ResolvedProvider is the fully-merged, ready-to-use provider config.
@@ -47,6 +51,7 @@ type ResolvedProvider struct {
 	ProcessNames           []string
 	EmitsPermissionWarning bool
 	Env                    map[string]string
+	SupportsACP            bool
 }
 
 // CommandString returns the full command line: command followed by args.
@@ -97,6 +102,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ReadyPromptPrefix:      "\u276f ", // ❯
 			ProcessNames:           []string{"node", "claude"},
 			EmitsPermissionWarning: true,
+			SupportsACP:            true,
 		},
 		"codex": {
 			DisplayName:  "Codex CLI",
@@ -145,6 +151,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ReadyDelayMs: 8000,
 			ProcessNames: []string{"opencode", "node", "bun"},
 			Env:          map[string]string{"OPENCODE_PERMISSION": `{"*":"allow"}`},
+			SupportsACP:  true,
 		},
 	}
 }

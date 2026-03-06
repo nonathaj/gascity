@@ -77,6 +77,13 @@
           "type": "string",
           "description": "Nudge is text typed into the agent's tmux session after startup.\nUsed for CLI agents that don't accept command-line prompts."
         },
+        "session": {
+          "type": "string",
+          "enum": [
+            "acp"
+          ],
+          "description": "Session overrides the session transport for this agent.\n\"\" (default) uses the city-level session provider (typically tmux).\n\"acp\" uses the Agent Client Protocol (JSON-RPC over stdio).\nThe agent's resolved provider must have supports_acp = true."
+        },
         "provider": {
           "type": "string",
           "description": "Provider names the provider preset to use for this agent."
@@ -260,6 +267,10 @@
           "type": "string",
           "description": "PromptTemplate overrides the prompt template path.\nRelative paths resolve against the city directory."
         },
+        "session": {
+          "type": "string",
+          "description": "Session overrides the session transport (\"acp\")."
+        },
         "provider": {
           "type": "string",
           "description": "Provider overrides the provider name."
@@ -417,6 +428,10 @@
         "prompt_template": {
           "type": "string",
           "description": "PromptTemplate overrides the prompt template path.\nRelative paths resolve against the city directory."
+        },
+        "session": {
+          "type": "string",
+          "description": "Session overrides the session transport (\"acp\")."
         },
         "provider": {
           "type": "string",
@@ -1091,6 +1106,10 @@
         "path_check": {
           "type": "string",
           "description": "PathCheck overrides the binary name used for PATH detection.\nWhen set, lookupProvider and detectProviderName use this instead\nof Command for exec.LookPath checks. Useful when Command is a\nshell wrapper (e.g. sh -c '...') but we need to verify the real\nbinary is installed."
+        },
+        "supports_acp": {
+          "type": "boolean",
+          "description": "SupportsACP indicates the binary speaks the Agent Client Protocol\n(JSON-RPC 2.0 over stdio). When an agent sets session = \"acp\",\nits resolved provider must have SupportsACP = true."
         }
       },
       "additionalProperties": false,
