@@ -427,20 +427,29 @@ func installClaudeHooks(fs fsys.FS, cityPath string, stderr io.Writer) int {
 }
 
 // writeDefaultPrompts creates the .gc/prompts/ directory and writes all
-// embedded prompt files used across the tutorials.
+// embedded prompt files. Walks the embed.FS dynamically — no hardcoded
+// filename list. Uses the injected FS for I/O (testability with mock FS).
 func writeDefaultPrompts(fs fsys.FS, cityPath string, stderr io.Writer) int {
 	promptsDir := filepath.Join(cityPath, ".gc", "prompts")
 	if err := fs.MkdirAll(promptsDir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	for _, name := range []string{"mayor.md", "foreman.md", "worker.md", "one-shot.md", "loop.md", "loop-mail.md", "pool-worker.md"} {
-		data, err := defaultPrompts.ReadFile("prompts/" + name)
+	entries, err := defaultPrompts.ReadDir("prompts")
+	if err != nil {
+		fmt.Fprintf(stderr, "gc init: reading embedded prompts: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := defaultPrompts.ReadFile("prompts/" + e.Name())
 		if err != nil {
-			fmt.Fprintf(stderr, "gc init: reading embedded %s: %v\n", name, err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc init: reading embedded %s: %v\n", e.Name(), err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
-		dst := filepath.Join(promptsDir, name)
+		dst := filepath.Join(promptsDir, e.Name())
 		if err := fs.WriteFile(dst, data, 0o644); err != nil {
 			fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
@@ -450,20 +459,29 @@ func writeDefaultPrompts(fs fsys.FS, cityPath string, stderr io.Writer) int {
 }
 
 // writeDefaultFormulas creates the .gc/formulas/ directory and writes
-// embedded example formula files used across the tutorials.
+// embedded example formula files. Walks the embed.FS dynamically — no
+// hardcoded filename list. Uses the injected FS for I/O (testability).
 func writeDefaultFormulas(fs fsys.FS, cityPath string, stderr io.Writer) int {
 	formulasDir := filepath.Join(cityPath, ".gc", "formulas")
 	if err := fs.MkdirAll(formulasDir, 0o755); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	for _, name := range []string{"pancakes.formula.toml", "cooking.formula.toml", "mol-do-work.formula.toml"} {
-		data, err := defaultFormulas.ReadFile("formulas/" + name)
+	entries, err := defaultFormulas.ReadDir("formulas")
+	if err != nil {
+		fmt.Fprintf(stderr, "gc init: reading embedded formulas: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := defaultFormulas.ReadFile("formulas/" + e.Name())
 		if err != nil {
-			fmt.Fprintf(stderr, "gc init: reading embedded %s: %v\n", name, err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc init: reading embedded %s: %v\n", e.Name(), err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
-		dst := filepath.Join(formulasDir, name)
+		dst := filepath.Join(formulasDir, e.Name())
 		if err := fs.WriteFile(dst, data, 0o644); err != nil {
 			fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1

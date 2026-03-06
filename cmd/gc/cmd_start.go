@@ -320,6 +320,14 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	}
 	injectBuiltinPacks(cfg, cityPath)
 
+	// Materialize builtin prompts and formulas to stay in sync with binary.
+	if err := materializeBuiltinPrompts(cityPath); err != nil {
+		fmt.Fprintf(stderr, "gc start: builtin prompts: %v\n", err) //nolint:errcheck // best-effort stderr
+	}
+	if err := materializeBuiltinFormulas(cityPath); err != nil {
+		fmt.Fprintf(stderr, "gc start: builtin formulas: %v\n", err) //nolint:errcheck // best-effort stderr
+	}
+
 	// Resolve rig paths and run the full bead store lifecycle:
 	// ensure-ready → init+hooks(city) → init+hooks(rigs) → routes.
 	resolveRigPaths(cityPath, cfg.Rigs)
