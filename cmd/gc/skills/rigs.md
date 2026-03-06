@@ -3,6 +3,12 @@
 A rig is a project directory registered with the city. Agents can be
 scoped to rigs via the `dir` field.
 
+## Convention
+
+Rigs should be created **inside the city directory** unless explicitly
+given an absolute path. The default rig path is `<city-root>/<rig-name>`.
+Do not create rigs as sibling directories of the city.
+
 ## Adding and listing
 
 ```
