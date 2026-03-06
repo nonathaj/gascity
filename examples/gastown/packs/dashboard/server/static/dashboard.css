@@ -899,6 +899,35 @@
             font-weight: 600;
         }
 
+        /* Rig filter tabs */
+        .rig-filter-tabs {
+            border-bottom: 1px solid var(--border);
+            padding: 4px 12px;
+        }
+
+        .rig-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            transition: all 0.15s ease;
+        }
+
+        .rig-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+        }
+
+        .rig-btn.active {
+            background: var(--purple);
+            border-color: var(--purple);
+            color: #000;
+            font-weight: 600;
+        }
+
         /* Issue status badges */
         .issue-status .badge-green {
             background: rgba(194, 217, 76, 0.2);

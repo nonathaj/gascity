@@ -371,7 +371,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 
 	case "hooks":
 		if len(parts) >= 2 && parts[1] == "list" {
-			body, err := h.apiGet("/v0/beads?status=hooked")
+			body, err := h.apiGet("/v0/beads?status=in_progress")
 			if err != nil {
 				return "", false
 			}
@@ -935,7 +935,7 @@ func (h *APIHandler) fetchOptionsAPI() *OptionsResponse {
 	// Fetch hooked beads (provides hooks list)
 	go func() {
 		defer wg.Done()
-		itemsRaw, err := h.apiGetListRaw("/v0/beads?status=hooked")
+		itemsRaw, err := h.apiGetListRaw("/v0/beads?status=in_progress")
 		if err != nil {
 			log.Printf("warning: handleOptions API: hooks: %v", err)
 			return

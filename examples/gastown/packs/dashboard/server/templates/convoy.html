@@ -776,10 +776,10 @@
             </div>
             {{end}}
 
-            <!-- Work Panel (Combined Issues + Ready Work) -->
-            <div class="panel" id="work-panel">
+            <!-- Beads Panel -->
+            <div class="panel" id="beads-panel">
                 <div class="panel-header">
-                    <h2>📋 Work</h2>
+                    <h2>📋 Beads</h2>
                     <span class="count">{{len .Issues}}</span>
                     <button class="new-issue-btn" onclick="openIssueModal()">+ New</button>
                     <button class="collapse-btn" aria-label="Toggle panel">▼</button>
@@ -789,6 +789,12 @@
                     <button class="tab-btn active" data-tab="ready" onclick="switchWorkTab('ready')">Ready</button>
                     <button class="tab-btn" data-tab="progress" onclick="switchWorkTab('progress')">In Progress</button>
                     <button class="tab-btn" data-tab="all" onclick="switchWorkTab('all')">All</button>
+                </div>
+                <div class="panel-tabs rig-filter-tabs">
+                    <button class="rig-btn active" data-rig="all" onclick="switchRigFilter('all')">All</button>
+                    {{range .Rigs}}
+                    <button class="rig-btn" data-rig="{{.Name}}" onclick="switchRigFilter('{{.Name}}')">{{.Name}}</button>
+                    {{end}}
                 </div>
                 <div class="panel-body">
                     <!-- Issues List View -->
@@ -800,6 +806,7 @@
                                     <th>Pri</th>
                                     <th>ID</th>
                                     <th>Title</th>
+                                    <th>Rig</th>
                                     <th>Status</th>
                                     <th>Age</th>
                                     <th>Actions</th>
@@ -807,7 +814,7 @@
                             </thead>
                             <tbody>
                                 {{range .Issues}}
-                                <tr class="issue-row priority-{{.Priority}}" data-issue-id="{{.ID}}" data-status="{{if .Assignee}}progress{{else}}ready{{end}}">
+                                <tr class="issue-row priority-{{.Priority}}" data-issue-id="{{.ID}}" data-status="{{if .Assignee}}progress{{else}}ready{{end}}" data-rig="{{.Rig}}">
                                     <td>
                                         {{if eq .Priority 1}}<span class="badge badge-red">P1</span>
                                         {{else if eq .Priority 2}}<span class="badge badge-orange">P2</span>
@@ -816,6 +823,7 @@
                                     </td>
                                     <td><span class="issue-id">{{.ID}}</span></td>
                                     <td class="issue-title">{{.Title}}</td>
+                                    <td class="issue-rig">{{.Rig}}</td>
                                     <td class="issue-status">
                                         {{if .Assignee}}<span class="badge badge-blue" title="{{.Assignee}}">{{.Assignee}}</span>{{else}}<span class="badge badge-green">Ready</span>{{end}}
                                     </td>
@@ -827,7 +835,7 @@
                         </table>
                         {{else}}
                         <div class="empty-state">
-                            <p>No work items</p>
+                            <p>No beads</p>
                         </div>
                         {{end}}
                     </div>

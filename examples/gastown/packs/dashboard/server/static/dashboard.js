@@ -1453,43 +1453,57 @@
     });
 
     // ============================================
-    // WORK PANEL TABS
+    // BEADS PANEL TABS + RIG FILTER
     // ============================================
+    var currentWorkTab = 'ready';
+    var currentRigFilter = 'all';
+
+    function applyBeadsFilter() {
+        var rows = document.querySelectorAll('#work-table tbody tr');
+        var visibleCount = 0;
+        rows.forEach(function(row) {
+            var status = row.getAttribute('data-status') || 'ready';
+            var rig = row.getAttribute('data-rig') || '';
+            var tabMatch = currentWorkTab === 'all' ||
+                (currentWorkTab === 'ready' && status === 'ready') ||
+                (currentWorkTab === 'progress' && status === 'progress');
+            var rigMatch = currentRigFilter === 'all' || rig === currentRigFilter;
+            if (tabMatch && rigMatch) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        var countEl = document.querySelector('#beads-panel .count');
+        if (countEl) countEl.textContent = visibleCount;
+    }
+
     function switchWorkTab(tab) {
-        // Update active tab button
+        currentWorkTab = tab;
         document.querySelectorAll('.panel-tabs .tab-btn').forEach(function(btn) {
             btn.classList.remove('active');
             if (btn.getAttribute('data-tab') === tab) {
                 btn.classList.add('active');
             }
         });
-
-        // Filter rows based on tab
-        var rows = document.querySelectorAll('#work-table tbody tr');
-        rows.forEach(function(row) {
-            var status = row.getAttribute('data-status') || 'ready';
-            if (tab === 'all') {
-                row.style.display = '';
-            } else if (tab === 'ready' && status === 'ready') {
-                row.style.display = '';
-            } else if (tab === 'progress' && status === 'progress') {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
-
-        // Update count
-        var visibleCount = 0;
-        rows.forEach(function(row) {
-            if (row.style.display !== 'none') visibleCount++;
-        });
-        var countEl = document.querySelector('#work-panel .count');
-        if (countEl) countEl.textContent = visibleCount;
+        applyBeadsFilter();
     }
     window.switchWorkTab = switchWorkTab;
 
-    // Initialize work panel to "Ready" tab on load
+    function switchRigFilter(rig) {
+        currentRigFilter = rig;
+        document.querySelectorAll('.rig-filter-tabs .rig-btn').forEach(function(btn) {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-rig') === rig) {
+                btn.classList.add('active');
+            }
+        });
+        applyBeadsFilter();
+    }
+    window.switchRigFilter = switchRigFilter;
+
+    // Initialize beads panel to "Ready" tab on load
     setTimeout(function() {
         switchWorkTab('ready');
     }, 100);

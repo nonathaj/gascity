@@ -116,6 +116,7 @@ type IssueRow struct {
 	Age      string // Time since created
 	Labels   string // Comma-separated labels
 	Assignee string // Who it's hooked to (empty if unassigned)
+	Rig      string // Rig the bead belongs to
 }
 
 // ActivityRow represents an event in the activity feed.

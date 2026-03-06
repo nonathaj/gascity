@@ -452,7 +452,7 @@ func (f *APIFetcher) FetchMail() ([]MailRow, error) {
 // FetchHooks returns hooked beads (work pinned to agents).
 func (f *APIFetcher) FetchHooks() ([]HookRow, error) {
 	var beadList []apiBead
-	if err := f.getList("/v0/beads?status=hooked&limit=1000", &beadList); err != nil {
+	if err := f.getList("/v0/beads?status=in_progress&limit=1000", &beadList); err != nil {
 		return nil, nil
 	}
 
@@ -483,37 +483,39 @@ func (f *APIFetcher) FetchHooks() ([]HookRow, error) {
 	return rows, nil
 }
 
-// FetchIssues returns open and hooked issues (the backlog).
+// FetchIssues returns open and in-progress issues (the backlog), tagged by rig.
 func (f *APIFetcher) FetchIssues() ([]IssueRow, error) {
-	var allBeads []apiBead
-
-	// Fetch open issues.
-	var openBeads []apiBead
-	if err := f.getList("/v0/beads?status=open&limit=50", &openBeads); err == nil {
-		allBeads = append(allBeads, openBeads...)
+	// Discover rigs so we can tag each bead with its source rig.
+	var rigs []apiRigResponse
+	if err := f.getList("/v0/rigs", &rigs); err != nil || len(rigs) == 0 {
+		// Fallback: query without rig scoping.
+		rigs = []apiRigResponse{{Name: ""}}
 	}
 
-	// Fetch hooked issues (in progress).
-	var hookedBeads []apiBead
-	if err := f.getList("/v0/beads?status=hooked&limit=50", &hookedBeads); err == nil {
-		allBeads = append(allBeads, hookedBeads...)
+	var allBeads []rigBead
+	for _, rig := range rigs {
+		rigFilter := ""
+		if rig.Name != "" {
+			rigFilter = "&rig=" + rig.Name
+		}
+		var openBeads []apiBead
+		if err := f.getList("/v0/beads?status=open&limit=50"+rigFilter, &openBeads); err == nil {
+			for _, b := range openBeads {
+				allBeads = append(allBeads, rigBead{bead: b, rig: rig.Name})
+			}
+		}
+		var inProgressBeads []apiBead
+		if err := f.getList("/v0/beads?status=in_progress&limit=50"+rigFilter, &inProgressBeads); err == nil {
+			for _, b := range inProgressBeads {
+				allBeads = append(allBeads, rigBead{bead: b, rig: rig.Name})
+			}
+		}
 	}
 
 	var rows []IssueRow
-	for _, b := range allBeads {
-		// Skip internal types.
-		isInternal := false
-		switch b.Type {
-		case "message", "convoy", "queue", "merge-request", "wisp", "agent":
-			isInternal = true
-		}
-		for _, l := range b.Labels {
-			switch l {
-			case "gc:message", "gc:convoy", "gc:queue", "gc:merge-request", "gc:wisp", "gc:agent":
-				isInternal = true
-			}
-		}
-		if isInternal {
+	for _, rb := range allBeads {
+		b := rb.bead
+		if isInternalBead(b) {
 			continue
 		}
 
@@ -521,6 +523,7 @@ func (f *APIFetcher) FetchIssues() ([]IssueRow, error) {
 			ID:    b.ID,
 			Title: b.Title,
 			Type:  b.Type,
+			Rig:   rb.rig,
 		}
 
 		var displayLabels []string
@@ -557,6 +560,27 @@ func (f *APIFetcher) FetchIssues() ([]IssueRow, error) {
 		return rows[i].Age > rows[j].Age
 	})
 	return rows, nil
+}
+
+// rigBead pairs a bead with its source rig name.
+type rigBead struct {
+	bead apiBead
+	rig  string
+}
+
+// isInternalBead returns true for beads that are internal infrastructure.
+func isInternalBead(b apiBead) bool {
+	switch b.Type {
+	case "message", "convoy", "queue", "merge-request", "wisp", "agent":
+		return true
+	}
+	for _, l := range b.Labels {
+		switch l {
+		case "gc:message", "gc:convoy", "gc:queue", "gc:merge-request", "gc:wisp", "gc:agent":
+			return true
+		}
+	}
+	return false
 }
 
 // FetchEscalations returns open escalations needing attention.
