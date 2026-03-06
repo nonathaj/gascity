@@ -220,6 +220,10 @@ func (f *APIFetcher) FetchWorkers() ([]WorkerRow, error) {
 		if !agent.Running {
 			continue
 		}
+		// Only show polecats in the workers panel.
+		if !strings.Contains(agent.Name, "polecat") {
+			continue
+		}
 
 		var lastActivity time.Time
 		sessionName := agent.Name
