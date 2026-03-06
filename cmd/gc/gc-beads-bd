@@ -585,6 +585,10 @@ op_ensure_ready() {
 # ensure_config_yaml creates a minimal .beads/config.yaml with prefix settings
 # if one doesn't exist or is missing the issue_prefix key. Fallback for when
 # bd init fails or doesn't create the file. Matches upstream EnsureConfigYAML.
+#
+# Also enforces dolt.auto-start: false to prevent bd from starting a rogue
+# dolt server when the gc-managed server is temporarily down. Without this,
+# bd's auto-start can reinit and clobber existing databases.
 ensure_config_yaml() {
     local beads_dir="$1"
     local prefix="$2"
@@ -593,6 +597,10 @@ ensure_config_yaml() {
     mkdir -p "$beads_dir"
 
     if [ -f "$config_file" ] && grep -q "issue_prefix" "$config_file" 2>/dev/null; then
+        # Config exists — ensure dolt.auto-start: false is present.
+        if ! grep -q "dolt.auto-start" "$config_file" 2>/dev/null; then
+            printf '\ndolt.auto-start: false\n' >> "$config_file"
+        fi
         return 0
     fi
 
@@ -602,6 +610,7 @@ ensure_config_yaml() {
     cat > "$tmp" <<YAML
 issue_prefix: $prefix
 issue-prefix: ${prefix}-
+dolt.auto-start: false
 YAML
     mv "$tmp" "$config_file"
 }
@@ -692,6 +701,21 @@ op_health() {
     # Query probe.
     if ! do_query_probe; then
         die "dolt query probe failed (SELECT active_branch())"
+    fi
+
+    # Imposter detection (local only): verify the process on our port is
+    # actually our server, not a rogue dolt started by bd auto-start.
+    # Gastown upstream does this in doltserver.Start() via VerifyServerDataDir
+    # + KillImposters. We do it here so health patrol catches imposters that
+    # appear between gc starts.
+    if ! is_remote; then
+        local holder
+        holder=$(find_port_holder)
+        if [ -n "$holder" ] && ! verify_our_server "$holder"; then
+            echo "imposter dolt server detected (PID $holder) — killing" >&2
+            kill_imposter "$holder"
+            die "killed imposter dolt server (PID $holder) on port $DOLT_PORT; recovery will restart the correct server"
+        fi
     fi
 
     # State file data-dir verification (local only).
