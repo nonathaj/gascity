@@ -126,6 +126,8 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		ReadyPromptPrefix:      spec.ReadyPromptPrefix,
 		EmitsPermissionWarning: spec.EmitsPermissionWarning,
 		SupportsACP:            spec.SupportsACP,
+		SupportsHooks:          spec.SupportsHooks,
+		InstructionsFile:       spec.InstructionsFile,
 	}
 	// Copy slices to avoid aliasing.
 	if len(spec.Args) > 0 {
@@ -149,26 +151,23 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 // (either auto-installed or manually). The determination considers:
 //
 //  1. Explicit override: agent.HooksInstalled is set → use that value.
-//  2. Claude always has hooks (via --settings override).
-//  3. Provider name appears in the resolved install_agent_hooks list.
+//  2. Provider name appears in the resolved install_agent_hooks list.
+//  3. Provider's SupportsHooks default (true for claude, gemini, etc.).
 //  4. Otherwise: no hooks.
-func AgentHasHooks(agent *Agent, ws *Workspace, providerName string) bool {
+func AgentHasHooks(agent *Agent, ws *Workspace, providerName string, supportsHooks bool) bool {
 	// 1. Explicit override wins.
 	if agent.HooksInstalled != nil {
 		return *agent.HooksInstalled
 	}
-	// 2. Claude always has hooks via --settings.
-	if providerName == "claude" {
-		return true
-	}
-	// 3. Check install_agent_hooks (agent-level overrides workspace-level).
+	// 2. Check install_agent_hooks (agent-level overrides workspace-level).
 	installHooks := ResolveInstallHooks(agent, ws)
 	for _, h := range installHooks {
 		if h == providerName {
 			return true
 		}
 	}
-	return false
+	// 3. Fall back to provider-level default.
+	return supportsHooks
 }
 
 // mergeAgentOverrides applies non-zero agent-level fields on top of the

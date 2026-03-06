@@ -1,4 +1,6 @@
 {
+  "skipDangerousModePermissionPrompt": true,
+  "editorMode": "normal",
   "hooks": {
     "SessionStart": [
       {
@@ -6,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gc prime"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime"
           }
         ]
       }
@@ -17,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gc prime"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime"
           }
         ]
       }
@@ -28,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gc mail check --inject"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc mail check --inject"
           }
         ]
       }
@@ -39,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "gc hook --inject"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc hook --inject"
           }
         ]
       }

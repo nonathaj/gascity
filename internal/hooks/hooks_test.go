@@ -9,10 +9,10 @@ import (
 
 func TestSupportedProviders(t *testing.T) {
 	got := SupportedProviders()
-	if len(got) != 5 {
-		t.Fatalf("SupportedProviders() = %v, want 5 entries", got)
+	if len(got) != 7 {
+		t.Fatalf("SupportedProviders() = %v, want 7 entries", got)
 	}
-	want := map[string]bool{"claude": true, "gemini": true, "opencode": true, "copilot": true, "cursor": true}
+	want := map[string]bool{"claude": true, "gemini": true, "opencode": true, "copilot": true, "cursor": true, "pi": true, "omp": true}
 	for _, p := range got {
 		if !want[p] {
 			t.Errorf("unexpected provider %q", p)
@@ -27,12 +27,15 @@ func TestValidateAcceptsSupported(t *testing.T) {
 }
 
 func TestValidateRejectsUnsupported(t *testing.T) {
-	err := Validate([]string{"claude", "codex", "bogus"})
+	err := Validate([]string{"claude", "codex", "auggie", "bogus"})
 	if err == nil {
-		t.Fatal("Validate should reject codex and bogus")
+		t.Fatal("Validate should reject codex, auggie, and bogus")
 	}
 	if !strings.Contains(err.Error(), "codex (no hook mechanism)") {
 		t.Errorf("error should mention codex: %v", err)
+	}
+	if !strings.Contains(err.Error(), "auggie (no hook mechanism)") {
+		t.Errorf("error should mention auggie: %v", err)
 	}
 	if !strings.Contains(err.Error(), "bogus (unknown)") {
 		t.Errorf("error should mention bogus: %v", err)
@@ -55,11 +58,21 @@ func TestInstallClaude(t *testing.T) {
 	if !ok {
 		t.Fatal("expected /city/.gc/settings.json to be written")
 	}
-	if !strings.Contains(string(data), "SessionStart") {
+	s := string(data)
+	if !strings.Contains(s, "SessionStart") {
 		t.Error("claude settings should contain SessionStart hook")
 	}
-	if !strings.Contains(string(data), "gc prime") {
+	if !strings.Contains(s, "gc prime") {
 		t.Error("claude settings should contain gc prime")
+	}
+	if !strings.Contains(s, `"skipDangerousModePermissionPrompt": true`) {
+		t.Error("claude settings should contain skipDangerousModePermissionPrompt")
+	}
+	if !strings.Contains(s, `"editorMode": "normal"`) {
+		t.Error("claude settings should contain editorMode")
+	}
+	if !strings.Contains(s, `$HOME/go/bin`) {
+		t.Error("claude hook commands should include PATH export")
 	}
 }
 
@@ -174,6 +187,44 @@ func TestInstallCursor(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "gc mail check --inject") {
 		t.Error("cursor hooks should contain gc mail check --inject")
+	}
+}
+
+func TestInstallPi(t *testing.T) {
+	fs := fsys.NewFake()
+	err := Install(fs, "/city", "/work", []string{"pi"})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, ok := fs.Files["/work/.pi/extensions/gc-hooks.js"]
+	if !ok {
+		t.Fatal("expected /work/.pi/extensions/gc-hooks.js to be written")
+	}
+	s := string(data)
+	if !strings.Contains(s, "gc prime") {
+		t.Error("pi hooks should contain gc prime")
+	}
+	if !strings.Contains(s, "gc hook --inject") {
+		t.Error("pi hooks should contain gc hook --inject")
+	}
+}
+
+func TestInstallOmp(t *testing.T) {
+	fs := fsys.NewFake()
+	err := Install(fs, "/city", "/work", []string{"omp"})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, ok := fs.Files["/work/.omp/hooks/gc-hook.ts"]
+	if !ok {
+		t.Fatal("expected /work/.omp/hooks/gc-hook.ts to be written")
+	}
+	s := string(data)
+	if !strings.Contains(s, "gc prime") {
+		t.Error("omp hooks should contain gc prime")
+	}
+	if !strings.Contains(s, "gc hook --inject") {
+		t.Error("omp hooks should contain gc hook --inject")
 	}
 }
 

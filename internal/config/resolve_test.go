@@ -455,18 +455,23 @@ func TestResolveInstallHooksNeitherSet(t *testing.T) {
 
 // --- AgentHasHooks tests ---
 
-func TestAgentHasHooks_ClaudeAlways(t *testing.T) {
+func TestAgentHasHooks_SupportsHooksDefault(t *testing.T) {
 	agent := &Agent{Name: "mayor"}
 	ws := &Workspace{Name: "test"}
-	if !AgentHasHooks(agent, ws, "claude") {
-		t.Error("claude should always have hooks")
+	// Provider with SupportsHooks=true → hooks assumed present.
+	if !AgentHasHooks(agent, ws, "claude", true) {
+		t.Error("provider with SupportsHooks=true should have hooks")
+	}
+	// Provider with SupportsHooks=false → no hooks by default.
+	if AgentHasHooks(agent, ws, "codex", false) {
+		t.Error("provider with SupportsHooks=false should not have hooks")
 	}
 }
 
 func TestAgentHasHooks_InstallHooksMatch(t *testing.T) {
 	agent := &Agent{Name: "worker"}
 	ws := &Workspace{InstallAgentHooks: []string{"gemini", "opencode"}}
-	if !AgentHasHooks(agent, ws, "gemini") {
+	if !AgentHasHooks(agent, ws, "gemini", false) {
 		t.Error("gemini with install_agent_hooks should have hooks")
 	}
 }
@@ -474,7 +479,7 @@ func TestAgentHasHooks_InstallHooksMatch(t *testing.T) {
 func TestAgentHasHooks_InstallHooksNoMatch(t *testing.T) {
 	agent := &Agent{Name: "worker"}
 	ws := &Workspace{InstallAgentHooks: []string{"claude"}}
-	if AgentHasHooks(agent, ws, "codex") {
+	if AgentHasHooks(agent, ws, "codex", false) {
 		t.Error("codex not in install_agent_hooks should not have hooks")
 	}
 }
@@ -482,7 +487,7 @@ func TestAgentHasHooks_InstallHooksNoMatch(t *testing.T) {
 func TestAgentHasHooks_NoHooksByDefault(t *testing.T) {
 	agent := &Agent{Name: "worker"}
 	ws := &Workspace{Name: "test"}
-	if AgentHasHooks(agent, ws, "codex") {
+	if AgentHasHooks(agent, ws, "codex", false) {
 		t.Error("codex with no install_agent_hooks should not have hooks")
 	}
 }
@@ -491,7 +496,7 @@ func TestAgentHasHooks_ExplicitOverrideTrue(t *testing.T) {
 	yes := true
 	agent := &Agent{Name: "worker", HooksInstalled: &yes}
 	ws := &Workspace{Name: "test"}
-	if !AgentHasHooks(agent, ws, "codex") {
+	if !AgentHasHooks(agent, ws, "codex", false) {
 		t.Error("hooks_installed=true should override to true")
 	}
 }
@@ -500,9 +505,9 @@ func TestAgentHasHooks_ExplicitOverrideFalse(t *testing.T) {
 	no := false
 	agent := &Agent{Name: "worker", HooksInstalled: &no}
 	ws := &Workspace{Name: "test"}
-	// Even claude should be overridden to false when explicit.
-	if AgentHasHooks(agent, ws, "claude") {
-		t.Error("hooks_installed=false should override even claude")
+	// Even a provider with SupportsHooks=true should be overridden to false.
+	if AgentHasHooks(agent, ws, "claude", true) {
+		t.Error("hooks_installed=false should override even SupportsHooks=true")
 	}
 }
 
@@ -510,10 +515,10 @@ func TestAgentHasHooks_AgentLevelInstallHooks(t *testing.T) {
 	agent := &Agent{Name: "worker", InstallAgentHooks: []string{"copilot"}}
 	ws := &Workspace{InstallAgentHooks: []string{"claude"}}
 	// Agent-level overrides workspace — only copilot in list.
-	if !AgentHasHooks(agent, ws, "copilot") {
+	if !AgentHasHooks(agent, ws, "copilot", false) {
 		t.Error("agent install_agent_hooks should be checked")
 	}
-	if AgentHasHooks(agent, ws, "opencode") {
+	if AgentHasHooks(agent, ws, "opencode", false) {
 		t.Error("opencode not in agent install_agent_hooks")
 	}
 }

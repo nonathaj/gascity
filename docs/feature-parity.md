@@ -347,10 +347,14 @@ become role-agnostic infrastructure that any pack can use.
 
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
-| Hook installation (Claude) | Hook installation (Claude) | **DONE** | `.gc/settings.json` |
+| Hook installation (Claude) | Hook installation (Claude) | **DONE** | `.gc/settings.json` — includes `skipDangerousModePermissionPrompt`, `editorMode`, PATH export |
 | Hook installation (Gemini) | Hook installation (Gemini) | **DONE** | `.gemini/settings.json` — event names (`SessionStart`, `PreCompress`, `BeforeAgent`, `SessionEnd`) verified correct against Gemini CLI docs and gastown upstream. |
 | Hook installation (OpenCode) | Hook installation (OpenCode) | **DONE** | `.opencode/automations/gascity.js` |
 | Hook installation (Copilot) | Hook installation (Copilot) | **DONE** | `.github/copilot-instructions.md` |
+| Hook installation (Pi) | Hook installation (Pi) | **DONE** | `.pi/extensions/gc-hooks.js` |
+| Hook installation (OMP) | Hook installation (OMP) | **DONE** | `.omp/hooks/gc-hook.ts` |
+| Provider `SupportsHooks` flag | `ProviderSpec.SupportsHooks` | **DONE** | Per-provider hook support indicator; used in `AgentHasHooks` default |
+| Provider `InstructionsFile` | `ProviderSpec.InstructionsFile` | **DONE** | Per-provider instructions file (e.g., `CLAUDE.md`, `AGENTS.md`) |
 | `gt hooks sync` | — | **TODO** | Regenerate all settings files from config |
 | `gt hooks diff` | — | **TODO** | Preview what sync would change |
 | `gt hooks base` | — | **TODO** | Edit shared base hook config |
@@ -666,3 +670,4 @@ Feature parity target: ~20,000-23,000 lines.
 | 2026-02-27 | Initial audit: 92 gastown commands mapped, 42 features tracked |
 | 2026-02-27 | Deep comparison (7 agents): +8 new gaps, 12 status corrections, 38 TODO items remaining. Dolt logs/sql/list/recover/sync→DONE. Automation list/show/run/check→DONE. Polecat git-state→DONE. Worktree gitignore→DONE. Periodic dispatch→REMAP (automations). Template vars→PARTIAL (missing DefaultBranch). Gemini hooks→VERIFY. |
 | 2026-02-27 | P2 verification: 4 items resolved (workspace sync→DONE, close-triggers-convoy→DONE via bd on_close hook, sling --merge→DONE, sling auto-convoy→DONE). 2 items WONTFIX (reactive feeding — pull-based GUPP obviates; --max-concurrent — pool min/max is sufficient). 1 item REMAP (MR bead fields — just `bd update --set-metadata branch=X target=Y`, gastown formulas already use this). Convoy-check polling automation removed. Automation tracking→PARTIAL. 31 TODO items remaining (7 P2, 24 P3). |
+| 2026-03-06 | Provider parity audit: added auggie/pi/omp presets (7→10 providers). Claude settings.json: added `skipDangerousModePermissionPrompt`, `editorMode`, PATH export. Added `SupportsHooks` and `InstructionsFile` to ProviderSpec. Generalized `AgentHasHooks` to use provider-level `SupportsHooks` default instead of hardcoded Claude check. Added pi/omp hook templates. |

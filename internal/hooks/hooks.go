@@ -17,10 +17,10 @@ import (
 var configFS embed.FS
 
 // supported lists provider names that have hook support.
-var supported = []string{"claude", "gemini", "opencode", "copilot", "cursor"}
+var supported = []string{"claude", "gemini", "opencode", "copilot", "cursor", "pi", "omp"}
 
 // unsupported lists provider names that have no hook mechanism.
-var unsupported = []string{"codex", "amp"}
+var unsupported = []string{"codex", "amp", "auggie"}
 
 // SupportedProviders returns the list of provider names with hook support.
 func SupportedProviders() []string {
@@ -75,6 +75,10 @@ func Install(fs fsys.FS, cityDir, workDir string, providers []string) error {
 			err = installCopilot(fs, workDir)
 		case "cursor":
 			err = installCursor(fs, workDir)
+		case "pi":
+			err = installPi(fs, workDir)
+		case "omp":
+			err = installOmp(fs, workDir)
 		default:
 			return fmt.Errorf("unsupported hook provider %q", p)
 		}
@@ -113,6 +117,18 @@ func installCopilot(fs fsys.FS, workDir string) error {
 func installCursor(fs fsys.FS, workDir string) error {
 	dst := filepath.Join(workDir, ".cursor", "hooks.json")
 	return writeEmbedded(fs, "config/cursor.json", dst)
+}
+
+// installPi writes .pi/extensions/gc-hooks.js in the working directory.
+func installPi(fs fsys.FS, workDir string) error {
+	dst := filepath.Join(workDir, ".pi", "extensions", "gc-hooks.js")
+	return writeEmbedded(fs, "config/pi.js", dst)
+}
+
+// installOmp writes .omp/hooks/gc-hook.ts in the working directory.
+func installOmp(fs fsys.FS, workDir string) error {
+	dst := filepath.Join(workDir, ".omp", "hooks", "gc-hook.ts")
+	return writeEmbedded(fs, "config/omp.ts", dst)
 }
 
 // writeEmbedded reads an embedded file and writes it to dst, creating parent

@@ -29,6 +29,7 @@ gc [flags]
 | [gc doctor](#gc-doctor) | Check workspace health |
 | [gc event](#gc-event) | Event operations |
 | [gc events](#gc-events) | Show the event log |
+| [gc graph](#gc-graph) | Show dependency graph for beads |
 | [gc handoff](#gc-handoff) | Send handoff mail and restart agent session |
 | [gc help](#gc-help) | Help about any command |
 | [gc hook](#gc-hook) | Check for available work (use --inject for Stop hook output) |
@@ -70,7 +71,6 @@ gc agent
 | [gc agent drain-check](#gc-agent-drain-check) | Check if this agent is draining (exit 0 = draining) |
 | [gc agent kill](#gc-agent-kill) | Force-kill an agent session (reconciler will restart it) |
 | [gc agent list](#gc-agent-list) | List workspace agents |
-| [gc agent logs](#gc-agent-logs) | Show session logs for an agent |
 | [gc agent nudge](#gc-agent-nudge) | Send a message to wake or redirect an agent |
 | [gc agent peek](#gc-agent-peek) | Capture recent output from an agent session |
 | [gc agent request-restart](#gc-agent-request-restart) | Request controller restart this session (blocks until killed) |
@@ -194,31 +194,6 @@ gc agent list [flags]
 |------|------|---------|-------------|
 | `--dir` | string |  | Filter agents by working directory |
 | `--json` | bool |  | Output in JSON format |
-
-## gc agent logs
-
-Show structured session log messages from an agent's Claude JSONL file.
-
-Reads the agent's session log, resolves the conversation DAG, and prints
-messages in chronological order. Use --tail to control how many compaction
-segments to show (0 = all). Use -f to follow new messages as they arrive.
-
-```
-gc agent logs <agent-name> [flags]
-```
-
-**Example:**
-
-```
-gc agent logs mayor
-  gc agent logs mayor --tail 0
-  gc agent logs myrig/polecat-1 -f
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-f`, `--follow` | bool |  | Follow new messages as they arrive |
-| `--tail` | int | `1` | Number of compaction segments to show (0 = all) |
 
 ## gc agent nudge
 
@@ -594,6 +569,7 @@ gc convoy
 | [gc convoy check](#gc-convoy-check) | Auto-close convoys where all issues are closed |
 | [gc convoy close](#gc-convoy-close) | Close a convoy |
 | [gc convoy create](#gc-convoy-create) | Create a convoy and optionally track issues |
+| [gc convoy land](#gc-convoy-land) | Land an owned convoy (terminate + cleanup) |
 | [gc convoy list](#gc-convoy-list) | List open convoys with progress |
 | [gc convoy status](#gc-convoy-status) | Show detailed convoy status |
 | [gc convoy stranded](#gc-convoy-stranded) | Find convoys with ready work but no workers |
@@ -639,7 +615,7 @@ Creates a convoy bead and sets the parent of any provided issue IDs to
 the new convoy. Issues can also be added later with "gc convoy add".
 
 ```
-gc convoy create <name> [issue-ids...]
+gc convoy create <name> [issue-ids...] [flags]
 ```
 
 **Example:**
@@ -647,7 +623,39 @@ gc convoy create <name> [issue-ids...]
 ```
 gc convoy create sprint-42
   gc convoy create sprint-42 issue-1 issue-2 issue-3
+  gc convoy create deploy --owner mayor --notify mayor --merge mr
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--merge` | string |  | merge strategy: direct, mr, local |
+| `--notify` | string |  | notification target on completion |
+| `--owner` | string |  | convoy owner (who manages it) |
+
+## gc convoy land
+
+Land an owned convoy, verifying all children are closed.
+
+Landing is the natural lifecycle termination for owned convoys created
+via "gc sling --owned". It verifies all children are closed (or uses
+--force), closes the convoy bead, and records a ConvoyClosed event.
+
+```
+gc convoy land <convoy-id> [flags]
+```
+
+**Example:**
+
+```
+gc convoy land gc-42
+  gc convoy land gc-42 --force
+  gc convoy land gc-42 --dry-run
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool |  | preview what would happen |
+| `--force` | bool |  | land even with open children |
 
 ## gc convoy list
 
@@ -914,6 +922,33 @@ gc events
 | `--timeout` | string | `30s` | Max wait duration for --watch (e.g. 30s, 5m) |
 | `--type` | string |  | Filter by event type (e.g. bead.created) |
 | `--watch` | bool |  | Block until matching events arrive (exits after first match) |
+
+## gc graph
+
+Show the dependency graph for a set of beads, a convoy, or an epic.
+
+Resolves dependencies via the bead store and prints each bead with its
+status and what blocks it. Convoys and epics are expanded to their
+children automatically. Readiness is computed within the displayed set.
+
+By default prints a table. Use --mermaid for a Mermaid.js flowchart
+you can paste into Markdown.
+
+```
+gc graph <bead-ids|convoy-id|epic-id...> [flags]
+```
+
+**Example:**
+
+```
+gc graph gc-42               # expand convoy or epic children
+  gc graph gc-1 gc-2 gc-3     # arbitrary beads
+  gc graph gc-42 --mermaid     # Mermaid.js diagram
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--mermaid` | bool |  | output Mermaid.js flowchart |
 
 ## gc handoff
 

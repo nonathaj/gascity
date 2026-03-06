@@ -36,6 +36,12 @@ type ProviderSpec struct {
 	// (JSON-RPC 2.0 over stdio). When an agent sets session = "acp",
 	// its resolved provider must have SupportsACP = true.
 	SupportsACP bool `toml:"supports_acp,omitempty"`
+	// SupportsHooks indicates the provider has an executable hook mechanism
+	// (settings.json, plugins, etc.) for lifecycle events.
+	SupportsHooks bool `toml:"supports_hooks,omitempty"`
+	// InstructionsFile is the filename the provider reads for project instructions
+	// (e.g., "CLAUDE.md", "AGENTS.md"). Empty defaults to "AGENTS.md".
+	InstructionsFile string `toml:"instructions_file,omitempty"`
 }
 
 // ResolvedProvider is the fully-merged, ready-to-use provider config.
@@ -52,6 +58,8 @@ type ResolvedProvider struct {
 	EmitsPermissionWarning bool
 	Env                    map[string]string
 	SupportsACP            bool
+	SupportsHooks          bool
+	InstructionsFile       string
 }
 
 // CommandString returns the full command line: command followed by args.
@@ -76,7 +84,7 @@ func (ps *ProviderSpec) pathCheckBinary() string {
 // in rough popularity order.
 var builtinProviderOrder = []string{
 	"claude", "codex", "gemini", "cursor", "copilot",
-	"amp", "opencode",
+	"amp", "opencode", "auggie", "pi", "omp",
 }
 
 // BuiltinProviderOrder returns the provider names in their canonical order.
@@ -103,29 +111,36 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ProcessNames:           []string{"node", "claude"},
 			EmitsPermissionWarning: true,
 			SupportsACP:            true,
+			SupportsHooks:          true,
+			InstructionsFile:       "CLAUDE.md",
 		},
 		"codex": {
-			DisplayName:  "Codex CLI",
-			Command:      "codex",
-			Args:         []string{"--dangerously-bypass-approvals-and-sandbox"},
-			PromptMode:   "none",
-			ReadyDelayMs: 3000,
-			ProcessNames: []string{"codex"},
+			DisplayName:      "Codex CLI",
+			Command:          "codex",
+			Args:             []string{"--dangerously-bypass-approvals-and-sandbox"},
+			PromptMode:       "none",
+			ReadyDelayMs:     3000,
+			ProcessNames:     []string{"codex"},
+			InstructionsFile: "AGENTS.md",
 		},
 		"gemini": {
-			DisplayName:  "Gemini CLI",
-			Command:      "gemini",
-			Args:         []string{"--approval-mode", "yolo"},
-			PromptMode:   "arg",
-			ReadyDelayMs: 5000,
-			ProcessNames: []string{"gemini"},
+			DisplayName:      "Gemini CLI",
+			Command:          "gemini",
+			Args:             []string{"--approval-mode", "yolo"},
+			PromptMode:       "arg",
+			ReadyDelayMs:     5000,
+			ProcessNames:     []string{"gemini"},
+			SupportsHooks:    true,
+			InstructionsFile: "AGENTS.md",
 		},
 		"cursor": {
-			DisplayName:  "Cursor Agent",
-			Command:      "cursor-agent",
-			Args:         []string{"-f"},
-			PromptMode:   "arg",
-			ProcessNames: []string{"cursor-agent"},
+			DisplayName:      "Cursor Agent",
+			Command:          "cursor-agent",
+			Args:             []string{"-f"},
+			PromptMode:       "arg",
+			ProcessNames:     []string{"cursor-agent"},
+			SupportsHooks:    true,
+			InstructionsFile: "AGENTS.md",
 		},
 		"copilot": {
 			DisplayName:       "GitHub Copilot",
@@ -135,23 +150,55 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ReadyPromptPrefix: "\u276f ", // ❯
 			ReadyDelayMs:      5000,
 			ProcessNames:      []string{"copilot"},
+			SupportsHooks:     true,
+			InstructionsFile:  "AGENTS.md",
 		},
 		"amp": {
-			DisplayName:  "Sourcegraph AMP",
-			Command:      "amp",
-			Args:         []string{"--dangerously-allow-all", "--no-ide"},
-			PromptMode:   "arg",
-			ProcessNames: []string{"amp"},
+			DisplayName:      "Sourcegraph AMP",
+			Command:          "amp",
+			Args:             []string{"--dangerously-allow-all", "--no-ide"},
+			PromptMode:       "arg",
+			ProcessNames:     []string{"amp"},
+			InstructionsFile: "AGENTS.md",
 		},
 		"opencode": {
-			DisplayName:  "OpenCode",
-			Command:      "opencode",
-			Args:         []string{},
-			PromptMode:   "arg",
-			ReadyDelayMs: 8000,
-			ProcessNames: []string{"opencode", "node", "bun"},
-			Env:          map[string]string{"OPENCODE_PERMISSION": `{"*":"allow"}`},
-			SupportsACP:  true,
+			DisplayName:      "OpenCode",
+			Command:          "opencode",
+			Args:             []string{},
+			PromptMode:       "arg",
+			ReadyDelayMs:     8000,
+			ProcessNames:     []string{"opencode", "node", "bun"},
+			Env:              map[string]string{"OPENCODE_PERMISSION": `{"*":"allow"}`},
+			SupportsACP:      true,
+			SupportsHooks:    true,
+			InstructionsFile: "AGENTS.md",
+		},
+		"auggie": {
+			DisplayName:      "Auggie CLI",
+			Command:          "auggie",
+			Args:             []string{"--allow-indexing"},
+			PromptMode:       "arg",
+			ProcessNames:     []string{"auggie"},
+			InstructionsFile: "AGENTS.md",
+		},
+		"pi": {
+			DisplayName:      "Pi Coding Agent",
+			Command:          "pi",
+			Args:             []string{"-e", ".pi/extensions/gc-hooks.js"},
+			PromptMode:       "arg",
+			ReadyDelayMs:     8000,
+			ProcessNames:     []string{"pi", "node", "bun"},
+			SupportsHooks:    true,
+			InstructionsFile: "AGENTS.md",
+		},
+		"omp": {
+			DisplayName:      "Oh My Pi (OMP)",
+			Command:          "omp",
+			Args:             []string{"--hook", ".omp/hooks/gc-hook.ts"},
+			PromptMode:       "arg",
+			ProcessNames:     []string{"omp", "node", "bun"},
+			SupportsHooks:    true,
+			InstructionsFile: "AGENTS.md",
 		},
 	}
 }
