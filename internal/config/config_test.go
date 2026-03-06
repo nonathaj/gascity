@@ -1437,6 +1437,82 @@ func TestValidatePoolMaxZero(t *testing.T) {
 	}
 }
 
+func TestValidatePoolMaxUnlimited(t *testing.T) {
+	// max=-1 is valid (unlimited pool).
+	agents := []Agent{{
+		Name: "polecat",
+		Pool: &PoolConfig{Min: 0, Max: -1},
+	}}
+	err := ValidateAgents(agents)
+	if err != nil {
+		t.Errorf("ValidateAgents: unexpected error for max=-1: %v", err)
+	}
+}
+
+func TestValidatePoolMaxBelowNegOne(t *testing.T) {
+	// max=-2 is invalid.
+	agents := []Agent{{
+		Name: "polecat",
+		Pool: &PoolConfig{Min: 0, Max: -2},
+	}}
+	err := ValidateAgents(agents)
+	if err == nil {
+		t.Fatal("expected error for max=-2")
+	}
+	if !strings.Contains(err.Error(), "must be >= -1") {
+		t.Errorf("error = %q, want mention of >= -1", err)
+	}
+}
+
+func TestValidatePoolMinGtMaxUnlimited(t *testing.T) {
+	// min > 0 with max=-1 should be valid (unlimited allows any min).
+	agents := []Agent{{
+		Name: "polecat",
+		Pool: &PoolConfig{Min: 5, Max: -1},
+	}}
+	err := ValidateAgents(agents)
+	if err != nil {
+		t.Errorf("ValidateAgents: unexpected error for min=5, max=-1: %v", err)
+	}
+}
+
+func TestPoolConfigIsUnlimited(t *testing.T) {
+	tests := []struct {
+		max  int
+		want bool
+	}{
+		{-1, true},
+		{0, false},
+		{1, false},
+		{5, false},
+	}
+	for _, tt := range tests {
+		p := PoolConfig{Max: tt.max}
+		if got := p.IsUnlimited(); got != tt.want {
+			t.Errorf("PoolConfig{Max: %d}.IsUnlimited() = %v, want %v", tt.max, got, tt.want)
+		}
+	}
+}
+
+func TestPoolConfigIsMultiInstance(t *testing.T) {
+	tests := []struct {
+		max  int
+		want bool
+	}{
+		{-1, true}, // unlimited
+		{0, false}, // disabled
+		{1, false}, // single instance
+		{2, true},  // multi-instance
+		{10, true}, // multi-instance
+	}
+	for _, tt := range tests {
+		p := PoolConfig{Max: tt.max}
+		if got := p.IsMultiInstance(); got != tt.want {
+			t.Errorf("PoolConfig{Max: %d}.IsMultiInstance() = %v, want %v", tt.max, got, tt.want)
+		}
+	}
+}
+
 func TestValidateAgentsValid(t *testing.T) {
 	agents := []Agent{
 		{Name: "mayor"},

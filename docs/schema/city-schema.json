@@ -875,8 +875,8 @@
         },
         "max": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Max is the maximum number of pool instances. 0 means the pool is\ndisabled (no instances will be created). Defaults to 0.",
+          "minimum": -1,
+          "description": "Max is the maximum number of pool instances. 0 means the pool is\ndisabled (no instances will be created). -1 means unlimited (the\ncheck command's output determines scale with no upper cap).\nDefaults to 0.",
           "default": 0
         },
         "check": {

@@ -958,6 +958,31 @@ func resolveNamedPacks(cfg *City, cityRoot string) {
 	}
 }
 
+// PackDefinesAgent checks whether a pack (recursively through includes)
+// defines a rig-scoped agent with the given name. Returns false on error
+// (fail-open: caller should add the default polecat).
+func PackDefinesAgent(fs fsys.FS, packRef, cityRoot, agentName string) bool {
+	topoDir, err := resolvePackRef(packRef, cityRoot, cityRoot)
+	if err != nil {
+		return false
+	}
+	topoPath := filepath.Join(topoDir, packFile)
+
+	agents, _, _, _, _, err := loadPack(fs, topoPath, topoDir, cityRoot, "", nil)
+	if err != nil {
+		return false
+	}
+
+	// Filter to rig-scoped agents only.
+	rigAgents := filterAgentsByScope(agents, false)
+	for _, a := range rigAgents {
+		if a.Name == agentName {
+			return true
+		}
+	}
+	return false
+}
+
 // EffectiveCityPacks returns the resolved list of city-level pack
 // paths from workspace.includes. Returns nil if none are set.
 func EffectiveCityPacks(ws Workspace) []string {

@@ -436,8 +436,8 @@ func controllerLoop(
 							}
 						}
 					}
-					poolSessions = computePoolSessions(cfg, cityName)
-					poolDeathHandlers = computePoolDeathHandlers(cfg, cityName, cityRoot)
+					poolSessions = computePoolSessions(cfg, cityName, sp)
+					poolDeathHandlers = computePoolDeathHandlers(cfg, cityName, cityRoot, sp)
 					suspendedNames = computeSuspendedNames(cfg, cityName, cityRoot)
 					// Rebuild crash tracker only if config values changed.
 					newMaxR := cfg.Daemon.MaxRestartsOrDefault()
@@ -455,7 +455,7 @@ func controllerLoop(
 						}
 					}
 					// Rebuild idle tracker with new config timeouts.
-					it = buildIdleTracker(cfg, cityName)
+					it = buildIdleTracker(cfg, cityName, sp)
 					// Rebuild wisp GC from new config.
 					if cfg.Daemon.WispGCEnabled() {
 						wg = newWispGC(cfg.Daemon.WispGCIntervalDuration(),
@@ -624,7 +624,7 @@ func runController(
 	}
 
 	// Build idle tracker from config.
-	it := buildIdleTracker(cfg, cityName)
+	it := buildIdleTracker(cfg, cityName, sp)
 
 	// Build wisp GC from config.
 	var wg wispGC

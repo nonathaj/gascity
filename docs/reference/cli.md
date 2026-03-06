@@ -40,6 +40,7 @@ gc [flags]
 | [gc restart](#gc-restart) | Restart all agent sessions in the city |
 | [gc resume](#gc-resume) | Resume a suspended city |
 | [gc rig](#gc-rig) | Manage rigs (projects) |
+| [gc skill](#gc-skill) | Show command reference for a topic |
 | [gc sling](#gc-sling) | Route work to an agent or pool |
 | [gc start](#gc-start) | Start the city (auto-initializes if needed) |
 | [gc status](#gc-status) | Show city-wide status overview |
@@ -1421,6 +1422,25 @@ database remains accessible. Use "gc rig resume" to restore.
 
 ```
 gc rig suspend <name>
+```
+
+## gc skill
+
+Show curated command reference for a Gas City topic.
+
+Without arguments, lists available topics. With a topic name,
+prints the full command reference for that topic.
+
+```
+gc skill [topic]
+```
+
+**Example:**
+
+```
+gc skill work       # beads command reference
+  gc skill dispatch   # sling and formula reference
+  gc skill            # list all topics
 ```
 
 ## gc sling

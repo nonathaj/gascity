@@ -745,15 +745,7 @@ func doSlingNudge(a *config.Agent, cityName string, cfg *config.City,
 	if a.IsPool() {
 		// Find a running pool member to nudge.
 		pool := a.EffectivePool()
-		for i := 1; i <= pool.Max; i++ {
-			name := a.Name
-			if pool.Max > 1 {
-				name = fmt.Sprintf("%s-%d", a.Name, i)
-			}
-			qn := name
-			if a.Dir != "" {
-				qn = a.Dir + "/" + name
-			}
+		for _, qn := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 			sn := agent.SessionNameFor(cityName, qn, st)
 			if sp.IsRunning(sn) {
 				h := agent.HandleFor(qn, cityName, st, sp)
@@ -992,7 +984,11 @@ func printTarget(w func(string), a config.Agent) {
 	w("Target:")
 	if a.IsPool() {
 		pool := a.EffectivePool()
-		w(fmt.Sprintf("  Pool:        %s (min=%d max=%d)", a.QualifiedName(), pool.Min, pool.Max))
+		maxDisplay := fmt.Sprintf("max=%d", pool.Max)
+		if pool.IsUnlimited() {
+			maxDisplay = "max=unlimited"
+		}
+		w(fmt.Sprintf("  Pool:        %s (min=%d %s)", a.QualifiedName(), pool.Min, maxDisplay))
 	} else {
 		w("  Agent:       " + a.QualifiedName() + " (fixed agent)")
 	}

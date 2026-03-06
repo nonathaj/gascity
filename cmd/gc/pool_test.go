@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -132,6 +133,99 @@ func TestEvaluatePoolWhitespaceOnly(t *testing.T) {
 	}
 	if got != 1 {
 		t.Errorf("got %d, want 1 (min on error)", got)
+	}
+}
+
+func TestEvaluatePoolUnlimitedNoClamp(t *testing.T) {
+	pool := config.PoolConfig{Min: 0, Max: -1, Check: "echo 100"}
+	runner := func(_, _ string) (string, error) { return "100", nil }
+
+	got, err := evaluatePool("worker", pool, "", runner)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	// With max=-1 (unlimited), the value should not be clamped.
+	if got != 100 {
+		t.Errorf("got %d, want 100 (no upper clamp for unlimited)", got)
+	}
+}
+
+func TestEvaluatePoolUnlimitedClampsToMin(t *testing.T) {
+	pool := config.PoolConfig{Min: 2, Max: -1, Check: "echo 0"}
+	runner := func(_, _ string) (string, error) { return "0", nil }
+
+	got, err := evaluatePool("worker", pool, "", runner)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("got %d, want 2 (clamped to min)", got)
+	}
+}
+
+func TestPoolAgentsUnlimitedNaming(t *testing.T) {
+	cfgAgent := &config.Agent{
+		Name:         "polecat",
+		StartCommand: "echo hello",
+		Pool:         &config.PoolConfig{Min: 0, Max: -1, Check: "echo 3"},
+	}
+	sp := session.NewFake()
+	bp := newAgentBuildParams("city", t.TempDir(), &config.City{}, sp, time.Now(), io.Discard)
+
+	agents, err := poolAgents(bp, cfgAgent, 3)
+	if err != nil {
+		t.Fatalf("poolAgents: %v", err)
+	}
+	if len(agents) != 3 {
+		t.Fatalf("len = %d, want 3", len(agents))
+	}
+	// Unlimited pools use suffixed names (like max > 1).
+	for i, a := range agents {
+		want := fmt.Sprintf("polecat-%d", i+1)
+		if a.Name() != want {
+			t.Errorf("agents[%d].Name() = %q, want %q", i, a.Name(), want)
+		}
+	}
+}
+
+func TestDiscoverPoolInstancesBounded(t *testing.T) {
+	sp := session.NewFake()
+	pool := config.PoolConfig{Min: 0, Max: 3}
+	instances := discoverPoolInstances("worker", "myrig", pool, "city", "", sp)
+	if len(instances) != 3 {
+		t.Fatalf("len = %d, want 3", len(instances))
+	}
+	want := []string{"myrig/worker-1", "myrig/worker-2", "myrig/worker-3"}
+	for i, got := range instances {
+		if got != want[i] {
+			t.Errorf("instances[%d] = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestDiscoverPoolInstancesUnlimited(t *testing.T) {
+	sp := session.NewFake()
+	// Start some instances that look like pool members.
+	_ = sp.Start(context.Background(), "myrig--worker-1", session.Config{})
+	_ = sp.Start(context.Background(), "myrig--worker-3", session.Config{})
+	// Start a non-matching session.
+	_ = sp.Start(context.Background(), "myrig--refinery", session.Config{})
+
+	pool := config.PoolConfig{Min: 0, Max: -1}
+	instances := discoverPoolInstances("worker", "myrig", pool, "city", "", sp)
+	if len(instances) != 2 {
+		t.Fatalf("len = %d, want 2 (instances: %v)", len(instances), instances)
+	}
+}
+
+func TestCountRunningPoolInstancesUnlimited(t *testing.T) {
+	sp := session.NewFake()
+	_ = sp.Start(context.Background(), "worker-1", session.Config{})
+	_ = sp.Start(context.Background(), "worker-3", session.Config{})
+
+	count := countRunningPoolInstances("worker", "", config.PoolConfig{Min: 0, Max: -1}, "city", "", sp)
+	if count != 2 {
+		t.Errorf("count = %d, want 2", count)
 	}
 }
 
@@ -477,7 +571,7 @@ func TestCountRunningPoolInstancesUsesListRunning(t *testing.T) {
 	_ = sp.Start(context.Background(), "worker-3", session.Config{})
 	_ = sp.Start(context.Background(), "worker-5", session.Config{})
 
-	count := countRunningPoolInstances("worker", "", 5, "city", "", sp)
+	count := countRunningPoolInstances("worker", "", config.PoolConfig{Min: 0, Max: 5}, "city", "", sp)
 	if count != 3 {
 		t.Errorf("count = %d, want 3", count)
 	}
@@ -489,7 +583,7 @@ func TestCountRunningPoolInstancesWithDir(t *testing.T) {
 	_ = sp.Start(context.Background(), "myrig--worker-1", session.Config{})
 	_ = sp.Start(context.Background(), "myrig--worker-2", session.Config{})
 
-	count := countRunningPoolInstances("worker", "myrig", 3, "city", "", sp)
+	count := countRunningPoolInstances("worker", "myrig", config.PoolConfig{Min: 0, Max: 3}, "city", "", sp)
 	if count != 2 {
 		t.Errorf("count = %d, want 2", count)
 	}
@@ -497,7 +591,7 @@ func TestCountRunningPoolInstancesWithDir(t *testing.T) {
 
 func TestCountRunningPoolInstancesNoneRunning(t *testing.T) {
 	sp := session.NewFake()
-	count := countRunningPoolInstances("worker", "", 10, "city", "", sp)
+	count := countRunningPoolInstances("worker", "", config.PoolConfig{Min: 0, Max: 10}, "city", "", sp)
 	if count != 0 {
 		t.Errorf("count = %d, want 0", count)
 	}
@@ -698,7 +792,7 @@ func TestComputePoolDeathHandlers(t *testing.T) {
 		},
 	}
 
-	handlers := computePoolDeathHandlers(cfg, "test", t.TempDir())
+	handlers := computePoolDeathHandlers(cfg, "test", t.TempDir(), session.NewFake())
 
 	// dog has max=3, so 3 handlers (dog-1, dog-2, dog-3).
 	// cat has max=1, skipped. mayor is not a pool.

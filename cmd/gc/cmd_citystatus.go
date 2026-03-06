@@ -163,15 +163,14 @@ func doCityStatus(
 			suspended := a.Suspended || (a.Dir != "" && suspendedRigs[a.Dir])
 			pool := a.EffectivePool()
 
-			if pool.Max > 1 {
+			if pool.IsMultiInstance() {
 				// Pool agent — show pool header then instances.
-				fmt.Fprintf(stdout, "  %-24spool (min=%d, max=%d)\n", a.QualifiedName(), pool.Min, pool.Max) //nolint:errcheck // best-effort stdout
-				for i := 1; i <= pool.Max; i++ {
-					instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-					qualifiedInstance := instanceName
-					if a.Dir != "" {
-						qualifiedInstance = a.Dir + "/" + instanceName
-					}
+				maxDisplay := fmt.Sprintf("max=%d", pool.Max)
+				if pool.IsUnlimited() {
+					maxDisplay = "max=unlimited"
+				}
+				fmt.Fprintf(stdout, "  %-24spool (min=%d, %s)\n", a.QualifiedName(), pool.Min, maxDisplay) //nolint:errcheck // best-effort stdout
+				for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, cfg.Workspace.SessionTemplate, sp) {
 					sn := sessionName(cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
 					status := agentStatusLine(sp, dops, sn, suspended)
 					fmt.Fprintf(stdout, "    %-22s%s\n", qualifiedInstance, status) //nolint:errcheck // best-effort stdout
@@ -253,14 +252,10 @@ func doCityStatusJSON(
 			scope = "rig"
 		}
 
-		if pool.Max > 1 {
+		if pool.IsMultiInstance() {
 			// Pool agent — emit each instance.
-			for i := 1; i <= pool.Max; i++ {
-				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-				qualifiedInstance := instanceName
-				if a.Dir != "" {
-					qualifiedInstance = a.Dir + "/" + instanceName
-				}
+			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, cfg.Workspace.SessionTemplate, sp) {
+				_, instanceName := config.ParseQualifiedName(qualifiedInstance)
 				sn := sessionName(cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
 				running := sp.IsRunning(sn)
 				agents = append(agents, StatusAgentJSON{

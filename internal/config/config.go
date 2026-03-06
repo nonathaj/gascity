@@ -790,8 +790,10 @@ type PoolConfig struct {
 	// Min is the minimum number of pool instances. Defaults to 0.
 	Min int `toml:"min,omitempty" jsonschema:"minimum=0,default=0"`
 	// Max is the maximum number of pool instances. 0 means the pool is
-	// disabled (no instances will be created). Defaults to 0.
-	Max int `toml:"max,omitempty" jsonschema:"minimum=0,default=0"`
+	// disabled (no instances will be created). -1 means unlimited (the
+	// check command's output determines scale with no upper cap).
+	// Defaults to 0.
+	Max int `toml:"max,omitempty" jsonschema:"minimum=-1,default=0"`
 	// Check is a shell command whose output determines desired pool size. Defaults to "echo 1".
 	Check string `toml:"check,omitempty" jsonschema:"default=echo 1"`
 	// DrainTimeout is the maximum time to wait for a pool instance to finish its
@@ -818,6 +820,13 @@ func (p *PoolConfig) DrainTimeoutDuration() time.Duration {
 	}
 	return dur
 }
+
+// IsUnlimited returns true if the pool has no upper bound (max < 0).
+func (p PoolConfig) IsUnlimited() bool { return p.Max < 0 }
+
+// IsMultiInstance returns true if the pool can have more than one instance.
+// This covers both bounded pools (max > 1) and unlimited pools (max < 0).
+func (p PoolConfig) IsMultiInstance() bool { return p.Max > 1 || p.Max < 0 }
 
 // Agent defines a configured agent in the city.
 type Agent struct {
@@ -1124,10 +1133,10 @@ func ValidateAgents(agents []Agent) error {
 			if a.Pool.Min < 0 {
 				return fmt.Errorf("agent %q: pool min must be >= 0", a.Name)
 			}
-			if a.Pool.Max < 0 {
-				return fmt.Errorf("agent %q: pool max must be >= 0", a.Name)
+			if a.Pool.Max < -1 {
+				return fmt.Errorf("agent %q: pool max must be >= -1 (use -1 for unlimited)", a.Name)
 			}
-			if a.Pool.Min > a.Pool.Max {
+			if a.Pool.Max >= 0 && a.Pool.Min > a.Pool.Max {
 				return fmt.Errorf("agent %q: pool min (%d) must be <= max (%d)", a.Name, a.Pool.Min, a.Pool.Max)
 			}
 			// Pool agents: sling_query and work_query must be both set or both unset.

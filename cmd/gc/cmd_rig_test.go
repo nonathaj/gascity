@@ -702,3 +702,123 @@ name = "inline-agent"
 		t.Errorf("city.toml should contain new rig:\n%s", data)
 	}
 }
+
+// Test that doRigAdd writes a default polecat pool when no pack is specified.
+func TestDoRigAdd_DefaultPolecatNoPack(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agents]]\nname = \"mayor\"\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-project")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd returned %d, stderr: %s", code, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Default polecat pool added") {
+		t.Errorf("output missing polecat message: %s", output)
+	}
+
+	// Verify city.toml has the polecat agent.
+	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Should have mayor + polecat.
+	var found bool
+	for _, a := range cfg.Agents {
+		if a.Name == "polecat" && a.Dir == "my-project" && a.Pool != nil && a.Pool.Max == -1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("city.toml should contain polecat agent with max=-1, agents: %+v", cfg.Agents)
+	}
+}
+
+// Test that doRigAdd writes a comment (not a polecat) when the pack provides one.
+func TestDoRigAdd_PackProvidesPolecat(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agents]]\nname = \"mayor\"\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a pack that defines a polecat.
+	packDir := filepath.Join(cityPath, "packs", "gastown")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	packToml := `
+[pack]
+name = "gastown"
+schema = 1
+
+[[agents]]
+name = "polecat"
+[agents.pool]
+min = 1
+max = 5
+check = "echo 3"
+`
+	if err := os.WriteFile(filepath.Join(packDir, "pack.toml"), []byte(packToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-project")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "packs/gastown", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd returned %d, stderr: %s", code, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "provided by pack") {
+		t.Errorf("output missing 'provided by pack' message: %s", output)
+	}
+
+	// Verify city.toml has the comment but NOT an inline polecat agent.
+	data, err := os.ReadFile(filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tomlStr := string(data)
+	if !strings.Contains(tomlStr, "# Default polecat pool for rig my-project provided by pack packs/gastown") {
+		t.Errorf("city.toml should contain pack-provided comment:\n%s", tomlStr)
+	}
+	// The config should NOT have an inline polecat agent (only the pack provides it).
+	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range cfg.Agents {
+		if a.Name == "polecat" {
+			t.Errorf("city.toml should NOT contain inline polecat agent when pack provides one, agents: %+v", cfg.Agents)
+		}
+	}
+}

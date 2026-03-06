@@ -207,11 +207,35 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 		fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+
+	// Add default polecat pool unless the pack already provides one.
+	packHasPolecat := false
+	if include != "" {
+		packHasPolecat = config.PackDefinesAgent(fs, include, cityPath, "polecat")
+	}
+	if !packHasPolecat {
+		cfg.Agents = append(cfg.Agents, config.Agent{
+			Name: "polecat",
+			Dir:  name,
+			Pool: &config.PoolConfig{Min: 0, Max: -1},
+		})
+		w("  Default polecat pool added (min=0, max=unlimited)")
+	} else {
+		w(fmt.Sprintf("  Default polecat pool provided by pack %s", include))
+	}
+
 	data, err := cfg.Marshal()
 	if err != nil {
 		fmt.Fprintf(stderr, "gc rig add: marshaling config: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+
+	// If the pack provides a polecat, append a comment to make the decision visible.
+	if packHasPolecat {
+		data = append(data, []byte(
+			"\n# Default polecat pool for rig "+name+" provided by pack "+include+"\n")...)
+	}
+
 	if err := fs.WriteFile(tomlPath, data, 0o644); err != nil {
 		fmt.Fprintf(stderr, "gc rig add: writing config: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1

@@ -84,18 +84,13 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 	for _, a := range cfg.Agents {
 		pool := a.EffectivePool()
 		qn := a.QualifiedName()
-		if pool.Max <= 1 {
+		if !pool.IsMultiInstance() {
 			// Single agent.
 			agents = append(agents, agent.HandleFor(qn, cityName, st, sp))
 			desired[agent.SessionNameFor(cityName, qn, st)] = true
 		} else {
-			// Pool agent: generate {name}-1 through {name}-{max}.
-			for i := 1; i <= pool.Max; i++ {
-				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-				qualifiedInstance := instanceName
-				if a.Dir != "" {
-					qualifiedInstance = a.Dir + "/" + instanceName
-				}
+			// Pool agent: discover instances (static for bounded, live for unlimited).
+			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 				agents = append(agents, agent.HandleFor(qualifiedInstance, cityName, st, sp))
 				desired[agent.SessionNameFor(cityName, qualifiedInstance, st)] = true
 			}

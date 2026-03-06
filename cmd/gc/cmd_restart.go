@@ -121,7 +121,7 @@ func doRigRestart(
 	killed := 0
 	for _, a := range agents {
 		pool := a.EffectivePool()
-		if pool.Max <= 1 {
+		if !pool.IsMultiInstance() {
 			// Single agent.
 			h := agent.HandleFor(a.QualifiedName(), cityName, sessionTemplate, sp)
 			if h.IsRunning() {
@@ -137,13 +137,8 @@ func doRigRestart(
 				killed++
 			}
 		} else {
-			// Pool agent: iterate {name}-1 through {name}-{max}.
-			for i := 1; i <= pool.Max; i++ {
-				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-				qualifiedInstance := instanceName
-				if a.Dir != "" {
-					qualifiedInstance = a.Dir + "/" + instanceName
-				}
+			// Pool agent: discover instances (static for bounded, live for unlimited).
+			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
 				h := agent.HandleFor(qualifiedInstance, cityName, sessionTemplate, sp)
 				if h.IsRunning() {
 					if err := h.Stop(); err != nil {

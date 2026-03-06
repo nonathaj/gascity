@@ -190,17 +190,12 @@ func doRigStatus(
 
 	for _, a := range agents {
 		pool := a.EffectivePool()
-		if pool.Max <= 1 {
+		if !pool.IsMultiInstance() {
 			sn := sessionName(cityName, a.QualifiedName(), sessionTemplate)
 			status := agentStatusLine(sp, dops, sn, a.Suspended)
 			fmt.Fprintf(stdout, "    %-12s%s\n", a.QualifiedName(), status) //nolint:errcheck // best-effort stdout
 		} else {
-			for i := 1; i <= pool.Max; i++ {
-				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-				qualifiedInstance := instanceName
-				if a.Dir != "" {
-					qualifiedInstance = a.Dir + "/" + instanceName
-				}
+			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
 				sn := sessionName(cityName, qualifiedInstance, sessionTemplate)
 				status := agentStatusLine(sp, dops, sn, a.Suspended)
 				fmt.Fprintf(stdout, "    %-12s%s\n", qualifiedInstance, status) //nolint:errcheck // best-effort stdout

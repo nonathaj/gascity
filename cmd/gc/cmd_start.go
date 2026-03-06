@@ -72,24 +72,20 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 }
 
 // computePoolSessions builds the set of ALL possible pool session names
-// (1..max) for every pool agent in the config, mapped to the pool's drain
+// (1..max for bounded pools, currently running for unlimited) for every
+// multi-instance pool agent in the config, mapped to the pool's drain
 // timeout. Used to distinguish excess pool members (drain) from true orphans
 // (kill) during reconciliation, and to enforce drain timeouts.
-func computePoolSessions(cfg *config.City, cityName string) map[string]time.Duration {
+func computePoolSessions(cfg *config.City, cityName string, sp session.Provider) map[string]time.Duration {
 	ps := make(map[string]time.Duration)
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
 		pool := a.EffectivePool()
-		if !a.IsPool() || pool.Max <= 1 {
+		if !a.IsPool() || !pool.IsMultiInstance() {
 			continue
 		}
 		timeout := pool.DrainTimeoutDuration()
-		for i := 1; i <= pool.Max; i++ {
-			instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-			qualifiedInstance := instanceName
-			if a.Dir != "" {
-				qualifiedInstance = a.Dir + "/" + instanceName
-			}
+		for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 			ps[sessionName(cityName, qualifiedInstance, st)] = timeout
 		}
 	}
@@ -103,8 +99,9 @@ type poolDeathInfo struct {
 }
 
 // computePoolDeathHandlers builds a map from session name to death handler
-// for every pool instance (1..max). Used to detect and handle pool deaths.
-func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string) map[string]poolDeathInfo {
+// for every pool instance (static for bounded pools, currently running for
+// unlimited). Used to detect and handle pool deaths.
+func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp session.Provider) map[string]poolDeathInfo {
 	handlers := make(map[string]poolDeathInfo)
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -112,11 +109,11 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string) map[s
 			continue
 		}
 		pool := a.EffectivePool()
-		if pool.Max <= 1 {
+		if !pool.IsMultiInstance() {
 			continue
 		}
-		for i := 1; i <= pool.Max; i++ {
-			instanceName := fmt.Sprintf("%s-%d", a.Name, i)
+		for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
+			_, instanceName := config.ParseQualifiedName(qualifiedInstance)
 			instance := config.Agent{Name: instanceName, Dir: a.Dir, Pool: a.Pool, PoolName: a.QualifiedName()}
 			cmd := instance.EffectiveOnDeath()
 			if cmd == "" {
@@ -127,10 +124,6 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string) map[s
 				if d, err := resolveAgentDir(cityPath, a.Dir); err == nil {
 					dir = d
 				}
-			}
-			qualifiedInstance := instanceName
-			if a.Dir != "" {
-				qualifiedInstance = a.Dir + "/" + instanceName
 			}
 			sn := sessionName(cityName, qualifiedInstance, st)
 			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir}
@@ -155,7 +148,7 @@ var dryRunMode bool
 // buildIdleTracker creates an idleTracker from the config, populating
 // timeouts for agents that have idle_timeout set. Returns nil if no
 // agents use idle timeout (disabled).
-func buildIdleTracker(cfg *config.City, cityName string) idleTracker {
+func buildIdleTracker(cfg *config.City, cityName string, sp session.Provider) idleTracker {
 	var hasAny bool
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -174,14 +167,9 @@ func buildIdleTracker(cfg *config.City, cityName string) idleTracker {
 			continue
 		}
 		pool := a.EffectivePool()
-		if a.IsPool() && pool.Max > 1 {
+		if a.IsPool() && pool.IsMultiInstance() {
 			// Register each pool instance (worker-1, worker-2, ...).
-			for i := 1; i <= pool.Max; i++ {
-				instanceName := fmt.Sprintf("%s-%d", a.Name, i)
-				qualifiedInstance := instanceName
-				if a.Dir != "" {
-					qualifiedInstance = a.Dir + "/" + instanceName
-				}
+			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 				sn := agent.SessionNameFor(cityName, qualifiedInstance, st)
 				it.setTimeout(sn, timeout)
 			}
@@ -525,7 +513,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			if pr.err != nil {
 				fmt.Fprintf(stderr, "gc start: %v (using min=%d)\n", pr.err, pw.pool.Min) //nolint:errcheck // best-effort stderr
 			}
-			running := countRunningPoolInstances(c.Agents[pw.agentIdx].Name, c.Agents[pw.agentIdx].Dir, pw.pool.Max, cityName, c.Workspace.SessionTemplate, currentSP)
+			running := countRunningPoolInstances(c.Agents[pw.agentIdx].Name, c.Agents[pw.agentIdx].Dir, pw.pool, cityName, c.Workspace.SessionTemplate, currentSP)
 			if pr.desired != running {
 				fmt.Fprintf(stderr, "Pool '%s': check returned %d, %d running → scaling %s\n", //nolint:errcheck // best-effort stderr
 					c.Agents[pw.agentIdx].Name, pr.desired, running, scaleDirection(running, pr.desired))
@@ -563,8 +551,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	tomlPath := filepath.Join(cityPath, "city.toml")
 	if controllerMode {
-		poolSessions := computePoolSessions(cfg, cityName)
-		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, cityPath)
+		poolSessions := computePoolSessions(cfg, cityName, sp)
+		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, cityPath, sp)
 		watchDirs := config.WatchDirs(prov, cfg, cityPath)
 		return runController(cityPath, tomlPath, cfg, buildAgents, sp,
 			newDrainOps(sp), poolSessions, poolDeathHandlers, watchDirs, recorder, eventProv, stdout, stderr)
@@ -809,16 +797,30 @@ func checkAgentImages(sp session.Provider, agents []config.Agent, _ io.Writer) e
 	return nil
 }
 
-// countRunningPoolInstances counts how many pool instances (1..max) are
-// currently running for a given pool agent. Used to log scaling decisions.
+// countRunningPoolInstances counts how many pool instances are currently
+// running for a given pool agent. For bounded pools, checks static names
+// (1..max). For unlimited pools, discovers via prefix matching.
 //
 // Uses ListRunning with the city prefix for a single batch call instead
 // of N individual IsRunning calls. For exec providers (K8s), this reduces
 // N subprocess spawns to 1.
-func countRunningPoolInstances(agentName, agentDir string, poolMax int, cityName, sessionTemplate string, sp session.Provider) int {
-	// Build the set of expected pool instance session names.
-	expected := make(map[string]bool, poolMax)
-	for i := 1; i <= poolMax; i++ {
+func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfig, cityName, sessionTemplate string, sp session.Provider) int {
+	if pool.IsUnlimited() {
+		// Unlimited: count by prefix matching.
+		instances := discoverPoolInstances(agentName, agentDir, pool, cityName, sessionTemplate, sp)
+		count := 0
+		for _, qn := range instances {
+			sn := sessionName(cityName, qn, sessionTemplate)
+			if sp.IsRunning(sn) {
+				count++
+			}
+		}
+		return count
+	}
+
+	// Bounded: build the set of expected pool instance session names.
+	expected := make(map[string]bool, pool.Max)
+	for i := 1; i <= pool.Max; i++ {
 		instanceName := fmt.Sprintf("%s-%d", agentName, i)
 		qualifiedInstance := instanceName
 		if agentDir != "" {

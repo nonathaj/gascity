@@ -14,6 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
@@ -55,7 +56,7 @@ func evaluatePool(agentName string, pool config.PoolConfig, dir string, runner S
 	if n < pool.Min {
 		return pool.Min, nil
 	}
-	if n > pool.Max {
+	if pool.Max >= 0 && n > pool.Max {
 		return pool.Max, nil
 	}
 	return n, nil
@@ -228,8 +229,9 @@ func runPoolOnBoot(cfg *config.City, cityPath string, runner ScaleCheckRunner, s
 }
 
 // poolAgents builds agent.Agent instances for a pool at the desired count.
-// If pool.Max == 1, uses the bare agent name (no suffix).
-// If pool.Max > 1, names follow the pattern {name}-{n} (1-indexed).
+// If the pool is single-instance (max == 1), uses the bare agent name (no suffix).
+// If the pool is multi-instance (max > 1 or unlimited), names follow
+// the pattern {name}-{n} (1-indexed).
 // Sessions follow the session naming template (default: gc-{city}-{name}).
 func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]agent.Agent, error) {
 	if desired <= 0 {
@@ -240,10 +242,10 @@ func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]ag
 
 	var agents []agent.Agent
 	for i := 1; i <= desired; i++ {
-		// If max == 1, use bare name (no suffix).
-		// If max > 1, use {name}-{N} suffix.
+		// If single-instance (max == 1), use bare name (no suffix).
+		// If multi-instance (max > 1 or unlimited), use {name}-{N} suffix.
 		name := cfgAgent.Name
-		if pool.Max > 1 {
+		if pool.IsMultiInstance() {
 			name = fmt.Sprintf("%s-%d", cfgAgent.Name, i)
 		}
 		// Build the qualified instance name for rig-scoped pools.
@@ -260,4 +262,57 @@ func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]ag
 		agents = append(agents, a)
 	}
 	return agents, nil
+}
+
+// discoverPoolInstances returns qualified instance names for a multi-instance pool.
+// For bounded pools (max > 1), generates static names {name}-1..{name}-{max}.
+// For unlimited pools (max < 0), discovers running instances via session provider
+// prefix matching.
+func discoverPoolInstances(agentName, agentDir string, pool config.PoolConfig,
+	cityName, st string, sp session.Provider,
+) []string {
+	if !pool.IsUnlimited() {
+		// Bounded pool: static enumeration.
+		var names []string
+		for i := 1; i <= pool.Max; i++ {
+			instanceName := fmt.Sprintf("%s-%d", agentName, i)
+			qn := instanceName
+			if agentDir != "" {
+				qn = agentDir + "/" + instanceName
+			}
+			names = append(names, qn)
+		}
+		return names
+	}
+
+	// Unlimited pool: discover running instances via session prefix.
+	qnPrefix := agentName + "-"
+	if agentDir != "" {
+		qnPrefix = agentDir + "/" + agentName + "-"
+	}
+	// Build the session name prefix to match against running sessions.
+	snPrefix := agent.SessionNameFor(cityName, qnPrefix, st)
+	running, err := sp.ListRunning("")
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, sn := range running {
+		if strings.HasPrefix(sn, snPrefix) {
+			// Reverse the session name construction to extract the qualified name.
+			// SessionNameFor replaces "/" with "--"; reverse that.
+			qnSanitized := sn
+			// Strip the template prefix: for default template (empty), the
+			// session name IS the sanitized agent name. For custom templates,
+			// we need to compute the prefix from the template.
+			templatePrefix := agent.SessionNameFor(cityName, "", st)
+			if templatePrefix != "" && strings.HasPrefix(qnSanitized, templatePrefix) {
+				qnSanitized = qnSanitized[len(templatePrefix):]
+			}
+			// Unsanitize: "--" → "/"
+			qn := strings.ReplaceAll(qnSanitized, "--", "/")
+			names = append(names, qn)
+		}
+	}
+	return names
 }

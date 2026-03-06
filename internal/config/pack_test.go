@@ -3900,3 +3900,100 @@ session_live = ["echo global"]
 		}
 	}
 }
+
+func TestPackDefinesAgent_Found(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "packs/gastown/pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+
+[[agents]]
+name = "polecat"
+
+[[agents]]
+name = "refinery"
+`)
+	fs := fsys.OSFS{}
+	if !PackDefinesAgent(fs, "packs/gastown", dir, "polecat") {
+		t.Error("PackDefinesAgent should find polecat")
+	}
+	if !PackDefinesAgent(fs, "packs/gastown", dir, "refinery") {
+		t.Error("PackDefinesAgent should find refinery")
+	}
+}
+
+func TestPackDefinesAgent_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "packs/gastown/pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+
+[[agents]]
+name = "refinery"
+`)
+	fs := fsys.OSFS{}
+	if PackDefinesAgent(fs, "packs/gastown", dir, "polecat") {
+		t.Error("PackDefinesAgent should not find polecat")
+	}
+}
+
+func TestPackDefinesAgent_RecursiveIncludes(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "packs/base/pack.toml", `
+[pack]
+name = "base"
+schema = 1
+
+[[agents]]
+name = "polecat"
+`)
+	writeFile(t, dir, "packs/gastown/pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+includes = ["../base"]
+
+[[agents]]
+name = "refinery"
+`)
+	fs := fsys.OSFS{}
+	// polecat is defined in the included base pack.
+	if !PackDefinesAgent(fs, "packs/gastown", dir, "polecat") {
+		t.Error("PackDefinesAgent should find polecat via included pack")
+	}
+}
+
+func TestPackDefinesAgent_CityScoped(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "packs/gastown/pack.toml", `
+[pack]
+name = "gastown"
+schema = 1
+city_agents = ["mayor"]
+
+[[agents]]
+name = "mayor"
+
+[[agents]]
+name = "polecat"
+`)
+	fs := fsys.OSFS{}
+	// mayor is city-scoped via city_agents, should NOT be found as rig agent.
+	if PackDefinesAgent(fs, "packs/gastown", dir, "mayor") {
+		t.Error("PackDefinesAgent should not find city-scoped mayor as rig agent")
+	}
+	// polecat is rig-scoped (default), should be found.
+	if !PackDefinesAgent(fs, "packs/gastown", dir, "polecat") {
+		t.Error("PackDefinesAgent should find rig-scoped polecat")
+	}
+}
+
+func TestPackDefinesAgent_BadPack(t *testing.T) {
+	// Returns false on error (fail-open).
+	fs := fsys.OSFS{}
+	if PackDefinesAgent(fs, "/nonexistent/pack", "/tmp", "polecat") {
+		t.Error("PackDefinesAgent should return false for bad pack")
+	}
+}

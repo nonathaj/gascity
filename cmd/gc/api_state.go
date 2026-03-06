@@ -308,21 +308,14 @@ func (cs *controllerState) expandedAgentNames(cfg *config.City, rig string) []st
 			continue
 		}
 		pool := a.EffectivePool()
-		poolMax := pool.Max
-		if poolMax <= 0 {
-			poolMax = 1
+		if !pool.IsMultiInstance() {
+			// Single-instance pool: use bare name.
+			names = append(names, a.QualifiedName())
+			continue
 		}
-		for i := 1; i <= poolMax; i++ {
-			memberName := a.Name
-			if poolMax > 1 {
-				memberName = fmt.Sprintf("%s-%d", a.Name, i)
-			}
-			qn := memberName
-			if a.Dir != "" {
-				qn = a.Dir + "/" + memberName
-			}
-			names = append(names, qn)
-		}
+		// Multi-instance pool: discover instances. For unlimited pools with
+		// no running instances, this returns empty (acceptable for API).
+		names = append(names, discoverPoolInstances(a.Name, a.Dir, pool, cs.cityName, cfg.Workspace.SessionTemplate, cs.sp)...)
 	}
 	return names
 }
