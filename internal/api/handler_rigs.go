@@ -100,7 +100,7 @@ func rigSuspended(cfg *config.City, rig config.Rig, sp session.Provider, cityNam
 		if a.Dir != rig.Name {
 			continue
 		}
-		expanded := expandAgent(a, cityName)
+		expanded := expandAgent(a, cityName, tmpl, sp)
 		for _, ea := range expanded {
 			agentCount++
 			sessionName := agent.SessionNameFor(cityName, ea.qualifiedName, tmpl)

@@ -26,7 +26,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// Count running agents by checking each configured agent's canonical session name.
 	var running int
 	for _, a := range cfg.Agents {
-		for _, ea := range expandAgent(a, cityName) {
+		for _, ea := range expandAgent(a, cityName, sessTmpl, sp) {
 			sessName := agentSessionName(cityName, ea.qualifiedName, sessTmpl)
 			if sp.IsRunning(sessName) {
 				running++
@@ -37,7 +37,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// Count effective agents (including expanded pool members).
 	var agentCount int
 	for _, a := range cfg.Agents {
-		agentCount += len(expandAgent(a, cityName))
+		agentCount += len(expandAgent(a, cityName, sessTmpl, sp))
 	}
 
 	resp := statusResponse{

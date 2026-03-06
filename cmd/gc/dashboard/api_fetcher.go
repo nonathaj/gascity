@@ -182,8 +182,8 @@ func (f *APIFetcher) FetchWorkers() ([]WorkerRow, error) {
 		if !agent.Running {
 			continue
 		}
-		// Only show polecats in the workers panel.
-		if !strings.Contains(agent.Name, "polecat") {
+		// Only show rig-scoped pool members in the workers panel.
+		if agent.Pool == "" || agent.Rig == "" {
 			continue
 		}
 
@@ -217,6 +217,12 @@ func (f *APIFetcher) FetchWorkers() ([]WorkerRow, error) {
 		// Get status hint via peek API.
 		statusHint := f.getStatusHint(agent.Name)
 
+		// Derive agent type from pool base name (e.g. "hello-world/polecat" → "polecat").
+		agentType := agent.Pool
+		if idx := strings.LastIndex(agentType, "/"); idx >= 0 {
+			agentType = agentType[idx+1:]
+		}
+
 		workers = append(workers, WorkerRow{
 			Name:         agent.Name,
 			Rig:          agent.Rig,
@@ -225,7 +231,7 @@ func (f *APIFetcher) FetchWorkers() ([]WorkerRow, error) {
 			IssueID:      issueID,
 			IssueTitle:   issueTitle,
 			WorkStatus:   workStatus,
-			AgentType:    "agent",
+			AgentType:    agentType,
 			StatusHint:   statusHint,
 		})
 	}

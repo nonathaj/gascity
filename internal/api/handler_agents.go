@@ -44,7 +44,7 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 
 	var agents []agentResponse
 	for _, a := range cfg.Agents {
-		expanded := expandAgent(a, cityName)
+		expanded := expandAgent(a, cityName, sessTmpl, sp)
 		for _, ea := range expanded {
 			// Apply filters.
 			if qRig != "" && ea.rig != qRig {
@@ -269,8 +269,10 @@ type expandedAgent struct {
 }
 
 // expandAgent expands a config.Agent into its effective runtime agents.
-// For pool agents, this generates pool-1, pool-2, ..., pool-max members.
-func expandAgent(a config.Agent, _ string) []expandedAgent {
+// For bounded pool agents, this generates pool-1..pool-max members.
+// For unlimited pools (max < 0), it discovers running instances via session
+// provider prefix matching — the same approach as discoverPoolInstances.
+func expandAgent(a config.Agent, cityName, sessTmpl string, sp sessionLister) []expandedAgent {
 	if !a.IsPool() {
 		return []expandedAgent{{
 			qualifiedName: a.QualifiedName(),
@@ -280,11 +282,18 @@ func expandAgent(a config.Agent, _ string) []expandedAgent {
 	}
 
 	pool := a.EffectivePool()
+	poolName := a.QualifiedName()
+
+	// Unlimited pool: discover running instances via session prefix.
+	if pool.IsUnlimited() && sp != nil {
+		return discoverUnlimitedPool(a, poolName, cityName, sessTmpl, sp)
+	}
+
+	// Bounded pool: static enumeration.
 	poolMax := pool.Max
 	if poolMax <= 0 {
 		poolMax = 1
 	}
-	poolName := a.QualifiedName()
 
 	var result []expandedAgent
 	for i := 1; i <= poolMax; i++ {
@@ -296,6 +305,46 @@ func expandAgent(a config.Agent, _ string) []expandedAgent {
 		if a.Dir != "" {
 			qn = a.Dir + "/" + memberName
 		}
+		result = append(result, expandedAgent{
+			qualifiedName: qn,
+			rig:           a.Dir,
+			pool:          poolName,
+			suspended:     a.Suspended,
+		})
+	}
+	return result
+}
+
+// sessionLister is the subset of session.Provider needed for pool discovery.
+type sessionLister interface {
+	ListRunning(prefix string) ([]string, error)
+}
+
+// discoverUnlimitedPool finds running instances of an unlimited pool by
+// listing sessions with a matching prefix, then reverse-mapping session
+// names back to qualified agent names.
+func discoverUnlimitedPool(a config.Agent, poolName, cityName, sessTmpl string, sp sessionLister) []expandedAgent {
+	// Build session name prefix: e.g. "city--myrig--polecat-"
+	qnPrefix := a.Name + "-"
+	if a.Dir != "" {
+		qnPrefix = a.Dir + "/" + a.Name + "-"
+	}
+	snPrefix := agent.SessionNameFor(cityName, qnPrefix, sessTmpl)
+
+	running, err := sp.ListRunning(snPrefix)
+	if err != nil || len(running) == 0 {
+		return nil
+	}
+
+	// Reverse session names back to qualified agent names.
+	templatePrefix := agent.SessionNameFor(cityName, "", sessTmpl)
+	var result []expandedAgent
+	for _, sn := range running {
+		qnSanitized := sn
+		if templatePrefix != "" && strings.HasPrefix(qnSanitized, templatePrefix) {
+			qnSanitized = qnSanitized[len(templatePrefix):]
+		}
+		qn := strings.ReplaceAll(qnSanitized, "--", "/")
 		result = append(result, expandedAgent{
 			qualifiedName: qn,
 			rig:           a.Dir,
@@ -320,9 +369,21 @@ func findAgent(cfg *config.City, name string) (config.Agent, bool) {
 		if a.Dir == dir && a.Name == baseName {
 			return a, true
 		}
-		// Check pool members: strip numeric suffix.
+		// Check pool members.
 		if a.IsPool() && a.Dir == dir {
 			pool := a.EffectivePool()
+			if pool.IsUnlimited() {
+				// Unlimited pool: match "{name}-{digits}".
+				prefix := a.Name + "-"
+				if strings.HasPrefix(baseName, prefix) {
+					suffix := baseName[len(prefix):]
+					if _, err := strconv.Atoi(suffix); err == nil {
+						return a, true
+					}
+				}
+				continue
+			}
+			// Bounded pool: enumerate.
 			poolMax := pool.Max
 			if poolMax <= 0 {
 				poolMax = 1

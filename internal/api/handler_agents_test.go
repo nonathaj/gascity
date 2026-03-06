@@ -77,6 +77,77 @@ func TestAgentListPoolExpansion(t *testing.T) {
 	}
 }
 
+func TestAgentListUnlimitedPoolDiscovery(t *testing.T) {
+	state := newFakeState(t)
+	state.cfg.Agents = []config.Agent{
+		{
+			Name: "polecat",
+			Dir:  "myrig",
+			Pool: &config.PoolConfig{Min: 0, Max: -1},
+		},
+	}
+	// Start 2 running sessions matching the pool pattern.
+	state.sp.Start(context.Background(), "myrig--polecat-1", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--polecat-2", session.Config{}) //nolint:errcheck
+	srv := New(state)
+
+	req := httptest.NewRequest("GET", "/v0/agents", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []agentResponse `json:"items"`
+		Total int             `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Total != 2 {
+		t.Fatalf("Total = %d, want 2", resp.Total)
+	}
+
+	// Both discovered instances should reference the pool.
+	for i, item := range resp.Items {
+		if item.Pool != "myrig/polecat" {
+			t.Errorf("Items[%d].Pool = %q, want %q", i, item.Pool, "myrig/polecat")
+		}
+		if !item.Running {
+			t.Errorf("Items[%d].Running = false, want true", i)
+		}
+	}
+}
+
+func TestFindAgentUnlimitedPoolMember(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{
+				Name: "polecat",
+				Dir:  "myrig",
+				Pool: &config.PoolConfig{Min: 0, Max: -1},
+			},
+		},
+	}
+	// Unlimited pool members follow the pattern {name}-{N}.
+	a, ok := findAgent(cfg, "myrig/polecat-5")
+	if !ok {
+		t.Fatal("findAgent(myrig/polecat-5) = false, want true for unlimited pool")
+	}
+	if a.Name != "polecat" {
+		t.Errorf("agent.Name = %q, want %q", a.Name, "polecat")
+	}
+
+	// Non-numeric suffix should not match.
+	_, ok = findAgent(cfg, "myrig/polecat-abc")
+	if ok {
+		t.Error("findAgent(myrig/polecat-abc) = true, want false for non-numeric suffix")
+	}
+}
+
 func TestAgentListFilterByRig(t *testing.T) {
 	state := newFakeState(t)
 	state.cfg.Agents = []config.Agent{

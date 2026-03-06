@@ -111,7 +111,7 @@ func (f *fakeMutatorState) SuspendRig(name string) error {
 		if a.Dir != name {
 			continue
 		}
-		expanded := expandAgent(a, f.cityName)
+		expanded := expandAgent(a, f.cityName, tmpl, f.sp)
 		for _, ea := range expanded {
 			sessionName := agent.SessionNameFor(f.cityName, ea.qualifiedName, tmpl)
 			_ = f.sp.SetMeta(sessionName, "suspended", "true")
@@ -137,7 +137,7 @@ func (f *fakeMutatorState) ResumeRig(name string) error {
 		if a.Dir != name {
 			continue
 		}
-		expanded := expandAgent(a, f.cityName)
+		expanded := expandAgent(a, f.cityName, tmpl, f.sp)
 		for _, ea := range expanded {
 			sessionName := agent.SessionNameFor(f.cityName, ea.qualifiedName, tmpl)
 			_ = f.sp.RemoveMeta(sessionName, "suspended")
