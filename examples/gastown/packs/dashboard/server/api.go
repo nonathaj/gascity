@@ -1412,7 +1412,11 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 		lastActive := ""
 
 		if agent.Running {
-			sessionStatus = "detached"
+			if agent.Session != nil && agent.Session.Attached {
+				sessionStatus = "attached"
+			} else {
+				sessionStatus = "detached"
+			}
 			if agent.Session != nil && agent.Session.LastActivity != nil {
 				lastActive = formatTimestamp(*agent.Session.LastActivity)
 				activityAge := time.Since(*agent.Session.LastActivity)
@@ -1426,6 +1430,13 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 			}
 		} else if agent.ActiveBead != "" {
 			state = "finished"
+		}
+
+		// Refine "questions" and "finished" states by peeking at agent output.
+		if state == "questions" || state == "finished" {
+			if h.hasQuestionInPeek(agent.Name) {
+				state = "questions"
+			}
 		}
 
 		member := CrewMember{
@@ -1443,6 +1454,45 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// hasQuestionInPeek checks the last lines of an agent's peek output for question indicators.
+func (h *APIHandler) hasQuestionInPeek(agentName string) bool {
+	body, err := h.apiGet("/v0/agent/" + agentName + "/peek")
+	if err != nil {
+		return false
+	}
+	var peekResp struct {
+		Output string `json:"output"`
+	}
+	if json.Unmarshal(body, &peekResp) != nil || peekResp.Output == "" {
+		return false
+	}
+
+	// Check last 10 lines for question indicators.
+	lines := strings.Split(strings.TrimSpace(peekResp.Output), "\n")
+	start := 0
+	if len(lines) > 10 {
+		start = len(lines) - 10
+	}
+	lastLines := strings.ToLower(strings.Join(lines[start:], "\n"))
+
+	for _, indicator := range []string{
+		"?",
+		"what do you think",
+		"should i",
+		"would you like",
+		"please confirm",
+		"waiting for",
+		"need your input",
+		"your thoughts",
+		"let me know",
+	} {
+		if strings.Contains(lastLines, indicator) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- Ready handler ----------

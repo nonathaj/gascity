@@ -87,10 +87,8 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 				resp.Session = si
 			}
 
-			// Check for active bead via session metadata.
-			if hook, err := sp.GetMeta(sessionName, "hook"); err == nil && hook != "" {
-				resp.ActiveBead = hook
-			}
+			// Find active bead by querying bead stores.
+			resp.ActiveBead = s.findActiveBead(ea.qualifiedName, ea.rig)
 
 			agents = append(agents, resp)
 		}
@@ -154,9 +152,8 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		resp.Session = si
 	}
 
-	if hook, err := sp.GetMeta(sessionName, "hook"); err == nil && hook != "" {
-		resp.ActiveBead = hook
-	}
+	// Find active bead by querying bead stores.
+	resp.ActiveBead = s.findActiveBead(name, agentCfg.Dir)
 
 	writeIndexJSON(w, s.latestIndex(), resp)
 }
@@ -342,4 +339,32 @@ func findAgent(cfg *config.City, name string) (config.Agent, bool) {
 		}
 	}
 	return config.Agent{}, false
+}
+
+// findActiveBead returns the ID of the first in_progress bead assigned to the
+// given agent. If rig is non-empty, only that rig's store is searched;
+// otherwise all stores are searched. Returns "" if no match.
+func (s *Server) findActiveBead(agentName, rig string) string {
+	stores := s.state.BeadStores()
+	var rigNames []string
+	if rig != "" {
+		if _, ok := stores[rig]; ok {
+			rigNames = []string{rig}
+		}
+	}
+	if rigNames == nil {
+		rigNames = sortedRigNames(stores)
+	}
+	for _, rn := range rigNames {
+		list, err := stores[rn].List()
+		if err != nil {
+			continue
+		}
+		for _, b := range list {
+			if b.Status == "in_progress" && b.Assignee == agentName {
+				return b.ID
+			}
+		}
+	}
+	return ""
 }
