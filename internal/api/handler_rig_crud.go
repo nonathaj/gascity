@@ -54,6 +54,10 @@ func (s *Server) handleRigCreate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "conflict", err.Error())
 			return
 		}
+		if strings.Contains(err.Error(), "validating") {
+			writeError(w, http.StatusBadRequest, "invalid", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -81,6 +85,10 @@ func (s *Server) handleRigUpdate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
 			return
 		}
+		if strings.Contains(err.Error(), "validating") {
+			writeError(w, http.StatusBadRequest, "invalid", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -98,6 +106,10 @@ func (s *Server) handleRigDelete(w http.ResponseWriter, r *http.Request) {
 	if err := sm.DeleteRig(name); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "validating") {
+			writeError(w, http.StatusBadRequest, "invalid", err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())

@@ -15,7 +15,7 @@ type agentCreateRequest struct {
 	Scope    string `json:"scope,omitempty"`
 }
 
-// agentUpdateRequest is the JSON body for PUT/PATCH /v0/agent/{name}.
+// agentUpdateRequest is the JSON body for PATCH /v0/agent/{name}.
 type agentUpdateRequest struct {
 	Provider  string `json:"provider,omitempty"`
 	Scope     string `json:"scope,omitempty"`
@@ -56,6 +56,10 @@ func (s *Server) handleAgentCreate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "conflict", err.Error())
 			return
 		}
+		if strings.Contains(err.Error(), "validating") {
+			writeError(w, http.StatusBadRequest, "invalid", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -87,6 +91,10 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "conflict", err.Error())
 			return
 		}
+		if strings.Contains(err.Error(), "validating") {
+			writeError(w, http.StatusBadRequest, "invalid", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
@@ -107,6 +115,10 @@ func (s *Server) handleAgentDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if strings.Contains(err.Error(), "pack-derived") {
+			writeError(w, http.StatusConflict, "conflict", err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "validating") {
 			writeError(w, http.StatusBadRequest, "invalid", err.Error())
 			return
 		}
