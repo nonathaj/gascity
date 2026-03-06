@@ -73,12 +73,12 @@
                     <span class="stat-label">🦨 Polecats</span>
                 </div>
                 <div class="stat">
-                    <span class="stat-value">{{.Summary.HookCount}}</span>
-                    <span class="stat-label">🪝 Hooks</span>
+                    <span class="stat-value">{{.Summary.AssignedCount}}</span>
+                    <span class="stat-label">👤 Assigned</span>
                 </div>
                 <div class="stat">
                     <span class="stat-value">{{.Summary.IssueCount}}</span>
-                    <span class="stat-label">📋 Work</span>
+                    <span class="stat-label">📋 Beads</span>
                 </div>
                 <div class="stat">
                     <span class="stat-value">{{.Summary.ConvoyCount}}</span>
@@ -94,8 +94,8 @@
                 {{if .Summary.StuckPolecats}}
                 <span class="alert-item alert-red">💀 {{.Summary.StuckPolecats}} stuck</span>
                 {{end}}
-                {{if .Summary.StaleHooks}}
-                <span class="alert-item alert-yellow">⏰ {{.Summary.StaleHooks}} stale hooks</span>
+                {{if .Summary.StaleAssigned}}
+                <span class="alert-item alert-yellow">⏰ {{.Summary.StaleAssigned}} stale</span>
                 {{end}}
                 {{if .Summary.UnackedEscalations}}
                 <span class="alert-item alert-orange">🔔 {{.Summary.UnackedEscalations}} unacked</span>
@@ -265,7 +265,7 @@
                                 <th>Name</th>
                                 <th>Rig</th>
                                 <th>State</th>
-                                <th>Hook</th>
+                                <th>Bead</th>
                                 <th>Activity</th>
                                 <th>Session</th>
                                 <th>Actions</th>
@@ -874,57 +874,57 @@
                 </div>
             </div>
 
-            <!-- Hooks Panel -->
+            <!-- Assigned Panel -->
             <div class="panel">
                 <div class="panel-header">
-                    <h2>🪝 Hooks</h2>
-                    <span class="count{{if .Hooks}} {{end}}">{{len .Hooks}}</span>
-                    <button class="hook-attach-btn" onclick="openHookAttachForm()">+ Attach</button>
-                    {{if .Hooks}}<button class="hook-clear-all-btn" onclick="clearAllHooks()">Clear All</button>{{end}}
+                    <h2>👤 Assigned</h2>
+                    <span class="count{{if .Assigned}} {{end}}">{{len .Assigned}}</span>
+                    <button class="assign-btn" onclick="openAssignForm()">+ Assign</button>
+                    {{if .Assigned}}<button class="assign-clear-all-btn" onclick="clearAllAssigned()">Clear All</button>{{end}}
                     <button class="collapse-btn" aria-label="Toggle panel">▼</button>
                     <button class="expand-btn">Expand</button>
                 </div>
                 <div class="panel-body">
-                    <!-- Attach Hook Form (hidden by default) -->
-                    <div id="hook-attach-form" class="hook-attach-form" style="display:none;">
-                        <div class="hook-attach-form-row">
-                            <input type="text" id="hook-attach-bead" class="hook-attach-input" placeholder="Bead ID (e.g. gc-abc)">
-                            <button class="hook-attach-submit" onclick="submitHookAttach()">Attach</button>
-                            <button class="hook-attach-cancel" onclick="closeHookAttachForm()">Cancel</button>
+                    <!-- Assign Form (hidden by default) -->
+                    <div id="assign-form" class="assign-form" style="display:none;">
+                        <div class="assign-form-row">
+                            <input type="text" id="assign-bead" class="assign-input" placeholder="Bead ID (e.g. gc-abc)">
+                            <button class="assign-submit" onclick="submitAssign()">Assign</button>
+                            <button class="assign-cancel" onclick="closeAssignForm()">Cancel</button>
                         </div>
                     </div>
-                    {{if .Hooks}}
+                    {{if .Assigned}}
                     <table>
                         <thead>
                             <tr>
                                 <th>Bead</th>
                                 <th>Title</th>
                                 <th>Agent</th>
-                                <th>Hooked</th>
+                                <th>Since</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {{range .Hooks}}
-                            <tr class="{{if .IsStale}}hook-stale{{end}}">
-                                <td><span class="hook-id">{{.ID}}</span></td>
-                                <td class="hook-title">{{.Title}}</td>
-                                <td class="hook-agent">{{.Agent}}</td>
-                                <td class="hook-age">
+                            {{range .Assigned}}
+                            <tr class="{{if .IsStale}}assigned-stale{{end}}">
+                                <td><span class="assigned-id">{{.ID}}</span></td>
+                                <td class="assigned-title">{{.Title}}</td>
+                                <td class="assigned-agent">{{.Agent}}</td>
+                                <td class="assigned-age">
                                     {{if .IsStale}}
                                     <span class="badge badge-yellow">{{.Age}}</span>
                                     {{else}}
                                     {{.Age}}
                                     {{end}}
                                 </td>
-                                <td><button class="hook-detach-btn" data-hook-id="{{.ID}}" onclick="detachHook(this)">Detach</button></td>
+                                <td><button class="unassign-btn" data-bead-id="{{.ID}}" onclick="unassignBead(this)">Unassign</button></td>
                             </tr>
                             {{end}}
                         </tbody>
                     </table>
                     {{else}}
                     <div class="empty-state">
-                        <p>No hooked work</p>
+                        <p>No assigned work</p>
                     </div>
                     {{end}}
                 </div>

@@ -1080,7 +1080,7 @@
                             '<td><span class="crew-name">' + escapeHtml(member.name) + '</span></td>' +
                             '<td><span class="crew-rig">' + escapeHtml(member.rig) + '</span></td>' +
                             '<td><span class="' + stateClass + '">' + stateIcon + stateText + '</span></td>' +
-                            '<td><span class="crew-hook">' + (member.hook ? escapeHtml(member.hook) : '—') + '</span></td>' +
+                            '<td><span class="crew-bead">' + (member.hook ? escapeHtml(member.hook) : '—') + '</span></td>' +
                             '<td class="crew-activity">' + (member.last_active || '—') + '</td>' +
                             '<td>' + sessionBadge + '</td>' +
                             '<td><button class="attach-btn" data-cmd="' + escapeHtml(attachCmd) + '" title="Copy attach command">📎 Attach</button></td>';
@@ -1193,14 +1193,14 @@
 
 
     // ============================================
-    // HOOK MANAGEMENT
+    // ASSIGNED MANAGEMENT
     // ============================================
 
-    function detachHook(btn) {
-        var beadId = btn.getAttribute('data-hook-id');
+    function unassignBead(btn) {
+        var beadId = btn.getAttribute('data-bead-id');
         if (!beadId) return;
 
-        if (!confirm('Detach hook ' + beadId + '?')) return;
+        if (!confirm('Unassign ' + beadId + '?')) return;
 
         btn.disabled = true;
         btn.textContent = '...';
@@ -1208,53 +1208,52 @@
         fetch('/api/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command: 'hook detach ' + beadId, confirmed: true })
+            body: JSON.stringify({ command: 'unsling ' + beadId, confirmed: true })
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
-                showToast('success', 'Detached', beadId + ' detached from hook');
-                // Refresh the page to update the hooks panel
+                showToast('success', 'Unassigned', beadId + ' unassigned');
                 if (typeof htmx !== 'undefined') {
                     htmx.trigger(document.body, 'htmx:load');
                 }
             } else {
-                showToast('error', 'Failed', data.error || 'Failed to detach hook');
+                showToast('error', 'Failed', data.error || 'Failed to unassign');
                 btn.disabled = false;
-                btn.textContent = 'Detach';
+                btn.textContent = 'Unassign';
             }
         })
         .catch(function(err) {
             showToast('error', 'Error', err.message);
             btn.disabled = false;
-            btn.textContent = 'Detach';
+            btn.textContent = 'Unassign';
         });
     }
-    window.detachHook = detachHook;
+    window.unassignBead = unassignBead;
 
-    function openHookAttachForm() {
-        var form = document.getElementById('hook-attach-form');
+    function openAssignForm() {
+        var form = document.getElementById('assign-form');
         if (form) {
             form.style.display = 'block';
-            var input = document.getElementById('hook-attach-bead');
+            var input = document.getElementById('assign-bead');
             if (input) {
                 input.value = '';
                 setTimeout(function() { input.focus(); }, 50);
             }
         }
     }
-    window.openHookAttachForm = openHookAttachForm;
+    window.openAssignForm = openAssignForm;
 
-    function closeHookAttachForm() {
-        var form = document.getElementById('hook-attach-form');
+    function closeAssignForm() {
+        var form = document.getElementById('assign-form');
         if (form) {
             form.style.display = 'none';
         }
     }
-    window.closeHookAttachForm = closeHookAttachForm;
+    window.closeAssignForm = closeAssignForm;
 
-    function submitHookAttach() {
-        var input = document.getElementById('hook-attach-bead');
+    function submitAssign() {
+        var input = document.getElementById('assign-bead');
         var beadId = input ? input.value.trim() : '';
 
         if (!beadId) {
@@ -1262,7 +1261,7 @@
             return;
         }
 
-        var submitBtn = document.querySelector('.hook-attach-submit');
+        var submitBtn = document.querySelector('.assign-submit');
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = '...';
@@ -1271,18 +1270,18 @@
         fetch('/api/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command: 'hook attach ' + beadId, confirmed: true })
+            body: JSON.stringify({ command: 'sling ' + beadId, confirmed: true })
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
-                showToast('success', 'Attached', beadId + ' attached to hook');
-                closeHookAttachForm();
+                showToast('success', 'Assigned', beadId + ' assigned');
+                closeAssignForm();
                 if (typeof htmx !== 'undefined') {
                     htmx.trigger(document.body, 'htmx:load');
                 }
             } else {
-                showToast('error', 'Failed', data.error || 'Failed to attach hook');
+                showToast('error', 'Failed', data.error || 'Failed to assign');
             }
         })
         .catch(function(err) {
@@ -1291,24 +1290,24 @@
         .finally(function() {
             if (submitBtn) {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Attach';
+                submitBtn.textContent = 'Assign';
             }
         });
     }
-    window.submitHookAttach = submitHookAttach;
+    window.submitAssign = submitAssign;
 
-    function clearAllHooks() {
-        if (!confirm('Clear ALL hooks? This will detach all hooked work.')) return;
+    function clearAllAssigned() {
+        if (!confirm('Unassign ALL? This will unassign all active work.')) return;
 
-        var rows = document.querySelectorAll('.hook-detach-btn');
+        var rows = document.querySelectorAll('.unassign-btn');
         if (rows.length === 0) {
-            showToast('info', 'Nothing', 'No hooks to clear');
+            showToast('info', 'Nothing', 'No assigned work to clear');
             return;
         }
 
         var beadIds = [];
         for (var i = 0; i < rows.length; i++) {
-            var id = rows[i].getAttribute('data-hook-id');
+            var id = rows[i].getAttribute('data-bead-id');
             if (id) beadIds.push(id);
         }
 
@@ -1319,7 +1318,7 @@
             fetch('/api/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command: 'hook detach ' + beadId, confirmed: true })
+                body: JSON.stringify({ command: 'unsling ' + beadId, confirmed: true })
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
@@ -1335,9 +1334,9 @@
             .finally(function() {
                 if (completed + errors === beadIds.length) {
                     if (errors > 0) {
-                        showToast('error', 'Partial', completed + ' detached, ' + errors + ' failed');
+                        showToast('error', 'Partial', completed + ' unassigned, ' + errors + ' failed');
                     } else {
-                        showToast('success', 'Cleared', completed + ' hook(s) cleared');
+                        showToast('success', 'Cleared', completed + ' assignment(s) cleared');
                     }
                     if (typeof htmx !== 'undefined') {
                         htmx.trigger(document.body, 'htmx:load');
@@ -1346,17 +1345,17 @@
             });
         });
     }
-    window.clearAllHooks = clearAllHooks;
+    window.clearAllAssigned = clearAllAssigned;
 
-    // Handle Enter key in hook attach input
+    // Handle Enter key in assign input
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && e.target.id === 'hook-attach-bead') {
+        if (e.key === 'Enter' && e.target.id === 'assign-bead') {
             e.preventDefault();
-            submitHookAttach();
+            submitAssign();
         }
-        if (e.key === 'Escape' && e.target.id === 'hook-attach-bead') {
+        if (e.key === 'Escape' && e.target.id === 'assign-bead') {
             e.preventDefault();
-            closeHookAttachForm();
+            closeAssignForm();
         }
     });
 
@@ -3194,7 +3193,7 @@
                     statusBadge = '<span class="badge badge-yellow">In Progress</span>';
                     break;
                 case 'hooked':
-                    statusBadge = '<span class="badge badge-blue">Hooked</span>';
+                    statusBadge = '<span class="badge badge-blue">Assigned</span>';
                     break;
                 default:
                     statusBadge = '<span class="badge badge-muted">Open</span>';

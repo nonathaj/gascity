@@ -28,7 +28,7 @@ type ConvoyFetcher interface {
 	FetchEscalations() ([]EscalationRow, error)
 	FetchHealth() (*HealthRow, error)
 	FetchQueues() ([]QueueRow, error)
-	FetchHooks() ([]HookRow, error)
+	FetchAssigned() ([]AssignedRow, error)
 	FetchMayor() (*MayorStatus, error)
 	FetchIssues() ([]IssueRow, error)
 	FetchActivity() ([]ActivityRow, error)
@@ -74,7 +74,7 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		escalations []EscalationRow
 		health      *HealthRow
 		queues      []QueueRow
-		hooks       []HookRow
+		assigned    []AssignedRow
 		mayor       *MayorStatus
 		issues      []IssueRow
 		activity    []ActivityRow
@@ -158,9 +158,9 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer wg.Done()
 		var err error
-		hooks, err = h.fetcher.FetchHooks()
+		assigned, err = h.fetcher.FetchAssigned()
 		if err != nil {
-			log.Printf("dashboard: FetchHooks failed: %v", err)
+			log.Printf("dashboard: FetchAssigned failed: %v", err)
 		}
 	}()
 	go func() {
@@ -201,7 +201,7 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		<-done
 	}
 
-	summary := computeSummary(workers, hooks, issues, convoys, escalations, activity)
+	summary := computeSummary(workers, assigned, issues, convoys, escalations, activity)
 
 	data := ConvoyData{
 		Convoys:     convoys,
@@ -213,9 +213,9 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Escalations: escalations,
 		Health:      health,
 		Queues:      queues,
-		Hooks:       hooks,
+		Assigned:    assigned,
 		Mayor:       mayor,
-		Issues:      enrichIssuesWithAssignees(issues, hooks),
+		Issues:      enrichIssuesWithAssignees(issues, assigned),
 		Activity:    activity,
 		Summary:     summary,
 		Expand:      expandPanel,
@@ -236,12 +236,12 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // computeSummary calculates dashboard stats and alerts from fetched data.
-func computeSummary(workers []WorkerRow, hooks []HookRow, issues []IssueRow,
+func computeSummary(workers []WorkerRow, assigned []AssignedRow, issues []IssueRow,
 	convoys []ConvoyRow, escalations []EscalationRow, activity []ActivityRow,
 ) *DashboardSummary {
 	summary := &DashboardSummary{
 		PolecatCount:    len(workers),
-		HookCount:       len(hooks),
+		AssignedCount:   len(assigned),
 		IssueCount:      len(issues),
 		ConvoyCount:     len(convoys),
 		EscalationCount: len(escalations),
@@ -252,9 +252,9 @@ func computeSummary(workers []WorkerRow, hooks []HookRow, issues []IssueRow,
 			summary.StuckPolecats++
 		}
 	}
-	for _, h := range hooks {
-		if h.IsStale {
-			summary.StaleHooks++
+	for _, a := range assigned {
+		if a.IsStale {
+			summary.StaleAssigned++
 		}
 	}
 	for _, e := range escalations {
@@ -274,7 +274,7 @@ func computeSummary(workers []WorkerRow, hooks []HookRow, issues []IssueRow,
 	}
 
 	summary.HasAlerts = summary.StuckPolecats > 0 ||
-		summary.StaleHooks > 0 ||
+		summary.StaleAssigned > 0 ||
 		summary.UnackedEscalations > 0 ||
 		summary.DeadSessions > 0 ||
 		summary.HighPriorityIssues > 0
@@ -282,15 +282,15 @@ func computeSummary(workers []WorkerRow, hooks []HookRow, issues []IssueRow,
 	return summary
 }
 
-// enrichIssuesWithAssignees adds Assignee info to issues by cross-referencing hooks.
-func enrichIssuesWithAssignees(issues []IssueRow, hooks []HookRow) []IssueRow {
-	hookMap := make(map[string]string)
-	for _, hook := range hooks {
-		hookMap[hook.ID] = hook.Agent
+// enrichIssuesWithAssignees adds Assignee info to issues by cross-referencing assigned beads.
+func enrichIssuesWithAssignees(issues []IssueRow, assigned []AssignedRow) []IssueRow {
+	assigneeMap := make(map[string]string)
+	for _, a := range assigned {
+		assigneeMap[a.ID] = a.Agent
 	}
 	for i := range issues {
-		if assignee, ok := hookMap[issues[i].ID]; ok {
-			issues[i].Assignee = assignee
+		if agent, ok := assigneeMap[issues[i].ID]; ok {
+			issues[i].Assignee = agent
 		}
 	}
 	return issues

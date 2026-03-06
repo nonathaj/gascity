@@ -29,7 +29,7 @@ type ConvoyData struct {
 	Escalations []EscalationRow
 	Health      *HealthRow
 	Queues      []QueueRow
-	Hooks       []HookRow
+	Assigned    []AssignedRow
 	Mayor       *MayorStatus
 	Issues      []IssueRow
 	Activity    []ActivityRow
@@ -88,14 +88,14 @@ type QueueRow struct {
 	Failed     int
 }
 
-// HookRow represents a hooked bead (work pinned to an agent).
-type HookRow struct {
+// AssignedRow represents a bead actively assigned to an agent.
+type AssignedRow struct {
 	ID       string // Bead ID
 	Title    string // Work item title
 	Assignee string // Agent address
 	Agent    string // Formatted agent name
-	Age      string // Time since hooked
-	IsStale  bool   // True if hooked > 1 hour (potentially stuck)
+	Age      string // Time since assigned
+	IsStale  bool   // True if assigned > 1 hour (potentially stuck)
 }
 
 // MayorStatus represents the coordinator agent's current state.
@@ -135,14 +135,14 @@ type ActivityRow struct {
 type DashboardSummary struct {
 	// Stats
 	PolecatCount    int
-	HookCount       int
+	AssignedCount   int
 	IssueCount      int
 	ConvoyCount     int
 	EscalationCount int
 
 	// Alerts (things needing attention)
 	StuckPolecats      int // No activity > 5 min
-	StaleHooks         int // Hooked > 1 hour
+	StaleAssigned      int // Assigned > 1 hour
 	UnackedEscalations int
 	DeadSessions       int // Sessions that died recently
 	HighPriorityIssues int // P1/P2 issues

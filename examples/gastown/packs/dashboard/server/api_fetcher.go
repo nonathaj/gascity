@@ -449,16 +449,16 @@ func (f *APIFetcher) FetchMail() ([]MailRow, error) {
 	return rows, nil
 }
 
-// FetchHooks returns hooked beads (work pinned to agents).
-func (f *APIFetcher) FetchHooks() ([]HookRow, error) {
+// FetchAssigned returns in-progress beads assigned to agents.
+func (f *APIFetcher) FetchAssigned() ([]AssignedRow, error) {
 	var beadList []apiBead
 	if err := f.getList("/v0/beads?status=in_progress&limit=1000", &beadList); err != nil {
 		return nil, nil
 	}
 
-	var rows []HookRow
+	var rows []AssignedRow
 	for _, b := range beadList {
-		row := HookRow{
+		row := AssignedRow{
 			ID:       b.ID,
 			Title:    b.Title,
 			Assignee: b.Assignee,
