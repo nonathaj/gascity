@@ -33,6 +33,60 @@ gc formula list                        # List available formulas
 gc formula show <name>                 # Show formula definition
 ```
 
+### Built-in formulas
+
+**mol-do-work** — Simple work lifecycle. Agent reads the bead, implements
+the solution in the current working directory, and closes the bead.
+No git branching, no worktree isolation, no refinery handoff. Good for
+demos and simple single-agent workflows.
+
+```
+gc sling <agent> <bead-id> --on mol-do-work
+```
+
+### Gastown pack formulas (work variants)
+
+These require the gastown pack. All are polecat work formulas that extend
+`mol-polecat-base` (shared steps: load context, preflight, implement,
+self-review).
+
+**mol-polecat-work** — Feature-branch variant. Creates a worktree and
+feature branch, implements, then pushes and reassigns to the refinery
+for merge review. Production default for multi-agent setups.
+
+```
+gc sling <agent> <bead-id> --on mol-polecat-work
+```
+
+**mol-polecat-commit** — Direct-commit variant. Commits directly to
+base_branch with no feature branch or refinery step. For small
+installations where merge review is unnecessary.
+
+```
+gc sling <agent> <bead-id> --on mol-polecat-commit
+```
+
+**mol-polecat-work-reviewed** — Human-reviewed variant. Like
+mol-polecat-work but adds investigation, planning, and a human
+checkpoint before implementation. The polecat writes a plan to bead
+notes, notifies the mayor, and blocks until approved. Use for
+high-risk or complex work that needs human sign-off before coding.
+
+```
+gc sling <agent> <bead-id> --on mol-polecat-work-reviewed
+```
+
+### Gastown pack formulas (patrol loops)
+
+Patrol formulas are auto-poured by agent startup prompts — you typically
+don't sling these manually:
+
+- **mol-refinery-patrol** — Refinery merge loop (check for work, merge one branch, repeat)
+- **mol-witness-patrol** — Rig work-health monitor (orphan recovery, stuck polecats, help mail)
+- **mol-deacon-patrol** — Controller sidekick (work-layer health, system diagnostics)
+- **mol-digest-generate** — Periodic activity digest mailed to the mayor
+- **mol-shutdown-dance** — Due process for stuck agents (interrogate → execute → epitaph)
+
 ## Convoys (grouped work)
 
 ```
