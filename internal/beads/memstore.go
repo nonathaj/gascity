@@ -68,9 +68,9 @@ func (m *MemStore) Create(b Bead) (Bead, error) {
 	}
 	b.CreatedAt = time.Now()
 
-	b.Metadata = maps.Clone(b.Metadata)
-	m.beads = append(m.beads, b)
-	return cloneBead(b), nil
+	stored := cloneBead(b)
+	m.beads = append(m.beads, stored)
+	return cloneBead(stored), nil
 }
 
 // Update modifies fields of an existing bead. Only non-nil fields in opts

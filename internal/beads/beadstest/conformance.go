@@ -645,6 +645,23 @@ func RunDepTests(t *testing.T, newStore func() beads.Store) {
 		}
 	})
 
+	t.Run("DepAddUpdatesType", func(t *testing.T) {
+		s := newStore()
+		if err := s.DepAdd("a", "b", "blocks"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DepAdd("a", "b", "tracks"); err != nil {
+			t.Fatal(err)
+		}
+		deps, _ := s.DepList("a", "down")
+		if len(deps) != 1 {
+			t.Fatalf("DepList after type update = %d deps, want 1", len(deps))
+		}
+		if deps[0].Type != "tracks" {
+			t.Errorf("dep.Type = %q, want %q", deps[0].Type, "tracks")
+		}
+	})
+
 	t.Run("DepListUp", func(t *testing.T) {
 		s := newStore()
 		if err := s.DepAdd("a", "b", "blocks"); err != nil {
