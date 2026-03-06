@@ -186,9 +186,15 @@ func TestHandleConfigValidate_WithWarnings(t *testing.T) {
 
 func TestHandleConfigExplain_PackDerivedAgent(t *testing.T) {
 	fs := newFakeState(t)
-	// Add a patch that targets the existing agent — heuristic marks it pack-derived.
-	fs.cfg.Patches.Agents = []config.AgentPatch{
-		{Dir: "myrig", Name: "worker"},
+	// Simulate pack-derived agent: present in expanded config (cfg) but
+	// absent from raw config. The explain handler uses RawConfigProvider
+	// for accurate provenance detection.
+	fs.rawCfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		// No agents in raw — worker comes from pack expansion.
+		Rigs: []config.Rig{
+			{Name: "myrig", Path: "/tmp/myrig"},
+		},
 	}
 	srv := New(fs)
 

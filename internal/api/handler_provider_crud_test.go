@@ -263,3 +263,34 @@ func TestHandleProviderDelete_NotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
+
+func TestHandleProviderUpdate_BuiltinConflict(t *testing.T) {
+	fs := newFakeMutatorState(t)
+	// No city-level "claude" — it's only a builtin.
+	srv := New(fs)
+
+	body := `{"command":"new-claude"}`
+	req := httptest.NewRequest("PATCH", "/v0/provider/claude", strings.NewReader(body))
+	req.Header.Set("X-GC-Request", "true")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
+func TestHandleProviderDelete_BuiltinConflict(t *testing.T) {
+	fs := newFakeMutatorState(t)
+	// No city-level "claude" — it's only a builtin.
+	srv := New(fs)
+
+	req := httptest.NewRequest("DELETE", "/v0/provider/claude", nil)
+	req.Header.Set("X-GC-Request", "true")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}

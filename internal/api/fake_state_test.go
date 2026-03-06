@@ -28,6 +28,7 @@ func newPostRequest(url string, body io.Reader) *http.Request {
 // fakeState implements State for testing.
 type fakeState struct {
 	cfg         *config.City
+	rawCfg      *config.City // optional: raw config for provenance detection
 	sp          *session.Fake
 	stores      map[string]beads.Store
 	mailProvs   map[string]mail.Provider
@@ -74,6 +75,12 @@ func (f *fakeState) CityPath() string                        { return f.cityPath
 func (f *fakeState) Version() string                         { return "test" }
 func (f *fakeState) StartedAt() time.Time                    { return f.startedAt }
 func (f *fakeState) IsQuarantined(sessionName string) bool   { return f.quarantined[sessionName] }
+func (f *fakeState) RawConfig() *config.City {
+	if f.rawCfg != nil {
+		return f.rawCfg
+	}
+	return f.cfg // fallback: raw == expanded when no packs
+}
 
 // fakeMutatorState extends fakeState with StateMutator for testing mutations.
 type fakeMutatorState struct {

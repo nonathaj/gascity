@@ -86,6 +86,13 @@ type ProviderUpdate struct {
 	Env          map[string]string // nil = not set, non-nil = additive merge
 }
 
+// RawConfigProvider is optionally implemented by State to provide the
+// raw (pre-expansion) config for provenance detection. Used by the
+// /v0/config/explain endpoint to distinguish inline vs pack-derived agents.
+type RawConfigProvider interface {
+	RawConfig() *config.City
+}
+
 // StateMutator extends State with write operations for mutation endpoints.
 type StateMutator interface {
 	State

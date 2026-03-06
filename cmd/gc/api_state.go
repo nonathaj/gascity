@@ -233,6 +233,17 @@ func (cs *controllerState) IsQuarantined(sessionName string) bool {
 	return ct.isQuarantined(sessionName, time.Now())
 }
 
+// RawConfig returns the raw (pre-expansion) config for provenance detection.
+// Implements api.RawConfigProvider.
+func (cs *controllerState) RawConfig() *config.City {
+	tomlPath := filepath.Join(cs.cityPath, "city.toml")
+	raw, err := config.Load(fsys.OSFS{}, tomlPath)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
 // --- api.StateMutator implementation ---
 
 // spAndSession captures the session provider and computes the session name

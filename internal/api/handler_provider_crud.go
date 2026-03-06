@@ -95,6 +95,11 @@ func (s *Server) handleProviderUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := sm.UpdateProvider(name, patch); err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if isBuiltinProvider(name) {
+				writeError(w, http.StatusConflict, "conflict",
+					"provider "+name+" is a builtin; use PATCH /v0/patches/providers to override")
+				return
+			}
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
 			return
 		}
@@ -118,6 +123,11 @@ func (s *Server) handleProviderDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := sm.DeleteProvider(name); err != nil {
 		if strings.Contains(err.Error(), "not found") {
+			if isBuiltinProvider(name) {
+				writeError(w, http.StatusConflict, "conflict",
+					"provider "+name+" is a builtin; use DELETE /v0/patches/providers to remove overrides")
+				return
+			}
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
 			return
 		}
@@ -129,4 +139,10 @@ func (s *Server) handleProviderDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "provider": name})
+}
+
+// isBuiltinProvider checks if a name is a known builtin provider.
+func isBuiltinProvider(name string) bool {
+	_, ok := config.BuiltinProviders()[name]
+	return ok
 }

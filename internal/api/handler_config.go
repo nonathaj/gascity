@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/configedit"
 )
 
 // configResponse is the JSON representation of the city configuration.
@@ -131,8 +132,15 @@ func (s *Server) handleConfigExplain(w http.ResponseWriter, _ *http.Request) {
 		Origin string `json:"origin"` // "builtin", "city", or "builtin+city"
 	}
 
+	// Use raw config for accurate provenance when available.
+	var rawCfg *config.City
+	if rcp, ok := s.state.(RawConfigProvider); ok {
+		rawCfg = rcp.RawConfig()
+	}
+
 	agents := make([]annotatedAgent, 0, len(cfg.Agents))
 	for _, a := range cfg.Agents {
+		origin := agentOrigin(a, rawCfg, cfg)
 		agents = append(agents, annotatedAgent{
 			configAgentResponse: configAgentResponse{
 				Name:      a.Name,
@@ -141,11 +149,7 @@ func (s *Server) handleConfigExplain(w http.ResponseWriter, _ *http.Request) {
 				Scope:     a.Scope,
 				Suspended: a.Suspended,
 			},
-			// In the expanded config, all agents are present. Without
-			// raw config access at the API layer, we annotate based on
-			// patches section: if a patch targets this agent, it's
-			// likely pack-derived. Otherwise it's inline.
-			Origin: agentOriginFromPatches(a, cfg.Patches),
+			Origin: origin,
 		})
 	}
 
@@ -224,10 +228,26 @@ func (s *Server) handleConfigValidate(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// agentOriginFromPatches heuristically determines agent origin based on
-// whether a patch targets it.
-func agentOriginFromPatches(a config.Agent, patches config.Patches) string {
-	for _, p := range patches.Agents {
+// agentOrigin determines the provenance of an agent. When raw config is
+// available (via RawConfigProvider), it uses two-phase detection for
+// accurate results. Otherwise falls back to the patch-presence heuristic.
+func agentOrigin(a config.Agent, raw, expanded *config.City) string {
+	if raw != nil {
+		qn := a.Name
+		if a.Dir != "" {
+			qn = a.Dir + "/" + a.Name
+		}
+		switch configedit.AgentOrigin(raw, expanded, qn) {
+		case configedit.OriginInline:
+			return "inline"
+		case configedit.OriginDerived:
+			return "pack-derived"
+		default:
+			return "inline"
+		}
+	}
+	// Fallback: heuristic based on patch presence.
+	for _, p := range expanded.Patches.Agents {
 		if p.Dir == a.Dir && p.Name == a.Name {
 			return "pack-derived"
 		}

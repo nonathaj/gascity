@@ -66,6 +66,9 @@ func (e *Editor) Edit(fn func(cfg *config.City) error) error {
 	if err := config.ValidateRigs(cfg.Rigs, cfg.Workspace.Name); err != nil {
 		return fmt.Errorf("validating rigs: %w", err)
 	}
+	if err := validateProviders(cfg.Providers); err != nil {
+		return fmt.Errorf("validating providers: %w", err)
+	}
 
 	content, err := cfg.Marshal()
 	if err != nil {
@@ -106,6 +109,9 @@ func (e *Editor) EditExpanded(fn func(raw, expanded *config.City) error) error {
 	}
 	if err := config.ValidateRigs(raw.Rigs, raw.Workspace.Name); err != nil {
 		return fmt.Errorf("validating rigs: %w", err)
+	}
+	if err := validateProviders(raw.Providers); err != nil {
+		return fmt.Errorf("validating providers: %w", err)
 	}
 
 	content, err := raw.Marshal()
@@ -596,4 +602,14 @@ func (e *Editor) DeleteProviderPatch(name string) error {
 		}
 		return fmt.Errorf("provider patch %q not found", name)
 	})
+}
+
+// validateProviders checks that all city-level providers have a command set.
+func validateProviders(providers map[string]config.ProviderSpec) error {
+	for name, spec := range providers {
+		if spec.Command == "" {
+			return fmt.Errorf("provider %q: command is required", name)
+		}
+	}
+	return nil
 }
