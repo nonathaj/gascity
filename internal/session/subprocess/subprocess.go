@@ -217,6 +217,9 @@ func (p *Provider) IsRunning(name string) bool {
 	return p.socketAlive(name)
 }
 
+// IsAttached always returns false — subprocess has no terminal concept.
+func (p *Provider) IsAttached(_ string) bool { return false }
+
 // Attach is not supported by the subprocess provider.
 func (p *Provider) Attach(_ string) error {
 	return fmt.Errorf("subprocess provider does not support attach")

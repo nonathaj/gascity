@@ -117,6 +117,11 @@ func (p *Provider) IsRunning(name string) bool {
 	return err == nil && has
 }
 
+// IsAttached reports whether a user terminal is connected to the named session.
+func (p *Provider) IsAttached(name string) bool {
+	return p.tm.IsSessionAttached(name)
+}
+
 // ProcessAlive reports whether the named session has a live agent
 // process matching one of the given names in its process tree.
 // Returns true if processNames is empty (no check possible).

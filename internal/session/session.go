@@ -32,6 +32,11 @@ type Provider interface {
 	// live process.
 	IsRunning(name string) bool
 
+	// IsAttached reports whether a user terminal is currently connected
+	// to the named session. Returns false if the session doesn't exist
+	// or the provider doesn't support attach detection.
+	IsAttached(name string) bool
+
 	// Attach connects the user's terminal to the named session for
 	// interactive use. Blocks until the user detaches.
 	Attach(name string) error

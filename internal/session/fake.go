@@ -20,6 +20,7 @@ type Fake struct {
 	Calls      []Call                       // recorded calls in order
 	broken     bool                         // when true, all ops fail
 	Zombies    map[string]bool              // sessions with dead agent processes
+	Attached   map[string]bool              // sessions with attached terminals
 	PeekOutput map[string]string            // session → canned peek output
 	Activity   map[string]time.Time         // session → last activity time
 }
@@ -42,6 +43,7 @@ func NewFake() *Fake {
 		sessions: make(map[string]Config),
 		meta:     make(map[string]map[string]string),
 		Zombies:  make(map[string]bool),
+		Attached: make(map[string]bool),
 	}
 }
 
@@ -53,6 +55,7 @@ func NewFailFake() *Fake {
 		sessions: make(map[string]Config),
 		meta:     make(map[string]map[string]string),
 		Zombies:  make(map[string]bool),
+		Attached: make(map[string]bool),
 		broken:   true,
 	}
 }
@@ -109,6 +112,29 @@ func (f *Fake) IsRunning(name string) bool {
 	}
 	_, exists := f.sessions[name]
 	return exists
+}
+
+// SetAttached sets the canned attached state for the named session.
+// Used in test setup.
+func (f *Fake) SetAttached(name string, val bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Attached == nil {
+		f.Attached = make(map[string]bool)
+	}
+	f.Attached[name] = val
+}
+
+// IsAttached reports whether the fake session has an attached terminal.
+// When broken, always returns false.
+func (f *Fake) IsAttached(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, Call{Method: "IsAttached", Name: name})
+	if f.broken {
+		return false
+	}
+	return f.Attached[name]
 }
 
 // Attach records the call but returns immediately (no terminal to attach).

@@ -149,6 +149,10 @@ func (p *Provider) IsRunning(name string) bool {
 	return strings.TrimSpace(out) == "true"
 }
 
+// IsAttached always returns false — the exec provider does not support
+// attach detection.
+func (p *Provider) IsAttached(_ string) bool { return false }
+
 // Attach connects the terminal to the session: script attach <name>
 func (p *Provider) Attach(name string) error {
 	return p.runWithTTY("attach", name)

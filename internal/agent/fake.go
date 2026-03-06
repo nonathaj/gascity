@@ -41,6 +41,9 @@ type Fake struct {
 	// FakeLastActivity is returned by GetLastActivity(). Set it per-test.
 	FakeLastActivity time.Time
 
+	// FakeIsAttached is returned by IsAttached(). Defaults to false.
+	FakeIsAttached bool
+
 	// FakeProcessAlive is returned by ProcessAlive(). Defaults to true.
 	FakeProcessAlive *bool
 
@@ -97,6 +100,14 @@ func (f *Fake) IsRunning() bool {
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, Call{Method: "IsRunning", Name: f.FakeName})
 	return f.Running
+}
+
+// IsAttached records the call and returns FakeIsAttached.
+func (f *Fake) IsAttached() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, Call{Method: "IsAttached", Name: f.FakeName})
+	return f.FakeIsAttached
 }
 
 // Start records the call. Sleeps for StartDelay if set, respecting

@@ -52,6 +52,11 @@ func (p *Provider) IsRunning(name string) bool {
 	return p.route(name).IsRunning(name)
 }
 
+// IsAttached delegates to the routed backend.
+func (p *Provider) IsAttached(name string) bool {
+	return p.route(name).IsAttached(name)
+}
+
 // Attach delegates to the routed backend.
 func (p *Provider) Attach(name string) error {
 	return p.route(name).Attach(name)

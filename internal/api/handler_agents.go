@@ -23,6 +23,7 @@ type agentResponse struct {
 type sessionInfo struct {
 	Name         string     `json:"name"`
 	LastActivity *time.Time `json:"last_activity,omitempty"`
+	Attached     bool       `json:"attached"`
 }
 
 func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +83,7 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 				if t, err := sp.GetLastActivity(sessionName); err == nil && !t.IsZero() {
 					si.LastActivity = &t
 				}
+				si.Attached = sp.IsAttached(sessionName)
 				resp.Session = si
 			}
 
@@ -148,6 +150,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		if t, err := sp.GetLastActivity(sessionName); err == nil && !t.IsZero() {
 			si.LastActivity = &t
 		}
+		si.Attached = sp.IsAttached(sessionName)
 		resp.Session = si
 	}
 

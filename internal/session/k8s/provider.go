@@ -252,6 +252,22 @@ func (p *Provider) IsRunning(name string) bool {
 	return err == nil
 }
 
+// IsAttached reports whether a user terminal is connected to the tmux
+// session inside the pod.
+func (p *Provider) IsAttached(name string) bool {
+	ctx := context.Background()
+	podName, err := p.findRunningPod(ctx, name)
+	if err != nil {
+		return false
+	}
+	output, err := p.ops.execInPod(ctx, podName, "agent",
+		[]string{"tmux", "display-message", "-t", tmuxSession, "-p", "#{session_attached}"}, nil)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(output) == "1"
+}
+
 // Attach shells out to kubectl exec -it for full TTY passthrough.
 func (p *Provider) Attach(name string) error {
 	ctx := context.Background()

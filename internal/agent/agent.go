@@ -32,6 +32,10 @@ type Handle interface {
 	// IsRunning reports whether the agent's session is active.
 	IsRunning() bool
 
+	// IsAttached reports whether a user terminal is connected to this
+	// agent's session.
+	IsAttached() bool
+
 	// Stop destroys the agent's session.
 	Stop() error
 
@@ -257,6 +261,8 @@ func (a *managed) IsRunning() bool {
 	}
 	return a.sp.ProcessAlive(a.sessionName, a.hints.ProcessNames)
 }
+
+func (a *managed) IsAttached() bool { return a.sp.IsAttached(a.sessionName) }
 
 func (a *managed) Stop() error {
 	if a.observer != nil {
