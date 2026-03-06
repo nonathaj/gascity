@@ -8,9 +8,9 @@ This keeps the wisp and mail tables from growing unbounded.
 Current behavior:
 - Closes open/hooked/in_progress wisps older than max_age (default 24h)
   whose parent molecule is closed or missing
-- Purges (deletes) closed wisps past purge_age (default 7 days)
-- Purges closed mail past mail_delete_age (default 7 days)
-- Auto-closes stale issues open >30 days with no status change
+- Purges (deletes) closed wisps past purge_age (default 3 days)
+- Purges closed mail past mail_delete_age (default 3 days)
+- Auto-closes stale issues open >7 days with no status change
 - Alerts if open wisp count exceeds threshold (500)
 
 ## Dog Contract
@@ -28,9 +28,9 @@ This is infrastructure work. You:
 | Variable | Source | Description |
 |----------|--------|-------------|
 | max_age | config | Max wisp age before reaping (default 24h) |
-| purge_age | config | Max closed wisp age before purging (default 7d) |
-| stale_issue_age | config | Max issue staleness before auto-close (default 30d) |
-| mail_delete_age | config | Max closed mail age before purging (default 7d) |
+| purge_age | config | Max closed wisp age before purging (default 3d) |
+| stale_issue_age | config | Max issue staleness before auto-close (default 7d) |
+| mail_delete_age | config | Max closed mail age before purging (default 3d) |
 | alert_threshold | config | Open wisp count that triggers escalation (default 500) |
 | dry_run | config | If "true", report without acting |
 | databases | config | Comma-separated DB list (empty = auto-discover) |
@@ -60,16 +60,16 @@ description = "Max wisp age before reaping (e.g., '24h')"
 default = "24h"
 
 [vars.purge_age]
-description = "Max closed wisp age before purging (e.g., '168h' = 7 days)"
-default = "168h"
+description = "Max closed wisp age before purging (e.g., '72h' = 3 days)"
+default = "72h"
 
 [vars.stale_issue_age]
-description = "Max issue staleness before auto-close (e.g., '720h' = 30 days)"
-default = "720h"
+description = "Max issue staleness before auto-close (e.g., '168h' = 7 days)"
+default = "168h"
 
 [vars.mail_delete_age]
-description = "Max closed mail age before purging (e.g., '168h' = 7 days)"
-default = "168h"
+description = "Max closed mail age before purging (e.g., '72h' = 3 days)"
+default = "72h"
 
 [vars.alert_threshold]
 description = "Open wisp count that triggers escalation warning"

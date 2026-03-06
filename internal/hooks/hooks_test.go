@@ -9,10 +9,10 @@ import (
 
 func TestSupportedProviders(t *testing.T) {
 	got := SupportedProviders()
-	if len(got) != 4 {
-		t.Fatalf("SupportedProviders() = %v, want 4 entries", got)
+	if len(got) != 5 {
+		t.Fatalf("SupportedProviders() = %v, want 5 entries", got)
 	}
-	want := map[string]bool{"claude": true, "gemini": true, "opencode": true, "copilot": true}
+	want := map[string]bool{"claude": true, "gemini": true, "opencode": true, "copilot": true, "cursor": true}
 	for _, p := range got {
 		if !want[p] {
 			t.Errorf("unexpected provider %q", p)
@@ -153,6 +153,27 @@ func TestInstallUnknownProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("error should mention unsupported: %v", err)
+	}
+}
+
+func TestInstallCursor(t *testing.T) {
+	fs := fsys.NewFake()
+	err := Install(fs, "/city", "/work", []string{"cursor"})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, ok := fs.Files["/work/.cursor/hooks.json"]
+	if !ok {
+		t.Fatal("expected /work/.cursor/hooks.json to be written")
+	}
+	if !strings.Contains(string(data), "sessionStart") {
+		t.Error("cursor hooks should contain sessionStart")
+	}
+	if !strings.Contains(string(data), "gc prime") {
+		t.Error("cursor hooks should contain gc prime")
+	}
+	if !strings.Contains(string(data), "gc mail check --inject") {
+		t.Error("cursor hooks should contain gc mail check --inject")
 	}
 }
 

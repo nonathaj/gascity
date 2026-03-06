@@ -17,10 +17,10 @@ import (
 var configFS embed.FS
 
 // supported lists provider names that have hook support.
-var supported = []string{"claude", "gemini", "opencode", "copilot"}
+var supported = []string{"claude", "gemini", "opencode", "copilot", "cursor"}
 
 // unsupported lists provider names that have no hook mechanism.
-var unsupported = []string{"codex", "cursor", "amp"}
+var unsupported = []string{"codex", "amp"}
 
 // SupportedProviders returns the list of provider names with hook support.
 func SupportedProviders() []string {
@@ -73,6 +73,8 @@ func Install(fs fsys.FS, cityDir, workDir string, providers []string) error {
 			err = installOpenCode(fs, workDir)
 		case "copilot":
 			err = installCopilot(fs, workDir)
+		case "cursor":
+			err = installCursor(fs, workDir)
 		default:
 			return fmt.Errorf("unsupported hook provider %q", p)
 		}
@@ -105,6 +107,12 @@ func installOpenCode(fs fsys.FS, workDir string) error {
 func installCopilot(fs fsys.FS, workDir string) error {
 	dst := filepath.Join(workDir, ".github", "copilot-instructions.md")
 	return writeEmbedded(fs, "config/copilot.md", dst)
+}
+
+// installCursor writes .cursor/hooks.json in the working directory.
+func installCursor(fs fsys.FS, workDir string) error {
+	dst := filepath.Join(workDir, ".cursor", "hooks.json")
+	return writeEmbedded(fs, "config/cursor.json", dst)
 }
 
 // writeEmbedded reads an embedded file and writes it to dst, creating parent

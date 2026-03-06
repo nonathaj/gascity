@@ -780,7 +780,7 @@ or formulas.
 
 ### 23a. Serial killer bug
 
-- [ ] **f3d47a96** — Daemon killed witness/refinery sessions after 30 min
+- [-] **f3d47a96** — Daemon killed witness/refinery sessions after 30 min
   of no tmux output, treating idle agents as "hung." But idle agents waiting
   for work legitimately produce no output. The deacon patrol's health-scan
   step already does context-aware stuck detection.
@@ -791,7 +791,7 @@ or formulas.
 
 ### 23b. GT_AGENT_READY sentinel env var
 
-- [ ] **3f699e7d** — Replace IsAgentAlive process-tree probing with
+- [-] **3f699e7d** — Replace IsAgentAlive process-tree probing with
   GT_AGENT_READY tmux env var. Agent's prime hook sets the var; WaitForCommand
   clears it on entry then polls for it. Pure declared-state observation
   instead of ZFC-violating process tree crawling.
@@ -808,7 +808,7 @@ New theme. Nudge delivery reliability improvements.
 
 ### 24a. Wait-idle as default
 
-- [ ] **6bc898ce** — Change default nudge delivery from `immediate` (tmux
+- [x] **6bc898ce** — Change default nudge delivery from `immediate` (tmux
   send-keys) to `wait-idle` (poll for idle prompt before delivering).
   Immediate mode interrupted active tool calls — the agent received nudge
   text as user input mid-execution, aborting work. Wait-idle falls back to
@@ -820,7 +820,7 @@ New theme. Nudge delivery reliability improvements.
 
 ### 24b. WaitForIdle false-positive fix
 
-- [ ] **dfd945e9** — WaitForIdle returned immediately when it found a `❯`
+- [x] **dfd945e9** — WaitForIdle returned immediately when it found a `❯`
   prompt in the pane buffer, but during inter-tool-call gaps the prompt
   remains visible in scrollback while Claude Code is actively processing.
   Fix: (1) check Claude Code status bar for "esc to interrupt" — if present,
@@ -848,16 +848,18 @@ New theme. Nudge delivery reliability improvements.
 
 ### 25b. Cursor hooks support
 
-- [-] **86e3b89b** — Add Cursor hooks support for polecat agent integration.
+- [x] **86e3b89b** — Add Cursor hooks support for polecat agent integration.
   `SupportsHooks = true` for Cursor preset, dedicated hook config files for
   autonomous and interactive modes.
-  N/A at SDK level — Gas City's `install_agent_hooks` already supports
-  arbitrary agent types including Cursor. Gastown config could add
-  `install_agent_hooks = ["cursor"]` if needed.
+  **Done:** Added Cursor hook support to `internal/hooks/`. Moved cursor
+  from unsupported to supported, added `config/cursor.json` with Cursor's
+  native hook format (sessionStart, preCompact, beforeSubmitPrompt, stop)
+  calling gc prime / gc mail check --inject / gc hook --inject.
+  `install_agent_hooks = ["cursor"]` now works.
 
 ### 25c. Hook bead slot removal
 
-- [ ] **fa9dc287** — Remove `hook_bead` slot from agent beads. The work bead
+- [-] **fa9dc287** — Remove `hook_bead` slot from agent beads. The work bead
   itself already tracks `status=hooked` and `assignee=<agent>`. The slot was
   redundant and caused cross-database warnings. `updateAgentHookBead` is now
   a no-op; `done.go` uses `issueID` param directly; `unsling.go` queries by
@@ -875,7 +877,7 @@ New theme. Nudge delivery reliability improvements.
 
 ### 26a. --cascade flag
 
-- [ ] **38bc4479** — Add `--cascade` flag to `bd close` / `gt close`.
+- [-] **38bc4479** — Add `--cascade` flag to `bd close` / `gt close`.
   Recursively closes all open children depth-first before closing the parent.
   Automatic reason noting the cascade.
   **Gastown:** Update formulas and prompts that close parent beads (epics,
@@ -896,7 +898,7 @@ New theme. Nudge delivery reliability improvements.
 
 ### 27a. Shortened TTLs
 
-- [ ] **2dd21003** — Shorten reaper TTLs: auto-close stale issues 30d → 7d,
+- [x] **2dd21003** — Shorten reaper TTLs: auto-close stale issues 30d → 7d,
   purge closed wisps 7d → 3d, purge closed mail 7d → 3d.
   **Gastown:** Update `mol-dog-reaper.formula.toml` vars to match new
   defaults: `stale_issue_age = "7d"`, `purge_age = "3d"`,
@@ -944,7 +946,7 @@ Extends Section 12d.
 
 ### 29a. bd close in quick-reference tables
 
-- [ ] **56eb2ed6** — Add `bd close` to command quick-reference tables in all
+- [~] **56eb2ed6** — Add `bd close` to command quick-reference tables in all
   role templates (crew, mayor, polecat, witness). Agents frequently guessed
   wrong commands (`bd complete`, `bd update --status done`). Also adds
   "valid statuses" reminder line.
@@ -969,7 +971,7 @@ Extends Section 12d.
 
 ### 30a. POLECAT_SLOT env var
 
-- [ ] **dafcd241** — Set `POLECAT_SLOT` env var for test isolation. Unique
+- [-] **dafcd241** — Set `POLECAT_SLOT` env var for test isolation. Unique
   integer (0, 1, 2, ...) based on polecat position among existing polecat
   directories. Enables port offsetting: `BACKEND_PORT = 8100 + POLECAT_SLOT`.
   **Gastown:** Add `POLECAT_SLOT` documentation to polecat prompt and/or
@@ -1097,28 +1099,35 @@ Gas Town internal fixes, test improvements, and operational items. All N/A.
 
 ## Delta 3 Action Summary
 
-**SDK items (implement):**
+**SDK items — done:**
 
-| # | Item | Section | Priority |
-|---|------|---------|----------|
-| 1 | WaitForIdle 2-poll + status bar check | S24b | High — active bug |
-| 2 | Nudge wait-idle as default delivery mode | S24a | High — interrupts active work |
-| 3 | Audit health patrol idle-kill semantics | S23a | Medium — verify correct |
-| 4 | GC_AGENT_READY env var for readiness detection | S23b | Low — enhancement |
+| # | Item | Section | Status |
+|---|------|---------|--------|
+| 1 | WaitForIdle 2-poll + status bar check | S24b | [x] Done |
+| 2 | Nudge wait-idle as default delivery mode | S24a | [x] Done |
+| 3 | Cursor hook support | S25b | [x] Done |
 
-**Gastown items (config/prompt updates):**
+**SDK items — skipped (N/A):**
 
-| # | Item | Section | Priority |
-|---|------|---------|----------|
-| 1 | Add `bd close` to all role quick-reference tables | S29a | High — agent confusion |
-| 2 | Add `--cascade` to relevant formula close commands | S26a | Medium |
-| 3 | Add POLECAT_SLOT to polecat prompt/formula | S30a | Medium |
-| 4 | Update reaper formula default TTLs (7d/3d/3d) | S27a | Low |
-| 5 | Verify hook_bead formula references still valid | S25c | Low — likely fine |
+| # | Item | Section | Reason |
+|---|------|---------|--------|
+| 1 | Health patrol idle-kill semantics | S23a | Already per-agent opt-in |
+| 2 | GC_AGENT_READY env var | S23b | Prompt-based readiness sufficient |
+| 3 | `--cascade` on bd close | S26a | No gastown formulas close parents |
+| 4 | hook_bead slot removal | S25c | Formula text is natural language, not API |
+| 5 | POLECAT_SLOT env var | S30a | Gas Town polecat manager feature |
+
+**Gastown items — done:**
+
+| # | Item | Section | Status |
+|---|------|---------|--------|
+| 1 | HELP assessment table in witness formula | S23 | [x] Done |
+| 2 | Reaper formula default TTLs (7d/3d/3d) | S27a | [x] Done |
 
 **Deferred:**
 
 | # | Item | Section | Blocked on |
 |---|------|---------|------------|
-| 1 | Context-budget guard | S29b | env var plumbing |
-| 2 | Sling context TTL | S31a | sling scheduling implementation |
+| 1 | Add `bd close` to all role quick-reference tables | S29a | Same approach as gc skills |
+| 2 | Context-budget guard | S29b | env var plumbing |
+| 3 | Sling context TTL | S31a | sling scheduling implementation |
