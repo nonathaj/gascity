@@ -1,0 +1,167 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestClientSuspendCity(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotBody map[string]any
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&gotBody) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.SuspendCity(); err != nil {
+		t.Fatalf("SuspendCity: %v", err)
+	}
+	if gotMethod != "PATCH" {
+		t.Errorf("method = %q, want PATCH", gotMethod)
+	}
+	if gotPath != "/v0/city" {
+		t.Errorf("path = %q, want /v0/city", gotPath)
+	}
+	if gotBody["suspended"] != true {
+		t.Errorf("body suspended = %v, want true", gotBody["suspended"])
+	}
+}
+
+func TestClientResumeCity(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.ResumeCity(); err != nil {
+		t.Fatalf("ResumeCity: %v", err)
+	}
+	if gotBody["suspended"] != false {
+		t.Errorf("body suspended = %v, want false", gotBody["suspended"])
+	}
+}
+
+func TestClientSuspendAgent(t *testing.T) {
+	var gotMethod, gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.SuspendAgent("worker"); err != nil {
+		t.Fatalf("SuspendAgent: %v", err)
+	}
+	if gotMethod != "POST" {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if gotPath != "/v0/agent/worker/suspend" {
+		t.Errorf("path = %q, want /v0/agent/worker/suspend", gotPath)
+	}
+}
+
+func TestClientResumeAgent(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.ResumeAgent("worker"); err != nil {
+		t.Fatalf("ResumeAgent: %v", err)
+	}
+	if gotPath != "/v0/agent/worker/resume" {
+		t.Errorf("path = %q, want /v0/agent/worker/resume", gotPath)
+	}
+}
+
+func TestClientSuspendRig(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.SuspendRig("myrig"); err != nil {
+		t.Fatalf("SuspendRig: %v", err)
+	}
+	if gotPath != "/v0/rig/myrig/suspend" {
+		t.Errorf("path = %q, want /v0/rig/myrig/suspend", gotPath)
+	}
+}
+
+func TestClientResumeRig(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.ResumeRig("myrig"); err != nil {
+		t.Fatalf("ResumeRig: %v", err)
+	}
+	if gotPath != "/v0/rig/myrig/resume" {
+		t.Errorf("path = %q, want /v0/rig/myrig/resume", gotPath)
+	}
+}
+
+func TestClientErrorResponse(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck
+			"error":   "not_found",
+			"message": "agent 'nope' not found",
+		})
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	err := c.SuspendAgent("nope")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := err.Error(); got != "API error: agent 'nope' not found" {
+		t.Errorf("error = %q", got)
+	}
+}
+
+func TestClientCSRFHeader(t *testing.T) {
+	var gotHeader string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-GC-Request")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	c.SuspendAgent("worker") //nolint:errcheck
+	if gotHeader != "true" {
+		t.Errorf("X-GC-Request = %q, want %q", gotHeader, "true")
+	}
+}

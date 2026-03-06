@@ -61,6 +61,14 @@ func cmdSuspend(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc suspend: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	if c := apiClient(cityPath); c != nil {
+		if err := c.SuspendCity(); err != nil {
+			fmt.Fprintf(stderr, "gc suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "City suspended (%s)\n", cityPath) //nolint:errcheck // best-effort stdout
+		return 0
+	}
 	return doSuspendCity(fsys.OSFS{}, cityPath, true, stdout, stderr)
 }
 
@@ -70,6 +78,14 @@ func cmdResume(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "gc resume: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
+	}
+	if c := apiClient(cityPath); c != nil {
+		if err := c.ResumeCity(); err != nil {
+			fmt.Fprintf(stderr, "gc resume: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "City resumed (%s)\n", cityPath) //nolint:errcheck // best-effort stdout
+		return 0
 	}
 	return doSuspendCity(fsys.OSFS{}, cityPath, false, stdout, stderr)
 }

@@ -1,6 +1,6 @@
 # Design Doc: State-Mutating Operations API Surface
 
-**Status:** Phase 1 implemented — Phases 2-5 are future work
+**Status:** Phases 1-5 implemented
 **Date:** 2026-03-06
 **Authors:** Claude (industry analysis + endpoint catalog), Codex (semantic analysis + control-plane model)
 **Synthesized by:** Claude
@@ -1388,20 +1388,31 @@ POST /v0/events (1)
 + X-GC-Request-Id on all responses
 ```
 
-### Phase 5: CLI as API Client
+### Phase 5: CLI as API Client ✅
 
-**No new endpoints.** Route CLI writes through the API when a controller
-is running:
+**Status:** Delivered. No new endpoints — CLI routes writes through API
+when controller is running.
 
+**Implementation:**
+- `internal/api/client.go` — HTTP client wrapping mutation endpoints
+  (SuspendCity, ResumeCity, SuspendAgent, ResumeAgent, SuspendRig, ResumeRig)
+- `cmd/gc/apiroute.go` — `apiClient(cityPath)` detects running controller
+  with API, returns client or nil for fallback to direct mutation
+- CLI commands wired: `gc suspend`, `gc resume`, `gc agent suspend/resume`,
+  `gc rig suspend/resume`
+
+**Pattern:**
 ```go
-if controllerRunning() {
-    return apiClient.CreateAgent(spec)
+if c := apiClient(cityPath); c != nil {
+    return c.SuspendAgent(name)
 }
 // No controller — direct file mutation (existing behavior)
-return createAgentDirect(spec)
+return doAgentSuspend(fs, cityPath, name, stdout, stderr)
 ```
 
-Parity tests ensure CLI and API produce identical results.
+**Tests:**
+- `internal/api/client_test.go` — 8 tests covering all client methods,
+  error responses, and CSRF header propagation
 
 ---
 

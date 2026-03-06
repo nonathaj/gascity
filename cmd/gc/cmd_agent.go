@@ -468,6 +468,14 @@ func cmdAgentSuspend(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	if c := apiClient(cityPath); c != nil {
+		if err := c.SuspendAgent(args[0]); err != nil {
+			fmt.Fprintf(stderr, "gc agent suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "Suspended agent '%s'\n", args[0]) //nolint:errcheck // best-effort stdout
+		return 0
+	}
 	return doAgentSuspend(fsys.OSFS{}, cityPath, args[0], stdout, stderr)
 }
 
@@ -554,6 +562,14 @@ func cmdAgentResume(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
+	}
+	if c := apiClient(cityPath); c != nil {
+		if err := c.ResumeAgent(args[0]); err != nil {
+			fmt.Fprintf(stderr, "gc agent resume: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintf(stdout, "Resumed agent '%s'\n", args[0]) //nolint:errcheck // best-effort stdout
+		return 0
 	}
 	return doAgentResume(fsys.OSFS{}, cityPath, args[0], stdout, stderr)
 }
