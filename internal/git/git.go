@@ -2,6 +2,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -27,13 +28,23 @@ func New(workDir string) *Git {
 
 // IsRepo reports whether workDir is inside a git repository.
 func (g *Git) IsRepo() bool {
-	_, err := g.run("rev-parse", "--git-dir")
+	return g.IsRepoCtx(context.Background())
+}
+
+// IsRepoCtx is like IsRepo but accepts a context for cancellation.
+func (g *Git) IsRepoCtx(ctx context.Context) bool {
+	_, err := g.runCtx(ctx, "rev-parse", "--git-dir")
 	return err == nil
 }
 
 // CurrentBranch returns the current branch name. Returns "HEAD" if detached.
 func (g *Git) CurrentBranch() (string, error) {
-	out, err := g.run("rev-parse", "--abbrev-ref", "HEAD")
+	return g.CurrentBranchCtx(context.Background())
+}
+
+// CurrentBranchCtx is like CurrentBranch but accepts a context.
+func (g *Git) CurrentBranchCtx(ctx context.Context) (string, error) {
+	out, err := g.runCtx(ctx, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("getting current branch: %w", err)
 	}
@@ -165,6 +176,48 @@ func (g *Git) PullRebase(remote, branch string) error {
 	return nil
 }
 
+// StatusPorcelain returns the porcelain status output showing changed files.
+// Each non-empty line represents one changed/untracked file.
+func (g *Git) StatusPorcelain() (string, error) {
+	return g.StatusPorcelainCtx(context.Background())
+}
+
+// StatusPorcelainCtx is like StatusPorcelain but accepts a context.
+func (g *Git) StatusPorcelainCtx(ctx context.Context) (string, error) {
+	out, err := g.runCtx(ctx, "status", "--porcelain")
+	if err != nil {
+		return "", fmt.Errorf("getting status: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// AheadBehind returns the number of commits ahead and behind the upstream
+// tracking branch. Returns (0, 0, err) if no upstream is configured.
+func (g *Git) AheadBehind() (ahead, behind int, err error) {
+	return g.AheadBehindCtx(context.Background())
+}
+
+// AheadBehindCtx is like AheadBehind but accepts a context.
+func (g *Git) AheadBehindCtx(ctx context.Context) (ahead, behind int, err error) {
+	out, err := g.runCtx(ctx, "rev-list", "--left-right", "--count", "HEAD...@{upstream}")
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.Fields(strings.TrimSpace(out))
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected rev-list output: %q", out)
+	}
+	a, err := fmt.Sscanf(parts[0], "%d", &ahead)
+	if err != nil || a != 1 {
+		return 0, 0, fmt.Errorf("parsing ahead count: %w", err)
+	}
+	b, err := fmt.Sscanf(parts[1], "%d", &behind)
+	if err != nil || b != 1 {
+		return 0, 0, fmt.Errorf("parsing behind count: %w", err)
+	}
+	return ahead, behind, nil
+}
+
 // gitEnvBlacklist lists git environment variables that must be stripped
 // so subprocess git commands use the intended workDir, not a parent repo.
 // This prevents leakage from pre-commit hooks or other git tooling.
@@ -180,7 +233,12 @@ var gitEnvBlacklist = map[string]bool{
 // variables from the parent process are stripped to prevent interference
 // (e.g., when called from a pre-commit hook context).
 func (g *Git) run(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return g.runCtx(context.Background(), args...)
+}
+
+// runCtx executes a git command with a context for cancellation/timeout.
+func (g *Git) runCtx(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = g.workDir
 	// Build clean env: inherit everything except git-specific vars.
 	for _, e := range os.Environ() {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -31,6 +32,9 @@ type controllerState struct {
 	eventProv  events.Provider
 	cityName   string
 	cityPath   string
+	version    string
+	startedAt  time.Time
+	ct         crashTracker // nil if crash tracking disabled
 }
 
 // newControllerState creates a controllerState with per-rig stores.
@@ -46,6 +50,8 @@ func newControllerState(
 		eventProv: ep,
 		cityName:  cityName,
 		cityPath:  cityPath,
+		version:   version,
+		startedAt: time.Now(),
 	}
 	cs.beadStores, cs.mailProvs = cs.buildStores(cfg)
 	return cs
@@ -200,6 +206,27 @@ func (cs *controllerState) CityName() string {
 // CityPath returns the city root directory.
 func (cs *controllerState) CityPath() string {
 	return cs.cityPath
+}
+
+// Version returns the GC binary version string.
+func (cs *controllerState) Version() string {
+	return cs.version
+}
+
+// StartedAt returns when the controller was started.
+func (cs *controllerState) StartedAt() time.Time {
+	return cs.startedAt
+}
+
+// IsQuarantined reports whether an agent is quarantined by the crash tracker.
+func (cs *controllerState) IsQuarantined(sessionName string) bool {
+	cs.mu.RLock()
+	ct := cs.ct
+	cs.mu.RUnlock()
+	if ct == nil {
+		return false
+	}
+	return ct.isQuarantined(sessionName, time.Now())
 }
 
 // --- api.StateMutator implementation ---

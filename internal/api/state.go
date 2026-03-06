@@ -6,6 +6,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
@@ -44,6 +46,16 @@ type State interface {
 
 	// CityPath returns the city root directory.
 	CityPath() string
+
+	// Version returns the GC binary version string.
+	Version() string
+
+	// StartedAt returns when the controller was started.
+	StartedAt() time.Time
+
+	// IsQuarantined reports whether an agent (by session name) is
+	// currently quarantined due to crash-loop detection.
+	IsQuarantined(sessionName string) bool
 }
 
 // StateMutator extends State with write operations for mutation endpoints.

@@ -47,6 +47,42 @@ func TestHandleStatus(t *testing.T) {
 	}
 }
 
+func TestHandleStatusEnriched(t *testing.T) {
+	state := newFakeState(t)
+	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	srv := New(state)
+
+	req := httptest.NewRequest("GET", "/v0/status", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	var resp statusResponse
+	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
+
+	// Version from fakeState.
+	if resp.Version != "test" {
+		t.Errorf("Version = %q, want %q", resp.Version, "test")
+	}
+
+	// Uptime should be >= 0.
+	if resp.UptimeSec < 0 {
+		t.Errorf("UptimeSec = %d, want >= 0", resp.UptimeSec)
+	}
+
+	// Agent counts.
+	if resp.Agents.Total != 1 {
+		t.Errorf("Agents.Total = %d, want 1", resp.Agents.Total)
+	}
+	if resp.Agents.Running != 1 {
+		t.Errorf("Agents.Running = %d, want 1", resp.Agents.Running)
+	}
+
+	// Rig counts.
+	if resp.Rigs.Total != 1 {
+		t.Errorf("Rigs.Total = %d, want 1", resp.Rigs.Total)
+	}
+}
+
 func TestHandleHealth(t *testing.T) {
 	state := newFakeState(t)
 	srv := New(state)
@@ -57,5 +93,21 @@ func TestHandleHealth(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
+
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want %q", resp["status"], "ok")
+	}
+	if resp["version"] != "test" {
+		t.Errorf("version = %v, want %q", resp["version"], "test")
+	}
+	if resp["city"] != "test-city" {
+		t.Errorf("city = %v, want %q", resp["city"], "test-city")
+	}
+	if _, ok := resp["uptime_sec"]; !ok {
+		t.Error("missing uptime_sec in health response")
 	}
 }

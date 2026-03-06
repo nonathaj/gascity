@@ -454,6 +454,12 @@ func controllerLoop(
 							ct = newCrashTracker(newMaxR, newWindow)
 						}
 					}
+					// Update API state with new crash tracker.
+					if cs != nil {
+						cs.mu.Lock()
+						cs.ct = ct
+						cs.mu.Unlock()
+					}
 					// Rebuild idle tracker with new config timeouts.
 					it = buildIdleTracker(cfg, cityName, sp)
 					// Rebuild wisp GC from new config.
@@ -582,10 +588,21 @@ func runController(
 	telemetry.RecordControllerLifecycle(context.Background(), "started")
 	fmt.Fprintln(stdout, "Controller started.") //nolint:errcheck // best-effort stdout
 
+	rops := newReconcileOps(sp)
+
+	// Build crash tracker from config — must happen before API server
+	// starts so IsQuarantined reads are race-free.
+	var ct crashTracker
+	maxR := cfg.Daemon.MaxRestartsOrDefault()
+	if maxR > 0 {
+		ct = newCrashTracker(maxR, cfg.Daemon.RestartWindowDuration())
+	}
+
 	// Start API server if configured.
 	var cs *controllerState
 	if cfg.API.Port > 0 {
 		cs = newControllerState(cfg, sp, eventProv, cityName, cityPath)
+		cs.ct = ct
 		bind := cfg.API.BindOrDefault()
 		nonLocal := bind != "127.0.0.1" && bind != "localhost" && bind != "::1"
 		var apiSrv *api.Server
@@ -612,15 +629,6 @@ func runController(
 			}()
 			fmt.Fprintf(stdout, "API server listening on http://%s\n", addr) //nolint:errcheck // best-effort stdout
 		}
-	}
-
-	rops := newReconcileOps(sp)
-
-	// Build crash tracker from config.
-	var ct crashTracker
-	maxR := cfg.Daemon.MaxRestartsOrDefault()
-	if maxR > 0 {
-		ct = newCrashTracker(maxR, cfg.Daemon.RestartWindowDuration())
 	}
 
 	// Build idle tracker from config.

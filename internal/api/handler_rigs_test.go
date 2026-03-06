@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 func TestRigList(t *testing.T) {
@@ -56,6 +60,32 @@ func TestRigGetNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestRigEnrichment(t *testing.T) {
+	state := newFakeState(t)
+	state.cfg.Agents = []config.Agent{
+		{Name: "worker", Dir: "myrig"},
+		{Name: "coder", Dir: "myrig"},
+	}
+	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	srv := New(state)
+
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/v0/rig/myrig", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var rig rigResponse
+	json.NewDecoder(rec.Body).Decode(&rig) //nolint:errcheck
+	if rig.AgentCount != 2 {
+		t.Errorf("AgentCount = %d, want 2", rig.AgentCount)
+	}
+	if rig.RunningCount != 1 {
+		t.Errorf("RunningCount = %d, want 1", rig.RunningCount)
 	}
 }
 

@@ -1,15 +1,46 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 )
 
+type agentCounts struct {
+	Total       int `json:"total"`
+	Running     int `json:"running"`
+	Suspended   int `json:"suspended"`
+	Quarantined int `json:"quarantined"`
+}
+
+type rigCounts struct {
+	Total     int `json:"total"`
+	Suspended int `json:"suspended"`
+}
+
+type workCounts struct {
+	InProgress int `json:"in_progress"`
+	Ready      int `json:"ready"`
+	Open       int `json:"open"`
+}
+
+type mailCounts struct {
+	Unread int `json:"unread"`
+	Total  int `json:"total"`
+}
+
 type statusResponse struct {
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	AgentCount int    `json:"agent_count"`
-	RigCount   int    `json:"rig_count"`
-	Running    int    `json:"running"`
+	Name       string      `json:"name"`
+	Path       string      `json:"path"`
+	Version    string      `json:"version,omitempty"`
+	UptimeSec  int         `json:"uptime_sec"`
+	AgentCount int         `json:"agent_count"`
+	RigCount   int         `json:"rig_count"`
+	Running    int         `json:"running"`
+	Agents     agentCounts `json:"agents"`
+	Rigs       rigCounts   `json:"rigs"`
+	Work       workCounts  `json:"work"`
+	Mail       mailCounts  `json:"mail"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -23,33 +54,109 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cityName := s.state.CityName()
 	sessTmpl := cfg.Workspace.SessionTemplate
 
-	// Count running agents by checking each configured agent's canonical session name.
-	var running int
+	// Count agents by state. The top-level Running field preserves backward
+	// compatibility (raw process count), while Agents.* uses the mutually
+	// exclusive state priority chain from computeAgentState.
+	var ac agentCounts
+	var rawRunning int
 	for _, a := range cfg.Agents {
 		for _, ea := range expandAgent(a, cityName, sessTmpl, sp) {
+			ac.Total++
 			sessName := agentSessionName(cityName, ea.qualifiedName, sessTmpl)
-			if sp.IsRunning(sessName) {
-				running++
+			running := sp.IsRunning(sessName)
+			if running {
+				rawRunning++
+			}
+			suspended := ea.suspended
+			if v, err := sp.GetMeta(sessName, "suspended"); err == nil && v == "true" {
+				suspended = true
+			}
+			switch {
+			case suspended:
+				ac.Suspended++
+			case s.state.IsQuarantined(sessName):
+				ac.Quarantined++
+			case running:
+				ac.Running++
 			}
 		}
 	}
 
-	// Count effective agents (including expanded pool members).
-	var agentCount int
-	for _, a := range cfg.Agents {
-		agentCount += len(expandAgent(a, cityName, sessTmpl, sp))
+	// Count rigs by state.
+	rc := rigCounts{Total: len(cfg.Rigs)}
+	for _, rig := range cfg.Rigs {
+		if rigSuspended(cfg, rig, sp, cityName) {
+			rc.Suspended++
+		}
 	}
+
+	// Count work items (best-effort). Deduplicate stores that may be
+	// shared across rigs (e.g., when using the "file" bead provider).
+	var wc workCounts
+	stores := s.state.BeadStores()
+	seenStores := make(map[string]bool)
+	for _, rigName := range sortedRigNames(stores) {
+		store := stores[rigName]
+		key := fmt.Sprintf("%p", store)
+		if seenStores[key] {
+			continue
+		}
+		seenStores[key] = true
+		list, err := store.List()
+		if err != nil {
+			continue
+		}
+		for _, b := range list {
+			switch b.Status {
+			case "in_progress":
+				wc.InProgress++
+			case "ready":
+				wc.Ready++
+			case "open":
+				wc.Open++
+			}
+		}
+	}
+
+	// Count mail (best-effort). Deduplicate shared providers.
+	var mc mailCounts
+	seenProvs := make(map[string]bool)
+	for _, mp := range s.state.MailProviders() {
+		key := fmt.Sprintf("%p", mp)
+		if seenProvs[key] {
+			continue
+		}
+		seenProvs[key] = true
+		if total, unread, err := mp.Count(""); err == nil {
+			mc.Total += total
+			mc.Unread += unread
+		}
+	}
+
+	uptime := int(time.Since(s.state.StartedAt()).Seconds())
 
 	resp := statusResponse{
 		Name:       cityName,
 		Path:       s.state.CityPath(),
-		AgentCount: agentCount,
-		RigCount:   len(cfg.Rigs),
-		Running:    running,
+		Version:    s.state.Version(),
+		UptimeSec:  uptime,
+		AgentCount: ac.Total,
+		RigCount:   rc.Total,
+		Running:    rawRunning,
+		Agents:     ac,
+		Rigs:       rc,
+		Work:       wc,
+		Mail:       mc,
 	}
 	writeIndexJSON(w, s.latestIndex(), resp)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	uptime := int(time.Since(s.state.StartedAt()).Seconds())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"version":    s.state.Version(),
+		"city":       s.state.CityName(),
+		"uptime_sec": uptime,
+	})
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -26,13 +27,15 @@ func newPostRequest(url string, body io.Reader) *http.Request {
 
 // fakeState implements State for testing.
 type fakeState struct {
-	cfg       *config.City
-	sp        *session.Fake
-	stores    map[string]beads.Store
-	mailProvs map[string]mail.Provider
-	eventProv events.Provider
-	cityName  string
-	cityPath  string
+	cfg         *config.City
+	sp          *session.Fake
+	stores      map[string]beads.Store
+	mailProvs   map[string]mail.Provider
+	eventProv   events.Provider
+	cityName    string
+	cityPath    string
+	startedAt   time.Time
+	quarantined map[string]bool
 }
 
 func newFakeState(t *testing.T) *fakeState {
@@ -55,6 +58,7 @@ func newFakeState(t *testing.T) *fakeState {
 		eventProv: events.NewFake(),
 		cityName:  "test-city",
 		cityPath:  t.TempDir(),
+		startedAt: time.Now(),
 	}
 }
 
@@ -67,6 +71,9 @@ func (f *fakeState) MailProviders() map[string]mail.Provider { return f.mailProv
 func (f *fakeState) EventProvider() events.Provider          { return f.eventProv }
 func (f *fakeState) CityName() string                        { return f.cityName }
 func (f *fakeState) CityPath() string                        { return f.cityPath }
+func (f *fakeState) Version() string                         { return "test" }
+func (f *fakeState) StartedAt() time.Time                    { return f.startedAt }
+func (f *fakeState) IsQuarantined(sessionName string) bool   { return f.quarantined[sessionName] }
 
 // fakeMutatorState extends fakeState with StateMutator for testing mutations.
 type fakeMutatorState struct {

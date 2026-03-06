@@ -2,12 +2,14 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 type agentResponse struct {
@@ -18,6 +20,21 @@ type agentResponse struct {
 	Pool       string       `json:"pool,omitempty"`
 	Session    *sessionInfo `json:"session,omitempty"`
 	ActiveBead string       `json:"active_bead,omitempty"`
+
+	// Gap 1: identity
+	Provider    string `json:"provider,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+
+	// Gap 2: state
+	State string `json:"state"`
+
+	// Gap 5: peek preview
+	LastOutput string `json:"last_output,omitempty"`
+
+	// Gap 9: model + context
+	Model         string `json:"model,omitempty"`
+	ContextPct    *int   `json:"context_pct,omitempty"`
+	ContextWindow *int   `json:"context_window,omitempty"`
 }
 
 type sessionInfo struct {
@@ -36,6 +53,7 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 	sp := s.state.SessionProvider()
 	cityName := s.state.CityName()
 	sessTmpl := cfg.Workspace.SessionTemplate
+	wantPeek := r.URL.Query().Get("peek") == "true"
 
 	// Query filters.
 	qPool := r.URL.Query().Get("pool")
@@ -70,18 +88,25 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 				suspended = true
 			}
 
+			// Resolve provider and display name.
+			provider, displayName := resolveProviderInfo(ea.provider, cfg)
+
 			resp := agentResponse{
-				Name:      ea.qualifiedName,
-				Running:   running,
-				Suspended: suspended,
-				Rig:       ea.rig,
-				Pool:      ea.pool,
+				Name:        ea.qualifiedName,
+				Running:     running,
+				Suspended:   suspended,
+				Rig:         ea.rig,
+				Pool:        ea.pool,
+				Provider:    provider,
+				DisplayName: displayName,
 			}
 
+			var lastActivity *time.Time
 			if running {
 				si := &sessionInfo{Name: sessionName}
 				if t, err := sp.GetLastActivity(sessionName); err == nil && !t.IsZero() {
 					si.LastActivity = &t
+					lastActivity = &t
 				}
 				si.Attached = sp.IsAttached(sessionName)
 				resp.Session = si
@@ -89,6 +114,24 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 
 			// Find active bead by querying bead stores.
 			resp.ActiveBead = s.findActiveBead(ea.qualifiedName, ea.rig)
+
+			// Compute state enum.
+			quarantined := s.state.IsQuarantined(sessionName)
+			resp.State = computeAgentState(suspended, quarantined, running, resp.ActiveBead, lastActivity)
+
+			// Peek preview (opt-in).
+			if wantPeek && running {
+				if output, err := sp.Peek(sessionName, 5); err == nil {
+					resp.LastOutput = output
+				}
+			}
+
+			// Model + context usage (best-effort, Claude only).
+			// Skip when session file attribution is ambiguous (pools,
+			// multiple Claude agents in same rig).
+			if running && provider == "claude" && canAttributeSession(a, ea.rig, cfg) {
+				s.enrichSessionMeta(&resp, ea.rig, cfg)
+			}
 
 			agents = append(agents, resp)
 		}
@@ -137,20 +180,27 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		suspended = true
 	}
 
+	// Resolve provider and display name.
+	provider, displayName := resolveProviderInfo(agentCfg.Provider, cfg)
+
 	resp := agentResponse{
-		Name:      name,
-		Running:   running,
-		Suspended: suspended,
-		Rig:       agentCfg.Dir,
+		Name:        name,
+		Running:     running,
+		Suspended:   suspended,
+		Rig:         agentCfg.Dir,
+		Provider:    provider,
+		DisplayName: displayName,
 	}
 	if agentCfg.IsPool() {
 		resp.Pool = agentCfg.QualifiedName()
 	}
 
+	var lastActivity *time.Time
 	if running {
 		si := &sessionInfo{Name: sessionName}
 		if t, err := sp.GetLastActivity(sessionName); err == nil && !t.IsZero() {
 			si.LastActivity = &t
+			lastActivity = &t
 		}
 		si.Attached = sp.IsAttached(sessionName)
 		resp.Session = si
@@ -158,6 +208,15 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 
 	// Find active bead by querying bead stores.
 	resp.ActiveBead = s.findActiveBead(name, agentCfg.Dir)
+
+	// Compute state enum.
+	quarantined := s.state.IsQuarantined(sessionName)
+	resp.State = computeAgentState(suspended, quarantined, running, resp.ActiveBead, lastActivity)
+
+	// Model + context usage (best-effort, Claude only).
+	if running && provider == "claude" && canAttributeSession(agentCfg, agentCfg.Dir, cfg) {
+		s.enrichSessionMeta(&resp, agentCfg.Dir, cfg)
+	}
 
 	writeIndexJSON(w, s.latestIndex(), resp)
 }
@@ -270,6 +329,7 @@ type expandedAgent struct {
 	rig           string
 	pool          string
 	suspended     bool
+	provider      string
 }
 
 // expandAgent expands a config.Agent into its effective runtime agents.
@@ -282,6 +342,7 @@ func expandAgent(a config.Agent, cityName, sessTmpl string, sp sessionLister) []
 			qualifiedName: a.QualifiedName(),
 			rig:           a.Dir,
 			suspended:     a.Suspended,
+			provider:      a.Provider,
 		}}
 	}
 
@@ -314,6 +375,7 @@ func expandAgent(a config.Agent, cityName, sessTmpl string, sp sessionLister) []
 			rig:           a.Dir,
 			pool:          poolName,
 			suspended:     a.Suspended,
+			provider:      a.Provider,
 		})
 	}
 	return result
@@ -354,6 +416,7 @@ func discoverUnlimitedPool(a config.Agent, poolName, cityName, sessTmpl string, 
 			rig:           a.Dir,
 			pool:          poolName,
 			suspended:     a.Suspended,
+			provider:      a.Provider,
 		})
 	}
 	return result
@@ -429,6 +492,121 @@ func (s *Server) findActiveBead(agentName, rig string) string {
 			if b.Status == "in_progress" && b.Assignee == agentName {
 				return b.ID
 			}
+		}
+	}
+	return ""
+}
+
+// resolveProviderInfo resolves the provider name and display name for an agent.
+// Falls back to workspace default if the agent doesn't specify a provider.
+func resolveProviderInfo(agentProvider string, cfg *config.City) (provider, displayName string) {
+	provider = agentProvider
+	if provider == "" {
+		provider = cfg.Workspace.Provider
+	}
+	if provider == "" {
+		return "", ""
+	}
+
+	// Check city-level provider overrides first.
+	if spec, ok := cfg.Providers[provider]; ok && spec.DisplayName != "" {
+		return provider, spec.DisplayName
+	}
+	// Fall back to built-in providers.
+	if spec, ok := config.BuiltinProviders()[provider]; ok {
+		return provider, spec.DisplayName
+	}
+	// Unknown provider — title-case the name.
+	return provider, strings.ToUpper(provider[:1]) + provider[1:]
+}
+
+// computeAgentState derives the state enum from existing agent data.
+func computeAgentState(suspended, quarantined, running bool, activeBead string, lastActivity *time.Time) string {
+	if suspended {
+		return "suspended"
+	}
+	if quarantined {
+		return "quarantined"
+	}
+	if !running {
+		return "stopped"
+	}
+	if activeBead != "" {
+		if lastActivity != nil && time.Since(*lastActivity) < 10*time.Minute {
+			return "working"
+		}
+		return "waiting"
+	}
+	return "idle"
+}
+
+// enrichSessionMeta populates model and context usage fields on the agent
+// response by reading the tail of the agent's session JSONL file.
+func (s *Server) enrichSessionMeta(resp *agentResponse, rig string, cfg *config.City) {
+	workDir := resolveAgentWorkDir(rig, cfg)
+	if workDir == "" {
+		return
+	}
+	// Resolve to absolute path for correct slug generation.
+	if abs, err := filepath.Abs(workDir); err == nil {
+		workDir = abs
+	}
+	searchPaths := s.sessionLogSearchPaths
+	if searchPaths == nil {
+		searchPaths = sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths)
+	}
+	sessionFile := sessionlog.FindSessionFile(searchPaths, workDir)
+	if sessionFile == "" {
+		return
+	}
+	meta, err := sessionlog.ExtractTailMeta(sessionFile)
+	if err != nil || meta == nil {
+		return
+	}
+	resp.Model = meta.Model
+	if meta.ContextUsage != nil {
+		resp.ContextPct = &meta.ContextUsage.Percentage
+		resp.ContextWindow = &meta.ContextUsage.ContextWindow
+	}
+}
+
+// canAttributeSession reports whether session file attribution is unambiguous
+// for the given agent in its rig. Returns false when multiple Claude agents
+// or pool instances share the same rig directory, since we can't reliably
+// determine which session file belongs to which agent.
+func canAttributeSession(agentCfg config.Agent, rig string, cfg *config.City) bool {
+	// Pool agents always share their rig's working directory — attribution
+	// is ambiguous even with a single pool config entry (it expands to N).
+	if agentCfg.IsPool() {
+		return false
+	}
+	// Count non-pool Claude agents. If any Claude pool exists in this rig,
+	// attribution is ambiguous for ALL agents (pool members create session
+	// files in the same directory as singletons).
+	count := 0
+	for _, a := range cfg.Agents {
+		if a.Dir != rig {
+			continue
+		}
+		provider := a.Provider
+		if provider == "" {
+			provider = cfg.Workspace.Provider
+		}
+		if provider == "claude" {
+			if a.IsPool() {
+				return false // pool presence → ambiguous for everyone
+			}
+			count++
+		}
+	}
+	return count <= 1
+}
+
+// resolveAgentWorkDir returns the filesystem path for an agent's rig.
+func resolveAgentWorkDir(rig string, cfg *config.City) string {
+	for _, r := range cfg.Rigs {
+		if r.Name == rig {
+			return r.Path
 		}
 	}
 	return ""
