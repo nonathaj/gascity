@@ -173,7 +173,7 @@ func (p *Provider) Count(recipient string) (int, int, error) {
 	}
 	var total, unread int
 	for _, b := range all {
-		if isMessage(b) && b.Status == "open" && b.Assignee == recipient {
+		if isMessage(b) && b.Status == "open" && (recipient == "" || b.Assignee == recipient) {
 			total++
 			if !hasLabel(b.Labels, "read") {
 				unread++
@@ -192,7 +192,7 @@ func (p *Provider) filterMessages(recipient string, includeRead bool) ([]mail.Me
 	}
 	var msgs []mail.Message
 	for _, b := range all {
-		if isMessage(b) && b.Status == "open" && b.Assignee == recipient {
+		if isMessage(b) && b.Status == "open" && (recipient == "" || b.Assignee == recipient) {
 			if !includeRead && hasLabel(b.Labels, "read") {
 				continue
 			}
