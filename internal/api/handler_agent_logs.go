@@ -47,7 +47,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, name st
 
 	searchPaths := s.sessionLogSearchPaths
 	if searchPaths == nil {
-		searchPaths = sessionlog.DefaultSearchPaths()
+		searchPaths = sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths)
 	}
 	path := sessionlog.FindSessionFile(searchPaths, workDir)
 	if path == "" {

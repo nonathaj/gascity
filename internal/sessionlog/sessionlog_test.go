@@ -473,7 +473,7 @@ func TestSliceAtCompactBoundariesBeforeCursorWithSlicing(t *testing.T) {
 
 func TestFindSessionFile(t *testing.T) {
 	base := t.TempDir()
-	slug := projectSlug("/home/user/myproject")
+	slug := ProjectSlug("/home/user/myproject")
 	dir := filepath.Join(base, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -517,8 +517,8 @@ func TestProjectSlug(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			if got := projectSlug(tt.path); got != tt.want {
-				t.Errorf("projectSlug(%q) = %q, want %q", tt.path, got, tt.want)
+			if got := ProjectSlug(tt.path); got != tt.want {
+				t.Errorf("ProjectSlug(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
 	}
@@ -701,6 +701,112 @@ func TestBuildDagFallbackOnlyForCompactBoundary(t *testing.T) {
 	}
 	if dag.ActiveBranch[0].UUID != "a" {
 		t.Errorf("first = %q, want %q", dag.ActiveBranch[0].UUID, "a")
+	}
+}
+
+// --- Codex session file tests ---
+
+func TestFindCodexSessionFileIn(t *testing.T) {
+	sessDir := t.TempDir()
+	workDir := "/data/projects/myproject"
+
+	// Create a date-organized session file with matching cwd.
+	dayDir := filepath.Join(sessDir, "2026", "01", "25")
+	if err := os.MkdirAll(dayDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	matchFile := filepath.Join(dayDir, "rollout-2026-01-25T07-00-00-abc123.jsonl")
+	meta := fmt.Sprintf(`{"type":"session_meta","payload":{"cwd":"%s"}}`, workDir)
+	if err := os.WriteFile(matchFile, []byte(meta+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := findCodexSessionFileIn(sessDir, workDir)
+	if got != matchFile {
+		t.Errorf("got %q, want %q", got, matchFile)
+	}
+}
+
+func TestFindCodexSessionFileInNoMatch(t *testing.T) {
+	sessDir := t.TempDir()
+
+	// Create a session file with a different cwd.
+	dayDir := filepath.Join(sessDir, "2026", "01", "25")
+	if err := os.MkdirAll(dayDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	noMatch := filepath.Join(dayDir, "rollout-abc.jsonl")
+	if err := os.WriteFile(noMatch, []byte(`{"type":"session_meta","payload":{"cwd":"/other/project"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := findCodexSessionFileIn(sessDir, "/data/projects/myproject")
+	if got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestFindCodexSessionFileInPicksNewest(t *testing.T) {
+	sessDir := t.TempDir()
+	workDir := "/data/projects/myproject"
+	meta := fmt.Sprintf(`{"type":"session_meta","payload":{"cwd":"%s"}}`, workDir)
+
+	// Create two matching sessions in different days.
+	oldDay := filepath.Join(sessDir, "2026", "01", "20")
+	newDay := filepath.Join(sessDir, "2026", "02", "15")
+	for _, d := range []string{oldDay, newDay} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldFile := filepath.Join(oldDay, "rollout-old.jsonl")
+	newFile := filepath.Join(newDay, "rollout-new.jsonl")
+	for _, f := range []string{oldFile, newFile} {
+		if err := os.WriteFile(f, []byte(meta+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := findCodexSessionFileIn(sessDir, workDir)
+	// Should find the one in the newest date directory (2026/02/15).
+	if got != newFile {
+		t.Errorf("got %q, want %q (newest date dir)", got, newFile)
+	}
+}
+
+func TestCodexSessionCWD(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "test.jsonl")
+
+	// Valid session_meta.
+	if err := os.WriteFile(f, []byte(`{"type":"session_meta","payload":{"cwd":"/foo/bar"}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := codexSessionCWD(f); got != "/foo/bar" {
+		t.Errorf("got %q, want %q", got, "/foo/bar")
+	}
+
+	// Non-session_meta first line.
+	if err := os.WriteFile(f, []byte(`{"type":"response_item","payload":{}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := codexSessionCWD(f); got != "" {
+		t.Errorf("expected empty for non-session_meta, got %q", got)
+	}
+
+	// Missing file.
+	if got := codexSessionCWD(filepath.Join(dir, "nope.jsonl")); got != "" {
+		t.Errorf("expected empty for missing file, got %q", got)
+	}
+}
+
+func TestFindSessionFileFallsBackToCodex(t *testing.T) {
+	// No slug-based files exist, but a Codex session matches.
+	// We can't easily test FindCodexSessionFile (uses $HOME), but we can
+	// test that FindSessionFile returns empty when neither strategy matches.
+	got := FindSessionFile([]string{t.TempDir()}, "/nonexistent/codex/project")
+	if got != "" {
+		t.Errorf("expected empty, got %q", got)
 	}
 }
 

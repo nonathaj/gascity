@@ -18,11 +18,14 @@ func newAgentLogsCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logs <agent-name>",
 		Short: "Show session logs for an agent",
-		Long: `Show structured session log messages from an agent's Claude JSONL file.
+		Long: `Show structured session log messages from an agent's JSONL session file.
 
 Reads the agent's session log, resolves the conversation DAG, and prints
-messages in chronological order. Use --tail to control how many compaction
-segments to show (0 = all). Use -f to follow new messages as they arrive.`,
+messages in chronological order. Searches default paths (~/.claude/projects/)
+and any extra paths from [daemon] observe_paths in city.toml.
+
+Use --tail to control how many compaction segments to show (0 = all).
+Use -f to follow new messages as they arrive.`,
 		Example: `  gc agent logs mayor
   gc agent logs mayor --tail 0
   gc agent logs myrig/polecat-1 -f`,
@@ -66,7 +69,7 @@ func cmdAgentLogs(args []string, follow bool, tail int, stdout, stderr io.Writer
 		return 1
 	}
 
-	path := sessionlog.FindSessionFile(sessionlog.DefaultSearchPaths(), workDir)
+	path := sessionlog.FindSessionFile(sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths), workDir)
 	if path == "" {
 		fmt.Fprintf(stderr, "gc agent logs: no session file found for %q\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1

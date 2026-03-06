@@ -1,7 +1,10 @@
-// Package sessionlog reads Claude Code JSONL session files.
+// Package sessionlog reads agent JSONL session files.
 //
-// Claude writes structured events to ~/.claude/projects/{slug}/{id}.jsonl.
-// These files form a DAG — each entry has a uuid and parentUuid. This
+// Supports multiple session file formats:
+//   - Claude: ~/.claude/projects/{slug}/{id}.jsonl (DAG with uuid/parentUuid)
+//   - Codex: ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl (flat, cwd in session_meta)
+//
+// Claude files form a DAG — each entry has a uuid and parentUuid. This
 // package resolves the DAG to find the active conversation branch,
 // pairs tool_use with tool_result, handles compact boundaries for
 // pagination, and provides a structured read API.

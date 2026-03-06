@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -220,21 +221,32 @@ func sliceAtCompactBoundaries(messages []*Entry, tailCompactions int, beforeMess
 }
 
 // FindSessionFile searches for the most recently modified JSONL session
-// file for the given working directory. Returns "" if not found.
-//
-// Claude stores sessions at ~/.claude/projects/{slug}/{sessionID}.jsonl
-// where slug is the absolute working directory path with "/" and "."
-// replaced by "-".
+// file matching the given working directory. It tries slug-based lookup
+// (Claude) across all search paths, then falls back to CWD-based lookup
+// (Codex). Returns "" if no match is found.
 func FindSessionFile(searchPaths []string, workDir string) string {
-	slug := projectSlug(workDir)
+	// Try slug-based lookup first (Claude: {searchPath}/{slug}/*.jsonl).
+	if path := findSlugSessionFile(searchPaths, workDir); path != "" {
+		return path
+	}
+	// Fall back to Codex CWD-based lookup.
+	return FindCodexSessionFile(workDir)
+}
+
+// findSlugSessionFile searches slug-organized search paths for the most
+// recently modified JSONL session file. Files are stored at
+// {searchPath}/{slug}/{sessionID}.jsonl where slug is the working
+// directory path with "/" and "." replaced by "-".
+func findSlugSessionFile(searchPaths []string, workDir string) string {
+	slug := ProjectSlug(workDir)
+	var globalBestPath string
+	var globalBestTime int64
 	for _, base := range searchPaths {
 		dir := filepath.Join(base, slug)
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
-		var bestPath string
-		var bestTime int64
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 				continue
@@ -244,20 +256,183 @@ func FindSessionFile(searchPaths []string, workDir string) string {
 				continue
 			}
 			mt := info.ModTime().UnixNano()
-			if mt > bestTime {
-				bestTime = mt
-				bestPath = filepath.Join(dir, e.Name())
+			if mt > globalBestTime {
+				globalBestTime = mt
+				globalBestPath = filepath.Join(dir, e.Name())
 			}
 		}
-		if bestPath != "" {
-			return bestPath
+	}
+	return globalBestPath
+}
+
+// FindCodexSessionFile searches Codex's date-organized session directory
+// (~/.codex/sessions/YYYY/MM/DD/*.jsonl) for the most recently modified
+// session file whose embedded cwd matches workDir. Also searches
+// symlinked session directories (e.g., aimux-managed accounts).
+// Returns "" if no match is found or Codex sessions don't exist.
+func FindCodexSessionFile(workDir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	sessDir := filepath.Join(home, ".codex", "sessions")
+	return findCodexSessionFileIn(sessDir, workDir)
+}
+
+// findCodexSessionFileIn searches a Codex sessions directory for the most
+// recent session matching workDir. Scans date directories in reverse
+// chronological order for efficiency. Also recurses into symlinked
+// subdirectories that aren't date components (e.g., aimux session roots).
+func findCodexSessionFileIn(sessDir, workDir string) string {
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		return ""
+	}
+
+	// Separate date-tree roots (YYYY dirs) from symlinked session roots.
+	var yearDirs []string
+	var extraRoots []string
+	for _, e := range entries {
+		if !e.IsDir() && e.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		name := e.Name()
+		if len(name) == 4 && name >= "2000" && name <= "2099" {
+			yearDirs = append(yearDirs, name)
+		} else if e.Type()&os.ModeSymlink != 0 {
+			// Symlinked directory — treat as an additional session root.
+			extraRoots = append(extraRoots, name)
+		}
+	}
+
+	// Scan year dirs in reverse chronological order.
+	sort.Sort(sort.Reverse(sort.StringSlice(yearDirs)))
+	if path := scanYearDirs(sessDir, yearDirs, workDir); path != "" {
+		return path
+	}
+
+	// Scan symlinked session roots (aimux-managed accounts).
+	for _, root := range extraRoots {
+		rootDir := filepath.Join(sessDir, root)
+		// Resolve symlink to get the actual directory.
+		resolved, err := filepath.EvalSymlinks(rootDir)
+		if err != nil {
+			continue
+		}
+		if path := findCodexSessionFileIn(resolved, workDir); path != "" {
+			return path
 		}
 	}
 	return ""
 }
 
-// DefaultSearchPaths returns the default search paths for Claude JSONL
-// session files.
+// scanYearDirs scans YYYY/MM/DD date tree for matching Codex sessions.
+func scanYearDirs(base string, years []string, workDir string) string {
+	for _, year := range years {
+		yearDir := filepath.Join(base, year)
+		months := listDirsReverse(yearDir)
+		for _, month := range months {
+			monthDir := filepath.Join(yearDir, month)
+			days := listDirsReverse(monthDir)
+			for _, day := range days {
+				dayDir := filepath.Join(monthDir, day)
+				if path := findCodexSessionInDir(dayDir, workDir); path != "" {
+					return path
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// findCodexSessionInDir searches a single day directory for the most
+// recently modified Codex session file matching workDir.
+func findCodexSessionInDir(dir, workDir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	// Sort by mod time descending so we check newest first.
+	type fileInfo struct {
+		path    string
+		modTime int64
+	}
+	var files []fileInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{
+			path:    filepath.Join(dir, e.Name()),
+			modTime: info.ModTime().UnixNano(),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].modTime > files[j].modTime
+	})
+
+	for _, f := range files {
+		if codexSessionCWD(f.path) == workDir {
+			return f.path
+		}
+	}
+	return ""
+}
+
+// codexSessionCWD reads the first line of a Codex JSONL session file and
+// extracts the cwd from the session_meta payload. Returns "" if the file
+// can't be read or doesn't contain a session_meta entry.
+func codexSessionCWD(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close() //nolint:errcheck // read-only
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		return ""
+	}
+	var meta struct {
+		Type    string `json:"type"`
+		Payload struct {
+			CWD string `json:"cwd"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(scanner.Bytes(), &meta); err != nil {
+		return ""
+	}
+	if meta.Type != "session_meta" {
+		return ""
+	}
+	return meta.Payload.CWD
+}
+
+// listDirsReverse returns directory names sorted in reverse lexicographic
+// order (newest date components first for YYYY/MM/DD trees).
+func listDirsReverse(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	return names
+}
+
+// DefaultSearchPaths returns the default search paths for JSONL
+// session files (~/.claude/projects/).
 func DefaultSearchPaths() []string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -266,9 +441,35 @@ func DefaultSearchPaths() []string {
 	return []string{filepath.Join(home, ".claude", "projects")}
 }
 
-// projectSlug converts an absolute path to the Claude project directory
-// slug convention: all "/" and "." are replaced with "-".
-func projectSlug(absPath string) string {
+// MergeSearchPaths merges default paths with user-configured extra paths,
+// expanding ~ and deduplicating.
+func MergeSearchPaths(extraPaths []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	add := func(p string) {
+		if strings.HasPrefix(p, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				p = filepath.Join(home, p[2:])
+			}
+		}
+		p = filepath.Clean(p)
+		if !seen[p] {
+			seen[p] = true
+			result = append(result, p)
+		}
+	}
+	for _, p := range DefaultSearchPaths() {
+		add(p)
+	}
+	for _, p := range extraPaths {
+		add(p)
+	}
+	return result
+}
+
+// ProjectSlug converts an absolute path to the project directory slug
+// convention: all "/" and "." are replaced with "-".
+func ProjectSlug(absPath string) string {
 	s := strings.ReplaceAll(absPath, "/", "-")
 	s = strings.ReplaceAll(s, ".", "-")
 	return s
