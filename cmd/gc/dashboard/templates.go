@@ -1,5 +1,5 @@
-// Package main provides the Gas City dashboard server.
-package main
+// Package dashboard provides the Gas City web dashboard server.
+package dashboard
 
 import (
 	"embed"
@@ -33,7 +33,7 @@ type ConvoyData struct {
 	Mayor       *MayorStatus
 	Issues      []IssueRow
 	Activity    []ActivityRow
-	Summary     *DashboardSummary
+	Summary     *Summary
 	Expand      string // Panel to show fullscreen (from ?expand=name)
 	CSRFToken   string // Token for CSRF protection on POST requests
 }
@@ -131,8 +131,8 @@ type ActivityRow struct {
 	RawTimestamp string // ISO 8601 timestamp for JS sorting/filtering
 }
 
-// DashboardSummary provides at-a-glance stats and alerts.
-type DashboardSummary struct {
+// Summary provides at-a-glance stats and alerts.
+type Summary struct {
 	// Stats
 	PolecatCount    int
 	AssignedCount   int
@@ -224,9 +224,7 @@ func LoadTemplates() (*template.Template, error) {
 		"queueStatusClass":   queueStatusClass,
 		"polecatStatusClass": polecatStatusClass,
 		"activityTypeClass":  activityTypeClass,
-		"contains": func(s, substr string) bool {
-			return strings.Contains(s, substr)
-		},
+		"contains":           strings.Contains,
 	}
 
 	subFS, err := fs.Sub(templateFS, "templates")

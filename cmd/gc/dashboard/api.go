@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"bufio"
@@ -97,7 +97,7 @@ func (h *APIHandler) apiGet(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return body, fmt.Errorf("API %s: status %d", path, resp.StatusCode)
@@ -126,7 +126,7 @@ func (h *APIHandler) apiPost(path string, payload any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return body, fmt.Errorf("API POST %s: status %d: %s", path, resp.StatusCode, string(body))
@@ -473,7 +473,7 @@ func runCommand(ctx context.Context, binary string, args []string, dir string) (
 	}
 
 	if err != nil {
-		return output, fmt.Errorf("command failed: %v", err)
+		return output, fmt.Errorf("command failed: %w", err)
 	}
 
 	return output, nil
@@ -575,7 +575,7 @@ func (h *APIHandler) handleMailInboxAPI(w http.ResponseWriter, _ *http.Request) 
 }
 
 // handleMailThreads returns the inbox grouped by conversation threads.
-func (h *APIHandler) handleMailThreads(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) handleMailThreads(w http.ResponseWriter, _ *http.Request) {
 	h.handleMailThreadsAPI(w)
 }
 
@@ -635,10 +635,11 @@ func groupIntoThreads(messages []MailMessage) []MailThread {
 	for _, msg := range messages {
 		var threadKey string
 
-		// Priority 1: Use ThreadID if present
-		if msg.ThreadID != "" {
+		switch {
+		case msg.ThreadID != "":
+			// Priority 1: Use ThreadID if present
 			threadKey = "thread:" + msg.ThreadID
-		} else if msg.ReplyTo != "" {
+		case msg.ReplyTo != "":
 			// Priority 2: Follow reply-to chain
 			if parentKey, ok := msgToThread[msg.ReplyTo]; ok {
 				threadKey = parentKey
@@ -646,7 +647,7 @@ func groupIntoThreads(messages []MailMessage) []MailThread {
 				// Start a new thread anchored to the reply-to ID
 				threadKey = "reply:" + msg.ReplyTo
 			}
-		} else {
+		default:
 			// Priority 3: Standalone message (its own thread)
 			threadKey = "msg:" + msg.ID
 		}
@@ -838,7 +839,7 @@ type OptionsResponse struct {
 
 // handleOptions returns dynamic options for command arguments.
 // Results are cached for 30 seconds to avoid slow repeated fetches.
-func (h *APIHandler) handleOptions(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) handleOptions(w http.ResponseWriter, _ *http.Request) {
 	// Check cache first — serialize under RLock to a buffer so we don't
 	// hold the lock while writing to the ResponseWriter (which can block
 	// on slow clients).
@@ -1577,7 +1578,7 @@ func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request
 	}
 
 	for _, c := range sessionName {
-		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
 			h.sendError(w, "Invalid session name: contains invalid characters", http.StatusBadRequest)
 			return
 		}
@@ -1621,13 +1622,14 @@ func parseCommandArgs(command string) []string {
 	for _, r := range command {
 		switch {
 		case r == '"' || r == '\'':
-			if inQuote && r == quoteChar {
+			switch {
+			case inQuote && r == quoteChar:
 				inQuote = false
 				quoteChar = 0
-			} else if !inQuote {
+			case !inQuote:
 				inQuote = true
 				quoteChar = r
-			} else {
+			default:
 				current.WriteRune(r)
 			}
 		case r == ' ' && !inQuote:
@@ -1682,7 +1684,7 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "SSE connect failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -1690,7 +1692,7 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	// Send initial connection event.
-	fmt.Fprintf(w, "event: connected\ndata: ok\n\n")
+	fmt.Fprintf(w, "event: connected\ndata: ok\n\n") //nolint:errcheck // best-effort SSE write
 	flusher.Flush()
 
 	// Proxy the upstream SSE stream using line-based parsing.
@@ -1703,7 +1705,7 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 		// dashboard-update event for each upstream data line. This
 		// triggers the browser's EventSource handler to re-render.
 		if strings.HasPrefix(line, "data:") {
-			fmt.Fprintf(w, "event: dashboard-update\ndata: event\n\n")
+			fmt.Fprintf(w, "event: dashboard-update\ndata: event\n\n") //nolint:errcheck // best-effort SSE write
 			flusher.Flush()
 		}
 		// Comments (keepalives) and other lines are silently consumed.

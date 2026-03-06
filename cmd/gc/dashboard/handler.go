@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"bytes"
@@ -238,8 +238,8 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // computeSummary calculates dashboard stats and alerts from fetched data.
 func computeSummary(workers []WorkerRow, assigned []AssignedRow, issues []IssueRow,
 	convoys []ConvoyRow, escalations []EscalationRow, activity []ActivityRow,
-) *DashboardSummary {
-	summary := &DashboardSummary{
+) *Summary {
+	summary := &Summary{
 		PolecatCount:    len(workers),
 		AssignedCount:   len(assigned),
 		IssueCount:      len(issues),

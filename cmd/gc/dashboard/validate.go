@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"regexp"
@@ -8,18 +8,12 @@ import (
 // Validation patterns for user input.
 var (
 	idPattern      = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
-	rigNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 	repoRefPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 )
 
 // isValidID checks if a string is a safe identifier (issue IDs, message IDs, rig names).
 func isValidID(s string) bool {
 	return len(s) > 0 && len(s) <= 200 && idPattern.MatchString(s)
-}
-
-// isValidRigName checks if a string is a valid rig name.
-func isValidRigName(s string) bool {
-	return len(s) > 0 && len(s) <= 200 && rigNamePattern.MatchString(s)
 }
 
 // isValidRepoRef checks if a string matches the owner/repo format.

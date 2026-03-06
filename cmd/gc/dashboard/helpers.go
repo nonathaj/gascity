@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"bytes"
@@ -298,7 +298,7 @@ func determineCIStatus(checks []struct {
 
 	for _, check := range checks {
 		switch check.Conclusion {
-		case "failure", "cancelled", "timed_out", "action_required":
+		case "failure", "canceled", "timed_out", "action_required":
 			hasFailure = true
 		case "success", "skipped", "neutral":
 			// Pass
@@ -349,26 +349,6 @@ func determineColorClass(ciStatus, mergeable string) string {
 		return "mq-green"
 	}
 	return "mq-yellow"
-}
-
-// determineCrewState determines state from activity and agent status.
-func determineCrewState(activityAge time.Duration, isAgentRunning bool, hook string) string {
-	if !isAgentRunning {
-		if hook != "" {
-			return "finished" // Had work, agent stopped = finished
-		}
-		return "ready" // No work, agent stopped = ready for work
-	}
-
-	// Agent is running
-	switch {
-	case activityAge < 2*time.Minute:
-		return "spinning" // Active recently
-	case activityAge < 10*time.Minute:
-		return "spinning" // Still probably working
-	default:
-		return "questions" // Running but no activity = likely waiting for input
-	}
 }
 
 // prResponse represents the JSON response from gh pr list.

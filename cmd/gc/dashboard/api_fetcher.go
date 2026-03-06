@@ -1,7 +1,6 @@
-package main
+package dashboard
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,7 +123,7 @@ func (f *APIFetcher) get(path string, result any) error {
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -147,43 +146,6 @@ func (f *APIFetcher) getList(path string, items any) error {
 		return nil
 	}
 	return json.Unmarshal(wrapper.Items, items)
-}
-
-// post performs a POST with JSON body and decodes the response.
-func (f *APIFetcher) post(path string, body, result any) error {
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("POST %s: marshal: %w", path, err)
-		}
-		reqBody = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, f.baseURL+path, reqBody)
-	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-GC-Request", "1") // CSRF header required by API server
-
-	resp, err := f.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("POST %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("POST %s: status %d: %s", path, resp.StatusCode, string(respBody))
-	}
-
-	if result != nil {
-		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-			return fmt.Errorf("POST %s: decode: %w", path, err)
-		}
-	}
-	return nil
 }
 
 // --- ConvoyFetcher implementation ---
@@ -667,15 +629,16 @@ func (f *APIFetcher) FetchQueues() ([]QueueRow, error) {
 		// Parse counts from description.
 		for _, line := range strings.Split(b.Description, "\n") {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "available_count:") {
+			switch {
+			case strings.HasPrefix(line, "available_count:"):
 				_, _ = fmt.Sscanf(line, "available_count: %d", &row.Available)
-			} else if strings.HasPrefix(line, "processing_count:") {
+			case strings.HasPrefix(line, "processing_count:"):
 				_, _ = fmt.Sscanf(line, "processing_count: %d", &row.Processing)
-			} else if strings.HasPrefix(line, "completed_count:") {
+			case strings.HasPrefix(line, "completed_count:"):
 				_, _ = fmt.Sscanf(line, "completed_count: %d", &row.Completed)
-			} else if strings.HasPrefix(line, "failed_count:") {
+			case strings.HasPrefix(line, "failed_count:"):
 				_, _ = fmt.Sscanf(line, "failed_count: %d", &row.Failed)
-			} else if strings.HasPrefix(line, "status:") {
+			case strings.HasPrefix(line, "status:"):
 				var s string
 				_, _ = fmt.Sscanf(line, "status: %s", &s)
 				if s != "" {
