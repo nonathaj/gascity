@@ -2965,7 +2965,7 @@
     // ============================================
 
     // Module-scoped category state — shared between the once-registered
-    // click handler and the per-swap applyFilters calls.
+    // delegated handlers and the per-swap re-init calls.
     var _activeCategory = 'all';
 
     function _applyTimelineFilters() {
@@ -2987,6 +2987,21 @@
             else { entry.classList.add('tl-hidden'); }
         });
         if (emptyMsg) emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+
+    // Sync category button active state to match _activeCategory after morph.
+    // The template always renders "All" as active; this corrects it.
+    function _syncCategoryButtons() {
+        var timeline = document.getElementById('activity-timeline');
+        if (!timeline) return;
+        var buttons = timeline.querySelectorAll('.tl-filter-btn[data-filter="category"]');
+        buttons.forEach(function(btn) {
+            if (btn.getAttribute('data-value') === _activeCategory) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
     }
 
     function initTimelineFilters() {
@@ -3018,7 +3033,6 @@
                 rigFilter.appendChild(opt);
             });
             rigFilter.value = currentRig;
-            rigFilter.addEventListener('change', _applyTimelineFilters);
         }
 
         // Repopulate agent dropdown, preserving current selection
@@ -3032,18 +3046,22 @@
                 agentFilter.appendChild(opt);
             });
             agentFilter.value = currentAgent;
-            agentFilter.addEventListener('change', _applyTimelineFilters);
         }
 
+        _syncCategoryButtons();
         _applyTimelineFilters();
     }
 
-    // Document-level category filter click handler — registered once to
-    // avoid listener accumulation across repeated HTMX swaps.
-    var _timelineClickRegistered = false;
-    function _ensureTimelineClickHandler() {
-        if (_timelineClickRegistered) return;
-        _timelineClickRegistered = true;
+    // All timeline filter event handlers are registered once via event
+    // delegation on document to avoid listener accumulation. Idiomorph
+    // preserves DOM elements by ID, so element-level addEventListener
+    // would add duplicates on each swap.
+    var _timelineListenersRegistered = false;
+    function _ensureTimelineListeners() {
+        if (_timelineListenersRegistered) return;
+        _timelineListenersRegistered = true;
+
+        // Category button clicks
         document.addEventListener('click', function(e) {
             var btn = e.target.closest('.tl-filter-btn');
             if (!btn) return;
@@ -3059,16 +3077,23 @@
             _activeCategory = btn.getAttribute('data-value');
             _applyTimelineFilters();
         });
+
+        // Dropdown filter changes (delegated to avoid listener accumulation)
+        document.addEventListener('change', function(e) {
+            if (e.target.id === 'tl-rig-filter' || e.target.id === 'tl-agent-filter') {
+                _applyTimelineFilters();
+            }
+        });
     }
 
     // Init on page load
-    _ensureTimelineClickHandler();
+    _ensureTimelineListeners();
     initTimelineFilters();
 
     // Re-init after HTMX swaps (both full-dashboard and activity panel partial).
     // This is safe — initTimelineFilters only queries DOM and populates
-    // dropdowns (no API calls). Needed because morph replaces DOM elements,
-    // losing event listeners and dynamically-populated dropdown options.
+    // dropdowns (no API calls). Needed because morph may replace DOM elements,
+    // losing dynamically-populated dropdown options.
     document.body.addEventListener('htmx:afterSwap', function() {
         initTimelineFilters();
     });

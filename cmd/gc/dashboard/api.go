@@ -1772,6 +1772,10 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 			currentID = ""
+		case line == "":
+			// Blank line is the SSE event delimiter. Reset currentID to prevent
+			// cross-event leakage if upstream ever sends data before id.
+			currentID = ""
 		case strings.HasPrefix(line, ":"):
 			// Forward keepalive comments to prevent connection timeout.
 			fmt.Fprintf(w, ": keepalive\n\n") //nolint:errcheck // best-effort SSE write
