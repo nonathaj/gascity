@@ -104,6 +104,14 @@ func doConvoyCreateWith(store beads.Store, rec events.Recorder, args []string, f
 		return 1
 	}
 
+	// Ensure metadata is persisted on all backends. MemStore carries Metadata
+	// through Create, but BdStore/exec.Store may not. setConvoyFields uses
+	// SetMetadata which works across all backends.
+	if err := setConvoyFields(store, convoy.ID, fields); err != nil {
+		fmt.Fprintf(stderr, "gc convoy create: warning: setting fields: %v\n", err) //nolint:errcheck // best-effort stderr
+		// Non-fatal: convoy already created and event will be emitted.
+	}
+
 	for _, id := range issueIDs {
 		if _, err := store.Get(id); err != nil {
 			fmt.Fprintf(stderr, "gc convoy create: issue %s: %v\n", id, err) //nolint:errcheck // best-effort stderr

@@ -3,6 +3,7 @@ package beads
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 )
@@ -45,9 +46,12 @@ func (m *MemStore) snapshot() (int, []Bead, []Dep) {
 }
 
 // cloneBead returns a deep copy of a bead, cloning reference fields
-// (Metadata) to prevent shared-map races between callers and the store.
+// (Metadata, Labels, Needs) to prevent shared-state races between callers
+// and the store.
 func cloneBead(b Bead) Bead {
 	b.Metadata = maps.Clone(b.Metadata)
+	b.Labels = slices.Clone(b.Labels)
+	b.Needs = slices.Clone(b.Needs)
 	return b
 }
 
@@ -252,9 +256,10 @@ func (m *MemStore) MolCookOn(formula, beadID, title string, _ []string) (string,
 func (m *MemStore) DepAdd(issueID, dependsOnID, depType string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, d := range m.deps {
+	for i, d := range m.deps {
 		if d.IssueID == issueID && d.DependsOnID == dependsOnID {
-			return nil // idempotent
+			m.deps[i].Type = depType // update type on re-add
+			return nil
 		}
 	}
 	m.deps = append(m.deps, Dep{
