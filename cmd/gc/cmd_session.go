@@ -1,0 +1,465 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/gastownhall/gascity/internal/chatsession"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/session"
+	"github.com/spf13/cobra"
+)
+
+func newSessionCmd(stdout, stderr io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "session",
+		Short: "Manage interactive chat sessions",
+		Long: `Create, resume, suspend, and close persistent conversations with agents.
+
+Sessions are conversations backed by agent templates. They can be
+suspended to free resources and resumed later with full conversation
+continuity.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, peek)") //nolint:errcheck // best-effort stderr
+			} else {
+				fmt.Fprintf(stderr, "gc session: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
+			}
+			return errExit
+		},
+	}
+	cmd.AddCommand(
+		newSessionNewCmd(stdout, stderr),
+		newSessionListCmd(stdout, stderr),
+		newSessionAttachCmd(stdout, stderr),
+		newSessionSuspendCmd(stdout, stderr),
+		newSessionCloseCmd(stdout, stderr),
+		newSessionPeekCmd(stdout, stderr),
+	)
+	return cmd
+}
+
+// newSessionNewCmd creates the "gc session new <template>" command.
+func newSessionNewCmd(stdout, stderr io.Writer) *cobra.Command {
+	var title string
+	var noAttach bool
+	cmd := &cobra.Command{
+		Use:   "new <template>",
+		Short: "Create a new chat session from an agent template",
+		Long: `Create a new persistent conversation from an agent template defined in
+city.toml. By default, attaches the terminal after creation.`,
+		Example: `  gc session new helper
+  gc session new helper --title "debugging auth"
+  gc session new helper --no-attach`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionNew(args, title, noAttach, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "human-readable session title")
+	cmd.Flags().BoolVar(&noAttach, "no-attach", false, "create session without attaching")
+	return cmd
+}
+
+// cmdSessionNew is the CLI entry point for "gc session new".
+func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc session new: missing template name") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	templateName := args[0]
+
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Find the template agent.
+	found, ok := resolveAgentIdentity(cfg, templateName, currentRigContext(cfg))
+	if !ok {
+		fmt.Fprintln(stderr, agentNotFoundMsg("gc session new", templateName, cfg)) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Resolve the provider.
+	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Open the bead store.
+	store, code := openCityStore(stderr, "gc session new")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	// Build the work directory.
+	workDir := resolveWorkDir(cityPath, &found)
+
+	// Build session.Config hints from provider.
+	hints := session.Config{
+		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
+		ReadyDelayMs:           resolved.ReadyDelayMs,
+		ProcessNames:           resolved.ProcessNames,
+		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
+	}
+
+	info, err := mgr.Create(context.Background(), templateName, title, resolved.CommandString(), workDir, resolved.Name, resolved.Env, hints)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, templateName) //nolint:errcheck // best-effort stdout
+
+	if noAttach {
+		return 0
+	}
+
+	fmt.Fprintln(stdout, "Attaching...") //nolint:errcheck // best-effort stdout
+	if err := sp.Attach(info.SessionName); err != nil {
+		fmt.Fprintf(stderr, "gc session new: attaching: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	return 0
+}
+
+// newSessionListCmd creates the "gc session list" command.
+func newSessionListCmd(stdout, stderr io.Writer) *cobra.Command {
+	var stateFilter string
+	var templateFilter string
+	var jsonOutput bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List chat sessions",
+		Long:  `List all chat sessions. By default shows active and suspended sessions.`,
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if cmdSessionList(stateFilter, templateFilter, jsonOutput, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&stateFilter, "state", "", `filter by state: "active", "suspended", "closed", "all"`)
+	cmd.Flags().StringVar(&templateFilter, "template", "", "filter by template name")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "JSON output")
+	return cmd
+}
+
+// cmdSessionList is the CLI entry point for "gc session list".
+func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout, stderr io.Writer) int {
+	store, code := openCityStore(stderr, "gc session list")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	sessions, err := mgr.List(stateFilter, templateFilter)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session list: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	if jsonOutput {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(sessions) //nolint:errcheck // best-effort stdout
+		return 0
+	}
+
+	if len(sessions) == 0 {
+		fmt.Fprintln(stdout, "No sessions found.") //nolint:errcheck // best-effort stdout
+		return 0
+	}
+
+	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tTEMPLATE\tSTATE\tTITLE\tAGE\tLAST ACTIVE") //nolint:errcheck // best-effort stdout
+	for _, s := range sessions {
+		state := string(s.State)
+		if s.State == "" {
+			state = "closed"
+		}
+		title := s.Title
+		if title == "" {
+			title = "-"
+		}
+		if len(title) > 30 {
+			title = title[:27] + "..."
+		}
+		age := formatDuration(time.Since(s.CreatedAt))
+		lastActive := "-"
+		if !s.LastActive.IsZero() {
+			lastActive = formatDuration(time.Since(s.LastActive)) + " ago"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Template, state, title, age, lastActive) //nolint:errcheck // best-effort stdout
+	}
+	_ = w.Flush() //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// newSessionAttachCmd creates the "gc session attach <id>" command.
+func newSessionAttachCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "attach <session-id>",
+		Short: "Attach to (or resume) a chat session",
+		Long: `Attach to a running session or resume a suspended one.
+
+If the session is active with a live tmux session, reattaches.
+If the session is suspended or the tmux session died, restarts
+with a fresh conversation (Phase 1 — provider resume in Phase 2).`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionAttach(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionAttach is the CLI entry point for "gc session attach".
+func cmdSessionAttach(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc session attach: missing session ID") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	sessionID := args[0]
+
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session attach: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session attach: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	store, code := openCityStore(stderr, "gc session attach")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	// Get the session to find its template.
+	info, err := mgr.Get(sessionID)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session attach: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Build the resume command from the template's provider.
+	resumeCmd, hints := buildResumeCommand(cfg, info)
+
+	fmt.Fprintf(stdout, "Attaching to session %s (%s)...\n", sessionID, info.Template) //nolint:errcheck // best-effort stdout
+	if err := mgr.Attach(context.Background(), sessionID, resumeCmd, hints); err != nil {
+		fmt.Fprintf(stderr, "gc session attach: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	return 0
+}
+
+// buildResumeCommand constructs the command and session.Config for resuming
+// a session. Phase 1: always starts a fresh conversation (no provider resume).
+func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, session.Config) {
+	// Find the template agent to resolve provider.
+	found, ok := resolveAgentIdentity(cfg, info.Template, "")
+	if !ok {
+		// Template may have been removed from config. Use stored provider.
+		return info.Provider, session.Config{WorkDir: info.WorkDir}
+	}
+	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	if err != nil {
+		return info.Provider, session.Config{WorkDir: info.WorkDir}
+	}
+	hints := session.Config{
+		WorkDir:                info.WorkDir,
+		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
+		ReadyDelayMs:           resolved.ReadyDelayMs,
+		ProcessNames:           resolved.ProcessNames,
+		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
+	}
+	return resolved.CommandString(), hints
+}
+
+// newSessionSuspendCmd creates the "gc session suspend <id>" command.
+func newSessionSuspendCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "suspend <session-id>",
+		Short: "Suspend a session (save state, free resources)",
+		Long: `Suspend an active session by stopping its runtime process.
+The session bead persists and can be resumed later.`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionSuspend(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionSuspend is the CLI entry point for "gc session suspend".
+func cmdSessionSuspend(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc session suspend: missing session ID") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	sessionID := args[0]
+
+	store, code := openCityStore(stderr, "gc session suspend")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	if err := mgr.Suspend(sessionID); err != nil {
+		fmt.Fprintf(stderr, "gc session suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Session %s suspended. Resume with: gc session attach %s\n", sessionID, sessionID) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// newSessionCloseCmd creates the "gc session close <id>" command.
+func newSessionCloseCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "close <session-id>",
+		Short: "Close a session permanently",
+		Long:  `End a conversation. Stops the runtime if active and closes the bead.`,
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionClose(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionClose is the CLI entry point for "gc session close".
+func cmdSessionClose(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc session close: missing session ID") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	sessionID := args[0]
+
+	store, code := openCityStore(stderr, "gc session close")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	if err := mgr.Close(sessionID); err != nil {
+		fmt.Fprintf(stderr, "gc session close: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Session %s closed.\n", sessionID) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// newSessionPeekCmd creates the "gc session peek <id>" command.
+func newSessionPeekCmd(stdout, stderr io.Writer) *cobra.Command {
+	var lines int
+	cmd := &cobra.Command{
+		Use:   "peek <session-id>",
+		Short: "View session output without attaching",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionPeek(args, lines, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&lines, "lines", 50, "number of lines to capture")
+	return cmd
+}
+
+// cmdSessionPeek is the CLI entry point for "gc session peek".
+func cmdSessionPeek(args []string, lines int, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc session peek: missing session ID") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	sessionID := args[0]
+
+	store, code := openCityStore(stderr, "gc session peek")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	output, err := mgr.Peek(sessionID, lines)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session peek: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprint(stdout, output) //nolint:errcheck // best-effort stdout
+	if !strings.HasSuffix(output, "\n") {
+		fmt.Fprintln(stdout) //nolint:errcheck // best-effort stdout
+	}
+	return 0
+}
+
+// resolveWorkDir determines the working directory for a session based on
+// the agent config. Uses the rig path if set, otherwise the city directory.
+func resolveWorkDir(cityPath string, agent *config.Agent) string {
+	if agent.Dir != "" {
+		// Rig-scoped agent: use rig path.
+		rigPath := filepath.Join(cityPath, "rigs", agent.Dir)
+		return rigPath
+	}
+	return cityPath
+}
+
+// formatDuration formats a duration for human display.
+func formatDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}

@@ -116,6 +116,7 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newVersionCmd(stdout),
 		newDashboardCmd(stdout, stderr),
 		newGraphCmd(stdout, stderr),
+		newSessionCmd(stdout, stderr),
 	)
 	// gen-doc needs the root command to walk the tree; add after construction.
 	root.AddCommand(newGenDocCmd(stdout, stderr, root))
