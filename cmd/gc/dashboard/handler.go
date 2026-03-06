@@ -243,6 +243,9 @@ func (h *ConvoyHandler) ServeActivityPanel(w http.ResponseWriter, _ *http.Reques
 	activity, err := h.fetcher.FetchActivity()
 	if err != nil {
 		log.Printf("dashboard: FetchActivity failed: %v", err)
+		// Return 503 so htmx skips the swap, preserving existing panel content.
+		http.Error(w, "Activity data unavailable", http.StatusServiceUnavailable)
+		return
 	}
 
 	data := ConvoyData{Activity: activity}

@@ -2964,6 +2964,31 @@
     // ACTIVITY TIMELINE FILTERS
     // ============================================
 
+    // Module-scoped category state — shared between the once-registered
+    // click handler and the per-swap applyFilters calls.
+    var _activeCategory = 'all';
+
+    function _applyTimelineFilters() {
+        var timeline = document.getElementById('activity-timeline');
+        if (!timeline) return;
+        var entries = timeline.querySelectorAll('.tl-entry');
+        var rigFilter = document.getElementById('tl-rig-filter');
+        var agentFilter = document.getElementById('tl-agent-filter');
+        var emptyMsg = document.getElementById('tl-empty-filtered');
+        var selectedRig = rigFilter ? rigFilter.value : 'all';
+        var selectedAgent = agentFilter ? agentFilter.value : 'all';
+        var visibleCount = 0;
+        entries.forEach(function(entry) {
+            var show = true;
+            if (_activeCategory !== 'all' && entry.getAttribute('data-category') !== _activeCategory) show = false;
+            if (selectedRig !== 'all' && entry.getAttribute('data-rig') !== selectedRig) show = false;
+            if (selectedAgent !== 'all' && entry.getAttribute('data-agent') !== selectedAgent) show = false;
+            if (show) { entry.classList.remove('tl-hidden'); visibleCount++; }
+            else { entry.classList.add('tl-hidden'); }
+        });
+        if (emptyMsg) emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+    }
+
     function initTimelineFilters() {
         var timeline = document.getElementById('activity-timeline');
         if (!timeline) return;
@@ -2971,7 +2996,6 @@
         var entries = timeline.querySelectorAll('.tl-entry');
         var rigFilter = document.getElementById('tl-rig-filter');
         var agentFilter = document.getElementById('tl-agent-filter');
-        var emptyMsg = document.getElementById('tl-empty-filtered');
 
         // Collect unique rigs and agents for dropdowns
         var rigs = {};
@@ -2983,67 +3007,35 @@
             if (agent) agents[agent] = true;
         });
 
-        // Populate rig dropdown
+        // Repopulate rig dropdown, preserving current selection
         if (rigFilter) {
+            var currentRig = rigFilter.value;
+            while (rigFilter.options.length > 1) rigFilter.remove(1);
             Object.keys(rigs).sort().forEach(function(rig) {
                 var opt = document.createElement('option');
                 opt.value = rig;
                 opt.textContent = rig;
                 rigFilter.appendChild(opt);
             });
+            rigFilter.value = currentRig;
+            rigFilter.addEventListener('change', _applyTimelineFilters);
         }
 
-        // Populate agent dropdown
+        // Repopulate agent dropdown, preserving current selection
         if (agentFilter) {
+            var currentAgent = agentFilter.value;
+            while (agentFilter.options.length > 1) agentFilter.remove(1);
             Object.keys(agents).sort().forEach(function(agent) {
                 var opt = document.createElement('option');
                 opt.value = agent;
                 opt.textContent = agent;
                 agentFilter.appendChild(opt);
             });
+            agentFilter.value = currentAgent;
+            agentFilter.addEventListener('change', _applyTimelineFilters);
         }
 
-        // Current filter state
-        var activeCategory = 'all';
-
-        function applyFilters() {
-            var selectedRig = rigFilter ? rigFilter.value : 'all';
-            var selectedAgent = agentFilter ? agentFilter.value : 'all';
-            var visibleCount = 0;
-
-            entries.forEach(function(entry) {
-                var show = true;
-
-                if (activeCategory !== 'all' && entry.getAttribute('data-category') !== activeCategory) {
-                    show = false;
-                }
-                if (selectedRig !== 'all' && entry.getAttribute('data-rig') !== selectedRig) {
-                    show = false;
-                }
-                if (selectedAgent !== 'all' && entry.getAttribute('data-agent') !== selectedAgent) {
-                    show = false;
-                }
-
-                if (show) {
-                    entry.classList.remove('tl-hidden');
-                    visibleCount++;
-                } else {
-                    entry.classList.add('tl-hidden');
-                }
-            });
-
-            if (emptyMsg) {
-                emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
-            }
-        }
-
-        // Dropdown filters
-        if (rigFilter) {
-            rigFilter.addEventListener('change', applyFilters);
-        }
-        if (agentFilter) {
-            agentFilter.addEventListener('change', applyFilters);
-        }
+        _applyTimelineFilters();
     }
 
     // Document-level category filter click handler — registered once to
@@ -3064,28 +3056,8 @@
                 });
             }
             btn.classList.add('active');
-
-            // Re-trigger filter with the current initTimelineFilters closure.
-            var timeline = document.getElementById('activity-timeline');
-            if (timeline) {
-                var entries = timeline.querySelectorAll('.tl-entry');
-                var rigFilter = document.getElementById('tl-rig-filter');
-                var agentFilter = document.getElementById('tl-agent-filter');
-                var emptyMsg = document.getElementById('tl-empty-filtered');
-                var activeCategory = btn.getAttribute('data-value');
-                var selectedRig = rigFilter ? rigFilter.value : 'all';
-                var selectedAgent = agentFilter ? agentFilter.value : 'all';
-                var visibleCount = 0;
-                entries.forEach(function(entry) {
-                    var show = true;
-                    if (activeCategory !== 'all' && entry.getAttribute('data-category') !== activeCategory) show = false;
-                    if (selectedRig !== 'all' && entry.getAttribute('data-rig') !== selectedRig) show = false;
-                    if (selectedAgent !== 'all' && entry.getAttribute('data-agent') !== selectedAgent) show = false;
-                    if (show) { entry.classList.remove('tl-hidden'); visibleCount++; }
-                    else { entry.classList.add('tl-hidden'); }
-                });
-                if (emptyMsg) emptyMsg.style.display = visibleCount === 0 ? 'block' : 'none';
-            }
+            _activeCategory = btn.getAttribute('data-value');
+            _applyTimelineFilters();
         });
     }
 
@@ -3093,10 +3065,11 @@
     _ensureTimelineClickHandler();
     initTimelineFilters();
 
-    // Re-init after full-dashboard HTMX swaps only (not activity panel partials).
-    document.body.addEventListener('htmx:afterSwap', function(evt) {
-        var target = evt.detail.target || evt.detail.elt;
-        if (!target || target.id !== 'dashboard-main') return;
+    // Re-init after HTMX swaps (both full-dashboard and activity panel partial).
+    // This is safe — initTimelineFilters only queries DOM and populates
+    // dropdowns (no API calls). Needed because morph replaces DOM elements,
+    // losing event listeners and dynamically-populated dropdown options.
+    document.body.addEventListener('htmx:afterSwap', function() {
         initTimelineFilters();
     });
 

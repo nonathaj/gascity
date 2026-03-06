@@ -1709,10 +1709,16 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Connect to API event stream.
+	// Connect to API event stream. Resume from after_seq if provided.
+	// The client sends after_seq as a query param (manual EventSource creation
+	// doesn't send Last-Event-ID header), so check both sources.
 	sseURL := h.apiURL + "/v0/events/stream"
-	if lastID := r.Header.Get("Last-Event-ID"); lastID != "" {
-		sseURL += "?after_seq=" + lastID
+	afterSeq := r.URL.Query().Get("after_seq")
+	if afterSeq == "" {
+		afterSeq = r.Header.Get("Last-Event-ID")
+	}
+	if afterSeq != "" {
+		sseURL += "?after_seq=" + url.QueryEscape(afterSeq)
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, sseURL, nil)
