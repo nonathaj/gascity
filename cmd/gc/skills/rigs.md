@@ -3,6 +3,20 @@
 A rig is a project directory registered with the city. Agents can be
 scoped to rigs via the `dir` field.
 
+## Beads
+
+Each rig has its own `.beads/` database with a unique prefix (e.g.
+`hw-` for hello-world). To create or query beads for a rig, run `bd`
+from the rig directory or pass `--dir`:
+
+```
+bd create "title" --dir /path/to/rig   # Create in rig's database
+bd list --dir /path/to/rig             # List rig's beads
+```
+
+Running `bd` from the city root hits the city-level `.beads/`, not
+the rig's. Use `gc rig list` to find rig paths.
+
 ## Convention
 
 Rigs should be created **inside the city directory** unless explicitly

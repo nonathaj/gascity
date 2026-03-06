@@ -28,6 +28,11 @@ where work goes. Example: bead `hw-42` → rig `hello-world` → target
 for rig-scoped bead IDs (e.g. `hw-abc`) and runs `bd update` from there,
 so the rig's `.beads` database is found without manual intervention.
 
+**Creating beads for a rig:** When creating beads with `bd create`, you
+must run from the rig directory (or pass `--dir`) so the bead lands in
+the rig's `.beads/` database, not the city-level one. Use `gc rig list`
+to find rig paths.
+
 ## Direct dispatch (bead to agent or pool)
 
 ```
