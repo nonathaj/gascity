@@ -136,6 +136,7 @@ func (w *beadWire) toBead() beads.Bead {
 		Needs:       w.Needs,
 		Description: w.Description,
 		Labels:      w.Labels,
+		Metadata:    w.Metadata,
 	}
 }
 

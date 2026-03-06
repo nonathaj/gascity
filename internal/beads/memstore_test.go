@@ -13,6 +13,7 @@ func TestMemStore(t *testing.T) {
 	beadstest.RunStoreTests(t, factory)
 	beadstest.RunSequentialIDTests(t, factory)
 	beadstest.RunCreationOrderTests(t, factory)
+	beadstest.RunDepTests(t, factory)
 }
 
 func TestMemStoreSetMetadata(t *testing.T) {

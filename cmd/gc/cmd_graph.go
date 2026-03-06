@@ -56,8 +56,9 @@ func cmdGraph(args []string, opts graphOpts, stdout, stderr io.Writer) int {
 
 // graphNode holds a bead and its resolved dependency edges.
 type graphNode struct {
-	bead      beads.Bead
-	blockedBy []string // IDs of beads in the set that block this one
+	bead        beads.Bead
+	blockedBy   []string // IDs of beads in the set that block this one (all edges)
+	openBlocker []string // IDs of open beads in the set that block this one
 }
 
 // doGraph resolves beads and their dependencies, then prints the graph.
@@ -107,6 +108,21 @@ func doGraph(store beads.Store, args []string, opts graphOpts, stdout, stderr io
 		nodes = append(nodes, graphNode{bead: b, blockedBy: blockedBy})
 	}
 
+	// Second pass: compute open blockers by cross-referencing status.
+	closedIDs := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		if n.bead.Status == "closed" {
+			closedIDs[n.bead.ID] = true
+		}
+	}
+	for i, n := range nodes {
+		for _, dep := range n.blockedBy {
+			if !closedIDs[dep] {
+				nodes[i].openBlocker = append(nodes[i].openBlocker, dep)
+			}
+		}
+	}
+
 	if opts.Mermaid {
 		printMermaid(nodes, stdout)
 	} else {
@@ -117,8 +133,16 @@ func doGraph(store beads.Store, args []string, opts graphOpts, stdout, stderr io
 
 // resolveGraphInput expands container types (convoy, epic) to their children.
 // Non-containers are passed through. Multiple args are resolved individually.
+// Duplicate IDs are removed.
 func resolveGraphInput(store beads.Store, args []string) ([]string, error) {
+	seen := make(map[string]bool)
 	var ids []string
+	add := func(id string) {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
 	for _, arg := range args {
 		b, err := store.Get(arg)
 		if err != nil {
@@ -130,10 +154,10 @@ func resolveGraphInput(store beads.Store, args []string) ([]string, error) {
 				return nil, fmt.Errorf("expanding %s %s: %w", b.Type, b.ID, err)
 			}
 			for _, ch := range children {
-				ids = append(ids, ch.ID)
+				add(ch.ID)
 			}
 		} else {
-			ids = append(ids, b.ID)
+			add(b.ID)
 		}
 	}
 	return ids, nil
@@ -185,7 +209,7 @@ func printMermaid(nodes []graphNode, stdout io.Writer) {
 
 	for _, n := range nodes {
 		label := mermaidLabel(n)
-		fmt.Fprintf(stdout, "  %s[%s]\n", n.bead.ID, label) //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "  %s[\"%s\"]\n", n.bead.ID, label) //nolint:errcheck // best-effort stdout
 	}
 
 	// Print edges.
@@ -221,5 +245,5 @@ func mermaidLabel(n graphNode) string {
 
 // isBeadReady reports whether a bead has no open blockers.
 func isBeadReady(n graphNode) bool {
-	return n.bead.Status != "closed" && len(n.blockedBy) == 0
+	return n.bead.Status != "closed" && len(n.openBlocker) == 0
 }

@@ -21,20 +21,24 @@ func NewMemStore() *MemStore {
 	return &MemStore{}
 }
 
-// NewMemStoreFrom returns a MemStore seeded with existing beads and sequence
-// counter. Used by FileStore to restore state from disk.
-func NewMemStoreFrom(seq int, existing []Bead) *MemStore {
+// NewMemStoreFrom returns a MemStore seeded with existing beads, deps, and
+// sequence counter. Used by FileStore to restore state from disk.
+func NewMemStoreFrom(seq int, existing []Bead, deps []Dep) *MemStore {
 	b := make([]Bead, len(existing))
 	copy(b, existing)
-	return &MemStore{seq: seq, beads: b}
+	d := make([]Dep, len(deps))
+	copy(d, deps)
+	return &MemStore{seq: seq, beads: b, deps: d}
 }
 
-// snapshot returns the current sequence counter and a copy of all beads.
-// Used by FileStore for serialization. Caller must hold m.mu.
-func (m *MemStore) snapshot() (int, []Bead) {
+// snapshot returns the current sequence counter, a copy of all beads, and a
+// copy of all deps. Used by FileStore for serialization. Caller must hold m.mu.
+func (m *MemStore) snapshot() (int, []Bead, []Dep) {
 	b := make([]Bead, len(m.beads))
 	copy(b, m.beads)
-	return m.seq, b
+	d := make([]Dep, len(m.deps))
+	copy(d, m.deps)
+	return m.seq, b, d
 }
 
 // Create persists a new bead in memory with a sequential ID.

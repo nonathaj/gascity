@@ -201,11 +201,53 @@ func TestGraphMermaidLabelEscaping(t *testing.T) {
 	}
 	out := stdout.String()
 
-	// Quotes should be escaped to single quotes.
-	if strings.Contains(out, `"quotes"`) {
-		t.Errorf("double quotes should be escaped:\n%s", out)
-	}
+	// Double quotes in titles should be escaped to single quotes in the label.
 	if !strings.Contains(out, "'quotes'") {
-		t.Errorf("should use single quotes:\n%s", out)
+		t.Errorf("should use single quotes for escaped title:\n%s", out)
+	}
+}
+
+func TestGraphClosedBlockerIsReady(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "prereq"})    // gc-1
+	_, _ = store.Create(beads.Bead{Title: "main task"}) // gc-2
+	_ = store.DepAdd("gc-2", "gc-1", "blocks")
+
+	// Close the blocker — gc-2 should now be ready.
+	_ = store.Close("gc-1")
+
+	var stdout, stderr bytes.Buffer
+	code := doGraph(store, []string{"gc-1", "gc-2"}, graphOpts{}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doGraph = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+
+	// gc-2 should show as ready (blocker is closed).
+	if !strings.Contains(out, "1 ready") {
+		t.Errorf("gc-2 should be ready when blocker is closed:\n%s", out)
+	}
+	// gc-1 should show as done.
+	if !strings.Contains(out, "done") {
+		t.Errorf("gc-1 should show done:\n%s", out)
+	}
+	// Summary: 1 done, 1 ready, 0 blocked.
+	if strings.Contains(out, "1 blocked") {
+		t.Errorf("no beads should be blocked:\n%s", out)
+	}
+}
+
+func TestGraphDeduplicate(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "task A"}) // gc-1
+
+	var stdout, stderr bytes.Buffer
+	// Pass same ID twice — should only appear once.
+	code := doGraph(store, []string{"gc-1", "gc-1"}, graphOpts{}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doGraph = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "1 bead(s)") {
+		t.Errorf("duplicate ID should be deduplicated:\n%s", stdout.String())
 	}
 }
