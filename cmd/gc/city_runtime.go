@@ -62,8 +62,7 @@ type CityRuntimeParams struct {
 	BuildFn func(*config.City, session.Provider) []agent.Agent
 	Dops    drainOps
 
-	Rec       events.Recorder
-	EventProv events.Provider
+	Rec events.Recorder
 
 	PoolSessions      map[string]time.Duration
 	PoolDeathHandlers map[string]poolDeathInfo

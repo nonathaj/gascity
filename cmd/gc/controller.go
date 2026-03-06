@@ -308,16 +308,20 @@ func controllerLoop(
 	if tomlPath != "" {
 		cityPath = filepath.Dir(tomlPath)
 	}
-	// Allow callers (tests) to override the patrol interval.
+	// Allow callers (tests) to override the patrol interval without
+	// mutating the caller's config.
+	loopCfg := cfg
 	if interval > 0 {
-		cfg.Daemon.PatrolInterval = interval.String()
+		cfgCopy := *cfg
+		cfgCopy.Daemon.PatrolInterval = interval.String()
+		loopCfg = &cfgCopy
 	}
 	cr := &CityRuntime{
 		cityPath:          cityPath,
 		cityName:          cityName,
 		tomlPath:          tomlPath,
 		watchDirs:         watchDirs,
-		cfg:               cfg,
+		cfg:               loopCfg,
 		sp:                sp,
 		buildFn:           buildFn,
 		rops:              rops,
@@ -431,7 +435,6 @@ func runController(
 		BuildFn:           buildFn,
 		Dops:              dops,
 		Rec:               rec,
-		EventProv:         eventProv,
 		PoolSessions:      poolSessions,
 		PoolDeathHandlers: poolDeathHandlers,
 		Stdout:            stdout,
