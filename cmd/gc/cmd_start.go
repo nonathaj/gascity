@@ -632,7 +632,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	rops := newReconcileOps(sp)
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath, multiReg)
 	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr, sigCtx)
-	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths), recorder)
+	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths))
 	if code == 0 {
 		fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 	}

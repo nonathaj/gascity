@@ -324,13 +324,13 @@ func controllerLoop(
 		lastProviderName = v
 	}
 
-	// Compute observation search paths for agent event bridging.
+	// Compute observation search paths for agent output reading.
 	observePaths := observeSearchPaths(cfg.Daemon.ObservePaths)
 
 	// Initial reconciliation.
 	agents := buildFn(cfg, sp)
 	doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
-	ensureObservers(agents, observePaths, rec)
+	ensureObservers(agents, observePaths)
 	fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 
 	cityRoot := filepath.Dir(tomlPath)
@@ -484,7 +484,7 @@ func controllerLoop(
 			}
 			agents = buildFn(cfg, sp)
 			doReconcileAgents(agents, sp, rops, dops, ct, it, rec, poolSessions, suspendedNames, cfg.Daemon.DriftDrainTimeoutDuration(), cfg.Session.StartupTimeoutDuration(), stdout, stderr, ctx)
-			ensureObservers(agents, observePaths, rec)
+			ensureObservers(agents, observePaths)
 			// Wisp GC: purge expired closed molecules.
 			if wg != nil && wg.shouldRun(time.Now()) {
 				purged, gcErr := wg.runGC(filepath.Dir(tomlPath), time.Now())
