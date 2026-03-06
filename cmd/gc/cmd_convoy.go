@@ -23,7 +23,7 @@ and can be auto-closed when all their issues are resolved.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc convoy: missing subcommand (create, list, status, add, close, check, stranded)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc convoy: missing subcommand (create, list, status, add, close, check, stranded, land)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc convoy: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -39,12 +39,14 @@ and can be auto-closed when all their issues are resolved.`,
 		newConvoyCheckCmd(stdout, stderr),
 		newConvoyStrandedCmd(stdout, stderr),
 		newConvoyAutocloseCmd(stdout, stderr),
+		newConvoyLandCmd(stdout, stderr),
 	)
 	return cmd
 }
 
 func newConvoyCreateCmd(stdout, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var owner, notify, merge string
+	cmd := &cobra.Command{
 		Use:   "create <name> [issue-ids...]",
 		Short: "Create a convoy and optionally track issues",
 		Long: `Create a convoy and optionally link existing issues to it.
@@ -52,29 +54,40 @@ func newConvoyCreateCmd(stdout, stderr io.Writer) *cobra.Command {
 Creates a convoy bead and sets the parent of any provided issue IDs to
 the new convoy. Issues can also be added later with "gc convoy add".`,
 		Example: `  gc convoy create sprint-42
-  gc convoy create sprint-42 issue-1 issue-2 issue-3`,
+  gc convoy create sprint-42 issue-1 issue-2 issue-3
+  gc convoy create deploy --owner mayor --notify mayor --merge mr`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdConvoyCreate(args, stdout, stderr) != 0 {
+			fields := ConvoyFields{Owner: owner, Notify: notify, Merge: merge}
+			if cmdConvoyCreateWithFields(args, fields, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&owner, "owner", "", "convoy owner (who manages it)")
+	cmd.Flags().StringVar(&notify, "notify", "", "notification target on completion")
+	cmd.Flags().StringVar(&merge, "merge", "", "merge strategy: direct, mr, local")
+	return cmd
 }
 
-// cmdConvoyCreate is the CLI entry point for creating a convoy.
-func cmdConvoyCreate(args []string, stdout, stderr io.Writer) int {
+// cmdConvoyCreateWithFields is the CLI entry point for creating a convoy with optional fields.
+func cmdConvoyCreateWithFields(args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
 	store, code := openCityStore(stderr, "gc convoy create")
 	if store == nil {
 		return code
 	}
 	rec := openCityRecorder(stderr)
-	return doConvoyCreate(store, rec, args, stdout, stderr)
+	return doConvoyCreateWith(store, rec, args, fields, stdout, stderr)
 }
 
 // doConvoyCreate creates a convoy bead and optionally adds issues to it.
 func doConvoyCreate(store beads.Store, rec events.Recorder, args []string, stdout, stderr io.Writer) int {
+	return doConvoyCreateWith(store, rec, args, ConvoyFields{}, stdout, stderr)
+}
+
+// doConvoyCreateWith creates a convoy bead with optional metadata fields.
+func doConvoyCreateWith(store beads.Store, rec events.Recorder, args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "gc convoy create: missing convoy name") //nolint:errcheck // best-effort stderr
 		return 1
@@ -98,6 +111,11 @@ func doConvoyCreate(store beads.Store, rec events.Recorder, args []string, stdou
 			fmt.Fprintf(stderr, "gc convoy create: setting parent on %s: %v\n", id, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
+	}
+
+	if err := setConvoyFields(store, convoy.ID, fields); err != nil {
+		fmt.Fprintf(stderr, "gc convoy create: setting fields: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
 	}
 
 	rec.Record(events.Event{
@@ -542,6 +560,172 @@ func doConvoyStranded(store beads.Store, stdout, stderr io.Writer) int {
 	}
 	tw.Flush() //nolint:errcheck // best-effort stdout
 	return 0
+}
+
+// --- gc convoy land ---
+
+func newConvoyLandCmd(stdout, stderr io.Writer) *cobra.Command {
+	var force, dryRun, keepWorktrees bool
+	cmd := &cobra.Command{
+		Use:   "land <convoy-id>",
+		Short: "Land an owned convoy (terminate + cleanup)",
+		Long: `Land an owned convoy, verifying all children are closed and cleaning up.
+
+Landing is the natural lifecycle termination for owned convoys created
+via "gc sling --owned". It verifies all children are closed (or uses
+--force), optionally removes git worktrees, closes the convoy bead,
+and records a ConvoyClosed event.`,
+		Example: `  gc convoy land gc-42
+  gc convoy land gc-42 --force
+  gc convoy land gc-42 --dry-run
+  gc convoy land gc-42 --keep-worktrees`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			opts := landOpts{
+				Force:         force,
+				DryRun:        dryRun,
+				KeepWorktrees: keepWorktrees,
+			}
+			if cmdConvoyLand(args, opts, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "land even with open children")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview what would happen")
+	cmd.Flags().BoolVar(&keepWorktrees, "keep-worktrees", false, "skip worktree cleanup")
+	return cmd
+}
+
+// landOpts controls the behavior of the land command.
+type landOpts struct {
+	Force         bool
+	DryRun        bool
+	KeepWorktrees bool
+	// worktreeCleanup is called for each child's assignee during landing.
+	// Nil means no worktree cleanup is attempted.
+	worktreeCleanup func(assignee string) error
+}
+
+// cmdConvoyLand is the CLI entry point for landing a convoy.
+func cmdConvoyLand(args []string, opts landOpts, stdout, stderr io.Writer) int {
+	store, code := openCityStore(stderr, "gc convoy land")
+	if store == nil {
+		return code
+	}
+	rec := openCityRecorder(stderr)
+	return doConvoyLand(store, rec, args, opts, stdout, stderr)
+}
+
+// doConvoyLand verifies an owned convoy's children are closed, optionally
+// cleans up worktrees, closes the convoy bead, and records an event.
+func doConvoyLand(store beads.Store, rec events.Recorder, args []string, opts landOpts, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "gc convoy land: missing convoy ID") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	convoyID := args[0]
+
+	convoy, err := store.Get(convoyID)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc convoy land: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	if convoy.Type != "convoy" {
+		fmt.Fprintf(stderr, "gc convoy land: bead %s is not a convoy\n", convoyID) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	if !hasLabel(convoy.Labels, "owned") {
+		fmt.Fprintf(stderr, "gc convoy land: convoy %s is not owned (missing 'owned' label)\n", convoyID) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Already closed → idempotent success.
+	if convoy.Status == "closed" {
+		fmt.Fprintf(stdout, "Convoy %s already closed\n", convoyID) //nolint:errcheck // best-effort stdout
+		return 0
+	}
+
+	// Check children.
+	children, err := store.Children(convoyID)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc convoy land: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	var openChildren []beads.Bead
+	for _, ch := range children {
+		if ch.Status != "closed" {
+			openChildren = append(openChildren, ch)
+		}
+	}
+
+	if len(openChildren) > 0 && !opts.Force {
+		fmt.Fprintf(stderr, "gc convoy land: %d open child(ren):\n", len(openChildren)) //nolint:errcheck // best-effort stderr
+		for _, ch := range openChildren {
+			fmt.Fprintf(stderr, "  %s %s (%s)\n", ch.ID, ch.Title, ch.Status) //nolint:errcheck // best-effort stderr
+		}
+		fmt.Fprintln(stderr, "Use --force to land anyway") //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Dry-run: preview what would happen.
+	if opts.DryRun {
+		fmt.Fprintf(stdout, "Would land convoy %s %q\n", convoyID, convoy.Title)                 //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "  Children: %d total, %d open\n", len(children), len(openChildren)) //nolint:errcheck // best-effort stdout
+		if !opts.KeepWorktrees {
+			assignees := collectAssignees(children)
+			if len(assignees) > 0 {
+				fmt.Fprintf(stdout, "  Worktrees to clean: %v\n", assignees) //nolint:errcheck // best-effort stdout
+			}
+		}
+		return 0
+	}
+
+	// Worktree cleanup (unless --keep-worktrees).
+	if !opts.KeepWorktrees && opts.worktreeCleanup != nil {
+		for _, assignee := range collectAssignees(children) {
+			if err := opts.worktreeCleanup(assignee); err != nil {
+				fmt.Fprintf(stderr, "gc convoy land: warning: cleaning worktree for %s: %v\n", assignee, err) //nolint:errcheck // best-effort stderr
+				// warnings don't abort landing
+			}
+		}
+	}
+
+	// Close the convoy.
+	if err := store.Close(convoyID); err != nil {
+		fmt.Fprintf(stderr, "gc convoy land: closing convoy: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	rec.Record(events.Event{
+		Type:    events.ConvoyClosed,
+		Actor:   eventActor(),
+		Subject: convoyID,
+	})
+
+	// Notification.
+	fields := getConvoyFields(convoy)
+	if fields.Notify != "" {
+		fmt.Fprintf(stdout, "Landed convoy %s %q (notify: %s)\n", convoyID, convoy.Title, fields.Notify) //nolint:errcheck // best-effort stdout
+	} else {
+		fmt.Fprintf(stdout, "Landed convoy %s %q\n", convoyID, convoy.Title) //nolint:errcheck // best-effort stdout
+	}
+	return 0
+}
+
+// collectAssignees returns unique assignees from a list of beads.
+func collectAssignees(beadList []beads.Bead) []string {
+	seen := make(map[string]bool)
+	var assignees []string
+	for _, b := range beadList {
+		if b.Assignee != "" && !seen[b.Assignee] {
+			seen[b.Assignee] = true
+			assignees = append(assignees, b.Assignee)
+		}
+	}
+	return assignees
 }
 
 // --- gc convoy autoclose (hidden — called by bd on_close hook) ---

@@ -12,6 +12,7 @@ import (
 type MemStore struct {
 	mu    sync.Mutex
 	beads []Bead
+	deps  []Dep
 	seq   int
 }
 
@@ -179,14 +180,16 @@ func (m *MemStore) ListByLabel(label string, limit int) ([]Bead, error) {
 }
 
 // SetMetadata sets a key-value metadata pair on a bead. Returns a wrapped
-// ErrNotFound if the bead does not exist. MemStore has no metadata storage,
-// so this is a no-op for existing beads — callers that need to verify metadata
-// values use BdStore or a recording wrapper.
-func (m *MemStore) SetMetadata(id, _, _ string) error {
+// ErrNotFound if the bead does not exist.
+func (m *MemStore) SetMetadata(id, key, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, b := range m.beads {
+	for i, b := range m.beads {
 		if b.ID == id {
+			if b.Metadata == nil {
+				m.beads[i].Metadata = make(map[string]string)
+			}
+			m.beads[i].Metadata[key] = value
 			return nil
 		}
 	}
@@ -226,4 +229,55 @@ func (m *MemStore) MolCookOn(formula, beadID, title string, _ []string) (string,
 		return "", fmt.Errorf("mol cook --on %q: %w", formula, err)
 	}
 	return b.ID, nil
+}
+
+// DepAdd records a dependency: issueID depends on dependsOnID.
+func (m *MemStore) DepAdd(issueID, dependsOnID, depType string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range m.deps {
+		if d.IssueID == issueID && d.DependsOnID == dependsOnID {
+			return nil // idempotent
+		}
+	}
+	m.deps = append(m.deps, Dep{
+		IssueID:     issueID,
+		DependsOnID: dependsOnID,
+		Type:        depType,
+	})
+	return nil
+}
+
+// DepRemove removes a dependency between two beads.
+func (m *MemStore) DepRemove(issueID, dependsOnID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, d := range m.deps {
+		if d.IssueID == issueID && d.DependsOnID == dependsOnID {
+			m.deps = append(m.deps[:i], m.deps[i+1:]...)
+			return nil
+		}
+	}
+	return nil // removing nonexistent dep is a no-op
+}
+
+// DepList returns dependencies for a bead. Direction "down" (default)
+// returns what this bead depends on; "up" returns what depends on this bead.
+func (m *MemStore) DepList(id, direction string) ([]Dep, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []Dep
+	for _, d := range m.deps {
+		switch direction {
+		case "up":
+			if d.DependsOnID == id {
+				result = append(result, d)
+			}
+		default: // "down" or empty
+			if d.IssueID == id {
+				result = append(result, d)
+			}
+		}
+	}
+	return result, nil
 }
