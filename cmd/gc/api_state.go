@@ -236,7 +236,12 @@ func (cs *controllerState) IsQuarantined(sessionName string) bool {
 
 // RawConfig returns the raw (pre-expansion) config for provenance detection.
 // Implements api.RawConfigProvider.
+//
+// Holds cs.mu.RLock during the load to ensure the raw config is from the
+// same generation as the expanded cs.cfg snapshot.
 func (cs *controllerState) RawConfig() *config.City {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
 	tomlPath := filepath.Join(cs.cityPath, "city.toml")
 	raw, err := config.Load(fsys.OSFS{}, tomlPath)
 	if err != nil {
