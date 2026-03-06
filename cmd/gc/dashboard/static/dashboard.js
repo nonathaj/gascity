@@ -3377,12 +3377,12 @@
             var btn = document.getElementById('log-drawer-older-btn');
             btn.textContent = 'Loading...';
             btn.disabled = true;
-            logDrawerHasOlder = true; // suppress polling while older messages are loaded
             fetchAgentLogs(logDrawerAgent, 1, logDrawerOldestUUID, function(data) {
                 if (gen !== logDrawerGeneration) return; // stale response
                 btn.textContent = 'Load older';
                 btn.disabled = false;
                 if (data.error) return;
+                logDrawerHasOlder = true; // suppress polling only after successful load
                 var messagesEl = document.getElementById('log-drawer-messages');
                 if (!messagesEl) return;
                 // Prepend older messages.
@@ -3409,7 +3409,16 @@
         if (tail > 0) url += '&tail=' + tail;
         if (before) url += '&before=' + encodeURIComponent(before);
         fetch(url)
-            .then(function(r) { return r.json(); })
+            .then(function(r) {
+                if (!r.ok) {
+                    return r.json().then(function(d) {
+                        return { error: d.message || 'Request failed (' + r.status + ')' };
+                    }).catch(function() {
+                        return { error: 'Request failed (' + r.status + ')' };
+                    });
+                }
+                return r.json();
+            })
             .then(callback)
             .catch(function(err) {
                 callback({ error: err.message });
