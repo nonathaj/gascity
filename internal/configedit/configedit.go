@@ -418,3 +418,89 @@ func (e *Editor) DeleteRig(name string) error {
 		return nil
 	})
 }
+
+// ProviderUpdate holds optional fields for a partial provider update.
+// Pointer fields distinguish "not set" from "set to zero value."
+type ProviderUpdate struct {
+	DisplayName  *string
+	Command      *string
+	Args         []string // nil = not set, non-nil = replace
+	PromptMode   *string
+	PromptFlag   *string
+	ReadyDelayMs *int
+	Env          map[string]string // nil = not set, non-nil = additive merge
+}
+
+// CreateProvider adds a new city-level provider to the config.
+// Returns an error if a provider with the same name already exists.
+func (e *Editor) CreateProvider(name string, spec config.ProviderSpec) error {
+	return e.Edit(func(cfg *config.City) error {
+		if cfg.Providers == nil {
+			cfg.Providers = make(map[string]config.ProviderSpec)
+		}
+		if _, exists := cfg.Providers[name]; exists {
+			return fmt.Errorf("provider %q already exists", name)
+		}
+		cfg.Providers[name] = spec
+		return nil
+	})
+}
+
+// UpdateProvider partially updates an existing city-level provider.
+// Returns an error if the provider is not found in the raw config
+// (builtin-only providers cannot be updated directly — use patches).
+func (e *Editor) UpdateProvider(name string, patch ProviderUpdate) error {
+	return e.Edit(func(cfg *config.City) error {
+		if cfg.Providers == nil {
+			return fmt.Errorf("provider %q not found", name)
+		}
+		spec, ok := cfg.Providers[name]
+		if !ok {
+			return fmt.Errorf("provider %q not found", name)
+		}
+		if patch.DisplayName != nil {
+			spec.DisplayName = *patch.DisplayName
+		}
+		if patch.Command != nil {
+			spec.Command = *patch.Command
+		}
+		if patch.Args != nil {
+			spec.Args = make([]string, len(patch.Args))
+			copy(spec.Args, patch.Args)
+		}
+		if patch.PromptMode != nil {
+			spec.PromptMode = *patch.PromptMode
+		}
+		if patch.PromptFlag != nil {
+			spec.PromptFlag = *patch.PromptFlag
+		}
+		if patch.ReadyDelayMs != nil {
+			spec.ReadyDelayMs = *patch.ReadyDelayMs
+		}
+		if len(patch.Env) > 0 {
+			if spec.Env == nil {
+				spec.Env = make(map[string]string, len(patch.Env))
+			}
+			for k, v := range patch.Env {
+				spec.Env[k] = v
+			}
+		}
+		cfg.Providers[name] = spec
+		return nil
+	})
+}
+
+// DeleteProvider removes a city-level provider from the config.
+// Returns an error if the provider is not found.
+func (e *Editor) DeleteProvider(name string) error {
+	return e.Edit(func(cfg *config.City) error {
+		if cfg.Providers == nil {
+			return fmt.Errorf("provider %q not found", name)
+		}
+		if _, ok := cfg.Providers[name]; !ok {
+			return fmt.Errorf("provider %q not found", name)
+		}
+		delete(cfg.Providers, name)
+		return nil
+	})
+}

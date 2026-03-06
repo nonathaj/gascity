@@ -222,3 +222,64 @@ func (f *fakeMutatorState) DeleteRig(name string) error {
 	}
 	return fmt.Errorf("rig %q not found", name)
 }
+
+func (f *fakeMutatorState) CreateProvider(name string, spec config.ProviderSpec) error {
+	if f.cfg.Providers == nil {
+		f.cfg.Providers = make(map[string]config.ProviderSpec)
+	}
+	if _, exists := f.cfg.Providers[name]; exists {
+		return fmt.Errorf("provider %q already exists", name)
+	}
+	f.cfg.Providers[name] = spec
+	return nil
+}
+
+func (f *fakeMutatorState) UpdateProvider(name string, patch ProviderUpdate) error {
+	if f.cfg.Providers == nil {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	spec, ok := f.cfg.Providers[name]
+	if !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if patch.DisplayName != nil {
+		spec.DisplayName = *patch.DisplayName
+	}
+	if patch.Command != nil {
+		spec.Command = *patch.Command
+	}
+	if patch.Args != nil {
+		spec.Args = make([]string, len(patch.Args))
+		copy(spec.Args, patch.Args)
+	}
+	if patch.PromptMode != nil {
+		spec.PromptMode = *patch.PromptMode
+	}
+	if patch.PromptFlag != nil {
+		spec.PromptFlag = *patch.PromptFlag
+	}
+	if patch.ReadyDelayMs != nil {
+		spec.ReadyDelayMs = *patch.ReadyDelayMs
+	}
+	if len(patch.Env) > 0 {
+		if spec.Env == nil {
+			spec.Env = make(map[string]string, len(patch.Env))
+		}
+		for k, v := range patch.Env {
+			spec.Env[k] = v
+		}
+	}
+	f.cfg.Providers[name] = spec
+	return nil
+}
+
+func (f *fakeMutatorState) DeleteProvider(name string) error {
+	if f.cfg.Providers == nil {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if _, ok := f.cfg.Providers[name]; !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	delete(f.cfg.Providers, name)
+	return nil
+}

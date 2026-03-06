@@ -643,3 +643,140 @@ func TestDeleteRig_NotFound(t *testing.T) {
 		t.Error("expected error for nonexistent rig")
 	}
 }
+
+// cityWithProvider returns a city.toml with a custom provider.
+func cityWithProvider() string {
+	return `[workspace]
+name = "test-city"
+
+[[agents]]
+name = "mayor"
+provider = "claude"
+
+[providers.custom]
+display_name = "Custom Agent"
+command = "custom-cli"
+`
+}
+
+func TestCreateProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, minimalCity())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	spec := config.ProviderSpec{
+		DisplayName: "My Provider",
+		Command:     "my-provider-cli",
+		Args:        []string{"--flag"},
+	}
+	if err := ed.CreateProvider("myprov", spec); err != nil {
+		t.Fatalf("CreateProvider: %v", err)
+	}
+
+	cfg := readTOML(t, path)
+	got, ok := cfg.Providers["myprov"]
+	if !ok {
+		t.Fatal("provider 'myprov' not found after create")
+	}
+	if got.Command != "my-provider-cli" {
+		t.Errorf("command = %q, want %q", got.Command, "my-provider-cli")
+	}
+	if got.DisplayName != "My Provider" {
+		t.Errorf("display_name = %q, want %q", got.DisplayName, "My Provider")
+	}
+}
+
+func TestCreateProvider_Duplicate(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, cityWithProvider())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	err := ed.CreateProvider("custom", config.ProviderSpec{Command: "other"})
+	if err == nil {
+		t.Error("expected error for duplicate provider")
+	}
+}
+
+func TestUpdateProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, cityWithProvider())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	newCmd := "updated-cli"
+	newName := "Updated Agent"
+	err := ed.UpdateProvider("custom", configedit.ProviderUpdate{
+		Command:     &newCmd,
+		DisplayName: &newName,
+	})
+	if err != nil {
+		t.Fatalf("UpdateProvider: %v", err)
+	}
+
+	cfg := readTOML(t, path)
+	got := cfg.Providers["custom"]
+	if got.Command != "updated-cli" {
+		t.Errorf("command = %q, want %q", got.Command, "updated-cli")
+	}
+	if got.DisplayName != "Updated Agent" {
+		t.Errorf("display_name = %q, want %q", got.DisplayName, "Updated Agent")
+	}
+}
+
+func TestUpdateProvider_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, minimalCity())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	cmd := "x"
+	err := ed.UpdateProvider("nonexistent", configedit.ProviderUpdate{Command: &cmd})
+	if err == nil {
+		t.Error("expected error for nonexistent provider")
+	}
+}
+
+func TestUpdateProvider_PreservesUnchangedFields(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, cityWithProvider())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	// Only update command — display_name should be preserved.
+	newCmd := "updated-cli"
+	err := ed.UpdateProvider("custom", configedit.ProviderUpdate{Command: &newCmd})
+	if err != nil {
+		t.Fatalf("UpdateProvider: %v", err)
+	}
+
+	cfg := readTOML(t, path)
+	got := cfg.Providers["custom"]
+	if got.Command != "updated-cli" {
+		t.Errorf("command = %q, want %q", got.Command, "updated-cli")
+	}
+	if got.DisplayName != "Custom Agent" {
+		t.Errorf("display_name was lost: %q", got.DisplayName)
+	}
+}
+
+func TestDeleteProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, cityWithProvider())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	if err := ed.DeleteProvider("custom"); err != nil {
+		t.Fatalf("DeleteProvider: %v", err)
+	}
+
+	cfg := readTOML(t, path)
+	if _, ok := cfg.Providers["custom"]; ok {
+		t.Error("provider 'custom' still exists after delete")
+	}
+}
+
+func TestDeleteProvider_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTOML(t, dir, minimalCity())
+	ed := configedit.NewEditor(fsys.OSFS{}, path)
+
+	if err := ed.DeleteProvider("nonexistent"); err == nil {
+		t.Error("expected error for nonexistent provider")
+	}
+}

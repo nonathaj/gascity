@@ -90,6 +90,14 @@ func (s *Server) registerRoutes() {
 	// Agents — actions
 	s.mux.HandleFunc("POST /v0/agent/{name...}", s.handleAgentAction)
 
+	// Providers — read
+	s.mux.HandleFunc("GET /v0/providers", s.handleProviderList)
+	s.mux.HandleFunc("GET /v0/provider/{name}", s.handleProviderGet)
+	// Providers — CRUD
+	s.mux.HandleFunc("POST /v0/providers", s.handleProviderCreate)
+	s.mux.HandleFunc("PATCH /v0/provider/{name}", s.handleProviderUpdate)
+	s.mux.HandleFunc("DELETE /v0/provider/{name}", s.handleProviderDelete)
+
 	// Rigs — read
 	s.mux.HandleFunc("GET /v0/rigs", s.handleRigList)
 	s.mux.HandleFunc("GET /v0/rig/{name}", s.handleRig)

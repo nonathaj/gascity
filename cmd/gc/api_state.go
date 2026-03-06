@@ -340,3 +340,26 @@ func (cs *controllerState) UpdateRig(name string, patch api.RigUpdate) error {
 func (cs *controllerState) DeleteRig(name string) error {
 	return cs.editor.DeleteRig(name)
 }
+
+// CreateProvider adds a new city-level provider to city.toml.
+func (cs *controllerState) CreateProvider(name string, spec config.ProviderSpec) error {
+	return cs.editor.CreateProvider(name, spec)
+}
+
+// UpdateProvider partially updates an existing city-level provider.
+func (cs *controllerState) UpdateProvider(name string, patch api.ProviderUpdate) error {
+	return cs.editor.UpdateProvider(name, configedit.ProviderUpdate{
+		DisplayName:  patch.DisplayName,
+		Command:      patch.Command,
+		Args:         patch.Args,
+		PromptMode:   patch.PromptMode,
+		PromptFlag:   patch.PromptFlag,
+		ReadyDelayMs: patch.ReadyDelayMs,
+		Env:          patch.Env,
+	})
+}
+
+// DeleteProvider removes a city-level provider from city.toml.
+func (cs *controllerState) DeleteProvider(name string) error {
+	return cs.editor.DeleteProvider(name)
+}

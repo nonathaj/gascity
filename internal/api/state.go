@@ -74,6 +74,18 @@ type RigUpdate struct {
 	Suspended *bool
 }
 
+// ProviderUpdate holds optional fields for a partial provider update.
+// Pointer fields distinguish "not set" from "set to zero value."
+type ProviderUpdate struct {
+	DisplayName  *string
+	Command      *string
+	Args         []string // nil = not set, non-nil = replace
+	PromptMode   *string
+	PromptFlag   *string
+	ReadyDelayMs *int
+	Env          map[string]string // nil = not set, non-nil = additive merge
+}
+
 // StateMutator extends State with write operations for mutation endpoints.
 type StateMutator interface {
 	State
@@ -115,6 +127,15 @@ type StateMutator interface {
 
 	// DeleteRig removes a rig from city.toml.
 	DeleteRig(name string) error
+
+	// CreateProvider adds a new city-level provider to city.toml.
+	CreateProvider(name string, spec config.ProviderSpec) error
+
+	// UpdateProvider partially updates an existing city-level provider.
+	UpdateProvider(name string, patch ProviderUpdate) error
+
+	// DeleteProvider removes a city-level provider from city.toml.
+	DeleteProvider(name string) error
 
 	// --- Runtime actions (ephemeral session operations) ---
 
