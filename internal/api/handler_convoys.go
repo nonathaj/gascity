@@ -202,14 +202,26 @@ func (s *Server) handleConvoyRemove(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid", "bead "+id+" is not a convoy")
 			return
 		}
-		// Unlink items by clearing their ParentID.
-		empty := ""
+		// Pre-validate all items exist and belong to this convoy.
 		for _, itemID := range body.Items {
-			if err := store.Update(itemID, beads.UpdateOpts{ParentID: &empty}); err != nil {
+			item, err := store.Get(itemID)
+			if err != nil {
 				if errors.Is(err, beads.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "not_found", "item "+itemID+" not found")
 					return
 				}
+				writeError(w, http.StatusInternalServerError, "internal", err.Error())
+				return
+			}
+			if item.ParentID != id {
+				writeError(w, http.StatusBadRequest, "invalid", "item "+itemID+" does not belong to convoy "+id)
+				return
+			}
+		}
+		// Unlink items by clearing their ParentID.
+		empty := ""
+		for _, itemID := range body.Items {
+			if err := store.Update(itemID, beads.UpdateOpts{ParentID: &empty}); err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", "failed to unlink item "+itemID+": "+err.Error())
 				return
 			}
@@ -235,7 +247,7 @@ func (s *Server) handleConvoyCheck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if b.Type != "convoy" {
-			writeError(w, http.StatusNotFound, "not_found", "bead "+id+" is not a convoy")
+			writeError(w, http.StatusBadRequest, "invalid", "bead "+id+" is not a convoy")
 			return
 		}
 

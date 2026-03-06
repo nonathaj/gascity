@@ -186,6 +186,29 @@ func TestBeadUpdate(t *testing.T) {
 	}
 }
 
+func TestBeadPatchAlias(t *testing.T) {
+	state := newFakeState(t)
+	store := state.stores["myrig"]
+	b, _ := store.Create(beads.Bead{Title: "Test"})
+	srv := New(state)
+
+	desc := "patched"
+	body := `{"description":"` + desc + `"}`
+	req := httptest.NewRequest("PATCH", "/v0/bead/"+b.ID, bytes.NewBufferString(body))
+	req.Header.Set("X-GC-Request", "true")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	got, _ := store.Get(b.ID)
+	if got.Description != desc {
+		t.Errorf("Description = %q, want %q", got.Description, desc)
+	}
+}
+
 func TestBeadReopen(t *testing.T) {
 	state := newFakeState(t)
 	store := state.stores["myrig"]

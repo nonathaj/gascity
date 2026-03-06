@@ -131,6 +131,24 @@ func TestConvoyRemoveItems(t *testing.T) {
 	}
 }
 
+func TestConvoyRemoveNonMember(t *testing.T) {
+	state := newFakeMutatorState(t)
+	srv := New(state)
+
+	store := state.stores["myrig"]
+	convoy, _ := store.Create(beads.Bead{Title: "convoy", Type: "convoy"})
+	item, _ := store.Create(beads.Bead{Title: "unrelated task"})
+
+	// Item is not linked to this convoy — remove should fail.
+	body := `{"items":["` + item.ID + `"]}`
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, newPostRequest("/v0/convoy/"+convoy.ID+"/remove", strings.NewReader(body)))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("remove non-member: status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestConvoyCheck(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)

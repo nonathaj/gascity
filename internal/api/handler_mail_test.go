@@ -160,11 +160,8 @@ func TestMailDeleteNotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
-	// beadmail wraps beads.ErrNotFound (not mail.ErrNotFound), so
-	// findMailProviderByID returns (nil, err) → 500. This is a known
-	// beadmail error-wrapping issue, not a handler bug.
-	if rec.Code != http.StatusInternalServerError && rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404 or 500", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 

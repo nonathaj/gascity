@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/mail"
 )
 
@@ -327,7 +328,7 @@ func (s *Server) findMailProviderByID(id string) (mail.Provider, error) {
 		mp := providers[name]
 		if _, err := mp.Get(id); err == nil {
 			return mp, nil
-		} else if !errors.Is(err, mail.ErrNotFound) {
+		} else if !errors.Is(err, mail.ErrNotFound) && !errors.Is(err, beads.ErrNotFound) {
 			if firstErr == nil {
 				firstErr = err
 			}
