@@ -1898,13 +1898,36 @@ func TestWaitForIdle_Timeout(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	// WaitForIdle should timeout quickly since the session is running sleep, not a prompt
-	err := tm.WaitForIdle(sessionName, 500*time.Millisecond)
+	// WaitForIdle should timeout since the session is running sleep, not a prompt.
+	// With 2-consecutive-poll requirement (200ms each), need enough time for polling.
+	err := tm.WaitForIdle(sessionName, 800*time.Millisecond)
 	if err == nil {
 		t.Error("WaitForIdle should have timed out for a busy session")
 	}
 	if !errors.Is(err, ErrIdleTimeout) {
 		t.Errorf("expected ErrIdleTimeout, got: %v", err)
+	}
+}
+
+func TestPaneContainsBusyIndicator(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		want  bool
+	}{
+		{"empty", nil, false},
+		{"idle prompt", []string{"❯ ", ""}, false},
+		{"busy status bar", []string{"❯ ", "  esc to interrupt  "}, true},
+		{"busy mid-line", []string{"some output", "Press esc to interrupt generation"}, true},
+		{"no indicator", []string{"some output", "building..."}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := paneContainsBusyIndicator(tt.lines)
+			if got != tt.want {
+				t.Errorf("paneContainsBusyIndicator(%v) = %v, want %v", tt.lines, got, tt.want)
+			}
+		})
 	}
 }
 

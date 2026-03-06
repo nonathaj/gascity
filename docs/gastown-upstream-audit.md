@@ -1,9 +1,11 @@
 # Gas Town Upstream Audit — Parity Tracking
 
-Audit of 574 + 151 commits from `gastown:upstream/main` since Gas City was
-created (2026-02-22). Delta 1: 574 commits through 2026-03-01. Delta 2: 151
-non-merge, non-backup commits 977953d8..04e7ed7c (2026-03-01 to 2026-03-03).
-Organized by theme so we can review together and decide actions.
+Audit of 574 + 151 + 141 commits from `gastown:upstream/main` since Gas City
+was created (2026-02-22). Delta 1: 574 commits through 2026-03-01. Delta 2:
+151 non-merge, non-backup commits 977953d8..04e7ed7c (2026-03-01 to
+2026-03-03). Delta 3: 141 non-merge commits 04e7ed7c..e8616072 (2026-03-03
+to 2026-03-06). Organized by theme so we can review together and decide
+actions.
 
 **Legend:** `[ ]` = pending review, `[x]` = addressed, `[-]` = skipped (N/A), `[~]` = deferred
 
@@ -737,3 +739,386 @@ configuration patterns.
 17. [-] **Persistent Polecat Delta 2** (S21) — all N/A (Go code, persistent polecat model)
 18. [-] **Low-relevance bulk** (S22) — TOCTOU, OTel, Dolt, daemon, proxy, namepool, build/CI
 19. [ ] **Convoy parity** (S18f) — reactive feeding, tracks deps, staged statuses, cross-rig dispatch
+20. [ ] **Nudge wait-idle** (S24) — WaitForIdle false-positive fix, default mode change
+21. [ ] **Gastown prompt updates** (S25c, S29a, S30a) — bd close quick-ref, POLECAT_SLOT, --cascade, hook_bead removal
+22. [-] **Delta 3 bulk N/A** (S32, S33) — deprecations, cleanup, Gas Town internal fixes
+
+---
+
+## Delta 3: Commits 04e7ed7c..e8616072 (2026-03-03 to 2026-03-06)
+
+141 non-merge commits. ~30 bd:backup, ~7 duplicate test fixes, ~5 dependency
+bumps, ~5 Docker/CI. ~54 substantive commits organized by theme below.
+Cross-references to Delta 1 sections (S1-S13) and Delta 2 (S14-S22) where
+themes continue.
+
+---
+
+## 23. ZFC Fixes (Delta 3)
+
+Extends Section 11 and 14. Go code making decisions that belong in prompts
+or formulas.
+
+- [-] **037bb2d8** — Remove ZFC-violating dead pane distinction from Go.
+  Deacon Start() had cognitive branching (IsPaneDead vs zombie shell, magic
+  500ms sleep). Replaced with uniform kill+recreate; auto-respawn hook
+  handles clean exits.
+  N/A — Gas City's reconciler is purely mechanical. No dead-pane-vs-zombie
+  logic exists. Kill+recreate is already the only path.
+- [-] **a5c5e31d** — Replace hardcoded help-assessment escalation heuristics
+  with keyword-based classification. Go-level HelpCategory/HelpSeverity types
+  for structured triage of HELP messages.
+  N/A — Gas City has no Go-level escalation logic. Witness handles HELP
+  assessment at the prompt layer.
+- [-] **777b9091** — Replace hardcoded isKnownAgent switch with
+  config.IsKnownPreset. Removes brittle switch statement over agent names.
+  N/A — Gas City has zero hardcoded role/agent names by design.
+- [-] **b5229763** — Consolidate GUPP violation threshold into single
+  constant (30 min, defined in 3 files → 1).
+  N/A — Gas City's GUPP timeout is per-agent config (`idle_timeout`),
+  never hardcoded.
+
+### 23a. Serial killer bug
+
+- [ ] **f3d47a96** — Daemon killed witness/refinery sessions after 30 min
+  of no tmux output, treating idle agents as "hung." But idle agents waiting
+  for work legitimately produce no output. The deacon patrol's health-scan
+  step already does context-aware stuck detection.
+  **SDK:** Gas City's health patrol should be audited to ensure it never
+  kills agents for being idle. Currently health patrol uses `idle_timeout`
+  config — verify the semantics are "idle since last prompt response" not
+  "no tmux activity."
+
+### 23b. GT_AGENT_READY sentinel env var
+
+- [ ] **3f699e7d** — Replace IsAgentAlive process-tree probing with
+  GT_AGENT_READY tmux env var. Agent's prime hook sets the var; WaitForCommand
+  clears it on entry then polls for it. Pure declared-state observation
+  instead of ZFC-violating process tree crawling.
+  **SDK:** Gas City already has `ready_prompt_prefix` in config for prompt-
+  based readiness detection. The env var pattern is a useful complement for
+  agents that wrap the actual CLI process (e.g., bash → claude). Consider
+  adding `GC_AGENT_READY` support to `WaitForRuntimeReady`.
+
+---
+
+## 24. Nudge System (Delta 3)
+
+New theme. Nudge delivery reliability improvements.
+
+### 24a. Wait-idle as default
+
+- [ ] **6bc898ce** — Change default nudge delivery from `immediate` (tmux
+  send-keys) to `wait-idle` (poll for idle prompt before delivering).
+  Immediate mode interrupted active tool calls — the agent received nudge
+  text as user input mid-execution, aborting work. Wait-idle falls back to
+  cooperative queue (delivered at next turn boundary via UserPromptSubmit
+  hook). `--mode=immediate` preserved for emergencies.
+  **SDK:** Gas City's `NudgeSession` currently uses direct tmux send-keys
+  (immediate mode). Should add `WaitForIdle` as the default delivery path
+  with immediate as opt-in override. Also update nudge command help text.
+
+### 24b. WaitForIdle false-positive fix
+
+- [ ] **dfd945e9** — WaitForIdle returned immediately when it found a `❯`
+  prompt in the pane buffer, but during inter-tool-call gaps the prompt
+  remains visible in scrollback while Claude Code is actively processing.
+  Fix: (1) check Claude Code status bar for "esc to interrupt" — if present,
+  agent is busy; (2) require 2 consecutive idle polls (400ms window) to
+  confirm genuine idle state.
+  **SDK:** Gas City's `WaitForIdle` (`tmux.go:1947`) has exactly this bug —
+  single-poll prompt detection without status bar check or confirmation
+  window. Port the 2-poll + status bar check.
+
+---
+
+## 25. Hook System (Delta 3)
+
+### 25a. Consolidation to generic declarative system
+
+- [-] **51549973** — Consolidate 7 per-agent hook installer packages into a
+  single generic `InstallForRole()` function. Templates live in a centralized
+  directory; adding a new agent requires only a preset entry + template files.
+  No Go boilerplate.
+  N/A — Gas City already has the generic `install_agent_hooks` config field
+  + `internal/hooks/hooks.go` declarative installer. Validates our approach.
+- [-] **730207a0** + **4c9767a1** — Remove old HookInstallerFunc registry and
+  per-agent packages. Cleanup of the old system.
+  N/A — Gas City never had per-agent hook packages.
+
+### 25b. Cursor hooks support
+
+- [-] **86e3b89b** — Add Cursor hooks support for polecat agent integration.
+  `SupportsHooks = true` for Cursor preset, dedicated hook config files for
+  autonomous and interactive modes.
+  N/A at SDK level — Gas City's `install_agent_hooks` already supports
+  arbitrary agent types including Cursor. Gastown config could add
+  `install_agent_hooks = ["cursor"]` if needed.
+
+### 25c. Hook bead slot removal
+
+- [ ] **fa9dc287** — Remove `hook_bead` slot from agent beads. The work bead
+  itself already tracks `status=hooked` and `assignee=<agent>`. The slot was
+  redundant and caused cross-database warnings. `updateAgentHookBead` is now
+  a no-op; `done.go` uses `issueID` param directly; `unsling.go` queries by
+  status+assignee instead of agent bead slot.
+  **Gastown:** Our polecat work formulas reference `hook_bead` at
+  `mol-polecat-work.formula.toml:95` and `mol-polecat-work-reviewed.formula.toml:136`.
+  Verify `bd hook show` still works the same way (it should — the slot
+  removal is internal to `gt`, not `bd`). The formula text "The hook_bead is
+  your assigned issue" is still accurate terminology since the concept
+  exists — only the internal storage slot was removed.
+
+---
+
+## 26. Cascade Close & Bead Lifecycle (Delta 3)
+
+### 26a. --cascade flag
+
+- [ ] **38bc4479** — Add `--cascade` flag to `bd close` / `gt close`.
+  Recursively closes all open children depth-first before closing the parent.
+  Automatic reason noting the cascade.
+  **Gastown:** Update formulas and prompts that close parent beads (epics,
+  molecules) to use `--cascade` where appropriate. Currently formulas use
+  plain `bd close`; `--cascade` saves agents from manually closing children.
+  Add to quick-reference tables alongside `bd close`.
+- [-] **b45d1e97** — Add cycle guard (visited set) and depth limit (50) to
+  cascade close. Prevents infinite recursion from dependency cycles.
+  N/A — Safety fix for the cascade implementation above.
+- [-] **fdae9a5d** — Deprecate `CreateOptions.Type` in favor of `Labels`.
+  N/A — Gas City beads already use labels as primary taxonomy.
+- [-] **d27b9248** — Migrate `ListOptions.Type` caller to Label filter.
+  N/A — Gas Town internal API migration.
+
+---
+
+## 27. Reaper & Lifecycle Tuning (Delta 3)
+
+### 27a. Shortened TTLs
+
+- [ ] **2dd21003** — Shorten reaper TTLs: auto-close stale issues 30d → 7d,
+  purge closed wisps 7d → 3d, purge closed mail 7d → 3d.
+  **Gastown:** Update `mol-dog-reaper.formula.toml` vars to match new
+  defaults: `stale_issue_age = "7d"`, `purge_age = "3d"`,
+  `mail_delete_age = "3d"`. Our formula already has these as configurable
+  vars — just update the default values.
+
+### 27b. Reaper operational fixes
+
+- [-] **6636f431** — Replace correlated EXISTS with LEFT JOIN in Scan/Reap
+  SQL. Dolt query optimization.
+  N/A — Gas City uses filesystem beads.
+- [-] **b7d601aa** — Remove parent-check from purge queries to fix reaper
+  timeouts. Dolt query fix.
+  N/A — Gas City uses filesystem beads.
+- [-] **0c20f4d9** — Correct database name from `bd` to `beads` in reaper.
+  N/A — Gas Town naming fix.
+- [-] **8ac6bf39** — Update stale DefaultDatabases and use DiscoverDatabases
+  in CLI.
+  N/A — Gas Town Dolt infrastructure.
+
+---
+
+## 28. Tmux Socket & Session Management (Delta 3)
+
+Extends Section 12d.
+
+- [-] **2af747fb** — Derive tmux socket from town name instead of defaulting
+  to "default". Fixes split-brain where daemon creates sessions on wrong
+  socket after restart without env var.
+  N/A — Gas City already has `[session] socket` config field. Socket name
+  flows through all tmux operations. Already at parity (S12d).
+- [-] **3a5980e4** — Fix lock.go to query correct tmux socket; gt down
+  cleans legacy sessions on "default" socket.
+  N/A — Gas Town split-brain cleanup. Gas City doesn't have the legacy
+  socket migration problem.
+- [-] **b1ee19aa** — Refresh cycle bindings when prefix pattern is stale.
+  N/A — Gas Town tmux keybinding fix.
+- [-] **f339c019** — Reload prefix registry on heartbeat to prevent ghost
+  sessions.
+  N/A — Gas Town daemon internal. Gas City discovers sessions from config.
+
+---
+
+## 29. Prompt & Template Updates (Delta 3)
+
+### 29a. bd close in quick-reference tables
+
+- [ ] **56eb2ed6** — Add `bd close` to command quick-reference tables in all
+  role templates (crew, mayor, polecat, witness). Agents frequently guessed
+  wrong commands (`bd complete`, `bd update --status done`). Also adds
+  "valid statuses" reminder line.
+  **Gastown:** Verify all role prompts in `examples/gastown/` have `bd close`
+  in their quick-reference tables. Currently only crew prompt has it at
+  line 328. Add to mayor, polecat, witness, and refinery prompts. Add valid
+  statuses line.
+
+### 29b. Context-budget guard
+
+- [~] **330aec8e** — Context-budget guard as external bash script (not
+  compiled Go). Threshold tiers: warn 75%, soft gate 85%, hard gate 92%.
+  All thresholds configurable via env vars. Sets precedent that new guards
+  don't need Go PRs.
+  Deferred: interesting capability for maintenance pack. Would be a hook
+  script or exec automation that monitors agent context usage and triggers
+  handoff/restart. Requires `GC_CONTEXT_BUDGET_TOKENS` env var plumbing.
+
+---
+
+## 30. Polecat & Agent Lifecycle (Delta 3)
+
+### 30a. POLECAT_SLOT env var
+
+- [ ] **dafcd241** — Set `POLECAT_SLOT` env var for test isolation. Unique
+  integer (0, 1, 2, ...) based on polecat position among existing polecat
+  directories. Enables port offsetting: `BACKEND_PORT = 8100 + POLECAT_SLOT`.
+  **Gastown:** Add `POLECAT_SLOT` documentation to polecat prompt and/or
+  polecat work formula. Currently referenced only in witness prompt. Polecats
+  need to know the env var exists so they can use it for port isolation.
+
+### 30b. Branch contamination preflight
+
+- [-] **a4cb49d7** — Add branch contamination preflight to `gt done`. Checks
+  that the worktree is on the expected branch before pushing.
+  N/A — Gas Town `gt done` internal. Gas City polecats use `git push`
+  directly in the formula submit step; branch verification is prompt-level.
+
+### 30c. Polecat operational fixes
+
+- [-] **91452bf0** + **774eec92** — Reconcile JSON list state with session
+  liveness in `gt polecat list`.
+  N/A — Gas Town CLI display fix.
+- [-] **e8616072** — Use ClonePath for best-effort push in nuke.
+  N/A — Gas Town polecat nuke fix.
+- [-] **9ff0c7e7** — Reuse bare repo as reference when cloning mayor.
+  N/A — Gas Town performance optimization.
+
+---
+
+## 31. Sling & Dispatch (Delta 3)
+
+Extends Section 18.
+
+### 31a. Sling context TTL
+
+- [~] **0516f68b** — Add 30-minute TTL to sling contexts. Orphaned sling
+  contexts (from failed spawns) permanently blocked tasks from re-dispatch.
+  Deferred: when Gas City implements sling scheduling, include context TTL
+  from the start. Design note captured.
+
+### 31b. Patrol & convoy operational fixes
+
+- [-] **65c0cb1a** — Cap stale patrol cleanup at 5 per run, break early on
+  active patrol found. Prevents Dolt query explosion under load.
+  N/A — Gas City wisp_gc handles patrol cleanup differently (timer-based).
+- [-] **72798afa** — 5-minute grace period before auto-closing empty convoys.
+  Created convoys were closed before sling's `bd dep add` propagated.
+  N/A — Gas Town convoy fix. Already captured in S18f convoy parity gaps.
+- [-] **366a245d** — Increase convoy ID entropy (3 → 5 base36 chars).
+  N/A — Gas Town convoy ID format.
+- [-] **7539e8c5** — Resolve tracked external IDs in convoy launch collection.
+  N/A — Gas Town convoy fix.
+
+---
+
+## 32. Deprecations & Cleanup (Delta 3)
+
+All N/A. Gas Town internal migrations and removal of legacy code that
+Gas City never had.
+
+- [-] **3dafc81b** + **67bf22a6** — Remove legacy SQLite/Beads Classic code
+  paths. Gas City never had SQLite beads.
+- [-] **3137ca4b** — Remove deprecated `gt swarm` command and
+  `internal/swarm` package. Gas City never had swarm.
+- [-] **9106b59a** — Update deprecated `gt polecat add` references to
+  `identity add`. Gas Town CLI rename.
+- [-] **8895ae4d** — Migrate witness manager from `beads.GetRoleConfig` to
+  `config.LoadRoleDefinition`. Gas Town internal migration.
+- [-] **76ef3fa6** — Extract shared `IsAutonomousRole` into hookutil package.
+  Gas Town internal refactor.
+- [-] **279a1311** — Remove vestigial `sync.mode` plumbing and dead config.
+  Gas Town config cleanup.
+
+---
+
+## 33. Miscellaneous (Delta 3)
+
+Gas Town internal fixes, test improvements, and operational items. All N/A.
+
+- [-] **907d587d** — Make `--allow-stale` conditional on bd version support.
+- [-] **c54b5f04** — Fix dog_molecule JSON parsing for `bd show --children`.
+- [-] **5a263f8e** — Normalize hook show targets, prefer hooked bead over
+  stale agent hook.
+- [-] **843dd982** — Fetch agent bead data once per polecat in zombie
+  detection.
+- [-] **6d05a43f** — Clamp negative MR priority to lowest instead of highest.
+- [-] **beead3a1** — Let claim/done use joined wl-commons clone when server
+  DB is absent.
+- [-] **fa3b6ce7** — Normalize double slashes in GT_ROLE parsing.
+- [-] **39f7bf7d** — gt done uses wrong rig when Claude Code resets shell cwd.
+- [-] **344bca85** — Add unit tests for killDefaultPrefixGhosts.
+- [-] **2657cc5b** + **971310a7** + **83d2803a** — Expand .gitignore to cover
+  all Gas Town infrastructure and Cursor runtime artifacts.
+- [-] **451f42f7** — Make gt done tolerate Gas Town runtime artifacts in
+  worktrees.
+- [-] **3f533d93** — Add schema evolution support to gt wl sync.
+- [-] **67b5723e** — Update wasteland fork test to match DoltHub API changes.
+- [-] **df5eb13d** — Add additional supported agent presets to README.
+- [-] **e0ca5375** — Add Wasteland getting started guide.
+- [-] **c93bbd15** — Create missing hq-dog-role bead and add to integration
+  test.
+- [-] **fbfb3cfa** — Add server-side timeouts to prevent CLOSE_WAIT
+  accumulation (Dolt).
+- [-] **3b9b0f04** — Enrich dashboard convoy panel with progress % and
+  assignees.
+- [-] **aa123968** — Use t.TempDir() in resetAbandonedBead tests.
+- [-] **e237a5ca** — Detect default branch from HEAD in bare clone.
+- [-] **9aa27c5d** — Show actionable guidance when removing orphaned rig dir.
+- [-] **64728362** — Read Dolt port from config.yaml before env var.
+- [-] **91452bf0** — Reconcile polecat JSON list state with session liveness.
+
+### 33a. Docker support
+
+- [-] **64bd736e** + **a9270cd9** + **e34ac7c5** + **1fc9804e** +
+  **35929e81** + **480f00f0** — Docker-compose and Dockerfile for Gas Town.
+  N/A — Gas Town deployment infrastructure.
+
+### 33b. CI / build / deps
+
+- [-] **5ff86dfd** — Resolve lint errors and Windows test failures.
+- [-] **f43708c2** — Bump bd to v0.57.0 and add -timeout=10m to test runner.
+- [-] **e7a5e29c** — Truncate subForLog to 128 bytes to prevent CI hang.
+- [-] **2f3d1933** + **04a9044b** + **a03f566c** + **0f41e12d** +
+  **1d9a665b** — Dependency bumps (npm, Go modules).
+- [-] ~7 **fix(test)** commits — Configure git user in
+  TestBareCloneDefaultBranch (repeated fixes).
+
+---
+
+## Delta 3 Action Summary
+
+**SDK items (implement):**
+
+| # | Item | Section | Priority |
+|---|------|---------|----------|
+| 1 | WaitForIdle 2-poll + status bar check | S24b | High — active bug |
+| 2 | Nudge wait-idle as default delivery mode | S24a | High — interrupts active work |
+| 3 | Audit health patrol idle-kill semantics | S23a | Medium — verify correct |
+| 4 | GC_AGENT_READY env var for readiness detection | S23b | Low — enhancement |
+
+**Gastown items (config/prompt updates):**
+
+| # | Item | Section | Priority |
+|---|------|---------|----------|
+| 1 | Add `bd close` to all role quick-reference tables | S29a | High — agent confusion |
+| 2 | Add `--cascade` to relevant formula close commands | S26a | Medium |
+| 3 | Add POLECAT_SLOT to polecat prompt/formula | S30a | Medium |
+| 4 | Update reaper formula default TTLs (7d/3d/3d) | S27a | Low |
+| 5 | Verify hook_bead formula references still valid | S25c | Low — likely fine |
+
+**Deferred:**
+
+| # | Item | Section | Blocked on |
+|---|------|---------|------------|
+| 1 | Context-budget guard | S29b | env var plumbing |
+| 2 | Sling context TTL | S31a | sling scheduling implementation |

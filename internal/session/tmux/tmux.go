@@ -1942,15 +1942,23 @@ const DefaultReadyPromptPrefix = "❯ "
 // Unlike WaitForRuntimeReady (which is for bootstrap), this is for steady-state
 // idle detection — used to avoid interrupting agents mid-work.
 //
+// To avoid false positives during inter-tool-call gaps (where the prompt is
+// visible in scrollback but the agent is actively processing), this function:
+//  1. Checks for "esc to interrupt" in the pane — if present, the agent is busy.
+//  2. Requires 2 consecutive idle polls before confirming idle state.
+//
 // Returns nil if the agent becomes idle within the timeout.
 // Returns an error if the timeout expires while the agent is still busy.
 func (t *Tmux) WaitForIdle(session string, timeout time.Duration) error {
 	promptPrefix := DefaultReadyPromptPrefix
 	prefix := strings.TrimSpace(promptPrefix)
 
+	consecutiveIdle := 0
+	const requiredConsecutive = 2
+
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		lines, err := t.CapturePaneLines(session, 5)
+		lines, err := t.CapturePaneLines(session, 10)
 		if err != nil {
 			// Distinguish terminal errors from transient ones.
 			// Session not found or no server means the session is gone —
@@ -1958,24 +1966,58 @@ func (t *Tmux) WaitForIdle(session string, timeout time.Duration) error {
 			if errors.Is(err, ErrSessionNotFound) || errors.Is(err, ErrNoServer) {
 				return err
 			}
+			consecutiveIdle = 0
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-		// Scan all captured lines for the prompt prefix.
+
+		// Check for active processing indicator in the status bar.
+		// Claude Code shows "esc to interrupt" while processing — if present,
+		// the agent is busy regardless of whether the prompt is visible.
+		if paneContainsBusyIndicator(lines) {
+			consecutiveIdle = 0
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+
+		// Scan captured lines for the prompt prefix.
 		// Claude Code renders a status bar below the prompt line,
 		// so the prompt may not be the last non-empty line.
+		foundPrompt := false
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "" {
 				continue
 			}
 			if matchesPromptPrefix(trimmed, promptPrefix) || (prefix != "" && trimmed == prefix) {
+				foundPrompt = true
+				break
+			}
+		}
+
+		if foundPrompt {
+			consecutiveIdle++
+			if consecutiveIdle >= requiredConsecutive {
 				return nil
 			}
+		} else {
+			consecutiveIdle = 0
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	return ErrIdleTimeout
+}
+
+// paneContainsBusyIndicator checks captured pane lines for signs that the
+// agent is actively processing. Claude Code displays "esc to interrupt" in
+// the status bar while running tools or generating responses.
+func paneContainsBusyIndicator(lines []string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, "esc to interrupt") {
+			return true
+		}
+	}
+	return false
 }
 
 // GetSessionInfo returns detailed information about a session.
