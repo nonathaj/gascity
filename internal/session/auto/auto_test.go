@@ -91,6 +91,54 @@ func TestListRunningMergesBothBackends(t *testing.T) {
 	}
 }
 
+func TestStopPreservesRouteOnError(t *testing.T) {
+	defaultSP := session.NewFake()
+	acpSP := session.NewFailFake() // Stop always fails
+	p := New(defaultSP, acpSP)
+
+	p.RouteACP("agent-fail")
+	err := p.Stop("agent-fail")
+	if err == nil {
+		t.Fatal("Stop should return error from failing backend")
+	}
+
+	// Route should be preserved since Stop failed.
+	if got := p.route("agent-fail"); got != acpSP {
+		t.Fatal("route should be preserved when Stop fails")
+	}
+}
+
+func TestListRunningPartialError(t *testing.T) {
+	defaultSP := session.NewFake()
+	acpSP := session.NewFailFake() // ListRunning returns error
+	p := New(defaultSP, acpSP)
+
+	_ = defaultSP.Start(context.Background(), "default-1", session.Config{})
+
+	names, err := p.ListRunning("")
+	if err == nil {
+		t.Fatal("ListRunning should return error when one backend fails")
+	}
+	// Should still return partial results from the working backend.
+	if len(names) != 1 || names[0] != "default-1" {
+		t.Errorf("ListRunning partial = %v, want [default-1]", names)
+	}
+}
+
+func TestListRunningBothFail(t *testing.T) {
+	defaultSP := session.NewFailFake()
+	acpSP := session.NewFailFake()
+	p := New(defaultSP, acpSP)
+
+	names, err := p.ListRunning("")
+	if err == nil {
+		t.Fatal("ListRunning should return error when both backends fail")
+	}
+	if names != nil {
+		t.Errorf("ListRunning both fail = %v, want nil", names)
+	}
+}
+
 func TestStopCleansUpRoute(t *testing.T) {
 	defaultSP := session.NewFake()
 	acpSP := session.NewFake()

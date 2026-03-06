@@ -124,6 +124,8 @@ func newSessionProvider() session.Provider {
 	}
 	// If the city-level provider is not ACP but some agents need ACP,
 	// wrap in an auto provider that routes per-session.
+	// NOTE: agents comes from loadCityConfig which applies pack overrides,
+	// so the Session field from overrides is already resolved here.
 	if provName != "acp" && hasACPAgents(agents) {
 		acpSP, acpErr := newSessionProviderByName("acp", sc, cityName)
 		if acpErr != nil {

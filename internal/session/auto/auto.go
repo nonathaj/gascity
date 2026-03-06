@@ -7,6 +7,7 @@ package auto
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -67,10 +68,14 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 	return p.route(name).Start(ctx, name, cfg)
 }
 
-// Stop delegates to the routed backend and cleans up the route entry.
+// Stop delegates to the routed backend and cleans up the route entry
+// only on success. If Stop fails the route is preserved so subsequent
+// operations still target the correct backend.
 func (p *Provider) Stop(name string) error {
 	err := p.route(name).Stop(name)
-	p.Unroute(name)
+	if err == nil {
+		p.Unroute(name)
+	}
 	return err
 }
 
@@ -79,9 +84,20 @@ func (p *Provider) Interrupt(name string) error {
 	return p.route(name).Interrupt(name)
 }
 
-// IsRunning checks both backends. Returns true if either reports running.
+// IsRunning checks the routed backend first. If it reports not running,
+// falls through to the other backend to handle route table inconsistencies.
 func (p *Provider) IsRunning(name string) bool {
-	return p.route(name).IsRunning(name)
+	if p.route(name).IsRunning(name) {
+		return true
+	}
+	// Fall through: check the other backend in case routing is stale.
+	p.mu.RLock()
+	isACP := p.routes[name]
+	p.mu.RUnlock()
+	if isACP {
+		return p.defaultSP.IsRunning(name)
+	}
+	return p.acpSP.IsRunning(name)
 }
 
 // IsAttached delegates to the routed backend.
@@ -130,14 +146,25 @@ func (p *Provider) Peek(name string, lines int) (string, error) {
 	return p.route(name).Peek(name, lines)
 }
 
-// ListRunning queries both backends and merges results.
+// ListRunning queries both backends and merges results. If one backend
+// fails, partial results are returned along with the error so callers
+// can distinguish complete vs partial results.
 func (p *Provider) ListRunning(prefix string) ([]string, error) {
 	defaultList, dErr := p.defaultSP.ListRunning(prefix)
 	acpList, aErr := p.acpSP.ListRunning(prefix)
-	if dErr != nil && aErr != nil {
-		return nil, dErr
+	var merged []string
+	merged = append(merged, defaultList...)
+	merged = append(merged, acpList...)
+	switch {
+	case dErr != nil && aErr != nil:
+		return nil, errors.Join(fmt.Errorf("default backend: %w", dErr), fmt.Errorf("acp backend: %w", aErr))
+	case dErr != nil:
+		return merged, fmt.Errorf("default backend: %w (acp results included)", dErr)
+	case aErr != nil:
+		return merged, fmt.Errorf("acp backend: %w (default results included)", aErr)
+	default:
+		return merged, nil
 	}
-	return append(defaultList, acpList...), nil
 }
 
 // GetLastActivity delegates to the routed backend.
