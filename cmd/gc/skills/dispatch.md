@@ -44,11 +44,24 @@ demos and simple single-agent workflows.
 gc sling <agent> <bead-id> --on mol-do-work
 ```
 
+**mol-polecat-commit** — Direct-commit variant. Creates a worktree but
+commits directly to base_branch with no feature branch or refinery step.
+Includes preflight tests, implementation, and self-review quality gates.
+For small installations where merge review is unnecessary.
+
+```
+gc sling <agent> <bead-id> --on mol-polecat-commit
+```
+
+**mol-polecat-base** — Shared base for polecat work formulas. Defines
+the common steps (load context, preflight, implement, self-review) that
+variant formulas extend. Not typically used directly — use a variant
+like mol-polecat-commit or mol-polecat-work instead.
+
 ### Gastown pack formulas (work variants)
 
-These require the gastown pack. All are polecat work formulas that extend
-`mol-polecat-base` (shared steps: load context, preflight, implement,
-self-review).
+These require the gastown pack. They extend the built-in
+`mol-polecat-base`.
 
 **mol-polecat-work** — Feature-branch variant. Creates a worktree and
 feature branch, implements, then pushes and reassigns to the refinery
@@ -56,14 +69,6 @@ for merge review. Production default for multi-agent setups.
 
 ```
 gc sling <agent> <bead-id> --on mol-polecat-work
-```
-
-**mol-polecat-commit** — Direct-commit variant. Commits directly to
-base_branch with no feature branch or refinery step. For small
-installations where merge review is unnecessary.
-
-```
-gc sling <agent> <bead-id> --on mol-polecat-commit
 ```
 
 **mol-polecat-work-reviewed** — Human-reviewed variant. Like

@@ -63,10 +63,12 @@ func TestMaterializeBuiltinFormulas(t *testing.T) {
 		t.Fatalf("materializeBuiltinFormulas: %v", err)
 	}
 
-	// All 3 embedded formulas should exist.
+	// All 5 embedded formulas should exist.
 	want := []string{
 		"cooking.formula.toml",
 		"mol-do-work.formula.toml",
+		"mol-polecat-base.formula.toml",
+		"mol-polecat-commit.formula.toml",
 		"pancakes.formula.toml",
 	}
 	formulasDir := filepath.Join(dir, ".gc", "formulas")

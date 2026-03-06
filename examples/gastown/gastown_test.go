@@ -85,8 +85,8 @@ func TestAllFormulasExist(t *testing.T) {
 		count++
 	}
 
-	if count != 8 {
-		t.Errorf("found %d formula files, want 8", count)
+	if count != 6 {
+		t.Errorf("found %d formula files, want 6", count)
 	}
 }
 
