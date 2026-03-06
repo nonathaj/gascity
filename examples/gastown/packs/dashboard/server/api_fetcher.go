@@ -712,11 +712,19 @@ func (f *APIFetcher) FetchActivity() ([]ActivityRow, error) {
 			_ = json.Unmarshal(event.Payload, &payload)
 		}
 
+		// Subject holds the agent identity (e.g. "myrig/polecats/polecat-1");
+		// Actor is who initiated the action (e.g. "gc", "controller", "human").
+		// Use Subject for display when available, fall back to Actor.
+		agent := event.Subject
+		if agent == "" {
+			agent = event.Actor
+		}
+
 		row := ActivityRow{
 			Type:         event.Type,
 			Category:     eventCategory(event.Type),
-			Actor:        formatAgentAddress(event.Actor),
-			Rig:          extractRig(event.Actor),
+			Actor:        formatAgentAddress(agent),
+			Rig:          extractRig(agent),
 			Icon:         eventIcon(event.Type),
 			RawTimestamp: event.Ts.Format(time.RFC3339),
 		}
@@ -725,7 +733,7 @@ func (f *APIFetcher) FetchActivity() ([]ActivityRow, error) {
 			row.Time = formatTimestamp(event.Ts)
 		}
 
-		row.Summary = eventSummary(event.Type, event.Actor, payload)
+		row.Summary = eventSummary(event.Type, agent, payload)
 		rows = append(rows, row)
 	}
 
