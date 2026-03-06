@@ -27,6 +27,7 @@ var skillTopics = []struct {
 	{"gc-rigs", "Managing rigs — add, list, status, suspend, resume", "rigs"},
 	{"gc-mail", "Sending and reading messages between agents", "mail"},
 	{"gc-city", "City lifecycle — status, start, stop, init", "city"},
+	{"gc-dashboard", "API server and web dashboard — config, start, monitor", "dashboard"},
 }
 
 func newSkillCmd(stdout, stderr io.Writer) *cobra.Command {

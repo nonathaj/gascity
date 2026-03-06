@@ -31,7 +31,7 @@ func TestSkillListTopics(t *testing.T) {
 		t.Fatalf("gc skill exited %d: %s", code, stderr.String())
 	}
 	out := stdout.String()
-	for _, topic := range []string{"work", "dispatch", "agents", "rigs", "mail", "city"} {
+	for _, topic := range []string{"work", "dispatch", "agents", "rigs", "mail", "city", "dashboard"} {
 		if !strings.Contains(out, topic) {
 			t.Errorf("topic listing missing %q", topic)
 		}

@@ -56,25 +56,7 @@ gc event emit <type> [data]            # Emit a custom event
 
 ## Dashboard
 
-The dashboard is a pack-provided command that launches a real-time web UI
-for monitoring convoys, agents, mail, rigs, sessions, and events.
-
-**Prerequisite:** The dashboard requires the GC API server. Add an `[api]`
-section with a port to `city.toml`:
-
-```toml
-[api]
-port = 4280
-```
-
-Without this, the API server won't start and the dashboard has no data source.
-
-```
-gc dashboard serve                     # Start dashboard on default port (8080)
-gc dashboard serve -port 3000          # Start on custom port
-```
-
-Requires the dashboard pack to be installed.
+See `gc skill dashboard` for full dashboard reference.
 
 ## Packs
 
