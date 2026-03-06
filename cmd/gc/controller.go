@@ -485,7 +485,7 @@ func controllerLoop(
 				if gcErr != nil {
 					fmt.Fprintf(stderr, "gc start: wisp gc: %v\n", gcErr) //nolint:errcheck // best-effort stderr
 				} else if purged > 0 {
-					fmt.Fprintf(stdout, "Wisp GC: purged %d closed molecule(s)\n", purged) //nolint:errcheck // best-effort stdout
+					fmt.Fprintf(stdout, "Bead GC: purged %d expired bead(s)\n", purged) //nolint:errcheck // best-effort stdout
 				}
 			}
 			// Automation dispatch: evaluate gates and fire due automations.

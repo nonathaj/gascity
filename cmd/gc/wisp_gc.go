@@ -85,5 +85,29 @@ func (m *memoryWispGC) runGC(cityPath string, now time.Time) (int, error) {
 		}
 	}
 
+	// Purge expired closed tracking beads.
+	trackOut, trackErr := m.runner(cityPath, "bd", "list", "--json",
+		"--label=automation-tracking", "--all", "--limit=0")
+	if trackErr == nil {
+		var trackEntries []gcEntry
+		if err := json.Unmarshal(trackOut, &trackEntries); err == nil {
+			for _, e := range trackEntries {
+				if e.Status != "closed" {
+					continue
+				}
+				created, err := time.Parse(time.RFC3339, e.CreatedAt)
+				if err != nil {
+					continue
+				}
+				if created.Before(cutoff) {
+					_, delErr := m.runner(cityPath, "bd", "delete", e.ID, "--force")
+					if delErr == nil {
+						purged++
+					}
+				}
+			}
+		}
+	}
+
 	return purged, nil
 }

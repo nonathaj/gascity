@@ -177,15 +177,23 @@ func makeMoleculeList(mols []fakeMol) []byte {
 }
 
 type fakeGCRunner struct {
-	listOutput   []byte
-	deleteErrors map[string]error
-	deletedIDs   []string
+	listOutput         []byte
+	trackingListOutput []byte
+	deleteErrors       map[string]error
+	deletedIDs         []string
 }
 
 func (f *fakeGCRunner) run(_, name string, args ...string) ([]byte, error) {
 	// Detect whether this is a "list" or "delete" call.
 	cmdLine := strings.Join(append([]string{name}, args...), " ")
 	if strings.Contains(cmdLine, "list") {
+		// Route tracking bead queries to trackingListOutput.
+		if strings.Contains(cmdLine, "automation-tracking") {
+			if f.trackingListOutput != nil {
+				return f.trackingListOutput, nil
+			}
+			return []byte("[]"), nil
+		}
 		return f.listOutput, nil
 	}
 	if strings.Contains(cmdLine, "delete") {
@@ -205,6 +213,52 @@ func (f *fakeGCRunner) run(_, name string, args ...string) ([]byte, error) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("unexpected command: %s", cmdLine)
+}
+
+func TestWispGC_PurgesExpiredTrackingBeads(t *testing.T) {
+	now := time.Now()
+	ttl := time.Hour
+	runner := &fakeGCRunner{
+		// One expired molecule.
+		listOutput: makeMoleculeList([]fakeMol{
+			{ID: "mol-1", CreatedAt: now.Add(-2 * time.Hour), Status: "closed", Type: "molecule"},
+		}),
+		// Two tracking beads: one expired+closed, one recent+closed.
+		trackingListOutput: makeMoleculeList([]fakeMol{
+			{ID: "track-old", CreatedAt: now.Add(-3 * time.Hour), Status: "closed", Type: "task"},
+			{ID: "track-new", CreatedAt: now.Add(-10 * time.Minute), Status: "closed", Type: "task"},
+			{ID: "track-open", CreatedAt: now.Add(-5 * time.Hour), Status: "open", Type: "task"},
+		}),
+	}
+
+	wg := newWispGC(5*time.Minute, ttl, runner.run)
+	purged, err := wg.runGC("/city", now)
+	if err != nil {
+		t.Fatalf("runGC: %v", err)
+	}
+
+	// mol-1 (expired molecule) + track-old (expired+closed tracking bead) = 2 purged.
+	// track-new is too recent; track-open is not closed.
+	if purged != 2 {
+		t.Errorf("purged = %d, want 2", purged)
+	}
+
+	deleted := map[string]bool{}
+	for _, id := range runner.deletedIDs {
+		deleted[id] = true
+	}
+	if !deleted["mol-1"] {
+		t.Error("expected mol-1 to be deleted")
+	}
+	if !deleted["track-old"] {
+		t.Error("expected track-old to be deleted")
+	}
+	if deleted["track-new"] {
+		t.Error("track-new should not be deleted (too recent)")
+	}
+	if deleted["track-open"] {
+		t.Error("track-open should not be deleted (not closed)")
+	}
 }
 
 // Verify fakeGCRunner satisfies beads.CommandRunner type.

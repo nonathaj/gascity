@@ -145,7 +145,7 @@ func (m *memoryAutomationDispatcher) dispatch(ctx context.Context, cityPath stri
 		// This prevents the cooldown gate from re-firing on the next tick.
 		trackingBead, err := m.store.Create(beads.Bead{
 			Title:  "automation:" + scoped,
-			Labels: []string{"automation-run:" + scoped},
+			Labels: []string{"automation-run:" + scoped, "automation-tracking"},
 		})
 		if err != nil {
 			fmt.Fprintf(m.stderr, "gc: automation dispatch: creating tracking bead for %s: %v\n", scoped, err) //nolint:errcheck
