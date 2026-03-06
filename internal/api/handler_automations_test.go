@@ -235,6 +235,57 @@ func TestHandleAutomationEnable(t *testing.T) {
 	}
 }
 
+func TestHandleAutomationGet_Ambiguous(t *testing.T) {
+	fs := newFakeState(t)
+	fs.autos = []automations.Automation{
+		{Name: "health", Exec: "echo ok", Gate: "cooldown", Rig: "rig-a"},
+		{Name: "health", Exec: "echo ok", Gate: "cooldown", Rig: "rig-b"},
+	}
+	srv := New(fs)
+
+	// Bare name should return 409 when ambiguous.
+	req := httptest.NewRequest("GET", "/v0/automation/health", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	// Scoped name should resolve unambiguously.
+	req = httptest.NewRequest("GET", "/v0/automation/health:rig:rig-a", nil)
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp automationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Rig != "rig-a" {
+		t.Errorf("rig = %q, want %q", resp.Rig, "rig-a")
+	}
+}
+
+func TestHandleAutomationDisable_Ambiguous(t *testing.T) {
+	fs := newFakeMutatorState(t)
+	fs.autos = []automations.Automation{
+		{Name: "health", Exec: "echo ok", Gate: "cooldown", Rig: "rig-a"},
+		{Name: "health", Exec: "echo ok", Gate: "cooldown", Rig: "rig-b"},
+	}
+	srv := New(fs)
+
+	req := newPostRequest("/v0/automation/health/disable", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
 func TestHandleAutomationDisable_NotFound(t *testing.T) {
 	fs := newFakeMutatorState(t)
 	srv := New(fs)

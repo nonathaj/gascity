@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -37,14 +38,16 @@ func (s *Server) handleAutomationList(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleAutomationGet(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	aa := s.state.Automations()
-	for _, a := range aa {
-		if a.Name == name || a.ScopedName() == name {
-			writeJSON(w, http.StatusOK, toAutomationResponse(a))
-			return
+	a, err := resolveAutomation(s.state.Automations(), name)
+	if err != nil {
+		if strings.Contains(err.Error(), "ambiguous") {
+			writeError(w, http.StatusConflict, "ambiguous", err.Error())
+		} else {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
 		}
+		return
 	}
-	writeError(w, http.StatusNotFound, "not_found", "automation "+name+" not found")
+	writeJSON(w, http.StatusOK, toAutomationResponse(*a))
 }
 
 func (s *Server) handleAutomationEnable(w http.ResponseWriter, r *http.Request) {
@@ -65,23 +68,18 @@ func (s *Server) setAutomationEnabled(w http.ResponseWriter, r *http.Request, en
 	name := r.PathValue("name")
 
 	// Resolve name and rig from the automation list.
-	aa := s.state.Automations()
-	var found bool
-	var autoName, autoRig string
-	for _, a := range aa {
-		if a.Name == name || a.ScopedName() == name {
-			autoName = a.Name
-			autoRig = a.Rig
-			found = true
-			break
+	a, err := resolveAutomation(s.state.Automations(), name)
+	if err != nil {
+		if strings.Contains(err.Error(), "ambiguous") {
+			writeError(w, http.StatusConflict, "ambiguous", err.Error())
+		} else {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
 		}
-	}
-	if !found {
-		writeError(w, http.StatusNotFound, "not_found", "automation "+name+" not found")
 		return
 	}
+	autoName := a.Name
+	autoRig := a.Rig
 
-	var err error
 	if enabled {
 		err = sm.EnableAutomation(autoName, autoRig)
 	} else {
@@ -101,6 +99,37 @@ func (s *Server) setAutomationEnabled(w http.ResponseWriter, r *http.Request, en
 		action = "disabled"
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": action, "automation": autoName})
+}
+
+// resolveAutomation finds an automation by name or scoped name. If a bare
+// name matches multiple automations across rigs, it returns an error
+// requiring the caller to use the scoped name instead.
+func resolveAutomation(aa []automations.Automation, name string) (*automations.Automation, error) {
+	// Scoped name is always unambiguous — try it first.
+	for i, a := range aa {
+		if a.ScopedName() == name {
+			return &aa[i], nil
+		}
+	}
+	// Bare name match — collect all matches to detect ambiguity.
+	var matches []int
+	for i, a := range aa {
+		if a.Name == name {
+			matches = append(matches, i)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("automation %s not found", name)
+	case 1:
+		return &aa[matches[0]], nil
+	default:
+		var scoped []string
+		for _, idx := range matches {
+			scoped = append(scoped, aa[idx].ScopedName())
+		}
+		return nil, fmt.Errorf("ambiguous automation name %q; use scoped name: %s", name, strings.Join(scoped, ", "))
+	}
 }
 
 func toAutomationResponse(a automations.Automation) automationResponse {
