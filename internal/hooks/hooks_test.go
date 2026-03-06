@@ -246,6 +246,12 @@ func TestSupportsHooksSyncWithProviderSpec(t *testing.T) {
 			t.Errorf("provider %q is in hooks.SupportedProviders() but has SupportsHooks=false", name)
 		}
 	}
+	// Reverse check: every supported provider must be a known builtin.
+	for _, p := range SupportedProviders() {
+		if _, ok := providers[p]; !ok {
+			t.Errorf("hooks.SupportedProviders() contains %q which is not a builtin provider", p)
+		}
+	}
 }
 
 func TestInstallEmpty(t *testing.T) {
