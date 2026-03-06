@@ -69,14 +69,29 @@ func (p *Provider) Start(ctx context.Context, name string, cfg session.Config) e
 }
 
 // Stop delegates to the routed backend and cleans up the route entry
-// only on success. If Stop fails the route is preserved so subsequent
-// operations still target the correct backend.
+// only on success. If the routed backend fails, tries the other backend
+// to handle stale/missing route entries (e.g., after controller restart).
 func (p *Provider) Stop(name string) error {
-	err := p.route(name).Stop(name)
+	primary := p.route(name)
+	err := primary.Stop(name)
 	if err == nil {
 		p.Unroute(name)
+		return nil
 	}
-	return err
+	// Fall through to the other backend in case the route is stale.
+	var other session.Provider
+	p.mu.RLock()
+	if p.routes[name] {
+		other = p.defaultSP
+	} else {
+		other = p.acpSP
+	}
+	p.mu.RUnlock()
+	if otherErr := other.Stop(name); otherErr == nil {
+		p.Unroute(name)
+		return nil
+	}
+	return err // return original error if both fail
 }
 
 // Interrupt delegates to the routed backend.

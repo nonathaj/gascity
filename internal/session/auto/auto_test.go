@@ -91,20 +91,20 @@ func TestListRunningMergesBothBackends(t *testing.T) {
 	}
 }
 
-func TestStopPreservesRouteOnError(t *testing.T) {
-	defaultSP := session.NewFake()
-	acpSP := session.NewFailFake() // Stop always fails
+func TestStopPreservesRouteOnBothFail(t *testing.T) {
+	defaultSP := session.NewFailFake() // both backends fail
+	acpSP := session.NewFailFake()
 	p := New(defaultSP, acpSP)
 
 	p.RouteACP("agent-fail")
 	err := p.Stop("agent-fail")
 	if err == nil {
-		t.Fatal("Stop should return error from failing backend")
+		t.Fatal("Stop should return error when both backends fail")
 	}
 
-	// Route should be preserved since Stop failed.
+	// Route should be preserved since Stop failed on both.
 	if got := p.route("agent-fail"); got != acpSP {
-		t.Fatal("route should be preserved when Stop fails")
+		t.Fatal("route should be preserved when Stop fails on both backends")
 	}
 }
 
@@ -136,6 +136,44 @@ func TestListRunningBothFail(t *testing.T) {
 	}
 	if names != nil {
 		t.Errorf("ListRunning both fail = %v, want nil", names)
+	}
+}
+
+func TestIsRunningFallsThrough(t *testing.T) {
+	defaultSP := session.NewFake()
+	acpSP := session.NewFake()
+	p := New(defaultSP, acpSP)
+
+	// Start on default backend but register route as ACP (simulates stale route).
+	_ = defaultSP.Start(context.Background(), "stale-agent", session.Config{})
+	p.RouteACP("stale-agent")
+
+	// ACP says not running → should fall through to default → true.
+	if !p.IsRunning("stale-agent") {
+		t.Fatal("IsRunning should fall through to default when ACP reports not running")
+	}
+
+	// Reverse: start on ACP, don't register route (simulates lost route).
+	_ = acpSP.Start(context.Background(), "lost-route", session.Config{})
+	if !p.IsRunning("lost-route") {
+		t.Fatal("IsRunning should fall through to ACP when default reports not running")
+	}
+}
+
+func TestStopFallsThrough(t *testing.T) {
+	defaultSP := session.NewFailFake() // Stop always fails (simulates "not found")
+	acpSP := session.NewFake()
+	p := New(defaultSP, acpSP)
+
+	// Start on ACP but don't register route (simulates lost route after restart).
+	_ = acpSP.Start(context.Background(), "orphan", session.Config{})
+
+	// Stop routes to default (no route entry), which fails → falls through to ACP.
+	if err := p.Stop("orphan"); err != nil {
+		t.Fatalf("Stop should fall through to ACP backend: %v", err)
+	}
+	if acpSP.IsRunning("orphan") {
+		t.Fatal("session should be stopped on ACP backend after fallthrough")
 	}
 }
 
