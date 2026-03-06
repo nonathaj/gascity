@@ -201,8 +201,10 @@ func (h *APIHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.handleSSE(w, r)
 	case path == "/session/preview" && r.Method == http.MethodGet:
 		h.handleSessionPreview(w, r)
-	case strings.HasPrefix(path, "/agent/output") && r.Method == http.MethodGet:
+	case path == "/agent/output" && r.Method == http.MethodGet:
 		h.handleAgentOutput(w, r)
+	case path == "/agent/output/stream" && r.Method == http.MethodGet:
+		h.handleAgentOutputStream(w, r)
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -1667,6 +1669,62 @@ func (h *APIHandler) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(body)
+}
+
+// handleAgentOutputStream proxies the API server's /v0/agent/{name}/output/stream SSE endpoint.
+func (h *APIHandler) handleAgentOutputStream(w http.ResponseWriter, r *http.Request) {
+	agentName := r.URL.Query().Get("name")
+	if agentName == "" {
+		h.sendError(w, "Missing name parameter", http.StatusBadRequest)
+		return
+	}
+
+	for _, c := range agentName {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '/' {
+			h.sendError(w, "Invalid agent name", http.StatusBadRequest)
+			return
+		}
+	}
+
+	upstream := h.apiURL + "/v0/agent/" + agentName + "/output/stream"
+	req, err := http.NewRequestWithContext(r.Context(), "GET", upstream, nil)
+	if err != nil {
+		h.sendError(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := h.apiClient.Do(req)
+	if err != nil {
+		h.sendError(w, "Failed to connect to agent output stream", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	// Pass through SSE headers.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(resp.StatusCode)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+	flusher.Flush()
+
+	// Stream the response body through.
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			_, _ = w.Write(buf[:n])
+			flusher.Flush()
+		}
+		if readErr != nil {
+			return
+		}
+	}
 }
 
 // ---------- Command parsing ----------

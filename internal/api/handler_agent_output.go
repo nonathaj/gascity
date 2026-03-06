@@ -44,21 +44,29 @@ func (s *Server) handleAgentOutput(w http.ResponseWriter, r *http.Request, name 
 	}
 
 	// Try structured session log first.
-	if resp, ok := s.trySessionLogOutput(r, name, agentCfg); ok {
+	resp, err := s.trySessionLogOutput(r, name, agentCfg)
+	if err != nil {
+		// Session file exists but failed to read — surface the error.
+		writeError(w, http.StatusInternalServerError, "internal", "reading session log: "+err.Error())
+		return
+	}
+	if resp != nil {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 
-	// Fall back to Peek() — raw terminal text.
+	// No session file found — fall back to Peek() (raw terminal text).
 	s.peekFallbackOutput(w, name, cfg)
 }
 
 // trySessionLogOutput attempts to read structured conversation data from
-// a Claude JSONL session file. Returns false if no session file is found.
-func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg config.Agent) (*agentOutputResponse, bool) {
+// a Claude JSONL session file. Returns (nil, nil) if no session file is
+// found (expected — triggers fallback). Returns (nil, err) if the file
+// exists but cannot be read (unexpected — surface to caller).
+func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg config.Agent) (*agentOutputResponse, error) {
 	workDir := s.resolveAgentWorkDir(agentCfg)
 	if workDir == "" {
-		return nil, false
+		return nil, nil
 	}
 
 	searchPaths := s.sessionLogSearchPaths
@@ -67,7 +75,7 @@ func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg conf
 	}
 	path := sessionlog.FindSessionFile(searchPaths, workDir)
 	if path == "" {
-		return nil, false
+		return nil, nil
 	}
 
 	tail := 1
@@ -86,7 +94,7 @@ func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg conf
 		sess, err = sessionlog.ReadFile(path, tail)
 	}
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 
 	turns := make([]outputTurn, 0, len(sess.Messages))
@@ -103,7 +111,7 @@ func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg conf
 		Format:     "conversation",
 		Turns:      turns,
 		Pagination: sess.Pagination,
-	}, true
+	}, nil
 }
 
 // peekFallbackOutput returns raw terminal text wrapped as a single turn.
@@ -179,9 +187,9 @@ func entryToTurn(e *sessionlog.Entry) outputTurn {
 					parts = append(parts, "["+b.Name+"]")
 				}
 			case "thinking":
-				if b.Text != "" {
-					parts = append(parts, b.Text)
-				}
+				// Redact thinking blocks — internal model reasoning
+				// should not be surfaced to the UI.
+				parts = append(parts, "[thinking]")
 			}
 		}
 		turn.Text = strings.Join(parts, "\n")
@@ -212,15 +220,6 @@ func (s *Server) handleAgentOutputStream(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// Set SSE headers before writing any data.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-	if err := http.NewResponseController(w).Flush(); err != nil {
-		_ = err
-	}
-
 	// Try session log streaming first, fall back to peek polling.
 	workDir := s.resolveAgentWorkDir(agentCfg)
 	searchPaths := s.sessionLogSearchPaths
@@ -233,6 +232,25 @@ func (s *Server) handleAgentOutputStream(w http.ResponseWriter, r *http.Request,
 		logPath = sessionlog.FindSessionFile(searchPaths, workDir)
 	}
 
+	// If no session log and agent isn't running, return 404 before committing SSE headers.
+	if logPath == "" {
+		sp := s.state.SessionProvider()
+		sessionName := agentSessionName(s.state.CityName(), name, cfg.Workspace.SessionTemplate)
+		if !sp.IsRunning(sessionName) {
+			writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not running")
+			return
+		}
+	}
+
+	// Commit SSE headers.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		_ = err
+	}
+
 	ctx := r.Context()
 	if logPath != "" {
 		s.streamSessionLog(ctx, w, name, logPath)
@@ -242,14 +260,16 @@ func (s *Server) handleAgentOutputStream(w http.ResponseWriter, r *http.Request,
 }
 
 // streamSessionLog polls a session log file and emits new turns as SSE events.
+// Uses file size tracking to skip re-reads when the file hasn't grown, and
+// UUID-based cursor to correctly identify new turns after DAG resolution.
 func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, name string, logPath string) {
 	poll := time.NewTicker(outputStreamPollInterval)
 	defer poll.Stop()
 	keepalive := time.NewTicker(sseKeepalive)
 	defer keepalive.Stop()
 
-	var lastModTime time.Time
-	sentCount := 0
+	var lastSize int64
+	var lastSentUUID string // UUID of the last turn we emitted
 	var seq uint64
 
 	// readAndEmit reads the file and sends any new turns.
@@ -258,30 +278,51 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 		if err != nil {
 			return
 		}
-		if info.ModTime().Equal(lastModTime) {
-			return // file unchanged
+		if info.Size() == lastSize {
+			return // file hasn't grown
 		}
-		lastModTime = info.ModTime()
+		lastSize = info.Size()
 
-		sess, err := sessionlog.ReadFile(logPath, 0) // tail=0: all messages
+		// Use tail=1 (last compaction segment) to limit parsing scope.
+		// For streaming, we only care about recent activity.
+		sess, err := sessionlog.ReadFile(logPath, 1)
 		if err != nil {
 			return
 		}
 
 		turns := make([]outputTurn, 0, len(sess.Messages))
+		uuids := make([]string, 0, len(sess.Messages))
 		for _, e := range sess.Messages {
 			turn := entryToTurn(e)
 			if turn.Text == "" {
 				continue
 			}
 			turns = append(turns, turn)
+			uuids = append(uuids, e.UUID)
 		}
 
-		if len(turns) <= sentCount {
+		if len(turns) == 0 {
+			return
+		}
+
+		// Find new turns by locating the last sent UUID.
+		startIdx := 0
+		if lastSentUUID != "" {
+			for i, uuid := range uuids {
+				if uuid == lastSentUUID {
+					startIdx = i + 1
+					break
+				}
+			}
+			// If lastSentUUID not found (branch switch/compaction), send all.
+			// This provides self-healing at the cost of potential duplicates.
+		}
+
+		if startIdx >= len(turns) {
 			return // no new turns
 		}
-		newTurns := turns[sentCount:]
-		sentCount = len(turns)
+		newTurns := turns[startIdx:]
+		lastSentUUID = uuids[len(uuids)-1]
 		seq++
 
 		data, err := json.Marshal(agentOutputResponse{

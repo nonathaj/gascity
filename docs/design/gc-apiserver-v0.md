@@ -169,7 +169,8 @@ Health endpoint returns HTTP status codes reflecting state (Vault pattern):
 ```
 GET  /v0/agents                      # list all agents (expanded, including pool members)
 GET  /v0/agent/{name}                # get agent details
-GET  /v0/agent/{name}/peek           # capture scrollback from session
+GET  /v0/agent/{name}/output         # unified conversation output (session log or terminal)
+GET  /v0/agent/{name}/output/stream  # SSE stream of new output turns
 POST /v0/agent/{name}/suspend        # suspend agent (reconciler won't restart)
 POST /v0/agent/{name}/resume         # resume agent (reconciler restarts)
 POST /v0/agent/{name}/kill           # force-kill session (reconciler restarts)
@@ -216,9 +217,13 @@ the reconciler starts sessions for non-suspended agents automatically.
 `suspend` prevents restart; `resume` allows it. `kill` forces a session
 restart. `drain` signals the agent to wind down gracefully.
 
-`/v0/agent/{name}/peek` captures scrollback from the agent's session.
-This replaces a standalone `/v0/sessions` endpoint — session state is
-an implementation detail of agents, not a separate resource.
+`/v0/agent/{name}/output` returns unified conversation output for an
+agent. It tries structured session logs (Claude JSONL) first, falling
+back to raw terminal capture via `Peek()`. The response format
+distinguishes the source via a `format` field (`"conversation"` or
+`"text"`). `/v0/agent/{name}/output/stream` provides the same data as
+an SSE stream for live UI updates. Session state is an implementation
+detail of agents, not a separate resource.
 
 **Agent response includes session state:**
 
@@ -246,7 +251,7 @@ is null. The `command` field is the foreground process in pane 0 (from
 `tmux display-message -t {session}:0.0 -p "#{pane_current_command}"`).
 The dashboard uses `session.last_activity` for stale/stuck detection,
 `session.command` for agent-running heuristics (e.g., is "claude"
-running?), and `GET /v0/agent/{name}/peek` for pane content — no
+running?), and `GET /v0/agent/{name}/output` for agent output — no
 direct tmux access needed.
 
 Data source: `session.Provider.ListRunning()` + `config.City.Agents`
@@ -692,7 +697,7 @@ Current → v0 endpoint mapping:
 | `POST /api/issues/close` | `POST /v0/bead/{id}/close` |
 | `POST /api/issues/update` | `POST /v0/bead/{id}/update` |
 | `GET /api/ready` | `GET /v0/beads/ready` |
-| `GET /api/session/preview` | `GET /v0/agent/{name}/peek` |
+| `GET /api/session/preview` | `GET /v0/agent/{name}/output` |
 | `FetchSessions()` | `GET /v0/agents` (session block per agent, pool members expanded) |
 | `GET /api/pr/show` | Stays in dashboard (shells out to `gh pr view` — GitHub-specific) |
 | `FetchMergeQueue()` | Stays in dashboard (shells out to `gh pr list` — GitHub-specific) |

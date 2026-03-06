@@ -173,6 +173,41 @@ func TestAgentOutputPagination(t *testing.T) {
 	}
 }
 
+func TestAgentOutputCorruptedSessionFile(t *testing.T) {
+	state := newFakeState(t)
+	rigDir := t.TempDir()
+	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: rigDir}}
+
+	searchBase := t.TempDir()
+	// Write a corrupt JSONL file that will cause ReadFile to fail.
+	// An empty file won't trigger the path (FindSessionFile needs .jsonl).
+	// Write truncated/garbage content.
+	writeSessionJSONL(t, searchBase, rigDir,
+		`not valid json at all {{{`,
+	)
+
+	srv := newServerWithSearchPaths(state, searchBase)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	// The corrupt file IS found by FindSessionFile, but ReadFile returns
+	// an empty session (no valid entries). The handler should return a
+	// conversation response with 0 turns (the entries are skipped, not errored).
+	// This is correct because ReadFile skips malformed lines rather than
+	// failing the whole parse.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp agentOutputResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Format != "conversation" {
+		t.Errorf("Format = %q, want %q", resp.Format, "conversation")
+	}
+}
+
 func TestAgentOutputStreamSSEHeaders(t *testing.T) {
 	state := newFakeState(t)
 	rigDir := t.TempDir()
@@ -222,6 +257,20 @@ func TestAgentOutputStreamNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestAgentOutputStreamNotRunning(t *testing.T) {
+	state := newFakeState(t)
+	// Agent exists in config but no session file and not running → 404.
+	srv := New(state)
+
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output/stream", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
 
