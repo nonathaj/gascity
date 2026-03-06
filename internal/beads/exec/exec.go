@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/formula"
 )
 
 // Store implements [beads.Store] by delegating each operation to a
@@ -22,22 +21,14 @@ import (
 // Exit codes: 0 = success, 1 = error (stderr has message), 2 = unknown
 // operation (treated as success for forward compatibility).
 type Store struct {
-	script          string
-	timeout         time.Duration
-	env             map[string]string
-	formulaResolver formula.Resolver
+	script  string
+	timeout time.Duration
+	env     map[string]string
 }
 
 // SetEnv sets environment variables passed to the script process.
 func (s *Store) SetEnv(env map[string]string) {
 	s.env = env
-}
-
-// SetFormulaResolver sets the function used by MolCook to load formulas.
-// When set, MolCook is composed in Go from Create calls instead of
-// delegating to the script.
-func (s *Store) SetFormulaResolver(r formula.Resolver) {
-	s.formulaResolver = r
 }
 
 // NewStore returns a Store that delegates to the given script.
@@ -257,15 +248,9 @@ func (s *Store) SetMetadata(id, key, value string) error {
 	return nil
 }
 
-// MolCook instantiates a molecule from a formula. When a formula resolver
-// is set (via [SetFormulaResolver]), the molecule is composed in Go from
-// Create calls. Otherwise it delegates to the script's mol-cook operation.
-// Returns the root bead ID.
+// MolCook instantiates a molecule from a formula by delegating to the
+// script's mol-cook operation. Returns the root bead ID.
 func (s *Store) MolCook(formulaName, title string, vars []string) (string, error) {
-	if s.formulaResolver != nil {
-		return formula.ComposeMolCook(s, s.formulaResolver, formulaName, title, vars)
-	}
-
 	data, err := marshalMolCook(formulaName, title, vars)
 	if err != nil {
 		return "", fmt.Errorf("exec beads mol-cook: marshaling: %w", err)

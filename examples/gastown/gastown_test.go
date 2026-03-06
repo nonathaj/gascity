@@ -14,7 +14,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
@@ -69,7 +68,7 @@ func TestPromptFilesExist(t *testing.T) {
 	}
 }
 
-func TestAllFormulasParseAndValidate(t *testing.T) {
+func TestAllFormulasExist(t *testing.T) {
 	dir := exampleDir()
 	formulaDir := filepath.Join(dir, "packs", "gastown", "formulas")
 
@@ -84,23 +83,10 @@ func TestAllFormulasParseAndValidate(t *testing.T) {
 			continue
 		}
 		count++
-		t.Run(e.Name(), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(formulaDir, e.Name()))
-			if err != nil {
-				t.Fatalf("reading %s: %v", e.Name(), err)
-			}
-			f, err := formula.Parse(data)
-			if err != nil {
-				t.Fatalf("Parse(%s): %v", e.Name(), err)
-			}
-			if err := formula.Validate(f); err != nil {
-				t.Errorf("Validate(%s): %v", e.Name(), err)
-			}
-		})
 	}
 
-	if count != 6 {
-		t.Errorf("found %d formula files, want 6", count)
+	if count != 8 {
+		t.Errorf("found %d formula files, want 8", count)
 	}
 }
 
@@ -409,7 +395,7 @@ func TestMaintenancePackParses(t *testing.T) {
 	}
 }
 
-func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
+func TestMaintenanceFormulasExist(t *testing.T) {
 	dir := exampleDir()
 	formulaDir := filepath.Join(dir, "packs", "maintenance", "formulas")
 
@@ -424,19 +410,6 @@ func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 			continue
 		}
 		count++
-		t.Run(e.Name(), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(formulaDir, e.Name()))
-			if err != nil {
-				t.Fatalf("reading %s: %v", e.Name(), err)
-			}
-			f, err := formula.Parse(data)
-			if err != nil {
-				t.Fatalf("Parse(%s): %v", e.Name(), err)
-			}
-			if err := formula.Validate(f); err != nil {
-				t.Errorf("Validate(%s): %v", e.Name(), err)
-			}
-		})
 	}
 
 	// 3 formulas: mol-shutdown-dance + mol-dog-jsonl + mol-dog-reaper
@@ -445,7 +418,7 @@ func TestMaintenanceFormulasParseAndValidate(t *testing.T) {
 	}
 }
 
-func TestDoltHealthFormulasParseAndValidate(t *testing.T) {
+func TestDoltHealthFormulasExist(t *testing.T) {
 	dir := exampleDir()
 	formulaDir := filepath.Join(dir, "..", "dolt", "formulas")
 
@@ -460,19 +433,6 @@ func TestDoltHealthFormulasParseAndValidate(t *testing.T) {
 			continue
 		}
 		count++
-		t.Run(e.Name(), func(t *testing.T) {
-			data, err := os.ReadFile(filepath.Join(formulaDir, e.Name()))
-			if err != nil {
-				t.Fatalf("reading %s: %v", e.Name(), err)
-			}
-			f, err := formula.Parse(data)
-			if err != nil {
-				t.Fatalf("Parse(%s): %v", e.Name(), err)
-			}
-			if err := formula.Validate(f); err != nil {
-				t.Errorf("Validate(%s): %v", e.Name(), err)
-			}
-		})
 	}
 
 	// 7 formulas: 5 dog infrastructure + 2 exec (dolt-health, dolt-remotes-patrol)

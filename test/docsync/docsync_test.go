@@ -187,21 +187,6 @@ func TestSchemaFreshness(t *testing.T) {
 			path: filepath.Join(root, "docs", "schema", "city-schema.json"),
 		},
 		{
-			name: "formula-schema.json",
-			generate: func() ([]byte, error) {
-				s, err := docgen.GenerateFormulaSchema()
-				if err != nil {
-					return nil, err
-				}
-				data, err := json.MarshalIndent(s, "", "  ")
-				if err != nil {
-					return nil, err
-				}
-				return append(data, '\n'), nil
-			},
-			path: filepath.Join(root, "docs", "schema", "formula-schema.json"),
-		},
-		{
 			name: "config.md",
 			generate: func() ([]byte, error) {
 				s, err := docgen.GenerateCitySchema()
@@ -215,21 +200,6 @@ func TestSchemaFreshness(t *testing.T) {
 				return buf.Bytes(), nil
 			},
 			path: filepath.Join(root, "docs", "reference", "config.md"),
-		},
-		{
-			name: "formula.md",
-			generate: func() ([]byte, error) {
-				s, err := docgen.GenerateFormulaSchema()
-				if err != nil {
-					return nil, err
-				}
-				var buf bytes.Buffer
-				if err := docgen.RenderMarkdown(&buf, s); err != nil {
-					return nil, err
-				}
-				return buf.Bytes(), nil
-			},
-			path: filepath.Join(root, "docs", "reference", "formula.md"),
 		},
 	}
 

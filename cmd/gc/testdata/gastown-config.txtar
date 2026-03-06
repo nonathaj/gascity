@@ -48,29 +48,7 @@ stdout 'Started agent .deacon.'
 stdout 'Started agent .boot.'
 stdout 'City started.'
 
-# --- 7. Formulas directory is configured ---
-
-exec gc formula list
-stdout 'mol-deacon-patrol'
-stdout 'mol-witness-patrol'
-stdout 'mol-refinery-patrol'
-stdout 'mol-polecat-work'
-stdout 'mol-shutdown-dance'
-stdout 'mol-digest-generate'
-stdout 'mol-wisp-compact'
-stdout 'mol-prune-branches'
-
-# --- 8. Formula show displays step info ---
-
-exec gc formula show mol-polecat-work
-stdout 'mol-polecat-work'
-stdout 'load-context'
-stdout 'branch-setup'
-
-exec gc formula show mol-shutdown-dance
-stdout 'mol-shutdown-dance'
-
-# --- 9. Daemon config is preserved ---
+# --- 7. Daemon config is preserved ---
 
 exec gc config show
 stdout 'patrol_interval = "30s"'

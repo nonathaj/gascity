@@ -36,9 +36,6 @@ stderr 'not in a city directory'
 ! exec gc convoy list
 stderr 'not in a city directory'
 
-! exec gc formula list
-stderr 'not in a city directory'
-
 # --- Bad bead operations ---
 
 exec gc init $WORK/err-city
@@ -115,11 +112,6 @@ stderr 'not found'
 stderr 'missing message ID'
 
 ! exec gc mail archive gc-999
-stderr 'not found'
-
-# --- Formula errors ---
-
-! exec gc formula show nonexistent
 stderr 'not found'
 
 # --- Event errors ---

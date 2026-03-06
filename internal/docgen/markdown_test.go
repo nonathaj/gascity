@@ -104,23 +104,3 @@ func TestRenderMarkdownEnumValues(t *testing.T) {
 		t.Error("pre_start not shown in markdown")
 	}
 }
-
-func TestRenderMarkdownFormulaSchema(t *testing.T) {
-	s, err := GenerateFormulaSchema()
-	if err != nil {
-		t.Fatalf("GenerateFormulaSchema: %v", err)
-	}
-
-	var buf bytes.Buffer
-	if err := RenderMarkdown(&buf, s); err != nil {
-		t.Fatalf("RenderMarkdown: %v", err)
-	}
-
-	md := buf.String()
-
-	for _, section := range []string{"## Formula", "## Step"} {
-		if !strings.Contains(md, section) {
-			t.Errorf("missing section %q", section)
-		}
-	}
-}

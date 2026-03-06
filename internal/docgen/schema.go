@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/invopop/jsonschema"
 )
 
@@ -73,17 +72,5 @@ func GenerateCitySchema() (*jsonschema.Schema, error) {
 	s := r.Reflect(&config.City{})
 	s.Title = "Gas City Configuration"
 	s.Description = "Schema for city.toml — the top-level configuration file for a Gas City instance."
-	return s, nil
-}
-
-// GenerateFormulaSchema produces a JSON Schema for *.formula.toml files.
-func GenerateFormulaSchema() (*jsonschema.Schema, error) {
-	r, err := newReflector()
-	if err != nil {
-		return nil, err
-	}
-	s := r.Reflect(&formula.Formula{})
-	s.Title = "Gas City Formula"
-	s.Description = "Schema for *.formula.toml — a formula definition file."
 	return s, nil
 }

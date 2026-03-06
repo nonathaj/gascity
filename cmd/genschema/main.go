@@ -6,9 +6,7 @@
 // Output:
 //
 //	docs/schema/city-schema.json
-//	docs/schema/formula-schema.json
 //	docs/reference/config.md
-//	docs/reference/formula.md
 //	docs/reference/cli.md
 package main
 
@@ -48,25 +46,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("generating city schema: %w", err)
 	}
-	formulaSchema, err := docgen.GenerateFormulaSchema()
-	if err != nil {
-		return fmt.Errorf("generating formula schema: %w", err)
-	}
-
-	// Write JSON schemas.
+	// Write JSON schema.
 	if err := writeSchema("docs/schema/city-schema.json", citySchema); err != nil {
 		return err
 	}
-	if err := writeSchema("docs/schema/formula-schema.json", formulaSchema); err != nil {
-		return err
-	}
 
-	// Write markdown reference docs.
+	// Write markdown reference doc.
 	if err := docgen.WriteMarkdown("docs/reference/config.md", citySchema); err != nil {
 		return fmt.Errorf("writing config.md: %w", err)
-	}
-	if err := docgen.WriteMarkdown("docs/reference/formula.md", formulaSchema); err != nil {
-		return fmt.Errorf("writing formula.md: %w", err)
 	}
 
 	// Generate CLI reference via "gc gen-doc" (has access to real command tree).
@@ -79,9 +66,7 @@ func run() error {
 
 	files := []string{
 		"docs/schema/city-schema.json",
-		"docs/schema/formula-schema.json",
 		"docs/reference/config.md",
-		"docs/reference/formula.md",
 		"docs/reference/cli.md",
 	}
 	fmt.Println("Generated:")

@@ -16,7 +16,6 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
 	"github.com/gastownhall/gascity/internal/events"
-	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -101,7 +100,6 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newAgentCmd(stdout, stderr),
 		newEventCmd(stdout, stderr),
 		newEventsCmd(stdout, stderr),
-		newFormulaCmd(stdout, stderr),
 		newAutomationCmd(stdout, stderr),
 		newConfigCmd(stdout, stderr),
 		newPackCmd(stdout, stderr),
@@ -223,7 +221,6 @@ func openCityStore(stderr io.Writer, cmdName string) (beads.Store, int) {
 	provider := rawBeadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		s := beadsexec.NewStore(strings.TrimPrefix(provider, "exec:"))
-		s.SetFormulaResolver(formula.DirResolver(filepath.Join(cityPath, ".gc", "formulas")))
 		return s, 0
 	}
 	switch provider {
