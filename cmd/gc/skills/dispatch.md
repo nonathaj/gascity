@@ -1,18 +1,41 @@
 # Dispatching Work
 
-`gc sling` routes work to agents. Three modes:
+`gc sling` routes work to agents. **Pools are valid targets** — sling to
+the pool and any idle member can claim the work. You do NOT need to find
+or create an individual agent first.
 
-## Direct dispatch (bead to agent)
+## Quick reference
 
 ```
-gc sling <agent> <bead-id>             # Route a bead to an agent's hook
+gc sling <bead-id>                     # Auto-target via rig's default_sling_target
+gc sling <agent-or-pool> <bead-id>     # Route to a specific agent or pool
+gc sling <agent-or-pool> -f <formula>  # Instantiate formula, route wisp root
+gc sling <agent-or-pool> <bead-id> --on <formula>  # Attach wisp to existing bead
 ```
 
-The agent receives the bead on its hook and runs it per GUPP.
+## Targeting
+
+The `<agent-or-pool>` is a qualified name from `gc agent list`:
+- **Fixed agent:** `mayor`, `hello-world/refinery`
+- **Pool:** `hello-world/polecat` — routes to the pool's shared work queue
+
+**1-arg shorthand:** When target is omitted, sling derives it from the
+bead's rig prefix. The rig's `default_sling_target` in city.toml determines
+where work goes. Example: bead `hw-42` → rig `hello-world` → target
+`hello-world/polecat`.
 
 **Rig-scoped beads:** `gc sling` automatically resolves the rig directory
 for rig-scoped bead IDs (e.g. `hw-abc`) and runs `bd update` from there,
 so the rig's `.beads` database is found without manual intervention.
+
+## Direct dispatch (bead to agent or pool)
+
+```
+gc sling <agent-or-pool> <bead-id>     # Route a bead to an agent's hook
+gc sling <bead-id>                     # Use rig's default_sling_target
+```
+
+The agent receives the bead on its hook and runs it per GUPP.
 
 ## Formula dispatch (formula on agent)
 
