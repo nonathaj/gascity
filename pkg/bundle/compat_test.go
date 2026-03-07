@@ -15,6 +15,9 @@ func TestSchemaVersionCompat(t *testing.T) {
 
 	t.Run("AcceptsPrevious", func(t *testing.T) {
 		prev := SchemaVersion - 1
+		if prev < 1 {
+			t.Skipf("N-1=%d is below minimum version 1, skipping", prev)
+		}
 		if !CanAccept(prev) {
 			t.Errorf("CanAccept(N-1=%d) = false, must accept previous version", prev)
 		}
@@ -24,6 +27,12 @@ func TestSchemaVersionCompat(t *testing.T) {
 		next := SchemaVersion + 1
 		if CanAccept(next) {
 			t.Errorf("CanAccept(N+1=%d) = true, must reject future version", next)
+		}
+	})
+
+	t.Run("RejectsZero", func(t *testing.T) {
+		if CanAccept(0) {
+			t.Error("CanAccept(0) = true, must reject version 0")
 		}
 	})
 }

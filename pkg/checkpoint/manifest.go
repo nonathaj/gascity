@@ -2,6 +2,7 @@ package checkpoint
 
 import (
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,9 @@ func (m *RecoveryManifest) Validate() error {
 	}
 	if m.WorkspaceID == "" {
 		return errors.New("recovery manifest: missing workspace_id")
+	}
+	if strings.ContainsAny(m.WorkspaceID, "/\\") || strings.Contains(m.WorkspaceID, "..") {
+		return errors.New("recovery manifest: workspace_id contains path separator or traversal")
 	}
 	if m.Epoch < 1 {
 		return errors.New("recovery manifest: epoch must be >= 1")

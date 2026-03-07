@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,10 +17,9 @@ func TestCanAccept(t *testing.T) {
 		want    bool
 	}{
 		{SchemaVersion, true},
-		{SchemaVersion - 1, true},
 		{SchemaVersion + 1, false},
 		{SchemaVersion - 2, false},
-		{0, true}, // N-1 when N=1
+		{0, false}, // version 0 is always invalid
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("v%d", tc.version), func(t *testing.T) {
@@ -87,8 +87,8 @@ func computeChecksum(t *testing.T, dir string) string {
 	t.Helper()
 	h := sha256.New()
 	var files []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !d.Type().IsRegular() {
 			return err
 		}
 		rel, _ := filepath.Rel(dir, path)
@@ -100,7 +100,7 @@ func computeChecksum(t *testing.T, dir string) string {
 	})
 	sort.Strings(files)
 	for _, rel := range files {
-		_, _ = fmt.Fprintf(h, "%s\n", rel)
+		_, _ = fmt.Fprintf(h, "%s\n", filepath.ToSlash(rel))
 		data, err := os.ReadFile(filepath.Join(dir, rel))
 		if err != nil {
 			t.Fatal(err)

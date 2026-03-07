@@ -3,7 +3,9 @@ package checkpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,12 +54,16 @@ func (s *LocalStore) Save(_ context.Context, m RecoveryManifest) error {
 		return fmt.Errorf("renaming checkpoint: %w", err)
 	}
 
-	// Update latest symlink.
+	// Update latest symlink atomically: create temp symlink then rename.
 	latestPath := filepath.Join(wsDir, "latest")
-	_ = os.Remove(latestPath) // may not exist
-	if err := os.Symlink(filename, latestPath); err != nil {
-		// Non-fatal: the data is saved, symlink is convenience.
-		return nil
+	tmpLink := latestPath + ".tmp"
+	_ = os.Remove(tmpLink) // clean up any stale temp
+	if err := os.Symlink(filename, tmpLink); err != nil {
+		return fmt.Errorf("creating latest symlink: %w", err)
+	}
+	if err := os.Rename(tmpLink, latestPath); err != nil {
+		_ = os.Remove(tmpLink)
+		return fmt.Errorf("updating latest symlink: %w", err)
 	}
 
 	return nil
@@ -110,7 +116,7 @@ func (s *LocalStore) readManifest(path string) (RecoveryManifest, error) {
 
 func (s *LocalStore) listManifests(wsDir string) ([]RecoveryManifest, error) {
 	entries, err := os.ReadDir(wsDir)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
@@ -129,7 +135,7 @@ func (s *LocalStore) listManifests(wsDir string) ([]RecoveryManifest, error) {
 		}
 		m, err := s.readManifest(filepath.Join(wsDir, name))
 		if err != nil {
-			continue // skip unreadable files
+			return nil, fmt.Errorf("corrupt checkpoint %s: %w", name, err)
 		}
 		manifests = append(manifests, m)
 	}

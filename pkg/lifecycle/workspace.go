@@ -16,13 +16,6 @@ const (
 	WorkspaceDeleted          WorkspaceState = "deleted"
 )
 
-// Transition describes a valid state transition and what triggers it.
-type Transition[S ~string] struct {
-	From    S
-	To      S
-	Trigger string
-}
-
 var workspaceTransitions = []Transition[WorkspaceState]{
 	{WorkspacePendingPlacement, WorkspaceCreating, "placement resolved"},
 	{WorkspacePendingPlacement, WorkspaceFailed, "placement failed"},
@@ -87,14 +80,4 @@ func WorkspaceStateCategory(s WorkspaceState) StateCategory {
 // (no further transitions possible by design).
 func IsTerminalWorkspace(s WorkspaceState) bool {
 	return s == WorkspaceDeleted
-}
-
-type transitionKey struct{ from, to string }
-
-func buildTransitionSet[S ~string](ts []Transition[S]) map[transitionKey]bool {
-	m := make(map[transitionKey]bool, len(ts))
-	for _, t := range ts {
-		m[transitionKey{string(t.From), string(t.To)}] = true
-	}
-	return m
 }

@@ -3,6 +3,7 @@ package operation
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -69,9 +70,15 @@ func (s *MemStore) List(_ context.Context, filter Filter) ([]Operation, error) {
 			continue
 		}
 		result = append(result, op)
-		if filter.Limit > 0 && len(result) >= filter.Limit {
-			break
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].ID < result[j].ID
 		}
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
+	if filter.Limit > 0 && len(result) > filter.Limit {
+		result = result[:filter.Limit]
 	}
 	return result, nil
 }
