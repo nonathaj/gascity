@@ -29,7 +29,7 @@ continuity.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, peek)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, rename, prune, peek)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc session: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -42,6 +42,8 @@ continuity.`,
 		newSessionAttachCmd(stdout, stderr),
 		newSessionSuspendCmd(stdout, stderr),
 		newSessionCloseCmd(stdout, stderr),
+		newSessionRenameCmd(stdout, stderr),
+		newSessionPruneCmd(stdout, stderr),
 		newSessionPeekCmd(stdout, stderr),
 	)
 	return cmd
@@ -385,6 +387,109 @@ func cmdSessionClose(args []string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stdout, "Session %s closed.\n", sessionID) //nolint:errcheck // best-effort stdout
 	return 0
+}
+
+// newSessionRenameCmd creates the "gc session rename <id> <title>" command.
+func newSessionRenameCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <session-id> <title>",
+		Short: "Rename a session",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionRename(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionRename is the CLI entry point for "gc session rename".
+func cmdSessionRename(args []string, stdout, stderr io.Writer) int {
+	sessionID, title := args[0], args[1]
+
+	store, code := openCityStore(stderr, "gc session rename")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	if err := mgr.Rename(sessionID, title); err != nil {
+		fmt.Fprintf(stderr, "gc session rename: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Session %s renamed to %q.\n", sessionID, title) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// newSessionPruneCmd creates the "gc session prune" command.
+func newSessionPruneCmd(stdout, stderr io.Writer) *cobra.Command {
+	var beforeStr string
+	cmd := &cobra.Command{
+		Use:   "prune",
+		Short: "Close old suspended sessions",
+		Long: `Close suspended sessions older than a given age. Only suspended
+sessions are affected — active sessions are never pruned.`,
+		Example: `  gc session prune --before 7d
+  gc session prune --before 24h`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if cmdSessionPrune(beforeStr, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&beforeStr, "before", "7d", "prune sessions older than this duration (e.g., 7d, 24h)")
+	return cmd
+}
+
+// cmdSessionPrune is the CLI entry point for "gc session prune".
+func cmdSessionPrune(beforeStr string, stdout, stderr io.Writer) int {
+	dur, err := parsePruneDuration(beforeStr)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session prune: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	store, code := openCityStore(stderr, "gc session prune")
+	if store == nil {
+		return code
+	}
+
+	sp := newSessionProvider()
+	mgr := chatsession.NewManager(store, sp)
+
+	cutoff := time.Now().Add(-dur)
+	pruned, err := mgr.Prune(cutoff)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session prune: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	if pruned == 0 {
+		fmt.Fprintln(stdout, "No sessions to prune.") //nolint:errcheck // best-effort stdout
+	} else {
+		fmt.Fprintf(stdout, "Pruned %d session(s).\n", pruned) //nolint:errcheck // best-effort stdout
+	}
+	return 0
+}
+
+// parsePruneDuration parses a duration string like "7d", "24h", "30m".
+// Extends time.ParseDuration with support for "d" (days).
+func parsePruneDuration(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "d") {
+		numStr := strings.TrimSuffix(s, "d")
+		var n int
+		if _, err := fmt.Sscanf(numStr, "%d", &n); err != nil {
+			return 0, fmt.Errorf("invalid duration %q", s)
+		}
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+	return time.ParseDuration(s)
 }
 
 // newSessionPeekCmd creates the "gc session peek <id>" command.

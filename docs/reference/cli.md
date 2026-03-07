@@ -1450,6 +1450,8 @@ gc session
 | [gc session list](#gc-session-list) | List chat sessions |
 | [gc session new](#gc-session-new) | Create a new chat session from an agent template |
 | [gc session peek](#gc-session-peek) | View session output without attaching |
+| [gc session prune](#gc-session-prune) | Close old suspended sessions |
+| [gc session rename](#gc-session-rename) | Rename a session |
 | [gc session suspend](#gc-session-suspend) | Suspend a session (save state, free resources) |
 
 ## gc session attach
@@ -1519,6 +1521,34 @@ gc session peek <session-id> [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--lines` | int | `50` | number of lines to capture |
+
+## gc session prune
+
+Close suspended sessions older than a given age. Only suspended
+sessions are affected — active sessions are never pruned.
+
+```
+gc session prune [flags]
+```
+
+**Example:**
+
+```
+gc session prune --before 7d
+  gc session prune --before 24h
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--before` | string | `7d` | prune sessions older than this duration (e.g., 7d, 24h) |
+
+## gc session rename
+
+Rename a session
+
+```
+gc session rename <session-id> <title>
+```
 
 ## gc session suspend
 

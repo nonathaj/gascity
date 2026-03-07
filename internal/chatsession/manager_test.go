@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/session"
@@ -582,5 +583,111 @@ func TestCreateFailsCleanup(t *testing.T) {
 		if b.Type == BeadType && b.Status == "open" {
 			t.Errorf("orphan session bead %s left open after failed create", b.ID)
 		}
+	}
+}
+
+func TestRename(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "old title", "echo test", "/tmp", "test", nil, ProviderResume{}, session.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mgr.Rename(info.ID, "new title"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	got, err := mgr.Get(info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "new title" {
+		t.Errorf("Title = %q, want %q", got.Title, "new title")
+	}
+}
+
+func TestRenameNotFound(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	if err := mgr.Rename("nonexistent", "title"); err == nil {
+		t.Error("Rename should fail for nonexistent session")
+	}
+}
+
+func TestPrune(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	// Create and suspend two sessions.
+	s1, err := mgr.Create(context.Background(), "default", "S1", "echo s1", "/tmp", "test", nil, ProviderResume{}, session.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2, err := mgr.Create(context.Background(), "default", "S2", "echo s2", "/tmp", "test", nil, ProviderResume{}, session.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mgr.Suspend(s1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Suspend(s2.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Prune with cutoff in the future — should prune both.
+	pruned, err := mgr.Prune(time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 2 {
+		t.Errorf("pruned = %d, want 2", pruned)
+	}
+
+	// Both should be closed.
+	sessions, err := mgr.List("all", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sessions {
+		if s.ID == s1.ID || s.ID == s2.ID {
+			if s.State != "" { // closed beads have empty state
+				t.Errorf("session %s state = %q after prune, want empty (closed)", s.ID, s.State)
+			}
+		}
+	}
+}
+
+func TestPruneSkipsActive(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	s1, err := mgr.Create(context.Background(), "default", "Active", "echo a", "/tmp", "test", nil, ProviderResume{}, session.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Active session should not be pruned.
+	pruned, err := mgr.Prune(time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 0 {
+		t.Errorf("pruned = %d, want 0 (active session should be skipped)", pruned)
+	}
+
+	got, err := mgr.Get(s1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != StateActive {
+		t.Errorf("active session state = %q, want %q", got.State, StateActive)
 	}
 }

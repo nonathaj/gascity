@@ -6,6 +6,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/gastownhall/gascity/internal/chatsession"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/spf13/cobra"
@@ -53,8 +54,10 @@ type StatusRigJSON struct {
 
 // StatusSummaryJSON is the agent count summary in JSON output.
 type StatusSummaryJSON struct {
-	TotalAgents   int `json:"total_agents"`
-	RunningAgents int `json:"running_agents"`
+	TotalAgents       int `json:"total_agents"`
+	RunningAgents     int `json:"running_agents"`
+	ActiveSessions    int `json:"active_sessions,omitempty"`
+	SuspendedSessions int `json:"suspended_sessions,omitempty"`
 }
 
 // newStatusCmd creates the "gc status [path]" command.
@@ -209,6 +212,24 @@ func doCityStatus(
 		}
 	}
 
+	// Chat sessions count (best-effort — skip if store unavailable).
+	if store, err := openCityStoreAt(cityPath); err == nil {
+		mgr := chatsession.NewManager(store, sp)
+		if sessions, err := mgr.List("", ""); err == nil && len(sessions) > 0 {
+			var active, suspended int
+			for _, s := range sessions {
+				switch s.State {
+				case chatsession.StateActive:
+					active++
+				case chatsession.StateSuspended:
+					suspended++
+				}
+			}
+			fmt.Fprintln(stdout)                                                          //nolint:errcheck // best-effort stdout
+			fmt.Fprintf(stdout, "Sessions: %d active, %d suspended\n", active, suspended) //nolint:errcheck // best-effort stdout
+		}
+	}
+
 	return 0
 }
 
@@ -300,6 +321,23 @@ func doCityStatusJSON(
 		})
 	}
 
+	summary := StatusSummaryJSON{TotalAgents: totalAgents, RunningAgents: runningAgents}
+
+	// Chat sessions count (best-effort).
+	if store, err := openCityStoreAt(cityPath); err == nil {
+		mgr := chatsession.NewManager(store, sp)
+		if sessions, err := mgr.List("", ""); err == nil {
+			for _, s := range sessions {
+				switch s.State {
+				case chatsession.StateActive:
+					summary.ActiveSessions++
+				case chatsession.StateSuspended:
+					summary.SuspendedSessions++
+				}
+			}
+		}
+	}
+
 	status := StatusJSON{
 		CityName:   cityName,
 		CityPath:   cityPath,
@@ -307,7 +345,7 @@ func doCityStatusJSON(
 		Suspended:  citySuspended(cfg),
 		Agents:     agents,
 		Rigs:       rigs,
-		Summary:    StatusSummaryJSON{TotalAgents: totalAgents, RunningAgents: runningAgents},
+		Summary:    summary,
 	}
 
 	data, err := json.MarshalIndent(status, "", "  ")

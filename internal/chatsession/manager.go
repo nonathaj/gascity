@@ -260,6 +260,49 @@ func (m *Manager) Close(id string) error {
 	return m.store.Close(id)
 }
 
+// Rename updates the title of a chat session.
+func (m *Manager) Rename(id, title string) error {
+	b, err := m.store.Get(id)
+	if err != nil {
+		return fmt.Errorf("getting session: %w", err)
+	}
+	if b.Type != BeadType {
+		return fmt.Errorf("bead %s is not a session (type=%q)", id, b.Type)
+	}
+	return m.store.Update(id, beads.UpdateOpts{Title: &title})
+}
+
+// Prune closes all sessions that have been closed or suspended before the
+// given cutoff time. Returns the number of sessions pruned.
+func (m *Manager) Prune(before time.Time) (int, error) {
+	all, err := m.store.ListByLabel(LabelSession, 0)
+	if err != nil {
+		return 0, fmt.Errorf("listing sessions: %w", err)
+	}
+	var pruned int
+	for _, b := range all {
+		if b.Type != BeadType {
+			continue
+		}
+		if b.Status == "closed" {
+			continue // already closed
+		}
+		// Prune suspended sessions created before the cutoff.
+		state := State(b.Metadata["state"])
+		if state != StateSuspended {
+			continue // only prune suspended sessions
+		}
+		if !b.CreatedAt.Before(before) {
+			continue
+		}
+		if err := m.store.Close(b.ID); err != nil {
+			return pruned, fmt.Errorf("closing session %s: %w", b.ID, err)
+		}
+		pruned++
+	}
+	return pruned, nil
+}
+
 // Get returns info about a single session.
 func (m *Manager) Get(id string) (Info, error) {
 	b, err := m.store.Get(id)
