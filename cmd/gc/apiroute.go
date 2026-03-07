@@ -28,7 +28,7 @@ func apiClient(cityPath string) *api.Client {
 	if err != nil {
 		return nil
 	}
-	if cfg.API.Port == 0 {
+	if cfg.API.Port <= 0 {
 		return nil
 	}
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -84,22 +86,33 @@ func (c *Client) patchCity(suspend bool) error {
 // Name can be qualified (e.g., "myrig/worker") — the server route uses
 // {name...} wildcard which captures slashes.
 func (c *Client) SuspendAgent(name string) error {
-	return c.doMutation("POST", "/v0/agent/"+name+"/suspend", nil)
+	return c.doMutation("POST", "/v0/agent/"+escapeName(name)+"/suspend", nil)
 }
 
 // ResumeAgent resumes an agent via POST /v0/agent/{name}/resume.
 func (c *Client) ResumeAgent(name string) error {
-	return c.doMutation("POST", "/v0/agent/"+name+"/resume", nil)
+	return c.doMutation("POST", "/v0/agent/"+escapeName(name)+"/resume", nil)
 }
 
 // SuspendRig suspends a rig via POST /v0/rig/{name}/suspend.
 func (c *Client) SuspendRig(name string) error {
-	return c.doMutation("POST", "/v0/rig/"+name+"/suspend", nil)
+	return c.doMutation("POST", "/v0/rig/"+escapeName(name)+"/suspend", nil)
 }
 
 // ResumeRig resumes a rig via POST /v0/rig/{name}/resume.
 func (c *Client) ResumeRig(name string) error {
-	return c.doMutation("POST", "/v0/rig/"+name+"/resume", nil)
+	return c.doMutation("POST", "/v0/rig/"+escapeName(name)+"/resume", nil)
+}
+
+// escapeName escapes each segment of a potentially qualified name (e.g.,
+// "myrig/worker") for use in URL paths. Slashes are preserved as path
+// separators; other URL metacharacters (#, ?, etc.) are percent-encoded.
+func escapeName(name string) string {
+	parts := strings.Split(name, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }
 
 // doMutation sends a mutation request and checks for errors.
