@@ -16,13 +16,18 @@ import (
 
 // CityEntry is one registered city in the supervisor registry.
 type CityEntry struct {
-	Path string `toml:"path"` // absolute path to city root directory
+	Path string `toml:"path"`           // absolute path to city root directory
+	Name string `toml:"name,omitempty"` // effective city name (workspace.name or basename)
 }
 
-// Name returns the city name derived from the directory basename.
-// If a city.toml exists with workspace.name, the caller should use
-// that instead; this is a fallback for when the config isn't loaded.
-func (e CityEntry) Name() string {
+// EffectiveName returns the city's effective name. If Name is set (from
+// workspace.name or explicit registration), it's used. Otherwise falls
+// back to the directory basename for backward compatibility with
+// registries created before the name field was added.
+func (e CityEntry) EffectiveName() string {
+	if e.Name != "" {
+		return e.Name
+	}
 	return filepath.Base(e.Path)
 }
 
@@ -53,13 +58,18 @@ func (r *Registry) List() ([]CityEntry, error) {
 }
 
 // Register adds a city to the registry. The path is resolved to an
-// absolute path. Returns an error if the city is already registered
-// (by path) or if a different city with the same directory basename
-// is already registered. Uses file-level locking for cross-process safety.
-func (r *Registry) Register(cityPath string) error {
+// absolute path. effectiveName is the city's runtime identity
+// (workspace.name from city.toml, or directory basename if unset).
+// Returns an error if the city is already registered (by path) or if
+// a different city with the same effective name is already registered.
+// Uses file-level locking for cross-process safety.
+func (r *Registry) Register(cityPath, effectiveName string) error {
 	abs, err := filepath.Abs(cityPath)
 	if err != nil {
 		return fmt.Errorf("resolving path: %w", err)
+	}
+	if effectiveName == "" {
+		effectiveName = filepath.Base(abs)
 	}
 
 	r.mu.Lock()
@@ -76,17 +86,16 @@ func (r *Registry) Register(cityPath string) error {
 		return err
 	}
 
-	newName := filepath.Base(abs)
 	for _, e := range entries {
 		if e.Path == abs {
 			return nil // already registered — idempotent
 		}
-		if filepath.Base(e.Path) == newName {
-			return fmt.Errorf("city name %q already registered at %s (set a unique workspace.name)", newName, e.Path)
+		if e.EffectiveName() == effectiveName {
+			return fmt.Errorf("city name %q already registered at %s (set a unique workspace.name)", effectiveName, e.Path)
 		}
 	}
 
-	entries = append(entries, CityEntry{Path: abs})
+	entries = append(entries, CityEntry{Path: abs, Name: effectiveName})
 	return r.saveLocked(entries)
 }
 

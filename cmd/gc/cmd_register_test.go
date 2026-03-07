@@ -72,7 +72,7 @@ func TestDoUnregister(t *testing.T) {
 
 	// Register first.
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
-	if err := reg.Register(cityPath); err != nil {
+	if err := reg.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +114,7 @@ func TestDoCities(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
-	if err := reg.Register(cityPath); err != nil {
+	if err := reg.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 

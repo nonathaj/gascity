@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/spf13/cobra"
 )
@@ -51,12 +53,21 @@ func doRegister(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Resolve effective city name from config (workspace.name or basename).
+	effectiveName := filepath.Base(cityPath)
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	if cfg, loadErr := config.Load(fsys.OSFS{}, tomlPath); loadErr == nil {
+		if cfg.Workspace.Name != "" {
+			effectiveName = cfg.Workspace.Name
+		}
+	}
+
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
-	if err := reg.Register(cityPath); err != nil {
+	if err := reg.Register(cityPath, effectiveName); err != nil {
 		fmt.Fprintf(stderr, "gc register: %v\n", err) //nolint:errcheck
 		return 1
 	}
-	fmt.Fprintf(stdout, "Registered city '%s' (%s)\n", filepath.Base(cityPath), cityPath) //nolint:errcheck
+	fmt.Fprintf(stdout, "Registered city '%s' (%s)\n", effectiveName, cityPath) //nolint:errcheck
 	return 0
 }
 
@@ -132,7 +143,7 @@ func doCities(stdout, stderr io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tPATH") //nolint:errcheck
 	for _, e := range entries {
-		fmt.Fprintf(tw, "%s\t%s\n", e.Name(), e.Path) //nolint:errcheck
+		fmt.Fprintf(tw, "%s\t%s\n", e.EffectiveName(), e.Path) //nolint:errcheck
 	}
 	tw.Flush() //nolint:errcheck
 	return 0

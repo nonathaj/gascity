@@ -422,7 +422,7 @@ func reconcileCities(
 
 	for _, entry := range toStart {
 		path := entry.Path
-		name := entry.Name()
+		name := entry.EffectiveName()
 
 		// Crash-loop backoff: skip cities that panicked recently.
 		// Must read panicHistory under lock since city goroutines write it.
@@ -434,9 +434,9 @@ func reconcileCities(
 			continue
 		}
 
-		// Load city config.
+		// Load city config with provenance so WatchDirs covers included files.
 		tomlPath := filepath.Join(path, "city.toml")
-		cfg, loadErr := config.Load(fsys.OSFS{}, tomlPath)
+		cfg, prov, loadErr := config.LoadWithIncludes(fsys.OSFS{}, tomlPath)
 		if loadErr != nil {
 			fmt.Fprintf(stderr, "gc supervisor: city '%s': %v (skipping)\n", name, loadErr) //nolint:errcheck
 			continue
@@ -478,7 +478,7 @@ func reconcileCities(
 		dops := newDrainOps(sp)
 		poolSessions := computePoolSessions(cfg, cityName, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, path, sp)
-		watchDirs := config.WatchDirs(nil, cfg, path)
+		watchDirs := config.WatchDirs(prov, cfg, path)
 
 		cr := newCityRuntime(CityRuntimeParams{
 			CityPath:          path,
@@ -526,7 +526,6 @@ func reconcileCities(
 		mu.Unlock()
 
 		go func(n, p string, cityFr *events.FileRecorder) {
-			defer close(done)
 			defer func() {
 				if r := recover(); r != nil {
 					fmt.Fprintf(stderr, "gc supervisor: city '%s' panicked: %v\n", n, r) //nolint:errcheck
@@ -572,6 +571,9 @@ func reconcileCities(
 				mu.Lock()
 				delete(cities, p)
 				mu.Unlock()
+				// Signal completion last — ensures all cleanup is done before
+				// waiters (shutdown/unregister paths) proceed.
+				close(done)
 			}()
 			cr.run(cityCtx)
 		}(cityName, path, fr)

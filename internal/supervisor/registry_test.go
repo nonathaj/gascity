@@ -28,7 +28,7 @@ func TestRegistryRegisterAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Register(cityPath); err != nil {
+	if err := r.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -53,11 +53,11 @@ func TestRegistryRegisterIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Register(cityPath); err != nil {
+	if err := r.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 	// Registering again should be a no-op.
-	if err := r.Register(cityPath); err != nil {
+	if err := r.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,10 +83,10 @@ func TestRegistryDuplicateNameRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Register(path1); err != nil {
+	if err := r.Register(path1, ""); err != nil {
 		t.Fatal(err)
 	}
-	err := r.Register(path2)
+	err := r.Register(path2, "")
 	if err == nil {
 		t.Fatal("expected error for duplicate city name")
 	}
@@ -101,7 +101,7 @@ func TestRegistryUnregister(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Register(cityPath); err != nil {
+	if err := r.Register(cityPath, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Unregister(cityPath); err != nil {
@@ -140,10 +140,10 @@ func TestRegistryMultipleCities(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := r.Register(path1); err != nil {
+	if err := r.Register(path1, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Register(path2); err != nil {
+	if err := r.Register(path2, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,9 +168,16 @@ func TestRegistryMultipleCities(t *testing.T) {
 	}
 }
 
-func TestCityEntryName(t *testing.T) {
+func TestCityEntryEffectiveName(t *testing.T) {
+	// Without explicit name, falls back to basename.
 	e := CityEntry{Path: "/home/user/bright-lights"}
-	if e.Name() != "bright-lights" {
-		t.Errorf("expected bright-lights, got %s", e.Name())
+	if e.EffectiveName() != "bright-lights" {
+		t.Errorf("expected bright-lights, got %s", e.EffectiveName())
+	}
+
+	// With explicit name, uses it.
+	e2 := CityEntry{Path: "/home/user/bright-lights", Name: "neon-city"}
+	if e2.EffectiveName() != "neon-city" {
+		t.Errorf("expected neon-city, got %s", e2.EffectiveName())
 	}
 }

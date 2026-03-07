@@ -23,6 +23,7 @@ type FileRecorder struct {
 	file   *os.File
 	seq    uint64
 	stderr io.Writer
+	closed bool
 }
 
 // NewFileRecorder opens (or creates) the event log at path. It scans any
@@ -107,10 +108,15 @@ func (r *FileRecorder) Watch(ctx context.Context, afterSeq uint64) (Watcher, err
 	}, nil
 }
 
-// Close closes the underlying file.
+// Close closes the underlying file. It is safe to call multiple times;
+// subsequent calls after the first return nil.
 func (r *FileRecorder) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return nil
+	}
+	r.closed = true
 	return r.file.Close()
 }
 
