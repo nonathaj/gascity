@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 // fakeCityResolver implements CityResolver for testing.
@@ -246,5 +248,103 @@ func TestSupervisorEmptyCityName(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestSupervisorGlobalEventList(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	// Record events in each city's event provider.
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "b1"})
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	req := httptest.NewRequest("GET", "/v0/events", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 {
+		t.Errorf("total = %d, want 2", resp.Total)
+	}
+
+	// Verify events are tagged with city names.
+	cities := make(map[string]bool)
+	for _, e := range resp.Items {
+		cities[e.City] = true
+	}
+	if !cities["alpha"] || !cities["beta"] {
+		t.Errorf("expected events from both cities, got: %v", cities)
+	}
+}
+
+func TestSupervisorGlobalEventListWithFilter(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "a1"})
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{"alpha": s1})
+
+	req := httptest.NewRequest("GET", "/v0/events?type=agent.started", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("total = %d, want 1", resp.Total)
+	}
+	if resp.Items[0].Type != events.AgentStarted {
+		t.Errorf("type = %q, want %q", resp.Items[0].Type, events.AgentStarted)
+	}
+}
+
+func TestSupervisorGlobalEventListEmpty(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest("GET", "/v0/events", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
 	}
 }

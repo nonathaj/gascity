@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/events"
 )
 
 // CityInfo describes a managed city for the /v0/cities endpoint.
@@ -95,6 +97,14 @@ func (sm *SupervisorMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if path == "/health" && r.Method == http.MethodGet {
 		sm.handleHealth(w, r)
+		return
+	}
+	if path == "/v0/events/stream" && r.Method == http.MethodGet {
+		sm.handleGlobalEventStream(w, r)
+		return
+	}
+	if path == "/v0/events" && r.Method == http.MethodGet {
+		sm.handleGlobalEventList(w, r)
 		return
 	}
 
@@ -186,6 +196,87 @@ func (sm *SupervisorMux) handleCities(w http.ResponseWriter, _ *http.Request) {
 	cities := sm.resolver.ListCities()
 	sort.Slice(cities, func(i, j int) bool { return cities[i].Name < cities[j].Name })
 	writeJSON(w, http.StatusOK, listResponse{Items: cities, Total: len(cities)})
+}
+
+// handleGlobalEventStream streams SSE events from all running cities,
+// tagged with city name. The cursor format for reconnection is
+// "city1:seq1,city2:seq2" via Last-Event-ID or ?after_cursor.
+func (sm *SupervisorMux) handleGlobalEventStream(w http.ResponseWriter, r *http.Request) {
+	mux := sm.buildMultiplexer()
+
+	// Parse cursor from Last-Event-ID or query param.
+	cursor := r.Header.Get("Last-Event-ID")
+	if cursor == "" {
+		cursor = r.URL.Query().Get("after_cursor")
+	}
+	cursors := events.ParseCursor(cursor)
+
+	mw, err := mux.Watch(r.Context(), cursors)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "internal", "failed to start global event watcher: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	if err := http.NewResponseController(w).Flush(); err != nil {
+		_ = err
+	}
+
+	// Stream tagged events with composite cursor IDs.
+	watcher := events.WrapForSSE(mw)
+	streamEventsWithWatcher(r.Context(), w, watcher)
+}
+
+// handleGlobalEventList returns events from all running cities, sorted
+// by timestamp, with each event tagged with its source city.
+func (sm *SupervisorMux) handleGlobalEventList(w http.ResponseWriter, r *http.Request) {
+	mux := sm.buildMultiplexer()
+
+	q := r.URL.Query()
+	filter := events.Filter{
+		Type:  q.Get("type"),
+		Actor: q.Get("actor"),
+	}
+	if v := q.Get("since"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			filter.Since = time.Now().Add(-d)
+		}
+	}
+
+	evts, err := mux.ListAll(filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	if evts == nil {
+		evts = []events.TaggedEvent{}
+	}
+	writeJSON(w, http.StatusOK, listResponse{Items: evts, Total: len(evts)})
+}
+
+// buildMultiplexer creates a Multiplexer from all running cities'
+// event providers.
+func (sm *SupervisorMux) buildMultiplexer() *events.Multiplexer {
+	mux := events.NewMultiplexer()
+	cities := sm.resolver.ListCities()
+	for _, c := range cities {
+		if !c.Running {
+			continue
+		}
+		state := sm.resolver.CityState(c.Name)
+		if state == nil {
+			continue
+		}
+		ep := state.EventProvider()
+		if ep == nil {
+			continue
+		}
+		mux.Add(c.Name, ep)
+	}
+	return mux
 }
 
 func (sm *SupervisorMux) handleHealth(w http.ResponseWriter, _ *http.Request) {
