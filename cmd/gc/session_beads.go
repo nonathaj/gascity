@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -117,33 +118,45 @@ func syncSessionBeads(
 
 		if b.Metadata["config_hash"] != coreHash {
 			// Core config changed — bump generation and token first,
-			// then write config_hash last to commit atomically.
+			// then write config_hash last as the "commit" signal.
+			// If any preceding write fails, skip config_hash so the
+			// stale hash triggers a retry on the next tick.
 			gen, _ := strconv.Atoi(b.Metadata["generation"])
 			gen++
-			setMeta(store, b.ID, "generation", strconv.Itoa(gen), stderr)
-			setMeta(store, b.ID, "instance_token", generateToken(), stderr)
-			setMeta(store, b.ID, "config_hash", coreHash, stderr) // commit signal
+			ok := true
+			if setMeta(store, b.ID, "generation", strconv.Itoa(gen), stderr) != nil {
+				ok = false
+			}
+			if setMeta(store, b.ID, "instance_token", generateToken(), stderr) != nil {
+				ok = false
+			}
+			if ok {
+				setMeta(store, b.ID, "config_hash", coreHash, stderr) //nolint:errcheck // commit signal
+			}
 			changed = true
 		}
 
 		if b.Metadata["live_hash"] != liveHash {
-			setMeta(store, b.ID, "live_hash", liveHash, stderr)
+			setMeta(store, b.ID, "live_hash", liveHash, stderr) //nolint:errcheck
 			changed = true
 		}
 
 		// Update state.
 		if b.Metadata["state"] != state {
-			setMeta(store, b.ID, "state", state, stderr)
+			setMeta(store, b.ID, "state", state, stderr) //nolint:errcheck
 			changed = true
 		}
 
-		// Always update synced_at.
-		_ = changed
-		setMeta(store, b.ID, "synced_at", now.Format("2006-01-02T15:04:05Z07:00"), stderr)
+		// Only update synced_at when something actually changed,
+		// to avoid disk thrashing on every tick.
+		if changed {
+			setMeta(store, b.ID, "synced_at", now.Format("2006-01-02T15:04:05Z07:00"), stderr) //nolint:errcheck
+		}
 	}
 
 	// Classify beads with no matching runnable agent.
-	// - If the session name is in configuredNames but not in desired (runnable),
+	// - If the session name is in configuredNames (or is a pool/multi
+	//   instance of a configured template) but not in desired (runnable),
 	//   the agent is suspended/disabled — mark "suspended".
 	// - If the session name is not in configuredNames at all, the agent was
 	//   removed from config — mark "orphaned".
@@ -156,15 +169,15 @@ func syncSessionBeads(
 		if b.Status == "closed" {
 			continue
 		}
-		if configuredNames[sn] {
+		if isConfigured(sn, configuredNames) {
 			// Still in config but not runnable (suspended/disabled).
 			if b.Metadata["state"] != "suspended" {
-				setMeta(store, b.ID, "state", "suspended", stderr)
+				setMeta(store, b.ID, "state", "suspended", stderr) //nolint:errcheck
 			}
 		} else {
 			// Not in config at all — orphaned.
 			if b.Metadata["state"] != "orphaned" {
-				setMeta(store, b.ID, "state", "orphaned", stderr)
+				setMeta(store, b.ID, "state", "orphaned", stderr) //nolint:errcheck
 			}
 		}
 	}
@@ -182,11 +195,31 @@ func configuredSessionNames(cfg *config.City, cityName string) map[string]bool {
 	return names
 }
 
-// setMeta wraps store.SetMetadata with error logging.
-func setMeta(store beads.Store, id, key, value string, stderr io.Writer) {
+// setMeta wraps store.SetMetadata with error logging. Returns the error
+// so callers can abort dependent writes (e.g., skip config_hash on failure).
+func setMeta(store beads.Store, id, key, value string, stderr io.Writer) error {
 	if err := store.SetMetadata(id, key, value); err != nil {
 		fmt.Fprintf(stderr, "session beads: setting %s on %s: %v\n", key, id, err) //nolint:errcheck
+		return err
 	}
+	return nil
+}
+
+// isConfigured checks whether a session name belongs to a configured agent.
+// Exact matches cover normal agents. For pool/multi instances (e.g.,
+// "city-worker-1"), we check if any configured template name is a prefix,
+// since instances are named by appending a suffix to the template session name.
+func isConfigured(sn string, configuredNames map[string]bool) bool {
+	if configuredNames[sn] {
+		return true
+	}
+	// Pool/multi instances: "city-worker-1" has template "city-worker".
+	for name := range configuredNames {
+		if strings.HasPrefix(sn, name+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 // generateToken returns a cryptographically random hex token.

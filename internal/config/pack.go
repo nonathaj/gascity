@@ -561,21 +561,6 @@ func loadPack(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen map[
 			agents[i].OverlayDir = adjustFragmentPath(
 				agents[i].OverlayDir, topoDir, cityRoot)
 		}
-		// Qualify depends_on entries so they match the target's QualifiedName
-		// after stamping. Pack agents get Dir = rigName, making their
-		// QualifiedName "rig/name", but DependsOn entries are written as
-		// bare names in the pack TOML. Rewrite them to match.
-		if rigName != "" && len(agents[i].DependsOn) > 0 {
-			qualified := make([]string, len(agents[i].DependsOn))
-			for j, dep := range agents[i].DependsOn {
-				if !strings.Contains(dep, "/") {
-					qualified[j] = rigName + "/" + dep
-				} else {
-					qualified[j] = dep
-				}
-			}
-			agents[i].DependsOn = qualified
-		}
 	}
 
 	// Merge: included agents first (base), then parent agents (override).
@@ -586,6 +571,27 @@ func loadPack(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen map[
 		adjustPackPatchPaths(&tc.Patches, topoDir, cityRoot)
 		if err := applyPackAgentPatches(includedAgents, tc.Patches.Agents); err != nil {
 			return nil, nil, nil, nil, nil, err
+		}
+	}
+
+	// Qualify depends_on entries AFTER patches so that patch-supplied
+	// bare names are also qualified. Pack agents have Dir = rigName,
+	// making their QualifiedName "rig/name", but DependsOn entries
+	// are written as bare names in pack TOML. Rewrite them to match.
+	if rigName != "" {
+		for i := range includedAgents {
+			if includedAgents[i].Dir != rigName || len(includedAgents[i].DependsOn) == 0 {
+				continue
+			}
+			qualified := make([]string, len(includedAgents[i].DependsOn))
+			for j, dep := range includedAgents[i].DependsOn {
+				if !strings.Contains(dep, "/") {
+					qualified[j] = rigName + "/" + dep
+				} else {
+					qualified[j] = dep
+				}
+			}
+			includedAgents[i].DependsOn = qualified
 		}
 	}
 

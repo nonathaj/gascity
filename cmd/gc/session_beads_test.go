@@ -271,6 +271,46 @@ func TestSyncSessionBeads_ClosedBeadCreatesNew(t *testing.T) {
 	}
 }
 
+func TestSyncSessionBeads_PoolInstanceSuspended(t *testing.T) {
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+
+	// Pool instances have session names like "city-worker-1", "city-worker-2".
+	// The template session name is "city-worker".
+	agents := []agent.Agent{
+		&agent.Fake{
+			FakeName:          "worker-1",
+			FakeSessionName:   "city-worker-1",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+		&agent.Fake{
+			FakeName:          "worker-2",
+			FakeSessionName:   "city-worker-2",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+	}
+
+	var stderr bytes.Buffer
+	// configuredNames has the template name, not instance names.
+	configuredNames := map[string]bool{"city-worker": true}
+	syncSessionBeads(store, agents, configuredNames, clk, &stderr)
+
+	// Now suspend: remove instances from runnable agents but keep template in configuredNames.
+	clk.Advance(5 * time.Second)
+	syncSessionBeads(store, nil, configuredNames, clk, &stderr)
+
+	// Both pool instances should be "suspended", not "orphaned".
+	all, _ := store.ListByLabel(sessionBeadLabel, 0)
+	for _, b := range all {
+		if b.Metadata["state"] != "suspended" {
+			t.Errorf("pool instance %s state = %q, want %q",
+				b.Metadata["session_name"], b.Metadata["state"], "suspended")
+		}
+	}
+}
+
 func TestSyncSessionBeads_SuspendedAgentNotOrphaned(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
