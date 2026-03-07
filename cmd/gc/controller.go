@@ -335,6 +335,7 @@ func controllerLoop(
 		poolSessions:      poolSessions,
 		poolDeathHandlers: poolDeathHandlers,
 		suspendedNames:    suspendedNames,
+		logPrefix:         "gc start",
 		stdout:            stdout,
 		stderr:            stderr,
 	}

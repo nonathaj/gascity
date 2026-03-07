@@ -56,13 +56,15 @@ type SupervisorMux struct {
 // NewSupervisorMux creates a SupervisorMux that routes requests to cities
 // resolved by the given CityResolver.
 func NewSupervisorMux(resolver CityResolver, readOnly bool, version string, startedAt time.Time) *SupervisorMux {
-	return &SupervisorMux{
+	sm := &SupervisorMux{
 		resolver:  resolver,
 		readOnly:  readOnly,
 		version:   version,
 		startedAt: startedAt,
 		cache:     make(map[string]cachedCityServer),
 	}
+	sm.server = &http.Server{Handler: sm.Handler()}
+	return sm
 }
 
 // Handler returns an http.Handler with the standard middleware chain applied.
@@ -76,15 +78,11 @@ func (sm *SupervisorMux) Handler() http.Handler {
 
 // Serve accepts connections on lis. Blocks until stopped.
 func (sm *SupervisorMux) Serve(lis net.Listener) error {
-	sm.server = &http.Server{Handler: sm.Handler()}
 	return sm.server.Serve(lis)
 }
 
 // Shutdown gracefully shuts down the server.
 func (sm *SupervisorMux) Shutdown(ctx context.Context) error {
-	if sm.server == nil {
-		return nil
-	}
 	return sm.server.Shutdown(ctx)
 }
 

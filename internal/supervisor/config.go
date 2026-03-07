@@ -44,7 +44,7 @@ func (s Section) PatrolIntervalDuration() time.Duration {
 		return 10 * time.Second
 	}
 	d, err := time.ParseDuration(s.PatrolInterval)
-	if err != nil {
+	if err != nil || d <= 0 {
 		return 10 * time.Second
 	}
 	return d
