@@ -59,10 +59,23 @@ func TestAdoptionBarrier_AdoptsRunning(t *testing.T) {
 		t.Errorf("Total = %d, want 2", result.Total)
 	}
 
-	// Verify beads were created.
+	// Verify beads were created with correct labels.
 	beadList, _ := store.ListByLabel(sessionBeadLabel, 0)
 	if len(beadList) != 2 {
 		t.Errorf("beads count = %d, want 2", len(beadList))
+	}
+	// Verify agent: label is present on adopted beads.
+	for _, b := range beadList {
+		hasAgentLabel := false
+		for _, l := range b.Labels {
+			if len(l) > len("agent:") && l[:len("agent:")] == "agent:" {
+				hasAgentLabel = true
+				break
+			}
+		}
+		if !hasAgentLabel {
+			t.Errorf("bead %q missing agent: label, labels = %v", b.Title, b.Labels)
+		}
 	}
 }
 
@@ -199,7 +212,9 @@ func TestAdoptionBarrier_NilStore(t *testing.T) {
 
 func TestAdoptionBarrier_PoolSlotDetection(t *testing.T) {
 	store := beads.NewMemStore()
-	sp := &fakeAdoptionProvider{running: []string{"test-city-worker-3"}}
+	// Pool instance session name: base "worker" produces session "worker",
+	// so instance "worker-3" has session name "worker-3".
+	sp := &fakeAdoptionProvider{running: []string{"worker-3"}}
 	cfg := &config.City{
 		Agents: []config.Agent{
 			{Name: "worker", Pool: &config.PoolConfig{Min: 1, Max: 5}},
@@ -208,18 +223,41 @@ func TestAdoptionBarrier_PoolSlotDetection(t *testing.T) {
 	var stderr bytes.Buffer
 
 	result, _ := runAdoptionBarrier(store, sp, cfg, "test-city", clock.Real{}, &stderr, true)
-	// The session name test-city-worker-3 won't match config agent "worker"
-	// (whose session name is test-city-worker), so it's adopted as unknown.
-	// But pool slot -3 should still be parsed from the suffix.
+	// Pool instance "worker-3" should resolve to config agent "worker"
+	// via resolvePoolBase, with pool slot 3.
 	found := false
 	for _, d := range result.Details {
-		if d.SessionName == "test-city-worker-3" && d.PoolSlot == 3 {
+		if d.SessionName == "worker-3" && d.PoolSlot == 3 && d.AgentName == "worker" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected detail with PoolSlot=3 for test-city-worker-3, got %+v", result.Details)
+		t.Errorf("expected detail with PoolSlot=3, AgentName=worker for worker-3, got %+v", result.Details)
+	}
+}
+
+func TestAdoptionBarrier_PoolOutOfBounds(t *testing.T) {
+	store := beads.NewMemStore()
+	// Pool instance exceeding max (5).
+	sp := &fakeAdoptionProvider{running: []string{"worker-7"}}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", Pool: &config.PoolConfig{Min: 1, Max: 5}},
+		},
+	}
+	var stderr bytes.Buffer
+
+	result, _ := runAdoptionBarrier(store, sp, cfg, "test-city", clock.Real{}, &stderr, true)
+	found := false
+	for _, d := range result.Details {
+		if d.SessionName == "worker-7" && d.PoolSlot == 7 && d.OutOfBounds {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected out-of-bounds detail for worker-7, got %+v", result.Details)
 	}
 }
 

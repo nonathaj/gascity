@@ -92,12 +92,15 @@ func runAdoptionBarrier(
 	}
 
 	// Build config agent lookup: session_name -> agent config.
+	// Also build a reverse lookup by qualified name for pool instance resolution.
 	st := cfg.Workspace.SessionTemplate
 	agentBySession := make(map[string]*config.Agent, len(cfg.Agents))
+	agentByQN := make(map[string]*config.Agent, len(cfg.Agents))
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
 		sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
 		agentBySession[sn] = a
+		agentByQN[a.QualifiedName()] = a
 	}
 
 	now := clk.Now().UTC()
@@ -114,7 +117,16 @@ func runAdoptionBarrier(
 		}
 
 		// Find matching config agent.
+		// First try exact session name match, then try resolving pool
+		// instances by stripping the numeric suffix and matching the
+		// base template name (e.g., "city-worker-3" -> "worker").
 		cfgAgent, isConfigAgent := agentBySession[sessionName]
+		if !isConfigAgent {
+			if base := resolvePoolBase(sessionName, cityName, st, agentByQN); base != nil {
+				cfgAgent = base
+				isConfigAgent = true
+			}
+		}
 
 		// Build bead metadata. Config/live hashes are left empty —
 		// syncSessionBeads populates them from built agent objects.
@@ -155,7 +167,7 @@ func runAdoptionBarrier(
 		_, createErr := store.Create(beads.Bead{
 			Title:    detail.AgentName,
 			Type:     sessionBeadType,
-			Labels:   []string{sessionBeadLabel},
+			Labels:   []string{sessionBeadLabel, "agent:" + detail.AgentName},
 			Metadata: meta,
 		})
 		if createErr != nil {
@@ -170,6 +182,31 @@ func runAdoptionBarrier(
 	// Step 4: Barrier gate — all running sessions must have beads.
 	passed := result.Skipped == 0
 	return result, passed
+}
+
+// resolvePoolBase attempts to match a pool instance session name back to its
+// base template agent. It strips the numeric suffix (e.g., "worker-3" -> "worker")
+// and checks whether the resulting base name corresponds to a configured agent.
+// Returns nil if no match is found.
+func resolvePoolBase(sessionName, cityName, sessionTemplate string, agentByQN map[string]*config.Agent) *config.Agent {
+	slot := parsePoolSlot(sessionName)
+	if slot == 0 {
+		return nil
+	}
+	// Strip the "-N" suffix from the session name to get the base session name.
+	suffix := fmt.Sprintf("-%d", slot)
+	baseSessName := sessionName[:len(sessionName)-len(suffix)]
+	// Check each config agent to see if its session name matches the base.
+	for _, a := range agentByQN {
+		if a.Pool == nil {
+			continue
+		}
+		sn := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+		if sn == baseSessName {
+			return a
+		}
+	}
+	return nil
 }
 
 // parsePoolSlot extracts the numeric pool slot from a session name suffix.

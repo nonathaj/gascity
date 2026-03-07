@@ -106,7 +106,7 @@ func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName st
 	agentEnv := map[string]string{
 		// New canonical vars
 		"GC_SESSION_NAME": sessName,
-		"GC_TEMPLATE":     qualifiedName,
+		"GC_TEMPLATE":     templateNameFor(cfgAgent, qualifiedName),
 		// Legacy compat vars
 		"GC_AGENT": qualifiedName,
 		"GC_CITY":  p.cityPath,
@@ -226,4 +226,14 @@ func effectiveOverlayDirs(cityDirs []string, rigDirs map[string][]string, rigNam
 	merged = append(merged, cityDirs...)
 	merged = append(merged, rigSpecific...)
 	return merged
+}
+
+// templateNameFor returns the configuration template name for an agent.
+// For pool/multi instances, this is the original template name (PoolName).
+// For regular agents, it's the qualified name.
+func templateNameFor(cfgAgent *config.Agent, qualifiedName string) string {
+	if cfgAgent.PoolName != "" {
+		return cfgAgent.PoolName
+	}
+	return qualifiedName
 }

@@ -30,7 +30,11 @@ func TestSessionKeyRoundTrip(t *testing.T) {
 	}
 
 	// Verify file permissions.
-	info, err := os.Stat(sessionKeyPath(cityPath, sessionID))
+	keyPath, pathErr := sessionKeyPath(cityPath, sessionID)
+	if pathErr != nil {
+		t.Fatalf("sessionKeyPath: %v", pathErr)
+	}
+	info, err := os.Stat(keyPath)
 	if err != nil {
 		t.Fatalf("stat key file: %v", err)
 	}
@@ -89,5 +93,33 @@ func TestRemoveSessionKey_NotFound(t *testing.T) {
 	// Should not error on nonexistent file.
 	if err := removeSessionKey(cityPath, "nonexistent"); err != nil {
 		t.Fatalf("removeSessionKey nonexistent: %v", err)
+	}
+}
+
+func TestSessionKeyPath_Traversal(t *testing.T) {
+	tests := []string{
+		"../etc/passwd",
+		"foo/bar",
+		"..\\windows",
+		".",
+	}
+	for _, id := range tests {
+		_, err := sessionKeyPath("/tmp/city", id)
+		if err == nil {
+			t.Errorf("sessionKeyPath(%q) should fail for path traversal", id)
+		}
+	}
+}
+
+func TestSessionKey_TraversalBlocked(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := writeSessionKey(cityPath, "../escape", "token"); err == nil {
+		t.Error("writeSessionKey should reject path traversal")
+	}
+	if _, err := readSessionKey(cityPath, "../escape"); err == nil {
+		t.Error("readSessionKey should reject path traversal")
+	}
+	if err := removeSessionKey(cityPath, "../escape"); err == nil {
+		t.Error("removeSessionKey should reject path traversal")
 	}
 }
