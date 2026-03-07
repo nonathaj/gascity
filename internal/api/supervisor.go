@@ -25,8 +25,6 @@ type CityResolver interface {
 	CityState(name string) State
 }
 
-// SupervisorMux routes API requests to per-city handlers with
-// city-namespaced URL paths. It handles:
 // cachedCityServer pairs a State with its pre-built Server for caching.
 type cachedCityServer struct {
 	state State

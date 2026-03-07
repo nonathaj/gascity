@@ -74,6 +74,10 @@ func (r *Registry) Register(cityPath, effectiveName string) error {
 	if err != nil {
 		return fmt.Errorf("resolving path: %w", err)
 	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("resolving symlinks: %w", err)
+	}
 	if effectiveName == "" {
 		effectiveName = filepath.Base(abs)
 	}
@@ -125,6 +129,10 @@ func (r *Registry) Unregister(cityPath string) error {
 	abs, err := filepath.Abs(cityPath)
 	if err != nil {
 		return fmt.Errorf("resolving path: %w", err)
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("resolving symlinks: %w", err)
 	}
 
 	r.mu.Lock()

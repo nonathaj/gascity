@@ -22,6 +22,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/spf13/cobra"
@@ -464,8 +465,16 @@ func reconcileCities(
 			continue
 		}
 
-		// Load city config with provenance so WatchDirs covers included files.
+		// Auto-fetch remote packs before full config load (same as doStart).
 		tomlPath := filepath.Join(path, "city.toml")
+		if quickCfg, qErr := config.Load(fsys.OSFS{}, tomlPath); qErr == nil && len(quickCfg.Packs) > 0 {
+			if fErr := config.FetchPacks(quickCfg.Packs, path); fErr != nil {
+				fmt.Fprintf(stderr, "gc supervisor: city '%s': fetching packs: %v (skipping)\n", name, fErr) //nolint:errcheck
+				continue
+			}
+		}
+
+		// Load city config with provenance so WatchDirs covers included files.
 		cfg, prov, loadErr := config.LoadWithIncludes(fsys.OSFS{}, tomlPath)
 		if loadErr != nil {
 			fmt.Fprintf(stderr, "gc supervisor: city '%s': %v (skipping)\n", name, loadErr) //nolint:errcheck
@@ -496,6 +505,12 @@ func reconcileCities(
 			effectiveProviderName(cfg.Session.Provider), cfg.Session, cityName)
 		if spErr != nil {
 			fmt.Fprintf(stderr, "gc supervisor: city '%s': session provider: %v (skipping)\n", cityName, spErr) //nolint:errcheck
+			continue
+		}
+
+		// Fail-fast image pre-check for container providers (same as doStart).
+		if err := checkAgentImages(sp, cfg.Agents, stderr); err != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': %v (skipping)\n", cityName, err) //nolint:errcheck
 			continue
 		}
 
@@ -594,17 +609,16 @@ func reconcileCities(
 					}
 					pr.backoff = time.Now().Add(delay)
 					fmt.Fprintf(stderr, "gc supervisor: city '%s' panic #%d, next retry in %s\n", n, pr.count, delay) //nolint:errcheck
+					delete(cities, p)
 					mu.Unlock()
 				} else {
-					// Normal exit (context canceled) — reset panic counter.
+					// Normal exit (context canceled) — reset panic counter
+					// and remove from map in a single critical section.
 					mu.Lock()
 					delete(panicHistory, p)
+					delete(cities, p)
 					mu.Unlock()
 				}
-				// Remove from map so reconcile can restart this city.
-				mu.Lock()
-				delete(cities, p)
-				mu.Unlock()
 				// Signal completion last — ensures all cleanup is done before
 				// waiters (shutdown/unregister paths) proceed.
 				close(done)
@@ -701,6 +715,20 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 	// Validate agents.
 	if err := config.ValidateAgents(cfg.Agents); err != nil {
 		return fmt.Errorf("validate agents: %w", err)
+	}
+
+	// Validate install_agent_hooks (workspace + all agents).
+	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
+		if err := hooks.Validate(ih); err != nil {
+			return fmt.Errorf("workspace hooks: %w", err)
+		}
+	}
+	for _, a := range cfg.Agents {
+		if len(a.InstallAgentHooks) > 0 {
+			if err := hooks.Validate(a.InstallAgentHooks); err != nil {
+				return fmt.Errorf("agent %q hooks: %w", a.QualifiedName(), err)
+			}
+		}
 	}
 
 	return nil
