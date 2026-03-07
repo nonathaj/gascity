@@ -2,6 +2,7 @@ package chatsession
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -13,7 +14,7 @@ func TestCreate(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "my chat", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "my chat", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestSuspendAndResume(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestClose(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestCloseSuspended(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -180,11 +181,11 @@ func TestList(t *testing.T) {
 	mgr := NewManager(store, sp)
 
 	// Create two sessions with different templates.
-	_, err := mgr.Create(context.Background(), "helper", "first", "claude", "/tmp", "claude", nil, session.Config{})
+	_, err := mgr.Create(context.Background(), "helper", "first", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create 1: %v", err)
 	}
-	info2, err := mgr.Create(context.Background(), "review", "second", "claude", "/tmp", "claude", nil, session.Config{})
+	info2, err := mgr.Create(context.Background(), "review", "second", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create 2: %v", err)
 	}
@@ -235,7 +236,7 @@ func TestPeek(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -257,7 +258,7 @@ func TestPeekSuspended(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -276,7 +277,7 @@ func TestAttachClosedErrors(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -311,7 +312,7 @@ func TestListExcludesClosedFromActiveFilter(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -334,7 +335,7 @@ func TestAttachActiveReattach(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -360,7 +361,7 @@ func TestSuspendCrashedSession(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -387,7 +388,7 @@ func TestCreateStoresCommand(t *testing.T) {
 	sp := session.NewFake()
 	mgr := NewManager(store, sp)
 
-	info, err := mgr.Create(context.Background(), "helper", "", "claude --dangerously-skip-permissions", "/tmp", "claude", nil, session.Config{})
+	info, err := mgr.Create(context.Background(), "helper", "", "claude --dangerously-skip-permissions", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -407,12 +408,170 @@ func TestCreateStoresCommand(t *testing.T) {
 	}
 }
 
+func TestCreateWithSessionID(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	resume := ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude --dangerously-skip-permissions", "/tmp", "claude", nil, resume, session.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Session key should be generated.
+	if info.SessionKey == "" {
+		t.Fatal("SessionKey is empty")
+	}
+	// Should look like a UUID.
+	if len(info.SessionKey) != 36 {
+		t.Errorf("SessionKey length = %d, want 36 (UUID)", len(info.SessionKey))
+	}
+
+	// Resume metadata should be stored.
+	if info.ResumeFlag != "--resume" {
+		t.Errorf("ResumeFlag = %q, want %q", info.ResumeFlag, "--resume")
+	}
+	if info.ResumeStyle != "flag" {
+		t.Errorf("ResumeStyle = %q, want %q", info.ResumeStyle, "flag")
+	}
+
+	// The start command should include --session-id <uuid>.
+	started := sp.LastStartConfig(info.SessionName)
+	if started == nil {
+		t.Fatal("session was not started")
+	}
+	if !strings.Contains(started.Command, "--session-id "+info.SessionKey) {
+		t.Errorf("start command = %q, should contain --session-id %s", started.Command, info.SessionKey)
+	}
+}
+
+func TestBuildResumeCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		info Info
+		want string
+	}{
+		{
+			name: "provider with resume flag",
+			info: Info{
+				Command:     "claude --dangerously-skip-permissions",
+				Provider:    "claude",
+				SessionKey:  "abc-123",
+				ResumeFlag:  "--resume",
+				ResumeStyle: "flag",
+			},
+			want: "claude --dangerously-skip-permissions --resume abc-123",
+		},
+		{
+			name: "provider with subcommand style",
+			info: Info{
+				Command:     "codex",
+				Provider:    "codex",
+				SessionKey:  "abc-123",
+				ResumeFlag:  "resume",
+				ResumeStyle: "subcommand",
+			},
+			want: "codex resume abc-123",
+		},
+		{
+			name: "no resume flag falls back to command",
+			info: Info{
+				Command:    "claude --dangerously-skip-permissions",
+				Provider:   "claude",
+				SessionKey: "abc-123",
+			},
+			want: "claude --dangerously-skip-permissions",
+		},
+		{
+			name: "no session key falls back to command",
+			info: Info{
+				Command:    "claude --dangerously-skip-permissions",
+				Provider:   "claude",
+				ResumeFlag: "--resume",
+			},
+			want: "claude --dangerously-skip-permissions",
+		},
+		{
+			name: "no command falls back to provider",
+			info: Info{
+				Provider:   "claude",
+				SessionKey: "abc-123",
+				ResumeFlag: "--resume",
+			},
+			want: "claude --resume abc-123",
+		},
+		{
+			name: "subcommand with flags in command",
+			info: Info{
+				Command:     "codex --model o3",
+				Provider:    "codex",
+				SessionKey:  "abc-123",
+				ResumeFlag:  "resume",
+				ResumeStyle: "subcommand",
+			},
+			want: "codex resume abc-123 --model o3",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildResumeCommand(tt.info)
+			if got != tt.want {
+				t.Errorf("BuildResumeCommand() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateWithResumeFlagNoSessionIDFlag(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := session.NewFake()
+	mgr := NewManager(store, sp)
+
+	// Provider supports resume but NOT Generate & Pass (no SessionIDFlag).
+	resume := ProviderResume{
+		ResumeFlag:  "resume",
+		ResumeStyle: "subcommand",
+		// SessionIDFlag deliberately empty.
+	}
+
+	info, err := mgr.Create(context.Background(), "helper", "", "codex --model o3", "/tmp", "codex", nil, resume, session.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// No session key should be generated since SessionIDFlag is empty.
+	if info.SessionKey != "" {
+		t.Errorf("SessionKey = %q, want empty (no SessionIDFlag)", info.SessionKey)
+	}
+
+	// The start command should be the original command (no --session-id injection).
+	started := sp.LastStartConfig(info.SessionName)
+	if started == nil {
+		t.Fatal("session was not started")
+	}
+	if started.Command != "codex --model o3" {
+		t.Errorf("start command = %q, want %q", started.Command, "codex --model o3")
+	}
+
+	// BuildResumeCommand should fall back to stored command (no key to resume with).
+	resumeCmd := BuildResumeCommand(info)
+	if resumeCmd != "codex --model o3" {
+		t.Errorf("BuildResumeCommand() = %q, want %q (fallback to stored command)", resumeCmd, "codex --model o3")
+	}
+}
+
 func TestCreateFailsCleanup(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := session.NewFailFake() // all operations fail
 	mgr := NewManager(store, sp)
 
-	_, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, session.Config{})
+	_, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, session.Config{})
 	if err == nil {
 		t.Fatal("Create should fail when provider fails")
 	}

@@ -1118,6 +1118,18 @@
         "instructions_file": {
           "type": "string",
           "description": "InstructionsFile is the filename the provider reads for project instructions\n(e.g., \"CLAUDE.md\", \"AGENTS.md\"). Empty defaults to \"AGENTS.md\"."
+        },
+        "resume_flag": {
+          "type": "string",
+          "description": "ResumeFlag is the CLI flag for resuming a session by ID.\nEmpty means the provider does not support resume.\nExamples: \"--resume\" (claude), \"resume\" (codex)"
+        },
+        "resume_style": {
+          "type": "string",
+          "description": "ResumeStyle controls how ResumeFlag is applied:\n  \"flag\"       → command --resume \u003ckey\u003e              (default)\n  \"subcommand\" → command resume \u003ckey\u003e"
+        },
+        "session_id_flag": {
+          "type": "string",
+          "description": "SessionIDFlag is the CLI flag for creating a session with a specific ID.\nEnables the Generate \u0026 Pass strategy for session key management.\nExample: \"--session-id\" (claude)"
         }
       },
       "additionalProperties": false,

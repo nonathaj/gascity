@@ -317,6 +317,20 @@ func (f *Fake) SendKeys(name string, keys ...string) error {
 	return nil
 }
 
+// LastStartConfig returns the Config used in the most recent Start call for
+// the named session, or nil if no Start was recorded for that name.
+func (f *Fake) LastStartConfig(name string) *Config {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.Calls) - 1; i >= 0; i-- {
+		if f.Calls[i].Method == "Start" && f.Calls[i].Name == name {
+			cfg := f.Calls[i].Config
+			return &cfg
+		}
+	}
+	return nil
+}
+
 // RunLive records the call and returns nil (or error if broken).
 func (f *Fake) RunLive(name string, _ Config) error {
 	f.mu.Lock()

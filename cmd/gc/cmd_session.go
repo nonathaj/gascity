@@ -121,7 +121,13 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 	}
 
-	info, err := mgr.Create(context.Background(), templateName, title, resolved.CommandString(), workDir, resolved.Name, resolved.Env, hints)
+	resume := chatsession.ProviderResume{
+		ResumeFlag:    resolved.ResumeFlag,
+		ResumeStyle:   resolved.ResumeStyle,
+		SessionIDFlag: resolved.SessionIDFlag,
+	}
+
+	info, err := mgr.Create(context.Background(), templateName, title, resolved.CommandString(), workDir, resolved.Name, resolved.Env, resume, hints)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -225,8 +231,8 @@ func newSessionAttachCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Attach to a running session or resume a suspended one.
 
 If the session is active with a live tmux session, reattaches.
-If the session is suspended or the tmux session died, restarts
-with a fresh conversation (Phase 1 — provider resume in Phase 2).`,
+If the session is suspended or the tmux session died, resumes
+using the provider's resume mechanism (if supported) or restarts.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if cmdSessionAttach(args, stdout, stderr) != 0 {
@@ -279,24 +285,20 @@ func cmdSessionAttach(args []string, stdout, stderr io.Writer) int {
 }
 
 // buildResumeCommand constructs the command and session.Config for resuming
-// a session. Phase 1: always starts a fresh conversation (no provider resume).
+// a session. Uses provider resume if the session has a session key and the
+// provider supports resume; otherwise falls back to the stored command.
 func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, session.Config) {
-	// Find the template agent to resolve provider.
+	// Build the resume command from stored session info.
+	// This handles --resume <key> for providers that support it.
+	cmd := chatsession.BuildResumeCommand(info)
+
+	// Try to resolve the template for startup hints and env.
 	found, ok := resolveAgentIdentity(cfg, info.Template, "")
 	if !ok {
-		// Template removed from config. Use stored command (or provider name as last resort).
-		cmd := info.Command
-		if cmd == "" {
-			cmd = info.Provider
-		}
 		return cmd, session.Config{WorkDir: info.WorkDir}
 	}
 	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
 	if err != nil {
-		cmd := info.Command
-		if cmd == "" {
-			cmd = info.Provider
-		}
 		return cmd, session.Config{WorkDir: info.WorkDir}
 	}
 	hints := session.Config{
@@ -307,7 +309,7 @@ func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, sessio
 		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 		Env:                    resolved.Env,
 	}
-	return resolved.CommandString(), hints
+	return cmd, hints
 }
 
 // newSessionSuspendCmd creates the "gc session suspend <id>" command.

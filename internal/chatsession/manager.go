@@ -8,6 +8,7 @@ package chatsession
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"strings"
@@ -43,9 +44,25 @@ type Info struct {
 	Command     string // resolved command stored at creation
 	WorkDir     string
 	SessionName string // tmux session name
+	SessionKey  string // provider-specific resume handle (UUID)
+	ResumeFlag  string // stored provider resume flag (e.g., "--resume")
+	ResumeStyle string // "flag" or "subcommand"
 	CreatedAt   time.Time
 	LastActive  time.Time
 	Attached    bool
+}
+
+// ProviderResume describes a provider's session resume capabilities.
+// Populated from config.ResolvedProvider's resume fields.
+type ProviderResume struct {
+	// ResumeFlag is the CLI flag for resuming (e.g., "--resume").
+	// Empty means the provider doesn't support resume.
+	ResumeFlag string
+	// ResumeStyle is "flag" (--resume <key>) or "subcommand" (command resume <key>).
+	ResumeStyle string
+	// SessionIDFlag is the CLI flag for creating with a specific ID (e.g., "--session-id").
+	// Enables Generate & Pass strategy.
+	SessionIDFlag string
 }
 
 // Manager orchestrates chat session lifecycle using beads for persistence
@@ -62,9 +79,35 @@ func NewManager(store beads.Store, sp session.Provider) *Manager {
 
 // Create creates a new chat session bead and starts the runtime session.
 // The command is the full provider command to execute (e.g., "claude --dangerously-skip-permissions").
+// The resume parameter carries provider resume capabilities; if the provider
+// supports SessionIDFlag, a UUID session key is generated and injected.
 // The caller is responsible for attaching after Create returns.
-func (m *Manager) Create(ctx context.Context, template, title, command, workDir, provider string, env map[string]string, hints session.Config) (Info, error) {
+func (m *Manager) Create(ctx context.Context, template, title, command, workDir, provider string, env map[string]string, resume ProviderResume, hints session.Config) (Info, error) {
+	// Generate session key only when the provider supports Generate & Pass
+	// (has SessionIDFlag). Otherwise the key would never be passed to the
+	// provider and BuildResumeCommand would produce invalid resume commands.
+	var sessionKey string
+	if resume.SessionIDFlag != "" {
+		var err error
+		sessionKey, err = generateSessionKey()
+		if err != nil {
+			return Info{}, fmt.Errorf("generating session key: %w", err)
+		}
+	}
+
 	// Create the bead first to get the ID.
+	meta := map[string]string{
+		"template":     template,
+		"state":        string(StateActive),
+		"provider":     provider,
+		"work_dir":     workDir,
+		"command":      command,
+		"resume_flag":  resume.ResumeFlag,
+		"resume_style": resume.ResumeStyle,
+	}
+	if sessionKey != "" {
+		meta["session_key"] = sessionKey
+	}
 	b, err := m.store.Create(beads.Bead{
 		Title: title,
 		Type:  BeadType,
@@ -72,13 +115,7 @@ func (m *Manager) Create(ctx context.Context, template, title, command, workDir,
 			LabelSession,
 			"template:" + template,
 		},
-		Metadata: map[string]string{
-			"template": template,
-			"state":    string(StateActive),
-			"provider": provider,
-			"work_dir": workDir,
-			"command":  command,
-		},
+		Metadata: meta,
 	})
 	if err != nil {
 		return Info{}, fmt.Errorf("creating session bead: %w", err)
@@ -93,9 +130,15 @@ func (m *Manager) Create(ctx context.Context, template, title, command, workDir,
 		return Info{}, fmt.Errorf("storing session name: %w", err)
 	}
 
+	// If the provider supports Generate & Pass, inject --session-id into command.
+	startCommand := command
+	if resume.SessionIDFlag != "" && sessionKey != "" {
+		startCommand = command + " " + resume.SessionIDFlag + " " + sessionKey
+	}
+
 	// Build the session config from the hints, overriding command/workdir/env.
 	cfg := hints
-	cfg.Command = command
+	cfg.Command = startCommand
 	cfg.WorkDir = workDir
 	cfg.Env = mergeEnv(cfg.Env, env)
 
@@ -320,6 +363,9 @@ func (m *Manager) infoFromBead(b beads.Bead) Info {
 		Command:     b.Metadata["command"],
 		WorkDir:     b.Metadata["work_dir"],
 		SessionName: sessName,
+		SessionKey:  b.Metadata["session_key"],
+		ResumeFlag:  b.Metadata["resume_flag"],
+		ResumeStyle: b.Metadata["resume_style"],
 		CreatedAt:   b.CreatedAt,
 	}
 
@@ -340,6 +386,40 @@ func sessionNameFor(beadID string) string {
 	return "s-" + strings.ReplaceAll(beadID, "/", "--")
 }
 
+// BuildResumeCommand constructs the resume command from stored session info.
+// If the provider supports resume (has ResumeFlag), it builds the appropriate
+// resume command using the session key. Otherwise returns the stored command
+// for a fresh start.
+func BuildResumeCommand(info Info) string {
+	if info.ResumeFlag == "" || info.SessionKey == "" {
+		// Provider doesn't support resume or no key — use stored command.
+		cmd := info.Command
+		if cmd == "" {
+			cmd = info.Provider
+		}
+		return cmd
+	}
+
+	// Build resume command based on style.
+	cmd := info.Command
+	if cmd == "" {
+		cmd = info.Provider
+	}
+	switch info.ResumeStyle {
+	case "subcommand":
+		// Insert subcommand after the binary name:
+		//   "codex --model o3" → "codex resume <key> --model o3"
+		parts := strings.SplitN(cmd, " ", 2)
+		if len(parts) == 2 {
+			return parts[0] + " " + info.ResumeFlag + " " + info.SessionKey + " " + parts[1]
+		}
+		return cmd + " " + info.ResumeFlag + " " + info.SessionKey
+	default: // "flag"
+		// command --resume <key> (e.g., claude --resume <uuid>)
+		return cmd + " " + info.ResumeFlag + " " + info.SessionKey
+	}
+}
+
 // mergeEnv merges two env maps, with override taking precedence.
 func mergeEnv(base, override map[string]string) map[string]string {
 	if len(base) == 0 && len(override) == 0 {
@@ -353,4 +433,16 @@ func mergeEnv(base, override map[string]string) map[string]string {
 		merged[k] = v
 	}
 	return merged
+}
+
+// generateSessionKey creates a random UUID v4 for session identification.
+func generateSessionKey() (string, error) {
+	var uuid [16]byte
+	if _, err := rand.Read(uuid[:]); err != nil {
+		return "", fmt.Errorf("reading random bytes: %w", err)
+	}
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // version 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16]), nil
 }
