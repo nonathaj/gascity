@@ -155,6 +155,7 @@ func (s *Server) handleBeadCreate(w http.ResponseWriter, r *http.Request) {
 
 	store := s.findStore(body.Rig)
 	if store == nil {
+		s.idem.unreserve(idemKey)
 		writeError(w, http.StatusBadRequest, "invalid", "rig is required when multiple rigs are configured")
 		return
 	}
@@ -167,6 +168,7 @@ func (s *Server) handleBeadCreate(w http.ResponseWriter, r *http.Request) {
 		Labels:      body.Labels,
 	})
 	if err != nil {
+		s.idem.unreserve(idemKey)
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

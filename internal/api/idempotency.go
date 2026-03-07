@@ -11,6 +11,13 @@ import (
 
 // idempotencyCache stores responses keyed by Idempotency-Key header values.
 // Used on create endpoints so clients can safely retry after network failures.
+//
+// The cache uses a two-phase protocol to prevent TOCTOU races:
+//  1. reserve(key, hash) atomically inserts a pending entry if absent
+//  2. complete(key, ...) fills in the response body once the create succeeds
+//
+// Concurrent requests with the same key: the first reserves, others see the
+// pending entry and get a 409 Conflict response.
 type idempotencyCache struct {
 	mu      sync.Mutex
 	entries map[string]cachedEntry
@@ -18,6 +25,7 @@ type idempotencyCache struct {
 }
 
 type cachedEntry struct {
+	pending    bool // true while the create is in-flight
 	statusCode int
 	body       []byte
 	bodyHash   string
@@ -31,30 +39,26 @@ func newIdempotencyCache(ttl time.Duration) *idempotencyCache {
 	}
 }
 
-// check returns the cached entry for the given key if it exists and hasn't expired.
-func (c *idempotencyCache) check(key string) (cachedEntry, bool) {
+// reserve atomically reserves a key for processing. Returns:
+//   - (entry, true) if the key already exists (completed or pending)
+//   - (zero, false) if the key was successfully reserved for this caller
+func (c *idempotencyCache) reserve(key, bodyHash string) (cachedEntry, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.entries[key]
-	if !ok {
-		return cachedEntry{}, false
+	if ok {
+		if time.Now().After(entry.expiresAt) {
+			delete(c.entries, key)
+			// Fall through to reserve.
+		} else {
+			return entry, true
+		}
 	}
-	if time.Now().After(entry.expiresAt) {
-		delete(c.entries, key)
-		return cachedEntry{}, false
-	}
-	return entry, true
-}
-
-// store caches a response for the given key.
-func (c *idempotencyCache) store(key string, statusCode int, body []byte, bodyHash string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Reserve the key with a pending entry.
 	c.entries[key] = cachedEntry{
-		statusCode: statusCode,
-		body:       body,
-		bodyHash:   bodyHash,
-		expiresAt:  time.Now().Add(c.ttl),
+		pending:   true,
+		bodyHash:  bodyHash,
+		expiresAt: time.Now().Add(c.ttl),
 	}
 	// Lazy cleanup when cache grows large.
 	if len(c.entries) > 1000 {
@@ -65,29 +69,61 @@ func (c *idempotencyCache) store(key string, statusCode int, body []byte, bodyHa
 			}
 		}
 	}
+	return cachedEntry{}, false
 }
 
-// handleIdempotent checks for a cached response matching the given
+// complete fills in the response for a previously reserved key.
+func (c *idempotencyCache) complete(key string, statusCode int, body []byte, bodyHash string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[key] = cachedEntry{
+		pending:    false,
+		statusCode: statusCode,
+		body:       body,
+		bodyHash:   bodyHash,
+		expiresAt:  time.Now().Add(c.ttl),
+	}
+}
+
+// unreserve removes a pending reservation on failure (so the key can be retried).
+func (c *idempotencyCache) unreserve(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if entry, ok := c.entries[key]; ok && entry.pending {
+		delete(c.entries, key)
+	}
+}
+
+// handleIdempotent checks for a cached or in-flight entry matching the given
 // Idempotency-Key and body hash. Returns true if it handled the response
-// (either replayed a cached response or wrote a 422 mismatch error).
-// Returns false if the caller should proceed with normal processing.
+// (replayed cached, wrote 409 for in-flight, or wrote 422 for mismatch).
+// Returns false if the caller should proceed with normal processing (key
+// was atomically reserved for this caller).
 func (c *idempotencyCache) handleIdempotent(w http.ResponseWriter, key, bodyHash string) bool {
 	if key == "" {
 		return false
 	}
-	cached, ok := c.check(key)
-	if !ok {
+	existing, found := c.reserve(key, bodyHash)
+	if !found {
+		// Key reserved for us — proceed with create.
 		return false
 	}
-	if cached.bodyHash != bodyHash {
+	// Key already exists.
+	if existing.bodyHash != bodyHash {
 		writeError(w, http.StatusUnprocessableEntity, "idempotency_mismatch",
 			"Idempotency-Key reused with different request body")
 		return true
 	}
+	if existing.pending {
+		// Another request is still processing this key.
+		writeError(w, http.StatusConflict, "in_flight",
+			"request with this Idempotency-Key is already in progress")
+		return true
+	}
 	// Replay cached response.
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(cached.statusCode)
-	w.Write(cached.body) //nolint:errcheck // best-effort
+	w.WriteHeader(existing.statusCode)
+	w.Write(existing.body) //nolint:errcheck // best-effort
 	return true
 }
 
@@ -104,7 +140,7 @@ func (c *idempotencyCache) storeResponse(key, bodyHash string, statusCode int, v
 	}
 	// Append newline to match json.Encoder.Encode behavior.
 	data = append(data, '\n')
-	c.store(key, statusCode, data, bodyHash)
+	c.complete(key, statusCode, data, bodyHash)
 }
 
 // hashBody returns a hex-encoded SHA-256 hash of the JSON-marshaled body.

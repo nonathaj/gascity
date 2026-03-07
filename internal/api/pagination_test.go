@@ -40,6 +40,14 @@ func TestParsePagination_CursorAndLimit(t *testing.T) {
 	}
 }
 
+func TestParsePagination_LimitCapped(t *testing.T) {
+	r := httptest.NewRequest("GET", "/v0/beads?limit=999999", nil)
+	pp := parsePagination(r, 50)
+	if pp.Limit != maxPaginationLimit {
+		t.Errorf("limit = %d, want %d (capped)", pp.Limit, maxPaginationLimit)
+	}
+}
+
 func TestParsePagination_InvalidCursor(t *testing.T) {
 	r := httptest.NewRequest("GET", "/v0/beads?cursor=invalid!!!", nil)
 	pp := parsePagination(r, 50)

@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,26 +13,28 @@ func TestIdempotency_MissOnFirstRequest(t *testing.T) {
 	w := httptest.NewRecorder()
 	handled := c.handleIdempotent(w, "key-1", "hash-abc")
 	if handled {
-		t.Error("handleIdempotent should return false on cache miss")
+		t.Error("handleIdempotent should return false on cache miss (key reserved)")
 	}
 }
 
 func TestIdempotency_HitOnReplay(t *testing.T) {
 	c := newIdempotencyCache(30 * time.Minute)
 
-	// Store a response.
+	// Reserve and complete.
+	w := httptest.NewRecorder()
+	c.handleIdempotent(w, "key-1", "hash-abc")
 	c.storeResponse("key-1", "hash-abc", 201, map[string]string{"id": "bead-42"})
 
 	// Replay with same key and hash.
-	w := httptest.NewRecorder()
-	handled := c.handleIdempotent(w, "key-1", "hash-abc")
+	w2 := httptest.NewRecorder()
+	handled := c.handleIdempotent(w2, "key-1", "hash-abc")
 	if !handled {
 		t.Fatal("handleIdempotent should return true on cache hit")
 	}
-	if w.Code != 201 {
-		t.Errorf("status = %d, want 201", w.Code)
+	if w2.Code != 201 {
+		t.Errorf("status = %d, want 201", w2.Code)
 	}
-	body := w.Body.String()
+	body := w2.Body.String()
 	if !containsStr(body, "bead-42") {
 		t.Errorf("body should contain cached response: %s", body)
 	}
@@ -38,31 +42,78 @@ func TestIdempotency_HitOnReplay(t *testing.T) {
 
 func TestIdempotency_MismatchReturns422(t *testing.T) {
 	c := newIdempotencyCache(30 * time.Minute)
+	w := httptest.NewRecorder()
+	c.handleIdempotent(w, "key-1", "hash-abc")
 	c.storeResponse("key-1", "hash-abc", 201, map[string]string{"id": "bead-42"})
 
 	// Replay with same key but different hash.
-	w := httptest.NewRecorder()
-	handled := c.handleIdempotent(w, "key-1", "hash-xyz")
+	w2 := httptest.NewRecorder()
+	handled := c.handleIdempotent(w2, "key-1", "hash-xyz")
 	if !handled {
 		t.Fatal("handleIdempotent should return true on mismatch")
 	}
-	if w.Code != 422 {
-		t.Errorf("status = %d, want 422", w.Code)
+	if w2.Code != 422 {
+		t.Errorf("status = %d, want 422", w2.Code)
 	}
-	body := w.Body.String()
+	body := w2.Body.String()
 	if !containsStr(body, "idempotency_mismatch") {
 		t.Errorf("body should contain idempotency_mismatch: %s", body)
 	}
 }
 
+func TestIdempotency_PendingReturns409(t *testing.T) {
+	c := newIdempotencyCache(30 * time.Minute)
+
+	// First request reserves the key.
+	w := httptest.NewRecorder()
+	handled := c.handleIdempotent(w, "key-1", "hash-abc")
+	if handled {
+		t.Fatal("first request should reserve, not handle")
+	}
+
+	// Second request with same key while first is still in-flight.
+	w2 := httptest.NewRecorder()
+	handled = c.handleIdempotent(w2, "key-1", "hash-abc")
+	if !handled {
+		t.Fatal("second request should be handled (409)")
+	}
+	if w2.Code != 409 {
+		t.Errorf("status = %d, want 409", w2.Code)
+	}
+	body := w2.Body.String()
+	if !containsStr(body, "in_flight") {
+		t.Errorf("body should contain in_flight: %s", body)
+	}
+}
+
+func TestIdempotency_UnreserveAllowsRetry(t *testing.T) {
+	c := newIdempotencyCache(30 * time.Minute)
+
+	// Reserve.
+	w := httptest.NewRecorder()
+	c.handleIdempotent(w, "key-1", "hash-abc")
+
+	// Unreserve (simulating a failed create).
+	c.unreserve("key-1")
+
+	// Retry should succeed (not get 409).
+	w2 := httptest.NewRecorder()
+	handled := c.handleIdempotent(w2, "key-1", "hash-abc")
+	if handled {
+		t.Error("after unreserve, key should be available for retry")
+	}
+}
+
 func TestIdempotency_ExpiredEntryMisses(t *testing.T) {
 	c := newIdempotencyCache(1 * time.Millisecond)
+	w := httptest.NewRecorder()
+	c.handleIdempotent(w, "key-1", "hash-abc")
 	c.storeResponse("key-1", "hash-abc", 201, map[string]string{"id": "bead-42"})
 
 	time.Sleep(5 * time.Millisecond)
 
-	w := httptest.NewRecorder()
-	handled := c.handleIdempotent(w, "key-1", "hash-abc")
+	w2 := httptest.NewRecorder()
+	handled := c.handleIdempotent(w2, "key-1", "hash-abc")
 	if handled {
 		t.Error("handleIdempotent should return false for expired entry")
 	}
@@ -83,6 +134,29 @@ func TestIdempotency_StoreResponseNoKey(t *testing.T) {
 	c.storeResponse("", "hash-abc", 201, map[string]string{"id": "bead-42"})
 	if len(c.entries) != 0 {
 		t.Errorf("cache should be empty after storeResponse with empty key, got %d entries", len(c.entries))
+	}
+}
+
+func TestIdempotency_ConcurrentSameKey(t *testing.T) {
+	c := newIdempotencyCache(30 * time.Minute)
+	const goroutines = 10
+	var reserved atomic.Int32
+	var wg sync.WaitGroup
+
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			if !c.handleIdempotent(w, "race-key", "hash-same") {
+				reserved.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if got := reserved.Load(); got != 1 {
+		t.Errorf("exactly 1 goroutine should reserve the key, got %d", got)
 	}
 }
 

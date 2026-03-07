@@ -141,6 +141,7 @@ func (s *Server) handleMailSend(w http.ResponseWriter, r *http.Request) {
 
 	msg, err := mp.Send(body.From, body.To, body.Subject, body.Body)
 	if err != nil {
+		s.idem.unreserve(idemKey)
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

@@ -125,24 +125,34 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 	}
 
 	killed := make([]string, 0)
+	failed := make([]string, 0)
 	for _, a := range cfg.Agents {
 		if a.Dir != name {
 			continue
 		}
 		expanded := expandAgent(a, s.state.CityName(), cfg.Workspace.SessionTemplate, s.state.SessionProvider())
 		for _, ea := range expanded {
-			if err := sm.KillAgent(ea.qualifiedName); err == nil {
+			if err := sm.KillAgent(ea.qualifiedName); err != nil {
+				// "not found" / "not running" are benign — agent wasn't running.
+				if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "not running") {
+					failed = append(failed, ea.qualifiedName)
+				}
+			} else {
 				killed = append(killed, ea.qualifiedName)
 			}
-			// Ignore errors — agent might not be running.
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status": "ok",
 		"action": "restart",
 		"rig":    name,
 		"killed": killed,
-	})
+	}
+	if len(failed) > 0 {
+		resp["status"] = "partial"
+		resp["failed"] = failed
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // buildRigResponse creates a rigResponse with agent counts and last activity.
