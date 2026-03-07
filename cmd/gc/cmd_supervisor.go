@@ -136,7 +136,13 @@ func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc) (net.Li
 		for {
 			conn, err := lis.Accept()
 			if err != nil {
-				return // listener closed
+				// Permanent close — exit loop.
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+				// Transient error — log and continue.
+				fmt.Fprintf(os.Stderr, "gc supervisor: socket accept: %v\n", err) //nolint:errcheck
+				continue
 			}
 			go handleSupervisorConn(conn, cancelFn)
 		}

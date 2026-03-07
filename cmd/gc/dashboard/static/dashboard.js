@@ -4,8 +4,11 @@
     // ============================================
     // CITY SCOPE (supervisor mode)
     // ============================================
-    // Selected city from URL query param, used to scope all API calls.
-    var _selectedCity = new URLSearchParams(window.location.search).get('city') || '';
+    // Selected city: prefer URL query param, fall back to server-rendered meta tag.
+    // The meta tag ensures the first load (no ?city= in URL) still scopes API calls
+    // to the city the server selected as default.
+    var _selectedCity = new URLSearchParams(window.location.search).get('city') ||
+        (document.querySelector('meta[name="selected-city"]') || {}).getAttribute('content') || '';
 
     // ============================================
     // CSRF PROTECTION

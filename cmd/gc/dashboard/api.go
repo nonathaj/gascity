@@ -1829,16 +1829,22 @@ func (h *APIHandler) handleSSEProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Connect to API event stream. Resume from after_seq if provided.
-	// The client sends after_seq as a query param (manual EventSource creation
-	// doesn't send Last-Event-ID header), so check both sources.
+	// Connect to API event stream. Resume from after_seq (per-city) or
+	// after_cursor (global/supervisor) if provided. The client sends the
+	// cursor as a query param (manual EventSource creation doesn't send
+	// Last-Event-ID header), so check both sources.
 	sseURL := h.apiURL + scopedPath("/v0/events/stream", h.cityScope)
 	afterSeq := r.URL.Query().Get("after_seq")
 	if afterSeq == "" {
 		afterSeq = r.Header.Get("Last-Event-ID")
 	}
 	if afterSeq != "" {
-		sseURL += "?after_seq=" + url.QueryEscape(afterSeq)
+		// Use after_cursor for unscoped (global) streams, after_seq for per-city.
+		paramName := "after_seq"
+		if h.cityScope == "" {
+			paramName = "after_cursor"
+		}
+		sseURL += "?" + paramName + "=" + url.QueryEscape(afterSeq)
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, sseURL, nil)
