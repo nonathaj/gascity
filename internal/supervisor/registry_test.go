@@ -168,6 +168,64 @@ func TestRegistryMultipleCities(t *testing.T) {
 	}
 }
 
+func TestRegistryReRegisterNameUpdate(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	cityPath := filepath.Join(dir, "bright-lights")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Register with initial name.
+	if err := r.Register(cityPath, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-register same path with different name — should update.
+	if err := r.Register(cityPath, "beta"); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Name != "beta" {
+		t.Errorf("expected updated name 'beta', got %q", entries[0].Name)
+	}
+}
+
+func TestRegistryReRegisterNameConflict(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	path1 := filepath.Join(dir, "city-a")
+	path2 := filepath.Join(dir, "city-b")
+	if err := os.MkdirAll(path1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(path1, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Register(path2, "beta"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-register path2 with name "alpha" — should conflict.
+	err := r.Register(path2, "alpha")
+	if err == nil {
+		t.Fatal("expected error for name conflict on re-register")
+	}
+}
+
 func TestCityEntryEffectiveName(t *testing.T) {
 	// Without explicit name, falls back to basename.
 	e := CityEntry{Path: "/home/user/bright-lights"}

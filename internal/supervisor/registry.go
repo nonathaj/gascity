@@ -86,9 +86,19 @@ func (r *Registry) Register(cityPath, effectiveName string) error {
 		return err
 	}
 
-	for _, e := range entries {
+	for i, e := range entries {
 		if e.Path == abs {
-			return nil // already registered — idempotent
+			if e.Name == effectiveName {
+				return nil // already registered with same name — idempotent
+			}
+			// Name changed — check for conflicts with other entries, then update.
+			for j, other := range entries {
+				if j != i && other.EffectiveName() == effectiveName {
+					return fmt.Errorf("city name %q already registered at %s (set a unique workspace.name)", effectiveName, other.Path)
+				}
+			}
+			entries[i].Name = effectiveName
+			return r.saveLocked(entries)
 		}
 		if e.EffectiveName() == effectiveName {
 			return fmt.Errorf("city name %q already registered at %s (set a unique workspace.name)", effectiveName, e.Path)

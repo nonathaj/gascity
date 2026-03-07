@@ -275,8 +275,9 @@ func runSupervisor(stdout, stderr io.Writer) int {
 
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
 
-	// Track managed cities.
-	var mu sync.Mutex
+	// Track managed cities. RWMutex allows concurrent API reads while
+	// reconciliation and goroutine defers hold exclusive write locks.
+	var mu sync.RWMutex
 	cities := make(map[string]*managedCity)
 
 	// Start API server with a multi-city state dispatcher.
@@ -341,7 +342,10 @@ func runSupervisor(stdout, stderr io.Writer) int {
 				fmt.Fprintf(stdout, "Stopping city '%s'...\n", name) //nolint:errcheck
 				mc.cancel()
 				<-mc.done
-				mc.cr.shutdown()
+				func() {
+					defer func() { recover() }() //nolint:errcheck
+					mc.cr.shutdown()
+				}()
 				if mc.closer != nil {
 					mc.closer.Close() //nolint:errcheck
 				}
@@ -366,7 +370,7 @@ type panicRecord struct {
 func reconcileCities(
 	reg *supervisor.Registry,
 	cities map[string]*managedCity,
-	mu *sync.Mutex,
+	mu *sync.RWMutex,
 	panicHistory map[string]*panicRecord,
 	stdout, stderr io.Writer,
 ) {
@@ -401,7 +405,10 @@ func reconcileCities(
 		fmt.Fprintf(stdout, "Unregistered city '%s', stopping...\n", name) //nolint:errcheck
 		mc.cancel()
 		<-mc.done
-		mc.cr.shutdown()
+		func() {
+			defer func() { recover() }() //nolint:errcheck
+			mc.cr.shutdown()
+		}()
 		if mc.closer != nil {
 			mc.closer.Close() //nolint:errcheck
 		}
@@ -442,9 +449,12 @@ func reconcileCities(
 			continue
 		}
 
-		cityName := cfg.Workspace.Name
-		if cityName == "" {
-			cityName = filepath.Base(path)
+		// Use registered name as authoritative identity. Warn if live
+		// config has a different workspace.name (name drift).
+		cityName := name // from entry.EffectiveName()
+		if liveName := cfg.Workspace.Name; liveName != "" && liveName != cityName {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': workspace.name changed to %q (re-register to update)\n", //nolint:errcheck
+				cityName, liveName)
 		}
 
 		// Run critical city initialization (same steps as cmd_start.go).
@@ -790,7 +800,7 @@ func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*
 // in the design doc — Phase 2 adds proper city-namespaced routing.
 type multiCityState struct {
 	cities    map[string]*managedCity
-	mu        *sync.Mutex
+	mu        *sync.RWMutex
 	startedAt time.Time
 }
 
@@ -798,8 +808,8 @@ type multiCityState struct {
 // or nil if no cities are running. Deterministic ordering ensures API
 // requests always route to the same city.
 func (m *multiCityState) firstCity() *controllerState {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if len(m.cities) == 0 {
 		return nil
 	}
