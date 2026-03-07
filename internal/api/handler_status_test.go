@@ -7,13 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestHandleStatus(t *testing.T) {
 	state := newFakeState(t)
 	// Start a fake session so Running > 0.
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/status", nil)
@@ -49,7 +49,7 @@ func TestHandleStatus(t *testing.T) {
 
 func TestHandleStatusEnriched(t *testing.T) {
 	state := newFakeState(t)
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/status", nil)

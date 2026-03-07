@@ -14,7 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/chatsession"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -116,8 +116,8 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 	// Build the work directory.
 	workDir := resolveWorkDir(cityPath, &found)
 
-	// Build session.Config hints from provider.
-	hints := session.Config{
+	// Build runtime.Config hints from provider.
+	hints := runtime.Config{
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,
 		ProcessNames:           resolved.ProcessNames,
@@ -287,10 +287,10 @@ func cmdSessionAttach(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// buildResumeCommand constructs the command and session.Config for resuming
+// buildResumeCommand constructs the command and runtime.Config for resuming
 // a session. Uses provider resume if the session has a session key and the
 // provider supports resume; otherwise falls back to the stored command.
-func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, session.Config) {
+func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, runtime.Config) {
 	// Build the resume command from stored session info.
 	// This handles --resume <key> for providers that support it.
 	cmd := chatsession.BuildResumeCommand(info)
@@ -298,13 +298,13 @@ func buildResumeCommand(cfg *config.City, info chatsession.Info) (string, sessio
 	// Try to resolve the template for startup hints and env.
 	found, ok := resolveAgentIdentity(cfg, info.Template, "")
 	if !ok {
-		return cmd, session.Config{WorkDir: info.WorkDir}
+		return cmd, runtime.Config{WorkDir: info.WorkDir}
 	}
 	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
 	if err != nil {
-		return cmd, session.Config{WorkDir: info.WorkDir}
+		return cmd, runtime.Config{WorkDir: info.WorkDir}
 	}
-	hints := session.Config{
+	hints := runtime.Config{
 		WorkDir:                info.WorkDir,
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,

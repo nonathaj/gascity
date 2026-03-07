@@ -9,7 +9,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	gitpkg "github.com/gastownhall/gascity/internal/git"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 type rigResponse struct {
@@ -166,7 +166,7 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 }
 
 // buildRigResponse creates a rigResponse with agent counts and last activity.
-func buildRigResponse(cfg *config.City, rig config.Rig, sp session.Provider, cityName string) rigResponse {
+func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName string) rigResponse {
 	tmpl := cfg.Workspace.SessionTemplate
 	var agentCount, runningCount int
 	var maxActivity time.Time
@@ -205,7 +205,7 @@ func buildRigResponse(cfg *config.City, rig config.Rig, sp session.Provider, cit
 // rigSuspended computes effective suspended state for a rig by merging config
 // and runtime session metadata. A rig is suspended if the config says so, or
 // if all its agents are runtime-suspended via session metadata.
-func rigSuspended(cfg *config.City, rig config.Rig, sp session.Provider, cityName string) bool {
+func rigSuspended(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName string) bool {
 	if rig.Suspended {
 		return true
 	}

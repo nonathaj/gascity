@@ -7,13 +7,13 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/chatsession"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // autoSuspendChatSessions scans active chat sessions and suspends any that
 // have been detached (no human attached) longer than idleTimeout.
 // Called on each controller reconciliation tick when [chat_sessions] idle_timeout is set.
-func autoSuspendChatSessions(store beads.Store, sp session.Provider, idleTimeout time.Duration, stdout, stderr io.Writer) {
+func autoSuspendChatSessions(store beads.Store, sp runtime.Provider, idleTimeout time.Duration, stdout, stderr io.Writer) {
 	if store == nil {
 		return // no store — nothing to suspend
 	}

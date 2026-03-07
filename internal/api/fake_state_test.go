@@ -15,7 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // newPostRequest creates a POST httptest request with the X-GC-Request header
@@ -30,7 +30,7 @@ func newPostRequest(url string, body io.Reader) *http.Request {
 type fakeState struct {
 	cfg           *config.City
 	rawCfg        *config.City // optional: raw config for provenance detection
-	sp            *session.Fake
+	sp            *runtime.Fake
 	stores        map[string]beads.Store
 	cityBeadStore beads.Store // city-level store for session beads
 	mailProvs     map[string]mail.Provider
@@ -56,7 +56,7 @@ func newFakeState(t *testing.T) *fakeState {
 				{Name: "myrig", Path: "/tmp/myrig"},
 			},
 		},
-		sp:        session.NewFake(),
+		sp:        runtime.NewFake(),
 		stores:    map[string]beads.Store{"myrig": store},
 		mailProvs: map[string]mail.Provider{"myrig": mp},
 		eventProv: events.NewFake(),
@@ -67,7 +67,7 @@ func newFakeState(t *testing.T) *fakeState {
 }
 
 func (f *fakeState) Config() *config.City                    { return f.cfg }
-func (f *fakeState) SessionProvider() session.Provider       { return f.sp }
+func (f *fakeState) SessionProvider() runtime.Provider       { return f.sp }
 func (f *fakeState) BeadStore(rig string) beads.Store        { return f.stores[rig] }
 func (f *fakeState) BeadStores() map[string]beads.Store      { return f.stores }
 func (f *fakeState) MailProvider(rig string) mail.Provider   { return f.mailProvs[rig] }

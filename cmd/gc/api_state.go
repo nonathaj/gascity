@@ -19,7 +19,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // controllerState implements api.State and api.StateMutator.
@@ -28,7 +28,7 @@ import (
 type controllerState struct {
 	mu            sync.RWMutex
 	cfg           *config.City
-	sp            session.Provider
+	sp            runtime.Provider
 	beadStores    map[string]beads.Store
 	cityBeadStore beads.Store // city-level store for session beads
 	mailProvs     map[string]mail.Provider
@@ -44,7 +44,7 @@ type controllerState struct {
 // newControllerState creates a controllerState with per-rig stores.
 func newControllerState(
 	cfg *config.City,
-	sp session.Provider,
+	sp runtime.Provider,
 	ep events.Provider,
 	cityName, cityPath string,
 ) *controllerState {
@@ -137,7 +137,7 @@ func (cs *controllerState) openRigStore(provider, rigPath string) beads.Store {
 
 // update replaces the config, session provider, and reopens stores.
 // Stores are built outside the lock to avoid blocking readers during I/O.
-func (cs *controllerState) update(cfg *config.City, sp session.Provider) {
+func (cs *controllerState) update(cfg *config.City, sp runtime.Provider) {
 	// Build new stores outside the lock (may do file I/O / subprocess spawns).
 	stores, provs := cs.buildStores(cfg)
 	// Reopen city-level store for session beads.
@@ -169,7 +169,7 @@ func (cs *controllerState) Config() *config.City {
 }
 
 // SessionProvider returns the current session provider.
-func (cs *controllerState) SessionProvider() session.Provider {
+func (cs *controllerState) SessionProvider() runtime.Provider {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.sp
@@ -336,7 +336,7 @@ func (cs *controllerState) DisableAutomation(name, rig string) error {
 
 // spAndSession captures the session provider and computes the session name
 // in a single critical section to avoid TOCTOU with config reloads.
-func (cs *controllerState) spAndSession(name string) (session.Provider, string) {
+func (cs *controllerState) spAndSession(name string) (runtime.Provider, string) {
 	cs.mu.RLock()
 	sp := cs.sp
 	tmpl := cs.cfg.Workspace.SessionTemplate

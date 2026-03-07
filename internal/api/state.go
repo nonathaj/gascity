@@ -13,7 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // State provides read access to controller-managed state.
@@ -23,7 +23,7 @@ type State interface {
 	Config() *config.City
 
 	// SessionProvider returns the current session provider.
-	SessionProvider() session.Provider
+	SessionProvider() runtime.Provider
 
 	// BeadStore returns the bead store for a rig (by name).
 	// Returns nil if the rig doesn't exist.

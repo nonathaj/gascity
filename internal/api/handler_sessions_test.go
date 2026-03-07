@@ -9,7 +9,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/chatsession"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func newSessionFakeState(t *testing.T) *fakeState {
@@ -19,10 +19,10 @@ func newSessionFakeState(t *testing.T) *fakeState {
 	return fs
 }
 
-func createTestSession(t *testing.T, store beads.Store, sp *session.Fake, title string) chatsession.Info {
+func createTestSession(t *testing.T, store beads.Store, sp *runtime.Fake, title string) chatsession.Info {
 	t.Helper()
 	mgr := chatsession.NewManager(store, sp)
-	info, err := mgr.Create(context.Background(), "default", title, "echo test", "/tmp", "test", nil, chatsession.ProviderResume{}, session.Config{})
+	info, err := mgr.Create(context.Background(), "default", title, "echo test", "/tmp", "test", nil, chatsession.ProviderResume{}, runtime.Config{})
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}

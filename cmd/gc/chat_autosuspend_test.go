@@ -9,20 +9,20 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/chatsession"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestAutoSuspendChatSessions(t *testing.T) {
 	store := beads.NewMemStore()
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	mgr := chatsession.NewManager(store, sp)
 
 	// Create two sessions.
-	s1, err := mgr.Create(context.Background(), "default", "S1", "echo s1", "/tmp", "test", nil, chatsession.ProviderResume{}, session.Config{})
+	s1, err := mgr.Create(context.Background(), "default", "S1", "echo s1", "/tmp", "test", nil, chatsession.ProviderResume{}, runtime.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s2, err := mgr.Create(context.Background(), "default", "S2", "echo s2", "/tmp", "test", nil, chatsession.ProviderResume{}, session.Config{})
+	s2, err := mgr.Create(context.Background(), "default", "S2", "echo s2", "/tmp", "test", nil, chatsession.ProviderResume{}, runtime.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,10 @@ func TestAutoSuspendChatSessions(t *testing.T) {
 
 func TestAutoSuspendSkipsAttachedSessions(t *testing.T) {
 	store := beads.NewMemStore()
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	mgr := chatsession.NewManager(store, sp)
 
-	s1, err := mgr.Create(context.Background(), "default", "Attached", "echo a", "/tmp", "test", nil, chatsession.ProviderResume{}, session.Config{})
+	s1, err := mgr.Create(context.Background(), "default", "Attached", "echo a", "/tmp", "test", nil, chatsession.ProviderResume{}, runtime.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestAutoSuspendSkipsAttachedSessions(t *testing.T) {
 
 func TestAutoSuspendNilStore(t *testing.T) {
 	t.Helper() // uses t for test name
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	var stdout, stderr bytes.Buffer
 	// Should not panic with nil store.
 	autoSuspendChatSessions(nil, sp, 30*time.Minute, &stdout, &stderr)

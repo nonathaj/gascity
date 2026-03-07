@@ -8,7 +8,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/chatsession"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -114,9 +114,9 @@ func cmdCityStatus(args []string, jsonOutput bool, stdout, stderr io.Writer) int
 }
 
 // doCityStatus prints the city-wide status overview. Accepts injected
-// session.Provider for testability.
+// runtime.Provider for testability.
 func doCityStatus(
-	sp session.Provider,
+	sp runtime.Provider,
 	dops drainOps,
 	cfg *config.City,
 	cityPath string,
@@ -236,7 +236,7 @@ func doCityStatus(
 // doCityStatusJSON outputs city status as JSON. Accepts injected providers
 // for testability.
 func doCityStatusJSON(
-	sp session.Provider,
+	sp runtime.Provider,
 	cfg *config.City,
 	cityPath string,
 	stdout, stderr io.Writer,

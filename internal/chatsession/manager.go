@@ -3,7 +3,7 @@
 // A chat session is a conversation between a human and an agent template
 // that can be started, suspended (freeing runtime resources), and resumed
 // later. Sessions are backed by beads (type "session") for persistence
-// and use session.Provider for runtime management.
+// and use runtime.Provider for runtime management.
 package chatsession
 
 import (
@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // State represents the runtime state of a chat session.
@@ -66,14 +66,14 @@ type ProviderResume struct {
 }
 
 // Manager orchestrates chat session lifecycle using beads for persistence
-// and session.Provider for runtime.
+// and runtime.Provider for runtime.
 type Manager struct {
 	store beads.Store
-	sp    session.Provider
+	sp    runtime.Provider
 }
 
 // NewManager creates a Manager backed by the given bead store and session provider.
-func NewManager(store beads.Store, sp session.Provider) *Manager {
+func NewManager(store beads.Store, sp runtime.Provider) *Manager {
 	return &Manager{store: store, sp: sp}
 }
 
@@ -82,7 +82,7 @@ func NewManager(store beads.Store, sp session.Provider) *Manager {
 // The resume parameter carries provider resume capabilities; if the provider
 // supports SessionIDFlag, a UUID session key is generated and injected.
 // The caller is responsible for attaching after Create returns.
-func (m *Manager) Create(ctx context.Context, template, title, command, workDir, provider string, env map[string]string, resume ProviderResume, hints session.Config) (Info, error) {
+func (m *Manager) Create(ctx context.Context, template, title, command, workDir, provider string, env map[string]string, resume ProviderResume, hints runtime.Config) (Info, error) {
 	// Generate session key only when the provider supports Generate & Pass
 	// (has SessionIDFlag). Otherwise the key would never be passed to the
 	// provider and BuildResumeCommand would produce invalid resume commands.
@@ -155,7 +155,7 @@ func (m *Manager) Create(ctx context.Context, template, title, command, workDir,
 // Attach attaches the user's terminal to the session. If the session is
 // suspended, it is resumed first using resumeCommand. If the tmux session
 // died (active bead but no process), it is restarted.
-func (m *Manager) Attach(ctx context.Context, id string, resumeCommand string, hints session.Config) error {
+func (m *Manager) Attach(ctx context.Context, id string, resumeCommand string, hints runtime.Config) error {
 	b, err := m.store.Get(id)
 	if err != nil {
 		return fmt.Errorf("getting session: %w", err)

@@ -16,7 +16,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -923,7 +923,7 @@ func cmdAgentKill(args []string, stdout, stderr io.Writer) int {
 
 // doAgentKill force-kills an agent's session. The reconciler will restart it
 // on its next tick.
-func doAgentKill(sp session.Provider, rec events.Recorder,
+func doAgentKill(sp runtime.Provider, rec events.Recorder,
 	agentName, sn string, stdout, stderr io.Writer,
 ) int {
 	if !sp.IsRunning(sn) {
