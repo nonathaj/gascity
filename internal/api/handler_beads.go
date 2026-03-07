@@ -52,6 +52,10 @@ func (s *Server) handleBeadList(w http.ResponseWriter, r *http.Request) {
 	if all == nil {
 		all = []beads.Bead{}
 	}
+	if !pp.IsPaging {
+		writeListJSON(w, s.latestIndex(), all, len(all))
+		return
+	}
 	page, total, nextCursor := paginate(all, pp)
 	if page == nil {
 		page = []beads.Bead{}
@@ -143,8 +147,8 @@ func (s *Server) handleBeadCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Idempotency check.
-	idemKey := r.Header.Get("Idempotency-Key")
+	// Idempotency check — key is scoped by method+path to prevent cross-endpoint collisions.
+	idemKey := scopedIdemKey(r, r.Header.Get("Idempotency-Key"))
 	var bodyHash string
 	if idemKey != "" {
 		bodyHash = hashBody(body)

@@ -8,8 +8,9 @@ import (
 
 // pageParams holds parsed cursor-based pagination parameters.
 type pageParams struct {
-	Offset int
-	Limit  int
+	Offset   int
+	Limit    int
+	IsPaging bool // true when the client explicitly supplied cursor or limit
 }
 
 // maxPaginationLimit caps the maximum page size to prevent oversized responses.
@@ -20,6 +21,7 @@ const maxPaginationLimit = 1000
 // Limit is capped at maxPaginationLimit regardless of the requested value.
 func parsePagination(r *http.Request, defaultLimit int) pageParams {
 	q := r.URL.Query()
+	isPaging := q.Has("cursor") || q.Has("limit")
 	limit := defaultLimit
 	if v := q.Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -33,7 +35,7 @@ func parsePagination(r *http.Request, defaultLimit int) pageParams {
 	if c := q.Get("cursor"); c != "" {
 		offset = decodeCursor(c)
 	}
-	return pageParams{Offset: offset, Limit: limit}
+	return pageParams{Offset: offset, Limit: limit, IsPaging: isPaging}
 }
 
 // decodeCursor decodes an opaque cursor string to an integer offset.

@@ -143,6 +143,16 @@ func (c *idempotencyCache) storeResponse(key, bodyHash string, statusCode int, v
 	c.complete(key, statusCode, data, bodyHash)
 }
 
+// scopedIdemKey returns an idempotency cache key namespaced by HTTP method
+// and path, preventing cross-endpoint collisions when clients reuse the same
+// Idempotency-Key value across different endpoints.
+func scopedIdemKey(r *http.Request, key string) string {
+	if key == "" {
+		return ""
+	}
+	return r.Method + ":" + r.URL.Path + ":" + key
+}
+
 // hashBody returns a hex-encoded SHA-256 hash of the JSON-marshaled body.
 func hashBody(v any) string {
 	data, err := json.Marshal(v)

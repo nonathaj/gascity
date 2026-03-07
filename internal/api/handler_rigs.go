@@ -124,6 +124,9 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 		return
 	}
 
+	// Best-effort kill: the agent set may change between config read and each
+	// KillAgent call (pool scaling, config reload). The reconciler is the
+	// convergence mechanism — survivors will be caught on its next tick.
 	killed := make([]string, 0)
 	failed := make([]string, 0)
 	for _, a := range cfg.Agents {
@@ -148,11 +151,18 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 		"rig":    name,
 		"killed": killed,
 	}
+	httpStatus := http.StatusOK
 	if len(failed) > 0 {
-		resp["status"] = "partial"
 		resp["failed"] = failed
+		if len(killed) == 0 {
+			// Total failure — no agents were killed.
+			resp["status"] = "failed"
+			httpStatus = http.StatusInternalServerError
+		} else {
+			resp["status"] = "partial"
+		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, httpStatus, resp)
 }
 
 // buildRigResponse creates a rigResponse with agent counts and last activity.

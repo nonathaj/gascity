@@ -15,6 +15,9 @@ func TestParsePagination_Defaults(t *testing.T) {
 	if pp.Limit != 50 {
 		t.Errorf("limit = %d, want 50", pp.Limit)
 	}
+	if pp.IsPaging {
+		t.Error("IsPaging should be false when no cursor/limit params")
+	}
 }
 
 func TestParsePagination_LimitOnly(t *testing.T) {
@@ -25,6 +28,9 @@ func TestParsePagination_LimitOnly(t *testing.T) {
 	}
 	if pp.Offset != 0 {
 		t.Errorf("offset = %d, want 0", pp.Offset)
+	}
+	if !pp.IsPaging {
+		t.Error("IsPaging should be true when limit is provided")
 	}
 }
 

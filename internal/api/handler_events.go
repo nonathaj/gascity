@@ -77,6 +77,10 @@ func (s *Server) handleEventList(w http.ResponseWriter, r *http.Request) {
 		evts = []events.Event{}
 	}
 	pp := parsePagination(r, 100)
+	if !pp.IsPaging {
+		writeListJSON(w, s.latestIndex(), evts, len(evts))
+		return
+	}
 	page, total, nextCursor := paginate(evts, pp)
 	if page == nil {
 		page = []events.Event{}

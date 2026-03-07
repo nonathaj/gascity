@@ -28,7 +28,7 @@ func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {
 		if rig != "" {
 			mp := s.state.MailProvider(rig)
 			if mp == nil {
-				writePagedJSON(w, s.latestIndex(), []any{}, 0, "")
+				writeListJSON(w, s.latestIndex(), []any{}, 0)
 				return
 			}
 			msgs, err := mp.Inbox(agent)
@@ -38,6 +38,10 @@ func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {
 			}
 			if msgs == nil {
 				msgs = []mail.Message{}
+			}
+			if !pp.IsPaging {
+				writeListJSON(w, s.latestIndex(), msgs, len(msgs))
+				return
 			}
 			page, total, nextCursor := paginate(msgs, pp)
 			if page == nil {
@@ -59,6 +63,10 @@ func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {
 		}
 		if allMsgs == nil {
 			allMsgs = []mail.Message{}
+		}
+		if !pp.IsPaging {
+			writeListJSON(w, s.latestIndex(), allMsgs, len(allMsgs))
+			break
 		}
 		page, total, nextCursor := paginate(allMsgs, pp)
 		if page == nil {
@@ -129,8 +137,8 @@ func (s *Server) handleMailSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Idempotency check.
-	idemKey := r.Header.Get("Idempotency-Key")
+	// Idempotency check — key is scoped by method+path to prevent cross-endpoint collisions.
+	idemKey := scopedIdemKey(r, r.Header.Get("Idempotency-Key"))
 	var bodyHash string
 	if idemKey != "" {
 		bodyHash = hashBody(body)

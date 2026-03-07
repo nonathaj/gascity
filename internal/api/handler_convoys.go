@@ -33,6 +33,10 @@ func (s *Server) handleConvoyList(w http.ResponseWriter, r *http.Request) {
 	if convoys == nil {
 		convoys = []beads.Bead{}
 	}
+	if !pp.IsPaging {
+		writeListJSON(w, s.latestIndex(), convoys, len(convoys))
+		return
+	}
 	page, total, nextCursor := paginate(convoys, pp)
 	if page == nil {
 		page = []beads.Bead{}

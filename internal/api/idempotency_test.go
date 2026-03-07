@@ -180,6 +180,27 @@ func TestHashBody_DifferentInputs(t *testing.T) {
 	}
 }
 
+func TestScopedIdemKey_NamespacedByEndpoint(t *testing.T) {
+	r1 := httptest.NewRequest("POST", "/v0/beads", nil)
+	r2 := httptest.NewRequest("POST", "/v0/mail", nil)
+
+	k1 := scopedIdemKey(r1, "abc")
+	k2 := scopedIdemKey(r2, "abc")
+	if k1 == k2 {
+		t.Errorf("same Idempotency-Key on different endpoints should produce different scoped keys: %q == %q", k1, k2)
+	}
+	if k1 == "" {
+		t.Error("scopedIdemKey should return non-empty for non-empty key")
+	}
+}
+
+func TestScopedIdemKey_EmptyKey(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v0/beads", nil)
+	if got := scopedIdemKey(r, ""); got != "" {
+		t.Errorf("scopedIdemKey with empty key should return empty, got %q", got)
+	}
+}
+
 func containsStr(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {
