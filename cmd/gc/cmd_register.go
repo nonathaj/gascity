@@ -54,9 +54,12 @@ func doRegister(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Resolve effective city name from config (workspace.name or basename).
+	// Use LoadWithIncludes to match the supervisor's config load path —
+	// if workspace.name is set in an included file, we must see it here
+	// to avoid name drift between registration and runtime.
 	effectiveName := filepath.Base(cityPath)
 	tomlPath := filepath.Join(cityPath, "city.toml")
-	if cfg, loadErr := config.Load(fsys.OSFS{}, tomlPath); loadErr == nil {
+	if cfg, _, loadErr := config.LoadWithIncludes(fsys.OSFS{}, tomlPath); loadErr == nil {
 		if cfg.Workspace.Name != "" {
 			effectiveName = cfg.Workspace.Name
 		}

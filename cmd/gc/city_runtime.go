@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,7 @@ type CityRuntime struct {
 	poolDeathHandlers map[string]poolDeathInfo
 	suspendedNames    map[string]bool
 
+	shutdownOnce   sync.Once
 	logPrefix      string // "gc start" or "gc supervisor"
 	stdout, stderr io.Writer
 }
@@ -370,18 +372,22 @@ func (cr *CityRuntime) reloadConfig(
 }
 
 // shutdown performs graceful two-pass agent shutdown for this city.
+// Safe to call multiple times (e.g., from both panic recovery and
+// normal shutdown) — only the first call takes effect.
 func (cr *CityRuntime) shutdown() {
-	timeout := cr.cfg.Daemon.ShutdownTimeoutDuration()
-	if cr.rops != nil {
-		running, _ := cr.rops.listRunning("")
-		gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
-	} else {
-		var names []string
-		for _, a := range cr.buildFn(cr.cfg, cr.sp) {
-			if a.IsRunning() {
-				names = append(names, a.SessionName())
+	cr.shutdownOnce.Do(func() {
+		timeout := cr.cfg.Daemon.ShutdownTimeoutDuration()
+		if cr.rops != nil {
+			running, _ := cr.rops.listRunning("")
+			gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
+		} else {
+			var names []string
+			for _, a := range cr.buildFn(cr.cfg, cr.sp) {
+				if a.IsRunning() {
+					names = append(names, a.SessionName())
+				}
 			}
+			gracefulStopAll(names, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
 		}
-		gracefulStopAll(names, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
-	}
+	})
 }

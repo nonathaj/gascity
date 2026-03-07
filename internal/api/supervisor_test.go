@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,5 +349,78 @@ func TestSupervisorGlobalEventListEmpty(t *testing.T) {
 	}
 	if resp.Total != 0 {
 		t.Errorf("total = %d, want 0", resp.Total)
+	}
+}
+
+func TestSupervisorGlobalEventStreamCompositeCursor(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	// Use a cancellable context so we can stop the SSE stream.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest("GET", "/v0/events/stream", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	// Run ServeHTTP in a goroutine since it blocks.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sm.ServeHTTP(rec, req)
+	}()
+
+	// Record events after the stream handler starts.
+	time.Sleep(50 * time.Millisecond)
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "b1"})
+
+	// Give events time to propagate through the stream.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Parse SSE events from the response body.
+	body := rec.Body.String()
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	var sseIDs []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "id: ") {
+			sseIDs = append(sseIDs, strings.TrimPrefix(line, "id: "))
+		}
+	}
+
+	if len(sseIDs) == 0 {
+		t.Fatalf("expected SSE events with id lines, got body: %s", body)
+	}
+
+	// Each id should be a composite cursor (containing ":" for city:seq format).
+	for _, id := range sseIDs {
+		if !strings.Contains(id, ":") {
+			t.Errorf("SSE id %q is not a composite cursor (expected city:seq format)", id)
+		}
+		// Verify round-trip: ParseCursor should produce a non-empty map.
+		cursors := events.ParseCursor(id)
+		if len(cursors) == 0 {
+			t.Errorf("ParseCursor(%q) returned empty map", id)
+		}
+	}
+
+	// The last cursor should contain both cities (once both have emitted events).
+	lastID := sseIDs[len(sseIDs)-1]
+	lastCursors := events.ParseCursor(lastID)
+	if _, ok := lastCursors["alpha"]; !ok {
+		t.Errorf("last cursor %q missing city 'alpha'", lastID)
+	}
+	if _, ok := lastCursors["beta"]; !ok {
+		t.Errorf("last cursor %q missing city 'beta'", lastID)
 	}
 }

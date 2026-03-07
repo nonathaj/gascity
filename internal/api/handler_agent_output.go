@@ -384,7 +384,7 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 		case <-poll.C:
 			readAndEmit()
 		case <-keepalive.C:
-			writeSSEComment(w, "keepalive")
+			writeSSEComment(w)
 		}
 	}
 }
@@ -441,7 +441,7 @@ func (s *Server) streamPeekOutput(ctx context.Context, w http.ResponseWriter, na
 		case <-poll.C:
 			emitPeek()
 		case <-keepalive.C:
-			writeSSEComment(w, "keepalive")
+			writeSSEComment(w)
 		}
 	}
 }
