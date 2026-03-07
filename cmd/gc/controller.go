@@ -499,8 +499,8 @@ func controllerLoop(
 				ad.dispatch(ctx, filepath.Dir(tomlPath), time.Now())
 			}
 			// Chat session auto-suspend: suspend detached idle sessions.
-			if idleTimeout := cfg.ChatSessions.IdleTimeoutDuration(); idleTimeout > 0 {
-				autoSuspendChatSessions(filepath.Dir(tomlPath), sp, idleTimeout, stdout, stderr)
+			if idleTimeout := cfg.ChatSessions.IdleTimeoutDuration(); idleTimeout > 0 && cs != nil {
+				autoSuspendChatSessions(cs.CityBeadStore(), sp, idleTimeout, stdout, stderr)
 			}
 		case <-ctx.Done():
 			return

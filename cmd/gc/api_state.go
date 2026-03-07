@@ -61,7 +61,11 @@ func newControllerState(
 	}
 	cs.beadStores, cs.mailProvs = cs.buildStores(cfg)
 	// Open city-level store for session beads (best-effort).
-	cs.cityBeadStore, _ = openCityStoreAt(cityPath)
+	if store, err := openCityStoreAt(cityPath); err != nil {
+		fmt.Fprintf(os.Stderr, "api: city bead store: %v (session endpoints disabled)\n", err)
+	} else {
+		cs.cityBeadStore = store
+	}
 	return cs
 }
 
@@ -136,6 +140,8 @@ func (cs *controllerState) openRigStore(provider, rigPath string) beads.Store {
 func (cs *controllerState) update(cfg *config.City, sp session.Provider) {
 	// Build new stores outside the lock (may do file I/O / subprocess spawns).
 	stores, provs := cs.buildStores(cfg)
+	// Reopen city-level store for session beads.
+	cityStore, _ := openCityStoreAt(cs.cityPath)
 
 	// Swap under short critical section.
 	cs.mu.Lock()
@@ -143,6 +149,10 @@ func (cs *controllerState) update(cfg *config.City, sp session.Provider) {
 	cs.sp = sp
 	cs.beadStores = stores
 	cs.mailProvs = provs
+	if cityStore != nil {
+		cs.cityBeadStore = cityStore
+	}
+	// Keep prior non-nil store if reopen fails.
 	cs.mu.Unlock()
 }
 

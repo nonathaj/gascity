@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,25 +36,7 @@ func TestAutoSuspendChatSessions(t *testing.T) {
 	sp.SetAttached(s2.SessionName, false)
 
 	var stdout, stderr bytes.Buffer
-
-	// Use the manager directly (auto-suspend calls mgr.List + mgr.Suspend).
-	// We can't call autoSuspendChatSessions directly because it needs openCityStoreAt.
-	// Instead, replicate the logic to test the behavior.
-	sessions, err := mgr.List("active", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	idleTimeout := 30 * time.Minute
-	now := time.Now()
-	for _, s := range sessions {
-		if s.Attached || s.LastActive.IsZero() || now.Sub(s.LastActive) < idleTimeout {
-			continue
-		}
-		if err := mgr.Suspend(s.ID); err != nil {
-			t.Fatalf("suspend: %v", err)
-		}
-	}
+	autoSuspendChatSessions(store, sp, 30*time.Minute, &stdout, &stderr)
 
 	// s1 should be suspended (idle 2h > 30m timeout).
 	got1, err := mgr.Get(s1.ID)
@@ -73,8 +56,13 @@ func TestAutoSuspendChatSessions(t *testing.T) {
 		t.Errorf("s2 state = %q, want active", got2.State)
 	}
 
-	_ = stdout
-	_ = stderr
+	// Verify stdout mentions the suspended session.
+	if !strings.Contains(stdout.String(), s1.ID) {
+		t.Errorf("stdout should mention suspended session ID %s, got: %s", s1.ID, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
+	}
 }
 
 func TestAutoSuspendSkipsAttachedSessions(t *testing.T) {
@@ -91,21 +79,8 @@ func TestAutoSuspendSkipsAttachedSessions(t *testing.T) {
 	sp.SetActivity(s1.SessionName, time.Now().Add(-2*time.Hour))
 	sp.SetAttached(s1.SessionName, true)
 
-	sessions, err := mgr.List("active", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	idleTimeout := 30 * time.Minute
-	now := time.Now()
-	for _, s := range sessions {
-		if s.Attached || s.LastActive.IsZero() || now.Sub(s.LastActive) < idleTimeout {
-			continue
-		}
-		if err := mgr.Suspend(s.ID); err != nil {
-			t.Fatalf("suspend: %v", err)
-		}
-	}
+	var stdout, stderr bytes.Buffer
+	autoSuspendChatSessions(store, sp, 30*time.Minute, &stdout, &stderr)
 
 	got, err := mgr.Get(s1.ID)
 	if err != nil {
@@ -113,5 +88,16 @@ func TestAutoSuspendSkipsAttachedSessions(t *testing.T) {
 	}
 	if got.State != chatsession.StateActive {
 		t.Errorf("attached session state = %q, want active", got.State)
+	}
+}
+
+func TestAutoSuspendNilStore(t *testing.T) {
+	t.Helper() // uses t for test name
+	sp := session.NewFake()
+	var stdout, stderr bytes.Buffer
+	// Should not panic with nil store.
+	autoSuspendChatSessions(nil, sp, 30*time.Minute, &stdout, &stderr)
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Errorf("unexpected output with nil store: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
