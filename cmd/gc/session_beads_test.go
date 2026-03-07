@@ -391,6 +391,52 @@ func TestSyncSessionBeads_ResumedAfterSuspension(t *testing.T) {
 	}
 }
 
+func TestSyncSessionBeads_StaleCloseMetadataCleared(t *testing.T) {
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+
+	agents := []agent.Agent{
+		&agent.Fake{
+			FakeName:          "worker",
+			FakeSessionName:   "worker",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+	}
+
+	var stderr bytes.Buffer
+	syncSessionBeads(store, agents, allConfigured(agents), clk, &stderr)
+
+	// Simulate a partially-failed closeBead: set close_reason on the
+	// open bead as if setMeta("close_reason") succeeded but store.Close
+	// failed. The bead stays open with stale terminal metadata.
+	all, _ := store.ListByLabel(sessionBeadLabel, 0)
+	_ = store.SetMetadata(all[0].ID, "close_reason", "orphaned")
+	_ = store.SetMetadata(all[0].ID, "closed_at", "2026-03-07T12:00:05Z")
+
+	// Agent resumes — sync should clear the stale close metadata.
+	clk.Advance(5 * time.Second)
+	syncSessionBeads(store, agents, allConfigured(agents), clk, &stderr)
+
+	all, _ = store.ListByLabel(sessionBeadLabel, 0)
+	if len(all) != 1 {
+		t.Fatalf("expected 1 bead, got %d", len(all))
+	}
+	b := all[0]
+	if b.Status != "open" {
+		t.Errorf("status = %q, want %q", b.Status, "open")
+	}
+	if b.Metadata["state"] != "active" {
+		t.Errorf("state = %q, want %q", b.Metadata["state"], "active")
+	}
+	if b.Metadata["close_reason"] != "" {
+		t.Errorf("close_reason = %q, want empty (stale metadata not cleared)", b.Metadata["close_reason"])
+	}
+	if b.Metadata["closed_at"] != "" {
+		t.Errorf("closed_at = %q, want empty (stale metadata not cleared)", b.Metadata["closed_at"])
+	}
+}
+
 func TestSyncSessionBeads_SuspendedAgentNotOrphaned(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}

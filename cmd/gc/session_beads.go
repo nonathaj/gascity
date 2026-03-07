@@ -151,6 +151,16 @@ func syncSessionBeads(
 			}
 		}
 
+		// Clear stale close metadata from a failed closeBead attempt.
+		// If closeBead partially wrote metadata before aborting (e.g.,
+		// close_reason set but store.Close failed), and the agent is
+		// now active again, clean up the stale terminal metadata.
+		if b.Metadata["close_reason"] != "" {
+			setMeta(store, b.ID, "close_reason", "", stderr) //nolint:errcheck
+			setMeta(store, b.ID, "closed_at", "", stderr)    //nolint:errcheck
+			changed = true
+		}
+
 		// Only update synced_at when something actually changed,
 		// to avoid disk thrashing on every tick.
 		if changed {
