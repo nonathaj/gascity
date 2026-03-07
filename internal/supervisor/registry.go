@@ -130,9 +130,11 @@ func (r *Registry) Unregister(cityPath string) error {
 	if err != nil {
 		return fmt.Errorf("resolving path: %w", err)
 	}
-	abs, err = filepath.EvalSymlinks(abs)
-	if err != nil {
-		return fmt.Errorf("resolving symlinks: %w", err)
+	// Best-effort symlink resolution: if the directory was deleted before
+	// unregister, EvalSymlinks fails. Fall back to the absolute path so
+	// stale entries can still be removed.
+	if resolved, evalErr := filepath.EvalSymlinks(abs); evalErr == nil {
+		abs = resolved
 	}
 
 	r.mu.Lock()
