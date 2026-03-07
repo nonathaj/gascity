@@ -31,7 +31,7 @@ func setupBeadReconcileOps(t *testing.T, agents []agent.Agent) (*beadReconcileOp
 		}
 	}
 
-	bro := newBeadReconcileOps(provider, store)
+	bro := newBeadReconcileOps(provider, func() beads.Store { return store })
 	bro.updateIndex(idx)
 	return bro, store
 }
@@ -109,13 +109,13 @@ func TestBeadReconcileOps_MissingBeadFallsBackToProvider(t *testing.T) {
 		t.Errorf("provider configHash = %q, want %q", provider.hashes["unknown"], "fallback")
 	}
 
-	// Reading from unknown session returns empty (graceful upgrade).
+	// Reading from unknown session should also fall back to provider.
 	hash, err := bro.configHash("unknown")
 	if err != nil {
 		t.Fatalf("configHash for unknown: %v", err)
 	}
-	if hash != "" {
-		t.Errorf("configHash for unknown = %q, want empty", hash)
+	if hash != "fallback" {
+		t.Errorf("configHash for unknown = %q, want %q (should fall back to provider)", hash, "fallback")
 	}
 }
 
@@ -258,7 +258,7 @@ func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 
 	provider := newFakeReconcileOps()
 	provider.running["mayor"] = true
-	bro := newBeadReconcileOps(provider, store)
+	bro := newBeadReconcileOps(provider, func() beads.Store { return store })
 	bro.updateIndex(idx1)
 
 	// Store a hash.
@@ -296,5 +296,52 @@ func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 	hash, _ = bro.configHash("mayor")
 	if hash != "v2" {
 		t.Errorf("after resume + store, configHash = %q, want %q", hash, "v2")
+	}
+}
+
+func TestBeadReconcileOps_UpgradePathFallsBackToProvider(t *testing.T) {
+	// Simulates upgrade: bead exists but has no started_config_hash.
+	// configHash should fall back to provider's stored hash.
+	agents := []agent.Agent{
+		&agent.Fake{
+			FakeName:          "mayor",
+			FakeSessionName:   "mayor",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+	}
+
+	bro, _ := setupBeadReconcileOps(t, agents)
+
+	// Simulate pre-upgrade state: provider has the hash, bead doesn't.
+	provider := bro.provider.(*fakeReconcileOps)
+	provider.hashes["mayor"] = "pre-upgrade-hash"
+
+	// configHash should fall back to provider since started_config_hash is empty.
+	hash, err := bro.configHash("mayor")
+	if err != nil {
+		t.Fatalf("configHash: %v", err)
+	}
+	if hash != "pre-upgrade-hash" {
+		t.Errorf("configHash = %q, want %q (should fall back to provider on upgrade)", hash, "pre-upgrade-hash")
+	}
+
+	// liveHash should also fall back.
+	provider.liveHashes["mayor"] = "pre-upgrade-live"
+	lhash, err := bro.liveHash("mayor")
+	if err != nil {
+		t.Fatalf("liveHash: %v", err)
+	}
+	if lhash != "pre-upgrade-live" {
+		t.Errorf("liveHash = %q, want %q (should fall back to provider on upgrade)", lhash, "pre-upgrade-live")
+	}
+
+	// After storing a hash in the bead, it should take precedence.
+	if err := bro.storeConfigHash("mayor", "v1"); err != nil {
+		t.Fatalf("storeConfigHash: %v", err)
+	}
+	hash, _ = bro.configHash("mayor")
+	if hash != "v1" {
+		t.Errorf("after store, configHash = %q, want %q", hash, "v1")
 	}
 }

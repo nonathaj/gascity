@@ -316,13 +316,8 @@ func (cr *CityRuntime) reloadConfig(
 				cr.logPrefix, newProviderName, spErr)
 		} else {
 			cr.sp = newSp
-			provOps := newReconcileOps(cr.sp)
-			// Preserve bead-driven reconciliation if a store is available.
-			if store := cr.cityBeadStore(); store != nil {
-				cr.rops = newBeadReconcileOps(provOps, store)
-			} else {
-				cr.rops = provOps
-			}
+			cr.rops = newReconcileOps(cr.sp)
+			cr.upgradeToBeadReconcileOps()
 			cr.dops = newDrainOps(cr.sp)
 			cr.rec.Record(events.Event{
 				Type:    events.ProviderSwapped,
@@ -419,11 +414,14 @@ func (cr *CityRuntime) reloadConfig(
 // beadReconcileOps when a bead store is available. Called once during run()
 // after the bead store is opened. No-op if no store is available.
 func (cr *CityRuntime) upgradeToBeadReconcileOps() {
-	store := cr.cityBeadStore()
-	if store == nil || cr.rops == nil {
+	if cr.cityBeadStore() == nil || cr.rops == nil {
 		return
 	}
-	cr.rops = newBeadReconcileOps(cr.rops, store)
+	// Guard against double-wrapping.
+	if _, ok := cr.rops.(*beadReconcileOps); ok {
+		return
+	}
+	cr.rops = newBeadReconcileOps(cr.rops, cr.cityBeadStore)
 }
 
 // syncBeadsAndUpdateIndex runs syncSessionBeads and, if rops is a

@@ -20,21 +20,31 @@ import (
 // reconciler detects drift by comparing started_config_hash to the
 // current config's fingerprint.
 //
+// Read methods fall back to the provider when the bead is missing or
+// the started_* key is empty. This ensures drift detection survives
+// the upgrade from provider-based hashes (Phase 2) to bead-based
+// hashes (Phase 3) without requiring a restart.
+//
+// The store is resolved dynamically via storeFunc to handle standalone
+// store replacement on config reload.
+//
 // listRunning and runLive delegate to the underlying provider — these
 // are session-level operations that beads cannot replace.
 type beadReconcileOps struct {
-	provider reconcileOps      // delegate for listRunning, runLive
-	store    beads.Store       // bead store for hash persistence
-	index    map[string]string // session_name → bead_id (open beads)
+	provider  reconcileOps       // delegate for listRunning, runLive, hash fallback
+	storeFunc func() beads.Store // dynamic store resolution (handles reload)
+	index     map[string]string  // session_name → bead_id (open beads)
 }
 
 // newBeadReconcileOps creates a beadReconcileOps wrapping the given provider.
+// The storeFunc is called on each operation to resolve the current store,
+// handling standalone store replacement on config reload.
 // The index is initially empty and must be populated via updateIndex before
 // hash operations will succeed.
-func newBeadReconcileOps(provider reconcileOps, store beads.Store) *beadReconcileOps {
+func newBeadReconcileOps(provider reconcileOps, storeFunc func() beads.Store) *beadReconcileOps {
 	return &beadReconcileOps{
-		provider: provider,
-		store:    store,
+		provider:  provider,
+		storeFunc: storeFunc,
 	}
 }
 
@@ -54,20 +64,26 @@ func (o *beadReconcileOps) storeConfigHash(name, hash string) error {
 		// No bead for this session — fall back to provider.
 		return o.provider.storeConfigHash(name, hash)
 	}
-	return o.store.SetMetadata(id, "started_config_hash", hash)
+	return o.storeFunc().SetMetadata(id, "started_config_hash", hash)
 }
 
 func (o *beadReconcileOps) configHash(name string) (string, error) {
 	id, ok := o.index[name]
 	if !ok {
-		// No bead — graceful upgrade, same as empty hash.
-		return "", nil
+		// No bead — fall back to provider (preserves pre-upgrade hashes).
+		return o.provider.configHash(name)
 	}
-	b, err := o.store.Get(id)
+	b, err := o.storeFunc().Get(id)
 	if err != nil {
-		return "", nil
+		// Store degraded — fall back to provider.
+		return o.provider.configHash(name)
 	}
-	return b.Metadata["started_config_hash"], nil
+	hash := b.Metadata["started_config_hash"]
+	if hash == "" {
+		// Bead exists but no started hash yet (upgrade path) — check provider.
+		return o.provider.configHash(name)
+	}
+	return hash, nil
 }
 
 func (o *beadReconcileOps) storeLiveHash(name, hash string) error {
@@ -75,19 +91,23 @@ func (o *beadReconcileOps) storeLiveHash(name, hash string) error {
 	if !ok {
 		return o.provider.storeLiveHash(name, hash)
 	}
-	return o.store.SetMetadata(id, "started_live_hash", hash)
+	return o.storeFunc().SetMetadata(id, "started_live_hash", hash)
 }
 
 func (o *beadReconcileOps) liveHash(name string) (string, error) {
 	id, ok := o.index[name]
 	if !ok {
-		return "", nil
+		return o.provider.liveHash(name)
 	}
-	b, err := o.store.Get(id)
+	b, err := o.storeFunc().Get(id)
 	if err != nil {
-		return "", nil
+		return o.provider.liveHash(name)
 	}
-	return b.Metadata["started_live_hash"], nil
+	hash := b.Metadata["started_live_hash"]
+	if hash == "" {
+		return o.provider.liveHash(name)
+	}
+	return hash, nil
 }
 
 func (o *beadReconcileOps) runLive(name string, cfg runtime.Config) error {
