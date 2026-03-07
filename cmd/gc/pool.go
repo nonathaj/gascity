@@ -262,7 +262,8 @@ func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]ag
 		}
 
 		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
-		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, nil)
+		fpExtra := buildFingerprintExtra(&instanceAgent)
+		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, fpExtra)
 		if err != nil {
 			return nil, fmt.Errorf("agent %q instance %q: %w", cfgAgent.QualifiedName(), name, err)
 		}

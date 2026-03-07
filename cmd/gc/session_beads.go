@@ -175,12 +175,14 @@ func syncSessionBeads(
 		if configuredNames[sn] {
 			// Still in config but not runnable (suspended/disabled).
 			if b.Metadata["state"] != "suspended" {
-				setMeta(store, b.ID, "state", "suspended", stderr) //nolint:errcheck
+				setMeta(store, b.ID, "state", "suspended", stderr)                                 //nolint:errcheck
+				setMeta(store, b.ID, "synced_at", now.Format("2006-01-02T15:04:05Z07:00"), stderr) //nolint:errcheck
 			}
 		} else {
 			// Not in config at all — orphaned.
 			if b.Metadata["state"] != "orphaned" {
-				setMeta(store, b.ID, "state", "orphaned", stderr) //nolint:errcheck
+				setMeta(store, b.ID, "state", "orphaned", stderr)                                  //nolint:errcheck
+				setMeta(store, b.ID, "synced_at", now.Format("2006-01-02T15:04:05Z07:00"), stderr) //nolint:errcheck
 			}
 		}
 	}
