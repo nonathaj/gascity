@@ -23,7 +23,10 @@ import (
 // Read methods fall back to the provider when the bead is missing or
 // the started_* key is empty. This ensures drift detection survives
 // the upgrade from provider-based hashes (Phase 2) to bead-based
-// hashes (Phase 3) without requiring a restart.
+// hashes (Phase 3) without requiring a restart. When the store is
+// degraded (Get error), reads return empty — the reconciler treats
+// empty as "no hash yet" and skips drift, avoiding destructive
+// restarts when state cannot be reliably read.
 //
 // The store is resolved dynamically via storeFunc to handle standalone
 // store replacement on config reload.
@@ -75,8 +78,12 @@ func (o *beadReconcileOps) configHash(name string) (string, error) {
 	}
 	b, err := o.storeFunc().Get(id)
 	if err != nil {
-		// Store degraded — fall back to provider.
-		return o.provider.configHash(name)
+		// Store degraded — return empty so reconciler skips drift
+		// (reconcile.go:329 treats "" as graceful-upgrade). Falling back
+		// to provider here would be asymmetric with storeConfigHash
+		// (which doesn't fall back on write failure), creating an
+		// infinite restart loop when the store is degraded.
+		return "", nil
 	}
 	hash := b.Metadata["started_config_hash"]
 	if hash == "" {
@@ -101,7 +108,8 @@ func (o *beadReconcileOps) liveHash(name string) (string, error) {
 	}
 	b, err := o.storeFunc().Get(id)
 	if err != nil {
-		return o.provider.liveHash(name)
+		// Store degraded — return empty (symmetric with configHash).
+		return "", nil
 	}
 	hash := b.Metadata["started_live_hash"]
 	if hash == "" {

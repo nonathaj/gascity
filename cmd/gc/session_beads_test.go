@@ -488,3 +488,69 @@ func TestSyncSessionBeads_SuspendedAgentNotOrphaned(t *testing.T) {
 		t.Errorf("worker close_reason = %q, want %q", workerBead.Metadata["close_reason"], "suspended")
 	}
 }
+
+func TestSyncSessionBeads_ReturnsIndex(t *testing.T) {
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+
+	agents := []agent.Agent{
+		&agent.Fake{
+			FakeName:          "mayor",
+			FakeSessionName:   "mayor",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+		&agent.Fake{
+			FakeName:          "worker",
+			FakeSessionName:   "worker",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+	}
+
+	var stderr bytes.Buffer
+	idx := syncSessionBeads(store, agents, allConfigured(agents), clk, &stderr)
+
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+
+	// Index should contain both agents.
+	if len(idx) != 2 {
+		t.Fatalf("index length = %d, want 2", len(idx))
+	}
+	if idx["mayor"] == "" {
+		t.Error("index missing mayor")
+	}
+	if idx["worker"] == "" {
+		t.Error("index missing worker")
+	}
+
+	// Verify IDs match actual beads.
+	all, _ := store.ListByLabel(sessionBeadLabel, 0)
+	beadIDs := make(map[string]string)
+	for _, b := range all {
+		beadIDs[b.Metadata["session_name"]] = b.ID
+	}
+	if idx["mayor"] != beadIDs["mayor"] {
+		t.Errorf("mayor ID = %q, want %q", idx["mayor"], beadIDs["mayor"])
+	}
+	if idx["worker"] != beadIDs["worker"] {
+		t.Errorf("worker ID = %q, want %q", idx["worker"], beadIDs["worker"])
+	}
+
+	// Suspend worker — closed beads excluded from index.
+	clk.Advance(5 * time.Second)
+	cfgNames := map[string]bool{"mayor": true, "worker": true}
+	idx2 := syncSessionBeads(store, agents[:1], cfgNames, clk, &stderr)
+
+	if len(idx2) != 1 {
+		t.Fatalf("after suspend, index length = %d, want 1", len(idx2))
+	}
+	if idx2["mayor"] == "" {
+		t.Error("after suspend, index missing mayor")
+	}
+	if _, ok := idx2["worker"]; ok {
+		t.Error("after suspend, index should not contain worker")
+	}
+}

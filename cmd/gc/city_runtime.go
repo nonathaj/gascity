@@ -179,8 +179,10 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	cr.upgradeToBeadReconcileOps()
 
 	// Session bead sync BEFORE reconciliation: ensures beads exist for
-	// beadReconcileOps to read/write hashes. Returns session_name → bead_id
-	// index for the reconciler.
+	// beadReconcileOps to read/write hashes. Bead "state" metadata reflects
+	// pre-reconcile reality and may lag by one tick after reconciliation
+	// starts/stops agents. This is acceptable — no external consumer reads
+	// bead state within a tick, and it converges on the next sync.
 	agents := cr.buildFn(cr.cfg, cr.sp)
 	cr.syncBeadsAndUpdateIndex(agents)
 
@@ -249,7 +251,7 @@ func (cr *CityRuntime) tick(
 		cr.reloadConfig(ctx, lastProviderName, observePaths, cityRoot)
 	}
 
-	// Session bead sync BEFORE reconciliation.
+	// Session bead sync BEFORE reconciliation (one-tick state lag; see run()).
 	agents := cr.buildFn(cr.cfg, cr.sp)
 	cr.syncBeadsAndUpdateIndex(agents)
 
@@ -395,6 +397,8 @@ func (cr *CityRuntime) reloadConfig(
 
 	if cr.cs != nil {
 		cr.cs.update(cr.cfg, cr.sp)
+		// Upgrade rops if store recovered from nil → non-nil.
+		cr.upgradeToBeadReconcileOps()
 	} else if cr.standaloneCityStore != nil {
 		// Refresh standalone city store for auto-suspend.
 		if s, err := openCityStoreAt(cityRoot); err != nil {

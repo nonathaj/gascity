@@ -208,8 +208,6 @@ func syncSessionBeads(
 			// Not in config at all — orphaned.
 			closeBead(store, b.ID, "orphaned", now, stderr)
 		}
-		// Remove closed beads from the open index.
-		delete(openIndex, sn)
 	}
 
 	return openIndex

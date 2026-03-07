@@ -299,6 +299,57 @@ func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 	}
 }
 
+func TestBeadReconcileOps_StoreDegradedReturnsEmpty(t *testing.T) {
+	// When store.Get fails, configHash/liveHash should return empty (not
+	// fall back to provider), so the reconciler skips drift rather than
+	// reading stale provider hashes and causing restart loops.
+	agents := []agent.Agent{
+		&agent.Fake{
+			FakeName:          "mayor",
+			FakeSessionName:   "mayor",
+			Running:           true,
+			FakeSessionConfig: runtime.Config{Command: "claude"},
+		},
+	}
+
+	bro, _ := setupBeadReconcileOps(t, agents)
+
+	// Store a hash, then verify it reads back.
+	if err := bro.storeConfigHash("mayor", "v1"); err != nil {
+		t.Fatalf("storeConfigHash: %v", err)
+	}
+	if err := bro.storeLiveHash("mayor", "live1"); err != nil {
+		t.Fatalf("storeLiveHash: %v", err)
+	}
+
+	// Set a stale provider hash — should NOT be returned on degradation.
+	provider := bro.provider.(*fakeReconcileOps)
+	provider.hashes["mayor"] = "stale-provider-hash"
+	provider.liveHashes["mayor"] = "stale-provider-live"
+
+	// Simulate store degradation: swap storeFunc to a fresh empty store
+	// so Get(id) returns "not found" for the existing bead ID.
+	bro.storeFunc = func() beads.Store { return beads.NewMemStore() }
+
+	// configHash should return empty (not provider's stale hash).
+	hash, err := bro.configHash("mayor")
+	if err != nil {
+		t.Fatalf("configHash during degradation: %v", err)
+	}
+	if hash != "" {
+		t.Errorf("configHash = %q, want empty on store degradation", hash)
+	}
+
+	// liveHash should also return empty.
+	lhash, err := bro.liveHash("mayor")
+	if err != nil {
+		t.Fatalf("liveHash during degradation: %v", err)
+	}
+	if lhash != "" {
+		t.Errorf("liveHash = %q, want empty on store degradation", lhash)
+	}
+}
+
 func TestBeadReconcileOps_UpgradePathFallsBackToProvider(t *testing.T) {
 	// Simulates upgrade: bead exists but has no started_config_hash.
 	// configHash should fall back to provider's stored hash.

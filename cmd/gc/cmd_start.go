@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -478,6 +480,17 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	runPoolOnBoot(cfg, cityPath, shellScaleCheck, stderr)
 	agents := buildAgents(cfg, sp)
 	rops := newReconcileOps(sp)
+	// Upgrade to bead-driven rops so one-shot writes hashes to the same
+	// store as the daemon, preventing false drift on next daemon start.
+	if store, err := openCityStoreAt(cityPath); err == nil {
+		cfgNames := configuredSessionNames(cfg, cityName)
+		idx := syncSessionBeads(store, agents, cfgNames, clock.Real{}, stderr)
+		if idx != nil {
+			bro := newBeadReconcileOps(rops, func() beads.Store { return store })
+			bro.updateIndex(idx)
+			rops = bro
+		}
+	}
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath, multiReg)
 	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr, sigCtx)
 	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths))
