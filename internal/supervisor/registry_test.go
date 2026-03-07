@@ -1,0 +1,176 @@
+package supervisor
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestRegistryEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected empty list, got %d entries", len(entries))
+	}
+}
+
+func TestRegistryRegisterAndList(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	cityPath := filepath.Join(dir, "bright-lights")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(cityPath); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Path != cityPath {
+		t.Errorf("expected path %s, got %s", cityPath, entries[0].Path)
+	}
+}
+
+func TestRegistryRegisterIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	cityPath := filepath.Join(dir, "bright-lights")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(cityPath); err != nil {
+		t.Fatal(err)
+	}
+	// Registering again should be a no-op.
+	if err := r.Register(cityPath); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry after double register, got %d", len(entries))
+	}
+}
+
+func TestRegistryDuplicateNameRejected(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	path1 := filepath.Join(dir, "sub1", "myproject")
+	path2 := filepath.Join(dir, "sub2", "myproject")
+	if err := os.MkdirAll(path1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(path1); err != nil {
+		t.Fatal(err)
+	}
+	err := r.Register(path2)
+	if err == nil {
+		t.Fatal("expected error for duplicate city name")
+	}
+}
+
+func TestRegistryUnregister(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	cityPath := filepath.Join(dir, "bright-lights")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(cityPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Unregister(cityPath); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries after unregister, got %d", len(entries))
+	}
+}
+
+func TestRegistryUnregisterNotFound(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	err := r.Unregister(filepath.Join(dir, "nonexistent"))
+	if err == nil {
+		t.Fatal("expected error for unregistering non-existent city")
+	}
+}
+
+func TestRegistryMultipleCities(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(filepath.Join(dir, "cities.toml"))
+
+	path1 := filepath.Join(dir, "city-a")
+	path2 := filepath.Join(dir, "city-b")
+	if err := os.MkdirAll(path1, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path2, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Register(path1); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Register(path2); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Unregister first, second remains.
+	if err := r.Unregister(path1); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = r.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Path != path2 {
+		t.Errorf("expected only city-b, got %v", entries)
+	}
+}
+
+func TestCityEntryName(t *testing.T) {
+	e := CityEntry{Path: "/home/user/bright-lights"}
+	if e.Name() != "bright-lights" {
+		t.Errorf("expected bright-lights, got %s", e.Name())
+	}
+}
