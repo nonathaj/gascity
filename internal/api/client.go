@@ -3,12 +3,30 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"time"
 )
+
+// connError wraps transport-level errors (connection refused, timeout, etc.)
+// to distinguish them from API-level error responses.
+type connError struct {
+	err error
+}
+
+func (e *connError) Error() string { return e.err.Error() }
+func (e *connError) Unwrap() error { return e.err }
+
+// IsConnError reports whether err is a transport-level connection failure
+// (e.g., connection refused, timeout) rather than an API-level error response.
+// CLI commands use this to fall back to direct file mutation when the
+// controller's API listener is unavailable.
+func IsConnError(err error) bool {
+	var ce *connError
+	return errors.As(err, &ce)
+}
 
 // Client is an HTTP client for the Gas City API server.
 // It wraps mutation endpoints so CLI commands can route writes
@@ -45,23 +63,25 @@ func (c *Client) patchCity(suspend bool) error {
 }
 
 // SuspendAgent suspends an agent via POST /v0/agent/{name}/suspend.
+// Name can be qualified (e.g., "myrig/worker") — the server route uses
+// {name...} wildcard which captures slashes.
 func (c *Client) SuspendAgent(name string) error {
-	return c.doMutation("POST", "/v0/agent/"+url.PathEscape(name)+"/suspend", nil)
+	return c.doMutation("POST", "/v0/agent/"+name+"/suspend", nil)
 }
 
 // ResumeAgent resumes an agent via POST /v0/agent/{name}/resume.
 func (c *Client) ResumeAgent(name string) error {
-	return c.doMutation("POST", "/v0/agent/"+url.PathEscape(name)+"/resume", nil)
+	return c.doMutation("POST", "/v0/agent/"+name+"/resume", nil)
 }
 
 // SuspendRig suspends a rig via POST /v0/rig/{name}/suspend.
 func (c *Client) SuspendRig(name string) error {
-	return c.doMutation("POST", "/v0/rig/"+url.PathEscape(name)+"/suspend", nil)
+	return c.doMutation("POST", "/v0/rig/"+name+"/suspend", nil)
 }
 
 // ResumeRig resumes a rig via POST /v0/rig/{name}/resume.
 func (c *Client) ResumeRig(name string) error {
-	return c.doMutation("POST", "/v0/rig/"+url.PathEscape(name)+"/resume", nil)
+	return c.doMutation("POST", "/v0/rig/"+name+"/resume", nil)
 }
 
 // doMutation sends a mutation request and checks for errors.
@@ -86,7 +106,7 @@ func (c *Client) doMutation(method, path string, body any) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return &connError{err: fmt.Errorf("request failed: %w", err)}
 	}
 	defer resp.Body.Close() //nolint:errcheck // best-effort
 
@@ -104,6 +124,9 @@ func (c *Client) doMutation(method, path string, body any) error {
 	}
 	if apiErr.Message != "" {
 		return fmt.Errorf("API error: %s", apiErr.Message)
+	}
+	if apiErr.Error != "" {
+		return fmt.Errorf("API error: %s", apiErr.Error)
 	}
 	return fmt.Errorf("API returned %d", resp.StatusCode)
 }

@@ -150,6 +150,55 @@ func TestClientErrorResponse(t *testing.T) {
 	}
 }
 
+func TestClientQualifiedAgentName(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	if err := c.SuspendAgent("myrig/worker"); err != nil {
+		t.Fatalf("SuspendAgent: %v", err)
+	}
+	// The server uses {name...} wildcard, so the raw slash must arrive unescaped.
+	if gotPath != "/v0/agent/myrig/worker/suspend" {
+		t.Errorf("path = %q, want /v0/agent/myrig/worker/suspend", gotPath)
+	}
+}
+
+func TestClientConnError(t *testing.T) {
+	// Client targeting a port with nothing listening → connection refused.
+	c := NewClient("http://127.0.0.1:1") // port 1 is never listening
+	err := c.SuspendCity()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsConnError(err) {
+		t.Errorf("IsConnError = false for connection refused error: %v", err)
+	}
+}
+
+func TestClientAPIErrorNotConnError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "bad_request"}) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	err := c.SuspendCity()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if IsConnError(err) {
+		t.Errorf("IsConnError = true for API error response: %v", err)
+	}
+}
+
 func TestClientCSRFHeader(t *testing.T) {
 	var gotHeader string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
