@@ -55,8 +55,11 @@ func detectSupervisor(apiURL string) bool {
 		return false
 	}
 
+	// Any valid JSON response from /v0/cities means supervisor mode. We
+	// don't require items to be non-empty since the supervisor may have
+	// zero cities registered at startup.
 	var list struct {
 		Items json.RawMessage `json:"items"`
 	}
-	return json.NewDecoder(resp.Body).Decode(&list) == nil && len(list.Items) > 0
+	return json.NewDecoder(resp.Body).Decode(&list) == nil && list.Items != nil
 }
