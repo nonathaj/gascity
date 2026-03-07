@@ -12,6 +12,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -244,6 +245,17 @@ func (cr *CityRuntime) tick(
 		cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
 		cr.stdout, cr.stderr, ctx)
 	ensureObservers(agents, *observePaths)
+
+	// Phase 1: sync session beads alongside the existing reconciler.
+	{
+		var store beads.Store
+		if cr.cs != nil {
+			store = cr.cs.CityBeadStore()
+		} else {
+			store = cr.standaloneCityStore
+		}
+		syncSessionBeads(store, agents, cr.sp, clock.Real{}, cr.stderr)
+	}
 
 	// Wisp GC: purge expired closed molecules.
 	if cr.wg != nil && cr.wg.shouldRun(time.Now()) {

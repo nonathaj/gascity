@@ -86,6 +86,8 @@ Agent defines a configured agent in the city.
 | `attach` | boolean |  |  | Attach controls whether the agent's session supports interactive attachment (e.g., tmux attach). When false, the agent can use a lighter runtime (subprocess instead of tmux). Defaults to true. |
 | `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 | `multi` | boolean |  |  | Multi marks this agent as a multi-instance template. Users manually start/stop named instances via "gc agent start/stop/destroy". Unlike pools (declarative auto-scaling), multi is imperative. Multi and pool are mutually exclusive. |
+| `depends_on` | []string |  |  | DependsOn lists agent names that must be awake before this agent wakes. Used for dependency-ordered startup and shutdown. Validated for cycles at config load time. |
+| `wake_mode` | string |  |  | WakeMode controls context freshness across sleep/wake cycles. "resume" (default): reuse provider session key for conversation continuity. "fresh": start a new provider session on every wake (polecat pattern). Enum: `resume`, `fresh` |
 
 ## AgentOverride
 
@@ -121,6 +123,8 @@ AgentOverride modifies a pack-stamped agent for a specific rig.
 | `install_agent_hooks_append` | []string |  |  | InstallAgentHooksAppend appends to the agent's install_agent_hooks list. |
 | `attach` | boolean |  |  | Attach overrides the agent's attach setting. |
 | `multi` | boolean |  |  | Multi overrides the agent's multi-instance template flag. |
+| `depends_on` | []string |  |  | DependsOn overrides the agent's dependency list. |
+| `wake_mode` | string |  |  | WakeMode overrides the agent's wake mode ("resume" or "fresh"). |
 | `inject_fragments_append` | []string |  |  | InjectFragmentsAppend appends to the agent's inject_fragments list. |
 
 ## AgentPatch
@@ -153,6 +157,8 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 | `inject_fragments` | []string |  |  | InjectFragments overrides the agent's inject_fragments list. |
 | `attach` | boolean |  |  | Attach overrides the agent's attach setting. |
 | `multi` | boolean |  |  | Multi overrides the agent's multi-instance template flag. |
+| `depends_on` | []string |  |  | DependsOn overrides the agent's dependency list. |
+| `wake_mode` | string |  |  | WakeMode overrides the agent's wake mode ("resume" or "fresh"). |
 | `pre_start_append` | []string |  |  | PreStartAppend appends commands to the agent's pre_start list (instead of replacing). Applied after PreStart if both are set. |
 | `session_setup_append` | []string |  |  | SessionSetupAppend appends commands to the agent's session_setup list. |
 | `session_live_append` | []string |  |  | SessionLiveAppend appends commands to the agent's session_live list. |

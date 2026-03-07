@@ -211,6 +211,21 @@
         "multi": {
           "type": "boolean",
           "description": "Multi marks this agent as a multi-instance template. Users manually\nstart/stop named instances via \"gc agent start/stop/destroy\". Unlike\npools (declarative auto-scaling), multi is imperative. Multi and pool\nare mutually exclusive."
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn lists agent names that must be awake before this agent wakes.\nUsed for dependency-ordered startup and shutdown. Validated for cycles\nat config load time."
+        },
+        "wake_mode": {
+          "type": "string",
+          "enum": [
+            "resume",
+            "fresh"
+          ],
+          "description": "WakeMode controls context freshness across sleep/wake cycles.\n\"resume\" (default): reuse provider session key for conversation continuity.\n\"fresh\": start a new provider session on every wake (polecat pattern)."
         }
       },
       "additionalProperties": false,
@@ -367,6 +382,17 @@
           "type": "boolean",
           "description": "Multi overrides the agent's multi-instance template flag."
         },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn overrides the agent's dependency list."
+        },
+        "wake_mode": {
+          "type": "string",
+          "description": "WakeMode overrides the agent's wake mode (\"resume\" or \"fresh\")."
+        },
         "inject_fragments_append": {
           "items": {
             "type": "string"
@@ -500,6 +526,17 @@
         "multi": {
           "type": "boolean",
           "description": "Multi overrides the agent's multi-instance template flag."
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn overrides the agent's dependency list."
+        },
+        "wake_mode": {
+          "type": "string",
+          "description": "WakeMode overrides the agent's wake mode (\"resume\" or \"fresh\")."
         },
         "pre_start_append": {
           "items": {

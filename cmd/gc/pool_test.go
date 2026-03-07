@@ -640,6 +640,8 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		Fallback:               true,
 		Multi:                  true,
 		PoolName:               "template/name",
+		DependsOn:              []string{"other-agent"},
+		WakeMode:               "fresh",
 	}
 
 	// Verify every Agent field is set (non-zero) in the test data.

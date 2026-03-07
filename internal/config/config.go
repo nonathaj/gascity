@@ -209,6 +209,10 @@ type AgentOverride struct {
 	Attach *bool `toml:"attach,omitempty"`
 	// Multi overrides the agent's multi-instance template flag.
 	Multi *bool `toml:"multi,omitempty"`
+	// DependsOn overrides the agent's dependency list.
+	DependsOn []string `toml:"depends_on,omitempty"`
+	// WakeMode overrides the agent's wake mode ("resume" or "fresh").
+	WakeMode *string `toml:"wake_mode,omitempty"`
 	// InjectFragmentsAppend appends to the agent's inject_fragments list.
 	InjectFragmentsAppend []string `toml:"inject_fragments_append,omitempty"`
 }
@@ -1026,6 +1030,14 @@ type Agent struct {
 	// pools (declarative auto-scaling), multi is imperative. Multi and pool
 	// are mutually exclusive.
 	Multi bool `toml:"multi,omitempty"`
+	// DependsOn lists agent names that must be awake before this agent wakes.
+	// Used for dependency-ordered startup and shutdown. Validated for cycles
+	// at config load time.
+	DependsOn []string `toml:"depends_on,omitempty"`
+	// WakeMode controls context freshness across sleep/wake cycles.
+	// "resume" (default): reuse provider session key for conversation continuity.
+	// "fresh": start a new provider session on every wake (polecat pattern).
+	WakeMode string `toml:"wake_mode,omitempty" jsonschema:"enum=resume,enum=fresh"`
 	// PoolName is the template agent's qualified name, set during pool
 	// expansion. Pool instances use this for label-based work discovery
 	// (e.g., pool:dog) rather than their instance name (e.g., pool:dog-1).
@@ -1220,6 +1232,13 @@ func ValidateAgents(agents []Agent) error {
 		if a.PromptMode == "flag" && a.PromptFlag == "" {
 			return fmt.Errorf("agent %q: prompt_flag is required when prompt_mode = \"flag\"", a.QualifiedName())
 		}
+		// WakeMode enum.
+		switch a.WakeMode {
+		case "", "resume", "fresh":
+			// valid
+		default:
+			return fmt.Errorf("agent %q: wake_mode must be \"resume\", \"fresh\", or empty, got %q", a.QualifiedName(), a.WakeMode)
+		}
 		if a.Multi && a.Pool != nil {
 			return fmt.Errorf("agent %q: multi and pool are mutually exclusive", a.QualifiedName())
 		}
@@ -1239,6 +1258,72 @@ func ValidateAgents(agents []Agent) error {
 			if hasSQ != hasWQ {
 				return fmt.Errorf("agent %q: pool agents must set both sling_query and work_query, or neither (got sling_query=%v, work_query=%v)",
 					a.QualifiedName(), hasSQ, hasWQ)
+			}
+		}
+	}
+
+	// Validate depends_on references and detect cycles.
+	if err := validateDependsOn(agents); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateDependsOn checks that all depends_on references are valid agent
+// names and that the dependency graph is acyclic.
+func validateDependsOn(agents []Agent) error {
+	names := make(map[string]bool, len(agents))
+	for _, a := range agents {
+		names[a.QualifiedName()] = true
+	}
+
+	// Check all references exist.
+	for _, a := range agents {
+		for _, dep := range a.DependsOn {
+			if !names[dep] {
+				return fmt.Errorf("agent %q: depends_on references unknown agent %q", a.QualifiedName(), dep)
+			}
+			if dep == a.QualifiedName() {
+				return fmt.Errorf("agent %q: depends_on contains self-reference", a.QualifiedName())
+			}
+		}
+	}
+
+	// Detect cycles via DFS with visiting/visited coloring.
+	const (
+		white = 0 // unvisited
+		gray  = 1 // visiting (on current path)
+		black = 2 // visited (fully explored)
+	)
+	color := make(map[string]int, len(agents))
+	adj := make(map[string][]string, len(agents))
+	for _, a := range agents {
+		adj[a.QualifiedName()] = a.DependsOn
+	}
+
+	var visit func(name string) error
+	visit = func(name string) error {
+		color[name] = gray
+		for _, dep := range adj[name] {
+			switch color[dep] {
+			case gray:
+				return fmt.Errorf("agent %q: dependency cycle detected (%s -> %s)", name, name, dep)
+			case white:
+				if err := visit(dep); err != nil {
+					return err
+				}
+			}
+		}
+		color[name] = black
+		return nil
+	}
+
+	for _, a := range agents {
+		n := a.QualifiedName()
+		if color[n] == white {
+			if err := visit(n); err != nil {
+				return err
 			}
 		}
 	}

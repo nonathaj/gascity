@@ -70,6 +70,10 @@ type AgentPatch struct {
 	Attach *bool `toml:"attach,omitempty"`
 	// Multi overrides the agent's multi-instance template flag.
 	Multi *bool `toml:"multi,omitempty"`
+	// DependsOn overrides the agent's dependency list.
+	DependsOn []string `toml:"depends_on,omitempty"`
+	// WakeMode overrides the agent's wake mode ("resume" or "fresh").
+	WakeMode *string `toml:"wake_mode,omitempty"`
 	// PreStartAppend appends commands to the agent's pre_start list
 	// (instead of replacing). Applied after PreStart if both are set.
 	PreStartAppend []string `toml:"pre_start_append,omitempty"`
@@ -243,6 +247,12 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if p.Multi != nil {
 		a.Multi = *p.Multi
+	}
+	if len(p.DependsOn) > 0 {
+		a.DependsOn = append([]string(nil), p.DependsOn...)
+	}
+	if p.WakeMode != nil {
+		a.WakeMode = *p.WakeMode
 	}
 	if len(p.InjectFragments) > 0 {
 		a.InjectFragments = append([]string(nil), p.InjectFragments...)
