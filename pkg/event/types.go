@@ -22,7 +22,7 @@ const (
 	CheckpointSaved    = "checkpoint.saved"
 	CheckpointRestored = "checkpoint.restored"
 
-	RuntimeSelfFenced = "runtime.self-fenced"
+	RuntimeSelfFenced = "runtime.self_fenced"
 
 	OperationStarted   = "operation.started"
 	OperationCompleted = "operation.completed"

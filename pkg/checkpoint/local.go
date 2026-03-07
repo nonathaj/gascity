@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // LocalStore is a filesystem-backed checkpoint store. Each manifest is stored
@@ -44,8 +45,8 @@ func (s *LocalStore) Save(_ context.Context, m RecoveryManifest) error {
 	filename := fmt.Sprintf("%d.json", m.Epoch)
 	filePath := filepath.Join(wsDir, filename)
 
-	// Atomic write: temp file then rename.
-	tmp := filePath + ".tmp"
+	// Atomic write: temp file with unique suffix then rename.
+	tmp := fmt.Sprintf("%s.tmp.%d", filePath, time.Now().UnixNano())
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing checkpoint: %w", err)
 	}
@@ -56,8 +57,7 @@ func (s *LocalStore) Save(_ context.Context, m RecoveryManifest) error {
 
 	// Update latest symlink atomically: create temp symlink then rename.
 	latestPath := filepath.Join(wsDir, "latest")
-	tmpLink := latestPath + ".tmp"
-	_ = os.Remove(tmpLink) // clean up any stale temp
+	tmpLink := fmt.Sprintf("%s.tmp.%d", latestPath, time.Now().UnixNano())
 	if err := os.Symlink(filename, tmpLink); err != nil {
 		return fmt.Errorf("creating latest symlink: %w", err)
 	}
@@ -79,13 +79,23 @@ func (s *LocalStore) Load(_ context.Context, workspaceID string) (RecoveryManife
 	latestPath := filepath.Join(wsDir, "latest")
 	target, err := os.Readlink(latestPath)
 	if err == nil {
-		m, err := s.readManifest(filepath.Join(wsDir, target))
-		if err == nil {
-			return m, nil
+		// Reject symlink targets containing path separators to prevent escape.
+		if strings.ContainsAny(target, "/\\") {
+			return RecoveryManifest{}, fmt.Errorf("checkpoint: latest symlink target %q contains path separator", target)
 		}
+		m, loadErr := s.readManifest(filepath.Join(wsDir, target))
+		if loadErr != nil {
+			// Symlink exists but target is broken — surface the error
+			// rather than silently rolling back to an older epoch.
+			return RecoveryManifest{}, fmt.Errorf("checkpoint: latest symlink target unreadable: %w", loadErr)
+		}
+		return m, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return RecoveryManifest{}, fmt.Errorf("checkpoint: reading latest symlink: %w", err)
 	}
 
-	// Fallback: find the highest epoch file.
+	// Fallback: symlink does not exist, find the highest epoch file.
 	manifests, err := s.listManifests(wsDir)
 	if err != nil {
 		return RecoveryManifest{}, err
@@ -110,6 +120,9 @@ func (s *LocalStore) readManifest(path string) (RecoveryManifest, error) {
 	var m RecoveryManifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return RecoveryManifest{}, fmt.Errorf("parsing manifest: %w", err)
+	}
+	if err := m.Validate(); err != nil {
+		return RecoveryManifest{}, fmt.Errorf("invalid manifest at %s: %w", filepath.Base(path), err)
 	}
 	return m, nil
 }

@@ -32,6 +32,9 @@ func (m *RecoveryManifest) Validate() error {
 	if strings.ContainsAny(m.WorkspaceID, "/\\") || strings.Contains(m.WorkspaceID, "..") {
 		return errors.New("recovery manifest: workspace_id contains path separator or traversal")
 	}
+	if m.WorkspaceID == "latest" || m.WorkspaceID == "." {
+		return errors.New("recovery manifest: workspace_id uses reserved name")
+	}
 	if m.Epoch < 1 {
 		return errors.New("recovery manifest: epoch must be >= 1")
 	}

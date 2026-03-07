@@ -38,6 +38,9 @@ func TestManifestValidateRequiredFields(t *testing.T) {
 		{"epoch", func(m *RecoveryManifest) { m.Epoch = 0 }},
 		{"snapshot_id", func(m *RecoveryManifest) { m.SnapshotID = "" }},
 		{"created_at", func(m *RecoveryManifest) { m.CreatedAt = time.Time{} }},
+		{"path_separator", func(m *RecoveryManifest) { m.WorkspaceID = "ws/../evil" }},
+		{"reserved_latest", func(m *RecoveryManifest) { m.WorkspaceID = "latest" }},
+		{"reserved_dot", func(m *RecoveryManifest) { m.WorkspaceID = "." }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
