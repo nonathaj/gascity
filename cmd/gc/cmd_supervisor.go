@@ -407,6 +407,10 @@ func reconcileCities(
 		if mc.closer != nil {
 			mc.closer.Close() //nolint:errcheck
 		}
+		// Clear backoff so re-registering starts immediately.
+		mu.Lock()
+		delete(panicHistory, toStopPaths[i])
+		mu.Unlock()
 		fmt.Fprintf(stdout, "City '%s' stopped.\n", name) //nolint:errcheck
 	}
 

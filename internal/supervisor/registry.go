@@ -8,11 +8,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"syscall"
 
 	"github.com/BurntSushi/toml"
 )
+
+// validCityName matches names safe for use in URL path segments.
+// Must start with alphanumeric and contain only alphanumerics, hyphens,
+// underscores, and dots.
+var validCityName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // CityEntry is one registered city in the supervisor registry.
 type CityEntry struct {
@@ -70,6 +76,9 @@ func (r *Registry) Register(cityPath, effectiveName string) error {
 	}
 	if effectiveName == "" {
 		effectiveName = filepath.Base(abs)
+	}
+	if !validCityName.MatchString(effectiveName) {
+		return fmt.Errorf("city name %q contains invalid characters (must match %s)", effectiveName, validCityName.String())
 	}
 
 	r.mu.Lock()

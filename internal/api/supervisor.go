@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,14 @@ type CityResolver interface {
 
 // SupervisorMux routes API requests to per-city handlers with
 // city-namespaced URL paths. It handles:
+// cachedCityServer pairs a State with its pre-built Server for caching.
+type cachedCityServer struct {
+	state State
+	srv   *Server
+}
+
+// SupervisorMux routes API requests to per-city handlers with
+// city-namespaced URL paths. It handles:
 //   - GET /v0/cities — list managed cities
 //   - GET /v0/city/{name} — city detail (status)
 //   - /v0/city/{name}/... — route to a specific city's API
@@ -37,6 +46,11 @@ type SupervisorMux struct {
 	version   string
 	startedAt time.Time
 	server    *http.Server
+
+	// Per-city Server cache. Keyed by city name. Invalidated when
+	// the State pointer changes (city restarted → new controllerState).
+	cacheMu sync.RWMutex
+	cache   map[string]cachedCityServer
 }
 
 // NewSupervisorMux creates a SupervisorMux that routes requests to cities
@@ -47,6 +61,7 @@ func NewSupervisorMux(resolver CityResolver, readOnly bool, version string, star
 		readOnly:  readOnly,
 		version:   version,
 		startedAt: startedAt,
+		cache:     make(map[string]cachedCityServer),
 	}
 }
 
@@ -136,16 +151,35 @@ func (sm *SupervisorMux) serveCityRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Create a per-city Server and dispatch through its mux directly.
-	// Middleware is already applied at the SupervisorMux level.
-	srv := &Server{state: state, mux: http.NewServeMux()}
-	srv.registerRoutes()
+	srv := sm.getCityServer(cityName, state)
 
 	// Rewrite the request path to the per-city route.
 	r2 := r.Clone(r.Context())
 	r2.URL.Path = path
 	r2.URL.RawPath = ""
+	// Dispatch through the mux directly — middleware is applied at the SupervisorMux level.
 	srv.mux.ServeHTTP(w, r2)
+}
+
+// getCityServer returns a cached per-city Server, creating one if the
+// cache is empty or the State pointer changed (city was restarted).
+func (sm *SupervisorMux) getCityServer(name string, state State) *Server {
+	sm.cacheMu.RLock()
+	if cached, ok := sm.cache[name]; ok && cached.state == state {
+		sm.cacheMu.RUnlock()
+		return cached.srv
+	}
+	sm.cacheMu.RUnlock()
+
+	// Cache miss or stale — create new Server.
+	srv := &Server{state: state, mux: http.NewServeMux()}
+	srv.registerRoutes()
+
+	sm.cacheMu.Lock()
+	sm.cache[name] = cachedCityServer{state: state, srv: srv}
+	sm.cacheMu.Unlock()
+
+	return srv
 }
 
 func (sm *SupervisorMux) handleCities(w http.ResponseWriter, _ *http.Request) {
