@@ -171,6 +171,19 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		cr.stdout, cr.stderr, ctx)
 	ensureObservers(agents, observePaths)
 
+	cityRoot := filepath.Dir(cr.tomlPath)
+
+	// Open standalone city bead store when API is disabled.
+	// Must happen before initial session bead sync below.
+	// When API is enabled, controllerState manages the store.
+	if cr.cs == nil {
+		if store, err := openCityStoreAt(cityRoot); err != nil {
+			fmt.Fprintf(cr.stderr, "%s: city bead store: %v (auto-suspend disabled)\n", cr.logPrefix, err) //nolint:errcheck // best-effort stderr
+		} else {
+			cr.standaloneCityStore = store
+		}
+	}
+
 	// Phase 1: initial session bead sync (before first patrol tick).
 	{
 		var store beads.Store
@@ -185,20 +198,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 
 	fmt.Fprintln(cr.stdout, "City started.") //nolint:errcheck // best-effort stdout
 
-	cityRoot := filepath.Dir(cr.tomlPath)
 	interval := cr.cfg.Daemon.PatrolIntervalDuration()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
-	// Open standalone city bead store for auto-suspend when API is disabled.
-	// When API is enabled, controllerState manages the store.
-	if cr.cs == nil {
-		if store, err := openCityStoreAt(cityRoot); err != nil {
-			fmt.Fprintf(cr.stderr, "%s: city bead store: %v (auto-suspend disabled)\n", cr.logPrefix, err) //nolint:errcheck // best-effort stderr
-		} else {
-			cr.standaloneCityStore = store
-		}
-	}
 
 	// Track pool instance liveness for death detection.
 	var prevPoolRunning map[string]bool

@@ -137,14 +137,16 @@ func syncSessionBeads(
 		}
 
 		if b.Metadata["live_hash"] != liveHash {
-			setMeta(store, b.ID, "live_hash", liveHash, stderr) //nolint:errcheck
-			changed = true
+			if setMeta(store, b.ID, "live_hash", liveHash, stderr) == nil {
+				changed = true
+			}
 		}
 
 		// Update state.
 		if b.Metadata["state"] != state {
-			setMeta(store, b.ID, "state", state, stderr) //nolint:errcheck
-			changed = true
+			if setMeta(store, b.ID, "state", state, stderr) == nil {
+				changed = true
+			}
 		}
 
 		// Only update synced_at when something actually changed,
@@ -207,8 +209,11 @@ func setMeta(store beads.Store, id, key, value string, stderr io.Writer) error {
 }
 
 // generateToken returns a cryptographically random hex token.
+// Panics on crypto/rand failure (standard Go pattern — indicates broken system).
 func generateToken() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("session beads: crypto/rand failed: " + err.Error())
+	}
 	return hex.EncodeToString(b)
 }
