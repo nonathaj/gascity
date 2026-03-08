@@ -1,5 +1,5 @@
 # Agent drain commands moved to gc runtime drain/undrain/drain-check.
-# Verify gc agent drain subcommands are no longer recognized
+# Verify gc agent drain subcommands print deprecation messages
 # (callers should use gc runtime drain, gc runtime undrain, gc runtime drain-check).
 
 env GC_SESSION=fake
@@ -9,15 +9,15 @@ env GC_DOLT=skip
 # gc agent drain is removed — use gc runtime drain.
 cd $WORK/test-city
 ! exec gc agent drain worker
-stderr 'unknown subcommand "drain"'
+stderr 'removed, use "gc runtime drain"'
 
 # gc agent undrain is removed — use gc runtime undrain.
 ! exec gc agent undrain worker
-stderr 'unknown subcommand "undrain"'
+stderr 'removed, use "gc runtime undrain"'
 
 # gc agent drain-check is removed — use gc runtime drain-check.
 ! exec gc agent drain-check
-stderr 'unknown subcommand "drain-check"'
+stderr 'removed, use "gc runtime drain-check"'
 
 -- test-city/.gc/.keep --
 -- test-city/rigs/.keep --

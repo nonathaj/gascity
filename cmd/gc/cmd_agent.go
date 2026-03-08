@@ -146,7 +146,7 @@ have moved to "gc session" and "gc runtime".`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc agent: missing subcommand (add, suspend, resume)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc agent: missing subcommand (add, suspend, resume, drain, undrain, drain-check, drain-ack, request-restart, logs)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc agent: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -167,6 +167,13 @@ have moved to "gc session" and "gc runtime".`,
 		newAgentStartCmd(stdout, stderr),
 		newAgentStatusCmd(stdout, stderr),
 		newAgentStopCmd(stdout, stderr),
+		// Deprecation shims — runtime/session drain commands.
+		newAgentDrainCmd(stdout, stderr),
+		newAgentUndrainCmd(stdout, stderr),
+		newAgentDrainCheckCmd(stdout, stderr),
+		newAgentDrainAckCmd(stdout, stderr),
+		newAgentRequestRestartCmd(stdout, stderr),
+		newAgentLogsCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -516,6 +523,78 @@ func newAgentKillCmd(_, stderr io.Writer) *cobra.Command {
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			fmt.Fprintln(stderr, "gc agent kill: removed, use \"gc session kill\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentDrainCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "drain",
+		Short: "Deprecated: use \"gc runtime drain\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent drain: removed, use \"gc runtime drain\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentUndrainCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "undrain",
+		Short: "Deprecated: use \"gc runtime undrain\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent undrain: removed, use \"gc runtime undrain\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentDrainCheckCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "drain-check",
+		Short: "Deprecated: use \"gc runtime drain-check\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent drain-check: removed, use \"gc runtime drain-check\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentDrainAckCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "drain-ack",
+		Short: "Deprecated: use \"gc runtime drain-ack\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent drain-ack: removed, use \"gc runtime drain-ack\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentRequestRestartCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "request-restart",
+		Short: "Deprecated: use \"gc runtime request-restart\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent request-restart: removed, use \"gc runtime request-restart\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
+	}
+}
+
+func newAgentLogsCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "logs",
+		Short: "Deprecated: use \"gc session logs\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent logs: removed, use \"gc session logs\" instead") //nolint:errcheck // best-effort stderr
 			return errExit
 		},
 	}

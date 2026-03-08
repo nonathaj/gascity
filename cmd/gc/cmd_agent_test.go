@@ -190,6 +190,12 @@ func TestAgentDeprecationShims(t *testing.T) {
 		{"stop", []string{"stop", "x"}, "gc session suspend"},
 		{"destroy", []string{"destroy", "x"}, "gc session close"},
 		{"kill", []string{"kill"}, "gc session kill"},
+		{"drain", []string{"drain"}, "gc runtime drain"},
+		{"undrain", []string{"undrain"}, "gc runtime undrain"},
+		{"drain-check", []string{"drain-check"}, "gc runtime drain-check"},
+		{"drain-ack", []string{"drain-ack"}, "gc runtime drain-ack"},
+		{"request-restart", []string{"request-restart"}, "gc runtime request-restart"},
+		{"logs", []string{"logs", "x"}, "gc session logs"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

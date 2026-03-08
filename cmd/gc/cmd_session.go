@@ -15,6 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/spf13/cobra"
@@ -726,6 +727,13 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc session kill: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+
+	rec := openCityRecorder(stderr)
+	rec.Record(events.Event{
+		Type:    events.SessionStopped,
+		Actor:   eventActor(),
+		Subject: sessionID,
+	})
 
 	fmt.Fprintf(stdout, "Session %s killed.\n", sessionID) //nolint:errcheck // best-effort stdout
 	return 0

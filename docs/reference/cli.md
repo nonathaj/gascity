@@ -73,21 +73,21 @@ gc agent
 | [gc agent add](#gc-agent-add) | Add an agent to the workspace |
 | [gc agent attach](#gc-agent-attach) | Attach to an agent session |
 | [gc agent destroy](#gc-agent-destroy) | Close a session created from an agent template |
-| [gc agent drain](#gc-agent-drain) | Alias for `gc runtime drain` |
-| [gc agent drain-ack](#gc-agent-drain-ack) | Alias for `gc runtime drain-ack` |
-| [gc agent drain-check](#gc-agent-drain-check) | Alias for `gc runtime drain-check` |
-| [gc agent kill](#gc-agent-kill) | Alias for `gc session kill` |
-| [gc agent list](#gc-agent-list) | Alias for `gc session list` |
-| [gc agent logs](#gc-agent-logs) | Alias for `gc session logs` |
-| [gc agent nudge](#gc-agent-nudge) | Send a message to wake or redirect an agent |
-| [gc agent peek](#gc-agent-peek) | Capture recent output from an agent session |
-| [gc agent request-restart](#gc-agent-request-restart) | Alias for `gc runtime request-restart` |
+| [gc agent drain](#gc-agent-drain) | Removed, use `gc runtime drain` |
+| [gc agent drain-ack](#gc-agent-drain-ack) | Removed, use `gc runtime drain-ack` |
+| [gc agent drain-check](#gc-agent-drain-check) | Removed, use `gc runtime drain-check` |
+| [gc agent kill](#gc-agent-kill) | Removed, use `gc session kill` |
+| [gc agent list](#gc-agent-list) | Removed, use `gc session list` |
+| [gc agent logs](#gc-agent-logs) | Removed, use `gc session logs` |
+| [gc agent nudge](#gc-agent-nudge) | Removed, use `gc session message` |
+| [gc agent peek](#gc-agent-peek) | Removed, use `gc session peek` |
+| [gc agent request-restart](#gc-agent-request-restart) | Removed, use `gc runtime request-restart` |
 | [gc agent resume](#gc-agent-resume) | Resume a suspended agent |
-| [gc agent start](#gc-agent-start) | Create a background session from an agent template |
-| [gc agent status](#gc-agent-status) | Alias for `gc session list` |
-| [gc agent stop](#gc-agent-stop) | Suspend a session created from an agent template |
+| [gc agent start](#gc-agent-start) | Removed, use `gc session new` |
+| [gc agent status](#gc-agent-status) | Removed, use `gc session list` |
+| [gc agent stop](#gc-agent-stop) | Removed, use `gc session suspend` |
 | [gc agent suspend](#gc-agent-suspend) | Suspend an agent (reconciler will skip it) |
-| [gc agent undrain](#gc-agent-undrain) | Alias for `gc runtime undrain` |
+| [gc agent undrain](#gc-agent-undrain) | Removed, use `gc runtime undrain` |
 
 ## gc agent add
 
@@ -118,167 +118,87 @@ gc agent add --name mayor
 
 ## gc agent attach
 
-Attach to an agent's tmux session for interactive debugging.
-
-Starts the session if not already running, then attaches your terminal.
-Detach with the standard tmux detach key (Ctrl-B D by default). Supports
-both fixed agents and pool instances (e.g. "polecat-2").
+Removed, use `gc session attach`.
 
 ```
-gc agent attach <name>
+gc session attach <name>
 ```
 
 ## gc agent destroy
 
-Close a session permanently.
-
-This is a compatibility alias for "gc session close". When multiple
-sessions exist for the same template, pass a session ID.
+Removed, use `gc session close`.
 
 ```
-gc agent destroy <session-id-or-name>
+gc session close <session-id-or-name>
 ```
 
 ## gc agent drain
 
-Alias for `gc runtime drain`. Signal an agent to drain — wind down its
-current work gracefully.
-
-Sets a GC_DRAIN metadata flag on the session. The agent should check
-for drain status periodically (via "gc runtime drain-check") and finish
-its current task before exiting. Use "gc runtime undrain" to cancel.
+Removed, use `gc runtime drain`.
 
 ```
-gc agent drain <name>
+gc runtime drain <name>
 ```
 
 ## gc agent drain-ack
 
-Alias for `gc runtime drain-ack`. Acknowledge a drain signal — tell the
-controller to stop this session.
-
-Sets GC_DRAIN_ACK metadata on the session. The controller will stop
-the session on its next reconcile tick. Call this after the agent has
-finished its current work in response to a drain signal.
+Removed, use `gc runtime drain-ack`.
 
 ```
-gc agent drain-ack [name]
+gc runtime drain-ack [name]
 ```
 
 ## gc agent drain-check
 
-Alias for `gc runtime drain-check`. Check if this agent is currently
-draining.
-
-Returns exit code 0 if draining, 1 if not. Designed for use in
-conditionals: "if gc runtime drain-check; then finish-up; fi".
-Uses $GC_AGENT and $GC_CITY env vars when called without arguments.
+Removed, use `gc runtime drain-check`.
 
 ```
-gc agent drain-check [name]
+gc runtime drain-check [name]
 ```
 
 ## gc agent kill
 
-Alias for `gc session kill`. Force-kill an agent's tmux session
-immediately.
-
-The session is destroyed without graceful shutdown. If a controller is
-running, it will restart the agent on its next reconcile tick. Use
-"gc runtime drain" for graceful wind-down instead.
+Removed, use `gc session kill`.
 
 ```
-gc agent kill <name>
+gc session kill <name>
 ```
 
 ## gc agent list
 
-Alias for `gc session list`. List all agents configured in city.toml
-with annotations.
-
-Shows each agent's qualified name, suspension status, rig suspension
-inheritance, and pool configuration. Use --dir to filter by working
-directory.
+Removed, use `gc session list`.
 
 ```
-gc agent list [flags]
+gc session list [flags]
 ```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--dir` | string |  | Filter agents by working directory |
-| `--json` | bool |  | Output in JSON format |
 
 ## gc agent logs
 
-Alias for `gc session logs`. Show structured session log messages from
-an agent's JSONL session file.
-
-Reads the agent's session log, resolves the conversation DAG, and prints
-messages in chronological order. Searches default paths (~/.claude/projects/)
-and any extra paths from [daemon] observe_paths in city.toml.
-
-Use --tail to control how many compaction segments to show (0 = all).
-Use -f to follow new messages as they arrive.
+Removed, use `gc session logs`.
 
 ```
-gc agent logs <agent-name> [flags]
+gc session logs <agent-name> [flags]
 ```
-
-**Example:**
-
-```
-gc session logs mayor
-  gc session logs mayor --tail 0
-  gc session logs myrig/polecat-1 -f
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-f`, `--follow` | bool |  | Follow new messages as they arrive |
-| `--tail` | int | `1` | Number of compaction segments to show (0 = all) |
 
 ## gc agent nudge
 
-Send a text message to an agent's running session.
-
-The message is typed into the agent's tmux session as if a human typed
-it. Use this to redirect an agent's attention, provide new instructions,
-or wake it from an idle state.
+Removed, use `gc session message`.
 
 ```
-gc agent nudge <agent-name> <message>
+gc session message <agent-name> <message>
 ```
 
 ## gc agent peek
 
-Capture recent terminal output from an agent's tmux session.
-
-Reads the session's scrollback buffer without attaching. Use --lines
-to control how much output to capture (0 = all available scrollback).
-Useful for monitoring agent progress without interrupting it.
+Removed, use `gc session peek`.
 
 ```
-gc agent peek <agent-name> [flags]
+gc session peek <agent-name> [flags]
 ```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--lines` | int | `50` | Number of lines to capture (0 = all scrollback) |
 
 ## gc agent request-restart
 
-Alias for `gc runtime request-restart`. Signal the controller to stop
-and restart this agent session.
-
-Sets GC_RESTART_REQUESTED metadata on the session, then blocks forever.
-The controller will stop the session on its next reconcile tick and
-restart it fresh. The blocking prevents the agent from consuming more
-context while waiting.
-
-This command is designed to be called from within an agent session
-(uses GC_AGENT and GC_CITY env vars). It emits an agent.draining event
-before blocking.
+Removed, use `gc runtime request-restart`.
 
 ```
 gc runtime request-restart
@@ -297,36 +217,26 @@ gc agent resume <name>
 
 ## gc agent start
 
-Create a detached session from an agent template.
-
-This is a compatibility alias for "gc session new <template> --no-attach".
-Templates can always be used as session sources.
+Removed, use `gc session new`.
 
 ```
-gc agent start <template> [flags]
+gc session new <template> [flags]
 ```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--name` | string |  | deprecated compatibility alias for --title |
 
 ## gc agent status
 
-Alias for `gc session list`. Show agent status.
+Removed, use `gc session list`.
 
 ```
-gc agent status <name>
+gc session list
 ```
 
 ## gc agent stop
 
-Suspend a running session and keep its conversation state.
-
-This is a compatibility alias for "gc session suspend". When multiple
-sessions exist for the same template, pass a session ID.
+Removed, use `gc session suspend`.
 
 ```
-gc agent stop <session-id-or-name>
+gc session suspend <session-id-or-name>
 ```
 
 ## gc agent suspend
@@ -343,14 +253,10 @@ gc agent suspend <name>
 
 ## gc agent undrain
 
-Alias for `gc runtime undrain`. Cancel a pending drain signal on an
-agent.
-
-Clears the GC_DRAIN and GC_DRAIN_ACK metadata flags, allowing the
-agent to continue normal operation.
+Removed, use `gc runtime undrain`.
 
 ```
-gc agent undrain <name>
+gc runtime undrain <name>
 ```
 
 ## gc automation

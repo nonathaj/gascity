@@ -22,7 +22,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 while true; do
-    agents=$(gc agent list 2>/dev/null | tail -n +2 | awk '{print $1}' || true)
+    agents=$(gc session list 2>/dev/null | tail -n +2 | awk '{print $1}' || true)
 
     if [ -z "$agents" ]; then
         clear
@@ -35,7 +35,7 @@ while true; do
         clear
         echo -e "${CYAN}${BOLD}=== $agent ===${NC}"
         echo ""
-        gc agent peek "$agent" --lines "$LINES" 2>/dev/null || echo -e "${DIM}(no output)${NC}"
+        gc session peek "$agent" --lines "$LINES" 2>/dev/null || echo -e "${DIM}(no output)${NC}"
         sleep "$DELAY"
     done
 done

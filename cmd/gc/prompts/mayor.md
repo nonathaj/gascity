@@ -14,7 +14,7 @@ or `/gc-city` to load command reference for any topic.
 2. **Add agents:** `gc agent add --name <name> --dir <rig-dir>` for each worker
 3. **Create work:** `bd create "<title>"` for each task to be done
 4. **Dispatch:** `gc sling <agent> <bead-id>` to route work to agents
-5. **Monitor:** `bd list` and `gc agent peek <name>` to track progress
+5. **Monitor:** `bd list` and `gc session peek <name>` to track progress
 
 ## Environment
 

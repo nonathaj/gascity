@@ -20,7 +20,7 @@ if [ -z "$IN_PROGRESS" ] || [ "$IN_PROGRESS" = "[]" ]; then
 fi
 
 # Step 2: Get all known agent names.
-AGENTS=$(gc agent list --json 2>/dev/null | jq -r '.[].name' 2>/dev/null) || exit 0
+AGENTS=$(gc session list --json 2>/dev/null | jq -r '.[].name' 2>/dev/null) || exit 0
 if [ -z "$AGENTS" ]; then
     exit 0
 fi
