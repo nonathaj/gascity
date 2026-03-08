@@ -101,6 +101,32 @@ type Provider interface {
 	Capabilities() ProviderCapabilities
 }
 
+// PendingInteraction describes a blocking interaction raised by a session.
+// This is an optional capability exposed by providers that support
+// structured approvals, questions, or other turn-blocking prompts.
+type PendingInteraction struct {
+	RequestID string            `json:"request_id"`
+	Kind      string            `json:"kind"`
+	Prompt    string            `json:"prompt,omitempty"`
+	Options   []string          `json:"options,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+// InteractionResponse is the client's answer to a pending interaction.
+type InteractionResponse struct {
+	RequestID string            `json:"request_id,omitempty"`
+	Action    string            `json:"action"`
+	Text      string            `json:"text,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+// InteractionProvider is an optional extension for providers that can
+// surface and resolve pending session interactions.
+type InteractionProvider interface {
+	Pending(name string) (*PendingInteraction, error)
+	Respond(name string, response InteractionResponse) error
+}
+
 // CopyEntry describes a file or directory to stage in the session's
 // working directory before the agent command starts.
 type CopyEntry struct {

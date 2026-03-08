@@ -233,6 +233,24 @@ func FindSessionFile(searchPaths []string, workDir string) string {
 	return FindCodexSessionFile(workDir)
 }
 
+// FindSessionFileByID resolves a Claude-style session log path using the
+// known session ID. This is the safest lookup when multiple sessions share
+// the same working directory.
+func FindSessionFileByID(searchPaths []string, workDir, sessionID string) string {
+	if workDir == "" || sessionID == "" {
+		return ""
+	}
+	slug := ProjectSlug(workDir)
+	for _, base := range searchPaths {
+		path := filepath.Join(base, slug, sessionID+".jsonl")
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
 // findSlugSessionFile searches slug-organized search paths for the most
 // recently modified JSONL session file. Files are stored at
 // {searchPath}/{slug}/{sessionID}.jsonl where slug is the working

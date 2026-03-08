@@ -2,12 +2,15 @@ package session
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 func TestCreate(t *testing.T) {
@@ -794,5 +797,145 @@ func TestPruneSkipsActive(t *testing.T) {
 	}
 	if got.State != StateActive {
 		t.Errorf("active session state = %q, want %q", got.State, StateActive)
+	}
+}
+
+func TestSendResumesSuspendedSession(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := mgr.Suspend(info.ID); err != nil {
+		t.Fatalf("Suspend: %v", err)
+	}
+
+	if err := mgr.Send(context.Background(), info.ID, "hello", "claude --resume "+info.SessionKey, runtime.Config{WorkDir: "/tmp"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	got, err := mgr.Get(info.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.State != StateActive {
+		t.Errorf("State = %q, want %q", got.State, StateActive)
+	}
+	if !sp.IsRunning(info.SessionName) {
+		t.Fatal("session should be running after Send resumes it")
+	}
+	found := false
+	for _, call := range sp.Calls {
+		if call.Method == "Nudge" && call.Name == info.SessionName && call.Message == "hello" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("calls = %#v, want Nudge hello", sp.Calls)
+	}
+}
+
+func TestStopTurnInterruptsActiveSession(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := mgr.StopTurn(info.ID); err != nil {
+		t.Fatalf("StopTurn: %v", err)
+	}
+
+	found := false
+	for _, call := range sp.Calls {
+		if call.Method == "Interrupt" && call.Name == info.SessionName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected Interrupt call")
+	}
+}
+
+func TestPendingAndRespond(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sp.SetPendingInteraction(info.SessionName, &runtime.PendingInteraction{
+		RequestID: "req-1",
+		Kind:      "approval",
+		Prompt:    "approve?",
+	})
+
+	pending, supported, err := mgr.Pending(info.ID)
+	if err != nil {
+		t.Fatalf("Pending: %v", err)
+	}
+	if !supported {
+		t.Fatal("Pending should report supported for runtime.Fake")
+	}
+	if pending == nil || pending.RequestID != "req-1" {
+		t.Fatalf("Pending = %#v, want req-1", pending)
+	}
+
+	if err := mgr.Respond(info.ID, runtime.InteractionResponse{Action: "approve"}); err != nil {
+		t.Fatalf("Respond: %v", err)
+	}
+	if got, _, err := mgr.Pending(info.ID); err != nil {
+		t.Fatalf("Pending after Respond: %v", err)
+	} else if got != nil {
+		t.Fatalf("pending should be cleared after Respond, got %#v", got)
+	}
+}
+
+func TestTranscriptPathPrefersSessionKey(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	workDir := t.TempDir()
+	resume := ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", workDir, "claude", nil, resume, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	searchBase := t.TempDir()
+	slugDir := filepath.Join(searchBase, sessionlog.ProjectSlug(workDir))
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	keyPath := filepath.Join(slugDir, info.SessionKey+".jsonl")
+	if err := os.WriteFile(keyPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(key): %v", err)
+	}
+	latestPath := filepath.Join(slugDir, "latest.jsonl")
+	if err := os.WriteFile(latestPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(latest): %v", err)
+	}
+
+	path, err := mgr.TranscriptPath(info.ID, []string{searchBase})
+	if err != nil {
+		t.Fatalf("TranscriptPath: %v", err)
+	}
+	if path != keyPath {
+		t.Errorf("TranscriptPath = %q, want %q", path, keyPath)
 	}
 }

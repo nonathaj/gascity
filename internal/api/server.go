@@ -190,9 +190,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /v0/automation/{name}/disable", s.handleAutomationDisable)
 
 	// Sessions (chat sessions) — id accepts bead ID or template name
+	s.mux.HandleFunc("POST /v0/sessions", s.handleSessionCreate)
 	s.mux.HandleFunc("GET /v0/sessions", s.handleSessionList)
 	s.mux.HandleFunc("GET /v0/session/{id}", s.handleSessionGet)
+	s.mux.HandleFunc("GET /v0/session/{id}/transcript", s.handleSessionTranscript)
+	s.mux.HandleFunc("GET /v0/session/{id}/pending", s.handleSessionPending)
+	s.mux.HandleFunc("GET /v0/session/{id}/stream", s.handleSessionStream)
 	s.mux.HandleFunc("PATCH /v0/session/{id}", s.handleSessionPatch)
+	s.mux.HandleFunc("POST /v0/session/{id}/messages", s.handleSessionMessage)
+	s.mux.HandleFunc("POST /v0/session/{id}/stop", s.handleSessionStop)
+	s.mux.HandleFunc("POST /v0/session/{id}/respond", s.handleSessionRespond)
 	s.mux.HandleFunc("POST /v0/session/{id}/suspend", s.handleSessionSuspend)
 	s.mux.HandleFunc("POST /v0/session/{id}/close", s.handleSessionClose)
 	s.mux.HandleFunc("POST /v0/session/{id}/wake", s.handleSessionWake)

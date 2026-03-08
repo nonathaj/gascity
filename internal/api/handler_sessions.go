@@ -18,6 +18,7 @@ import (
 type sessionResponse struct {
 	ID          string `json:"id"`
 	Template    string `json:"template"`
+	WorkDir     string `json:"work_dir,omitempty"`
 	State       string `json:"state"`
 	Reason      string `json:"reason,omitempty"`
 	Title       string `json:"title"`
@@ -47,6 +48,7 @@ func sessionToResponse(info session.Info, cfg *config.City) sessionResponse {
 	r := sessionResponse{
 		ID:          info.ID,
 		Template:    info.Template,
+		WorkDir:     info.WorkDir,
 		State:       string(info.State),
 		Title:       info.Title,
 		Provider:    provider,

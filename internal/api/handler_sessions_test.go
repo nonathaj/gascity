@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 func newSessionFakeState(t *testing.T) *fakeState {
@@ -28,6 +32,19 @@ func createTestSession(t *testing.T, store beads.Store, sp *runtime.Fake, title 
 		t.Fatalf("create session: %v", err)
 	}
 	return info
+}
+
+func writeNamedSessionJSONL(t *testing.T, searchBase, workDir, fileName string, lines ...string) {
+	t.Helper()
+	dir := filepath.Join(searchBase, sessionlog.ProjectSlug(workDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, fileName)
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestHandleSessionList(t *testing.T) {
@@ -420,12 +437,9 @@ func TestHandleSessionGetEnrichment(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	// Session is active and runtime.Fake reports it as running.
 	if !resp.Running {
 		t.Error("running = false, want true for active session")
 	}
-
-	// DisplayName should be resolved (provider is "test" → title-cased).
 	if resp.DisplayName != "Test" {
 		t.Errorf("display_name = %q, want %q", resp.DisplayName, "Test")
 	}
@@ -437,7 +451,6 @@ func TestHandleSessionListPeek(t *testing.T) {
 
 	createTestSession(t, fs.cityBeadStore, fs.sp, "Peek Session")
 
-	// Without peek param — no last_output.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/v0/sessions", nil)
 	srv.ServeHTTP(w, r)
@@ -451,5 +464,195 @@ func TestHandleSessionListPeek(t *testing.T) {
 	}
 	if resp.Items[0].LastOutput != "" {
 		t.Errorf("last_output = %q without peek param, want empty", resp.Items[0].LastOutput)
+	}
+}
+
+func TestHandleSessionCreate(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	body := `{"template":"myrig/worker"}`
+	req := newPostRequest("/v0/sessions", strings.NewReader(body))
+	req.Header.Set("Idempotency-Key", "sess-create-1")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Template != "myrig/worker" {
+		t.Errorf("Template = %q, want %q", resp.Template, "myrig/worker")
+	}
+	if resp.Title != "myrig/worker" {
+		t.Errorf("Title = %q, want default %q", resp.Title, "myrig/worker")
+	}
+	if resp.WorkDir != "/tmp/myrig" {
+		t.Errorf("WorkDir = %q, want %q", resp.WorkDir, "/tmp/myrig")
+	}
+}
+
+func TestHandleSessionMessageResumesSuspendedSession(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Resume Me")
+	mgr := session.NewManager(fs.cityBeadStore, fs.sp)
+	if err := mgr.Suspend(info.ID); err != nil {
+		t.Fatalf("Suspend: %v", err)
+	}
+
+	req := newPostRequest("/v0/session/"+info.ID+"/messages", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Idempotency-Key", "sess-msg-1")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+	if !fs.sp.IsRunning(info.SessionName) {
+		t.Fatal("session should be running after POST /messages")
+	}
+	found := false
+	for _, call := range fs.sp.Calls {
+		if call.Method == "Nudge" && call.Name == info.SessionName && call.Message == "hello" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("calls = %#v, want Nudge hello", fs.sp.Calls)
+	}
+}
+
+func TestHandleSessionTranscriptUsesSessionKey(t *testing.T) {
+	fs := newSessionFakeState(t)
+	searchBase := t.TempDir()
+	srv := New(fs)
+	srv.sessionLogSearchPaths = []string{searchBase}
+
+	mgr := session.NewManager(fs.cityBeadStore, fs.sp)
+	resume := session.ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+	workDir := t.TempDir()
+	info, err := mgr.Create(context.Background(), "myrig/worker", "Chat", "claude", workDir, "claude", nil, resume, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
+	)
+	writeNamedSessionJSONL(t, searchBase, workDir, "latest.jsonl",
+		`{"uuid":"9","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"wrong file\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+	)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/transcript?tail=0", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp sessionTranscriptResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Format != "conversation" {
+		t.Errorf("Format = %q, want %q", resp.Format, "conversation")
+	}
+	if len(resp.Turns) != 2 || resp.Turns[1].Text != "world" {
+		t.Fatalf("Turns = %+v, want hello/world from session key file", resp.Turns)
+	}
+}
+
+func TestHandleSessionPendingAndRespond(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Interactive")
+	fs.sp.SetPendingInteraction(info.SessionName, &runtime.PendingInteraction{
+		RequestID: "req-1",
+		Kind:      "approval",
+		Prompt:    "approve?",
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/pending", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("pending status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var pendingResp sessionPendingResponse
+	if err := json.NewDecoder(w.Body).Decode(&pendingResp); err != nil {
+		t.Fatalf("decode pending: %v", err)
+	}
+	if !pendingResp.Supported || pendingResp.Pending == nil || pendingResp.Pending.RequestID != "req-1" {
+		t.Fatalf("pending response = %#v, want req-1", pendingResp)
+	}
+
+	respondReq := newPostRequest("/v0/session/"+info.ID+"/respond", strings.NewReader(`{"action":"approve"}`))
+	respondReq.Header.Set("Idempotency-Key", "sess-respond-1")
+	respondRec := httptest.NewRecorder()
+	srv.ServeHTTP(respondRec, respondReq)
+
+	if respondRec.Code != http.StatusAccepted {
+		t.Fatalf("respond status = %d, want %d; body: %s", respondRec.Code, http.StatusAccepted, respondRec.Body.String())
+	}
+	if got := fs.sp.Responses[info.SessionName]; len(got) != 1 || got[0].Action != "approve" {
+		t.Fatalf("responses = %#v, want single approve", got)
+	}
+}
+
+func TestHandleSessionStreamSSEHeaders(t *testing.T) {
+	fs := newSessionFakeState(t)
+	searchBase := t.TempDir()
+	srv := New(fs)
+	srv.sessionLogSearchPaths = []string{searchBase}
+
+	mgr := session.NewManager(fs.cityBeadStore, fs.sp)
+	resume := session.ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+	workDir := t.TempDir()
+	info, err := mgr.Create(context.Background(), "myrig/worker", "Chat", "claude", workDir, "claude", nil, resume, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	req := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/stream", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		srv.ServeHTTP(rec, req)
+		close(done)
+	}()
+	<-done
+
+	if ct := rec.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want %q", ct, "text/event-stream")
+	}
+	if !strings.Contains(rec.Body.String(), "event: turn") || !strings.Contains(rec.Body.String(), "hello") {
+		t.Errorf("stream body missing initial turn: %s", rec.Body.String())
 	}
 }
