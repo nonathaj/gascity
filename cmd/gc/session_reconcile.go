@@ -73,8 +73,18 @@ func wakeReasons(
 	}
 
 	// WakeWork: session has open work assigned to its template.
+	// For pool agents, apply the same slot/desired gate as WakeConfig
+	// so excess pool instances aren't woken by pending work.
 	if workSet[template] {
-		reasons = append(reasons, WakeWork)
+		if agent := findAgentByTemplate(cfg, template); agent != nil && agent.Pool != nil {
+			slot, _ := strconv.Atoi(session.Metadata["pool_slot"])
+			desired := poolDesired[template]
+			if slot > 0 && slot <= desired {
+				reasons = append(reasons, WakeWork)
+			}
+		} else {
+			reasons = append(reasons, WakeWork)
+		}
 	}
 
 	return reasons
@@ -84,7 +94,8 @@ func wakeReasons(
 // of template names that have pending work. Called once per reconciler tick.
 // The runner executes shell commands in the agent's working directory;
 // non-empty output means work exists. Agents without a work_query produce
-// no WakeWork reason.
+// no WakeWork reason. Uses EffectiveWorkQuery() which provides sensible
+// defaults so all agents participate in work-driven wake automatically.
 func computeWorkSet(cfg *config.City, runner ScaleCheckRunner, cityDir string) map[string]bool {
 	if cfg == nil || runner == nil {
 		return nil

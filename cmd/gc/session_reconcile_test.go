@@ -297,6 +297,51 @@ func TestWakeReasons_WorkSetHeldSuppressed(t *testing.T) {
 	}
 }
 
+func TestWakeReasons_WorkSetPoolSlotGated(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "pooled", Pool: &config.PoolConfig{Min: 1, Max: 3}},
+		},
+	}
+
+	poolDesired := map[string]int{"pooled": 2}
+	workSet := map[string]bool{"pooled": true}
+
+	// Slot 1 (within desired) — should get WakeWork.
+	s1 := makeBead("b1", map[string]string{
+		"template":     "pooled",
+		"session_name": "test-pooled-1",
+		"pool_slot":    "1",
+	})
+	reasons := wakeReasons(s1, cfg, nil, poolDesired, workSet, clk)
+	hasWork := false
+	for _, r := range reasons {
+		if r == WakeWork {
+			hasWork = true
+		}
+	}
+	if !hasWork {
+		t.Errorf("pool slot 1 (within desired=2) should get WakeWork, got %v", reasons)
+	}
+
+	// Slot 3 (exceeds desired) — should NOT get WakeWork.
+	s3 := makeBead("b3", map[string]string{
+		"template":     "pooled",
+		"session_name": "test-pooled-3",
+		"pool_slot":    "3",
+	})
+	reasons = wakeReasons(s3, cfg, nil, poolDesired, workSet, clk)
+	for _, r := range reasons {
+		if r == WakeWork {
+			t.Errorf("pool slot 3 (exceeds desired=2) should NOT get WakeWork, got %v", reasons)
+			break
+		}
+	}
+}
+
 func TestComputeWorkSet_RunsWorkQuery(t *testing.T) {
 	cfg := &config.City{
 		Agents: []config.Agent{
