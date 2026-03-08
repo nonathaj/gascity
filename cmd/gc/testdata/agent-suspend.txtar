@@ -10,52 +10,46 @@ stdout 'Started agent .mayor.'
 ! stdout 'Started agent .builder.'
 stdout 'City started.'
 
-# 2. gc agent list shows suspended annotation.
+# 2. gc config show shows suspended annotation.
 cd $WORK/city
-exec gc agent list
-stdout 'bright-lights:'
-stdout '  mayor'
-stdout 'hello-world/builder.*suspended'
+exec gc config show
+stdout 'mayor'
+stdout 'builder'
+stdout 'suspended = true'
 
-# 3. gc agent list --dir filters by directory.
-exec gc agent list --dir hello-world
-stdout 'hello-world/builder'
-! stdout 'mayor'
-
-# 4. gc agent resume clears suspended (use qualified name).
+# 3. gc agent resume clears suspended (use qualified name).
 exec gc agent resume hello-world/builder
 stdout 'Resumed agent'
 
-# 5. After resume, gc start spawns the agent.
+# 4. After resume, gc start spawns the agent.
 exec gc start $WORK/city
 stdout 'Started agent'
 stdout 'City started.'
 
-# 6. gc agent suspend sets suspended (use qualified name).
+# 5. gc agent suspend sets suspended (use qualified name).
 exec gc agent suspend hello-world/builder
 stdout 'Suspended agent'
 
-# 7. gc agent list confirms suspended status.
-exec gc agent list
-stdout 'hello-world/builder.*suspended'
+# 6. gc config show confirms suspended status.
+exec gc config show
+stdout 'suspended = true'
 
-# 8. gc agent add --dir --suspended registers correctly.
+# 7. gc agent add --dir --suspended registers correctly.
 exec gc agent add --name tester --dir other-project --suspended
 stdout 'Added agent .tester.'
 
-exec gc agent list
-stdout 'other-project/tester.*suspended'
+exec gc config show
+stdout 'tester'
 
-# 9. gc agent add --dir without --suspended.
+# 8. gc agent add --dir without --suspended.
 exec gc agent add --name reviewer --dir hello-world
 stdout 'Added agent .reviewer.'
 
-exec gc agent list --dir hello-world
-stdout 'hello-world/builder'
-stdout 'hello-world/reviewer'
-! stdout 'tester'
+exec gc config show
+stdout 'builder'
+stdout 'reviewer'
 
-# 10. Error cases.
+# 9. Error cases.
 ! exec gc agent suspend nonexistent
 stderr 'not found'
 

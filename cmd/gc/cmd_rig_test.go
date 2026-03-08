@@ -433,32 +433,6 @@ func TestDoRigListShowsSuspended(t *testing.T) {
 	}
 }
 
-func TestDoAgentListShowsRigSuspended(t *testing.T) {
-	rigPath := t.TempDir()
-	cityPath := t.TempDir()
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agents]]\nname = \"mayor\"\n\n[[agents]]\nname = \"polecat\"\ndir = \"" + rigPath + "\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigPath + "\"\nsuspended = true\n"
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentList(fsys.OSFS{}, cityPath, "", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("doAgentList returned %d, stderr: %s", code, stderr.String())
-	}
-	output := stdout.String()
-	if !strings.Contains(output, "rig suspended") {
-		t.Errorf("output = %q, want 'rig suspended' annotation", output)
-	}
-	// Mayor should NOT show rig suspended.
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "mayor") && strings.Contains(line, "rig suspended") {
-			t.Errorf("mayor should not show rig suspended: %s", line)
-		}
-	}
-}
-
 func TestDoRigAdd_WithPack(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {

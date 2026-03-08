@@ -11,11 +11,11 @@ stdout 'Started agent .worker-2.'
 stdout 'Started agent .worker-3.'
 stdout 'City started.'
 
-# 2. gc agent list shows pool info inline.
+# 2. gc config show shows pool info.
 cd $WORK/pool-city
-exec gc agent list
-stdout 'pool-city:'
-stdout 'worker.*pool: min=0, max=5'
+exec gc config show
+stdout 'worker'
+stdout 'max = 5'
 
 # 3. City with pool (min=2, check="echo 0") — min wins, starts 2.
 exec gc start $WORK/min-city
@@ -27,11 +27,10 @@ stdout 'City started.'
 exec gc stop $WORK/pool-city
 stdout 'City stopped.'
 
-# 5. gc agent list with no pools shows simple agents.
+# 5. gc config show with no pools shows simple agents.
 cd $WORK/no-pool-city
-exec gc agent list
-stdout 'no-pool-city:'
-stdout '  mayor'
+exec gc config show
+stdout 'mayor'
 
 # 6. Mixed agents and pools coexist.
 exec gc start $WORK/mixed-city

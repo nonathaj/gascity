@@ -80,22 +80,22 @@ become role-agnostic infrastructure that any pack can use.
 
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
-| `gt agents list` | `gc agent list` | **DONE** | Lists agents with pool/suspend annotations |
+| `gt agents list` | `gc session list` | **DONE** | Lists agents with pool/suspend annotations |
 | `gt agents menu` | `scripts/agent-menu.sh` | **DONE** | Shell script via session_setup; `prefix-g` keybinding |
 | `gt agents check` | `gc doctor` | **DONE** | Agent health in doctor checks |
 | `gt agents fix` | `gc doctor --fix` | **DONE** | |
 | Agent start (spawn) | Reconciler auto-starts | **REMAP** | No `gc agent start`; reconciler spawns agents on tick. `gc agent attach` idempotently starts+attaches. |
-| Agent stop (graceful) | `gc agent drain` / `gc agent suspend` | **REMAP** | No `gc agent stop`; drain stops gracefully with timeout, suspend prevents restart. |
-| Agent kill | `gc agent kill <name>` | **DONE** | Force-kill; reconciler restarts on next tick |
+| Agent stop (graceful) | `gc runtime drain` / `gc agent suspend` | **REMAP** | No `gc agent stop`; drain stops gracefully with timeout, suspend prevents restart. |
+| Agent kill | `gc session kill <name>` | **DONE** | Force-kill; reconciler restarts on next tick |
 | Agent attach | `gc agent attach <name>` | **DONE** | Interactive terminal; starts session if not running |
-| Agent status | `gc agent status <name>` | **DONE** | Shows session, running, suspended, draining state |
+| Agent status | `gc session list` | **DONE** | Shows session, running, suspended, draining state |
 | Agent peek | `gc agent peek [name]` | **DONE** | Scrollback capture with --lines |
-| Agent drain | `gc agent drain <name>` | **DONE** | Pool drain with timeout + drain-ack + drain-check + undrain |
+| Agent drain | `gc runtime drain <name>` | **DONE** | Pool drain with timeout + drain-ack + drain-check + undrain |
 | Agent suspend | `gc agent suspend <name>` | **DONE** | Prevent reconciler spawn (sets `suspended=true` in city.toml) |
 | Agent resume | `gc agent resume <name>` | **DONE** | Re-enable spawning (clears `suspended`) |
 | Agent nudge | `gc agent nudge <name> <msg>` | **DONE** | Send input to running session via tmux send-keys |
 | Agent add (runtime) | `gc agent add --name <name>` | **DONE** | Add agent to city.toml (supports --prompt-template, --dir, --suspended) |
-| Agent request-restart | `gc agent request-restart <name>` | **DONE** | Signal agent to restart on next hook check |
+| Agent request-restart | `gc runtime request-restart` | **DONE** | Signal agent to restart on next hook check |
 | Session cycling (`gt cycle`) | `session_setup` + scripts | **DONE** | Inlined as shell scripts in `examples/gastown/scripts/cycle.sh`, wired via `session_setup` bind-key with if-shell fallback preservation |
 | Session restart with handoff | `gc handoff` + reconciler | **DONE** | Core handoff implemented: mail-to-self + restart-requested + reconciler restart + scrollback clearing. `--collect` is WONTFIX (fails ZFC: agent writes better handoff notes than a canned state dump). |
 | `gt seance` | — | **P3** | Predecessor session forking: decomposes into events + provider `--fork-session --resume`. Real in gastown but not SDK-critical. |
@@ -112,10 +112,10 @@ become role-agnostic infrastructure that any pack can use.
 | Pool drain with timeout | Pool drain with timeout | **DONE** | `drainOps` in reconciler |
 | Polecat spawn (worktree) | Worktree isolation | **DONE** | `isolation = "worktree"` |
 | Polecat name pool | — | **REMAP** | Gas City uses `{name}-{N}` numeric; names are config |
-| `gt polecat list` | `gc agent list` | **DONE** | Pool instances shown with annotations |
+| `gt polecat list` | `gc session list` | **DONE** | Pool instances shown with annotations |
 | `gt polecat add/remove` | Config-driven | **REMAP** | Edit city.toml pool.max |
-| `gt polecat status` | `gc agent status` | **DONE** | Per-instance |
-| `gt polecat nuke` | `gc agent kill` + `gc worktree clean` | **DONE** | Kill + worktree cleanup |
+| `gt polecat status` | `gc session list` | **DONE** | Per-instance |
+| `gt polecat nuke` | `gc session kill` + `gc worktree clean` | **DONE** | Kill + worktree cleanup |
 | `gt polecat gc` | `gc doctor --fix` | **DONE** | Stale worktree cleanup |
 | `gt polecat stale/prune` | Reconciler | **DONE** | Orphan detection in reconciler |
 | `gt polecat identity` | — | **REMAP** | No identity system; agents are config |
@@ -131,10 +131,10 @@ become role-agnostic infrastructure that any pack can use.
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
 | `gt crew add/remove` | Config-driven | **REMAP** | Add `[[agents]]` to city.toml |
-| `gt crew list` | `gc agent list` | **DONE** | |
+| `gt crew list` | `gc session list` | **DONE** | |
 | `gt crew start/stop` | Reconciler / `gc agent suspend+resume` | **REMAP** | No individual start/stop; reconciler auto-starts, suspend prevents restart |
-| `gt crew restart` | `gc agent kill` (reconciler restarts) | **DONE** | |
-| `gt crew status` | `gc agent status` | **DONE** | |
+| `gt crew restart` | `gc session kill` (reconciler restarts) | **DONE** | |
+| `gt crew status` | `gc session list` | **DONE** | |
 | `gt crew at <name>` | `gc agent attach <name>` | **DONE** | |
 | `gt crew refresh` | `gc handoff --target` | **DONE** | Remote handoff: sends mail + kills session; reconciler restarts |
 | `gt crew pristine` | — | **REMAP** | Just git: `git -C <workdir> pull` per agent; witness/deacon prompt can do this |
@@ -466,7 +466,7 @@ become role-agnostic infrastructure that any pack can use.
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
 | `gt dog add/remove` | — | **REMAP** | Config-driven pool agents scoped to city |
-| `gt dog list/status` | `gc agent list` | **REMAP** | City-wide agents shown |
+| `gt dog list/status` | `gc session list` | **REMAP** | City-wide agents shown |
 | `gt dog call/dispatch/done/clear` | `gc sling` | **REMAP** | Sling to city-wide agent pool |
 
 ---

@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// TestE2E_Drain_SetAndCheck verifies that gc agent drain sets the GC_DRAIN
-// metadata flag and gc agent drain-check returns exit 0.
+// TestE2E_Drain_SetAndCheck verifies that gc runtime drain sets the GC_DRAIN
+// metadata flag and gc runtime drain-check returns exit 0.
 func TestE2E_Drain_SetAndCheck(t *testing.T) {
 	city := e2eCity{
 		Agents: []e2eAgent{
@@ -22,25 +22,25 @@ func TestE2E_Drain_SetAndCheck(t *testing.T) {
 	cityDir := setupE2ECity(t, nil, city)
 
 	// Before drain: drain-check should return non-zero.
-	_, err := gc(cityDir, "agent", "drain-check", "drainee")
+	_, err := gc(cityDir, "runtime", "drain-check", "drainee")
 	if err == nil {
 		t.Error("drain-check should fail before drain is set")
 	}
 
 	// Set drain.
-	out, err := gc(cityDir, "agent", "drain", "drainee")
+	out, err := gc(cityDir, "runtime", "drain", "drainee")
 	if err != nil {
-		t.Fatalf("gc agent drain failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc runtime drain failed: %v\noutput: %s", err, out)
 	}
 
 	// After drain: drain-check should return 0.
-	out, err = gc(cityDir, "agent", "drain-check", "drainee")
+	out, err = gc(cityDir, "runtime", "drain-check", "drainee")
 	if err != nil {
 		t.Errorf("drain-check should succeed after drain: %v\noutput: %s", err, out)
 	}
 }
 
-// TestE2E_Drain_Ack verifies that gc agent drain-ack sets the GC_DRAIN_ACK
+// TestE2E_Drain_Ack verifies that gc runtime drain-ack sets the GC_DRAIN_ACK
 // metadata flag.
 func TestE2E_Drain_Ack(t *testing.T) {
 	city := e2eCity{
@@ -51,19 +51,19 @@ func TestE2E_Drain_Ack(t *testing.T) {
 	cityDir := setupE2ECity(t, nil, city)
 
 	// Drain the agent.
-	out, err := gc(cityDir, "agent", "drain", "acker")
+	out, err := gc(cityDir, "runtime", "drain", "acker")
 	if err != nil {
-		t.Fatalf("gc agent drain failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc runtime drain failed: %v\noutput: %s", err, out)
 	}
 
 	// Ack the drain (simulating agent behavior).
-	out, err = gc(cityDir, "agent", "drain-ack", "acker")
+	out, err = gc(cityDir, "runtime", "drain-ack", "acker")
 	if err != nil {
-		t.Fatalf("gc agent drain-ack failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc runtime drain-ack failed: %v\noutput: %s", err, out)
 	}
 }
 
-// TestE2E_Undrain verifies that gc agent undrain clears drain flags.
+// TestE2E_Undrain verifies that gc runtime undrain clears drain flags.
 func TestE2E_Undrain(t *testing.T) {
 	city := e2eCity{
 		Agents: []e2eAgent{
@@ -73,31 +73,31 @@ func TestE2E_Undrain(t *testing.T) {
 	cityDir := setupE2ECity(t, nil, city)
 
 	// Set drain.
-	out, err := gc(cityDir, "agent", "drain", "undrain")
+	out, err := gc(cityDir, "runtime", "drain", "undrain")
 	if err != nil {
-		t.Fatalf("gc agent drain failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc runtime drain failed: %v\noutput: %s", err, out)
 	}
 
 	// Verify drain is set.
-	_, err = gc(cityDir, "agent", "drain-check", "undrain")
+	_, err = gc(cityDir, "runtime", "drain-check", "undrain")
 	if err != nil {
 		t.Fatal("drain-check should succeed after drain")
 	}
 
 	// Undrain.
-	out, err = gc(cityDir, "agent", "undrain", "undrain")
+	out, err = gc(cityDir, "runtime", "undrain", "undrain")
 	if err != nil {
-		t.Fatalf("gc agent undrain failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc runtime undrain failed: %v\noutput: %s", err, out)
 	}
 
 	// After undrain: drain-check should fail again.
-	_, err = gc(cityDir, "agent", "drain-check", "undrain")
+	_, err = gc(cityDir, "runtime", "drain-check", "undrain")
 	if err == nil {
 		t.Error("drain-check should fail after undrain")
 	}
 }
 
-// TestE2E_RequestRestart verifies that gc agent request-restart sets the
+// TestE2E_RequestRestart verifies that gc runtime request-restart sets the
 // GC_RESTART_REQUESTED metadata. Since request-restart blocks, we run it
 // with a short timeout.
 func TestE2E_RequestRestart(t *testing.T) {
@@ -117,7 +117,7 @@ func TestE2E_RequestRestart(t *testing.T) {
 		gcWithEnv(cityDir, map[string]string{
 			"GC_AGENT": "restarter",
 			"GC_CITY":  cityDir,
-		}, "agent", "request-restart")
+		}, "runtime", "request-restart")
 	}()
 
 	// Give it a moment for the metadata to be set.
@@ -130,7 +130,7 @@ func TestE2E_RequestRestart(t *testing.T) {
 	}
 
 	// Kill the agent to unblock the goroutine.
-	gc(cityDir, "agent", "kill", "restarter") //nolint:errcheck
+	gc(cityDir, "session", "kill", "restarter") //nolint:errcheck
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):

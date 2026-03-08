@@ -1,6 +1,6 @@
 #!/bin/bash
 # Bash agent: loop worker with drain awareness.
-# Like loop.sh but checks gc agent drain-check before each iteration.
+# Like loop.sh but checks gc runtime drain-check before each iteration.
 # If drain-check returns 0 (draining), sends drain-ack and exits cleanly.
 #
 # Required env vars (set by gc start):
@@ -13,8 +13,8 @@ cd "$GC_CITY"
 
 while true; do
     # Check if we're being drained
-    if gc agent drain-check 2>/dev/null; then
-        gc agent drain-ack 2>/dev/null || true
+    if gc runtime drain-check 2>/dev/null; then
+        gc runtime drain-ack 2>/dev/null || true
         exit 0
     fi
 

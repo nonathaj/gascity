@@ -10,92 +10,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ---------------------------------------------------------------------------
-// gc agent status <name>
-// ---------------------------------------------------------------------------
-
-// newAgentStatusCmd creates the "gc agent status <name>" subcommand.
-func newAgentStatusCmd(stdout, stderr io.Writer) *cobra.Command {
+// newAgentStatusCmd is a deprecation shim for "gc agent status".
+func newAgentStatusCmd(_, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "status <name>",
-		Short: "Show agent status",
+		Use:   "status",
+		Short: "Deprecated: use \"gc session list\"",
 		Args:  cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentStatus(args, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent status: removed, use \"gc session list\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
 		},
 	}
-}
-
-// cmdAgentStatus is the CLI entry point for showing agent status.
-func cmdAgentStatus(args []string, stdout, stderr io.Writer) int {
-	fmt.Fprintln(stderr, "Warning: \"gc agent status\" is deprecated, use \"gc session list\"") //nolint:errcheck
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent status: missing agent name") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	agentName := args[0]
-
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent status: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent status: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent status", agentName, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	agentName = found.QualifiedName()
-
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
-	sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
-	sp := newSessionProvider()
-	dops := newDrainOps(sp)
-	return doAgentStatus(sp, dops, found, agentName, sn, stdout, stderr)
-}
-
-// doAgentStatus prints detailed status for a single agent.
-func doAgentStatus(
-	sp runtime.Provider,
-	dops drainOps,
-	cfgAgent config.Agent,
-	agentName, sn string,
-	stdout, stderr io.Writer,
-) int {
-	_ = stderr // reserved for future error reporting
-	running := sp.IsRunning(sn)
-	draining, _ := dops.isDraining(sn)
-
-	runStr := "no"
-	if running {
-		runStr = "yes"
-	}
-	suspStr := "no"
-	if cfgAgent.Suspended {
-		suspStr = "yes"
-	}
-	drainStr := "no"
-	if draining {
-		drainStr = "yes"
-	}
-
-	fmt.Fprintf(stdout, "%s:\n", agentName)             //nolint:errcheck // best-effort stdout
-	fmt.Fprintf(stdout, "  Session:    %s\n", sn)       //nolint:errcheck // best-effort stdout
-	fmt.Fprintf(stdout, "  Running:    %s\n", runStr)   //nolint:errcheck // best-effort stdout
-	fmt.Fprintf(stdout, "  Suspended:  %s\n", suspStr)  //nolint:errcheck // best-effort stdout
-	fmt.Fprintf(stdout, "  Draining:   %s\n", drainStr) //nolint:errcheck // best-effort stdout
-	return 0
 }
 
 // ---------------------------------------------------------------------------

@@ -73,21 +73,21 @@ gc agent
 | [gc agent add](#gc-agent-add) | Add an agent to the workspace |
 | [gc agent attach](#gc-agent-attach) | Attach to an agent session |
 | [gc agent destroy](#gc-agent-destroy) | Close a session created from an agent template |
-| [gc agent drain](#gc-agent-drain) | Signal an agent to drain (wind down gracefully) |
-| [gc agent drain-ack](#gc-agent-drain-ack) | Acknowledge drain — signal the controller to stop this session |
-| [gc agent drain-check](#gc-agent-drain-check) | Check if this agent is draining (exit 0 = draining) |
-| [gc agent kill](#gc-agent-kill) | Force-kill an agent session (reconciler will restart it) |
-| [gc agent list](#gc-agent-list) | List workspace agents |
-| [gc agent logs](#gc-agent-logs) | Show session logs for an agent |
+| [gc agent drain](#gc-agent-drain) | Alias for `gc runtime drain` |
+| [gc agent drain-ack](#gc-agent-drain-ack) | Alias for `gc runtime drain-ack` |
+| [gc agent drain-check](#gc-agent-drain-check) | Alias for `gc runtime drain-check` |
+| [gc agent kill](#gc-agent-kill) | Alias for `gc session kill` |
+| [gc agent list](#gc-agent-list) | Alias for `gc session list` |
+| [gc agent logs](#gc-agent-logs) | Alias for `gc session logs` |
 | [gc agent nudge](#gc-agent-nudge) | Send a message to wake or redirect an agent |
 | [gc agent peek](#gc-agent-peek) | Capture recent output from an agent session |
-| [gc agent request-restart](#gc-agent-request-restart) | Request controller restart this session (blocks until killed) |
+| [gc agent request-restart](#gc-agent-request-restart) | Alias for `gc runtime request-restart` |
 | [gc agent resume](#gc-agent-resume) | Resume a suspended agent |
 | [gc agent start](#gc-agent-start) | Create a background session from an agent template |
-| [gc agent status](#gc-agent-status) | Show agent status |
+| [gc agent status](#gc-agent-status) | Alias for `gc session list` |
 | [gc agent stop](#gc-agent-stop) | Suspend a session created from an agent template |
 | [gc agent suspend](#gc-agent-suspend) | Suspend an agent (reconciler will skip it) |
-| [gc agent undrain](#gc-agent-undrain) | Cancel drain on an agent |
+| [gc agent undrain](#gc-agent-undrain) | Alias for `gc runtime undrain` |
 
 ## gc agent add
 
@@ -141,11 +141,12 @@ gc agent destroy <session-id-or-name>
 
 ## gc agent drain
 
-Signal an agent to drain — wind down its current work gracefully.
+Alias for `gc runtime drain`. Signal an agent to drain — wind down its
+current work gracefully.
 
 Sets a GC_DRAIN metadata flag on the session. The agent should check
-for drain status periodically (via "gc agent drain-check") and finish
-its current task before exiting. Use "gc agent undrain" to cancel.
+for drain status periodically (via "gc runtime drain-check") and finish
+its current task before exiting. Use "gc runtime undrain" to cancel.
 
 ```
 gc agent drain <name>
@@ -153,7 +154,8 @@ gc agent drain <name>
 
 ## gc agent drain-ack
 
-Acknowledge a drain signal — tell the controller to stop this session.
+Alias for `gc runtime drain-ack`. Acknowledge a drain signal — tell the
+controller to stop this session.
 
 Sets GC_DRAIN_ACK metadata on the session. The controller will stop
 the session on its next reconcile tick. Call this after the agent has
@@ -165,10 +167,11 @@ gc agent drain-ack [name]
 
 ## gc agent drain-check
 
-Check if this agent is currently draining.
+Alias for `gc runtime drain-check`. Check if this agent is currently
+draining.
 
 Returns exit code 0 if draining, 1 if not. Designed for use in
-conditionals: "if gc agent drain-check; then finish-up; fi".
+conditionals: "if gc runtime drain-check; then finish-up; fi".
 Uses $GC_AGENT and $GC_CITY env vars when called without arguments.
 
 ```
@@ -177,11 +180,12 @@ gc agent drain-check [name]
 
 ## gc agent kill
 
-Force-kill an agent's tmux session immediately.
+Alias for `gc session kill`. Force-kill an agent's tmux session
+immediately.
 
 The session is destroyed without graceful shutdown. If a controller is
 running, it will restart the agent on its next reconcile tick. Use
-"gc agent drain" for graceful wind-down instead.
+"gc runtime drain" for graceful wind-down instead.
 
 ```
 gc agent kill <name>
@@ -189,7 +193,8 @@ gc agent kill <name>
 
 ## gc agent list
 
-List all agents configured in city.toml with annotations.
+Alias for `gc session list`. List all agents configured in city.toml
+with annotations.
 
 Shows each agent's qualified name, suspension status, rig suspension
 inheritance, and pool configuration. Use --dir to filter by working
@@ -206,7 +211,8 @@ gc agent list [flags]
 
 ## gc agent logs
 
-Show structured session log messages from an agent's JSONL session file.
+Alias for `gc session logs`. Show structured session log messages from
+an agent's JSONL session file.
 
 Reads the agent's session log, resolves the conversation DAG, and prints
 messages in chronological order. Searches default paths (~/.claude/projects/)
@@ -222,9 +228,9 @@ gc agent logs <agent-name> [flags]
 **Example:**
 
 ```
-gc agent logs mayor
-  gc agent logs mayor --tail 0
-  gc agent logs myrig/polecat-1 -f
+gc session logs mayor
+  gc session logs mayor --tail 0
+  gc session logs myrig/polecat-1 -f
 ```
 
 | Flag | Type | Default | Description |
@@ -262,7 +268,8 @@ gc agent peek <agent-name> [flags]
 
 ## gc agent request-restart
 
-Signal the controller to stop and restart this agent session.
+Alias for `gc runtime request-restart`. Signal the controller to stop
+and restart this agent session.
 
 Sets GC_RESTART_REQUESTED metadata on the session, then blocks forever.
 The controller will stop the session on its next reconcile tick and
@@ -274,7 +281,7 @@ This command is designed to be called from within an agent session
 before blocking.
 
 ```
-gc agent request-restart
+gc runtime request-restart
 ```
 
 ## gc agent resume
@@ -305,7 +312,7 @@ gc agent start <template> [flags]
 
 ## gc agent status
 
-Show agent status
+Alias for `gc session list`. Show agent status.
 
 ```
 gc agent status <name>
@@ -336,7 +343,8 @@ gc agent suspend <name>
 
 ## gc agent undrain
 
-Cancel a pending drain signal on an agent.
+Alias for `gc runtime undrain`. Cancel a pending drain signal on an
+agent.
 
 Clears the GC_DRAIN and GC_DRAIN_ACK metadata flags, allowing the
 agent to continue normal operation.
@@ -1116,14 +1124,14 @@ Self-handoff (default): sends mail to self and blocks until controller
 restarts the session. Equivalent to:
 
   gc mail send $GC_AGENT <subject> [message]
-  gc agent request-restart
+  gc runtime request-restart
 
 Remote handoff (--target): sends mail to target agent and kills its
 session. The reconciler restarts it with the handoff mail waiting.
 Returns immediately. Equivalent to:
 
   gc mail send <target> <subject> [message]
-  gc agent kill <target>
+  gc session kill <target>
 
 Self-handoff requires agent context (GC_AGENT/GC_CITY env vars).
 Remote handoff can be run from any context with access to the city.

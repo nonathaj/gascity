@@ -618,7 +618,7 @@ do_set_meta() {
 
     # Store in tmux environment inside the container. This is the same
     # store the agent's default tmux provider reads, so both controller
-    # (via this script) and agent (via gc agent drain-check) see the
+    # (via this script) and agent (via gc runtime drain-check) see the
     # same metadata.
     dtmux "$cname" set-environment -t "$TMUX_SESSION" "$key" "$value" \
         2>/dev/null || true

@@ -1,35 +1,18 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
-	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
-
-// AgentListEntry is the JSON output format for a single agent in "gc agent list --json".
-type AgentListEntry struct {
-	Name          string    `json:"name"`
-	QualifiedName string    `json:"qualified_name"`
-	Dir           string    `json:"dir"`
-	Scope         string    `json:"scope"`
-	Suspended     bool      `json:"suspended"`
-	RigSuspended  bool      `json:"rig_suspended"`
-	Pool          *PoolJSON `json:"pool"`
-}
 
 // loadCityConfig loads the city configuration with full pack expansion.
 // Most CLI commands need this instead of config.Load so that agents defined
@@ -155,17 +138,15 @@ func currentRigContext(cfg *config.City) string {
 func newAgentCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agent",
-		Short: "Manage agents",
-		Long: `Manage agents in the city workspace.
+		Short: "Manage agent configuration",
+		Long: `Manage agent configuration in city.toml.
 
-Agents are the autonomous workers that execute tasks. Each agent runs
-in its own tmux session with a configured provider (Claude, Codex, etc).
-Agents can be fixed (single instance) or pooled (multiple instances
-scaled by demand).`,
+Runtime operations (attach, list, peek, nudge, kill, start, stop, destroy)
+have moved to "gc session" and "gc runtime".`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc agent: missing subcommand (add, attach, destroy, drain, drain-ack, drain-check, kill, list, logs, nudge, peek, request-restart, resume, start, status, stop, suspend, undrain)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc agent: missing subcommand (add, suspend, resume)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc agent: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -174,23 +155,18 @@ scaled by demand).`,
 	}
 	cmd.AddCommand(
 		newAgentAddCmd(stdout, stderr),
+		newAgentResumeCmd(stdout, stderr),
+		newAgentSuspendCmd(stdout, stderr),
+		// Deprecation shims — print removal message and exit.
 		newAgentAttachCmd(stdout, stderr),
 		newAgentDestroyCmd(stdout, stderr),
-		newAgentDrainCmd(stdout, stderr),
-		newAgentDrainAckCmd(stdout, stderr),
-		newAgentDrainCheckCmd(stdout, stderr),
 		newAgentKillCmd(stdout, stderr),
 		newAgentListCmd(stdout, stderr),
-		newAgentLogsCmd(stdout, stderr),
 		newAgentNudgeCmd(stdout, stderr),
 		newAgentPeekCmd(stdout, stderr),
-		newAgentRequestRestartCmd(stdout, stderr),
-		newAgentResumeCmd(stdout, stderr),
 		newAgentStartCmd(stdout, stderr),
 		newAgentStatusCmd(stdout, stderr),
 		newAgentStopCmd(stdout, stderr),
-		newAgentSuspendCmd(stdout, stderr),
-		newAgentUndrainCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -224,137 +200,28 @@ scope the agent to a rig's working directory.`,
 	return cmd
 }
 
-func newAgentListCmd(stdout, stderr io.Writer) *cobra.Command {
-	var dir string
-	var jsonFlag bool
-	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List workspace agents",
-		Long: `List all agents configured in city.toml with annotations.
-
-Shows each agent's qualified name, suspension status, rig suspension
-inheritance, and pool configuration. Use --dir to filter by working
-directory.`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if cmdAgentList(dir, jsonFlag, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
-		},
-	}
-	cmd.Flags().StringVar(&dir, "dir", "", "Filter agents by working directory")
-	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
-	return cmd
-}
-
-func newAgentAttachCmd(stdout, stderr io.Writer) *cobra.Command {
+func newAgentListCmd(_, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "attach <name>",
-		Short: "Attach to an agent session",
-		Long: `Attach to an agent's tmux session for interactive debugging.
-
-Starts the session if not already running, then attaches your terminal.
-Detach with the standard tmux detach key (Ctrl-B D by default). Supports
-both fixed agents and pool instances (e.g. "polecat-2").`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentAttach(args, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
+		Use:   "list",
+		Short: "Deprecated: use \"gc session list\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent list: removed, use \"gc session list\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
 		},
 	}
 }
 
-// cmdAgentAttach is the CLI entry point for attaching to an agent session.
-// It loads city config, finds the agent, determines the command, constructs
-// the session name, and delegates to doAgentAttach.
-func cmdAgentAttach(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent attach: missing agent name") //nolint:errcheck // best-effort stderr
-		return 1
+func newAgentAttachCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "attach",
+		Short: "Deprecated: use \"gc session attach\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent attach: removed, use \"gc session attach\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
 	}
-	agentName := args[0]
-
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent attach: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent attach: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Find agent in config.
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
-	if !ok {
-		if len(cfg.Agents) == 0 {
-			fmt.Fprintln(stderr, "gc agent attach: no agents configured; run 'gc init' to set up your city") //nolint:errcheck // best-effort stderr
-		} else {
-			fmt.Fprintln(stderr, agentNotFoundMsg("gc agent attach", agentName, cfg)) //nolint:errcheck // best-effort stderr
-		}
-		return 1
-	}
-	cfgAgent := &found
-
-	// Check for ACP session — attach is not supported.
-	if cfgAgent.Session == "acp" || sessionProviderName() == "acp" {
-		fmt.Fprintf(stderr, "gc agent attach: agent %q uses ACP transport (no terminal to attach to)\n", cfgAgent.QualifiedName()) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Determine command: agent > workspace > auto-detect.
-	resolved, err := config.ResolveProvider(cfgAgent, &cfg.Workspace, cfg.Providers, exec.LookPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent attach: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Construct session name and attach.
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
-	sp := newSessionProvider()
-	sn := agent.SessionNameFor(cityName, cfgAgent.QualifiedName(), cfg.Workspace.SessionTemplate)
-	workDir := cityPath
-	if cfgAgent.Dir != "" {
-		if wd, wdErr := resolveAgentDir(cityPath, cfgAgent.Dir); wdErr == nil {
-			workDir = wd
-		}
-	}
-	cfg2 := runtime.Config{
-		Command:                resolved.CommandString(),
-		Env:                    resolved.Env,
-		WorkDir:                workDir,
-		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
-		ReadyDelayMs:           resolved.ReadyDelayMs,
-		ProcessNames:           resolved.ProcessNames,
-		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
-	}
-	return doAgentAttach(sp, sn, cfgAgent.QualifiedName(), cfg2, stdout, stderr)
-}
-
-// doAgentAttach is the pure logic for "gc agent attach <name>".
-// It is idempotent: starts the session if not already running, then attaches.
-func doAgentAttach(sp runtime.Provider, sessionName, displayName string, cfg runtime.Config, stdout, stderr io.Writer) int {
-	if !sp.IsRunning(sessionName) {
-		if err := sp.Start(context.Background(), sessionName, cfg); err != nil {
-			fmt.Fprintf(stderr, "gc agent attach: starting session: %v\n", err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-	}
-
-	fmt.Fprintf(stdout, "Attaching to agent '%s'...\n", displayName) //nolint:errcheck // best-effort stdout
-
-	if err := sp.Attach(sessionName); err != nil {
-		fmt.Fprintf(stderr, "gc agent attach: attaching to session: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	return 0
 }
 
 // cmdAgentAdd is the CLI entry point for adding an agent. It locates
@@ -618,340 +485,38 @@ func doAgentResume(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) 
 	return 1
 }
 
-func newAgentNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
+func newAgentNudgeCmd(_, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "nudge <agent-name> <message>",
-		Short: "Send a message to wake or redirect an agent",
-		Long: `Send a text message to an agent's running session.
-
-The message is typed into the agent's tmux session as if a human typed
-it. Use this to redirect an agent's attention, provide new instructions,
-or wake it from an idle state.`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentNudge(args, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
+		Use:   "nudge",
+		Short: "Deprecated: use \"gc session message\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent nudge: removed, use \"gc session message\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
 		},
 	}
 }
 
-// cmdAgentNudge is the CLI entry point for nudging an agent. It validates the
-// agent exists in city.toml, constructs a minimal Agent, and delegates to
-// doAgentNudge.
-func cmdAgentNudge(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 2 {
-		fmt.Fprintln(stderr, "gc agent nudge: usage: gc agent nudge <agent-name> <message>") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	agentName := args[0]
-	message := strings.Join(args[1:], " ")
-
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Validate agent exists in config.
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent nudge", agentName, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Resolve session name and nudge via provider.
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
-	sp := newSessionProvider()
-	sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
-	return doAgentNudge(sp, sn, found.QualifiedName(), message, stdout, stderr)
-}
-
-// doAgentNudge is the pure logic for "gc agent nudge". Accepts provider,
-// session name, and display name for testability.
-func doAgentNudge(sp runtime.Provider, sessionName, displayName, message string, stdout, stderr io.Writer) int {
-	if err := sp.Nudge(sessionName, runtime.TextContent(message)); err != nil {
-		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	fmt.Fprintf(stdout, "Nudged agent '%s'\n", displayName) //nolint:errcheck // best-effort stdout
-	return 0
-}
-
-func newAgentPeekCmd(stdout, stderr io.Writer) *cobra.Command {
-	var lines int
-	cmd := &cobra.Command{
-		Use:   "peek <agent-name>",
-		Short: "Capture recent output from an agent session",
-		Long: `Capture recent terminal output from an agent's tmux session.
-
-Reads the session's scrollback buffer without attaching. Use --lines
-to control how much output to capture (0 = all available scrollback).
-Useful for monitoring agent progress without interrupting it.`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentPeek(args, lines, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
-		},
-	}
-	cmd.Flags().IntVar(&lines, "lines", 50, "Number of lines to capture (0 = all scrollback)")
-	return cmd
-}
-
-// cmdAgentPeek is the CLI entry point for peeking at agent output. It
-// validates the agent exists in city.toml, constructs a minimal Agent,
-// and delegates to doAgentPeek.
-func cmdAgentPeek(args []string, lines int, stdout, stderr io.Writer) int {
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent peek: missing agent name") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	agentName := args[0]
-
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent peek: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent peek: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Validate agent exists in config.
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent peek", agentName, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Resolve session name and peek via provider.
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
-	sp := newSessionProvider()
-	sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
-	return doAgentPeek(sp, sn, lines, stdout, stderr)
-}
-
-// doAgentPeek is the pure logic for "gc agent peek". Accepts provider
-// and session name for testability.
-func doAgentPeek(sp runtime.Provider, sessionName string, lines int, stdout, stderr io.Writer) int {
-	output, err := sp.Peek(sessionName, lines)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent peek: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	fmt.Fprint(stdout, output) //nolint:errcheck // best-effort stdout
-	return 0
-}
-
-// cmdAgentList is the CLI entry point for listing agents. It locates
-// the city root and delegates to doAgentList.
-func cmdAgentList(dirFilter string, jsonOutput bool, stdout, stderr io.Writer) int {
-	fmt.Fprintln(stderr, "Warning: \"gc agent list\" is deprecated, use \"gc session list\"") //nolint:errcheck
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent list: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if jsonOutput {
-		return doAgentListJSON(fsys.OSFS{}, cityPath, dirFilter, stdout, stderr)
-	}
-	return doAgentList(fsys.OSFS{}, cityPath, dirFilter, stdout, stderr)
-}
-
-// doAgentListJSON outputs agent list as a JSON array. Accepts an injected FS
-// for testability.
-func doAgentListJSON(fs fsys.FS, cityPath, dirFilter string, stdout, stderr io.Writer) int {
-	tomlPath := filepath.Join(cityPath, "city.toml")
-	cfg, err := loadCityConfigFS(fs, tomlPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent list: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Pre-compute suspended rig names.
-	suspendedRigs := make(map[string]bool)
-	for _, r := range cfg.Rigs {
-		if r.Suspended {
-			suspendedRigs[r.Name] = true
-		}
-	}
-
-	var entries []AgentListEntry
-	for _, a := range cfg.Agents {
-		if dirFilter != "" && a.Dir != dirFilter {
-			continue
-		}
-		scope := "city"
-		if a.Dir != "" {
-			scope = "rig"
-		}
-		rigSuspended := a.Dir != "" && suspendedRigs[a.Dir]
-		var pool *PoolJSON
-		if a.Pool != nil {
-			pool = &PoolJSON{Min: a.Pool.Min, Max: a.Pool.Max}
-		}
-		entry := AgentListEntry{
-			Name:          a.Name,
-			QualifiedName: a.QualifiedName(),
-			Dir:           a.Dir,
-			Scope:         scope,
-			Suspended:     a.Suspended,
-			RigSuspended:  rigSuspended,
-			Pool:          pool,
-		}
-		entries = append(entries, entry)
-	}
-
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent list: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	fmt.Fprintln(stdout, string(data)) //nolint:errcheck // best-effort stdout
-	return 0
-}
-
-// ---------------------------------------------------------------------------
-// gc agent kill <name>
-// ---------------------------------------------------------------------------
-
-func newAgentKillCmd(stdout, stderr io.Writer) *cobra.Command {
+func newAgentPeekCmd(_, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "kill <name>",
-		Short: "Force-kill an agent session (reconciler will restart it)",
-		Long: `Force-kill an agent's tmux session immediately.
-
-The session is destroyed without graceful shutdown. If a controller is
-running, it will restart the agent on its next reconcile tick. Use
-"gc agent drain" for graceful wind-down instead.`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentKill(args, stdout, stderr) != 0 {
-				return errExit
-			}
-			return nil
+		Use:   "peek",
+		Short: "Deprecated: use \"gc session peek\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent peek: removed, use \"gc session peek\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
 		},
 	}
 }
 
-func cmdAgentKill(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent kill: missing agent name") //nolint:errcheck // best-effort stderr
-		return 1
+func newAgentKillCmd(_, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "kill",
+		Short: "Deprecated: use \"gc session kill\"",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			fmt.Fprintln(stderr, "gc agent kill: removed, use \"gc session kill\" instead") //nolint:errcheck // best-effort stderr
+			return errExit
+		},
 	}
-	agentName := args[0]
-
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent kill: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent kill: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent kill", agentName, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	agentName = found.QualifiedName()
-
-	cityName := cfg.Workspace.Name
-	if cityName == "" {
-		cityName = filepath.Base(cityPath)
-	}
-	sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
-	sp := newSessionProvider()
-	rec := openCityRecorder(stderr)
-	return doAgentKill(sp, rec, agentName, sn, stdout, stderr)
-}
-
-// doAgentKill force-kills an agent's session. The reconciler will restart it
-// on its next tick.
-func doAgentKill(sp runtime.Provider, rec events.Recorder,
-	agentName, sn string, stdout, stderr io.Writer,
-) int {
-	if !sp.IsRunning(sn) {
-		fmt.Fprintf(stderr, "gc agent kill: agent %q is not running\n", agentName) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if err := sp.Stop(sn); err != nil {
-		fmt.Fprintf(stderr, "gc agent kill: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	rec.Record(events.Event{
-		Type:    events.SessionStopped,
-		Actor:   eventActor(),
-		Subject: agentName,
-	})
-	fmt.Fprintf(stdout, "Killed agent '%s'\n", agentName) //nolint:errcheck // best-effort stdout
-	return 0
-}
-
-// doAgentList is the pure logic for "gc agent list". It loads city.toml
-// and prints the city name header followed by agent names. When dirFilter
-// is non-empty, only agents whose Dir matches are shown.
-// Accepts an injected FS for testability.
-func doAgentList(fs fsys.FS, cityPath, dirFilter string, stdout, stderr io.Writer) int {
-	tomlPath := filepath.Join(cityPath, "city.toml")
-	cfg, err := loadCityConfigFS(fs, tomlPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc agent list: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	// Pre-compute suspended rig paths for annotation.
-	suspendedRigPaths := make(map[string]bool)
-	for _, r := range cfg.Rigs {
-		if r.Suspended {
-			suspendedRigPaths[filepath.Clean(r.Path)] = true
-		}
-	}
-
-	fmt.Fprintf(stdout, "%s:\n", cfg.Workspace.Name) //nolint:errcheck // best-effort stdout
-	for _, a := range cfg.Agents {
-		if dirFilter != "" && a.Dir != dirFilter {
-			continue
-		}
-		displayName := a.QualifiedName()
-		var annotations []string
-		if a.Suspended {
-			annotations = append(annotations, "suspended")
-		} else if a.Dir != "" && len(suspendedRigPaths) > 0 {
-			workDir := a.Dir
-			if !filepath.IsAbs(workDir) {
-				workDir = filepath.Join(cityPath, workDir)
-			}
-			if suspendedRigPaths[filepath.Clean(workDir)] {
-				annotations = append(annotations, "rig suspended")
-			}
-		}
-		if a.Pool != nil {
-			annotations = append(annotations, fmt.Sprintf("pool: min=%d, max=%d", a.Pool.Min, a.Pool.Max))
-		}
-		if len(annotations) > 0 {
-			fmt.Fprintf(stdout, "  %s  (%s)\n", displayName, strings.Join(annotations, ", ")) //nolint:errcheck // best-effort stdout
-		} else {
-			fmt.Fprintf(stdout, "  %s\n", displayName) //nolint:errcheck // best-effort stdout
-		}
-	}
-	return 0
 }

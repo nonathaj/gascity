@@ -219,7 +219,7 @@ Save this output — it's the last evidence of what the agent was doing.
 
 **2. Kill the session:**
 ```bash
-gc agent request-restart {{target}}
+gc runtime request-restart {{target}}
 ```
 This sets restart-requested metadata. If the agent is truly stuck
 (not responding to nudges), the controller will kill and restart it

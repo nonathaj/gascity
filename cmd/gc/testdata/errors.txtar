@@ -48,7 +48,7 @@ stderr 'not in a city directory'
 
 # gc agent with no subcommand.
 ! exec gc agent
-stderr 'missing subcommand \(add, attach, destroy, drain, drain-ack, drain-check, kill, list, logs, nudge, peek, request-restart, resume, start, status, stop, suspend, undrain\)'
+stderr 'missing subcommand \(add, suspend, resume\)'
 
 # gc agent unknown subcommand.
 ! exec gc agent blorp
@@ -64,25 +64,25 @@ exec gc agent add --name dupe
 ! exec gc agent add --name dupe
 stderr 'already exists'
 
-# gc agent list outside a city.
+# gc agent list prints deprecation.
 cd $WORK
 ! exec gc agent list
-stderr 'not in a city directory'
+stderr 'removed, use "gc session list" instead'
 
-# gc agent attach missing name (need a city first).
+# gc agent attach prints deprecation.
 cd $WORK/err-city
 ! exec gc agent attach
-stderr 'missing agent name'
+stderr 'removed, use "gc session attach" instead'
 
-# gc agent attach — no agents configured.
+# gc agent attach prints deprecation (with args too).
 cd $WORK/bare-city
 ! exec gc agent attach mayor
-stderr 'no agents configured'
+stderr 'removed, use "gc session attach" instead'
 
-# gc agent attach — agent not found.
+# gc agent attach prints deprecation (agent name).
 cd $WORK/err-city
 ! exec gc agent attach nonexistent
-stderr 'agent "nonexistent" not found'
+stderr 'removed, use "gc session attach" instead'
 
 # gc stop not in city.
 cd $WORK

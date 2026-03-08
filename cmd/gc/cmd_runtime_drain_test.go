@@ -136,10 +136,10 @@ func (f *fakeDrainOps) clearDriftRestart(sessionName string) error {
 }
 
 // ---------------------------------------------------------------------------
-// doAgentDrain tests
+// doRuntimeDrain tests
 // ---------------------------------------------------------------------------
 
-func TestDoAgentDrain(t *testing.T) {
+func TestDoRuntimeDrain(t *testing.T) {
 	dops := newFakeDrainOps()
 	sp := runtime.NewFake()
 	if err := sp.Start(context.Background(), "worker", runtime.Config{Command: "echo"}); err != nil {
@@ -148,7 +148,7 @@ func TestDoAgentDrain(t *testing.T) {
 
 	rec := events.NewFake()
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeDrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -166,21 +166,21 @@ func TestDoAgentDrain(t *testing.T) {
 	}
 }
 
-func TestDoAgentDrainNotRunning(t *testing.T) {
+func TestDoRuntimeDrainNotRunning(t *testing.T) {
 	dops := newFakeDrainOps()
 	sp := runtime.NewFake() // no sessions started
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if got := stderr.String(); got != "gc agent drain: agent \"worker\" is not running\n" {
+	if got := stderr.String(); got != "gc runtime drain: agent \"worker\" is not running\n" {
 		t.Errorf("stderr = %q", got)
 	}
 }
 
-func TestDoAgentDrainSetError(t *testing.T) {
+func TestDoRuntimeDrainSetError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	sp := runtime.NewFake()
@@ -189,20 +189,20 @@ func TestDoAgentDrainSetError(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeDrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if got := stderr.String(); got != "gc agent drain: tmux borked\n" {
+	if got := stderr.String(); got != "gc runtime drain: tmux borked\n" {
 		t.Errorf("stderr = %q", got)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// doAgentUndrain tests
+// doRuntimeUndrain tests
 // ---------------------------------------------------------------------------
 
-func TestDoAgentUndrain(t *testing.T) {
+func TestDoRuntimeUndrain(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.draining["worker"] = true
 	sp := runtime.NewFake()
@@ -212,7 +212,7 @@ func TestDoAgentUndrain(t *testing.T) {
 
 	rec := events.NewFake()
 	var stdout, stderr bytes.Buffer
-	code := doAgentUndrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeUndrain(dops, sp, rec, "worker", "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -227,61 +227,61 @@ func TestDoAgentUndrain(t *testing.T) {
 	}
 }
 
-func TestDoAgentUndrainNotRunning(t *testing.T) {
+func TestDoRuntimeUndrainNotRunning(t *testing.T) {
 	dops := newFakeDrainOps()
 	sp := runtime.NewFake()
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentUndrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeUndrain(dops, sp, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if got := stderr.String(); got != "gc agent undrain: agent \"worker\" is not running\n" {
+	if got := stderr.String(); got != "gc runtime undrain: agent \"worker\" is not running\n" {
 		t.Errorf("stderr = %q", got)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// doAgentDrainCheck tests
+// doRuntimeDrainCheck tests
 // ---------------------------------------------------------------------------
 
-func TestDoAgentDrainCheck(t *testing.T) {
+func TestDoRuntimeDrainCheck(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.draining["worker"] = true
 
-	code := doAgentDrainCheck(dops, "worker")
+	code := doRuntimeDrainCheck(dops, "worker")
 	if code != 0 {
 		t.Errorf("code = %d, want 0 (draining)", code)
 	}
 }
 
-func TestDoAgentDrainCheckNotDraining(t *testing.T) {
+func TestDoRuntimeDrainCheckNotDraining(t *testing.T) {
 	dops := newFakeDrainOps()
 
-	code := doAgentDrainCheck(dops, "worker")
+	code := doRuntimeDrainCheck(dops, "worker")
 	if code != 1 {
 		t.Errorf("code = %d, want 1 (not draining)", code)
 	}
 }
 
-func TestDoAgentDrainCheckError(t *testing.T) {
+func TestDoRuntimeDrainCheckError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux gone")
 
-	code := doAgentDrainCheck(dops, "worker")
+	code := doRuntimeDrainCheck(dops, "worker")
 	if code != 1 {
 		t.Errorf("code = %d, want 1 (error → not draining)", code)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// doAgentDrainAck tests
+// doRuntimeDrainAck tests
 // ---------------------------------------------------------------------------
 
-func TestDoAgentDrainAck(t *testing.T) {
+func TestDoRuntimeDrainAck(t *testing.T) {
 	dops := newFakeDrainOps()
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrainAck(dops, "worker", &stdout, &stderr)
+	code := doRuntimeDrainAck(dops, "worker", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -293,15 +293,15 @@ func TestDoAgentDrainAck(t *testing.T) {
 	}
 }
 
-func TestDoAgentDrainAckError(t *testing.T) {
+func TestDoRuntimeDrainAckError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	var stdout, stderr bytes.Buffer
-	code := doAgentDrainAck(dops, "worker", &stdout, &stderr)
+	code := doRuntimeDrainAck(dops, "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if got := stderr.String(); got != "gc agent drain-ack: tmux borked\n" {
+	if got := stderr.String(); got != "gc runtime drain-ack: tmux borked\n" {
 		t.Errorf("stderr = %q", got)
 	}
 }
@@ -376,18 +376,18 @@ func TestProviderDrainOpsRoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// doAgentRequestRestart tests
+// doRuntimeRequestRestart tests
 // ---------------------------------------------------------------------------
 
-func TestDoAgentRequestRestartError(t *testing.T) {
+func TestDoRuntimeRequestRestartError(t *testing.T) {
 	dops := newFakeDrainOps()
 	dops.err = errors.New("tmux borked")
 	var stdout, stderr bytes.Buffer
-	code := doAgentRequestRestart(dops, events.Discard, "worker", "worker", &stdout, &stderr)
+	code := doRuntimeRequestRestart(dops, events.Discard, "worker", "worker", &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if got := stderr.String(); got != "gc agent request-restart: tmux borked\n" {
+	if got := stderr.String(); got != "gc runtime request-restart: tmux borked\n" {
 		t.Errorf("stderr = %q", got)
 	}
 }
@@ -395,7 +395,7 @@ func TestDoAgentRequestRestartError(t *testing.T) {
 func TestRequestRestartAcceptsNoArgs(t *testing.T) {
 	// Verify the cobra command accepts no args.
 	var stdout, stderr bytes.Buffer
-	cmd := newAgentRequestRestartCmd(&stdout, &stderr)
+	cmd := newRuntimeRequestRestartCmd(&stdout, &stderr)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true
 	t.Setenv("GC_AGENT", "")
@@ -471,7 +471,7 @@ func TestProviderDrainOpsDriftRestartRoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// newAgentDrainCheckCmd / newAgentDrainAckCmd arg acceptance tests
+// newRuntimeDrainCheckCmd / newRuntimeDrainAckCmd arg acceptance tests
 // ---------------------------------------------------------------------------
 
 func TestDrainCheckAcceptsPositionalArg(t *testing.T) {
@@ -479,7 +479,7 @@ func TestDrainCheckAcceptsPositionalArg(t *testing.T) {
 	// The command will fail at runtime (no city), but it should NOT fail
 	// with "unknown command" or "accepts 0 arg(s)" errors.
 	var stdout, stderr bytes.Buffer
-	cmd := newAgentDrainCheckCmd(&stdout, &stderr)
+	cmd := newRuntimeDrainCheckCmd(&stdout, &stderr)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"polecat"})
@@ -497,7 +497,7 @@ func TestDrainCheckAcceptsPositionalArg(t *testing.T) {
 func TestDrainCheckNoArgsStillWorks(t *testing.T) {
 	// Without args and without env vars, drain-check returns exit 1 silently.
 	var stdout, stderr bytes.Buffer
-	cmd := newAgentDrainCheckCmd(&stdout, &stderr)
+	cmd := newRuntimeDrainCheckCmd(&stdout, &stderr)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true
 	// Ensure env vars are not set (in case test environment has them).
@@ -517,7 +517,7 @@ func TestDrainCheckNoArgsStillWorks(t *testing.T) {
 func TestDrainAckAcceptsPositionalArg(t *testing.T) {
 	// Same pattern as drain-check: verify cobra allows positional arg.
 	var stdout, stderr bytes.Buffer
-	cmd := newAgentDrainAckCmd(&stdout, &stderr)
+	cmd := newRuntimeDrainAckCmd(&stdout, &stderr)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"polecat"})
@@ -532,7 +532,7 @@ func TestDrainAckAcceptsPositionalArg(t *testing.T) {
 func TestDrainAckNoArgsErrorMessage(t *testing.T) {
 	// Without args and without env vars, drain-ack prints an error message.
 	var stdout, stderr bytes.Buffer
-	cmd := newAgentDrainAckCmd(&stdout, &stderr)
+	cmd := newRuntimeDrainAckCmd(&stdout, &stderr)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true
 	t.Setenv("GC_AGENT", "")

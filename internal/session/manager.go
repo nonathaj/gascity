@@ -310,6 +310,21 @@ func (m *Manager) Close(id string) error {
 	})
 }
 
+// Kill force-kills the runtime process for a session without changing bead
+// state. This is intended for manual intervention; the reconciler will detect
+// the dead process and restart it according to the session's lifecycle rules.
+func (m *Manager) Kill(id string) error {
+	b, sessName, err := m.sessionBead(id)
+	if err != nil {
+		return err
+	}
+	state := State(b.Metadata["state"])
+	if state != StateActive && state != StateCreating && state != StateDraining {
+		return fmt.Errorf("session %s is not active", id)
+	}
+	return m.sp.Stop(sessName)
+}
+
 // BeginDrain transitions a session to the draining state. The caller is
 // responsible for signaling the runtime process to finish its work.
 func (m *Manager) BeginDrain(id, reason string) error {

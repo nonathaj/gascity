@@ -1,56 +1,23 @@
-# Agent drain commands with fake session provider.
+# Agent drain commands moved to gc runtime drain/undrain/drain-check.
+# Verify gc agent drain subcommands are no longer recognized
+# (callers should use gc runtime drain, gc runtime undrain, gc runtime drain-check).
 
 env GC_SESSION=fake
 env GC_BEADS=file
 env GC_DOLT=skip
 
-# 1. gc agent drain with fake provider — agent not running.
+# gc agent drain is removed — use gc runtime drain.
 cd $WORK/test-city
 ! exec gc agent drain worker
-stderr 'agent "worker" is not running'
+stderr 'unknown subcommand "drain"'
 
-# 2. gc agent undrain with fake provider — agent not running.
+# gc agent undrain is removed — use gc runtime undrain.
 ! exec gc agent undrain worker
-stderr 'agent "worker" is not running'
+stderr 'unknown subcommand "undrain"'
 
-# 3. gc agent drain-check outside agent context → exit 1 (not draining).
+# gc agent drain-check is removed — use gc runtime drain-check.
 ! exec gc agent drain-check
-
-# 4. gc agent drain with missing name → error.
-! exec gc agent drain
-stderr 'missing agent name'
-
-# 5. gc agent undrain with missing name → error.
-! exec gc agent undrain
-stderr 'missing agent name'
-
-# 6. gc agent drain for agent not in config → error.
-! exec gc agent drain nonexistent
-stderr 'agent "nonexistent" not found in city.toml'
-
-# 7. gc agent undrain for agent not in config → error.
-! exec gc agent undrain nonexistent
-stderr 'agent "nonexistent" not found in city.toml'
-
-# 8. gc agent drain-check with only GC_AGENT set (missing GC_CITY) → exit 1.
-env GC_AGENT=worker
-! exec gc agent drain-check
-
-# 9. gc agent drain-check with only GC_CITY set (missing GC_AGENT) → exit 1.
-env GC_AGENT=
-env GC_CITY=$WORK/test-city
-! exec gc agent drain-check
-
-# 10. gc agent drain outside a city → error.
-env GC_AGENT=
-env GC_CITY=
-cd $WORK
-! exec gc agent drain worker
-stderr 'not in a city directory'
-
-# 11. gc agent undrain outside a city → error.
-! exec gc agent undrain worker
-stderr 'not in a city directory'
+stderr 'unknown subcommand "drain-check"'
 
 -- test-city/.gc/.keep --
 -- test-city/rigs/.keep --

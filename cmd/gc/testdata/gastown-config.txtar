@@ -20,9 +20,9 @@ stdout 'Config valid.'
 exec gc config show
 stdout 'name = "gastown"'
 
-# --- 3. Agent list shows city-scoped agents ---
+# --- 3. Config show shows city-scoped agents ---
 
-exec gc agent list
+exec gc config show
 stdout 'mayor'
 stdout 'deacon'
 stdout 'boot'
@@ -30,12 +30,12 @@ stdout 'dog'
 
 # --- 4. Dog pool config is visible ---
 
-exec gc agent list
-stdout 'dog.*pool: min=0, max=3'
+exec gc config show
+stdout 'max = 3'
 
 # --- 5. Without rigs, no rig-scoped agents ---
 
-exec gc agent list
+exec gc config show
 ! stdout 'witness'
 ! stdout 'refinery'
 ! stdout 'polecat'

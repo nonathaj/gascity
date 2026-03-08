@@ -12,6 +12,16 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
+// stopErrorProvider wraps runtime.Fake but returns an error on Stop.
+type stopErrorProvider struct {
+	*runtime.Fake
+	stopErr error
+}
+
+func (s *stopErrorProvider) Stop(_ string) error {
+	return s.stopErr
+}
+
 func TestDoRigRestart(t *testing.T) {
 	sp := runtime.NewFake()
 	// Start 2 sessions for agents in the rig.

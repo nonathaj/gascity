@@ -25,7 +25,7 @@ func writeTestSession(t *testing.T, searchBase, workDir string, lines ...string)
 	}
 }
 
-func TestDoAgentLogsBasic(t *testing.T) {
+func TestDoSessionLogsBasic(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -40,7 +40,7 @@ func TestDoAgentLogsBasic(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	code := doSessionLogs(path, false, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -60,7 +60,7 @@ func TestDoAgentLogsBasic(t *testing.T) {
 	}
 }
 
-func TestDoAgentLogsCompactBoundary(t *testing.T) {
+func TestDoSessionLogsCompactBoundary(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -83,7 +83,7 @@ func TestDoAgentLogsCompactBoundary(t *testing.T) {
 
 	// tail=1 should show only from the last compact boundary.
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 1, &stdout, &stderr)
+	code := doSessionLogs(path, false, 1, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -100,7 +100,7 @@ func TestDoAgentLogsCompactBoundary(t *testing.T) {
 	}
 }
 
-func TestDoAgentLogsToolUse(t *testing.T) {
+func TestDoSessionLogsToolUse(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -115,7 +115,7 @@ func TestDoAgentLogsToolUse(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	code := doSessionLogs(path, false, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -129,7 +129,7 @@ func TestDoAgentLogsToolUse(t *testing.T) {
 	}
 }
 
-func TestDoAgentLogsStringEncodedMessage(t *testing.T) {
+func TestDoSessionLogsStringEncodedMessage(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -145,7 +145,7 @@ func TestDoAgentLogsStringEncodedMessage(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	code := doSessionLogs(path, false, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -156,7 +156,7 @@ func TestDoAgentLogsStringEncodedMessage(t *testing.T) {
 	}
 }
 
-func TestDoAgentLogsToolResultError(t *testing.T) {
+func TestDoSessionLogsToolResultError(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -170,7 +170,7 @@ func TestDoAgentLogsToolResultError(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	code := doSessionLogs(path, false, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -181,9 +181,9 @@ func TestDoAgentLogsToolResultError(t *testing.T) {
 	}
 }
 
-func TestDoAgentLogsNegativeTail(t *testing.T) {
+func TestDoSessionLogsNegativeTail(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs("/nonexistent", false, -1, &stdout, &stderr)
+	code := doSessionLogs("/nonexistent", false, -1, &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1 for negative tail", code)
 	}
@@ -192,11 +192,11 @@ func TestDoAgentLogsNegativeTail(t *testing.T) {
 	}
 }
 
-// TestDoAgentLogsFollowSeeding verifies that follow mode seeds the 'seen' map
+// TestDoSessionLogsFollowSeeding verifies that follow mode seeds the 'seen' map
 // with ALL existing messages (not just the tail window) before entering the
 // poll loop. Without this, switching from tail=N to tail=0 re-reads would
 // replay messages from before the compaction boundary.
-func TestDoAgentLogsFollowSeeding(t *testing.T) {
+func TestDoSessionLogsFollowSeeding(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
@@ -215,7 +215,7 @@ func TestDoAgentLogsFollowSeeding(t *testing.T) {
 		t.Fatal("session file not found")
 	}
 
-	// Simulate what doAgentLogs does: initial tail=1 read, then seed seen
+	// Simulate what doSessionLogs does: initial tail=1 read, then seed seen
 	// map with tail=0. Verify "old msg" uuid is in seen even though it
 	// wasn't printed.
 	sess, err := sessionlog.ReadFile(path, 1)
@@ -233,7 +233,7 @@ func TestDoAgentLogsFollowSeeding(t *testing.T) {
 		t.Fatal("tail=1 should not include pre-boundary messages")
 	}
 
-	// Now simulate the seeding step (what doAgentLogs does before follow loop).
+	// Now simulate the seeding step (what doSessionLogs does before follow loop).
 	full, err := sessionlog.ReadFile(path, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func TestPrintLogEntryTimestamp(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentLogs(path, false, 0, &stdout, &stderr)
+	code := doSessionLogs(path, false, 0, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}

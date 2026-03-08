@@ -15,8 +15,9 @@ stdout 'Started agent .myproject/polecat-2.'
 stdout 'City started.'
 
 cd $WORK/polecat-city
-exec gc agent list
-stdout 'myproject/polecat.*pool: min=0, max=5'
+exec gc config show
+stdout 'polecat'
+stdout 'max = 5'
 
 exec gc stop $WORK/polecat-city
 
@@ -57,10 +58,10 @@ stdout 'Started agent .dog-1.'
 stdout 'City started.'
 
 cd $WORK/multi-pool-city
-exec gc agent list
+exec gc config show
 stdout 'mayor'
-stdout 'polecat.*pool: min=0, max=5'
-stdout 'dog.*pool: min=0, max=3'
+stdout 'polecat'
+stdout 'dog'
 
 exec gc stop $WORK/multi-pool-city
 

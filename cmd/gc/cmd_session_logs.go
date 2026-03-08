@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newAgentLogsCmd(stdout, stderr io.Writer) *cobra.Command {
+func newSessionLogsCmd(stdout, stderr io.Writer) *cobra.Command {
 	var follow bool
 	var tail int
 	cmd := &cobra.Command{
@@ -26,12 +26,12 @@ and any extra paths from [daemon] observe_paths in city.toml.
 
 Use --tail to control how many compaction segments to show (0 = all).
 Use -f to follow new messages as they arrive.`,
-		Example: `  gc agent logs mayor
-  gc agent logs mayor --tail 0
-  gc agent logs myrig/polecat-1 -f`,
+		Example: `  gc session logs mayor
+  gc session logs mayor --tail 0
+  gc session logs myrig/polecat-1 -f`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentLogs(args, follow, tail, stdout, stderr) != 0 {
+			if cmdSessionLogs(args, follow, tail, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -42,40 +42,40 @@ Use -f to follow new messages as they arrive.`,
 	return cmd
 }
 
-// cmdAgentLogs is the CLI entry point for viewing agent session logs.
-func cmdAgentLogs(args []string, follow bool, tail int, stdout, stderr io.Writer) int {
+// cmdSessionLogs is the CLI entry point for viewing agent session logs.
+func cmdSessionLogs(args []string, follow bool, tail int, stdout, stderr io.Writer) int {
 	agentName := args[0]
 
 	cityPath, err := resolveCity()
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent logs: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session logs: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cfg, err := loadCityConfig(cityPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent logs: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session logs: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent logs", agentName, cfg)) //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, agentNotFoundMsg("gc session logs", agentName, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	workDir := resolveAgentWorkDir(found, cfg, cityPath)
 	if workDir == "" {
-		fmt.Fprintf(stderr, "gc agent logs: cannot resolve working directory for %q\n", agentName) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session logs: cannot resolve working directory for %q\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	path := sessionlog.FindSessionFile(sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths), workDir)
 	if path == "" {
-		fmt.Fprintf(stderr, "gc agent logs: no session file found for %q\n", agentName) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session logs: no session file found for %q\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	return doAgentLogs(path, follow, tail, stdout, stderr)
+	return doSessionLogs(path, follow, tail, stdout, stderr)
 }
 
 // resolveAgentWorkDir returns the absolute working directory for an agent.
@@ -93,17 +93,17 @@ func resolveAgentWorkDir(a config.Agent, cfg *config.City, cityPath string) stri
 	return ""
 }
 
-// doAgentLogs reads the session file and prints messages. If follow is true,
+// doSessionLogs reads the session file and prints messages. If follow is true,
 // it polls for new messages every 2 seconds.
-func doAgentLogs(path string, follow bool, tail int, stdout, stderr io.Writer) int {
+func doSessionLogs(path string, follow bool, tail int, stdout, stderr io.Writer) int {
 	if tail < 0 {
-		fmt.Fprintln(stderr, "gc agent logs: --tail must be >= 0") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc session logs: --tail must be >= 0") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	sess, err := sessionlog.ReadFile(path, tail)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent logs: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session logs: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
@@ -141,7 +141,7 @@ func doAgentLogs(path string, follow bool, tail int, stdout, stderr io.Writer) i
 		if err != nil {
 			consecErrors++
 			if consecErrors >= maxConsecErrors {
-				fmt.Fprintf(stderr, "gc agent logs: %d consecutive read errors, last: %v\n", consecErrors, err) //nolint:errcheck // best-effort stderr
+				fmt.Fprintf(stderr, "gc session logs: %d consecutive read errors, last: %v\n", consecErrors, err) //nolint:errcheck // best-effort stderr
 				return 1
 			}
 			continue

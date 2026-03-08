@@ -32,7 +32,7 @@ continuity.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, rename, prune, peek)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, rename, prune, peek, kill, logs)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc session: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -48,6 +48,8 @@ continuity.`,
 		newSessionRenameCmd(stdout, stderr),
 		newSessionPruneCmd(stdout, stderr),
 		newSessionPeekCmd(stdout, stderr),
+		newSessionKillCmd(stdout, stderr),
+		newSessionLogsCmd(stdout, stderr),
 		newSessionWakeCmd(stdout, stderr),
 	)
 	return cmd
@@ -679,6 +681,53 @@ func cmdSessionPeek(args []string, lines int, stdout, stderr io.Writer) int {
 	if !strings.HasSuffix(output, "\n") {
 		fmt.Fprintln(stdout) //nolint:errcheck // best-effort stdout
 	}
+	return 0
+}
+
+// newSessionKillCmd creates the "gc session kill <id-or-name>" command.
+func newSessionKillCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "kill <session-id-or-name>",
+		Short: "Force-kill session runtime (reconciler restarts)",
+		Long: `Force-kill the runtime process for a session without changing its bead state.
+
+The session remains marked as active, so the reconciler will detect the dead
+process and restart it according to the session's lifecycle rules. This is
+useful for unsticking a session without losing its conversation history.
+
+Accepts a session ID (e.g., gc-42) or template name (e.g., overseer).`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionKill(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionKill is the CLI entry point for "gc session kill".
+func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
+	store, code := openCityStore(stderr, "gc session kill")
+	if store == nil {
+		return code
+	}
+
+	sessionID, err := resolveSessionID(store, args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session kill: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	sp := newSessionProvider()
+	mgr := newSessionManager(store, sp)
+
+	if err := mgr.Kill(sessionID); err != nil {
+		fmt.Fprintf(stderr, "gc session kill: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Session %s killed.\n", sessionID) //nolint:errcheck // best-effort stdout
 	return 0
 }
 

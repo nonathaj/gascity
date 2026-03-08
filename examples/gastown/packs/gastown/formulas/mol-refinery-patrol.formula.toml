@@ -76,7 +76,7 @@ RSS_MB=$((RSS / 1024))
 
 If RSS > 1500 MB or context feels heavy, request a restart:
 ```bash
-gc agent request-restart
+gc runtime request-restart
 ```
 This sets `GC_RESTART_REQUESTED` metadata on the session and blocks
 forever. The controller will kill and restart the session on the next

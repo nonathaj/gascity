@@ -50,7 +50,7 @@ before killing the session.
 close the warrant, notify the requester, exit.
 
 **If no response after 3 attempts (420s total):** Execute — send
-`gc agent request-restart <target>`, close the warrant, notify, exit.
+`gc runtime request-restart <target>`, close the warrant, notify, exit.
 
 This is due process, not summary execution. The timeouts give agents
 ample opportunity to respond even if they're in long-running operations.
@@ -112,7 +112,7 @@ gc nudge {{"{{requester}}"}}/ "DOG_DONE: <target> — <outcome>"
 | Claim pool work | `bd update <id> --claim` |
 | View work details | `bd show <id> --json` |
 | Close completed work | `bd close <id> --reason "..."` |
-| Request target restart | `gc agent request-restart <target>` |
+| Request target restart | `gc runtime request-restart <target>` |
 | List orphan databases | `gc dolt cleanup` |
 | Remove orphan databases | `gc dolt cleanup --force` |
 | Exit (return to pool) | `exit` |

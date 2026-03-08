@@ -27,7 +27,7 @@ refinery. Resume the existing branch — don't redo all the work.
 |-----------|--------|
 | Tests fail | Fix them. Do not proceed with failures. |
 | Blocked on external | Mail Witness, mark yourself stuck |
-| Context filling | `gc agent request-restart` (blocks until controller kills you) |
+| Context filling | `gc runtime request-restart` (blocks until controller kills you) |
 | Unsure what to do | Mail Witness, don't guess |"""
 formula = "mol-polecat-work"
 extends = ["mol-polecat-base"]

@@ -28,7 +28,7 @@ cd $WORK
 stderr 'not in a city directory'
 
 ! exec gc agent list
-stderr 'not in a city directory'
+stderr 'removed, use "gc session list" instead'
 
 ! exec gc events
 stderr 'not in a city directory'
@@ -53,46 +53,32 @@ stderr 'not found'
 ! exec bd create
 stderr 'missing title'
 
-# --- Agent errors ---
+# --- Agent deprecation shims ---
 
-# Attach nonexistent agent
+# Deprecated agent commands print removal messages.
 ! exec gc agent attach nonexistent
-stderr 'not found'
+stderr 'removed, use "gc session attach" instead'
 
-# Status nonexistent agent
 ! exec gc agent status nonexistent
-stderr 'not found'
+stderr 'removed, use "gc session list" instead'
 
-# Nudge nonexistent agent (requires name + message)
 ! exec gc agent nudge nonexistent 'hello'
-stderr 'not found'
+stderr 'removed, use "gc session message" instead'
 
-# Drain nonexistent agent
-! exec gc agent drain nonexistent
-stderr 'not found'
-
-# Kill nonexistent agent
 ! exec gc agent kill nonexistent
-stderr 'not found'
-
-# Missing agent name for various subcommands
-! exec gc agent drain
-stderr 'missing agent name'
-
-! exec gc agent undrain
-stderr 'missing agent name'
+stderr 'removed, use "gc session kill" instead'
 
 ! exec gc agent attach
-stderr 'missing agent name'
+stderr 'removed, use "gc session attach" instead'
 
 ! exec gc agent nudge
-stderr 'usage:'
+stderr 'removed, use "gc session message" instead'
 
 ! exec gc agent kill
-stderr 'missing agent name'
+stderr 'removed, use "gc session kill" instead'
 
 ! exec gc agent status
-stderr 'missing agent name'
+stderr 'removed, use "gc session list" instead'
 
 # --- Mail errors ---
 

@@ -2,229 +2,11 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
-	"github.com/gastownhall/gascity/internal/runtime"
 )
-
-// ---------------------------------------------------------------------------
-// doAgentAttach tests (no existing coverage)
-// ---------------------------------------------------------------------------
-
-func TestDoAgentAttachStartsThenAttaches(t *testing.T) {
-	sp := runtime.NewFake()
-	cfg := runtime.Config{Command: "claude"}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
-	}
-	if !sp.IsRunning("mayor") {
-		t.Error("session should be started before attach")
-	}
-	// Verify attach was called.
-	attachCalled := false
-	for _, c := range sp.Calls {
-		if c.Method == "Attach" {
-			attachCalled = true
-		}
-	}
-	if !attachCalled {
-		t.Error("Attach was not called")
-	}
-	if !strings.Contains(stdout.String(), "Attaching to agent 'mayor'") {
-		t.Errorf("stdout = %q, want attach message", stdout.String())
-	}
-}
-
-func TestDoAgentAttachSkipsStartWhenRunning(t *testing.T) {
-	sp := runtime.NewFake()
-	_ = sp.Start(context.Background(), "mayor", runtime.Config{Command: "claude"})
-	cfg := runtime.Config{Command: "claude"}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0", code)
-	}
-	// Should NOT call Start since already running.
-	startCount := 0
-	for _, c := range sp.Calls {
-		if c.Method == "Start" {
-			startCount++
-		}
-	}
-	// Only the initial Start from setup, not a second one from doAgentAttach.
-	if startCount > 1 {
-		t.Error("Start should not be called again when already running")
-	}
-}
-
-func TestDoAgentAttachStartFailure(t *testing.T) {
-	sp := runtime.NewFake()
-	sp.StartErrors = map[string]error{"mayor": errors.New("tmux crashed")}
-	cfg := runtime.Config{Command: "claude"}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
-	if code != 1 {
-		t.Fatalf("code = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "tmux crashed") {
-		t.Errorf("stderr = %q, want error message", stderr.String())
-	}
-}
-
-func TestDoAgentAttachFailure(t *testing.T) {
-	sp := runtime.NewFailFake() // Attach will fail
-	cfg := runtime.Config{Command: "claude"}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
-	if code != 1 {
-		t.Fatalf("code = %d, want 1", code)
-	}
-	if !strings.Contains(stderr.String(), "session unavailable") {
-		t.Errorf("stderr = %q, want error message", stderr.String())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// doAgentList — pool annotation (no existing coverage)
-// ---------------------------------------------------------------------------
-
-func TestDoAgentListPoolAnnotation(t *testing.T) {
-	fs := fsys.NewFake()
-	fs.Files["/city/city.toml"] = []byte(`[workspace]
-name = "test-city"
-
-[[agents]]
-name = "worker"
-[agents.pool]
-min = 2
-max = 5
-`)
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentList(fs, "/city", "", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "pool:") {
-		t.Errorf("stdout should annotate pool config: %q", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "min=2") {
-		t.Errorf("stdout should show min: %q", stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "max=5") {
-		t.Errorf("stdout should show max: %q", stdout.String())
-	}
-}
-
-// ---------------------------------------------------------------------------
-// doAgentListJSON — JSON output (dashboard support)
-// ---------------------------------------------------------------------------
-
-func TestDoAgentListJSON(t *testing.T) {
-	fs := fsys.NewFake()
-	fs.Files["/city/city.toml"] = []byte(`[workspace]
-name = "test-city"
-
-[[rigs]]
-name = "myrig"
-path = "/path/to/myrig"
-suspended = true
-
-[[agents]]
-name = "mayor"
-
-[[agents]]
-name = "polecat"
-dir = "myrig"
-[agents.pool]
-min = 1
-max = 3
-`)
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentListJSON(fs, "/city", "", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
-	}
-
-	var entries []AgentListEntry
-	if err := json.Unmarshal(stdout.Bytes(), &entries); err != nil {
-		t.Fatalf("unmarshal: %v; output: %s", err, stdout.String())
-	}
-	if len(entries) != 2 {
-		t.Fatalf("got %d entries, want 2", len(entries))
-	}
-
-	// Mayor: city-scoped, not suspended.
-	if entries[0].Name != "mayor" {
-		t.Errorf("entries[0].name = %q, want %q", entries[0].Name, "mayor")
-	}
-	if entries[0].Scope != "city" {
-		t.Errorf("entries[0].scope = %q, want %q", entries[0].Scope, "city")
-	}
-	if entries[0].Pool != nil {
-		t.Error("entries[0].pool should be nil")
-	}
-
-	// Polecat: rig-scoped, rig suspended, pool config.
-	if entries[1].QualifiedName != "myrig/polecat" {
-		t.Errorf("entries[1].qualified_name = %q, want %q", entries[1].QualifiedName, "myrig/polecat")
-	}
-	if entries[1].Scope != "rig" {
-		t.Errorf("entries[1].scope = %q, want %q", entries[1].Scope, "rig")
-	}
-	if !entries[1].RigSuspended {
-		t.Error("entries[1].rig_suspended should be true")
-	}
-	if entries[1].Pool == nil {
-		t.Fatal("entries[1].pool should not be nil")
-	}
-	if entries[1].Pool.Max != 3 {
-		t.Errorf("entries[1].pool.max = %d, want 3", entries[1].Pool.Max)
-	}
-}
-
-func TestDoAgentListJSONDirFilter(t *testing.T) {
-	fs := fsys.NewFake()
-	fs.Files["/city/city.toml"] = []byte(`[workspace]
-name = "test-city"
-
-[[agents]]
-name = "mayor"
-
-[[agents]]
-name = "worker"
-dir = "myrig"
-`)
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentListJSON(fs, "/city", "myrig", &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
-	}
-
-	var entries []AgentListEntry
-	if err := json.Unmarshal(stdout.Bytes(), &entries); err != nil {
-		t.Fatalf("unmarshal: %v; output: %s", err, stdout.String())
-	}
-	if len(entries) != 1 {
-		t.Fatalf("got %d entries, want 1 (dir filter)", len(entries))
-	}
-	if entries[0].Name != "worker" {
-		t.Errorf("entries[0].name = %q, want %q", entries[0].Name, "worker")
-	}
-}
 
 // ---------------------------------------------------------------------------
 // doAgentSuspend/Resume — bad config error path (no existing coverage)
@@ -281,10 +63,6 @@ name = "test-city"
 		t.Errorf("city.toml should contain dir from qualified name: %s", data)
 	}
 }
-
-// ---------------------------------------------------------------------------
-// doAgentPeek — lines parameter (no existing coverage)
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Pack-preservation tests: write-back must NOT expand includes
@@ -394,27 +172,39 @@ func TestDoAgentResumePackDerivedError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// doAgentPeek — lines parameter (no existing coverage)
+// Deprecation shim tests: verify old subcommands print migration message
 // ---------------------------------------------------------------------------
 
-func TestDoAgentPeekPassesLineCount(t *testing.T) {
-	sp := runtime.NewFake()
-	_ = sp.Start(context.Background(), "mayor", runtime.Config{})
-	sp.PeekOutput = map[string]string{"mayor": "output"}
-
-	var stdout, stderr bytes.Buffer
-	code := doAgentPeek(sp, "mayor", 100, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, want 0", code)
+func TestAgentDeprecationShims(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantMsg string
+	}{
+		{"list", []string{"list"}, "gc session list"},
+		{"status", []string{"status"}, "gc session list"},
+		{"attach", []string{"attach"}, "gc session attach"},
+		{"peek", []string{"peek"}, "gc session peek"},
+		{"nudge", []string{"nudge"}, "gc session message"},
+		{"start", []string{"start", "x"}, "gc session new"},
+		{"stop", []string{"stop", "x"}, "gc session suspend"},
+		{"destroy", []string{"destroy", "x"}, "gc session close"},
+		{"kill", []string{"kill"}, "gc session kill"},
 	}
-	// Verify Peek was called on the provider.
-	var found bool
-	for _, c := range sp.Calls {
-		if c.Method == "Peek" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("Peek call not recorded on provider")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			cmd := newAgentCmd(&stdout, &stderr)
+			cmd.SetArgs(tt.args)
+			cmd.SilenceErrors = true
+			cmd.SilenceUsage = true
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatal("expected error from deprecated command")
+			}
+			if !strings.Contains(stderr.String(), tt.wantMsg) {
+				t.Errorf("stderr = %q, want to contain %q", stderr.String(), tt.wantMsg)
+			}
+		})
 	}
 }

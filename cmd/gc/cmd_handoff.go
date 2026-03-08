@@ -25,14 +25,14 @@ Self-handoff (default): sends mail to self and blocks until controller
 restarts the session. Equivalent to:
 
   gc mail send $GC_AGENT <subject> [message]
-  gc agent request-restart
+  gc runtime request-restart
 
 Remote handoff (--target): sends mail to target agent and kills its
 session. The reconciler restarts it with the handoff mail waiting.
 Returns immediately. Equivalent to:
 
   gc mail send <target> <subject> [message]
-  gc agent kill <target>
+  gc session kill <target>
 
 Self-handoff requires agent context (GC_AGENT/GC_CITY env vars).
 Remote handoff can be run from any context with access to the city.`,

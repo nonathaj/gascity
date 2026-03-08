@@ -23,7 +23,7 @@ Push conflicts are handled by fetch + rebase + retry (up to 3 times).
 | Tests fail | Fix them. Do not proceed with failures. |
 | Push conflict (3 retries exhausted) | Mail Witness, mark yourself stuck |
 | Blocked on external | Mail Witness, mark yourself stuck |
-| Context filling | `gc agent request-restart` (blocks until controller kills you) |
+| Context filling | `gc runtime request-restart` (blocks until controller kills you) |
 | Unsure what to do | Mail Witness, don't guess |"""
 formula = "mol-polecat-commit"
 extends = ["mol-polecat-base"]

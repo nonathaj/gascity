@@ -79,6 +79,11 @@ func TestResolveWorkDir(t *testing.T) {
 	}
 }
 
+// NOTE: session kill is tested via internal/session.Manager.Kill which
+// delegates to Provider.Stop. The CLI layer (cmdSessionKill) is a thin
+// wrapper that resolves the session ID and calls mgr.Kill, so it does
+// not warrant a separate unit test beyond integration coverage.
+
 func TestShouldAttachNewSession(t *testing.T) {
 	tests := []struct {
 		name      string

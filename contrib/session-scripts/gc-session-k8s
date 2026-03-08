@@ -663,7 +663,7 @@ case "$op" in
   set-meta)
     # Store in tmux environment inside the pod. This is the same store
     # the agent's default tmux provider reads, so both controller (via
-    # this script) and agent (via gc agent drain-check) see the same
+    # this script) and agent (via gc runtime drain-check) see the same
     # metadata.
     key="${3:?set-meta: missing key}"
     value=$(cat)

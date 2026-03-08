@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// TestE2E_Kill verifies that gc agent kill stops the agent session.
+// TestE2E_Kill verifies that gc session kill stops the agent session.
 func TestE2E_Kill(t *testing.T) {
 	city := e2eCity{
 		Agents: []e2eAgent{
@@ -19,25 +19,25 @@ func TestE2E_Kill(t *testing.T) {
 	cityDir := setupE2ECity(t, nil, city)
 
 	// Agent should be running.
-	out, err := gc(cityDir, "agent", "status", "killme")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent status failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 
 	// Kill the agent.
-	out, err = gc(cityDir, "agent", "kill", "killme")
+	out, err = gc(cityDir, "session", "kill", "killme")
 	if err != nil {
-		t.Fatalf("gc agent kill failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session kill failed: %v\noutput: %s", err, out)
 	}
 
 	// Give it a moment to die.
 	time.Sleep(500 * time.Millisecond)
 
 	// Status should show not running.
-	out, err = gc(cityDir, "agent", "status", "killme")
+	out, err = gc(cityDir, "session", "list")
 	if err != nil {
-		// Some providers may error on status of dead agent; that's OK.
-		t.Logf("gc agent status after kill: %v\noutput: %s", err, out)
+		// Some providers may error on list of dead agent; that's OK.
+		t.Logf("gc session list after kill: %v\noutput: %s", err, out)
 	}
 }
 
@@ -110,7 +110,7 @@ func TestE2E_SuspendResume_Agent(t *testing.T) {
 	}
 
 	// Kill it to simulate controller stopping suspended agent.
-	gc(cityDir, "agent", "kill", "suspendee") //nolint:errcheck
+	gc(cityDir, "session", "kill", "suspendee") //nolint:errcheck
 	time.Sleep(500 * time.Millisecond)
 
 	// Remove old report.
@@ -168,7 +168,7 @@ func TestE2E_SuspendResume_City(t *testing.T) {
 	}
 
 	// Kill existing agent.
-	gc(cityDir, "agent", "kill", "citysus") //nolint:errcheck
+	gc(cityDir, "session", "kill", "citysus") //nolint:errcheck
 	time.Sleep(500 * time.Millisecond)
 
 	// Remove old report.

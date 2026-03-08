@@ -193,7 +193,7 @@ Tried: <what you've attempted>"
 
 **If context filling up:**
 ```bash
-gc agent request-restart
+gc runtime request-restart
 ```
 This blocks until the controller kills your session. The next session
 resumes from context (re-reads formula steps, checks git/bead state).

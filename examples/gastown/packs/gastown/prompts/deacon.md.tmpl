@@ -77,7 +77,7 @@ bd update "$NEW_WISP" --assignee=deacon
 
 If your context is filling up during patrol:
 ```bash
-gc agent request-restart
+gc runtime request-restart
 ```
 This blocks until the controller kills your session. The new session
 re-reads formula steps and resumes from context.
@@ -156,8 +156,8 @@ Individual stuck agents don't need escalation — the warrant system handles the
 | Want to... | Correct command |
 |------------|----------------|
 | Pour next wisp | `bd mol wisp mol-deacon-patrol --root-only` |
-| Context exhaustion | `gc agent request-restart` |
-| Request target restart | `gc agent request-restart <target>` |
+| Context exhaustion | `gc runtime request-restart` |
+| Request target restart | `gc runtime request-restart <target>` |
 | Check gates | `bd gate check --type=timer --escalate` |
 | List gate beads | `bd gate list --json` |
 | List convoys | `gc convoy list` |

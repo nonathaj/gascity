@@ -165,7 +165,7 @@ bd update "$NEW_WISP" --assignee={{ .RigName }}/witness
 
 If your context is filling up during patrol:
 ```bash
-gc agent request-restart
+gc runtime request-restart
 ```
 This blocks until the controller kills your session. The new session
 re-reads formula steps and resumes from context.
@@ -234,7 +234,7 @@ gc mail send mayor/ -s "ESCALATION: Brief description [HIGH]" -m "Details"
 | Want to... | Correct command |
 |------------|----------------|
 | Pour next wisp | `bd mol wisp mol-witness-patrol --root-only` |
-| Context exhaustion | `gc agent request-restart` |
+| Context exhaustion | `gc runtime request-restart` |
 | Recover orphaned bead | `bd update <id> --status=open --assignee=""` |
 | Salvage worktree work | `git add -A && git commit && git push origin HEAD` |
 | Delete worktree | `git worktree remove <path> --force` |

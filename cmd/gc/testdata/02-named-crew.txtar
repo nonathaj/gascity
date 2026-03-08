@@ -8,7 +8,6 @@ exec gc agent add --name worker
 stdout 'Added agent'
 stdout 'worker'
 
-exec gc agent list
-stdout 'bright-lights:'
+exec gc config show
 stdout 'mayor'
 stdout 'worker'

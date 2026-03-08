@@ -116,21 +116,21 @@ func newDrainOps(sp runtime.Provider) drainOps {
 }
 
 // ---------------------------------------------------------------------------
-// gc agent drain <name>
+// gc runtime drain <name>
 // ---------------------------------------------------------------------------
 
-func newAgentDrainCmd(stdout, stderr io.Writer) *cobra.Command {
+func newRuntimeDrainCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "drain <name>",
 		Short: "Signal an agent to drain (wind down gracefully)",
 		Long: `Signal an agent to drain — wind down its current work gracefully.
 
 Sets a GC_DRAIN metadata flag on the session. The agent should check
-for drain status periodically (via "gc agent drain-check") and finish
-its current task before exiting. Use "gc agent undrain" to cancel.`,
+for drain status periodically (via "gc runtime drain-check") and finish
+its current task before exiting. Use "gc runtime undrain" to cancel.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentDrain(args, stdout, stderr) != 0 {
+			if cmdRuntimeDrain(args, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -138,26 +138,26 @@ its current task before exiting. Use "gc agent undrain" to cancel.`,
 	}
 }
 
-func cmdAgentDrain(args []string, stdout, stderr io.Writer) int {
+func cmdRuntimeDrain(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent drain: missing agent name") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc runtime drain: missing agent name") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	agentName := args[0]
 
 	cityPath, err := resolveCity()
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent drain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cfg, err := loadCityConfig(cityPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent drain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent drain", agentName, cfg)) //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, agentNotFoundMsg("gc runtime drain", agentName, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	agentName = found.QualifiedName()
@@ -170,19 +170,19 @@ func cmdAgentDrain(args []string, stdout, stderr io.Writer) int {
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorder(stderr)
-	return doAgentDrain(dops, sp, rec, agentName, sn, stdout, stderr)
+	return doRuntimeDrain(dops, sp, rec, agentName, sn, stdout, stderr)
 }
 
-// doAgentDrain sets the drain signal on an agent's session.
-func doAgentDrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
+// doRuntimeDrain sets the drain signal on an agent's session.
+func doRuntimeDrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 	agentName, sn string, stdout, stderr io.Writer,
 ) int {
 	if !sp.IsRunning(sn) {
-		fmt.Fprintf(stderr, "gc agent drain: agent %q is not running\n", agentName) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain: agent %q is not running\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	if err := dops.setDrain(sn); err != nil {
-		fmt.Fprintf(stderr, "gc agent drain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	rec.Record(events.Event{
@@ -195,10 +195,10 @@ func doAgentDrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 }
 
 // ---------------------------------------------------------------------------
-// gc agent undrain <name>
+// gc runtime undrain <name>
 // ---------------------------------------------------------------------------
 
-func newAgentUndrainCmd(stdout, stderr io.Writer) *cobra.Command {
+func newRuntimeUndrainCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "undrain <name>",
 		Short: "Cancel drain on an agent",
@@ -208,7 +208,7 @@ Clears the GC_DRAIN and GC_DRAIN_ACK metadata flags, allowing the
 agent to continue normal operation.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentUndrain(args, stdout, stderr) != 0 {
+			if cmdRuntimeUndrain(args, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -216,26 +216,26 @@ agent to continue normal operation.`,
 	}
 }
 
-func cmdAgentUndrain(args []string, stdout, stderr io.Writer) int {
+func cmdRuntimeUndrain(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
-		fmt.Fprintln(stderr, "gc agent undrain: missing agent name") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc runtime undrain: missing agent name") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	agentName := args[0]
 
 	cityPath, err := resolveCity()
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent undrain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime undrain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cfg, err := loadCityConfig(cityPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent undrain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime undrain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc agent undrain", agentName, cfg)) //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, agentNotFoundMsg("gc runtime undrain", agentName, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	agentName = found.QualifiedName()
@@ -248,19 +248,19 @@ func cmdAgentUndrain(args []string, stdout, stderr io.Writer) int {
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorder(stderr)
-	return doAgentUndrain(dops, sp, rec, agentName, sn, stdout, stderr)
+	return doRuntimeUndrain(dops, sp, rec, agentName, sn, stdout, stderr)
 }
 
-// doAgentUndrain clears the drain signal on an agent's session.
-func doAgentUndrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
+// doRuntimeUndrain clears the drain signal on an agent's session.
+func doRuntimeUndrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 	agentName, sn string, stdout, stderr io.Writer,
 ) int {
 	if !sp.IsRunning(sn) {
-		fmt.Fprintf(stderr, "gc agent undrain: agent %q is not running\n", agentName) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime undrain: agent %q is not running\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	if err := dops.clearDrain(sn); err != nil {
-		fmt.Fprintf(stderr, "gc agent undrain: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime undrain: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	rec.Record(events.Event{
@@ -273,10 +273,10 @@ func doAgentUndrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 }
 
 // ---------------------------------------------------------------------------
-// gc agent drain-check
+// gc runtime drain-check
 // ---------------------------------------------------------------------------
 
-func newAgentDrainCheckCmd(stdout, stderr io.Writer) *cobra.Command {
+func newRuntimeDrainCheckCmd(stdout, stderr io.Writer) *cobra.Command {
 	_ = stdout // drain-check is silent on stdout
 	return &cobra.Command{
 		Use:   "drain-check [name]",
@@ -284,11 +284,11 @@ func newAgentDrainCheckCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Check if this agent is currently draining.
 
 Returns exit code 0 if draining, 1 if not. Designed for use in
-conditionals: "if gc agent drain-check; then finish-up; fi".
+conditionals: "if gc runtime drain-check; then finish-up; fi".
 Uses $GC_AGENT and $GC_CITY env vars when called without arguments.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentDrainCheck(args, stderr) != 0 {
+			if cmdRuntimeDrainCheck(args, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -296,10 +296,10 @@ Uses $GC_AGENT and $GC_CITY env vars when called without arguments.`,
 	}
 }
 
-func cmdAgentDrainCheck(args []string, stderr io.Writer) int {
+func cmdRuntimeDrainCheck(args []string, stderr io.Writer) int {
 	var agentName, cityDir string
 	if len(args) > 0 {
-		// Explicit: resolve via city config (same as gc agent drain).
+		// Explicit: resolve via city config (same as gc runtime drain).
 		agentName = args[0]
 		var err error
 		cityDir, err = resolveCity()
@@ -308,12 +308,12 @@ func cmdAgentDrainCheck(args []string, stderr io.Writer) int {
 		}
 		cfg, err := loadCityConfig(cityDir)
 		if err != nil {
-			fmt.Fprintf(stderr, "gc agent drain-check: %v\n", err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc runtime drain-check: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 		if !ok {
-			fmt.Fprintln(stderr, agentNotFoundMsg("gc agent drain-check", agentName, cfg)) //nolint:errcheck // best-effort stderr
+			fmt.Fprintln(stderr, agentNotFoundMsg("gc runtime drain-check", agentName, cfg)) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		agentName = found.QualifiedName()
@@ -324,7 +324,7 @@ func cmdAgentDrainCheck(args []string, stderr io.Writer) int {
 		sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
 		sp := newSessionProvider()
 		dops := newDrainOps(sp)
-		return doAgentDrainCheck(dops, sn)
+		return doRuntimeDrainCheck(dops, sn)
 	}
 
 	// Implicit: env vars (backward compat for agent sessions).
@@ -336,7 +336,7 @@ func cmdAgentDrainCheck(args []string, stderr io.Writer) int {
 
 	cfg, err := loadCityConfig(cityDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent drain-check: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain-check: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cityName := cfg.Workspace.Name
@@ -346,12 +346,12 @@ func cmdAgentDrainCheck(args []string, stderr io.Writer) int {
 	sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
-	return doAgentDrainCheck(dops, sn)
+	return doRuntimeDrainCheck(dops, sn)
 }
 
-// doAgentDrainCheck returns 0 if the agent is draining, 1 otherwise.
-// Silent on stdout — designed for `if gc agent drain-check; then ...`.
-func doAgentDrainCheck(dops drainOps, sn string) int {
+// doRuntimeDrainCheck returns 0 if the agent is draining, 1 otherwise.
+// Silent on stdout — designed for `if gc runtime drain-check; then ...`.
+func doRuntimeDrainCheck(dops drainOps, sn string) int {
 	draining, err := dops.isDraining(sn)
 	if err != nil || !draining {
 		return 1
@@ -360,10 +360,10 @@ func doAgentDrainCheck(dops drainOps, sn string) int {
 }
 
 // ---------------------------------------------------------------------------
-// gc agent drain-ack
+// gc runtime drain-ack
 // ---------------------------------------------------------------------------
 
-func newAgentDrainAckCmd(stdout, stderr io.Writer) *cobra.Command {
+func newRuntimeDrainAckCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "drain-ack [name]",
 		Short: "Acknowledge drain — signal the controller to stop this session",
@@ -374,7 +374,7 @@ the session on its next reconcile tick. Call this after the agent has
 finished its current work in response to a drain signal.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdAgentDrainAck(args, stdout, stderr) != 0 {
+			if cmdRuntimeDrainAck(args, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -382,25 +382,25 @@ finished its current work in response to a drain signal.`,
 	}
 }
 
-func cmdAgentDrainAck(args []string, stdout, stderr io.Writer) int {
+func cmdRuntimeDrainAck(args []string, stdout, stderr io.Writer) int {
 	var agentName, cityDir string
 	if len(args) > 0 {
-		// Explicit: resolve via city config (same as gc agent drain).
+		// Explicit: resolve via city config (same as gc runtime drain).
 		agentName = args[0]
 		var err error
 		cityDir, err = resolveCity()
 		if err != nil {
-			fmt.Fprintf(stderr, "gc agent drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc runtime drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		cfg, err := loadCityConfig(cityDir)
 		if err != nil {
-			fmt.Fprintf(stderr, "gc agent drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc runtime drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 		if !ok {
-			fmt.Fprintln(stderr, agentNotFoundMsg("gc agent drain-ack", agentName, cfg)) //nolint:errcheck // best-effort stderr
+			fmt.Fprintln(stderr, agentNotFoundMsg("gc runtime drain-ack", agentName, cfg)) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		agentName = found.QualifiedName()
@@ -411,20 +411,20 @@ func cmdAgentDrainAck(args []string, stdout, stderr io.Writer) int {
 		sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
 		sp := newSessionProvider()
 		dops := newDrainOps(sp)
-		return doAgentDrainAck(dops, sn, stdout, stderr)
+		return doRuntimeDrainAck(dops, sn, stdout, stderr)
 	}
 
 	// Implicit: env vars (backward compat for agent sessions).
 	agentName = os.Getenv("GC_AGENT")
 	cityDir = os.Getenv("GC_CITY")
 	if agentName == "" || cityDir == "" {
-		fmt.Fprintln(stderr, "gc agent drain-ack: not in agent context (GC_AGENT/GC_CITY not set)") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc runtime drain-ack: not in agent context (GC_AGENT/GC_CITY not set)") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	cfg, err := loadCityConfig(cityDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cityName := cfg.Workspace.Name
@@ -434,14 +434,14 @@ func cmdAgentDrainAck(args []string, stdout, stderr io.Writer) int {
 	sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
-	return doAgentDrainAck(dops, sn, stdout, stderr)
+	return doRuntimeDrainAck(dops, sn, stdout, stderr)
 }
 
 // ---------------------------------------------------------------------------
-// gc agent request-restart
+// gc runtime request-restart
 // ---------------------------------------------------------------------------
 
-func newAgentRequestRestartCmd(stdout, stderr io.Writer) *cobra.Command {
+func newRuntimeRequestRestartCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "request-restart",
 		Short: "Request controller restart this session (blocks until killed)",
@@ -457,7 +457,7 @@ This command is designed to be called from within an agent session
 before blocking.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if cmdAgentRequestRestart(stdout, stderr) != 0 {
+			if cmdRuntimeRequestRestart(stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -465,17 +465,17 @@ before blocking.`,
 	}
 }
 
-func cmdAgentRequestRestart(stdout, stderr io.Writer) int {
+func cmdRuntimeRequestRestart(stdout, stderr io.Writer) int {
 	agentName := os.Getenv("GC_AGENT")
 	cityDir := os.Getenv("GC_CITY")
 	if agentName == "" || cityDir == "" {
-		fmt.Fprintln(stderr, "gc agent request-restart: not in agent context (GC_AGENT/GC_CITY not set)") //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc runtime request-restart: not in agent context (GC_AGENT/GC_CITY not set)") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	cfg, err := loadCityConfig(cityDir)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc agent request-restart: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime request-restart: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	cityName := cfg.Workspace.Name
@@ -486,16 +486,16 @@ func cmdAgentRequestRestart(stdout, stderr io.Writer) int {
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorder(stderr)
-	return doAgentRequestRestart(dops, rec, agentName, sn, stdout, stderr)
+	return doRuntimeRequestRestart(dops, rec, agentName, sn, stdout, stderr)
 }
 
-// doAgentRequestRestart sets the restart-requested flag and blocks forever.
+// doRuntimeRequestRestart sets the restart-requested flag and blocks forever.
 // The controller will kill and restart the session on its next tick.
-func doAgentRequestRestart(dops drainOps, rec events.Recorder,
+func doRuntimeRequestRestart(dops drainOps, rec events.Recorder,
 	agentName, sn string, stdout, stderr io.Writer,
 ) int {
 	if err := dops.setRestartRequested(sn); err != nil {
-		fmt.Fprintf(stderr, "gc agent request-restart: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime request-restart: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	rec.Record(events.Event{
@@ -510,11 +510,11 @@ func doAgentRequestRestart(dops drainOps, rec events.Recorder,
 	select {}
 }
 
-// doAgentDrainAck sets the drain-ack flag on the session. The controller
+// doRuntimeDrainAck sets the drain-ack flag on the session. The controller
 // will stop the session on the next tick.
-func doAgentDrainAck(dops drainOps, sn string, stdout, stderr io.Writer) int {
+func doRuntimeDrainAck(dops drainOps, sn string, stdout, stderr io.Writer) int {
 	if err := dops.setDrainAck(sn); err != nil {
-		fmt.Fprintf(stderr, "gc agent drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc runtime drain-ack: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	fmt.Fprintln(stdout, "Drain acknowledged. Controller will stop this session.") //nolint:errcheck // best-effort stdout
