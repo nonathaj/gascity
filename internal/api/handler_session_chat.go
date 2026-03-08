@@ -506,7 +506,7 @@ func (s *Server) emitClosedSessionSnapshot(w http.ResponseWriter, info session.I
 	if logPath == "" {
 		return
 	}
-	sess, err := sessionlog.ReadFile(logPath, 1)
+	sess, err := sessionlog.ReadFile(logPath, 0)
 	if err != nil {
 		return
 	}

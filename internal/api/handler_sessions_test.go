@@ -600,6 +600,7 @@ func TestHandleSessionTranscriptClosedSession(t *testing.T) {
 	}
 	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
 		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 	if err := mgr.Close(info.ID); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -617,8 +618,8 @@ func TestHandleSessionTranscriptClosedSession(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(resp.Turns) != 1 || resp.Turns[0].Text != "hello" {
-		t.Fatalf("Turns = %+v, want closed-session transcript", resp.Turns)
+	if len(resp.Turns) != 2 || resp.Turns[0].Text != "hello" || resp.Turns[1].Text != "world" {
+		t.Fatalf("Turns = %+v, want closed-session transcript hello/world", resp.Turns)
 	}
 }
 
@@ -729,6 +730,7 @@ func TestHandleSessionStreamSSEHeaders(t *testing.T) {
 	}
 	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
 		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -794,6 +796,7 @@ func TestHandleSessionStreamClosedSessionReturnsSnapshot(t *testing.T) {
 	}
 	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
 		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 	if err := mgr.Close(info.ID); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -813,7 +816,7 @@ func TestHandleSessionStreamClosedSessionReturnsSnapshot(t *testing.T) {
 		t.Fatal("closed session stream should return immediately")
 	}
 
-	if !strings.Contains(rec.Body.String(), "event: turn") || !strings.Contains(rec.Body.String(), "hello") {
+	if !strings.Contains(rec.Body.String(), "event: turn") || !strings.Contains(rec.Body.String(), "hello") || !strings.Contains(rec.Body.String(), "world") {
 		t.Errorf("stream body missing closed-session snapshot: %s", rec.Body.String())
 	}
 }
