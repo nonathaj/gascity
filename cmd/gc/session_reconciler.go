@@ -216,10 +216,14 @@ func reconcileSessionBeads(
 		// Live-only drift: re-apply session_live without restart.
 		if alive {
 			template := session.Metadata["template"]
-			// Use config_hash (set by new reconciler) with fallback to
-			// started_config_hash (set by legacy beadReconcileOps). This
-			// ensures correct drift detection when toggling bead_reconciler
-			// from false→true on a running city.
+			// Prefer started_config_hash (set at actual start time by
+			// whichever reconciler started the session) over config_hash
+			// (set at bead creation/sync time, which may predate the
+			// session start). This ensures correct drift detection when
+			// toggling bead_reconciler from false→true: the legacy
+			// reconciler writes started_config_hash after start, and
+			// config_hash may reflect bead creation state, not the
+			// config the session was actually started with.
 			storedHash := session.Metadata["config_hash"]
 			if sh := session.Metadata["started_config_hash"]; sh != "" {
 				storedHash = sh

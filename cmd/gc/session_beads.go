@@ -140,11 +140,20 @@ func syncSessionBeads(
 		// Record existing open bead in index.
 		openIndex[sn] = b.ID
 
-		// Backfill template metadata for beads created before Phase 2f.
+		// Backfill template and pool_slot metadata for beads created
+		// before Phase 2f. Each field is checked independently so a
+		// partial failure (e.g., template succeeds but pool_slot fails)
+		// is retried on the next sync.
 		if b.Metadata["template"] == "" {
 			tmpl := resolveAgentTemplate(a.Name(), cfg)
 			if setMeta(store, b.ID, "template", tmpl, stderr) == nil {
 				b.Metadata["template"] = tmpl
+			}
+		}
+		if b.Metadata["pool_slot"] == "" {
+			tmpl := b.Metadata["template"]
+			if tmpl == "" {
+				tmpl = resolveAgentTemplate(a.Name(), cfg)
 			}
 			if slot := resolvePoolSlot(a.Name(), tmpl); slot > 0 {
 				if setMeta(store, b.ID, "pool_slot", strconv.Itoa(slot), stderr) == nil {

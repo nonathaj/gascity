@@ -202,6 +202,11 @@ func (cr *CityRuntime) run(ctx context.Context) {
 			fmt.Fprintf(cr.stdout, "Adopted %d running session(s) into bead store.\n", result.Adopted) //nolint:errcheck
 		}
 		if !passed {
+			// Sessions that fail adoption AND have no matching agent are
+			// invisible to the bead reconciler (which only processes beaded
+			// sessions). They will be cleaned up when they naturally exit.
+			// Sessions with matching agents get beads via syncSessionBeads
+			// on the next tick.
 			fmt.Fprintf(cr.stderr, "%s: adoption barrier: %d session(s) failed bead creation\n", cr.logPrefix, result.Skipped) //nolint:errcheck
 		}
 	}
@@ -435,23 +440,6 @@ func (cr *CityRuntime) reloadConfig(
 
 	cr.ad = buildAutomationDispatcher(cityRoot, cr.cfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
 
-	// Recompute bead-driven reconciler activation from current config.
-	// Toggling bead_reconciler on creates the drain tracker; toggling it
-	// off nils it so the next tick falls back to the legacy reconciler.
-	// In-flight drains are discarded on toggle-off (sessions will be
-	// re-reconciled by the legacy path).
-	if cr.cfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
-		if cr.sessionDrains == nil {
-			cr.sessionDrains = newDrainTracker()
-			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler enabled (config reload)\n", cr.logPrefix) //nolint:errcheck
-		}
-	} else {
-		if cr.sessionDrains != nil {
-			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler disabled (config reload)\n", cr.logPrefix) //nolint:errcheck
-		}
-		cr.sessionDrains = nil
-	}
-
 	*observePaths = observeSearchPaths(cr.cfg.Daemon.ObservePaths)
 
 	if cr.cs != nil {
@@ -470,6 +458,25 @@ func (cr *CityRuntime) reloadConfig(
 		}
 		// Upgrade rops if store recovered from nil → non-nil.
 		cr.upgradeToBeadReconcileOps()
+	}
+
+	// Recompute bead-driven reconciler activation from current config.
+	// Placed AFTER store recovery so that a nil→non-nil store transition
+	// is visible to the activation check on this reload cycle.
+	// Toggling bead_reconciler on creates the drain tracker; toggling it
+	// off nils it so the next tick falls back to the legacy reconciler.
+	// In-flight drains are discarded on toggle-off; the legacy path
+	// re-reconciles those sessions within one tick.
+	if cr.cfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
+		if cr.sessionDrains == nil {
+			cr.sessionDrains = newDrainTracker()
+			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler enabled (config reload)\n", cr.logPrefix) //nolint:errcheck
+		}
+	} else {
+		if cr.sessionDrains != nil {
+			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler disabled (config reload)\n", cr.logPrefix) //nolint:errcheck
+		}
+		cr.sessionDrains = nil
 	}
 
 	fmt.Fprintf(cr.stdout, "Config reloaded: %s (rev %s)\n", //nolint:errcheck
