@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -46,8 +47,9 @@ func acquireControllerLock(cityPath string) (*os.File, error) {
 
 // startControllerSocket listens on a Unix socket at .gc/controller.sock.
 // When a client sends "stop\n", cancelFn is called to shut down the
-// controller loop. Returns the listener for cleanup.
-func startControllerSocket(cityPath string, cancelFn context.CancelFunc) (net.Listener, error) {
+// controller loop. convergenceReqCh is used to route convergence commands
+// to the event loop for serialized processing. Returns the listener for cleanup.
+func startControllerSocket(cityPath string, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest) (net.Listener, error) {
 	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
 	// Remove stale socket from a previous crash.
 	os.Remove(sockPath) //nolint:errcheck // stale socket cleanup
@@ -61,27 +63,91 @@ func startControllerSocket(cityPath string, cancelFn context.CancelFunc) (net.Li
 			if err != nil {
 				return // listener closed
 			}
-			go handleControllerConn(conn, cancelFn)
+			go handleControllerConn(conn, cancelFn, convergenceReqCh)
 		}
 	}()
 	return lis, nil
 }
 
 // handleControllerConn reads from a connection and dispatches commands.
-// Supported commands: "stop" (shutdown), "ping" (liveness check, returns PID).
-func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc) {
+// Supported commands: "stop" (shutdown), "ping" (liveness check, returns PID),
+// "converge:{json}" (convergence commands routed to event loop).
+func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest) {
 	defer conn.Close()                                     //nolint:errcheck // best-effort cleanup
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck // best-effort deadline
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck // best-effort deadline
 	scanner := bufio.NewScanner(conn)
+	// Increase scanner buffer for convergence commands which may carry large payloads.
+	scanner.Buffer(make([]byte, 64*1024), 64*1024)
 	if scanner.Scan() {
-		switch scanner.Text() {
-		case "stop":
+		line := scanner.Text()
+		switch {
+		case line == "stop":
 			cancelFn()
 			conn.Write([]byte("ok\n")) //nolint:errcheck // best-effort ack
-		case "ping":
+		case line == "ping":
 			fmt.Fprintf(conn, "%d\n", os.Getpid()) //nolint:errcheck // best-effort
+		case strings.HasPrefix(line, "converge:"):
+			handleConvergeSocketCmd(conn, line[len("converge:"):], convergenceReqCh)
 		}
 	}
+}
+
+// handleConvergeSocketCmd parses a convergence JSON request, enqueues it
+// to the event loop, and writes the reply back to the connection.
+func handleConvergeSocketCmd(conn net.Conn, payload string, ch chan convergenceRequest) {
+	var req convergenceRequest
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		writeJSONLine(conn, convergenceReply{Error: fmt.Sprintf("invalid request: %v", err)})
+		return
+	}
+	req.replyCh = make(chan convergenceReply, 1)
+	// Send to event loop with a timeout to prevent hanging if the loop is stuck.
+	select {
+	case ch <- req:
+	case <-time.After(30 * time.Second):
+		writeJSONLine(conn, convergenceReply{Error: "controller busy (request timeout)"})
+		return
+	}
+	// Wait for reply.
+	select {
+	case reply := <-req.replyCh:
+		writeJSONLine(conn, reply)
+	case <-time.After(60 * time.Second):
+		writeJSONLine(conn, convergenceReply{Error: "controller did not respond in time"})
+	}
+}
+
+// writeJSONLine marshals v as JSON and writes it as a single line to w.
+func writeJSONLine(w net.Conn, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	data = append(data, '\n')
+	w.Write(data) //nolint:errcheck // best-effort
+}
+
+// sendControllerCommand sends a command string to controller.sock and
+// returns the raw response bytes. Used by CLI commands that need to
+// route through the controller.
+func sendControllerCommand(cityPath, command string) ([]byte, error) {
+	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
+	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to controller: %w (is the controller running?)", err)
+	}
+	defer conn.Close()                                     //nolint:errcheck
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
+	if _, err := conn.Write([]byte(command + "\n")); err != nil {
+		return nil, fmt.Errorf("sending command: %w", err)
+	}
+	buf := make([]byte, 64*1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	return buf[:n], nil
 }
 
 // controllerAlive checks whether a controller is running by connecting
@@ -410,8 +476,10 @@ func runController(
 		cancel()
 	}()
 
+	convergenceReqCh := make(chan convergenceRequest, 16)
+
 	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
-	lis, err := startControllerSocket(cityPath, cancel)
+	lis, err := startControllerSocket(cityPath, cancel, convergenceReqCh)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -457,6 +525,7 @@ func runController(
 		Rec:               rec,
 		PoolSessions:      poolSessions,
 		PoolDeathHandlers: poolDeathHandlers,
+		ConvergenceReqCh:  convergenceReqCh,
 		Stdout:            stdout,
 		Stderr:            stderr,
 	})
