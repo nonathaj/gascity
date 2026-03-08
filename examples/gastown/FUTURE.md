@@ -18,7 +18,7 @@ These are required for any agent to do useful work.
 | `gc hook` | **NEEDS IMPL:** Thin wrapper over bd protocol: (1) `bd list --assignee=$GC_AGENT --status=in_progress` (current work), (2) `bd ready --assignee=<pool>` (search pool), (3) `bd update <bead> --claim --assignee=$GC_AGENT` (atomic grab). Returns current/claimed bead or nothing. | All 8 prompts, most formulas |
 | ~~`gc sling <bead> <rig>`~~ | **RESOLVED:** Use `bd update <bead> --assignee=<role>` + pool auto-scaling | mayor, deacon, convoy-feed, orphan-scan, session-gc |
 | ~~`gc done`~~ | **RESOLVED:** Push branch + `bd create --type=merge-request --assignee=refinery` + `bd close <work-bead>` + exit | polecat, dog |
-| ~~`gc nudge <target> "msg"`~~ | **RESOLVED:** Already exists as `gc session wake <name> <msg>`. Scoped to health patrol (deacon/dog). Remove from mayor/crew/witness prompts. | mayor, deacon, witness, crew, refinery, boot-triage |
+| ~~`gc nudge <target> "msg"`~~ | **RESOLVED:** Use `gc session nudge <name> <msg>` for message delivery. Scoped to health patrol (deacon/dog). Remove from mayor/crew/witness prompts. | mayor, deacon, witness, crew, refinery, boot-triage |
 | ~~`gc polecat list/nuke/status/remove`~~ | **RESOLVED:** `gc session list` (with filters) for listing/status. Self-nuke on success; reconciler + idempotent resume on crash; crash loop backoff prevents thrashing. No polecat-specific commands. | mayor, witness, refinery |
 | ~~`gc session status/start/stop`~~ | **RESOLVED:** Controller reconciler handles liveness + restart. `gc session list` for status. | witness, deacon, boot-triage |
 

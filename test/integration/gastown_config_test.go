@@ -18,9 +18,9 @@ func TestGastown_ConfigStartStop(t *testing.T) {
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
 	// Agent list should show all three agents.
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	for _, name := range []string{"mayor", "deacon", "boot"} {
 		if !strings.Contains(out, name) {
@@ -39,18 +39,18 @@ func TestGastown_ConfigWithPool(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "mayor") {
-		t.Errorf("expected 'mayor' in agent list:\n%s", out)
+		t.Errorf("expected 'mayor' in session list:\n%s", out)
 	}
 	if !strings.Contains(out, "dog") {
-		t.Errorf("expected 'dog' in agent list:\n%s", out)
+		t.Errorf("expected 'dog' in session list:\n%s", out)
 	}
 	if !strings.Contains(out, "pool:") {
-		t.Errorf("expected pool info in agent list:\n%s", out)
+		t.Errorf("expected pool info in session list:\n%s", out)
 	}
 }
 
@@ -81,11 +81,11 @@ func TestGastown_SuspendedAgentSkipped(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "suspended") {
-		t.Errorf("expected 'suspended' in agent list for worker:\n%s", out)
+		t.Errorf("expected 'suspended' in session list for worker:\n%s", out)
 	}
 }

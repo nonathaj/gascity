@@ -37,8 +37,8 @@ func TestGastown_WitnessWithNoOrphans(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// City should still be operational.
-	_, err := gc(cityDir, "agent", "list")
+	_, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed after witness patrol: %v", err)
+		t.Fatalf("gc session list failed after witness patrol: %v", err)
 	}
 }

@@ -93,7 +93,7 @@ become role-agnostic infrastructure that any pack can use.
 | Agent drain | `gc runtime drain <name>` | **DONE** | Pool drain with timeout + drain-ack + drain-check + undrain |
 | Agent suspend | `gc agent suspend <name>` | **DONE** | Prevent reconciler spawn (sets `suspended=true` in city.toml) |
 | Agent resume | `gc agent resume <name>` | **DONE** | Re-enable spawning (clears `suspended`) |
-| Agent nudge | `gc session wake <name> <msg>` | **DONE** | Send input to running session via tmux send-keys |
+| Agent nudge | `gc session nudge <name> <msg>` | **DONE** | Send input to running session via tmux send-keys |
 | Agent add (runtime) | `gc agent add --name <name>` | **DONE** | Add agent to city.toml (supports --prompt-template, --dir, --suspended) |
 | Agent request-restart | `gc runtime request-restart` | **DONE** | Signal agent to restart on next hook check |
 | Session cycling (`gt cycle`) | `session_setup` + scripts | **DONE** | Inlined as shell scripts in `examples/gastown/scripts/cycle.sh`, wired via `session_setup` bind-key with if-shell fallback preservation |
@@ -188,7 +188,7 @@ become role-agnostic infrastructure that any pack can use.
 | Sling --agent override | — | **N/A** | WONTFIX: Use separate pools with different providers. Priority sorting (`bd ready --sort priority`) handles work routing. Adding pools is already supported via config + `gc agent add`. |
 | `gt handoff` | `gc handoff` | **DONE** | Mail-to-self + restart-requested + block |
 | `gt broadcast` | — | **DEFER** | Nudge all agents; operator convenience, no programmatic callers. Implement when needed. |
-| `gt nudge <target> [msg]` | `gc session wake <name> <msg>` | **DONE** | Direct message injection via tmux send-keys |
+| `gt nudge <target> [msg]` | `gc session nudge <name> <msg>` | **DONE** | Direct message injection via tmux send-keys |
 
 ---
 
@@ -539,7 +539,7 @@ become role-agnostic infrastructure that any pack can use.
 
 These are features that gastown's configuration depends on to function:
 
-1. ~~**Agent nudge**~~ — DONE (`gc session wake <name> <msg>`)
+1. ~~**Agent nudge**~~ — DONE (`gc session nudge <name> <msg>`)
 2. ~~**`gc done`**~~ — REMAP (inlined to prompt: `git push` + `bd create` + `bd close` + exit)
 3. ~~**Agent bead lifecycle**~~ — REMAP (just bd: `bd create --type=agent` + `bd update --label`)
 4. ~~**Bead slot (hook) operations**~~ — N/A WONTFIX (no hooked beads; users can use bd)

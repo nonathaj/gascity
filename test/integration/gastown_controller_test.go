@@ -18,15 +18,15 @@ func TestGastown_ControllerStartStop(t *testing.T) {
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
 	// Verify agents are running.
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "mayor") {
-		t.Errorf("expected mayor in agent list:\n%s", out)
+		t.Errorf("expected mayor in session list:\n%s", out)
 	}
 	if !strings.Contains(out, "deacon") {
-		t.Errorf("expected deacon in agent list:\n%s", out)
+		t.Errorf("expected deacon in session list:\n%s", out)
 	}
 
 	// Stop and restart.
@@ -57,11 +57,11 @@ func TestGastown_ControllerIdleAgent(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "mayor") {
-		t.Errorf("expected mayor in agent list:\n%s", out)
+		t.Errorf("expected mayor in session list:\n%s", out)
 	}
 }

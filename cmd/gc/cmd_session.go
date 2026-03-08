@@ -50,6 +50,7 @@ continuity.`,
 		newSessionPruneCmd(stdout, stderr),
 		newSessionPeekCmd(stdout, stderr),
 		newSessionKillCmd(stdout, stderr),
+		newSessionNudgeCmd(stdout, stderr),
 		newSessionLogsCmd(stdout, stderr),
 		newSessionWakeCmd(stdout, stderr),
 	)
@@ -728,14 +729,84 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Use the user-supplied name (agent or session ID) as Subject for
+	// consistency with other SessionStopped events which use agent names.
 	rec := openCityRecorder(stderr)
 	rec.Record(events.Event{
 		Type:    events.SessionStopped,
 		Actor:   eventActor(),
-		Subject: sessionID,
+		Subject: args[0],
+		Message: "killed",
 	})
 
 	fmt.Fprintf(stdout, "Session %s killed.\n", sessionID) //nolint:errcheck // best-effort stdout
+	return 0
+}
+
+// newSessionNudgeCmd creates the "gc session nudge <id-or-name> <message>" command.
+func newSessionNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "nudge <session-id-or-name> <message>",
+		Short: "Send a text message to a running session",
+		Long: `Send text input to a running session via the runtime provider.
+
+The message is delivered as text content to the session's input. This is
+equivalent to typing the message into the session's terminal.
+
+Accepts a session ID (e.g., gc-42) or template name (e.g., overseer).`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if cmdSessionNudge(args, stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+}
+
+// cmdSessionNudge is the CLI entry point for "gc session nudge".
+func cmdSessionNudge(args []string, stdout, stderr io.Writer) int {
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	cityName := cfg.Workspace.Name
+	if cityName == "" {
+		cityName = filepath.Base(cityPath)
+	}
+
+	target := args[0]
+	message := args[1]
+
+	// Resolve target to an agent for session name construction.
+	found, ok := resolveAgentIdentity(cfg, target, currentRigContext(cfg))
+	if !ok {
+		fmt.Fprintln(stderr, agentNotFoundMsg("gc session nudge", target, cfg)) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	sp := newSessionProvider()
+	sn := sessionName(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+
+	if !sp.IsRunning(sn) {
+		fmt.Fprintf(stderr, "gc session nudge: session %q is not running\n", found.QualifiedName()) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	if err := sp.Nudge(sn, runtime.TextContent(message)); err != nil {
+		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Nudged %s\n", found.QualifiedName()) //nolint:errcheck // best-effort stdout
 	return 0
 }
 

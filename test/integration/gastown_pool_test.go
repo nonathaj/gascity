@@ -36,13 +36,13 @@ func TestGastown_PoolMinGuarantee(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	// min=2 means at least 2 agents even when check says 0.
 	if !strings.Contains(out, "builder") {
-		t.Errorf("expected 'builder' in agent list:\n%s", out)
+		t.Errorf("expected 'builder' in session list:\n%s", out)
 	}
 }
 
@@ -55,12 +55,12 @@ func TestGastown_PoolMaxCap(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "agent", "list")
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 	// Should show max=3 in pool info.
 	if !strings.Contains(out, "max=3") {
-		t.Errorf("expected 'max=3' in agent list:\n%s", out)
+		t.Errorf("expected 'max=3' in session list:\n%s", out)
 	}
 }

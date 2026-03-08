@@ -123,10 +123,10 @@ func TestE2E_RequestRestart(t *testing.T) {
 	// Give it a moment for the metadata to be set.
 	time.Sleep(1 * time.Second)
 
-	// Verify metadata was set by checking agent status.
-	out, err := gc(cityDir, "agent", "status", "restarter")
+	// Verify metadata was set by checking session list.
+	out, err := gc(cityDir, "session", "list")
 	if err != nil {
-		t.Fatalf("gc agent status failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
 	}
 
 	// Kill the agent to unblock the goroutine.
@@ -139,6 +139,8 @@ func TestE2E_RequestRestart(t *testing.T) {
 }
 
 // TestE2E_Nudge verifies that gc agent nudge delivers text to a tmux session.
+// NOTE: gc agent nudge is deprecated; replacement is "gc mail send --notify"
+// which has a different interface. This test needs a logic rewrite to migrate.
 func TestE2E_Nudge(t *testing.T) {
 	if usingSubprocess() {
 		t.Skip("nudge requires tmux provider")
@@ -157,7 +159,7 @@ func TestE2E_Nudge(t *testing.T) {
 	}
 }
 
-// TestE2E_Peek verifies that gc agent peek captures session output.
+// TestE2E_Peek verifies that gc session peek captures session output.
 func TestE2E_Peek(t *testing.T) {
 	if usingSubprocess() {
 		t.Skip("peek requires tmux provider")
@@ -176,9 +178,9 @@ func TestE2E_Peek(t *testing.T) {
 	// Wait for the agent to produce output.
 	time.Sleep(2 * time.Second)
 
-	out, err := gc(cityDir, "agent", "peek", "peekee")
+	out, err := gc(cityDir, "session", "peek", "peekee")
 	if err != nil {
-		t.Fatalf("gc agent peek failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc session peek failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "peek-test-output") {
 		t.Errorf("peek output missing expected text:\n%s", out)
