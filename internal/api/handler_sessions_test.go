@@ -400,3 +400,56 @@ func TestHandleSessionAmbiguousTemplateName(t *testing.T) {
 		t.Fatalf("got status %d, want %d (ambiguous); body: %s", w.Code, http.StatusConflict, w.Body.String())
 	}
 }
+
+func TestHandleSessionGetEnrichment(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Enriched Session")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID, nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// Session is active and runtime.Fake reports it as running.
+	if !resp.Running {
+		t.Error("running = false, want true for active session")
+	}
+
+	// DisplayName should be resolved (provider is "test" → title-cased).
+	if resp.DisplayName != "Test" {
+		t.Errorf("display_name = %q, want %q", resp.DisplayName, "Test")
+	}
+}
+
+func TestHandleSessionListPeek(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	createTestSession(t, fs.cityBeadStore, fs.sp, "Peek Session")
+
+	// Without peek param — no last_output.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/sessions", nil)
+	srv.ServeHTTP(w, r)
+
+	var resp struct {
+		Items []sessionResponse `json:"items"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) == 0 {
+		t.Fatal("no sessions returned")
+	}
+	if resp.Items[0].LastOutput != "" {
+		t.Errorf("last_output = %q without peek param, want empty", resp.Items[0].LastOutput)
+	}
+}
