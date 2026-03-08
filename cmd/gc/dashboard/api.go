@@ -342,7 +342,7 @@ func (h *APIHandler) runViaAPI(command string) (string, bool) {
 
 	case "agent":
 		if len(parts) >= 2 && parts[1] == "list" {
-			body, err := h.apiGet("/v0/agents")
+			body, err := h.apiGet("/v0/sessions")
 			if err != nil {
 				return "", false
 			}
@@ -939,34 +939,30 @@ func (h *APIHandler) fetchOptionsAPI() *OptionsResponse {
 		}
 	}()
 
-	// Fetch agents (provides agents, crew, and convoys are a bonus)
+	// Fetch sessions (provides agents, crew lists)
 	go func() {
 		defer wg.Done()
-		itemsRaw, err := h.apiGetListRaw("/v0/agents")
+		itemsRaw, err := h.apiGetListRaw("/v0/sessions")
 		if err != nil {
-			log.Printf("warning: handleOptions API: agents: %v", err)
+			log.Printf("warning: handleOptions API: sessions: %v", err)
 			return
 		}
-		var agents []apiAgentResponse
-		if json.Unmarshal(itemsRaw, &agents) == nil {
+		var sessions []apiSessionResponse
+		if json.Unmarshal(itemsRaw, &sessions) == nil {
 			mu.Lock()
-			for _, a := range agents {
+			for _, s := range sessions {
 				state := "stopped"
-				if a.Running {
+				if s.Running {
 					state = "running"
-				} else if a.Suspended {
+				} else if s.State == "suspended" {
 					state = "suspended"
 				}
 				resp.Agents = append(resp.Agents, OptionItem{
-					Name:    a.Name,
+					Name:    s.Template,
 					Status:  state,
-					Running: a.Running,
+					Running: s.Running,
 				})
-				rigPrefix := ""
-				if a.Rig != "" {
-					rigPrefix = a.Rig + "/"
-				}
-				resp.Crew = append(resp.Crew, rigPrefix+a.Name)
+				resp.Crew = append(resp.Crew, s.Template)
 			}
 			mu.Unlock()
 		}
@@ -1432,34 +1428,35 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 		ByRig: make(map[string][]CrewMember),
 	}
 
-	itemsRaw, err := h.apiGetListRaw("/v0/agents")
+	itemsRaw, err := h.apiGetListRaw("/v0/sessions?state=active&peek=true")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	var agents []apiAgentResponse
-	if err := json.Unmarshal(itemsRaw, &agents); err != nil {
+	var sessions []apiSessionResponse
+	if err := json.Unmarshal(itemsRaw, &sessions); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 		return
 	}
 
-	for _, agent := range agents {
+	for _, sess := range sessions {
 		state := "ready"
 		sessionStatus := "none"
 		lastActive := ""
 
-		if agent.Running {
-			if agent.Session != nil && agent.Session.Attached {
+		if sess.Running {
+			if sess.Attached {
 				sessionStatus = "attached"
 			} else {
 				sessionStatus = "detached"
 			}
-			if agent.Session != nil && agent.Session.LastActivity != nil {
-				lastActive = formatTimestamp(*agent.Session.LastActivity)
-				activityAge := time.Since(*agent.Session.LastActivity)
+			la := parseTime(sess.LastActive)
+			if !la.IsZero() {
+				lastActive = formatTimestamp(la)
+				activityAge := time.Since(la)
 				if activityAge < 10*time.Minute {
 					state = "spinning"
 				} else {
@@ -1468,27 +1465,27 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 			} else {
 				state = "spinning"
 			}
-		} else if agent.ActiveBead != "" {
+		} else if sess.ActiveBead != "" {
 			state = "finished"
 		}
 
-		// Refine "questions" and "finished" states by peeking at agent output.
+		// Refine "questions" state: check for pending interaction via session API.
 		if state == "questions" || state == "finished" {
-			if h.hasQuestionInOutput(agent.Name) {
+			if h.hasSessionPendingInteraction(sess.ID) {
 				state = "questions"
 			}
 		}
 
 		member := CrewMember{
-			Name:       agent.Name,
-			Rig:        agent.Rig,
+			Name:       sess.Template,
+			Rig:        sess.Rig,
 			State:      state,
-			Hook:       agent.ActiveBead,
+			Hook:       sess.ActiveBead,
 			Session:    sessionStatus,
 			LastActive: lastActive,
 		}
 		resp.Crew = append(resp.Crew, member)
-		resp.ByRig[agent.Rig] = append(resp.ByRig[agent.Rig], member)
+		resp.ByRig[sess.Rig] = append(resp.ByRig[sess.Rig], member)
 	}
 	resp.Total = len(resp.Crew)
 
@@ -1496,51 +1493,23 @@ func (h *APIHandler) handleCrewAPI(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// hasQuestionInOutput checks recent assistant output for question indicators.
-// Only checks assistant turns to avoid false positives from user prompts.
-func (h *APIHandler) hasQuestionInOutput(agentName string) bool {
-	body, err := h.apiGet("/v0/agent/" + agentName + "/output")
+// hasSessionPendingInteraction checks if a session has a pending interaction
+// (permission prompt, question) via the session pending API.
+func (h *APIHandler) hasSessionPendingInteraction(sessionID string) bool {
+	body, err := h.apiGet("/v0/session/" + sessionID + "/pending")
 	if err != nil {
 		return false
 	}
-	var outputResp struct {
-		Turns []struct {
-			Role string `json:"role"`
-			Text string `json:"text"`
-		} `json:"turns"`
+	var resp struct {
+		Supported bool `json:"supported"`
+		Pending   *struct {
+			Type string `json:"type"`
+		} `json:"pending"`
 	}
-	if json.Unmarshal(body, &outputResp) != nil || len(outputResp.Turns) == 0 {
+	if json.Unmarshal(body, &resp) != nil {
 		return false
 	}
-
-	// Find the last assistant turn, or fall back to "output" (peek format).
-	var lastText string
-	for i := len(outputResp.Turns) - 1; i >= 0; i-- {
-		role := outputResp.Turns[i].Role
-		if role == "assistant" || role == "output" {
-			lastText = strings.ToLower(outputResp.Turns[i].Text)
-			break
-		}
-	}
-	if lastText == "" {
-		return false
-	}
-
-	for _, indicator := range []string{
-		"what do you think",
-		"should i",
-		"would you like",
-		"please confirm",
-		"waiting for",
-		"need your input",
-		"your thoughts",
-		"let me know",
-	} {
-		if strings.Contains(lastText, indicator) {
-			return true
-		}
-	}
-	return false
+	return resp.Supported && resp.Pending != nil
 }
 
 // ---------- Ready handler ----------
@@ -1618,49 +1587,47 @@ type SessionPreviewResponse struct {
 
 // handleSessionPreview returns the last N lines of output for a session.
 func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request) {
-	sessionName := r.URL.Query().Get("session")
-	if sessionName == "" {
+	sessionID := r.URL.Query().Get("session")
+	if sessionID == "" {
 		h.sendError(w, "Missing session parameter", http.StatusBadRequest)
 		return
 	}
 
-	for _, c := range sessionName {
-		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
-			h.sendError(w, "Invalid session name: contains invalid characters", http.StatusBadRequest)
+	for _, c := range sessionID {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '/' {
+			h.sendError(w, "Invalid session ID: contains invalid characters", http.StatusBadRequest)
 			return
 		}
 	}
 
-	body, err := h.apiGet("/v0/agent/" + sessionName + "/output")
+	body, err := h.apiGet("/v0/session/" + sessionID + "/transcript?tail=1")
 	if err != nil {
-		h.sendError(w, "Failed to get agent output: "+err.Error(), http.StatusInternalServerError)
+		h.sendError(w, "Failed to get session transcript: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var outputResp struct {
+	var transcriptResp struct {
 		Turns []struct {
 			Text string `json:"text"`
 		} `json:"turns"`
 	}
-	if json.Unmarshal(body, &outputResp) == nil {
-		// Combine turn texts into a single preview.
+	if json.Unmarshal(body, &transcriptResp) == nil {
 		var parts []string
-		for _, t := range outputResp.Turns {
+		for _, t := range transcriptResp.Turns {
 			if t.Text != "" {
 				parts = append(parts, t.Text)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(SessionPreviewResponse{
-			Session:   sessionName,
+			Session:   sessionID,
 			Content:   strings.Join(parts, "\n"),
 			Timestamp: time.Now().Format(time.RFC3339),
 		})
 		return
 	}
-	// Fallback: return raw body as content.
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(SessionPreviewResponse{
-		Session:   sessionName,
+		Session:   sessionID,
 		Content:   string(body),
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
@@ -1668,24 +1635,23 @@ func (h *APIHandler) handleSessionPreview(w http.ResponseWriter, r *http.Request
 
 // ---------- Agent logs handler ----------
 
-// handleAgentOutput proxies the API server's /v0/agent/{name}/output endpoint.
+// handleAgentOutput proxies the session transcript API.
 func (h *APIHandler) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
-	agentName := r.URL.Query().Get("name")
-	if agentName == "" {
+	sessionID := r.URL.Query().Get("name")
+	if sessionID == "" {
 		h.sendError(w, "Missing name parameter", http.StatusBadRequest)
 		return
 	}
 
-	// Validate agent name characters.
-	for _, c := range agentName {
+	for _, c := range sessionID {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '/' {
-			h.sendError(w, "Invalid agent name", http.StatusBadRequest)
+			h.sendError(w, "Invalid session ID", http.StatusBadRequest)
 			return
 		}
 	}
 
 	// Build upstream URL with query params.
-	upstream := "/v0/agent/" + agentName + "/output"
+	upstream := "/v0/session/" + sessionID + "/transcript"
 	sep := "?"
 	if v := r.URL.Query().Get("tail"); v != "" {
 		upstream += sep + "tail=" + url.QueryEscape(v)
@@ -1697,7 +1663,7 @@ func (h *APIHandler) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.apiClient.Get(h.apiURL + scopedPath(upstream, h.cityScope))
 	if err != nil {
-		h.sendError(w, "Failed to fetch agent output", http.StatusBadGateway)
+		h.sendError(w, "Failed to fetch session transcript", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close() //nolint:errcheck
@@ -1708,22 +1674,22 @@ func (h *APIHandler) handleAgentOutput(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-// handleAgentOutputStream proxies the API server's /v0/agent/{name}/output/stream SSE endpoint.
+// handleAgentOutputStream proxies the session stream SSE endpoint.
 func (h *APIHandler) handleAgentOutputStream(w http.ResponseWriter, r *http.Request) {
-	agentName := r.URL.Query().Get("name")
-	if agentName == "" {
+	sessionID := r.URL.Query().Get("name")
+	if sessionID == "" {
 		h.sendError(w, "Missing name parameter", http.StatusBadRequest)
 		return
 	}
 
-	for _, c := range agentName {
+	for _, c := range sessionID {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' && c != '/' {
-			h.sendError(w, "Invalid agent name", http.StatusBadRequest)
+			h.sendError(w, "Invalid session ID", http.StatusBadRequest)
 			return
 		}
 	}
 
-	upstream := h.apiURL + scopedPath("/v0/agent/"+agentName+"/output/stream", h.cityScope)
+	upstream := h.apiURL + scopedPath("/v0/session/"+sessionID+"/stream", h.cityScope)
 	req, err := http.NewRequestWithContext(r.Context(), "GET", upstream, nil)
 	if err != nil {
 		h.sendError(w, "Failed to create request", http.StatusInternalServerError)

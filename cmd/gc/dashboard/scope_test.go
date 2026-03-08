@@ -14,16 +14,16 @@ func TestScopedPath(t *testing.T) {
 		want      string
 	}{
 		// Standalone mode — no rewriting.
-		{"/v0/agents", "", "/v0/agents"},
+		{"/v0/sessions", "", "/v0/sessions"},
 		{"/v0/events/stream", "", "/v0/events/stream"},
 		{"/v0/bead/abc123", "", "/v0/bead/abc123"},
 		{"/health", "", "/health"},
 
 		// Supervisor mode — /v0/ paths get city prefix.
-		{"/v0/agents", "bright-lights", "/v0/city/bright-lights/agents"},
+		{"/v0/sessions", "bright-lights", "/v0/city/bright-lights/sessions"},
 		{"/v0/events/stream", "bright-lights", "/v0/city/bright-lights/events/stream"},
 		{"/v0/bead/abc123", "bright-lights", "/v0/city/bright-lights/bead/abc123"},
-		{"/v0/agent/mayor/output", "mytown", "/v0/city/mytown/agent/mayor/output"},
+		{"/v0/session/abc123/transcript", "mytown", "/v0/city/mytown/session/abc123/transcript"},
 		{"/v0/beads?status=open&limit=50", "mytown", "/v0/city/mytown/beads?status=open&limit=50"},
 
 		// Non-/v0/ paths are never rewritten.

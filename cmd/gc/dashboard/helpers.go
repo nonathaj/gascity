@@ -366,7 +366,7 @@ type prResponse struct {
 
 // scopedPath rewrites a bare API path for supervisor city-scoped routing.
 // When cityScope is empty (standalone mode), returns path unchanged.
-// When set, "/v0/agents" becomes "/v0/city/{cityScope}/agents".
+// When set, "/v0/sessions" becomes "/v0/city/{cityScope}/sessions".
 func scopedPath(path, cityScope string) string {
 	if cityScope == "" || !strings.HasPrefix(path, "/v0/") {
 		return path

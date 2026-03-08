@@ -60,22 +60,6 @@ type apiListResponse struct {
 	Total int             `json:"total"`
 }
 
-type apiAgentResponse struct {
-	Name       string          `json:"name"`
-	Running    bool            `json:"running"`
-	Suspended  bool            `json:"suspended"`
-	Rig        string          `json:"rig,omitempty"`
-	Pool       string          `json:"pool,omitempty"`
-	Session    *apiSessionMeta `json:"session,omitempty"`
-	ActiveBead string          `json:"active_bead,omitempty"`
-}
-
-type apiSessionMeta struct {
-	Name         string     `json:"name"`
-	LastActivity *time.Time `json:"last_activity,omitempty"`
-	Attached     bool       `json:"attached"`
-}
-
 // apiSessionResponse mirrors the session API response (GET /v0/sessions).
 type apiSessionResponse struct {
 	ID          string `json:"id"`
