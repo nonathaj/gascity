@@ -192,32 +192,31 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 		return 1
 	}
 
-	// Load config for wake reason computation (best-effort).
-	var cfg *config.City
-	if cityPath, err := resolveCity(); err == nil {
-		if c, err := loadCityConfig(cityPath); err == nil {
-			cfg = c
-		}
-	}
-
-	// Build a bead index for wake reason computation.
-	beadIndex := make(map[string]beads.Bead)
-	// Compute pool desired counts from config (use pool.Max as a static approximation
-	// since the CLI doesn't run the dynamic pool evaluator).
-	var poolDesired map[string]int
-	if cfg != nil {
-		all, _ := store.ListByLabel(session.LabelSession, 0)
-		for _, b := range all {
-			beadIndex[b.ID] = b
-		}
-		poolDesired = cliPoolDesired(cfg)
-	}
-
 	if jsonOutput {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(sessions) //nolint:errcheck // best-effort stdout
 		return 0
+	}
+
+	// Build a bead index for REASON column (always, even without config —
+	// sleep_reason, held_until, quarantine metadata live on the bead itself).
+	beadIndex := make(map[string]beads.Bead)
+	if all, err := store.ListByLabel(session.LabelSession, 0); err == nil {
+		for _, b := range all {
+			beadIndex[b.ID] = b
+		}
+	}
+
+	// Load config for wake reason computation (best-effort).
+	// Only WakeConfig reason needs config; sleep/hold/quarantine come from beads.
+	var cfg *config.City
+	var poolDesired map[string]int
+	if cityPath, err := resolveCity(); err == nil {
+		if c, err := loadCityConfig(cityPath); err == nil {
+			cfg = c
+			poolDesired = cliPoolDesired(cfg)
+		}
 	}
 
 	if len(sessions) == 0 {
@@ -261,24 +260,24 @@ func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.
 	}
 
 	b, ok := beadIndex[s.ID]
-	if !ok || cfg == nil {
-		return "-" // no bead data or config available
+	if !ok {
+		return "-" // no bead data available
 	}
 
-	// Compute wake reasons from bead metadata and config.
-	// poolDesired is computed from config pool.Max (static approximation
-	// since the CLI doesn't run the dynamic pool evaluator).
-	reasons := wakeReasons(b, cfg, sp, poolDesired, clock.Real{})
-
-	if len(reasons) > 0 {
-		parts := make([]string, len(reasons))
-		for i, r := range reasons {
-			parts[i] = string(r)
+	// If config is available, compute full wake reasons (including WakeConfig).
+	// Otherwise, only bead metadata (sleep/hold/quarantine) is shown.
+	if cfg != nil {
+		reasons := wakeReasons(b, cfg, sp, poolDesired, clock.Real{})
+		if len(reasons) > 0 {
+			parts := make([]string, len(reasons))
+			for i, r := range reasons {
+				parts[i] = string(r)
+			}
+			return strings.Join(parts, ",")
 		}
-		return strings.Join(parts, ",")
 	}
 
-	// No wake reasons — show why it's asleep.
+	// No wake reasons (or no config) — show why it's asleep from bead metadata.
 	if sr := b.Metadata["sleep_reason"]; sr != "" {
 		return sr
 	}
