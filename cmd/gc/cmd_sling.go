@@ -783,8 +783,11 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 			}
 		}
 		// No running pool member — poke controller for immediate wake.
-		pokeController(cityPath)
-		fmt.Fprintf(stdout, "No running pool members for %q — poked controller for wake\n", a.QualifiedName()) //nolint:errcheck // best-effort
+		if err := pokeController(cityPath); err != nil {
+			fmt.Fprintf(stderr, "No running pool members for %q; poke failed: %v\n", a.QualifiedName(), err) //nolint:errcheck // best-effort
+		} else {
+			fmt.Fprintf(stdout, "No running pool members for %q — poked controller for wake\n", a.QualifiedName()) //nolint:errcheck // best-effort
+		}
 		return
 	}
 
@@ -792,8 +795,11 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 	sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
 	if !sp.IsRunning(sn) {
 		// Session is asleep — poke controller for immediate wake.
-		pokeController(cityPath)
-		fmt.Fprintf(stdout, "Session %q is asleep — poked controller for wake\n", a.QualifiedName()) //nolint:errcheck // best-effort
+		if err := pokeController(cityPath); err != nil {
+			fmt.Fprintf(stderr, "Session %q is asleep; poke failed: %v\n", a.QualifiedName(), err) //nolint:errcheck // best-effort
+		} else {
+			fmt.Fprintf(stdout, "Session %q is asleep — poked controller for wake\n", a.QualifiedName()) //nolint:errcheck // best-effort
+		}
 		return
 	}
 	h := agent.HandleFor(a.QualifiedName(), cityName, st, sp)
@@ -805,10 +811,11 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 }
 
 // pokeController sends a "poke" command to the controller socket to
-// trigger an immediate reconciler tick. Best-effort: failures are
-// silently ignored (the next patrol tick will catch the work).
-func pokeController(cityPath string) {
-	_, _ = sendControllerCommand(cityPath, "poke")
+// trigger an immediate reconciler tick. Returns an error if the socket
+// is unreachable (the next patrol tick will still catch the work).
+func pokeController(cityPath string) error {
+	_, err := sendControllerCommand(cityPath, "poke")
+	return err
 }
 
 // dryRunSingle prints a step-by-step preview of what gc sling would do for a

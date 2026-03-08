@@ -646,6 +646,7 @@ func reconcileCities(
 		poolSessions := computePoolSessions(cfg, cityName, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, path, sp)
 		watchDirs := config.WatchDirs(prov, cfg, path)
+		pokeCh := make(chan struct{}, 1)
 
 		cr := newCityRuntime(CityRuntimeParams{
 			CityPath:          path,
@@ -659,6 +660,7 @@ func reconcileCities(
 			Rec:               rec,
 			PoolSessions:      poolSessions,
 			PoolDeathHandlers: poolDeathHandlers,
+			PokeCh:            pokeCh,
 			LogPrefix:         "gc supervisor",
 			Stdout:            stdout,
 			Stderr:            stderr,
@@ -667,6 +669,7 @@ func reconcileCities(
 		// Wire API state.
 		cs := newControllerState(cfg, sp, eventProv, cityName, path)
 		cs.ct = cr.crashTrack()
+		cs.pokeCh = pokeCh
 		cr.setControllerState(cs)
 
 		// Run pool on_boot hooks (same as runController does).
