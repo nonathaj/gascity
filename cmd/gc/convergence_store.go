@@ -63,7 +63,12 @@ func (a *convergenceStoreAdapter) Children(parentID string) ([]convergence.BeadI
 
 func (a *convergenceStoreAdapter) PourWisp(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error) {
 	// Idempotency: check if a wisp with this key already exists (crash-retry safety).
-	if existing, found, err := a.FindByIdempotencyKey(idempotencyKey); err == nil && found {
+	// Fail closed on lookup errors to prevent duplicate wisps.
+	existing, found, err := a.FindByIdempotencyKey(idempotencyKey)
+	if err != nil {
+		return "", fmt.Errorf("idempotency check for %q: %w", idempotencyKey, err)
+	}
+	if found {
 		return existing, nil
 	}
 

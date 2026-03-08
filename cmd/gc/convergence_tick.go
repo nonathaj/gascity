@@ -241,7 +241,7 @@ func (cr *CityRuntime) handleConvergenceRetry(ctx context.Context, req convergen
 
 // convergenceStartupReconcile runs convergence bead reconciliation on startup.
 func (cr *CityRuntime) convergenceStartupReconcile(ctx context.Context) {
-	if cr.convHandler == nil {
+	if cr.convHandler == nil || cr.convergenceReqCh == nil {
 		return
 	}
 	store := cr.cityBeadStore()

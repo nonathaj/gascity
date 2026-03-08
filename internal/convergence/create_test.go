@@ -3,6 +3,7 @@ package convergence
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -142,6 +143,72 @@ func TestCreateHandler_Validation(t *testing.T) {
 				t.Errorf("error = %q, want to contain %q", err.Error(), tt.errMsg)
 			}
 		})
+	}
+}
+
+func TestCreateHandler_PartialCreateCleanup(t *testing.T) {
+	store := newFakeStore()
+	emitter := &fakeEmitter{}
+	handler := &Handler{
+		Store:   store,
+		Emitter: emitter,
+		Clock:   time.Now,
+	}
+
+	// Make PourWisp fail to simulate a partial-create scenario.
+	store.PourWispFunc = func(_, _, _ string, _ map[string]string, _ string) (string, error) {
+		return "", fmt.Errorf("simulated PourWisp failure")
+	}
+
+	params := CreateParams{
+		Formula:       "test-formula",
+		Target:        "test-agent",
+		MaxIterations: 5,
+		GateMode:      GateModeManual,
+	}
+
+	_, err := handler.CreateHandler(context.Background(), params)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pouring first wisp") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "pouring first wisp")
+	}
+
+	// The orphan bead should have been closed/terminated so the reconciler
+	// does not try to resume it.
+	for _, rec := range store.beads {
+		if rec.info.Status == "closed" && rec.metadata[FieldState] == StateTerminated {
+			return // cleanup happened
+		}
+	}
+	t.Error("orphan bead was not terminated+closed after partial create failure")
+}
+
+func TestCreateHandler_InvalidGateConfig(t *testing.T) {
+	store := newFakeStore()
+	emitter := &fakeEmitter{}
+	handler := &Handler{
+		Store:   store,
+		Emitter: emitter,
+		Clock:   time.Now,
+	}
+
+	params := CreateParams{
+		Formula:       "test-formula",
+		Target:        "test-agent",
+		MaxIterations: 5,
+		GateMode:      "invalid-mode",
+	}
+
+	_, err := handler.CreateHandler(context.Background(), params)
+	if err == nil {
+		t.Fatal("expected error for invalid gate_mode, got nil")
+	}
+
+	// No bead should have been created — validation happens before CreateConvergenceBead.
+	if len(store.beads) != 0 {
+		t.Errorf("expected 0 beads after invalid gate config, got %d", len(store.beads))
 	}
 }
 
