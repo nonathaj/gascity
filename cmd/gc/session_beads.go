@@ -166,9 +166,9 @@ func syncSessionBeads(
 		coreHash := runtime.CoreFingerprint(agentCfg)
 		liveHash := runtime.LiveFingerprint(agentCfg)
 
-		// Use provider for liveness check.
+		// Use provider for liveness check (includes zombie detection).
 		state := "stopped"
-		if sp.IsRunning(sn) {
+		if sp.IsRunning(sn) && sp.ProcessAlive(sn, tp.Hints.ProcessNames) {
 			state = "active"
 		}
 

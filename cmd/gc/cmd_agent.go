@@ -351,9 +351,16 @@ func cmdAgentAttach(args []string, stdout, stderr io.Writer) int {
 	}
 	sp := newSessionProvider()
 	sn := agent.SessionNameFor(cityName, cfgAgent.QualifiedName(), cfg.Workspace.SessionTemplate)
+	workDir := cityPath
+	if cfgAgent.Dir != "" {
+		if wd, wdErr := resolveAgentDir(cityPath, cfgAgent.Dir); wdErr == nil {
+			workDir = wd
+		}
+	}
 	cfg2 := runtime.Config{
 		Command:                resolved.CommandString(),
 		Env:                    resolved.Env,
+		WorkDir:                workDir,
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,
 		ProcessNames:           resolved.ProcessNames,

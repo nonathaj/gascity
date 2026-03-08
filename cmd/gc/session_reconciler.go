@@ -196,7 +196,9 @@ func reconcileSessionBeads(
 			continue
 		}
 
-		alive := sp.IsRunning(name)
+		// Liveness includes zombie detection: tmux session exists AND
+		// the expected child process is alive (when ProcessNames configured).
+		alive := sp.IsRunning(name) && sp.ProcessAlive(name, tp.Hints.ProcessNames)
 
 		// Heal advisory state metadata.
 		healState(session, alive, store)

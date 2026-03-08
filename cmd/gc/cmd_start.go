@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -501,8 +502,14 @@ func printDryRunPreview(desiredState map[string]TemplateParams, cfg *config.City
 		return
 	}
 
-	for sn, tp := range desiredState {
-		fmt.Fprintf(stdout, "  %-30s  session=%s\n", tp.TemplateName, sn) //nolint:errcheck // best-effort stdout
+	sortedNames := make([]string, 0, len(desiredState))
+	for sn := range desiredState {
+		sortedNames = append(sortedNames, sn)
+	}
+	sort.Strings(sortedNames)
+	for _, sn := range sortedNames {
+		tp := desiredState[sn]
+		fmt.Fprintf(stdout, "  %-30s  session=%s\n", tp.DisplayName(), sn) //nolint:errcheck // best-effort stdout
 	}
 
 	// Summary by suspension.

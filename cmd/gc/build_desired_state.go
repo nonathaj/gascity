@@ -55,10 +55,11 @@ func buildDesiredState(
 			continue
 		}
 
-		// Multi-instance templates are not supported in the bead reconciler
-		// path — they require the multiRegistry which is being removed.
-		// Skip them silently; the legacy reconciler handles these.
+		// Multi-instance templates are not supported in buildDesiredState —
+		// they require the multiRegistry (see cmd_agent_multi.go).
+		// Warn and skip; multi-instance agents are managed separately.
 		if cfg.Agents[i].IsMulti() {
+			fmt.Fprintf(stderr, "buildDesiredState: agent %q uses multi-instance (not supported here, skipping)\n", cfg.Agents[i].QualifiedName()) //nolint:errcheck
 			continue
 		}
 
@@ -137,7 +138,8 @@ func buildDesiredState(
 		for slot := 1; slot <= pr.desired; slot++ {
 			instanceName := fmt.Sprintf("%s-%d", cfg.Agents[pw.agentIdx].QualifiedName(), slot)
 			instanceAgent := deepCopyAgent(&cfg.Agents[pw.agentIdx], instanceName, cfg.Agents[pw.agentIdx].Dir)
-			tp, err := resolveTemplate(bp, &instanceAgent, instanceName, nil)
+			fpExtra := buildFingerprintExtra(&instanceAgent)
+			tp, err := resolveTemplate(bp, &instanceAgent, instanceName, fpExtra)
 			if err != nil {
 				fmt.Fprintf(stderr, "buildDesiredState: pool instance %q: %v (skipping)\n", instanceName, err) //nolint:errcheck
 				continue
