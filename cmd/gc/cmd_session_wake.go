@@ -72,6 +72,6 @@ func cmdSessionWake(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Session %s cleared for wake. The reconciler will start it on the next tick.\n", id) //nolint:errcheck
+	fmt.Fprintf(stdout, "Session %s: hold and quarantine cleared.\n", id) //nolint:errcheck
 	return 0
 }

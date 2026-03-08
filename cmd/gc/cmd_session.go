@@ -202,11 +202,15 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 
 	// Build a bead index for wake reason computation.
 	beadIndex := make(map[string]beads.Bead)
+	// Compute pool desired counts from config (use pool.Max as a static approximation
+	// since the CLI doesn't run the dynamic pool evaluator).
+	var poolDesired map[string]int
 	if cfg != nil {
 		all, _ := store.ListByLabel(session.LabelSession, 0)
 		for _, b := range all {
 			beadIndex[b.ID] = b
 		}
+		poolDesired = cliPoolDesired(cfg)
 	}
 
 	if jsonOutput {
@@ -228,7 +232,7 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 		if s.State == "" {
 			state = "closed"
 		}
-		reason := sessionReason(s, beadIndex, cfg, sp)
+		reason := sessionReason(s, beadIndex, cfg, sp, poolDesired)
 		title := s.Title
 		if title == "" {
 			title = "-"
@@ -251,7 +255,7 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 // For awake sessions, shows wake reasons (e.g., "config", "attached").
 // For asleep sessions, shows the sleep reason (e.g., "user-hold", "quarantine").
 // For closed sessions, shows "-".
-func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.City, sp runtime.Provider) string {
+func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.City, sp runtime.Provider, poolDesired map[string]int) string {
 	if s.State == "" {
 		return "-" // closed
 	}
@@ -262,10 +266,9 @@ func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.
 	}
 
 	// Compute wake reasons from bead metadata and config.
-	// Pass nil for poolDesired — CLI doesn't run the pool evaluator.
-	// This means pool agents show "config" if their template exists,
-	// regardless of slot. Acceptable for CLI display.
-	reasons := wakeReasons(b, cfg, sp, nil, clock.Real{})
+	// poolDesired is computed from config pool.Max (static approximation
+	// since the CLI doesn't run the dynamic pool evaluator).
+	reasons := wakeReasons(b, cfg, sp, poolDesired, clock.Real{})
 
 	if len(reasons) > 0 {
 		parts := make([]string, len(reasons))
@@ -286,6 +289,24 @@ func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.
 		return "user-hold"
 	}
 	return "-"
+}
+
+// cliPoolDesired computes a static pool desired count from config.
+// Uses pool.Max as an approximation since the CLI doesn't run the
+// dynamic pool evaluator. This ensures pool sessions within Max
+// show "config" as a wake reason.
+func cliPoolDesired(cfg *config.City) map[string]int {
+	if cfg == nil {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, a := range cfg.Agents {
+		if a.Pool != nil {
+			pool := a.EffectivePool()
+			counts[a.QualifiedName()] = pool.Max
+		}
+	}
+	return counts
 }
 
 // newSessionAttachCmd creates the "gc session attach <id-or-name>" command.

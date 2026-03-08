@@ -56,8 +56,9 @@ func resolveSessionID(store beads.Store, identifier string) (string, error) {
 }
 
 // looksLikeBeadID returns true if the identifier looks like a bead ID
-// rather than a template name. Bead IDs typically start with "gc-" or
-// contain a hyphen with a numeric suffix.
+// rather than a template name. Bead IDs use the "gc-" prefix (e.g., "gc-42").
+// Note: "gc-" is a reserved prefix — template names starting with "gc-" will
+// be treated as bead IDs and bypass name resolution.
 func looksLikeBeadID(s string) bool {
 	return strings.HasPrefix(s, "gc-")
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -87,7 +88,7 @@ func TestResolveSessionID_Ambiguous(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ambiguity error")
 	}
-	if !contains(err.Error(), "ambiguous") {
+	if !strings.Contains(err.Error(), "ambiguous") {
 		t.Errorf("error should mention ambiguous, got: %v", err)
 	}
 }
@@ -98,7 +99,7 @@ func TestResolveSessionID_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
-	if !contains(err.Error(), "no session found") {
+	if !strings.Contains(err.Error(), "no session found") {
 		t.Errorf("error should mention not found, got: %v", err)
 	}
 }
@@ -137,17 +138,4 @@ func TestLooksLikeBeadID(t *testing.T) {
 			t.Errorf("looksLikeBeadID(%q) = %v, want %v", tt.input, got, tt.want)
 		}
 	}
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && containsHelper(s, sub)
-}
-
-func containsHelper(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
