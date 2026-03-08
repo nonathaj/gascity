@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"sync"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -39,21 +38,45 @@ var (
 	ErrTransportUnknown = errors.New("session transport is ambiguous; migrate or recreate the session")
 )
 
-const sessionMutationLockCount = 64
+type sessionMutationLockEntry struct {
+	mu   sync.Mutex
+	refs int
+}
 
-var sessionMutationLocks [sessionMutationLockCount]sync.Mutex
+var (
+	sessionMutationLocksMu sync.Mutex
+	sessionMutationLocks   = map[string]*sessionMutationLockEntry{}
+)
 
 func withSessionMutationLock(id string, fn func() error) error {
-	lock := &sessionMutationLocks[sessionMutationLockIndex(id)]
-	lock.Lock()
-	defer lock.Unlock()
+	lock := acquireSessionMutationLock(id)
+	defer releaseSessionMutationLock(id, lock)
 	return fn()
 }
 
-func sessionMutationLockIndex(id string) uint32 {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(id))
-	return h.Sum32() % sessionMutationLockCount
+func acquireSessionMutationLock(id string) *sessionMutationLockEntry {
+	sessionMutationLocksMu.Lock()
+	lock := sessionMutationLocks[id]
+	if lock == nil {
+		lock = &sessionMutationLockEntry{}
+		sessionMutationLocks[id] = lock
+	}
+	lock.refs++
+	sessionMutationLocksMu.Unlock()
+
+	lock.mu.Lock()
+	return lock
+}
+
+func releaseSessionMutationLock(id string, lock *sessionMutationLockEntry) {
+	lock.mu.Unlock()
+
+	sessionMutationLocksMu.Lock()
+	lock.refs--
+	if lock.refs == 0 {
+		delete(sessionMutationLocks, id)
+	}
+	sessionMutationLocksMu.Unlock()
 }
 
 func sessionName(id string, b beads.Bead) string {

@@ -200,6 +200,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := sessionToResponse(info, s.state.Config())
+	s.enrichSessionResponse(&resp, info, s.state.Config(), s.state.SessionProvider(), false)
 	s.idem.storeResponse(idemKey, bodyHash, http.StatusCreated, resp)
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -231,7 +232,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	}
 
 	if path != "" {
-		tail := 1
+		tail := 0
 		if v := r.URL.Query().Get("tail"); v != "" {
 			if n, convErr := strconv.Atoi(v); convErr == nil && n >= 0 {
 				tail = n

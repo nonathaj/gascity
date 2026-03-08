@@ -494,6 +494,12 @@ func TestHandleSessionCreate(t *testing.T) {
 	if resp.Title != "myrig/worker" {
 		t.Errorf("Title = %q, want default %q", resp.Title, "myrig/worker")
 	}
+	if !resp.Running {
+		t.Errorf("Running = %v, want true", resp.Running)
+	}
+	if resp.DisplayName != "Claude Code" {
+		t.Errorf("DisplayName = %q, want %q", resp.DisplayName, "Claude Code")
+	}
 }
 
 func TestHandleSessionMessageResumesSuspendedSession(t *testing.T) {
@@ -556,7 +562,7 @@ func TestHandleSessionTranscriptUsesSessionKey(t *testing.T) {
 	)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/transcript?tail=0", nil)
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/transcript", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
