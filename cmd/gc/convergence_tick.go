@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os/user"
 
 	"github.com/gastownhall/gascity/internal/convergence"
@@ -98,6 +97,9 @@ func (cr *CityRuntime) convergenceTick(ctx context.Context) {
 // processes each command serially. Called from the event loop to serialize
 // CLI commands with tick-based processing.
 func (cr *CityRuntime) processConvergenceRequests(ctx context.Context) {
+	if cr.convHandler == nil || cr.convergenceReqCh == nil {
+		return
+	}
 	for {
 		select {
 		case req := <-cr.convergenceReqCh:
@@ -279,7 +281,7 @@ func (cr *CityRuntime) convergenceStartupReconcile(ctx context.Context) {
 
 // sendConvergenceRequest sends a request through the controller socket and
 // waits for a reply. Used by CLI commands.
-func sendConvergenceRequest(cityPath string, req convergenceRequest, _ io.Writer) (convergenceReply, error) {
+func sendConvergenceRequest(cityPath string, req convergenceRequest) (convergenceReply, error) {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return convergenceReply{}, fmt.Errorf("marshaling request: %w", err)

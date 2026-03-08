@@ -323,11 +323,12 @@ func (cr *CityRuntime) tick(
 		autoSuspendChatSessions(cr.cityBeadStore(), cr.sp, idleTimeout, cr.stdout, cr.stderr)
 	}
 
+	// Drain queued convergence requests (CLI commands) BEFORE tick so
+	// user commands (e.g. stop) take precedence over automated progression.
+	cr.processConvergenceRequests(ctx)
+
 	// Convergence tick: process active convergence loops.
 	cr.convergenceTick(ctx)
-
-	// Drain queued convergence requests (CLI commands).
-	cr.processConvergenceRequests(ctx)
 }
 
 // reloadConfig attempts to reload city.toml and update all internal

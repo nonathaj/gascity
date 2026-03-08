@@ -73,8 +73,8 @@ func startControllerSocket(cityPath string, cancelFn context.CancelFunc, converg
 // Supported commands: "stop" (shutdown), "ping" (liveness check, returns PID),
 // "converge:{json}" (convergence commands routed to event loop).
 func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest) {
-	defer conn.Close()                                     //nolint:errcheck // best-effort cleanup
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck // best-effort deadline
+	defer conn.Close()                                 //nolint:errcheck // best-effort cleanup
+	conn.SetDeadline(time.Now().Add(90 * time.Second)) //nolint:errcheck // symmetric read+write deadline
 	scanner := bufio.NewScanner(conn)
 	// Increase scanner buffer for convergence commands which may carry large payloads.
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)

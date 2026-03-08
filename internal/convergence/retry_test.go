@@ -3,6 +3,8 @@ package convergence
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -80,6 +82,58 @@ func TestRetryHandler_Success(t *testing.T) {
 	}
 	if meta[FieldMaxIterations] != "10" {
 		t.Errorf("max_iterations = %q, want %q", meta[FieldMaxIterations], "10")
+	}
+	if meta[FieldIteration] != "1" {
+		t.Errorf("iteration = %q, want %q", meta[FieldIteration], "1")
+	}
+}
+
+func TestRetryHandler_PartialCreateCleanup(t *testing.T) {
+	handler, store, _ := setupTerminatedHandler(t, TerminalStopped, nil)
+
+	// Make PourWisp fail to simulate a partial-create scenario.
+	store.PourWispFunc = func(_, _, _ string, _ map[string]string, _ string) (string, error) {
+		return "", fmt.Errorf("simulated PourWisp failure")
+	}
+
+	_, err := handler.RetryHandler(context.Background(), "source-1", "alice", 5)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pouring first wisp") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "pouring first wisp")
+	}
+
+	// The orphan bead should have been closed/terminated.
+	for _, rec := range store.beads {
+		if rec.info.ID == "source-1" {
+			continue // skip the source bead
+		}
+		if rec.info.Status == "closed" && rec.metadata[FieldState] == StateTerminated {
+			return // cleanup happened
+		}
+	}
+	t.Error("orphan bead was not terminated+closed after partial retry failure")
+}
+
+func TestRetryHandler_InvalidGateConfig(t *testing.T) {
+	handler, store, _ := setupTerminatedHandler(t, TerminalStopped, map[string]string{
+		FieldGateMode: "invalid-mode",
+	})
+
+	_, err := handler.RetryHandler(context.Background(), "source-1", "alice", 5)
+	if err == nil {
+		t.Fatal("expected error for invalid gate_mode from source bead, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid gate config") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "invalid gate config")
+	}
+
+	// No new bead should have been created — only the source bead should exist.
+	for _, rec := range store.beads {
+		if rec.info.ID != "source-1" && rec.info.ID != "wisp-iter-3" {
+			t.Errorf("unexpected bead %q created despite invalid gate config", rec.info.ID)
+		}
 	}
 }
 
