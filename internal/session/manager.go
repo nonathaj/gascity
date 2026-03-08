@@ -80,13 +80,18 @@ type ProviderResume struct {
 // Manager orchestrates chat session lifecycle using beads for persistence
 // and runtime.Provider for runtime.
 type Manager struct {
-	store beads.Store
-	sp    runtime.Provider
+	store             beads.Store
+	sp                runtime.Provider
+	transportResolver func(template string) string
 }
 
 type acpRouteRegistrar interface {
 	RouteACP(name string)
 	Unroute(name string)
+}
+
+type transportDetector interface {
+	DetectTransport(name string) string
 }
 
 func normalizeTransport(provider, transport string) string {
@@ -101,6 +106,28 @@ func normalizeTransport(provider, transport string) string {
 
 func transportFromMetadata(b beads.Bead) string {
 	return normalizeTransport(b.Metadata["provider"], b.Metadata["transport"])
+}
+
+func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool) {
+	transport := transportFromMetadata(b)
+	if transport != "" {
+		return transport, false
+	}
+	if detector, ok := m.sp.(transportDetector); ok {
+		transport = normalizeTransport(b.Metadata["provider"], detector.DetectTransport(sessName))
+		if transport != "" {
+			return transport, true
+		}
+	}
+	return "", false
+}
+
+func (m *Manager) persistTransport(id, provider, transport string) {
+	transport = normalizeTransport(provider, transport)
+	if transport == "" {
+		return
+	}
+	_ = m.store.SetMetadata(id, "transport", transport)
 }
 
 func (m *Manager) routeACPIfNeeded(provider, transport, sessName string) func() {
@@ -118,6 +145,12 @@ func (m *Manager) routeACPIfNeeded(provider, transport, sessName string) func() 
 // NewManager creates a Manager backed by the given bead store and session provider.
 func NewManager(store beads.Store, sp runtime.Provider) *Manager {
 	return &Manager{store: store, sp: sp}
+}
+
+// NewManagerWithTransportResolver creates a Manager that can infer session
+// transport from template config when older beads do not have transport metadata.
+func NewManagerWithTransportResolver(store beads.Store, sp runtime.Provider, resolver func(template string) string) *Manager {
+	return &Manager{store: store, sp: sp, transportResolver: resolver}
 }
 
 // Create creates a new chat session bead and starts the runtime session.
@@ -214,61 +247,66 @@ func (m *Manager) CreateWithTransport(ctx context.Context, template, title, comm
 // suspended, it is resumed first using resumeCommand. If the tmux session
 // died (active bead but no process), it is restarted.
 func (m *Manager) Attach(ctx context.Context, id string, resumeCommand string, hints runtime.Config) error {
-	b, sessName, err := m.sessionBead(id)
-	if err != nil {
-		return err
-	}
-	if err := m.ensureRunning(ctx, id, b, sessName, resumeCommand, hints); err != nil {
-		return err
-	}
+	return withSessionMutationLock(id, func() error {
+		b, sessName, err := m.sessionBead(id)
+		if err != nil {
+			return err
+		}
+		if err := m.ensureRunning(ctx, id, b, sessName, resumeCommand, hints); err != nil {
+			return err
+		}
 
-	return m.sp.Attach(sessName)
+		return m.sp.Attach(sessName)
+	})
 }
 
 // Suspend saves session state and kills the runtime session.
 func (m *Manager) Suspend(id string) error {
-	b, sessName, err := m.sessionBead(id)
-	if err != nil {
-		return err
-	}
-	if State(b.Metadata["state"]) == StateSuspended {
-		return nil // already suspended
-	}
-
-	// Kill the runtime session (skip if already dead).
-	if m.sp.IsRunning(sessName) {
-		if err := m.sp.Stop(sessName); err != nil {
-			return fmt.Errorf("stopping runtime session: %w", err)
+	return withSessionMutationLock(id, func() error {
+		b, sessName, err := m.sessionBead(id)
+		if err != nil {
+			return err
 		}
-	}
+		if State(b.Metadata["state"]) == StateSuspended {
+			return nil // already suspended
+		}
 
-	// Update state and record suspension timestamp.
-	if err := m.store.SetMetadata(id, "state", string(StateSuspended)); err != nil {
-		return fmt.Errorf("updating session state: %w", err)
-	}
-	if err := m.store.SetMetadata(id, "suspended_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
-		return fmt.Errorf("storing suspension timestamp: %w", err)
-	}
+		// Kill the runtime session (skip if already dead).
+		if m.sp.IsRunning(sessName) {
+			if err := m.sp.Stop(sessName); err != nil {
+				return fmt.Errorf("stopping runtime session: %w", err)
+			}
+		}
 
-	return nil
+		// Update state and record suspension timestamp.
+		if err := m.store.SetMetadata(id, "state", string(StateSuspended)); err != nil {
+			return fmt.Errorf("updating session state: %w", err)
+		}
+		if err := m.store.SetMetadata(id, "suspended_at", time.Now().UTC().Format(time.RFC3339)); err != nil {
+			return fmt.Errorf("storing suspension timestamp: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // Close ends a conversation permanently.
 func (m *Manager) Close(id string) error {
-	b, sessName, err := m.loadSessionBead(id, true)
-	if err != nil {
-		return err
-	}
-	if b.Status == "closed" {
-		return nil // already closed
-	}
+	return withSessionMutationLock(id, func() error {
+		b, sessName, err := m.loadSessionBead(id, true)
+		if err != nil {
+			return err
+		}
+		if b.Status == "closed" {
+			return nil // already closed
+		}
 
-	// If active, kill the runtime session.
-	if State(b.Metadata["state"]) == StateActive {
-		_ = m.sp.Stop(sessName) // best-effort
-	}
+		// Best-effort stop cleans up any live runtime and allows auto.Provider
+		// to discard stale ACP route entries for suspended sessions as well.
+		_ = m.sp.Stop(sessName)
 
-	return m.store.Close(id)
+		return m.store.Close(id)
+	})
 }
 
 // BeginDrain transitions a session to the draining state. The caller is
@@ -331,10 +369,12 @@ func (m *Manager) ConfirmCreation(id string) error {
 
 // Rename updates the title of a chat session.
 func (m *Manager) Rename(id, title string) error {
-	if _, _, err := m.loadSessionBead(id, true); err != nil {
-		return err
-	}
-	return m.store.Update(id, beads.UpdateOpts{Title: &title})
+	return withSessionMutationLock(id, func() error {
+		if _, _, err := m.loadSessionBead(id, true); err != nil {
+			return err
+		}
+		return m.store.Update(id, beads.UpdateOpts{Title: &title})
+	})
 }
 
 // Prune closes suspended sessions whose suspension time is before the given
@@ -455,7 +495,8 @@ func (m *Manager) infoFromBead(b beads.Bead) Info {
 		sessName = sessionNameFor(b.ID)
 	}
 	if b.Status != "closed" {
-		_ = m.routeACPIfNeeded(b.Metadata["provider"], transportFromMetadata(b), sessName)
+		transport, _ := m.transportForBead(b, sessName)
+		_ = m.routeACPIfNeeded(b.Metadata["provider"], transport, sessName)
 	}
 
 	state := State(b.Metadata["state"])

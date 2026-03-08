@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"sync"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -29,7 +31,30 @@ var (
 	// ErrInteractionMismatch reports that the response does not match the
 	// currently pending interaction request.
 	ErrInteractionMismatch = errors.New("pending interaction does not match request")
+	// ErrPendingInteraction reports that the session is blocked on a pending
+	// approval or question and cannot accept a new user turn.
+	ErrPendingInteraction = errors.New("session has a pending interaction")
+	// ErrTransportUnknown reports that a legacy session is missing persisted
+	// transport metadata and cannot be safely resumed on the current config.
+	ErrTransportUnknown = errors.New("session transport is ambiguous; migrate or recreate the session")
 )
+
+const sessionMutationLockCount = 64
+
+var sessionMutationLocks [sessionMutationLockCount]sync.Mutex
+
+func withSessionMutationLock(id string, fn func() error) error {
+	lock := &sessionMutationLocks[sessionMutationLockIndex(id)]
+	lock.Lock()
+	defer lock.Unlock()
+	return fn()
+}
+
+func sessionMutationLockIndex(id string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(id))
+	return h.Sum32() % sessionMutationLockCount
+}
 
 func sessionName(id string, b beads.Bead) string {
 	sessName := b.Metadata["session_name"]
@@ -52,7 +77,8 @@ func (m *Manager) loadSessionBead(id string, allowClosed bool) (beads.Bead, stri
 	}
 	sessName := sessionName(id, b)
 	if b.Status != "closed" {
-		_ = m.routeACPIfNeeded(b.Metadata["provider"], transportFromMetadata(b), sessName)
+		transport, _ := m.transportForBead(b, sessName)
+		_ = m.routeACPIfNeeded(b.Metadata["provider"], transport, sessName)
 	}
 	return b, sessName, nil
 }
@@ -62,8 +88,17 @@ func (m *Manager) sessionBead(id string) (beads.Bead, string, error) {
 }
 
 func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, sessName, resumeCommand string, hints runtime.Config) error {
-	unroute := m.routeACPIfNeeded(b.Metadata["provider"], transportFromMetadata(b), sessName)
+	transport, transportVerified := m.transportForBead(b, sessName)
+	if transport == "" && b.Metadata["transport"] == "" && m.transportResolver != nil {
+		if normalizeTransport(b.Metadata["provider"], m.transportResolver(b.Metadata["template"])) == "acp" {
+			return fmt.Errorf("%w: %s", ErrTransportUnknown, id)
+		}
+	}
+	unroute := m.routeACPIfNeeded(b.Metadata["provider"], transport, sessName)
 	if State(b.Metadata["state"]) != StateSuspended && m.sp.IsRunning(sessName) {
+		if b.Metadata["transport"] == "" && transportVerified {
+			m.persistTransport(id, b.Metadata["provider"], transport)
+		}
 		return nil
 	}
 	if resumeCommand == "" {
@@ -89,6 +124,9 @@ func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, se
 	} else {
 		started = true
 	}
+	if b.Metadata["transport"] == "" && (started || transportVerified) {
+		m.persistTransport(id, b.Metadata["provider"], transport)
+	}
 	if err := m.store.SetMetadata(id, "state", string(StateActive)); err != nil {
 		if started {
 			_ = m.sp.Stop(sessName)
@@ -101,32 +139,45 @@ func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, se
 // Send resumes a suspended session if needed, then nudges the runtime with a
 // new user message.
 func (m *Manager) Send(ctx context.Context, id, message, resumeCommand string, hints runtime.Config) error {
-	b, sessName, err := m.sessionBead(id)
-	if err != nil {
-		return err
-	}
-	if err := m.ensureRunning(ctx, id, b, sessName, resumeCommand, hints); err != nil {
-		return err
-	}
-	if err := m.sp.Nudge(sessName, message); err != nil {
-		return fmt.Errorf("sending message to session: %w", err)
-	}
-	return nil
+	return withSessionMutationLock(id, func() error {
+		b, sessName, err := m.sessionBead(id)
+		if err != nil {
+			return err
+		}
+		if err := m.ensureRunning(ctx, id, b, sessName, resumeCommand, hints); err != nil {
+			return err
+		}
+		if ip, ok := m.sp.(runtime.InteractionProvider); ok {
+			pending, err := ip.Pending(sessName)
+			if err != nil && !errors.Is(err, runtime.ErrInteractionUnsupported) {
+				return fmt.Errorf("getting pending interaction: %w", err)
+			}
+			if pending != nil {
+				return ErrPendingInteraction
+			}
+		}
+		if err := m.sp.Nudge(sessName, message); err != nil {
+			return fmt.Errorf("sending message to session: %w", err)
+		}
+		return nil
+	})
 }
 
 // StopTurn issues a soft interrupt for the currently running turn.
 func (m *Manager) StopTurn(id string) error {
-	b, sessName, err := m.sessionBead(id)
-	if err != nil {
-		return err
-	}
-	if State(b.Metadata["state"]) == StateSuspended || !m.sp.IsRunning(sessName) {
+	return withSessionMutationLock(id, func() error {
+		b, sessName, err := m.sessionBead(id)
+		if err != nil {
+			return err
+		}
+		if State(b.Metadata["state"]) == StateSuspended || !m.sp.IsRunning(sessName) {
+			return nil
+		}
+		if err := m.sp.Interrupt(sessName); err != nil {
+			return fmt.Errorf("interrupting session: %w", err)
+		}
 		return nil
-	}
-	if err := m.sp.Interrupt(sessName); err != nil {
-		return fmt.Errorf("interrupting session: %w", err)
-	}
-	return nil
+	})
 }
 
 // Pending returns the provider's current structured pending interaction, if
@@ -152,40 +203,42 @@ func (m *Manager) Pending(id string) (*runtime.PendingInteraction, bool, error) 
 
 // Respond resolves the current pending interaction for a session.
 func (m *Manager) Respond(id string, response runtime.InteractionResponse) error {
-	_, sessName, err := m.sessionBead(id)
-	if err != nil {
-		return err
-	}
-	ip, ok := m.sp.(runtime.InteractionProvider)
-	if !ok {
-		return ErrInteractionUnsupported
-	}
-	pending, err := ip.Pending(sessName)
-	if err != nil {
-		if errors.Is(err, runtime.ErrInteractionUnsupported) {
+	return withSessionMutationLock(id, func() error {
+		_, sessName, err := m.sessionBead(id)
+		if err != nil {
+			return err
+		}
+		ip, ok := m.sp.(runtime.InteractionProvider)
+		if !ok {
 			return ErrInteractionUnsupported
 		}
-		return fmt.Errorf("getting pending interaction: %w", err)
-	}
-	if pending == nil {
-		return ErrNoPendingInteraction
-	}
-	if response.RequestID == "" {
-		response.RequestID = pending.RequestID
-	}
-	if response.Action == "" {
-		return fmt.Errorf("interaction action is required")
-	}
-	if pending.RequestID != "" && response.RequestID != pending.RequestID {
-		return fmt.Errorf("%w: pending interaction %q does not match request %q", ErrInteractionMismatch, pending.RequestID, response.RequestID)
-	}
-	if err := ip.Respond(sessName, response); err != nil {
-		if errors.Is(err, runtime.ErrInteractionUnsupported) {
-			return ErrInteractionUnsupported
+		pending, err := ip.Pending(sessName)
+		if err != nil {
+			if errors.Is(err, runtime.ErrInteractionUnsupported) {
+				return ErrInteractionUnsupported
+			}
+			return fmt.Errorf("getting pending interaction: %w", err)
 		}
-		return fmt.Errorf("responding to pending interaction: %w", err)
-	}
-	return nil
+		if pending == nil {
+			return ErrNoPendingInteraction
+		}
+		if response.RequestID == "" {
+			response.RequestID = pending.RequestID
+		}
+		if response.Action == "" {
+			return fmt.Errorf("interaction action is required")
+		}
+		if pending.RequestID != "" && response.RequestID != pending.RequestID {
+			return fmt.Errorf("%w: pending interaction %q does not match request %q", ErrInteractionMismatch, pending.RequestID, response.RequestID)
+		}
+		if err := ip.Respond(sessName, response); err != nil {
+			if errors.Is(err, runtime.ErrInteractionUnsupported) {
+				return ErrInteractionUnsupported
+			}
+			return fmt.Errorf("responding to pending interaction: %w", err)
+		}
+		return nil
+	})
 }
 
 // TranscriptPath resolves the best available session transcript file.

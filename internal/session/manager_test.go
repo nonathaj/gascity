@@ -941,6 +941,156 @@ func TestSendReRoutesActiveACPSessionBeforeNudge(t *testing.T) {
 	}
 }
 
+func TestSendBackfillsTransportForLegacyACPSession(t *testing.T) {
+	store := beads.NewMemStore()
+	defaultSP := runtime.NewFake()
+	acpSP := runtime.NewFake()
+	autoSP := sessionauto.New(defaultSP, acpSP)
+
+	legacy, err := store.Create(beads.Bead{
+		Title: "legacy acp",
+		Type:  BeadType,
+		Labels: []string{
+			LabelSession,
+			"template:helper",
+		},
+		Metadata: map[string]string{
+			"template": "helper",
+			"state":    string(StateActive),
+			"provider": "claude",
+			"work_dir": "/tmp",
+			"command":  "claude",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create legacy bead: %v", err)
+	}
+	sessName := sessionNameFor(legacy.ID)
+	if err := store.SetMetadata(legacy.ID, "session_name", sessName); err != nil {
+		t.Fatalf("SetMetadata(session_name): %v", err)
+	}
+	if err := acpSP.Start(context.Background(), sessName, runtime.Config{WorkDir: "/tmp"}); err != nil {
+		t.Fatalf("Start ACP session: %v", err)
+	}
+
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+		if template == "helper" {
+			return "acp"
+		}
+		return ""
+	})
+	if err := mgr.Send(context.Background(), legacy.ID, "hello from legacy", "", runtime.Config{}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if defaultSP.IsRunning(sessName) {
+		t.Fatalf("default backend should not own legacy ACP session %q", sessName)
+	}
+	found := false
+	for _, call := range acpSP.Calls {
+		if call.Method == "Nudge" && call.Name == sessName && call.Message == "hello from legacy" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ACP calls = %#v, want Nudge for legacy session", acpSP.Calls)
+	}
+
+	updated, err := store.Get(legacy.ID)
+	if err != nil {
+		t.Fatalf("Get updated bead: %v", err)
+	}
+	if updated.Metadata["transport"] != "acp" {
+		t.Fatalf("transport metadata = %q, want %q", updated.Metadata["transport"], "acp")
+	}
+}
+
+func TestGetDoesNotPersistGuessedTransportForLegacySession(t *testing.T) {
+	store := beads.NewMemStore()
+	defaultSP := runtime.NewFake()
+	acpSP := runtime.NewFake()
+	autoSP := sessionauto.New(defaultSP, acpSP)
+
+	legacy, err := store.Create(beads.Bead{
+		Title: "legacy acp",
+		Type:  BeadType,
+		Labels: []string{
+			LabelSession,
+			"template:helper",
+		},
+		Metadata: map[string]string{
+			"template": "helper",
+			"state":    string(StateActive),
+			"provider": "claude",
+			"work_dir": "/tmp",
+			"command":  "claude",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create legacy bead: %v", err)
+	}
+
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+		if template == "helper" {
+			return "acp"
+		}
+		return ""
+	})
+	if _, err := mgr.Get(legacy.ID); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	updated, err := store.Get(legacy.ID)
+	if err != nil {
+		t.Fatalf("Get updated bead: %v", err)
+	}
+	if updated.Metadata["transport"] != "" {
+		t.Fatalf("transport metadata = %q, want empty on read-only lookup", updated.Metadata["transport"])
+	}
+}
+
+func TestSendRejectsLegacySuspendedACPSessionWithoutTransport(t *testing.T) {
+	store := beads.NewMemStore()
+	defaultSP := runtime.NewFake()
+	acpSP := runtime.NewFake()
+	autoSP := sessionauto.New(defaultSP, acpSP)
+
+	legacy, err := store.Create(beads.Bead{
+		Title: "legacy acp",
+		Type:  BeadType,
+		Labels: []string{
+			LabelSession,
+			"template:helper",
+		},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"state":        string(StateSuspended),
+			"provider":     "claude",
+			"work_dir":     "/tmp",
+			"command":      "claude",
+			"session_name": "s-legacy",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create legacy bead: %v", err)
+	}
+
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+		if template == "helper" {
+			return "acp"
+		}
+		return ""
+	})
+	err = mgr.Send(context.Background(), legacy.ID, "hello", "claude --resume", runtime.Config{WorkDir: "/tmp"})
+	if !errors.Is(err, ErrTransportUnknown) {
+		t.Fatalf("Send error = %v, want %v", err, ErrTransportUnknown)
+	}
+	if defaultSP.IsRunning("s-legacy") || acpSP.IsRunning("s-legacy") {
+		t.Fatal("legacy suspended session should not be started when transport is ambiguous")
+	}
+}
+
 func TestSendConvergesWhenSessionAlreadyResumed(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()
@@ -1101,6 +1251,33 @@ func TestPendingAndRespond(t *testing.T) {
 		t.Fatalf("Pending after Respond: %v", err)
 	} else if got != nil {
 		t.Fatalf("pending should be cleared after Respond, got %#v", got)
+	}
+}
+
+func TestSendRejectsPendingInteraction(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp", "claude", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sp.SetPendingInteraction(info.SessionName, &runtime.PendingInteraction{
+		RequestID: "req-1",
+		Kind:      "approval",
+		Prompt:    "approve?",
+	})
+
+	err = mgr.Send(context.Background(), info.ID, "hello", "", runtime.Config{})
+	if !errors.Is(err, ErrPendingInteraction) {
+		t.Fatalf("Send error = %v, want %v", err, ErrPendingInteraction)
+	}
+	for _, call := range sp.Calls {
+		if call.Method == "Nudge" && call.Name == info.SessionName {
+			t.Fatalf("unexpected Nudge while pending interaction is active: %#v", sp.Calls)
+		}
 	}
 }
 

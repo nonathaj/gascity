@@ -66,6 +66,18 @@ func (p *Provider) route(name string) runtime.Provider {
 	return p.defaultSP
 }
 
+// DetectTransport reports the backend currently hosting the named session.
+// It returns "acp" for ACP-backed sessions and "" for default or unknown.
+func (p *Provider) DetectTransport(name string) string {
+	if p.defaultSP.IsRunning(name) {
+		return ""
+	}
+	if p.acpSP.IsRunning(name) {
+		return "acp"
+	}
+	return ""
+}
+
 // Start delegates to the routed backend.
 func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) error {
 	return p.route(name).Start(ctx, name, cfg)

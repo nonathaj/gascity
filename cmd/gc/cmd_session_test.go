@@ -78,3 +78,24 @@ func TestResolveWorkDir(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldAttachNewSession(t *testing.T) {
+	tests := []struct {
+		name      string
+		noAttach  bool
+		transport string
+		want      bool
+	}{
+		{name: "default transport attaches", noAttach: false, transport: "", want: true},
+		{name: "explicit no-attach wins", noAttach: true, transport: "", want: false},
+		{name: "acp skips attach", noAttach: false, transport: "acp", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldAttachNewSession(tt.noAttach, tt.transport); got != tt.want {
+				t.Fatalf("shouldAttachNewSession(%v, %q) = %v, want %v", tt.noAttach, tt.transport, got, tt.want)
+			}
+		})
+	}
+}

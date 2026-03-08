@@ -42,7 +42,10 @@ type sessionResponse struct {
 }
 
 func sessionToResponse(info session.Info, cfg *config.City) sessionResponse {
-	provider, displayName := resolveProviderInfo(info.Provider, cfg)
+	provider, displayName := info.Provider, ""
+	if cfg != nil {
+		provider, displayName = resolveProviderInfo(info.Provider, cfg)
+	}
 	rig, _ := config.ParseQualifiedName(info.Template)
 	r := sessionResponse{
 		ID:          info.ID,
@@ -58,8 +61,10 @@ func sessionToResponse(info session.Info, cfg *config.City) sessionResponse {
 	}
 	// Populate pool from config lookup. The pool field is the agent's
 	// base name (e.g., "polecat"), useful for dashboard type classification.
-	if agent, ok := findAgent(cfg, info.Template); ok && agent.IsPool() {
-		r.Pool = agent.Name
+	if cfg != nil {
+		if agent, ok := findAgent(cfg, info.Template); ok && agent.IsPool() {
+			r.Pool = agent.Name
+		}
 	}
 	if !info.LastActive.IsZero() {
 		r.LastActive = info.LastActive.Format(time.RFC3339)
@@ -104,9 +109,9 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "no bead store configured")
 		return
 	}
-	sp := s.state.SessionProvider()
+	mgr := s.sessionManager(store)
 	cfg := s.state.Config()
-	mgr := session.NewManager(store, sp)
+	sp := s.state.SessionProvider()
 
 	q := r.URL.Query()
 	stateFilter := q.Get("state")
@@ -141,9 +146,9 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "no bead store configured")
 		return
 	}
-	sp := s.state.SessionProvider()
+	mgr := s.sessionManager(store)
 	cfg := s.state.Config()
-	mgr := session.NewManager(store, sp)
+	sp := s.state.SessionProvider()
 
 	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
@@ -168,8 +173,7 @@ func (s *Server) handleSessionSuspend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "no bead store configured")
 		return
 	}
-	sp := s.state.SessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := s.sessionManager(store)
 
 	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
@@ -189,8 +193,7 @@ func (s *Server) handleSessionClose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "unavailable", "no bead store configured")
 		return
 	}
-	sp := s.state.SessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := s.sessionManager(store)
 
 	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
@@ -285,22 +288,20 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := store.Update(id, beads.UpdateOpts{Title: &body.Title}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+	mgr := s.sessionManager(store)
+	if err := mgr.Rename(id, body.Title); err != nil {
+		writeSessionManagerError(w, err)
 		return
 	}
 
 	// Re-fetch to return the updated session, consistent with PATCH.
-	sp := s.state.SessionProvider()
-	cfg := s.state.Config()
-	mgr := session.NewManager(store, sp)
 	info, err := mgr.Get(id)
 	if err != nil {
 		writeSessionManagerError(w, err)
 		return
 	}
 	updated, _ := store.Get(id)
-	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated, cfg))
+	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated, s.state.Config()))
 }
 
 // enrichSessionResponse populates runtime fields on a session response:
@@ -329,8 +330,11 @@ func (s *Server) enrichSessionResponse(resp *sessionResponse, info session.Info,
 			workDir = abs
 		}
 		searchPaths := s.sessionLogSearchPaths
-		if searchPaths == nil {
+		if searchPaths == nil && cfg != nil {
 			searchPaths = sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths)
+		}
+		if searchPaths == nil {
+			searchPaths = sessionlog.DefaultSearchPaths()
 		}
 		if sessionFile := sessionlog.FindSessionFile(searchPaths, workDir); sessionFile != "" {
 			if meta, err := sessionlog.ExtractTailMeta(sessionFile); err == nil && meta != nil {
@@ -389,20 +393,18 @@ func (s *Server) handleSessionPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := store.Update(id, beads.UpdateOpts{Title: &title}); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+	mgr := s.sessionManager(store)
+	if err := mgr.Rename(id, title); err != nil {
+		writeSessionManagerError(w, err)
 		return
 	}
 
 	// Re-fetch to get updated state.
-	sp := s.state.SessionProvider()
-	cfg := s.state.Config()
-	mgr := session.NewManager(store, sp)
 	info, err := mgr.Get(id)
 	if err != nil {
 		writeSessionManagerError(w, err)
 		return
 	}
 	updated, _ := store.Get(id)
-	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated, cfg))
+	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated, s.state.Config()))
 }

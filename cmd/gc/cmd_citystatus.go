@@ -214,7 +214,7 @@ func doCityStatus(
 
 	// Chat sessions count (best-effort — skip if store unavailable).
 	if store, err := openCityStoreAt(cityPath); err == nil {
-		mgr := session.NewManager(store, sp)
+		mgr := newSessionManagerWithConfig(store, sp, cfg)
 		if sessions, err := mgr.List("", ""); err == nil && len(sessions) > 0 {
 			var active, suspended int
 			for _, s := range sessions {
@@ -325,7 +325,7 @@ func doCityStatusJSON(
 
 	// Chat sessions count (best-effort).
 	if store, err := openCityStoreAt(cityPath); err == nil {
-		mgr := session.NewManager(store, sp)
+		mgr := newSessionManagerWithConfig(store, sp, cfg)
 		if sessions, err := mgr.List("", ""); err == nil {
 			for _, s := range sessions {
 				switch s.State {

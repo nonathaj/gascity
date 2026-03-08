@@ -115,6 +115,10 @@ func writeSessionManagerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, session.ErrInteractionUnsupported):
 		writeError(w, http.StatusNotImplemented, "unsupported", err.Error())
+	case errors.Is(err, session.ErrPendingInteraction):
+		writeError(w, http.StatusConflict, "pending_interaction", err.Error())
+	case errors.Is(err, session.ErrTransportUnknown):
+		writeError(w, http.StatusConflict, "unknown_transport", err.Error())
 	case errors.Is(err, session.ErrNoPendingInteraction):
 		writeError(w, http.StatusConflict, "no_pending", err.Error())
 	case errors.Is(err, session.ErrInteractionMismatch):
@@ -176,7 +180,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		SessionIDFlag: resolved.SessionIDFlag,
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	info, err := mgr.CreateWithTransport(
 		r.Context(),
 		body.Template,
@@ -195,7 +199,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := sessionToResponse(info)
+	resp := sessionToResponse(info, s.state.Config())
 	s.idem.storeResponse(idemKey, bodyHash, http.StatusCreated, resp)
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -213,7 +217,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	info, err := mgr.Get(id)
 	if err != nil {
 		writeSessionManagerError(w, err)
@@ -323,26 +327,11 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	info, err := mgr.Get(id)
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		writeSessionManagerError(w, err)
-		return
-	}
-
-	// This is a best-effort guard to keep new turns from crossing a provider's
-	// blocking approval/question state. Providers can still surface a pending
-	// interaction after this check and before Send reaches the runtime.
-	pending, supported, err := mgr.Pending(id)
-	if err != nil {
-		s.idem.unreserve(idemKey)
-		writeSessionManagerError(w, err)
-		return
-	}
-	if supported && pending != nil {
-		s.idem.unreserve(idemKey)
-		writeError(w, http.StatusConflict, "pending_interaction", "session has a pending interaction; use /respond")
 		return
 	}
 
@@ -371,7 +360,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	if err := mgr.StopTurn(id); err != nil {
 		writeSessionManagerError(w, err)
 		return
@@ -392,7 +381,7 @@ func (s *Server) handleSessionPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	pending, supported, err := mgr.Pending(id)
 	if err != nil {
 		writeSessionManagerError(w, err)
@@ -436,7 +425,7 @@ func (s *Server) handleSessionRespond(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	if err := mgr.Respond(id, runtime.InteractionResponse{
 		RequestID: body.RequestID,
 		Action:    body.Action,
@@ -466,7 +455,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := session.NewManager(store, s.state.SessionProvider())
+	mgr := s.sessionManager(store)
 	info, err := mgr.Get(id)
 	if err != nil {
 		writeSessionManagerError(w, err)

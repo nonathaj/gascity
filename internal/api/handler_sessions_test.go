@@ -126,6 +126,9 @@ func TestHandleSessionGet(t *testing.T) {
 	if resp.State != "active" {
 		t.Errorf("got state %q, want %q", resp.State, "active")
 	}
+	if !resp.Running {
+		t.Errorf("got running=%v, want true", resp.Running)
+	}
 }
 
 func TestHandleSessionGetNotFound(t *testing.T) {
@@ -650,6 +653,34 @@ func TestHandleSessionPendingAndRespond(t *testing.T) {
 	}
 	if got := fs.sp.Responses[info.SessionName]; len(got) != 1 || got[0].Action != "approve" {
 		t.Fatalf("responses = %#v, want single approve", got)
+	}
+}
+
+func TestHandleSessionMessageRejectsPendingInteraction(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Interactive")
+	fs.sp.SetPendingInteraction(info.SessionName, &runtime.PendingInteraction{
+		RequestID: "req-1",
+		Kind:      "approval",
+		Prompt:    "approve?",
+	})
+
+	rec := httptest.NewRecorder()
+	req := newPostRequest("/v0/session/"+info.ID+"/messages", strings.NewReader(`{"message":"hello"}`))
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("message status = %d, want %d; body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "pending_interaction") {
+		t.Fatalf("message body = %s, want pending_interaction error", rec.Body.String())
+	}
+	for _, call := range fs.sp.Calls {
+		if call.Method == "Nudge" && call.Name == info.SessionName {
+			t.Fatalf("unexpected Nudge while pending interaction is active: %#v", fs.sp.Calls)
+		}
 	}
 }
 

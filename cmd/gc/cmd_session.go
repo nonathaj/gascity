@@ -114,7 +114,7 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	// Build the work directory.
 	workDir := resolveWorkDir(cityPath, &found)
@@ -141,7 +141,10 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 
 	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, templateName) //nolint:errcheck // best-effort stdout
 
-	if noAttach {
+	if !shouldAttachNewSession(noAttach, found.Session) {
+		if found.Session == "acp" && !noAttach {
+			fmt.Fprintln(stdout, "Session uses ACP transport; not attaching.") //nolint:errcheck // best-effort stdout
+		}
 		return 0
 	}
 
@@ -184,7 +187,7 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	sessions, err := mgr.List(stateFilter, templateFilter)
 	if err != nil {
@@ -359,7 +362,7 @@ func cmdSessionAttach(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	// Get the session to find its template.
 	info, err := mgr.Get(sessionID)
@@ -440,7 +443,7 @@ func cmdSessionSuspend(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	if err := mgr.Suspend(sessionID); err != nil {
 		fmt.Fprintf(stderr, "gc session suspend: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -483,7 +486,7 @@ func cmdSessionClose(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	if err := mgr.Close(sessionID); err != nil {
 		fmt.Fprintf(stderr, "gc session close: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -525,7 +528,7 @@ func cmdSessionRename(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	if err := mgr.Rename(sessionID, title); err != nil {
 		fmt.Fprintf(stderr, "gc session rename: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -572,7 +575,7 @@ func cmdSessionPrune(beforeStr string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	cutoff := time.Now().Add(-dur)
 	pruned, err := mgr.Prune(cutoff)
@@ -649,7 +652,7 @@ func cmdSessionPeek(args []string, lines int, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	mgr := session.NewManager(store, sp)
+	mgr := newSessionManager(store, sp)
 
 	output, err := mgr.Peek(sessionID, lines)
 	if err != nil {
@@ -673,6 +676,10 @@ func resolveWorkDir(cityPath string, agent *config.Agent) string {
 		return rigPath
 	}
 	return cityPath
+}
+
+func shouldAttachNewSession(noAttach bool, transport string) bool {
+	return !noAttach && transport != "acp"
 }
 
 // formatDuration formats a duration for human display.
