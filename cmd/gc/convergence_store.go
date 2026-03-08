@@ -61,11 +61,19 @@ func (a *convergenceStoreAdapter) Children(parentID string) ([]convergence.BeadI
 	return result, nil
 }
 
-func (a *convergenceStoreAdapter) PourWisp(parentID, formula, idempotencyKey string, vars map[string]string, _ string) (string, error) {
+func (a *convergenceStoreAdapter) PourWisp(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error) {
+	// Idempotency: check if a wisp with this key already exists (crash-retry safety).
+	if existing, found, err := a.FindByIdempotencyKey(idempotencyKey); err == nil && found {
+		return existing, nil
+	}
+
 	// Build vars list from map.
 	var varList []string
 	for k, v := range vars {
 		varList = append(varList, k+"="+v)
+	}
+	if evaluatePrompt != "" {
+		varList = append(varList, "evaluate_prompt="+evaluatePrompt)
 	}
 	wispID, err := a.store.MolCookOn(formula, parentID, "", varList)
 	if err != nil {

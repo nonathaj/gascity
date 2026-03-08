@@ -44,6 +44,7 @@ func newConvergeCreateCmd(stdout, stderr io.Writer) *cobra.Command {
 		gateTimeout       string
 		gateTimeoutAction string
 		title             string
+		evaluatePrompt    string
 		vars              []string
 	)
 	cmd := &cobra.Command{
@@ -66,6 +67,7 @@ func newConvergeCreateCmd(stdout, stderr io.Writer) *cobra.Command {
 				"gate_timeout":        gateTimeout,
 				"gate_timeout_action": gateTimeoutAction,
 				"title":               title,
+				"evaluate_prompt":     evaluatePrompt,
 			}
 			for _, v := range vars {
 				parts := strings.SplitN(v, "=", 2)
@@ -108,6 +110,7 @@ func newConvergeCreateCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd.Flags().StringVar(&gateTimeout, "gate-timeout", "30s", "Gate execution timeout")
 	cmd.Flags().StringVar(&gateTimeoutAction, "gate-timeout-action", "iterate", "Action on gate timeout: iterate, retry, manual, terminate")
 	cmd.Flags().StringVar(&title, "title", "", "Convergence loop title")
+	cmd.Flags().StringVar(&evaluatePrompt, "evaluate-prompt", "", "Custom evaluate prompt (overrides formula default)")
 	cmd.Flags().StringArrayVar(&vars, "var", nil, "Template variable (key=value, repeatable)")
 	_ = cmd.MarkFlagRequired("formula")
 	_ = cmd.MarkFlagRequired("target")

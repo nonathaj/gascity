@@ -77,7 +77,7 @@ func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc, convergenc
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck // best-effort deadline
 	scanner := bufio.NewScanner(conn)
 	// Increase scanner buffer for convergence commands which may carry large payloads.
-	scanner.Buffer(make([]byte, 64*1024), 64*1024)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	if scanner.Scan() {
 		line := scanner.Text()
 		switch {
@@ -138,16 +138,19 @@ func sendControllerCommand(cityPath, command string) ([]byte, error) {
 	}
 	defer conn.Close()                                     //nolint:errcheck
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(95 * time.Second)) //nolint:errcheck // Must exceed server-side 30s enqueue + 60s reply
 	if _, err := conn.Write([]byte(command + "\n")); err != nil {
 		return nil, fmt.Errorf("sending command: %w", err)
 	}
-	buf := make([]byte, 64*1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+		return nil, fmt.Errorf("reading response: connection closed")
 	}
-	return buf[:n], nil
+	return scanner.Bytes(), nil
 }
 
 // controllerAlive checks whether a controller is running by connecting

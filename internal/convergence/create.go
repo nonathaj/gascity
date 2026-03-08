@@ -88,9 +88,12 @@ func (h *Handler) CreateHandler(_ context.Context, params CreateParams) (CreateR
 		return CreateResult{}, fmt.Errorf("pouring first wisp: %w", err)
 	}
 
-	// Step 5: Set active_wisp.
+	// Step 5: Set active_wisp and iteration counter.
 	if err := h.Store.SetMetadata(beadID, FieldActiveWisp, firstWispID); err != nil {
 		return CreateResult{}, fmt.Errorf("setting active wisp: %w", err)
+	}
+	if err := h.Store.SetMetadata(beadID, FieldIteration, EncodeInt(1)); err != nil {
+		return CreateResult{}, fmt.Errorf("setting iteration: %w", err)
 	}
 
 	// Step 6: Emit ConvergenceCreated event.

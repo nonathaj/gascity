@@ -43,7 +43,7 @@ func (cr *CityRuntime) initConvergenceHandler() {
 // convergenceTick processes active convergence loops by scanning for closed
 // wisps and calling HandleWispClosed. Called from tick().
 func (cr *CityRuntime) convergenceTick(ctx context.Context) {
-	if cr.convHandler == nil {
+	if cr.convHandler == nil || cr.convergenceReqCh == nil {
 		return
 	}
 	store := cr.cityBeadStore()
@@ -205,12 +205,14 @@ func (cr *CityRuntime) handleConvergenceRetry(ctx context.Context, req convergen
 		maxIter = v
 	}
 
+	// Read source bead metadata once for both max_iterations and target.
+	meta, err := cr.convHandler.Store.GetMetadata(sourceBeadID)
+	if err != nil {
+		return convergenceReply{Error: fmt.Sprintf("reading source bead: %v", err)}
+	}
+
 	// If no max_iterations specified, read from source bead.
 	if maxIter == 0 {
-		meta, err := cr.convHandler.Store.GetMetadata(sourceBeadID)
-		if err != nil {
-			return convergenceReply{Error: fmt.Sprintf("reading source bead: %v", err)}
-		}
 		if v, ok := convergence.DecodeInt(meta[convergence.FieldMaxIterations]); ok {
 			maxIter = v
 		}
@@ -219,11 +221,6 @@ func (cr *CityRuntime) handleConvergenceRetry(ctx context.Context, req convergen
 		}
 	}
 
-	// Read target from source bead for concurrency checks.
-	meta, err := cr.convHandler.Store.GetMetadata(sourceBeadID)
-	if err != nil {
-		return convergenceReply{Error: fmt.Sprintf("reading source bead: %v", err)}
-	}
 	target := meta[convergence.FieldTarget]
 
 	// Concurrency checks.

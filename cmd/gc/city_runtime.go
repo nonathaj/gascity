@@ -239,6 +239,10 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		case <-ticker.C:
 			cr.tick(ctx, dirty, &lastProviderName, &observePaths, cityRoot, &prevPoolRunning)
 		case req := <-cr.convergenceReqCh:
+			// Low-latency path: process convergence commands between ticks.
+			// processConvergenceRequests() in tick() drains any that arrived
+			// during tick processing. Both paths are safe — channel receives
+			// are atomic, so each request is processed exactly once.
 			reply := cr.handleConvergenceRequest(ctx, req)
 			req.replyCh <- reply
 		case <-ctx.Done():

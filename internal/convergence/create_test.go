@@ -61,6 +61,9 @@ func TestCreateHandler_Basic(t *testing.T) {
 	if meta[FieldActiveWisp] != result.FirstWispID {
 		t.Errorf("active_wisp = %q, want %q", meta[FieldActiveWisp], result.FirstWispID)
 	}
+	if meta[FieldIteration] != "1" {
+		t.Errorf("iteration = %q, want %q", meta[FieldIteration], "1")
+	}
 	if meta[VarPrefix+"doc_path"] != "/docs/readme.md" {
 		t.Errorf("var.doc_path = %q, want %q", meta[VarPrefix+"doc_path"], "/docs/readme.md")
 	}
