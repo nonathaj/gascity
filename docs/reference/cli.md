@@ -79,7 +79,7 @@ gc agent
 | [gc agent kill](#gc-agent-kill) | Removed, use `gc session kill` |
 | [gc agent list](#gc-agent-list) | Removed, use `gc session list` |
 | [gc agent logs](#gc-agent-logs) | Removed, use `gc session logs` |
-| [gc agent nudge](#gc-agent-nudge) | Removed, use `gc session message` |
+| [gc agent nudge](#gc-agent-nudge) | Removed, use `gc session wake` |
 | [gc agent peek](#gc-agent-peek) | Removed, use `gc session peek` |
 | [gc agent request-restart](#gc-agent-request-restart) | Removed, use `gc runtime request-restart` |
 | [gc agent resume](#gc-agent-resume) | Resume a suspended agent |
@@ -182,7 +182,7 @@ gc session logs <agent-name> [flags]
 
 ## gc agent nudge
 
-Removed, use `gc session message`.
+Removed, use `gc session wake`.
 
 ```
 gc session message <agent-name> <message>

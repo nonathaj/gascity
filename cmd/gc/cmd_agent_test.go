@@ -185,7 +185,7 @@ func TestAgentDeprecationShims(t *testing.T) {
 		{"status", []string{"status"}, "gc session list"},
 		{"attach", []string{"attach"}, "gc session attach"},
 		{"peek", []string{"peek"}, "gc session peek"},
-		{"nudge", []string{"nudge"}, "gc session message"},
+		{"nudge", []string{"nudge"}, "gc session wake"},
 		{"start", []string{"start", "x"}, "gc session new"},
 		{"stop", []string{"stop", "x"}, "gc session suspend"},
 		{"destroy", []string{"destroy", "x"}, "gc session close"},

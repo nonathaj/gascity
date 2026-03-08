@@ -495,10 +495,10 @@ func doAgentResume(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) 
 func newAgentNudgeCmd(_, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "nudge",
-		Short: "Deprecated: use \"gc session message\"",
+		Short: "Deprecated: use \"gc session wake\"",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent nudge: removed, use \"gc session message\" instead") //nolint:errcheck // best-effort stderr
+			fmt.Fprintln(stderr, "gc agent nudge: removed, use \"gc session wake\" instead") //nolint:errcheck // best-effort stderr
 			return errExit
 		},
 	}

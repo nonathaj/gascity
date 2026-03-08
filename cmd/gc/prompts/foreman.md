@@ -11,7 +11,7 @@ or `/gc-city` to load command reference for any topic.
 
 ## How to work
 
-1. **Check agents:** `gc session list --dir $GC_DIR` to see who is available
+1. **Check agents:** `gc session list` to see who is available
 2. **Create work:** `bd create "<title>"` for each task in this rig
 3. **Dispatch:** `gc sling <agent> <bead-id>` to route work to agents
 4. **Monitor:** `bd list` and `gc session peek <name>` to track progress

@@ -63,7 +63,7 @@ stderr 'removed, use "gc session attach" instead'
 stderr 'removed, use "gc session list" instead'
 
 ! exec gc agent nudge nonexistent 'hello'
-stderr 'removed, use "gc session message" instead'
+stderr 'removed, use "gc session wake" instead'
 
 ! exec gc agent kill nonexistent
 stderr 'removed, use "gc session kill" instead'
@@ -72,7 +72,7 @@ stderr 'removed, use "gc session kill" instead'
 stderr 'removed, use "gc session attach" instead'
 
 ! exec gc agent nudge
-stderr 'removed, use "gc session message" instead'
+stderr 'removed, use "gc session wake" instead'
 
 ! exec gc agent kill
 stderr 'removed, use "gc session kill" instead'
