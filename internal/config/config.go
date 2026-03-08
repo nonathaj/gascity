@@ -213,7 +213,7 @@ type AgentOverride struct {
 	InstallAgentHooksAppend []string `toml:"install_agent_hooks_append,omitempty"`
 	// Attach overrides the agent's attach setting.
 	Attach *bool `toml:"attach,omitempty"`
-	// Multi overrides the agent's multi-instance template flag.
+	// Multi is deprecated. It remains parseable so old configs fail loudly.
 	Multi *bool `toml:"multi,omitempty"`
 	// DependsOn overrides the agent's dependency list.
 	DependsOn []string `toml:"depends_on,omitempty"`
@@ -1086,10 +1086,9 @@ type Agent struct {
 	// composition, a non-fallback agent with the same name wins silently.
 	// When two fallbacks collide, the first loaded (depth-first) wins.
 	Fallback bool `toml:"fallback,omitempty"`
-	// Multi marks this agent as a multi-instance template. Users manually
-	// start/stop named instances via "gc agent start/stop/destroy". Unlike
-	// pools (declarative auto-scaling), multi is imperative. Multi and pool
-	// are mutually exclusive.
+	// Multi is deprecated and no longer supported. Templates are session-
+	// spawnable by default, so old configs that still set this field fail
+	// validation with a migration hint.
 	Multi bool `toml:"multi,omitempty"`
 	// DependsOn lists agent names that must be awake before this agent wakes.
 	// Used for dependency-ordered startup and shutdown. Validated for cycles
@@ -1199,11 +1198,6 @@ func (a *Agent) IsPool() bool {
 	return a.Pool != nil
 }
 
-// IsMulti reports whether this agent is a multi-instance template.
-func (a *Agent) IsMulti() bool {
-	return a.Multi
-}
-
 // EffectiveOnDeath returns the on_death command for this pool agent.
 // Default: unclaims in_progress beads assigned to this agent.
 func (a *Agent) EffectiveOnDeath() string {
@@ -1300,8 +1294,8 @@ func ValidateAgents(agents []Agent) error {
 		default:
 			return fmt.Errorf("agent %q: wake_mode must be \"resume\", \"fresh\", or empty, got %q", a.QualifiedName(), a.WakeMode)
 		}
-		if a.Multi && a.Pool != nil {
-			return fmt.Errorf("agent %q: multi and pool are mutually exclusive", a.QualifiedName())
+		if a.Multi {
+			return fmt.Errorf("agent %q: multi has been removed; every template is session-spawnable by default", a.QualifiedName())
 		}
 		if a.Pool != nil {
 			if a.Pool.Min < 0 {

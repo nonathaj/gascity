@@ -55,14 +55,6 @@ func buildDesiredState(
 			continue
 		}
 
-		// Multi-instance templates are not supported in buildDesiredState —
-		// they require the multiRegistry (see cmd_agent_multi.go).
-		// Warn and skip; multi-instance agents are managed separately.
-		if cfg.Agents[i].IsMulti() {
-			fmt.Fprintf(stderr, "buildDesiredState: agent %q uses multi-instance (not supported here, skipping)\n", cfg.Agents[i].QualifiedName()) //nolint:errcheck
-			continue
-		}
-
 		pool := cfg.Agents[i].EffectivePool()
 
 		if pool.Max == 0 {

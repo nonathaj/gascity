@@ -68,7 +68,7 @@ func effectiveOverlayDirs(cityDirs []string, rigDirs map[string][]string, rigNam
 }
 
 // templateNameFor returns the configuration template name for an agent.
-// For pool/multi instances, this is the original template name (PoolName).
+// For pool instances, this is the original template name (PoolName).
 // For regular agents, it's the qualified name.
 func templateNameFor(cfgAgent *config.Agent, qualifiedName string) string {
 	if cfgAgent.PoolName != "" {

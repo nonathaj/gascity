@@ -68,7 +68,7 @@ type AgentPatch struct {
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
 	// Attach overrides the agent's attach setting.
 	Attach *bool `toml:"attach,omitempty"`
-	// Multi overrides the agent's multi-instance template flag.
+	// Multi is deprecated. It remains parseable so old patches fail loudly.
 	Multi *bool `toml:"multi,omitempty"`
 	// DependsOn overrides the agent's dependency list.
 	DependsOn []string `toml:"depends_on,omitempty"`

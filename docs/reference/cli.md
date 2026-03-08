@@ -72,7 +72,7 @@ gc agent
 |------------|-------------|
 | [gc agent add](#gc-agent-add) | Add an agent to the workspace |
 | [gc agent attach](#gc-agent-attach) | Attach to an agent session |
-| [gc agent destroy](#gc-agent-destroy) | Destroy a stopped multi-instance agent |
+| [gc agent destroy](#gc-agent-destroy) | Close a session created from an agent template |
 | [gc agent drain](#gc-agent-drain) | Signal an agent to drain (wind down gracefully) |
 | [gc agent drain-ack](#gc-agent-drain-ack) | Acknowledge drain — signal the controller to stop this session |
 | [gc agent drain-check](#gc-agent-drain-check) | Check if this agent is draining (exit 0 = draining) |
@@ -83,9 +83,9 @@ gc agent
 | [gc agent peek](#gc-agent-peek) | Capture recent output from an agent session |
 | [gc agent request-restart](#gc-agent-request-restart) | Request controller restart this session (blocks until killed) |
 | [gc agent resume](#gc-agent-resume) | Resume a suspended agent |
-| [gc agent start](#gc-agent-start) | Start a multi-instance agent |
+| [gc agent start](#gc-agent-start) | Create a background session from an agent template |
 | [gc agent status](#gc-agent-status) | Show agent status |
-| [gc agent stop](#gc-agent-stop) | Stop a multi-instance agent |
+| [gc agent stop](#gc-agent-stop) | Suspend a session created from an agent template |
 | [gc agent suspend](#gc-agent-suspend) | Suspend an agent (reconciler will skip it) |
 | [gc agent undrain](#gc-agent-undrain) | Cancel drain on an agent |
 
@@ -130,12 +130,13 @@ gc agent attach <name>
 
 ## gc agent destroy
 
-Permanently remove a stopped multi-instance agent by closing its bead.
+Close a session permanently.
 
-The instance must be stopped first. Use "gc agent stop" before destroying.
+This is a compatibility alias for "gc session close". When multiple
+sessions exist for the same template, pass a session ID.
 
 ```
-gc agent destroy <template/instance>
+gc agent destroy <session-id-or-name>
 ```
 
 ## gc agent drain
@@ -289,10 +290,10 @@ gc agent resume <name>
 
 ## gc agent start
 
-Start a named instance of a multi-instance agent template.
+Create a detached session from an agent template.
 
-If --name is not provided, a sequential name is auto-generated.
-Starting a stopped instance resumes it (no new bead is created).
+This is a compatibility alias for "gc session new <template> --no-attach".
+Templates no longer need "multi = true" to support multiple sessions.
 
 ```
 gc agent start <template> [flags]
@@ -300,7 +301,7 @@ gc agent start <template> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--name` | string |  | instance name (auto-generated if omitted) |
+| `--name` | string |  | deprecated compatibility alias for --title |
 
 ## gc agent status
 
@@ -312,14 +313,13 @@ gc agent status <name>
 
 ## gc agent stop
 
-Stop a running multi-instance agent.
+Suspend a running session and keep its conversation state.
 
-The session is killed and the instance bead is marked stopped.
-Use "gc agent start" to resume it later, or "gc agent destroy" to
-permanently remove it.
+This is a compatibility alias for "gc session suspend". When multiple
+sessions exist for the same template, pass a session ID.
 
 ```
-gc agent stop <template/instance>
+gc agent stop <session-id-or-name>
 ```
 
 ## gc agent suspend

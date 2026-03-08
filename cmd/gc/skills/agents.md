@@ -27,47 +27,35 @@ gc agent attach <name>                 # Attach to agent's live session
 gc agent claim <name> <bead-id>        # Put a bead on agent's hook
 ```
 
-## Multi-instance agents (templates)
+## Sessions from templates
 
-An agent with `multi = true` in config is a template — it doesn't start
-automatically with `gc start`. Instead, you imperatively create named
-instances from it. Unlike pools (declarative auto-scaling), multi is
-imperative: you decide when to spin up and tear down instances.
+Every configured template can now spawn sessions directly. You do not
+need `multi = true`, and that config field is rejected if present.
 
-Multi and pool are mutually exclusive on the same agent.
-
-### Config
-
-```toml
-[[agents]]
-name = "researcher"
-multi = true
-provider = "claude"
-prompt = "prompts/researcher.md"
-```
-
-### Instance lifecycle
+Use the session commands directly:
 
 ```
-gc agent start <template>              # Start instance (auto-named: inst-1, inst-2, ...)
-gc agent start <template> --name spike # Start instance with explicit name
-gc agent stop <template/instance>      # Stop instance (session killed, bead marked stopped)
-gc agent stop <instance>               # Stop by bare name (if unambiguous)
-gc agent start <template> --name spike # Resume a stopped instance
-gc agent destroy <template/instance>   # Permanently remove a stopped instance
+gc session new <template>              # Create and attach to a new session
+gc session new <template> --no-attach  # Create a detached background session
+gc session suspend <id-or-template>    # Suspend a session
+gc session close <id-or-template>      # Close a session permanently
 ```
 
-### Addressing instances
+The legacy aliases still exist:
 
-Instances are addressed as `template/instance` (e.g., `researcher/spike-1`).
-Bare instance names work when unambiguous across all multi templates.
+```
+gc agent start <template>              # Alias for gc session new <template> --no-attach
+gc agent start <template> --name foo   # Same alias; --name becomes the session title
+gc agent stop <session-id-or-name>     # Alias for gc session suspend
+gc agent destroy <session-id-or-name>  # Alias for gc session close
+```
 
-### How it works
+When multiple sessions exist for the same template, use the session ID.
 
-Each instance is tracked as a bead (type=multi-instance). The controller
-picks up new instance beads and starts sessions for them. `gc start`
-starts sessions for all existing running instances but does not create
-new ones — use `gc agent start` for that.
+## Pools
+
+Pools still control controller-managed worker capacity. Pool `max`
+limits pool-managed workers, not manually created interactive sessions.
 
 ## Lifecycle
 

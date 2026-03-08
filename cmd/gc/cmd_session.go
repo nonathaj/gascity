@@ -93,8 +93,9 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		return 1
 	}
 
-	// Find the template agent.
-	found, ok := resolveAgentIdentity(cfg, templateName, currentRigContext(cfg))
+	// Find the template agent. Session creation targets configured templates,
+	// not concrete pool member names like worker-2.
+	found, ok := resolveSessionTemplate(cfg, templateName, currentRigContext(cfg))
 	if !ok {
 		fmt.Fprintln(stderr, agentNotFoundMsg("gc session new", templateName, cfg)) //nolint:errcheck // best-effort stderr
 		return 1
@@ -133,13 +134,14 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		SessionIDFlag: resolved.SessionIDFlag,
 	}
 
-	info, err := mgr.CreateWithTransport(context.Background(), templateName, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints)
+	templateQN := found.QualifiedName()
+	info, err := mgr.CreateWithTransport(context.Background(), templateQN, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, templateName) //nolint:errcheck // best-effort stdout
+	fmt.Fprintf(stdout, "Session %s created from template %q.\n", info.ID, templateQN) //nolint:errcheck // best-effort stdout
 
 	if !shouldAttachNewSession(noAttach, found.Session) {
 		if found.Session == "acp" && !noAttach {
@@ -154,6 +156,19 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 		return 1
 	}
 	return 0
+}
+
+func resolveSessionTemplate(cfg *config.City, input, currentRigDir string) (config.Agent, bool) {
+	found, ok := resolveAgentIdentity(cfg, input, currentRigDir)
+	if !ok {
+		return config.Agent{}, false
+	}
+	for _, a := range cfg.Agents {
+		if a.QualifiedName() == found.QualifiedName() {
+			return a, true
+		}
+	}
+	return config.Agent{}, false
 }
 
 // newSessionListCmd creates the "gc session list" command.

@@ -145,7 +145,6 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 		OverlayDir:          src.OverlayDir,
 		SourceDir:           src.SourceDir,
 		Fallback:            src.Fallback,
-		Multi:               src.Multi,
 		IdleTimeout:         src.IdleTimeout,
 		Suspended:           src.Suspended,
 		WakeMode:            src.WakeMode,

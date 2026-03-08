@@ -20,9 +20,9 @@ gc stop                                # Stop all agent sessions
 gc restart                             # Stop then start
 ```
 
-`gc start` starts all singleton agents and resumes existing multi-instance
-agents, but does NOT create new multi instances. Use `gc agent start
-<template>` to create new instances from a `multi = true` template.
+`gc start` starts fixed agents and reconciles pool-managed workers.
+Interactive sessions are created separately with `gc session new
+<template>` (or the compatibility alias `gc agent start <template>`).
 
 ## Status
 

@@ -1580,25 +1580,16 @@ func TestValidateAgentsPoolMaxZeroIsValid(t *testing.T) {
 	}
 }
 
-func TestValidateAgentsMultiPoolMutualExclusion(t *testing.T) {
+func TestValidateAgentsMultiIsRejected(t *testing.T) {
 	agents := []Agent{
-		{Name: "worker", Multi: true, Pool: &PoolConfig{Min: 0, Max: 5}},
+		{Name: "worker", Multi: true},
 	}
 	err := ValidateAgents(agents)
 	if err == nil {
-		t.Fatal("expected error for multi + pool")
+		t.Fatal("expected error for deprecated multi")
 	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("expected mutually exclusive error, got: %v", err)
-	}
-}
-
-func TestValidateAgentsMultiAloneIsValid(t *testing.T) {
-	agents := []Agent{
-		{Name: "researcher", Multi: true},
-	}
-	if err := ValidateAgents(agents); err != nil {
-		t.Errorf("ValidateAgents: unexpected error for multi alone: %v", err)
+	if !strings.Contains(err.Error(), "multi has been removed") {
+		t.Errorf("expected deprecation error, got: %v", err)
 	}
 }
 

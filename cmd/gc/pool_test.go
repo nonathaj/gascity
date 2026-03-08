@@ -413,7 +413,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 	dv := reflect.ValueOf(dst)
 	for i := 0; i < st.NumField(); i++ {
 		fname := st.Field(i).Name
-		if fname == "Name" || fname == "Dir" {
+		if fname == "Name" || fname == "Dir" || fname == "Multi" {
 			continue // Intentionally overridden.
 		}
 		if dv.Field(i).IsZero() {

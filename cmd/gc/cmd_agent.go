@@ -22,21 +22,13 @@ import (
 
 // AgentListEntry is the JSON output format for a single agent in "gc agent list --json".
 type AgentListEntry struct {
-	Name          string         `json:"name"`
-	QualifiedName string         `json:"qualified_name"`
-	Dir           string         `json:"dir"`
-	Scope         string         `json:"scope"`
-	Suspended     bool           `json:"suspended"`
-	RigSuspended  bool           `json:"rig_suspended"`
-	Pool          *PoolJSON      `json:"pool"`
-	Multi         bool           `json:"multi,omitempty"`
-	Instances     []InstanceJSON `json:"instances,omitempty"`
-}
-
-// InstanceJSON is the JSON output format for a multi-instance agent.
-type InstanceJSON struct {
-	Name  string `json:"name"`
-	State string `json:"state"`
+	Name          string    `json:"name"`
+	QualifiedName string    `json:"qualified_name"`
+	Dir           string    `json:"dir"`
+	Scope         string    `json:"scope"`
+	Suspended     bool      `json:"suspended"`
+	RigSuspended  bool      `json:"rig_suspended"`
+	Pool          *PoolJSON `json:"pool"`
 }
 
 // loadCityConfig loads the city configuration with full pack expansion.
@@ -74,7 +66,8 @@ func loadCityConfigForEditFS(fs fsys.FS, tomlPath string) (*config.City, error) 
 //  2. Contextual: if input has no "/" and currentRigDir is set, try
 //     "{currentRigDir}/{input}" to resolve rig-scoped agents from context.
 //  3. Unambiguous bare name: scan all agents by Name (ignoring Dir).
-//     Succeeds only when exactly one agent matches.
+//     Succeeds only when exactly one configured agent matches. Pool
+//     members are synthesized when the input uses {name}-{N}.
 func resolveAgentIdentity(cfg *config.City, input, currentRigDir string) (config.Agent, bool) {
 	// Step 1: literal match.
 	if a, ok := findAgentByQualified(cfg, input); ok {
@@ -118,7 +111,6 @@ func resolveAgentIdentity(cfg *config.City, input, currentRigDir string) (config
 
 // findAgentByQualified looks up an agent by its qualified identity (dir+name).
 // For pool agents with Max > 1, matches {name}-{N} patterns within the same dir.
-// For multi agents, matches {template}/{instance} by checking the registry.
 func findAgentByQualified(cfg *config.City, identity string) (config.Agent, bool) {
 	dir, name := config.ParseQualifiedName(identity)
 	for _, a := range cfg.Agents {
@@ -134,29 +126,6 @@ func findAgentByQualified(cfg *config.City, identity string) (config.Agent, bool
 					instance := a
 					instance.Name = name
 					instance.Pool = nil // instances are not pools
-					return instance, true
-				}
-			}
-		}
-	}
-	// Multi: try interpreting as {template}/{instance}.
-	// For city-scoped multi agents: "researcher/spike-1" → template="researcher", instance="spike-1".
-	// For rig-scoped: "rig/researcher/spike-1" → template="rig/researcher", instance="spike-1".
-	if strings.Contains(identity, "/") {
-		// Try all multi agents to see if the identity starts with their QN.
-		for _, a := range cfg.Agents {
-			if !a.IsMulti() {
-				continue
-			}
-			templateQN := a.QualifiedName()
-			prefix := templateQN + "/"
-			if strings.HasPrefix(identity, prefix) {
-				instanceName := identity[len(prefix):]
-				if instanceName != "" {
-					instance := a
-					instance.Name = instanceName
-					instance.Multi = false
-					instance.PoolName = templateQN
 					return instance, true
 				}
 			}
@@ -845,22 +814,6 @@ func doAgentListJSON(fs fsys.FS, cityPath, dirFilter string, stdout, stderr io.W
 			Suspended:     a.Suspended,
 			RigSuspended:  rigSuspended,
 			Pool:          pool,
-			Multi:         a.IsMulti(),
-		}
-		if a.IsMulti() {
-			store, code := openCityStore(stderr, "gc agent list")
-			if code == 0 {
-				reg := newMultiRegistry(store)
-				instances, iErr := reg.instancesForTemplate(a.QualifiedName())
-				if iErr == nil {
-					for _, mi := range instances {
-						entry.Instances = append(entry.Instances, InstanceJSON{
-							Name:  mi.Name,
-							State: mi.State,
-						})
-					}
-				}
-			}
 		}
 		entries = append(entries, entry)
 	}
@@ -994,26 +947,10 @@ func doAgentList(fs fsys.FS, cityPath, dirFilter string, stdout, stderr io.Write
 		if a.Pool != nil {
 			annotations = append(annotations, fmt.Sprintf("pool: min=%d, max=%d", a.Pool.Min, a.Pool.Max))
 		}
-		if a.IsMulti() {
-			annotations = append(annotations, "multi")
-		}
 		if len(annotations) > 0 {
 			fmt.Fprintf(stdout, "  %s  (%s)\n", displayName, strings.Join(annotations, ", ")) //nolint:errcheck // best-effort stdout
 		} else {
 			fmt.Fprintf(stdout, "  %s\n", displayName) //nolint:errcheck // best-effort stdout
-		}
-		// Print multi instances if available.
-		if a.IsMulti() {
-			store, code := openCityStore(stderr, "gc agent list")
-			if code == 0 {
-				reg := newMultiRegistry(store)
-				instances, iErr := reg.instancesForTemplate(a.QualifiedName())
-				if iErr == nil {
-					for _, mi := range instances {
-						fmt.Fprintf(stdout, "    %s/%s  %s\n", a.QualifiedName(), mi.Name, mi.State) //nolint:errcheck // best-effort stdout
-					}
-				}
-			}
 		}
 	}
 	return 0
