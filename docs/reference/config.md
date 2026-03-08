@@ -87,7 +87,7 @@ Agent defines a configured agent in the city.
 | `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded packs. Each name must match a {{ define "name" }} block. |
 | `attach` | boolean |  |  | Attach controls whether the agent's session supports interactive attachment (e.g., tmux attach). When false, the agent can use a lighter runtime (subprocess instead of tmux). Defaults to true. |
 | `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
-| `multi` | boolean |  |  | Multi is deprecated and no longer supported. Templates are session- spawnable by default, so old configs that still set this field fail validation with a migration hint. |
+| `multi` | boolean |  |  | Multi is deprecated and no longer supported. Templates are session- spawnable by default, so old configs that still set this field fail validation with a migration hint. Manual-only templates should use pool.max = 0 instead. |
 | `depends_on` | []string |  |  | DependsOn lists agent names that must be awake before this agent wakes. Used for dependency-ordered startup and shutdown. Validated for cycles at config load time. |
 | `wake_mode` | string |  |  | WakeMode controls context freshness across sleep/wake cycles. "resume" (default): reuse provider session key for conversation continuity. "fresh": start a new provider session on every wake (polecat pattern). Enum: `resume`, `fresh` |
 

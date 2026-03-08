@@ -210,7 +210,7 @@
         },
         "multi": {
           "type": "boolean",
-          "description": "Multi is deprecated and no longer supported. Templates are session-\nspawnable by default, so old configs that still set this field fail\nvalidation with a migration hint."
+          "description": "Multi is deprecated and no longer supported. Templates are session-\nspawnable by default, so old configs that still set this field fail\nvalidation with a migration hint. Manual-only templates should use\npool.max = 0 instead."
         },
         "depends_on": {
           "items": {

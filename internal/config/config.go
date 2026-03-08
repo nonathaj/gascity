@@ -1088,7 +1088,8 @@ type Agent struct {
 	Fallback bool `toml:"fallback,omitempty"`
 	// Multi is deprecated and no longer supported. Templates are session-
 	// spawnable by default, so old configs that still set this field fail
-	// validation with a migration hint.
+	// validation with a migration hint. Manual-only templates should use
+	// pool.max = 0 instead.
 	Multi bool `toml:"multi,omitempty"`
 	// DependsOn lists agent names that must be awake before this agent wakes.
 	// Used for dependency-ordered startup and shutdown. Validated for cycles
@@ -1295,7 +1296,7 @@ func ValidateAgents(agents []Agent) error {
 			return fmt.Errorf("agent %q: wake_mode must be \"resume\", \"fresh\", or empty, got %q", a.QualifiedName(), a.WakeMode)
 		}
 		if a.Multi {
-			return fmt.Errorf("agent %q: multi has been removed; every template is session-spawnable by default", a.QualifiedName())
+			return fmt.Errorf("agent %q: multi has been removed; every template is session-spawnable by default. If this agent should be manual-only, set pool.max = 0", a.QualifiedName())
 		}
 		if a.Pool != nil {
 			if a.Pool.Min < 0 {

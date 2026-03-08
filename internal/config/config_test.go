@@ -1588,7 +1588,7 @@ func TestValidateAgentsMultiIsRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for deprecated multi")
 	}
-	if !strings.Contains(err.Error(), "multi has been removed") {
+	if !strings.Contains(err.Error(), "pool.max = 0") {
 		t.Errorf("expected deprecation error, got: %v", err)
 	}
 }
