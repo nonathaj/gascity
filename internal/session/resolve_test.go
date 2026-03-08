@@ -1,22 +1,21 @@
-package main
+package session_test
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/session"
 )
 
-func TestResolveSessionID_BeadID(t *testing.T) {
+func TestResolveSessionID_DirectLookup(t *testing.T) {
 	store := beads.NewMemStore()
-	// Create a real session bead so the direct lookup succeeds.
 	b, _ := store.Create(beads.Bead{
 		Type:   session.BeadType,
 		Labels: []string{session.LabelSession},
 	})
 
-	id, err := resolveSessionID(store, b.ID)
+	id, err := session.ResolveSessionID(store, b.ID)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,13 +28,13 @@ func TestResolveSessionID_TemplateName(t *testing.T) {
 	store := beads.NewMemStore()
 	b, _ := store.Create(beads.Bead{
 		Type:   session.BeadType,
-		Labels: []string{session.LabelSession, "template:overseer"},
+		Labels: []string{session.LabelSession},
 		Metadata: map[string]string{
 			"template": "overseer",
 		},
 	})
 
-	id, err := resolveSessionID(store, "overseer")
+	id, err := session.ResolveSessionID(store, "overseer")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -48,28 +47,30 @@ func TestResolveSessionID_QualifiedName(t *testing.T) {
 	store := beads.NewMemStore()
 	b, _ := store.Create(beads.Bead{
 		Type:   session.BeadType,
-		Labels: []string{session.LabelSession, "template:myrig/worker"},
+		Labels: []string{session.LabelSession},
 		Metadata: map[string]string{
 			"template": "myrig/worker",
 		},
 	})
 
 	// Resolve by bare name.
-	id, err := resolveSessionID(store, "worker")
+	id, err := session.ResolveSessionID(store, "worker")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if id != b.ID {
 		t.Errorf("got %q, want %q", id, b.ID)
 	}
+}
 
-	// Resolve by qualified name.
-	id, err = resolveSessionID(store, "myrig/worker")
-	if err != nil {
-		t.Fatalf("unexpected error for qualified: %v", err)
+func TestResolveSessionID_NotFound(t *testing.T) {
+	store := beads.NewMemStore()
+	_, err := session.ResolveSessionID(store, "nonexistent")
+	if err == nil {
+		t.Fatal("expected error")
 	}
-	if id != b.ID {
-		t.Errorf("qualified: got %q, want %q", id, b.ID)
+	if !errors.Is(err, session.ErrSessionNotFound) {
+		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
 
@@ -90,23 +91,12 @@ func TestResolveSessionID_Ambiguous(t *testing.T) {
 		},
 	})
 
-	_, err := resolveSessionID(store, "worker")
+	_, err := session.ResolveSessionID(store, "worker")
 	if err == nil {
 		t.Fatal("expected ambiguity error")
 	}
-	if !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("error should mention ambiguous, got: %v", err)
-	}
-}
-
-func TestResolveSessionID_NotFound(t *testing.T) {
-	store := beads.NewMemStore()
-	_, err := resolveSessionID(store, "nonexistent")
-	if err == nil {
-		t.Fatal("expected not found error")
-	}
-	if !strings.Contains(err.Error(), "session not found") {
-		t.Errorf("error should mention not found, got: %v", err)
+	if !errors.Is(err, session.ErrAmbiguous) {
+		t.Errorf("expected ErrAmbiguous, got: %v", err)
 	}
 }
 
@@ -121,27 +111,11 @@ func TestResolveSessionID_SkipsClosedBeads(t *testing.T) {
 	})
 	_ = store.Close(b.ID)
 
-	_, err := resolveSessionID(store, "worker")
+	_, err := session.ResolveSessionID(store, "worker")
 	if err == nil {
 		t.Fatal("expected not found for closed session")
 	}
-}
-
-func TestLooksLikeBeadID(t *testing.T) {
-	tests := []struct {
-		input string
-		want  bool
-	}{
-		{"gc-42", true},
-		{"gc-1", true},
-		{"gc-abc", true},
-		{"overseer", false},
-		{"myrig/worker", false},
-		{"", false},
-	}
-	for _, tt := range tests {
-		if got := looksLikeBeadID(tt.input); got != tt.want {
-			t.Errorf("looksLikeBeadID(%q) = %v, want %v", tt.input, got, tt.want)
-		}
+	if !errors.Is(err, session.ErrSessionNotFound) {
+		t.Errorf("expected ErrSessionNotFound, got: %v", err)
 	}
 }

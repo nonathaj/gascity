@@ -341,3 +341,62 @@ func TestHandleSessionListIncludesReason(t *testing.T) {
 		t.Errorf("got reason %q, want %q", item.Reason, "user-hold")
 	}
 }
+
+func TestHandleSessionRename(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Original")
+
+	body := `{"title":"Renamed"}`
+	req := newPostRequest("/v0/session/"+info.ID+"/rename", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Title != "Renamed" {
+		t.Errorf("got title %q, want %q", resp.Title, "Renamed")
+	}
+}
+
+func TestHandleSessionRenameEmptyTitle(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Test")
+
+	body := `{"title":""}`
+	req := newPostRequest("/v0/session/"+info.ID+"/rename", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+func TestHandleSessionAmbiguousTemplateName(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	// Create two sessions with the same template name.
+	info1 := createTestSession(t, fs.cityBeadStore, fs.sp, "Worker 1")
+	info2 := createTestSession(t, fs.cityBeadStore, fs.sp, "Worker 2")
+	_ = fs.cityBeadStore.SetMetadataBatch(info1.ID, map[string]string{"template": "worker"})
+	_ = fs.cityBeadStore.SetMetadataBatch(info2.ID, map[string]string{"template": "worker"})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/worker", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("got status %d, want %d (ambiguous); body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}

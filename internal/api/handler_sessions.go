@@ -1,9 +1,9 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -60,36 +60,13 @@ func sessionResponseWithReason(info session.Info, b *beads.Bead) sessionResponse
 	return r
 }
 
-// resolveSessionID resolves a session identifier (bead ID or template name)
-// to a bead ID. This mirrors the CLI's resolveSessionID logic.
-func resolveSessionID(store beads.Store, identifier string) (string, error) {
-	if strings.HasPrefix(identifier, "gc-") {
-		return identifier, nil
-	}
-
-	all, err := store.ListByLabel(session.LabelSession, 0)
-	if err != nil {
-		return "", fmt.Errorf("listing sessions: %w", err)
-	}
-
-	var matches []beads.Bead
-	for _, b := range all {
-		if b.Type != session.BeadType || b.Status == "closed" {
-			continue
-		}
-		tmpl := b.Metadata["template"]
-		if tmpl == identifier || strings.HasSuffix(tmpl, "/"+identifier) {
-			matches = append(matches, b)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("no session found for %q", identifier)
-	case 1:
-		return matches[0].ID, nil
+// writeResolveError maps session.ResolveSessionID errors to HTTP responses.
+func writeResolveError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, session.ErrAmbiguous):
+		writeError(w, http.StatusConflict, "ambiguous", err.Error())
 	default:
-		return "", fmt.Errorf("ambiguous: %q matches %d sessions", identifier, len(matches))
+		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	}
 }
 
@@ -136,9 +113,9 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	sp := s.state.SessionProvider()
 	mgr := session.NewManager(store, sp)
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 	info, err := mgr.Get(id)
@@ -159,9 +136,9 @@ func (s *Server) handleSessionSuspend(w http.ResponseWriter, r *http.Request) {
 	sp := s.state.SessionProvider()
 	mgr := session.NewManager(store, sp)
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 	if err := mgr.Suspend(id); err != nil {
@@ -180,9 +157,9 @@ func (s *Server) handleSessionClose(w http.ResponseWriter, r *http.Request) {
 	sp := s.state.SessionProvider()
 	mgr := session.NewManager(store, sp)
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 	if err := mgr.Close(id); err != nil {
@@ -200,9 +177,9 @@ func (s *Server) handleSessionWake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 
@@ -245,9 +222,9 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 
@@ -277,7 +254,21 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "id": id})
+
+	// Re-fetch to return the updated session, consistent with PATCH.
+	sp := s.state.SessionProvider()
+	mgr := session.NewManager(store, sp)
+	info, err := mgr.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "id": id})
+		return
+	}
+	updated, err := store.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, sessionToResponse(info))
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated))
 }
 
 // handleSessionPatch handles PATCH /v0/session/{id}. Only title is mutable.
@@ -288,9 +279,9 @@ func (s *Server) handleSessionPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := resolveSessionID(store, r.PathValue("id"))
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not_found", err.Error())
+		writeResolveError(w, err)
 		return
 	}
 
@@ -333,7 +324,15 @@ func (s *Server) handleSessionPatch(w http.ResponseWriter, r *http.Request) {
 	// Re-fetch to get updated state.
 	sp := s.state.SessionProvider()
 	mgr := session.NewManager(store, sp)
-	info, _ := mgr.Get(id)
-	updated, _ := store.Get(id)
+	info, err := mgr.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "id": id})
+		return
+	}
+	updated, err := store.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, sessionToResponse(info))
+		return
+	}
 	writeJSON(w, http.StatusOK, sessionResponseWithReason(info, &updated))
 }
