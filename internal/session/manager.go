@@ -316,9 +316,12 @@ func (m *Manager) Reactivate(id string) error {
 		"state":             string(StateActive),
 		"state_reason":      "reactivated",
 		"quarantined_until": "",
-		"quarantine_cycle":  "",
+		"crash_count":       "0",
 		"archived_at":       "",
 	}
+	// Note: quarantine_cycle is intentionally preserved across reactivations.
+	// It tracks how many quarantine rounds the session has been through,
+	// enabling eviction after quarantine_max_attempts.
 	return m.store.SetMetadataBatch(id, batch)
 }
 

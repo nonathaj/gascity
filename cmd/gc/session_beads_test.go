@@ -657,16 +657,15 @@ func TestLoadSessionBeads_DeduplicatesBySessionName(t *testing.T) {
 }
 
 func TestLoadSessionBeads_LegacyStateMapping(t *testing.T) {
-	store := beads.NewMemStore()
-
 	tests := []struct {
 		legacyState string
 		wantState   string
+		wantCount   int // expected number of beads returned
 	}{
-		{"stopped", "closed"},
-		{"orphaned", "suspended"},
-		{"active", "active"},
-		{"suspended", "suspended"},
+		{"stopped", "closed", 0},     // stopped → closed is terminal, filtered out
+		{"orphaned", "suspended", 1}, // orphaned → suspended, kept
+		{"active", "active", 1},
+		{"suspended", "suspended", 1},
 	}
 	for _, tt := range tests {
 		store := beads.NewMemStore() // fresh store per subtest
@@ -684,15 +683,14 @@ func TestLoadSessionBeads_LegacyStateMapping(t *testing.T) {
 		if err != nil {
 			t.Fatalf("state=%q: %v", tt.legacyState, err)
 		}
-		if len(result) != 1 {
-			t.Fatalf("state=%q: expected 1 bead, got %d", tt.legacyState, len(result))
+		if len(result) != tt.wantCount {
+			t.Fatalf("state=%q: expected %d bead(s), got %d", tt.legacyState, tt.wantCount, len(result))
 		}
-		if result[0].Metadata["state"] != tt.wantState {
+		if tt.wantCount > 0 && result[0].Metadata["state"] != tt.wantState {
 			t.Errorf("state=%q: mapped to %q, want %q",
 				tt.legacyState, result[0].Metadata["state"], tt.wantState)
 		}
 	}
-	_ = store // suppress unused warning
 }
 
 func TestLoadSessionBeads_HybridPoolOccupancy(t *testing.T) {

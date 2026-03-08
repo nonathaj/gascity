@@ -87,9 +87,19 @@ func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
 		if _, hasNew := newByName[sn]; hasNew {
 			continue // new-type bead takes precedence
 		}
-		// Normalize legacy state.
+		// Normalize legacy state. Clone metadata map first to avoid
+		// mutating the store's cached copy (maps are reference types).
 		if mapped, ok := legacyStateMap[b.Metadata["state"]]; ok {
-			b.Metadata["state"] = mapped
+			newMeta := make(map[string]string, len(b.Metadata))
+			for k, v := range b.Metadata {
+				newMeta[k] = v
+			}
+			newMeta["state"] = mapped
+			b.Metadata = newMeta
+			// Skip terminal beads after mapping (e.g., stopped → closed).
+			if mapped == "closed" {
+				continue
+			}
 		}
 		result = append(result, b)
 	}

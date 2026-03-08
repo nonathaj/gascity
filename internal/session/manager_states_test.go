@@ -162,3 +162,36 @@ func TestConformance_ArchivedReactivation(t *testing.T) {
 		t.Error("archived_at should be cleared on reactivation")
 	}
 }
+
+func TestConformance_QuarantineReactivation(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	m := NewManager(store, sp)
+
+	id := createTestSession(t, m, "crasher")
+
+	// Quarantine the session.
+	until := time.Now().Add(5 * time.Minute)
+	if err := m.Quarantine(id, until, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reactivate.
+	if err := m.Reactivate(id); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := store.Get(id)
+
+	// quarantine_cycle should be preserved (for eviction tracking).
+	if b.Metadata["quarantine_cycle"] != "3" {
+		t.Errorf("quarantine_cycle = %q, want 3 (should be preserved)", b.Metadata["quarantine_cycle"])
+	}
+	// crash_count should be reset.
+	if b.Metadata["crash_count"] != "0" {
+		t.Errorf("crash_count = %q, want 0", b.Metadata["crash_count"])
+	}
+	// quarantined_until should be cleared.
+	if b.Metadata["quarantined_until"] != "" {
+		t.Error("quarantined_until should be cleared on reactivation")
+	}
+}

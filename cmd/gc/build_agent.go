@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os/exec"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 )
@@ -43,12 +45,19 @@ type agentBuildParams struct {
 // fingerprinting (e.g., pool bounds); pass nil for pool instances.
 //
 // Internally delegates to resolveTemplate() for pure parameter resolution,
-// then handles ACP route registration (the only side effect) and creates
-// the agent.Agent.
+// then handles side effects (hook installation, ACP route registration) and
+// creates the agent.Agent.
 func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName string, fpExtra map[string]string, onStop ...func() error) (agent.Agent, error) {
 	params, err := resolveTemplate(p, cfgAgent, qualifiedName, fpExtra)
 	if err != nil {
 		return nil, err
+	}
+
+	// Install provider hooks (idempotent filesystem side effect).
+	if ih := config.ResolveInstallHooks(cfgAgent, p.workspace); len(ih) > 0 {
+		if hErr := hooks.Install(p.fs, p.cityPath, params.WorkDir, ih); hErr != nil {
+			fmt.Fprintf(p.stderr, "agent %q: hooks: %v\n", qualifiedName, hErr) //nolint:errcheck
+		}
 	}
 
 	// Register ACP route on the auto provider for dynamic sessions

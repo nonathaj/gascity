@@ -1,7 +1,10 @@
 // template_resolve.go extracts a pure function for resolving agent config
 // into session parameters. This is the data-only half of buildOneAgent:
 // all steps that compute values (provider resolution, dir expansion, env
-// merging, prompt rendering) without side effects (ACP route registration).
+// merging, prompt rendering) without side effects.
+//
+// Side effects (ACP route registration, hook installation) are handled
+// by the caller (buildOneAgent).
 //
 // resolveTemplate returns TemplateParams — a value type suitable for
 // session.Manager.CreateFromParams or for building an agent.Agent.
@@ -16,7 +19,6 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/convergence"
-	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -78,18 +80,10 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		return TemplateParams{}, fmt.Errorf("agent %q: %w", qualifiedName, err)
 	}
 
-	// Step 4: Install provider hooks (best-effort side effect, kept here
-	// because it's idempotent and affects the filesystem, not runtime state).
-	if ih := config.ResolveInstallHooks(cfgAgent, p.workspace); len(ih) > 0 {
-		if hErr := hooks.Install(p.fs, p.cityPath, workDir, ih); hErr != nil {
-			fmt.Fprintf(p.stderr, "agent %q: hooks: %v\n", qualifiedName, hErr) //nolint:errcheck
-		}
-	}
-
-	// Step 5: Resolve overlay directory.
+	// Step 4: Resolve overlay directory.
 	overlayDir := resolveOverlayDir(cfgAgent.OverlayDir, p.cityPath)
 
-	// Step 6: Build copy_files and command with settings args.
+	// Step 5: Build copy_files and command with settings args.
 	var copyFiles []runtime.CopyEntry
 	command := resolved.CommandString()
 	if sa := settingsArgs(p.cityPath, resolved.Name); sa != "" {
@@ -103,13 +97,13 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	}
 	copyFiles = stageHookFiles(copyFiles, p.cityPath, workDir)
 
-	// Step 7: Resolve rig association.
+	// Step 6: Resolve rig association.
 	rigName := resolveRigForAgent(workDir, p.rigs)
 
-	// Step 8: Compute session name.
+	// Step 7: Compute session name.
 	sessName := agent.SessionNameFor(p.cityName, qualifiedName, p.sessionTemplate)
 
-	// Step 9: Build agent environment.
+	// Step 8: Build agent environment.
 	agentEnv := map[string]string{
 		"GC_SESSION_NAME": sessName,
 		"GC_TEMPLATE":     templateNameFor(cfgAgent, qualifiedName),
@@ -121,7 +115,7 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		agentEnv["GC_RIG"] = rigName
 	}
 
-	// Step 10: Render prompt with beacon.
+	// Step 9: Render prompt with beacon.
 	var prompt string
 	if resolved.PromptMode != "none" {
 		fragments := mergeFragmentLists(p.globalFragments, cfgAgent.InjectFragments)
@@ -146,10 +140,10 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		}
 	}
 
-	// Step 11: Merge environment layers.
+	// Step 10: Merge environment layers.
 	env := convergence.ScrubTokenEnv(mergeEnv(passthroughEnv(), expandEnvMap(resolved.Env), expandEnvMap(cfgAgent.Env), agentEnv))
 
-	// Step 12: Expand session setup templates.
+	// Step 11: Expand session setup templates.
 	configDir := p.cityPath
 	if cfgAgent.SourceDir != "" {
 		configDir = cfgAgent.SourceDir
@@ -172,7 +166,7 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	expandedPreStart := expandSessionSetup(cfgAgent.PreStart, setupCtx)
 	expandedLive := expandSessionSetup(cfgAgent.SessionLive, setupCtx)
 
-	// Step 13: Build startup hints.
+	// Step 12: Build startup hints.
 	hints := agent.StartupHints{
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,

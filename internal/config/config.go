@@ -904,6 +904,10 @@ func (c *City) FormulasDir() string {
 // AgentDefaults provides default values applied to all agents that don't
 // explicitly override them. Declared once at the city level via
 // [agent_defaults] in city.toml.
+//
+// NOTE: This is a config-only scaffold for Phase 1. Runtime merging of
+// defaults into individual agents is wired in Phase 2 (PR 2c). Until
+// then, these values are parsed and composed but not consumed at runtime.
 type AgentDefaults struct {
 	// Model is the default model name for agents (e.g., "claude-sonnet-4-6").
 	// Agents with their own model override take precedence.

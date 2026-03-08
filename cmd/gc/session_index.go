@@ -57,7 +57,9 @@ func (idx *sessionIndex) populateIndex(store beads.Store, stderr io.Writer) {
 	for _, b := range loaded {
 		state := b.Metadata["state"]
 		// Skip archived/closed — they don't affect reconciliation.
-		if state == "archived" || b.Status == "closed" {
+		// Check both metadata state (includes legacy "stopped" mapped to
+		// "closed") and bead-level status.
+		if state == "archived" || state == "closed" || b.Status == "closed" {
 			continue
 		}
 		idx.entries[b.ID] = entryFromBead(b)
