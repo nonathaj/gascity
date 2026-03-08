@@ -84,7 +84,9 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 		if err := sp.Nudge(sessionName, "New molecule assigned: "+rootID); err != nil {
 			resp["nudge_error"] = err.Error()
 		}
-		// Poke for immediate wake (same as bead path).
+		// Poke unconditionally: even if nudge succeeded, the target may be
+		// asleep and need a reconciler tick to wake via WakeWork. The poke
+		// coalesces via buffered(1) channel so extra pokes are harmless.
 		s.state.Poke()
 		writeJSON(w, http.StatusCreated, resp)
 		return
@@ -98,8 +100,9 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 		resp["nudge_error"] = err.Error()
 	}
 
-	// Poke the controller to trigger immediate reconciler tick so WakeWork
-	// can wake the target session without waiting for the next patrol.
+	// Poke unconditionally: even if nudge succeeded, the target may be
+	// asleep and need a reconciler tick to wake via WakeWork. The poke
+	// coalesces via buffered(1) channel so extra pokes are harmless.
 	s.state.Poke()
 
 	writeJSON(w, http.StatusOK, resp)

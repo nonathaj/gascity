@@ -380,6 +380,7 @@ func TestDoSlingNudgeNoSession(t *testing.T) {
 	a := config.Agent{Name: "mayor"}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir() // isolated path so poke doesn't hit real socket
 	opts := testOpts(a, "BL-1")
 	opts.Nudge = true
 	code := doSling(opts, deps, nil)
@@ -457,6 +458,7 @@ func TestDoSlingNudgePoolNoMembers(t *testing.T) {
 	}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir() // isolated path so poke doesn't hit real socket
 	opts := testOpts(a, "BL-1")
 	opts.Nudge = true
 	code := doSling(opts, deps, nil)
