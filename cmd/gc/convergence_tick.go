@@ -104,12 +104,31 @@ func (cr *CityRuntime) processConvergenceRequests(ctx context.Context) {
 	for {
 		select {
 		case req := <-cr.convergenceReqCh:
-			reply := cr.handleConvergenceRequest(ctx, req)
+			reply := cr.safeHandleConvergenceRequest(ctx, req)
 			req.replyCh <- reply
 		default:
 			return
 		}
 	}
+}
+
+// safeHandleConvergenceRequest wraps handleConvergenceRequest with panic
+// recovery so a panicking handler doesn't leave replyCh unwritten and hang
+// the socket handler goroutine.
+func (cr *CityRuntime) safeHandleConvergenceRequest(ctx context.Context, req convergenceRequest) (reply convergenceReply) {
+	defer func() {
+		if r := recover(); r != nil {
+			reply = convergenceReply{Error: fmt.Sprintf("internal error (panic): %v", r)}
+			fmt.Fprintf(cr.stderr, "%s: convergence: panic handling %q for %s: %v\n", //nolint:errcheck
+				cr.logPrefix, req.Command, req.BeadID, r)
+		}
+	}()
+	reply = cr.handleConvergenceRequest(ctx, req)
+	if reply.Error != "" {
+		fmt.Fprintf(cr.stderr, "%s: convergence: %s %s: %s\n", //nolint:errcheck
+			cr.logPrefix, req.Command, req.BeadID, reply.Error)
+	}
+	return reply
 }
 
 // handleConvergenceRequest dispatches a single convergence command.

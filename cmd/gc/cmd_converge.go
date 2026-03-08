@@ -322,6 +322,10 @@ func newConvergeTestGateCmd(stdout, stderr io.Writer) *cobra.Command {
 				fmt.Fprintf(stderr, "gc converge test-gate: %v\n", err) //nolint:errcheck
 				return errExit
 			}
+			if b.Type != "convergence" {
+				fmt.Fprintf(stderr, "gc converge test-gate: bead %s is type %q, not convergence\n", beadID, b.Type) //nolint:errcheck
+				return errExit
+			}
 			meta := b.Metadata
 			if meta == nil {
 				meta = map[string]string{}
@@ -344,11 +348,14 @@ func newConvergeTestGateCmd(stdout, stderr io.Writer) *cobra.Command {
 
 			cityPath, _ := resolveCity()
 			iter, _ := convergence.DecodeInt(meta[convergence.FieldIteration])
+			maxIter, _ := convergence.DecodeInt(meta[convergence.FieldMaxIterations])
 			env := convergence.ConditionEnv{
-				BeadID:    beadID,
-				Iteration: iter,
-				CityPath:  cityPath,
-				DocPath:   meta[convergence.VarPrefix+"doc_path"],
+				BeadID:        beadID,
+				Iteration:     iter,
+				MaxIterations: maxIter,
+				WispID:        meta[convergence.FieldActiveWisp],
+				CityPath:      cityPath,
+				DocPath:       meta[convergence.VarPrefix+"doc_path"],
 			}
 
 			fmt.Fprintf(stdout, "Testing gate: %s\n", gateConfig.Condition) //nolint:errcheck

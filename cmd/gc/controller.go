@@ -74,7 +74,7 @@ func startControllerSocket(cityPath string, cancelFn context.CancelFunc, converg
 // "converge:{json}" (convergence commands routed to event loop).
 func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest) {
 	defer conn.Close()                                 //nolint:errcheck // best-effort cleanup
-	conn.SetDeadline(time.Now().Add(90 * time.Second)) //nolint:errcheck // symmetric read+write deadline
+	conn.SetDeadline(time.Now().Add(95 * time.Second)) //nolint:errcheck // symmetric read+write deadline; 5s margin over 30s enqueue + 60s reply
 	scanner := bufio.NewScanner(conn)
 	// Increase scanner buffer for convergence commands which may carry large payloads.
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)

@@ -100,8 +100,9 @@ func (a *convergenceStoreAdapter) FindByIdempotencyKey(key string) (string, bool
 	}
 	children, err := a.store.Children(parentID)
 	if err != nil {
-		// Parent might not exist or have no children — try full scan.
-		return a.findByKeyScan(key)
+		// Children returns empty list (not error) when parent has no children,
+		// so any error here is a real store failure — propagate it.
+		return "", false, fmt.Errorf("listing children of %s: %w", parentID, err)
 	}
 	for _, b := range children {
 		if b.Metadata != nil && b.Metadata["idempotency_key"] == key {

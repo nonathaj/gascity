@@ -243,7 +243,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 			// processConvergenceRequests() in tick() drains any that arrived
 			// during tick processing. Both paths are safe — channel receives
 			// are atomic, so each request is processed exactly once.
-			reply := cr.handleConvergenceRequest(ctx, req)
+			// Note: ordering relative to convergenceTick is non-deterministic
+			// via this path, but handlers are idempotent so interleaving is safe.
+			reply := cr.safeHandleConvergenceRequest(ctx, req)
 			req.replyCh <- reply
 		case <-ctx.Done():
 			return
