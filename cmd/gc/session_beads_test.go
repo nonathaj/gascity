@@ -2,20 +2,20 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
-// allConfigured is a helper that builds configuredNames from agent session names.
-func allConfigured(agents []agent.Agent) map[string]bool {
-	m := make(map[string]bool, len(agents))
-	for _, a := range agents {
-		m[a.SessionName()] = true
+// allConfiguredDS builds configuredNames from a desiredState map.
+func allConfiguredDS(ds map[string]TemplateParams) map[string]bool {
+	m := make(map[string]bool, len(ds))
+	for sn := range ds {
+		m[sn] = true
 	}
 	return m
 }
@@ -23,18 +23,15 @@ func allConfigured(agents []agent.Agent) map[string]bool {
 func TestSyncSessionBeads_CreatesNewBeads(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
@@ -72,18 +69,15 @@ func TestSyncSessionBeads_CreatesNewBeads(t *testing.T) {
 func TestSyncSessionBeads_Idempotent(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Get the created bead's token and generation.
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
@@ -92,7 +86,7 @@ func TestSyncSessionBeads_Idempotent(t *testing.T) {
 
 	// Run again — should be idempotent.
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ = store.ListByLabel(sessionBeadLabel, 0)
 	if len(all) != 1 {
@@ -111,26 +105,23 @@ func TestSyncSessionBeads_Idempotent(t *testing.T) {
 func TestSyncSessionBeads_ConfigDrift(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
 	token1 := all[0].Metadata["instance_token"]
 
 	// Change config — different command.
-	agents[0].(*agent.Fake).FakeSessionConfig = runtime.Config{Command: "gemini"}
+	ds["mayor"] = TemplateParams{TemplateName: "mayor", Command: "gemini"}
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// syncSessionBeads no longer updates config_hash for existing beads.
 	// The bead-driven reconciler (reconcileSessionBeads) detects drift by
@@ -153,30 +144,23 @@ func TestSyncSessionBeads_ConfigDrift(t *testing.T) {
 func TestSyncSessionBeads_OrphanDetection(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
 
 	// Create a bead for "old-agent".
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "old-agent",
-			FakeSessionName:   "old-agent",
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"old-agent": {TemplateName: "old-agent", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Now sync with a different agent list (old-agent removed from config too).
-	agents = []agent.Agent{
-		&agent.Fake{
-			FakeName:          "new-agent",
-			FakeSessionName:   "new-agent",
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds2 := map[string]TemplateParams{
+		"new-agent": {TemplateName: "new-agent", Command: "claude"},
 	}
 	clk.Advance(5 * time.Second)
 	// configuredNames only has new-agent — old-agent is truly orphaned.
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds2, sp, allConfiguredDS(ds2), nil, clk, &stderr, false)
 
 	// old-agent's bead should be closed with reason "orphaned".
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
@@ -204,7 +188,7 @@ func TestSyncSessionBeads_OrphanDetection(t *testing.T) {
 func TestSyncSessionBeads_NilStore(t *testing.T) {
 	// Verify nil store does not panic.
 	var stderr bytes.Buffer
-	syncSessionBeads(nil, nil, nil, nil, &clock.Fake{}, &stderr, false)
+	syncSessionBeads(nil, nil, nil, nil, nil, &clock.Fake{}, &stderr, false)
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
 	}
@@ -213,18 +197,14 @@ func TestSyncSessionBeads_NilStore(t *testing.T) {
 func TestSyncSessionBeads_StoppedAgent(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake() // mayor NOT started → IsRunning returns false
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           false,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
 	if len(all) != 1 {
@@ -238,20 +218,17 @@ func TestSyncSessionBeads_StoppedAgent(t *testing.T) {
 func TestSyncSessionBeads_ClosedBeadCreatesNew(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
 
 	// First sync creates the bead.
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
 	if len(all) != 1 {
@@ -263,7 +240,7 @@ func TestSyncSessionBeads_ClosedBeadCreatesNew(t *testing.T) {
 
 	// Re-sync should create a NEW bead, not reuse the closed one.
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ = store.ListByLabel(sessionBeadLabel, 0)
 	if len(all) != 2 {
@@ -292,34 +269,23 @@ func TestSyncSessionBeads_ClosedBeadCreatesNew(t *testing.T) {
 func TestSyncSessionBeads_PoolInstanceOrphaned(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "city-worker-1", runtime.Config{Command: "claude"})
+	_ = sp.Start(context.TODO(), "city-worker-2", runtime.Config{Command: "claude"})
 
-	// Pool instances have session names like "city-worker-1", "city-worker-2".
-	// These are ephemeral — not user-configured — so they're classified by
-	// exact match against configuredNames. The template "city-worker" is
-	// configured, but instances "city-worker-1" etc. are not.
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "worker-1",
-			FakeSessionName:   "city-worker-1",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-		&agent.Fake{
-			FakeName:          "worker-2",
-			FakeSessionName:   "city-worker-2",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"city-worker-1": {TemplateName: "worker", Command: "claude"},
+		"city-worker-2": {TemplateName: "worker", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
 	// configuredNames has the template name, not instance names.
 	configuredNames := map[string]bool{"city-worker": true}
-	syncSessionBeads(store, agents, configuredNames, nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, configuredNames, nil, clk, &stderr, false)
 
 	// Remove instances from runnable agents but keep template configured.
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, nil, configuredNames, nil, clk, &stderr, false)
+	syncSessionBeads(store, nil, sp, configuredNames, nil, clk, &stderr, false)
 
 	// Pool instances are ephemeral (not user-configured), so they become
 	// closed with reason "orphaned" when no longer running.
@@ -343,23 +309,20 @@ func TestSyncSessionBeads_PoolInstanceOrphaned(t *testing.T) {
 func TestSyncSessionBeads_ResumedAfterSuspension(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "worker", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "worker",
-			FakeSessionName:   "worker",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"worker": {TemplateName: "worker", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Suspend the agent: remove from runnable but keep in configuredNames.
 	clk.Advance(5 * time.Second)
 	configuredNames := map[string]bool{"worker": true}
-	syncSessionBeads(store, nil, configuredNames, nil, clk, &stderr, false)
+	syncSessionBeads(store, nil, sp, configuredNames, nil, clk, &stderr, false)
 
 	// Verify the bead is closed.
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
@@ -372,7 +335,7 @@ func TestSyncSessionBeads_ResumedAfterSuspension(t *testing.T) {
 
 	// Resume the agent: return it to the runnable set.
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Should have 2 beads: 1 closed (old lifecycle) + 1 open (new lifecycle).
 	all, _ = store.ListByLabel(sessionBeadLabel, 0)
@@ -403,18 +366,15 @@ func TestSyncSessionBeads_ResumedAfterSuspension(t *testing.T) {
 func TestSyncSessionBeads_StaleCloseMetadataCleared(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "worker", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "worker",
-			FakeSessionName:   "worker",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"worker": {TemplateName: "worker", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Simulate a partially-failed closeBead: set close_reason on the
 	// open bead as if setMeta("close_reason") succeeded but store.Close
@@ -425,7 +385,7 @@ func TestSyncSessionBeads_StaleCloseMetadataCleared(t *testing.T) {
 
 	// Agent resumes — sync should clear the stale close metadata.
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	all, _ = store.ListByLabel(sessionBeadLabel, 0)
 	if len(all) != 1 {
@@ -449,34 +409,28 @@ func TestSyncSessionBeads_StaleCloseMetadataCleared(t *testing.T) {
 func TestSyncSessionBeads_SuspendedAgentNotOrphaned(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
+	_ = sp.Start(context.TODO(), "worker", runtime.Config{Command: "claude"})
 
-	// Create beads for both agents.
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-		&agent.Fake{
-			FakeName:          "worker",
-			FakeSessionName:   "worker",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor":  {TemplateName: "mayor", Command: "claude"},
+		"worker": {TemplateName: "worker", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	// Now "suspend" worker: remove from runnable agents but keep in configuredNames.
-	runnableAgents := []agent.Agent{agents[0]} // only mayor
+	dsOnlyMayor := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
+	}
 	configuredNames := map[string]bool{
 		"mayor":  true,
 		"worker": true, // still configured, just suspended
 	}
 	clk.Advance(5 * time.Second)
-	syncSessionBeads(store, runnableAgents, configuredNames, nil, clk, &stderr, false)
+	syncSessionBeads(store, dsOnlyMayor, sp, configuredNames, nil, clk, &stderr, false)
 
 	// Worker should be closed with reason "suspended", not "orphaned".
 	all, _ := store.ListByLabel(sessionBeadLabel, 0)
@@ -501,24 +455,17 @@ func TestSyncSessionBeads_SuspendedAgentNotOrphaned(t *testing.T) {
 func TestSyncSessionBeads_ReturnsIndex(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
+	_ = sp.Start(context.TODO(), "worker", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-		&agent.Fake{
-			FakeName:          "worker",
-			FakeSessionName:   "worker",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor":  {TemplateName: "mayor", Command: "claude"},
+		"worker": {TemplateName: "worker", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	idx := syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	idx := syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr: %s", stderr.String())
@@ -551,7 +498,10 @@ func TestSyncSessionBeads_ReturnsIndex(t *testing.T) {
 	// Suspend worker — closed beads excluded from index.
 	clk.Advance(5 * time.Second)
 	cfgNames := map[string]bool{"mayor": true, "worker": true}
-	idx2 := syncSessionBeads(store, agents[:1], cfgNames, nil, clk, &stderr, false)
+	dsOnlyMayor := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
+	}
+	idx2 := syncSessionBeads(store, dsOnlyMayor, sp, cfgNames, nil, clk, &stderr, false)
 
 	if len(idx2) != 1 {
 		t.Fatalf("after suspend, index length = %d, want 1", len(idx2))

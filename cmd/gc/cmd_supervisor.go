@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
@@ -871,13 +870,11 @@ func effectiveProviderName(configured string) string {
 }
 
 // supervisorBuildAgentsFn returns a buildFn suitable for CityRuntimeParams.
-// It delegates to buildAgentsFromConfig with a stable beacon timestamp
-// and no multi-instance registry (multi agents are not yet supported
-// in supervisor mode).
-func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*config.City, runtime.Provider) []agent.Agent {
+// It delegates to buildDesiredState with a stable beacon timestamp.
+func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*config.City, runtime.Provider) map[string]TemplateParams {
 	beaconTime := time.Now()
-	return func(c *config.City, sp runtime.Provider) []agent.Agent {
-		return buildAgentsFromConfig(cityName, cityPath, beaconTime, c, sp, nil, "gc supervisor", stderr)
+	return func(c *config.City, sp runtime.Provider) map[string]TemplateParams {
+		return buildDesiredState(cityName, cityPath, beaconTime, c, sp, stderr)
 	}
 }
 

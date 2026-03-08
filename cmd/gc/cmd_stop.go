@@ -79,20 +79,22 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 
 	sp := newSessionProvider()
 	st := cfg.Workspace.SessionTemplate
-	var agents []agent.Handle
+	var sessionNames []string
 	desired := make(map[string]bool, len(cfg.Agents))
 	for _, a := range cfg.Agents {
 		pool := a.EffectivePool()
 		qn := a.QualifiedName()
 		if !pool.IsMultiInstance() {
 			// Single agent.
-			agents = append(agents, agent.HandleFor(qn, cityName, st, sp))
-			desired[agent.SessionNameFor(cityName, qn, st)] = true
+			sn := agent.SessionNameFor(cityName, qn, st)
+			sessionNames = append(sessionNames, sn)
+			desired[sn] = true
 		} else {
 			// Pool agent: discover instances (static for bounded, live for unlimited).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				agents = append(agents, agent.HandleFor(qualifiedInstance, cityName, st, sp))
-				desired[agent.SessionNameFor(cityName, qualifiedInstance, st)] = true
+				sn := agent.SessionNameFor(cityName, qualifiedInstance, st)
+				sessionNames = append(sessionNames, sn)
+				desired[sn] = true
 			}
 		}
 	}
@@ -102,7 +104,7 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 		recorder = fr
 	}
 
-	code := doStop(agents, sp, cfg.Daemon.ShutdownTimeoutDuration(), recorder, stdout, stderr)
+	code := doStop(sessionNames, sp, cfg.Daemon.ShutdownTimeoutDuration(), recorder, stdout, stderr)
 
 	// Clean up orphan sessions (sessions with the city prefix that are
 	// not in the current config).
@@ -139,19 +141,19 @@ func tryStopController(cityPath string, stdout io.Writer) bool {
 	return true
 }
 
-// doStop is the pure logic for "gc stop". It collects running agents and
-// performs graceful shutdown (interrupt → wait → kill). Accepts pre-built
-// agents, provider, timeout, and recorder for testability.
-func doStop(agents []agent.Handle, sp runtime.Provider, timeout time.Duration,
+// doStop is the pure logic for "gc stop". Filters to running sessions and
+// performs graceful shutdown (interrupt → wait → kill). Accepts session names,
+// provider, timeout, and recorder for testability.
+func doStop(sessionNames []string, sp runtime.Provider, timeout time.Duration,
 	rec events.Recorder, stdout, stderr io.Writer,
 ) int {
-	var names []string
-	for _, a := range agents {
-		if a.IsRunning() {
-			names = append(names, a.SessionName())
+	var running []string
+	for _, sn := range sessionNames {
+		if sp.IsRunning(sn) {
+			running = append(running, sn)
 		}
 	}
-	gracefulStopAll(names, sp, timeout, rec, stdout, stderr)
+	gracefulStopAll(running, sp, timeout, rec, stdout, stderr)
 	fmt.Fprintln(stdout, "City stopped.") //nolint:errcheck // best-effort stdout
 	return 0
 }

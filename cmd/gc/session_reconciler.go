@@ -3,9 +3,9 @@
 // bead, compute whether the session should be awake, and manage lifecycle
 // transitions using the Phase 2 building blocks.
 //
-// This is a bridge implementation: beads drive state tracking while
-// agent.Agent objects handle lifecycle operations (Start/Stop). A later
-// phase removes the agent.Agent dependency entirely.
+// This reconciler uses desiredState (map[string]TemplateParams) for config
+// queries and runtime.Provider directly for lifecycle operations. There
+// is no dependency on agent types.
 package main
 
 import (
@@ -37,31 +37,31 @@ func buildDepsMap(cfg *config.City) map[string][]string {
 	return deps
 }
 
-// derivePoolDesired computes pool desired counts from the already-evaluated
-// agent list. Since buildAgentsFromConfig already ran evaluatePool, the
-// number of instances per template in the agent list IS the desired count.
-func derivePoolDesired(agents []agent.Agent, cfg *config.City) map[string]int {
+// derivePoolDesired computes pool desired counts from the desired state map.
+// Since buildDesiredState already ran evaluatePool, the number of instances
+// per template in the desired state IS the desired count.
+func derivePoolDesired(desiredState map[string]TemplateParams, cfg *config.City) map[string]int {
 	if cfg == nil {
 		return nil
 	}
 	counts := make(map[string]int)
-	for _, a := range agents {
-		template := resolveAgentTemplate(a.Name(), cfg)
-		cfgAgent := findAgentByTemplate(cfg, template)
+	for _, tp := range desiredState {
+		cfgAgent := findAgentByTemplate(cfg, tp.TemplateName)
 		if cfgAgent != nil && cfgAgent.Pool != nil {
-			counts[template]++
+			counts[tp.TemplateName]++
 		}
 	}
 	return counts
 }
 
 // allDependenciesAlive checks that all template dependencies of a session
-// have at least one alive instance. Used to gate wake ordering so that
-// dependencies are alive before dependents try to wake.
+// have at least one alive instance. Uses the runtime.Provider directly
+// instead of agent types for liveness checks.
 func allDependenciesAlive(
 	session beads.Bead,
 	cfg *config.City,
-	agentIndex map[string]agent.Agent,
+	desiredState map[string]TemplateParams,
+	sp runtime.Provider,
 	cityName string,
 ) bool {
 	template := session.Metadata["template"]
@@ -76,11 +76,10 @@ func allDependenciesAlive(
 			continue // dependency not in config — skip
 		}
 		if depCfg.Pool != nil {
-			// Pool: check if any instance is alive.
+			// Pool: check if any instance is alive via Provider.
 			anyAlive := false
-			for _, a := range agentIndex {
-				t := resolveAgentTemplate(a.Name(), cfg)
-				if t == dep && a.IsRunning() {
+			for sn, tp := range desiredState {
+				if tp.TemplateName == dep && sp.IsRunning(sn) {
 					anyAlive = true
 					break
 				}
@@ -89,10 +88,9 @@ func allDependenciesAlive(
 				return false
 			}
 		} else {
-			// Fixed agent: check single instance.
+			// Fixed agent: check single instance via Provider.
 			sn := agent.SessionNameFor(cityName, dep, st)
-			a, ok := agentIndex[sn]
-			if !ok || !a.IsRunning() {
+			if !sp.IsRunning(sn) {
 				return false
 			}
 		}
@@ -102,31 +100,27 @@ func allDependenciesAlive(
 
 // reconcileSessionBeads performs bead-driven reconciliation using wake/sleep
 // semantics. For each session bead, it determines if the session should be
-// awake (has a matching agent in the desired set) and manages lifecycle
+// awake (has a matching entry in the desired state) and manages lifecycle
 // transitions using the Phase 2 building blocks.
 //
 // The function assumes session beads are already synced (syncSessionBeads
 // called before this function). When the bead reconciler is active,
 // syncSessionBeads does NOT close orphan/suspended beads (skipClose=true),
-// so the sessions slice may include beads with no matching agent. These
-// are handled by the orphan/suspended drain phase.
+// so the sessions slice may include beads with no matching desired entry.
+// These are handled by the orphan/suspended drain phase.
+//
+// desiredState maps sessionName → TemplateParams for all agents that should
+// be running. Built by buildDesiredState from config + scale_check results.
 //
 // configuredNames is the set of ALL configured agent session names (including
 // suspended agents). Used to distinguish "orphaned" (removed from config)
 // from "suspended" (still in config, not runnable) when closing beads.
 //
-// Known limitation: sessions adopted via the adoption barrier (running
-// sessions found without beads on startup) have beads with config_hash
-// and live_hash from the CURRENT config, not the config they were started
-// with. Drift detection is approximate for these sessions until they are
-// restarted by the reconciler, at which point provenance fields are
-// backfilled accurately.
-//
 // Returns the number of sessions woken this tick.
 func reconcileSessionBeads(
 	ctx context.Context,
 	sessions []beads.Bead,
-	agentIndex map[string]agent.Agent,
+	desiredState map[string]TemplateParams,
 	configuredNames map[string]bool,
 	cfg *config.City,
 	sp runtime.Provider,
@@ -175,22 +169,16 @@ func reconcileSessionBeads(
 		}
 
 		name := session.Metadata["session_name"]
-		a := agentIndex[name]
+		tp, desired := desiredState[name]
 
-		// Orphan/suspended: bead exists but no agent in desired set.
+		// Orphan/suspended: bead exists but not in desired state.
 		// Handle BEFORE heal/stability to avoid false crash detection —
 		// a running session that leaves the desired set is not a crash.
-		if a == nil {
+		if !desired {
 			providerAlive := sp.IsRunning(name)
 			// Heal state using provider liveness, not agent membership.
 			healState(session, providerAlive, store)
 			if providerAlive {
-				// Use defaultDrainTimeout (not driftDrainTimeout) for orphan/
-				// suspended drains. driftDrainTimeout is for config-drift only
-				// — it controls how long an agent gets to finish work before
-				// being restarted with new config. Orphan/suspended drains are
-				// lifecycle operations (agent removed/disabled) where the
-				// standard timeout applies.
 				reason := "orphaned"
 				if configuredNames[name] {
 					reason = "suspended"
@@ -198,7 +186,7 @@ func reconcileSessionBeads(
 				beginSessionDrain(*session, sp, dt, reason, clk, defaultDrainTimeout)
 				fmt.Fprintf(stdout, "Draining session '%s': %s\n", name, reason) //nolint:errcheck
 			} else {
-				// Not running and no agent — close the bead.
+				// Not running and not desired — close the bead.
 				reason := "orphaned"
 				if configuredNames[name] {
 					reason = "suspended"
@@ -208,7 +196,7 @@ func reconcileSessionBeads(
 			continue
 		}
 
-		alive := a.IsRunning()
+		alive := sp.IsRunning(name)
 
 		// Heal advisory state metadata.
 		healState(session, alive, store)
@@ -227,14 +215,6 @@ func reconcileSessionBeads(
 		// Live-only drift: re-apply session_live without restart.
 		if alive {
 			template := session.Metadata["template"]
-			// Prefer started_config_hash (set at actual start time by
-			// whichever reconciler started the session) over config_hash
-			// (set at bead creation/sync time, which may predate the
-			// session start). This ensures correct drift detection when
-			// toggling bead_reconciler from false→true: the legacy
-			// reconciler writes started_config_hash after start, and
-			// config_hash may reflect bead creation state, not the
-			// config the session was actually started with.
 			storedHash := session.Metadata["config_hash"]
 			if sh := session.Metadata["started_config_hash"]; sh != "" {
 				storedHash = sh
@@ -242,7 +222,7 @@ func reconcileSessionBeads(
 			if template != "" && storedHash != "" {
 				cfgAgent := findAgentByTemplate(cfg, template)
 				if cfgAgent != nil {
-					agentCfg := a.SessionConfig()
+					agentCfg := templateParamsToConfig(tp)
 					currentHash := runtime.CoreFingerprint(agentCfg)
 					if storedHash != currentHash {
 						ddt := driftDrainTimeout
@@ -254,15 +234,13 @@ func reconcileSessionBeads(
 						rec.Record(events.Event{
 							Type:    events.AgentDraining,
 							Actor:   "gc",
-							Subject: a.Name(),
+							Subject: tp.DisplayName(),
 							Message: "config drift detected",
 						})
 						continue
 					}
 
 					// Core config matches — check live-only drift.
-					// Live-only changes (e.g., session_live template updates)
-					// can be re-applied without draining/restarting.
 					storedLive := session.Metadata["live_hash"]
 					if sl := session.Metadata["started_live_hash"]; sl != "" {
 						storedLive = sl
@@ -270,7 +248,7 @@ func reconcileSessionBeads(
 					if storedLive != "" {
 						currentLive := runtime.LiveFingerprint(agentCfg)
 						if storedLive != currentLive {
-							fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", a.Name()) //nolint:errcheck
+							fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", tp.DisplayName()) //nolint:errcheck
 							if err := sp.RunLive(name, agentCfg); err != nil {
 								fmt.Fprintf(stderr, "session reconciler: RunLive %s: %v\n", name, err) //nolint:errcheck
 							} else {
@@ -281,7 +259,7 @@ func reconcileSessionBeads(
 								rec.Record(events.Event{
 									Type:    events.AgentUpdated,
 									Actor:   "gc",
-									Subject: a.Name(),
+									Subject: tp.DisplayName(),
 									Message: "session_live re-applied",
 								})
 							}
@@ -304,7 +282,7 @@ func reconcileSessionBeads(
 			if wakeCount >= defaultMaxWakesPerTick {
 				continue // budget exceeded, defer to next tick
 			}
-			if !allDependenciesAlive(*session, cfg, agentIndex, cityName) {
+			if !allDependenciesAlive(*session, cfg, desiredState, sp, cityName) {
 				continue // dependencies not ready
 			}
 
@@ -314,13 +292,14 @@ func reconcileSessionBeads(
 				continue
 			}
 
-			// Start via agent.Agent with startup timeout.
+			// Start via Provider directly with startup timeout.
 			startCtx := ctx
 			var startCancel context.CancelFunc
 			if startupTimeout > 0 {
 				startCtx, startCancel = context.WithTimeout(ctx, startupTimeout)
 			}
-			err := a.Start(startCtx)
+			agentCfg := templateParamsToConfig(tp)
+			err := sp.Start(startCtx, name, agentCfg)
 			if startCancel != nil {
 				startCancel()
 			}
@@ -335,17 +314,14 @@ func reconcileSessionBeads(
 			}
 
 			wakeCount++
-			fmt.Fprintf(stdout, "Woke session '%s'\n", a.Name()) //nolint:errcheck
+			fmt.Fprintf(stdout, "Woke session '%s'\n", tp.DisplayName()) //nolint:errcheck
 			rec.Record(events.Event{
 				Type:    events.AgentStarted,
 				Actor:   "gc",
-				Subject: a.Name(),
+				Subject: tp.DisplayName(),
 			})
 
 			// Store config fingerprint after successful start.
-			// Write both config_hash and started_config_hash for
-			// bidirectional compatibility with the legacy reconciler.
-			agentCfg := a.SessionConfig()
 			coreHash := runtime.CoreFingerprint(agentCfg)
 			liveHash := runtime.LiveFingerprint(agentCfg)
 			if err := store.SetMetadataBatch(session.ID, map[string]string{
@@ -366,10 +342,6 @@ func reconcileSessionBeads(
 
 		if !shouldWake && alive {
 			// No reason to be awake — begin drain.
-			// Note: pool excess instances don't reach here in practice.
-			// After pool scale-down, excess instances leave the agents list
-			// and are handled by the a==nil orphan path above. This branch
-			// handles edge cases like held_until expiry or attachment loss.
 			beginSessionDrain(*session, sp, dt, "no-wake-reason", clk, defaultDrainTimeout)
 			fmt.Fprintf(stdout, "Draining session '%s': no-wake-reason\n", name) //nolint:errcheck
 		}

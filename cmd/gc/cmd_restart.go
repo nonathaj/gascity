@@ -123,10 +123,10 @@ func doRigRestart(
 		pool := a.EffectivePool()
 		if !pool.IsMultiInstance() {
 			// Single agent.
-			h := agent.HandleFor(a.QualifiedName(), cityName, sessionTemplate, sp)
-			if h.IsRunning() {
-				if err := h.Stop(); err != nil {
-					fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", h.SessionName(), err) //nolint:errcheck // best-effort stderr
+			sn := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+			if sp.IsRunning(sn) {
+				if err := sp.Stop(sn); err != nil {
+					fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
 					continue
 				}
 				rec.Record(events.Event{
@@ -139,10 +139,10 @@ func doRigRestart(
 		} else {
 			// Pool agent: discover instances (static for bounded, live for unlimited).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
-				h := agent.HandleFor(qualifiedInstance, cityName, sessionTemplate, sp)
-				if h.IsRunning() {
-					if err := h.Stop(); err != nil {
-						fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", h.SessionName(), err) //nolint:errcheck // best-effort stderr
+				sn := agent.SessionNameFor(cityName, qualifiedInstance, sessionTemplate)
+				if sp.IsRunning(sn) {
+					if err := sp.Stop(sn); err != nil {
+						fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
 						continue
 					}
 					rec.Record(events.Event{

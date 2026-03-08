@@ -4,10 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/gastownhall/gascity/internal/agent"
-	"github.com/gastownhall/gascity/internal/agent/observe/jsonl"
-	"github.com/gastownhall/gascity/internal/agent/observe/peek"
 )
 
 // claudeProjectSlug converts an absolute path to the Claude project
@@ -87,32 +83,4 @@ func observeSearchPaths(extraPaths []string) []string {
 		add(p)
 	}
 	return result
-}
-
-// attachObserver attaches an observation strategy to an agent.
-// Prefers JSONL if a session file is found, otherwise falls back to peek.
-// Returns the agent's event channel (nil if attachment fails).
-func attachObserver(a agent.Agent, searchPaths []string) <-chan agent.Event {
-	workDir := a.SessionConfig().WorkDir
-	if workDir != "" {
-		if path := findJSONLSessionFile(searchPaths, workDir); path != "" {
-			a.SetObserver(jsonl.New(a.Name(), path))
-			return a.Events()
-		}
-	}
-	// Fallback: peek-based observation.
-	a.SetObserver(peek.New(a.Name(), a, 50))
-	return a.Events()
-}
-
-// ensureObservers is an idempotent scan that attaches observers to
-// running agents that don't have one yet. Safe to call on every
-// controller tick.
-func ensureObservers(agents []agent.Agent, searchPaths []string) {
-	for _, a := range agents {
-		if !a.IsRunning() || a.Events() != nil {
-			continue // not running or already observed
-		}
-		attachObserver(a, searchPaths)
-	}
 }

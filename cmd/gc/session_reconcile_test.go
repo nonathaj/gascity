@@ -854,7 +854,7 @@ func TestIsKnownState_UnknownStates(t *testing.T) {
 func TestForwardCompatibility_UnknownState(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 
 	// Create a session bead with a future state that the current reconciler
 	// doesn't understand.

@@ -235,43 +235,6 @@ func runPoolOnBoot(cfg *config.City, cityPath string, runner ScaleCheckRunner, s
 	}
 }
 
-// poolAgents builds agent.Agent instances for a pool at the desired count.
-// If the pool is single-instance (max == 1), uses the bare agent name (no suffix).
-// If the pool is multi-instance (max > 1 or unlimited), names follow
-// the pattern {name}-{n} (1-indexed).
-// Sessions follow the session naming template (default: gc-{city}-{name}).
-func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]agent.Agent, error) {
-	if desired <= 0 {
-		return nil, nil
-	}
-
-	pool := cfgAgent.EffectivePool()
-
-	var agents []agent.Agent
-	for i := 1; i <= desired; i++ {
-		// If single-instance (max == 1), use bare name (no suffix).
-		// If multi-instance (max > 1 or unlimited), use {name}-{N} suffix.
-		name := cfgAgent.Name
-		if pool.IsMultiInstance() {
-			name = fmt.Sprintf("%s-%d", cfgAgent.Name, i)
-		}
-		// Build the qualified instance name for rig-scoped pools.
-		qualifiedInstance := name
-		if cfgAgent.Dir != "" {
-			qualifiedInstance = cfgAgent.Dir + "/" + name
-		}
-
-		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
-		fpExtra := buildFingerprintExtra(&instanceAgent)
-		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, fpExtra)
-		if err != nil {
-			return nil, fmt.Errorf("agent %q instance %q: %w", cfgAgent.QualifiedName(), name, err)
-		}
-		agents = append(agents, a)
-	}
-	return agents, nil
-}
-
 // discoverPoolInstances returns qualified instance names for a multi-instance pool.
 // For bounded pools (max > 1), generates static names {name}-1..{name}-{max}.
 // For unlimited pools (max < 0), discovers running instances via session provider

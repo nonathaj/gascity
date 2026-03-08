@@ -350,29 +350,31 @@ func cmdAgentAttach(args []string, stdout, stderr io.Writer) int {
 		cityName = filepath.Base(cityPath)
 	}
 	sp := newSessionProvider()
-	hints := agent.StartupHints{
+	sn := agent.SessionNameFor(cityName, cfgAgent.QualifiedName(), cfg.Workspace.SessionTemplate)
+	cfg2 := runtime.Config{
+		Command:                resolved.CommandString(),
+		Env:                    resolved.Env,
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,
 		ProcessNames:           resolved.ProcessNames,
 		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 	}
-	a := agent.New(cfgAgent.QualifiedName(), cityName, resolved.CommandString(), "", resolved.Env, hints, "", cfg.Workspace.SessionTemplate, nil, sp)
-	return doAgentAttach(a, stdout, stderr)
+	return doAgentAttach(sp, sn, cfgAgent.QualifiedName(), cfg2, stdout, stderr)
 }
 
 // doAgentAttach is the pure logic for "gc agent attach <name>".
 // It is idempotent: starts the session if not already running, then attaches.
-func doAgentAttach(a agent.Agent, stdout, stderr io.Writer) int {
-	if !a.IsRunning() {
-		if err := a.Start(context.Background()); err != nil {
+func doAgentAttach(sp runtime.Provider, sessionName, displayName string, cfg runtime.Config, stdout, stderr io.Writer) int {
+	if !sp.IsRunning(sessionName) {
+		if err := sp.Start(context.Background(), sessionName, cfg); err != nil {
 			fmt.Fprintf(stderr, "gc agent attach: starting session: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 	}
 
-	fmt.Fprintf(stdout, "Attaching to agent '%s'...\n", a.Name()) //nolint:errcheck // best-effort stdout
+	fmt.Fprintf(stdout, "Attaching to agent '%s'...\n", displayName) //nolint:errcheck // best-effort stdout
 
-	if err := a.Attach(); err != nil {
+	if err := sp.Attach(sessionName); err != nil {
 		fmt.Fprintf(stderr, "gc agent attach: attaching to session: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
@@ -688,24 +690,24 @@ func cmdAgentNudge(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Resolve session name and construct a lightweight Handle.
+	// Resolve session name and nudge via provider.
 	cityName := cfg.Workspace.Name
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
 	sp := newSessionProvider()
-	h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
-	return doAgentNudge(h, message, stdout, stderr)
+	sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+	return doAgentNudge(sp, sn, found.QualifiedName(), message, stdout, stderr)
 }
 
-// doAgentNudge is the pure logic for "gc agent nudge". Accepts an injected
-// Handle for testability.
-func doAgentNudge(a agent.Handle, message string, stdout, stderr io.Writer) int {
-	if err := a.Nudge(message); err != nil {
+// doAgentNudge is the pure logic for "gc agent nudge". Accepts provider,
+// session name, and display name for testability.
+func doAgentNudge(sp runtime.Provider, sessionName, displayName, message string, stdout, stderr io.Writer) int {
+	if err := sp.Nudge(sessionName, message); err != nil {
 		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	fmt.Fprintf(stdout, "Nudged agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+	fmt.Fprintf(stdout, "Nudged agent '%s'\n", displayName) //nolint:errcheck // best-effort stdout
 	return 0
 }
 
@@ -759,20 +761,20 @@ func cmdAgentPeek(args []string, lines int, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Resolve session name and construct a lightweight Handle.
+	// Resolve session name and peek via provider.
 	cityName := cfg.Workspace.Name
 	if cityName == "" {
 		cityName = filepath.Base(cityPath)
 	}
 	sp := newSessionProvider()
-	h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
-	return doAgentPeek(h, lines, stdout, stderr)
+	sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+	return doAgentPeek(sp, sn, lines, stdout, stderr)
 }
 
-// doAgentPeek is the pure logic for "gc agent peek". Accepts an injected
-// Handle for testability.
-func doAgentPeek(a agent.Handle, lines int, stdout, stderr io.Writer) int {
-	output, err := a.Peek(lines)
+// doAgentPeek is the pure logic for "gc agent peek". Accepts provider
+// and session name for testability.
+func doAgentPeek(sp runtime.Provider, sessionName string, lines int, stdout, stderr io.Writer) int {
+	output, err := sp.Peek(sessionName, lines)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc agent peek: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1

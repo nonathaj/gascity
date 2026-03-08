@@ -5,18 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestPrintDryRunPreview(t *testing.T) {
-	sp := runtime.NewFake()
-
-	agents := []agent.Agent{
-		agent.New("mayor", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp),
-		agent.New("hw/polecat-1", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp),
-		agent.New("hw/polecat-2", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp),
+	ds := map[string]TemplateParams{
+		"mayor":         {SessionName: "mayor", TemplateName: "mayor", Command: "echo hello"},
+		"hw--polecat-1": {SessionName: "hw--polecat-1", TemplateName: "hw/polecat-1", Command: "echo hello"},
+		"hw--polecat-2": {SessionName: "hw--polecat-2", TemplateName: "hw/polecat-2", Command: "echo hello"},
 	}
 
 	cfg := &config.City{
@@ -29,7 +25,7 @@ func TestPrintDryRunPreview(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	printDryRunPreview(agents, cfg, "test", &stdout)
+	printDryRunPreview(ds, cfg, "test", &stdout)
 	out := stdout.String()
 
 	if !strings.Contains(out, "3 agent(s) would start") {

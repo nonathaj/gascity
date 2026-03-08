@@ -10,6 +10,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -127,8 +128,8 @@ func cmdHandoffRemote(args []string, target string, stdout, stderr io.Writer) in
 		sender = "human"
 	}
 
-	h := agent.HandleFor(targetName, cityName, cfg.Workspace.SessionTemplate, sp)
-	return doHandoffRemote(store, rec, h, sender, args, stdout, stderr)
+	sn := agent.SessionNameFor(cityName, targetName, cfg.Workspace.SessionTemplate)
+	return doHandoffRemote(store, rec, sp, sn, targetName, sender, args, stdout, stderr)
 }
 
 // doHandoff sends a handoff mail to self and sets the restart-requested flag.
@@ -178,10 +179,9 @@ func doHandoff(store beads.Store, rec events.Recorder, dops drainOps,
 
 // doHandoffRemote sends handoff mail to a remote agent and kills its session.
 // Non-blocking: returns immediately after killing the session.
-func doHandoffRemote(store beads.Store, rec events.Recorder, target agent.Handle,
-	sender string, args []string, stdout, stderr io.Writer,
+func doHandoffRemote(store beads.Store, rec events.Recorder, sp runtime.Provider,
+	sessionName, targetName, sender string, args []string, stdout, stderr io.Writer,
 ) int {
-	targetName := target.Name()
 	subject := args[0]
 	var message string
 	if len(args) > 1 {
@@ -209,11 +209,11 @@ func doHandoffRemote(store beads.Store, rec events.Recorder, target agent.Handle
 	})
 
 	// Kill target session (reconciler restarts it).
-	if !target.IsRunning() {
+	if !sp.IsRunning(sessionName) {
 		fmt.Fprintf(stdout, "Handoff: sent mail %s to %s (session not running; will be delivered on next start)\n", b.ID, targetName) //nolint:errcheck // best-effort stdout
 		return 0
 	}
-	if err := target.Stop(); err != nil {
+	if err := sp.Stop(sessionName); err != nil {
 		fmt.Fprintf(stderr, "gc handoff: killing %s: %v\n", targetName, err) //nolint:errcheck // best-effort stderr
 		return 1
 	}

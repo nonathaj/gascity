@@ -466,8 +466,8 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 				return fmt.Errorf("agent %q not found", recipient)
 			}
 			sp := newSessionProvider()
-			h := agent.HandleFor(found.QualifiedName(), cityName, cfg.Workspace.SessionTemplate, sp)
-			return h.Nudge(fmt.Sprintf("You have mail from %s", sender))
+			sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+			return sp.Nudge(sn, fmt.Sprintf("You have mail from %s", sender))
 		}
 	}
 

@@ -7,7 +7,7 @@
 // by the caller (buildOneAgent).
 //
 // resolveTemplate returns TemplateParams — a value type suitable for
-// session.Manager.CreateFromParams or for building an agent.Agent.
+// session.Manager.CreateFromParams or for constructing runtime.Config.
 package main
 
 import (
@@ -41,12 +41,26 @@ type TemplateParams struct {
 	FPExtra map[string]string
 	// ResolvedProvider is the resolved provider spec (for ACP routing, etc.).
 	ResolvedProvider *config.ResolvedProvider
-	// TemplateName is the config template name (pool name or qualified name).
+	// TemplateName is the config template name (pool base name or qualified name).
+	// For pool instances this is the base template (e.g., "dog"), not the instance.
 	TemplateName string
+	// InstanceName is the qualified instance name used for display and events.
+	// For singletons it equals TemplateName; for pool instances it's "dog-1".
+	InstanceName string
 	// RigName is the resolved rig association (empty if none).
 	RigName string
 	// IsACP is true if session = "acp".
 	IsACP bool
+}
+
+// DisplayName returns the name to use for log messages and event subjects.
+// For pool instances this is the instance name (e.g., "dog-1"); for
+// singletons it equals TemplateName.
+func (tp TemplateParams) DisplayName() string {
+	if tp.InstanceName != "" {
+		return tp.InstanceName
+	}
+	return tp.TemplateName
 }
 
 // resolveTemplate computes all session parameters from a config.Agent without
@@ -192,7 +206,37 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		FPExtra:          fpExtra,
 		ResolvedProvider: resolved,
 		TemplateName:     templateNameFor(cfgAgent, qualifiedName),
+		InstanceName:     qualifiedName,
 		RigName:          rigName,
 		IsACP:            cfgAgent.Session == "acp",
 	}, nil
+}
+
+// templateParamsToConfig converts TemplateParams to the runtime.Config
+// needed by Provider.Start. This mirrors managed.SessionConfig() at
+// internal/agent/agent.go:292-315 — for the same inputs, both must
+// produce identical output.
+func templateParamsToConfig(tp TemplateParams) runtime.Config {
+	cmd := tp.Command
+	if tp.Prompt != "" {
+		cmd = cmd + " " + shellQuote(tp.Prompt)
+	}
+	return runtime.Config{
+		Command:                cmd,
+		Env:                    tp.Env,
+		WorkDir:                tp.WorkDir,
+		ReadyPromptPrefix:      tp.Hints.ReadyPromptPrefix,
+		ReadyDelayMs:           tp.Hints.ReadyDelayMs,
+		ProcessNames:           tp.Hints.ProcessNames,
+		EmitsPermissionWarning: tp.Hints.EmitsPermissionWarning,
+		Nudge:                  tp.Hints.Nudge,
+		PreStart:               tp.Hints.PreStart,
+		SessionSetup:           tp.Hints.SessionSetup,
+		SessionSetupScript:     tp.Hints.SessionSetupScript,
+		SessionLive:            tp.Hints.SessionLive,
+		PackOverlayDirs:        tp.Hints.PackOverlayDirs,
+		OverlayDir:             tp.Hints.OverlayDir,
+		CopyFiles:              tp.Hints.CopyFiles,
+		FingerprintExtra:       tp.FPExtra,
+	}
 }

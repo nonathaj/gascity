@@ -2,32 +2,32 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // setupBeadReconcileOps creates a beadReconcileOps backed by a MemStore,
-// syncs beads for the given agents, and returns the ops with its index populated.
-func setupBeadReconcileOps(t *testing.T, agents []agent.Agent) (*beadReconcileOps, beads.Store) {
+// syncs beads for the given desired state, and returns the ops with its index populated.
+func setupBeadReconcileOps(t *testing.T, ds map[string]TemplateParams, sp *runtime.Fake) (*beadReconcileOps, beads.Store) {
 	t.Helper()
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
 
 	var stderr bytes.Buffer
-	idx := syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	idx := syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 	if stderr.Len() > 0 {
 		t.Fatalf("unexpected stderr from syncSessionBeads: %s", stderr.String())
 	}
 
 	provider := newFakeReconcileOps()
-	for _, a := range agents {
-		if a.IsRunning() {
-			provider.running[a.SessionName()] = true
+	for sn := range ds {
+		if sp.IsRunning(sn) {
+			provider.running[sn] = true
 		}
 	}
 
@@ -36,17 +36,19 @@ func setupBeadReconcileOps(t *testing.T, agents []agent.Agent) (*beadReconcileOp
 	return bro, store
 }
 
-func TestBeadReconcileOps_StoreAndRetrieveConfigHash(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+// defaultDS creates a simple desired state map with a single running agent ("mayor").
+func defaultDS() (map[string]TemplateParams, *runtime.Fake) {
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
+	return ds, sp
+}
 
-	bro, _ := setupBeadReconcileOps(t, agents)
+func TestBeadReconcileOps_StoreAndRetrieveConfigHash(t *testing.T) {
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	if err := bro.storeConfigHash("mayor", "abc123"); err != nil {
 		t.Fatalf("storeConfigHash: %v", err)
@@ -62,16 +64,8 @@ func TestBeadReconcileOps_StoreAndRetrieveConfigHash(t *testing.T) {
 }
 
 func TestBeadReconcileOps_StoreAndRetrieveLiveHash(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	if err := bro.storeLiveHash("mayor", "live456"); err != nil {
 		t.Fatalf("storeLiveHash: %v", err)
@@ -87,16 +81,8 @@ func TestBeadReconcileOps_StoreAndRetrieveLiveHash(t *testing.T) {
 }
 
 func TestBeadReconcileOps_MissingBeadFallsBackToProvider(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	// Store hash for unknown session — should fall back to provider.
 	if err := bro.storeConfigHash("unknown", "fallback"); err != nil {
@@ -120,16 +106,8 @@ func TestBeadReconcileOps_MissingBeadFallsBackToProvider(t *testing.T) {
 }
 
 func TestBeadReconcileOps_HashesSeparateFromSyncHashes(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, store := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, store := setupBeadReconcileOps(t, ds, sp)
 
 	// Store reconciler hashes.
 	if err := bro.storeConfigHash("mayor", "started-hash"); err != nil {
@@ -164,16 +142,8 @@ func TestBeadReconcileOps_HashesSeparateFromSyncHashes(t *testing.T) {
 }
 
 func TestBeadReconcileOps_DriftDetection(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	// Agent started with config hash "v1".
 	if err := bro.storeConfigHash("mayor", "v1"); err != nil {
@@ -197,16 +167,8 @@ func TestBeadReconcileOps_DriftDetection(t *testing.T) {
 }
 
 func TestBeadReconcileOps_DelegatesListRunning(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	names, err := bro.listRunning("")
 	if err != nil {
@@ -218,16 +180,8 @@ func TestBeadReconcileOps_DelegatesListRunning(t *testing.T) {
 }
 
 func TestBeadReconcileOps_DelegatesRunLive(t *testing.T) {
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	cfg := runtime.Config{Command: "claude"}
 	if err := bro.runLive("mayor", cfg); err != nil {
@@ -243,18 +197,15 @@ func TestBeadReconcileOps_DelegatesRunLive(t *testing.T) {
 func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 	store := beads.NewMemStore()
 	clk := &clock.Fake{Time: time.Date(2026, 3, 7, 12, 0, 0, 0, time.UTC)}
+	sp := runtime.NewFake()
+	_ = sp.Start(context.TODO(), "mayor", runtime.Config{Command: "claude"})
 
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
+	ds := map[string]TemplateParams{
+		"mayor": {TemplateName: "mayor", Command: "claude"},
 	}
 
 	var stderr bytes.Buffer
-	idx1 := syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	idx1 := syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 
 	provider := newFakeReconcileOps()
 	provider.running["mayor"] = true
@@ -269,7 +220,7 @@ func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 	// Suspend the agent (bead gets closed).
 	clk.Advance(5 * time.Second)
 	configuredNames := map[string]bool{"mayor": true}
-	idx2 := syncSessionBeads(store, nil, configuredNames, nil, clk, &stderr, false)
+	idx2 := syncSessionBeads(store, nil, sp, configuredNames, nil, clk, &stderr, false)
 	bro.updateIndex(idx2)
 
 	// Mayor bead is now closed — no index entry, falls back to provider
@@ -282,7 +233,7 @@ func TestBeadReconcileOps_IndexUpdateAfterResync(t *testing.T) {
 
 	// Resume — new bead created.
 	clk.Advance(5 * time.Second)
-	idx3 := syncSessionBeads(store, agents, allConfigured(agents), nil, clk, &stderr, false)
+	idx3 := syncSessionBeads(store, ds, sp, allConfiguredDS(ds), nil, clk, &stderr, false)
 	bro.updateIndex(idx3)
 
 	// New bead has no started_config_hash yet — falls back to provider
@@ -306,16 +257,8 @@ func TestBeadReconcileOps_StoreDegradedFallsBackToProvider(t *testing.T) {
 	// When store.Get fails, configHash/liveHash should fall back to
 	// provider. This is safe because storeConfigHash/storeLiveHash
 	// mirror every write to the provider, so it always has current data.
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	// Store hashes — these mirror to provider automatically.
 	if err := bro.storeConfigHash("mayor", "v1"); err != nil {
@@ -360,16 +303,8 @@ func TestBeadReconcileOps_StoreDegradedFallsBackToProvider(t *testing.T) {
 func TestBeadReconcileOps_UpgradePathFallsBackToProvider(t *testing.T) {
 	// Simulates upgrade: bead exists but has no started_config_hash.
 	// configHash should fall back to provider's stored hash.
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	// Simulate pre-upgrade state: provider has the hash, bead doesn't.
 	provider := bro.provider.(*fakeReconcileOps)
@@ -407,16 +342,8 @@ func TestBeadReconcileOps_UpgradePathFallsBackToProvider(t *testing.T) {
 func TestBeadReconcileOps_NilStoreFallsBackToProvider(t *testing.T) {
 	// When storeFunc returns nil, all operations should fall back to
 	// provider without panicking.
-	agents := []agent.Agent{
-		&agent.Fake{
-			FakeName:          "mayor",
-			FakeSessionName:   "mayor",
-			Running:           true,
-			FakeSessionConfig: runtime.Config{Command: "claude"},
-		},
-	}
-
-	bro, _ := setupBeadReconcileOps(t, agents)
+	ds, sp := defaultDS()
+	bro, _ := setupBeadReconcileOps(t, ds, sp)
 
 	// Set storeFunc to return nil.
 	bro.storeFunc = func() beads.Store { return nil }

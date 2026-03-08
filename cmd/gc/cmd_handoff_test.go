@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -149,10 +148,8 @@ func TestHandoffRemoteRunning(t *testing.T) {
 	if err := sp.Start(context.Background(), "deacon", runtime.Config{Command: "echo"}); err != nil {
 		t.Fatal(err)
 	}
-	target := agent.HandleFor("deacon", "", "", sp)
-
 	var stdout, stderr bytes.Buffer
-	code := doHandoffRemote(store, rec, target, "mayor",
+	code := doHandoffRemote(store, rec, sp, "deacon", "deacon", "mayor",
 		[]string{"Context refresh", "Check beads for current state"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
@@ -200,10 +197,8 @@ func TestHandoffRemoteNotRunning(t *testing.T) {
 	store := beads.NewMemStore()
 	rec := events.NewFake()
 	sp := runtime.NewFake()
-	target := agent.HandleFor("deacon", "", "", sp)
-
 	var stdout, stderr bytes.Buffer
-	code := doHandoffRemote(store, rec, target, "human",
+	code := doHandoffRemote(store, rec, sp, "deacon", "deacon", "human",
 		[]string{"Please check on PR #42"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())

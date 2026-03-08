@@ -137,14 +137,13 @@ func cmdAgentStop(input string, stdout, stderr io.Writer) int {
 	instanceQN := templateQN + "/" + instanceName
 	sp := newSessionProvider()
 
-	onStop := func() error {
-		return reg.stop(templateQN, instanceName)
-	}
-	h := agent.HandleFor(instanceQN, cityName, cfg.Workspace.SessionTemplate, sp, onStop)
-	if h.IsRunning() {
-		if err := h.Stop(); err != nil {
+	sn := agent.SessionNameFor(cityName, instanceQN, cfg.Workspace.SessionTemplate)
+	if sp.IsRunning(sn) {
+		if err := sp.Stop(sn); err != nil {
 			fmt.Fprintf(stderr, "gc agent stop: killing session: %v\n", err) //nolint:errcheck // best-effort stderr
 		}
+		// Run registry cleanup after session stop.
+		_ = reg.stop(templateQN, instanceName)
 		rec := openCityRecorder(stderr)
 		rec.Record(events.Event{
 			Type:    events.AgentStopped,

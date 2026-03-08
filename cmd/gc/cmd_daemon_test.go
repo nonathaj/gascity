@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -370,8 +369,14 @@ func TestControllerSocketPing(t *testing.T) {
 	writeCityTOML(t, dir, "test", "worker")
 
 	sp := runtime.NewFake()
-	buildFn := func(_ *config.City, _ runtime.Provider) []agent.Agent {
-		return []agent.Agent{agent.New("worker", "test", "echo hi", "", nil, agent.StartupHints{}, "", "", nil, sp)}
+	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+		return map[string]TemplateParams{
+			"worker": {
+				SessionName:  "worker",
+				TemplateName: "worker",
+				Command:      "echo hi",
+			},
+		}
 	}
 
 	cfg := &config.City{

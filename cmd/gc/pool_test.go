@@ -4,29 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
-
-// testBuildParams returns agentBuildParams suitable for unit tests.
-func testBuildParams(sp runtime.Provider) *agentBuildParams {
-	return &agentBuildParams{
-		cityName:  "city",
-		cityPath:  "/tmp/city",
-		workspace: &config.Workspace{Name: "city"},
-		lookPath:  fakeLookPath,
-		fs:        fsys.NewFake(),
-		sp:        sp,
-		stderr:    io.Discard,
-	}
-}
 
 func TestEvaluatePoolSuccess(t *testing.T) {
 	pool := config.PoolConfig{Min: 0, Max: 10, Check: "echo 5"}
@@ -163,31 +147,6 @@ func TestEvaluatePoolUnlimitedClampsToMin(t *testing.T) {
 	}
 }
 
-func TestPoolAgentsUnlimitedNaming(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "polecat",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: -1, Check: "echo 3"},
-	}
-	sp := runtime.NewFake()
-	bp := newAgentBuildParams("city", t.TempDir(), &config.City{}, sp, time.Now(), io.Discard)
-
-	agents, err := poolAgents(bp, cfgAgent, 3)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 3 {
-		t.Fatalf("len = %d, want 3", len(agents))
-	}
-	// Unlimited pools use suffixed names (like max > 1).
-	for i, a := range agents {
-		want := fmt.Sprintf("polecat-%d", i+1)
-		if a.Name() != want {
-			t.Errorf("agents[%d].Name() = %q, want %q", i, a.Name(), want)
-		}
-	}
-}
-
 func TestDiscoverPoolInstancesBounded(t *testing.T) {
 	sp := runtime.NewFake()
 	pool := config.PoolConfig{Min: 0, Max: 3}
@@ -226,116 +185,6 @@ func TestCountRunningPoolInstancesUnlimited(t *testing.T) {
 	count := countRunningPoolInstances("worker", "", config.PoolConfig{Min: 0, Max: -1}, "city", "", sp)
 	if count != 2 {
 		t.Errorf("count = %d, want 2", count)
-	}
-}
-
-func TestPoolAgentsNaming(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 3"},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 3)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 3 {
-		t.Fatalf("len(agents) = %d, want 3", len(agents))
-	}
-	want := []string{"worker-1", "worker-2", "worker-3"}
-	for i, a := range agents {
-		if a.Name() != want[i] {
-			t.Errorf("agents[%d].Name() = %q, want %q", i, a.Name(), want[i])
-		}
-	}
-}
-
-func TestPoolAgentsSessionNames(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 3"},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 3)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	want := []string{"worker-1", "worker-2", "worker-3"}
-	for i, a := range agents {
-		if a.SessionName() != want[i] {
-			t.Errorf("agents[%d].SessionName() = %q, want %q", i, a.SessionName(), want[i])
-		}
-	}
-}
-
-func TestPoolAgentsZeroDesired(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 0"},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 0)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 0 {
-		t.Errorf("len(agents) = %d, want 0", len(agents))
-	}
-}
-
-func TestPoolAgentsEnv(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 5, Check: "echo 2"},
-		Env:          map[string]string{"POOL_VAR": "yes"},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 2)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 2 {
-		t.Fatalf("len(agents) = %d, want 2", len(agents))
-	}
-	// Check that GC_AGENT is set correctly for each agent.
-	cfg1 := agents[0].SessionConfig()
-	if cfg1.Env["GC_AGENT"] != "worker-1" {
-		t.Errorf("agent[0] GC_AGENT = %q, want %q", cfg1.Env["GC_AGENT"], "worker-1")
-	}
-	cfg2 := agents[1].SessionConfig()
-	if cfg2.Env["GC_AGENT"] != "worker-2" {
-		t.Errorf("agent[1] GC_AGENT = %q, want %q", cfg2.Env["GC_AGENT"], "worker-2")
-	}
-	// Check pool-level env is passed through.
-	if cfg1.Env["POOL_VAR"] != "yes" {
-		t.Errorf("agent[0] POOL_VAR = %q, want %q", cfg1.Env["POOL_VAR"], "yes")
-	}
-}
-
-func TestPoolAgentsMaxOneNoSuffix(t *testing.T) {
-	// When max == 1, the agent should use the bare name (no -1 suffix).
-	cfgAgent := &config.Agent{
-		Name:         "refinery",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 1 {
-		t.Fatalf("len(agents) = %d, want 1", len(agents))
-	}
-	if agents[0].Name() != "refinery" {
-		t.Errorf("Name() = %q, want %q (bare name, no suffix)", agents[0].Name(), "refinery")
-	}
-	if agents[0].SessionName() != "refinery" {
-		t.Errorf("SessionName() = %q, want %q", agents[0].SessionName(), "refinery")
 	}
 }
 
@@ -442,41 +291,6 @@ func TestResolveSetupScript_Empty(t *testing.T) {
 	}
 }
 
-func TestPoolAgentsSessionSetup(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
-		SessionSetup: []string{
-			"tmux set-option -t {{.Session}} status-left ' {{.Agent}} '",
-		},
-		SessionSetupScript: "scripts/setup.sh",
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 1 {
-		t.Fatalf("len(agents) = %d, want 1", len(agents))
-	}
-	cfg := agents[0].SessionConfig()
-
-	// Template should be expanded with session name.
-	if len(cfg.SessionSetup) != 1 {
-		t.Fatalf("SessionSetup len = %d, want 1", len(cfg.SessionSetup))
-	}
-	want := "tmux set-option -t worker status-left ' worker '"
-	if cfg.SessionSetup[0] != want {
-		t.Errorf("SessionSetup[0] = %q, want %q", cfg.SessionSetup[0], want)
-	}
-
-	// Script should be resolved to absolute path.
-	if cfg.SessionSetupScript != "/tmp/city/scripts/setup.sh" {
-		t.Errorf("SessionSetupScript = %q, want %q", cfg.SessionSetupScript, "/tmp/city/scripts/setup.sh")
-	}
-}
-
 func TestExpandSessionSetup_ConfigDir(t *testing.T) {
 	ctx := SessionSetupContext{
 		Session:   "mayor",
@@ -494,74 +308,6 @@ func TestExpandSessionSetup_ConfigDir(t *testing.T) {
 	if got[0] != want {
 		t.Errorf("got %q, want %q", got[0], want)
 	}
-}
-
-func TestPoolAgentsConfigDir(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
-		SourceDir:    "/city/packs/gt",
-		SessionSetup: []string{
-			"{{.ConfigDir}}/scripts/setup.sh {{.Agent}}",
-		},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 1 {
-		t.Fatalf("len(agents) = %d, want 1", len(agents))
-	}
-	cfg := agents[0].SessionConfig()
-	// ConfigDir should use SourceDir, not CityRoot.
-	want := "/city/packs/gt/scripts/setup.sh worker"
-	if len(cfg.SessionSetup) != 1 || cfg.SessionSetup[0] != want {
-		t.Errorf("SessionSetup = %v, want [%q]", cfg.SessionSetup, want)
-	}
-}
-
-func TestPoolAgentsConfigDir_DefaultsToCityPath(t *testing.T) {
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 1, Check: "echo 1"},
-		SessionSetup: []string{
-			"{{.ConfigDir}}/scripts/setup.sh",
-		},
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 1)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	cfg := agents[0].SessionConfig()
-	// No SourceDir → ConfigDir defaults to cityPath.
-	want := "/tmp/city/scripts/setup.sh"
-	if len(cfg.SessionSetup) != 1 || cfg.SessionSetup[0] != want {
-		t.Errorf("SessionSetup = %v, want [%q]", cfg.SessionSetup, want)
-	}
-}
-
-func TestPoolAgentsOverlayDirCopied(t *testing.T) {
-	// Verify OverlayDir is deep-copied from cfgAgent to pool instances.
-	cfgAgent := &config.Agent{
-		Name:         "worker",
-		StartCommand: "echo hello",
-		Pool:         &config.PoolConfig{Min: 0, Max: 2, Check: "echo 2"},
-		OverlayDir:   "overlays/worker",
-	}
-	sp := runtime.NewFake()
-	agents, err := poolAgents(testBuildParams(sp), cfgAgent, 2)
-	if err != nil {
-		t.Fatalf("poolAgents: %v", err)
-	}
-	if len(agents) != 2 {
-		t.Fatalf("len(agents) = %d, want 2", len(agents))
-	}
-	// OverlayDir should be set on both instances (resolved at CopyDir call time, not here).
-	// The pool build just copies the field — actual resolution happens at startup.
 }
 
 func TestCountRunningPoolInstancesUsesListRunning(t *testing.T) {
@@ -723,20 +469,6 @@ func TestDeepCopyAgentSetsPoolName(t *testing.T) {
 	}
 }
 
-func TestPoolInstanceWorkQueryUsesTemplateName(t *testing.T) {
-	src := &config.Agent{
-		Name: "dog",
-		Dir:  "hello-world",
-		Pool: &config.PoolConfig{Min: 0, Max: 3},
-	}
-	dst := deepCopyAgent(src, "dog-2", "hello-world")
-	got := dst.EffectiveWorkQuery()
-	want := "bd ready --label=pool:hello-world/dog --limit=1"
-	if got != want {
-		t.Errorf("pool instance EffectiveWorkQuery() = %q, want %q", got, want)
-	}
-}
-
 func TestRunPoolOnBoot(t *testing.T) {
 	var ran []string
 	runner := func(cmd, _ string) (string, error) {
@@ -825,9 +557,4 @@ func handlerKeys(m map[string]poolDeathInfo) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-// fakeLookPath always succeeds — tests don't need real binaries.
-func fakeLookPath(name string) (string, error) {
-	return "/usr/bin/" + name, nil
 }

@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // idleTracker checks for agents that have been idle longer than their
@@ -11,8 +11,8 @@ import (
 // compatible). Follows the same nil-guard pattern as crashTracker.
 type idleTracker interface {
 	// checkIdle returns true if the agent has been idle longer than its
-	// configured timeout. Queries agent.GetLastActivity().
-	checkIdle(a agent.Agent, now time.Time) bool
+	// configured timeout. Queries sp.GetLastActivity().
+	checkIdle(sessionName string, sp runtime.Provider, now time.Time) bool
 
 	// setTimeout configures the idle timeout for a session name.
 	// Called during agent list construction. Duration of 0 disables.
@@ -40,14 +40,14 @@ func (m *memoryIdleTracker) setTimeout(sessionName string, timeout time.Duration
 	m.timeouts[sessionName] = timeout
 }
 
-func (m *memoryIdleTracker) checkIdle(a agent.Agent, now time.Time) bool {
-	timeout, ok := m.timeouts[a.SessionName()]
+func (m *memoryIdleTracker) checkIdle(sessionName string, sp runtime.Provider, now time.Time) bool {
+	timeout, ok := m.timeouts[sessionName]
 	if !ok || timeout <= 0 {
 		return false
 	}
-	lastActivity, err := a.GetLastActivity()
+	lastActivity, err := sp.GetLastActivity(sessionName)
 	if err != nil || lastActivity.IsZero() {
-		return false // don't false-positive on error or unsupported
+		return false
 	}
 	return now.Sub(lastActivity) > timeout
 }

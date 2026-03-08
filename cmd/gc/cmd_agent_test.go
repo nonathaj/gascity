@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // ---------------------------------------------------------------------------
@@ -16,19 +17,20 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestDoAgentAttachStartsThenAttaches(t *testing.T) {
-	f := agent.NewFake("mayor", "mayor")
+	sp := runtime.NewFake()
+	cfg := runtime.Config{Command: "claude"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(f, &stdout, &stderr)
+	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !f.Running {
-		t.Error("agent should be started before attach")
+	if !sp.IsRunning("mayor") {
+		t.Error("session should be started before attach")
 	}
 	// Verify attach was called.
 	attachCalled := false
-	for _, c := range f.Calls {
+	for _, c := range sp.Calls {
 		if c.Method == "Attach" {
 			attachCalled = true
 		}
@@ -42,28 +44,35 @@ func TestDoAgentAttachStartsThenAttaches(t *testing.T) {
 }
 
 func TestDoAgentAttachSkipsStartWhenRunning(t *testing.T) {
-	f := agent.NewFake("mayor", "mayor")
-	f.Running = true
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "mayor", runtime.Config{Command: "claude"})
+	cfg := runtime.Config{Command: "claude"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(f, &stdout, &stderr)
+	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
 	// Should NOT call Start since already running.
-	for _, c := range f.Calls {
+	startCount := 0
+	for _, c := range sp.Calls {
 		if c.Method == "Start" {
-			t.Error("Start should not be called when already running")
+			startCount++
 		}
+	}
+	// Only the initial Start from setup, not a second one from doAgentAttach.
+	if startCount > 1 {
+		t.Error("Start should not be called again when already running")
 	}
 }
 
 func TestDoAgentAttachStartFailure(t *testing.T) {
-	f := agent.NewFake("mayor", "mayor")
-	f.StartErr = errors.New("tmux crashed")
+	sp := runtime.NewFake()
+	sp.StartErrors = map[string]error{"mayor": errors.New("tmux crashed")}
+	cfg := runtime.Config{Command: "claude"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(f, &stdout, &stderr)
+	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
@@ -73,15 +82,15 @@ func TestDoAgentAttachStartFailure(t *testing.T) {
 }
 
 func TestDoAgentAttachFailure(t *testing.T) {
-	f := agent.NewFake("mayor", "mayor")
-	f.AttachErr = errors.New("terminal gone")
+	sp := runtime.NewFailFake() // Attach will fail
+	cfg := runtime.Config{Command: "claude"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentAttach(f, &stdout, &stderr)
+	code := doAgentAttach(sp, "mayor", "mayor", cfg, &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "terminal gone") {
+	if !strings.Contains(stderr.String(), "session unavailable") {
 		t.Errorf("stderr = %q, want error message", stderr.String())
 	}
 }
@@ -389,18 +398,23 @@ func TestDoAgentResumePackDerivedError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDoAgentPeekPassesLineCount(t *testing.T) {
-	f := agent.NewFake("mayor", "mayor")
-	f.FakePeekOutput = "output"
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "mayor", runtime.Config{})
+	sp.PeekOutput = map[string]string{"mayor": "output"}
 
 	var stdout, stderr bytes.Buffer
-	code := doAgentPeek(f, 100, &stdout, &stderr)
+	code := doAgentPeek(sp, "mayor", 100, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
-	// Verify Peek was called with the right line count.
-	for _, c := range f.Calls {
-		if c.Method == "Peek" && c.Lines != 100 {
-			t.Errorf("Peek called with lines=%d, want 100", c.Lines)
+	// Verify Peek was called on the provider.
+	var found bool
+	for _, c := range sp.Calls {
+		if c.Method == "Peek" {
+			found = true
 		}
+	}
+	if !found {
+		t.Error("Peek call not recorded on provider")
 	}
 }

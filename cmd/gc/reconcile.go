@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
@@ -92,7 +91,7 @@ func newReconcileOps(sp runtime.Provider) reconcileOps {
 //
 // If rops is nil, reconciliation degrades gracefully to the simpler
 // start-if-not-running behavior (no drift detection, no orphan cleanup).
-func doReconcileAgents(agents []agent.Agent,
+func doReconcileAgents(desiredState map[string]TemplateParams,
 	sp runtime.Provider, rops reconcileOps, dops drainOps,
 	ct crashTracker, it idleTracker,
 	rec events.Recorder,
@@ -112,7 +111,10 @@ func doReconcileAgents(agents []agent.Agent,
 		parentCtx = ctxOpts[0]
 	}
 	// Build desired session name set for orphan detection.
-	desired := make(map[string]bool, len(agents))
+	desired := make(map[string]bool, len(desiredState))
+	for name := range desiredState {
+		desired[name] = true
+	}
 
 	// Pre-fetch running sessions once for batch lookup. This replaces N
 	// individual IsRunning() calls (each a subprocess spawn for exec
@@ -124,8 +126,8 @@ func doReconcileAgents(agents []agent.Agent,
 		if names, err := rops.listRunning(""); err == nil {
 			allRunning = names
 			runningSet = make(map[string]bool, len(names))
-			for _, name := range names {
-				runningSet[name] = true
+			for _, n := range names {
+				runningSet[n] = true
 			}
 		}
 	}
@@ -134,62 +136,61 @@ func doReconcileAgents(agents []agent.Agent,
 	// starting, handle running agents inline (drift, restart, idle are fast
 	// and touch more shared state).
 	type startCandidate struct {
-		agent  agent.Agent
-		reason string
+		sessionName string
+		tp          TemplateParams
+		reason      string
 	}
 	var toStart []startCandidate
 
-	for _, a := range agents {
-		desired[a.SessionName()] = true
-
+	for name, tp := range desiredState {
 		// Fast path: if we have a pre-fetched running set and this
 		// session isn't in it, skip per-agent IsRunning+ProcessAlive
 		// calls entirely. No zombie capture needed (session doesn't
 		// exist). This is the main scaling win for exec providers.
-		if runningSet != nil && !runningSet[a.SessionName()] {
-			if ct != nil && ct.isQuarantined(a.SessionName(), time.Now()) {
+		if runningSet != nil && !runningSet[name] {
+			if ct != nil && ct.isQuarantined(name, time.Now()) {
 				continue
 			}
 			reason := "initial start"
-			if _, isPool := poolSessions[a.SessionName()]; isPool {
+			if _, isPool := poolSessions[name]; isPool {
 				reason = "pool scale-up"
 			}
-			toStart = append(toStart, startCandidate{agent: a, reason: reason})
+			toStart = append(toStart, startCandidate{sessionName: name, tp: tp, reason: reason})
 			continue
 		}
 
-		if !a.IsRunning() {
+		if !sp.IsRunning(name) || !sp.ProcessAlive(name, tp.Hints.ProcessNames) {
 			// Row 1: not running → candidate for parallel start.
 
 			// Zombie capture: session exists but agent process dead.
 			// Grab pane output for crash forensics before Start() kills the zombie.
 			zombieCaptured := false
-			if sp.IsRunning(a.SessionName()) {
+			if sp.IsRunning(name) {
 				zombieCaptured = true
-				output, err := a.Peek(50)
+				output, err := sp.Peek(name, 50)
 				if err == nil && output != "" {
 					rec.Record(events.Event{
 						Type:    events.AgentCrashed,
 						Actor:   "gc",
-						Subject: a.Name(),
+						Subject: tp.DisplayName(),
 						Message: output,
 					})
-					telemetry.RecordAgentCrash(context.Background(), a.Name(), output)
+					telemetry.RecordAgentCrash(context.Background(), tp.DisplayName(), output)
 				}
 			}
 
 			// Check crash loop quarantine.
-			if ct != nil && ct.isQuarantined(a.SessionName(), time.Now()) {
+			if ct != nil && ct.isQuarantined(name, time.Now()) {
 				continue // skip silently — event was emitted when quarantine started
 			}
 
 			reason := "initial start"
 			if zombieCaptured {
 				reason = "crash recovery"
-			} else if _, isPool := poolSessions[a.SessionName()]; isPool {
+			} else if _, isPool := poolSessions[name]; isPool {
 				reason = "pool scale-up"
 			}
-			toStart = append(toStart, startCandidate{agent: a, reason: reason})
+			toStart = append(toStart, startCandidate{sessionName: name, tp: tp, reason: reason})
 			continue
 		}
 
@@ -197,123 +198,124 @@ func doReconcileAgents(agents []agent.Agent,
 		// (handles scale-back-up: agent returns to desired set while draining).
 		// Skip clearing if this is a drift-restart drain (we initiated it).
 		if dops != nil {
-			if draining, _ := dops.isDraining(a.SessionName()); draining {
-				if isDrift, _ := dops.isDriftRestart(a.SessionName()); !isDrift {
-					_ = dops.clearDrain(a.SessionName())
+			if draining, _ := dops.isDraining(name); draining {
+				if isDrift, _ := dops.isDriftRestart(name); !isDrift {
+					_ = dops.clearDrain(name)
 				}
 			}
 		}
 
 		// Running — check if agent requested a restart (context exhaustion, etc.).
 		if dops != nil {
-			if restart, _ := dops.isRestartRequested(a.SessionName()); restart {
-				_ = dops.clearRestartRequested(a.SessionName())                                // clear before stop to prevent re-fire
-				fmt.Fprintf(stdout, "Agent '%s' requested restart, restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
+			if restart, _ := dops.isRestartRequested(name); restart {
+				_ = dops.clearRestartRequested(name)                                                   // clear before stop to prevent re-fire
+				fmt.Fprintf(stdout, "Agent '%s' requested restart, restarting...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStopped,
 					Actor:   "gc",
-					Subject: a.Name(),
+					Subject: tp.DisplayName(),
 					Message: "restart requested by agent",
 				})
-				if err := a.Stop(); err != nil {
-					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				if err := sp.Stop(name); err != nil {
+					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				if err := a.Start(parentCtx); err != nil {
-					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				cfg := templateParamsToConfig(tp)
+				if err := sp.Start(parentCtx, name, cfg); err != nil {
+					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				_ = a.ClearScrollback()                                 // best-effort: clean slate after restart
-				fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+				_ = sp.ClearScrollback(name)                                    // best-effort: clean slate after restart
+				fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStarted,
 					Actor:   "gc",
-					Subject: a.Name(),
+					Subject: tp.DisplayName(),
 				})
 				if ct != nil {
-					ct.recordStart(a.SessionName(), time.Now())
+					ct.recordStart(name, time.Now())
 				}
 				if rops != nil {
-					cfg := a.SessionConfig()
-					_ = rops.storeConfigHash(a.SessionName(), runtime.CoreFingerprint(cfg))
-					_ = rops.storeLiveHash(a.SessionName(), runtime.LiveFingerprint(cfg))
+					_ = rops.storeConfigHash(name, runtime.CoreFingerprint(cfg))
+					_ = rops.storeLiveHash(name, runtime.LiveFingerprint(cfg))
 				}
 				continue
 			}
 		}
 
 		// Running — check idle timeout (opt-in per agent).
-		if it != nil && it.checkIdle(a, time.Now()) {
-			fmt.Fprintf(stdout, "Agent '%s' idle too long, restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
+		if it != nil && it.checkIdle(name, sp, time.Now()) {
+			fmt.Fprintf(stdout, "Agent '%s' idle too long, restarting...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
 				Type:    events.AgentIdleKilled,
 				Actor:   "gc",
-				Subject: a.Name(),
+				Subject: tp.DisplayName(),
 			})
-			telemetry.RecordAgentIdleKill(context.Background(), a.Name())
-			if err := a.Stop(); err != nil {
-				fmt.Fprintf(stderr, "gc start: stopping idle %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+			telemetry.RecordAgentIdleKill(context.Background(), tp.DisplayName())
+			if err := sp.Stop(name); err != nil {
+				fmt.Fprintf(stderr, "gc start: stopping idle %s: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 				continue
 			}
-			if err := a.Start(parentCtx); err != nil {
-				fmt.Fprintf(stderr, "gc start: restarting idle %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+			cfg := templateParamsToConfig(tp)
+			if err := sp.Start(parentCtx, name, cfg); err != nil {
+				fmt.Fprintf(stderr, "gc start: restarting idle %s: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 				continue
 			}
-			_ = a.ClearScrollback()                                 // best-effort: clean slate after restart
-			fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+			_ = sp.ClearScrollback(name)                                    // best-effort: clean slate after restart
+			fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
 				Type:    events.AgentStarted,
 				Actor:   "gc",
-				Subject: a.Name(),
+				Subject: tp.DisplayName(),
 			})
 			// Record for crash tracking (idle kills count as restarts).
 			if ct != nil {
-				ct.recordStart(a.SessionName(), time.Now())
+				ct.recordStart(name, time.Now())
 			}
 			if rops != nil {
-				cfg := a.SessionConfig()
-				_ = rops.storeConfigHash(a.SessionName(), runtime.CoreFingerprint(cfg)) // best-effort
-				_ = rops.storeLiveHash(a.SessionName(), runtime.LiveFingerprint(cfg))
+				cfg := templateParamsToConfig(tp)
+				_ = rops.storeConfigHash(name, runtime.CoreFingerprint(cfg)) // best-effort
+				_ = rops.storeLiveHash(name, runtime.LiveFingerprint(cfg))
 			}
 			continue
 		}
 
 		// Running — check pending drift restart (drain-then-restart in progress).
 		if dops != nil {
-			if isDrift, _ := dops.isDriftRestart(a.SessionName()); isDrift {
-				acked, _ := dops.isDrainAcked(a.SessionName())
+			if isDrift, _ := dops.isDriftRestart(name); isDrift {
+				acked, _ := dops.isDrainAcked(name)
 				timedOut := false
 				if !acked && driftDrainTimeout > 0 {
-					if started, err := dops.drainStartTime(a.SessionName()); err == nil {
+					if started, err := dops.drainStartTime(name); err == nil {
 						timedOut = time.Since(started) > driftDrainTimeout
 					}
 				}
 				if acked || timedOut {
 					// Drain complete → stop + start with new config.
-					_ = dops.clearDriftRestart(a.SessionName())
-					_ = dops.clearDrain(a.SessionName())
-					if err := a.Stop(); err != nil {
-						fmt.Fprintf(stderr, "gc start: stopping %s for drift restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+					_ = dops.clearDriftRestart(name)
+					_ = dops.clearDrain(name)
+					if err := sp.Stop(name); err != nil {
+						fmt.Fprintf(stderr, "gc start: stopping %s for drift restart: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
-					if err := a.Start(parentCtx); err != nil {
-						fmt.Fprintf(stderr, "gc start: restarting %s after drift drain: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+					cfg := templateParamsToConfig(tp)
+					if err := sp.Start(parentCtx, name, cfg); err != nil {
+						fmt.Fprintf(stderr, "gc start: restarting %s after drift drain: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 						continue
 					}
-					_ = a.ClearScrollback()
-					fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+					_ = sp.ClearScrollback(name)
+					fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 					rec.Record(events.Event{
 						Type:    events.AgentStarted,
 						Actor:   "gc",
-						Subject: a.Name(),
+						Subject: tp.DisplayName(),
 					})
 					if ct != nil {
-						ct.recordStart(a.SessionName(), time.Now())
+						ct.recordStart(name, time.Now())
 					}
 					if rops != nil {
-						cfg := a.SessionConfig()
-						_ = rops.storeConfigHash(a.SessionName(), runtime.CoreFingerprint(cfg))
-						_ = rops.storeLiveHash(a.SessionName(), runtime.LiveFingerprint(cfg))
+						_ = rops.storeConfigHash(name, runtime.CoreFingerprint(cfg))
+						_ = rops.storeLiveHash(name, runtime.LiveFingerprint(cfg))
 					}
 				}
 				continue // skip normal drift check — already handling it
@@ -325,65 +327,65 @@ func doReconcileAgents(agents []agent.Agent,
 			continue // Row 2: no reconcile ops, skip.
 		}
 
-		storedCore, err := rops.configHash(a.SessionName())
+		storedCore, err := rops.configHash(name)
 		if err != nil || storedCore == "" {
 			// No stored hash — graceful upgrade, don't restart.
 			continue
 		}
 
-		cfg := a.SessionConfig()
+		cfg := templateParamsToConfig(tp)
 		currentCore := runtime.CoreFingerprint(cfg)
 		if storedCore != currentCore {
 			// Core drift → drain + restart (existing behavior).
 			if dops != nil {
-				_ = dops.setDrain(a.SessionName())
-				_ = dops.setDriftRestart(a.SessionName())
-				fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", a.Name()) //nolint:errcheck // best-effort stdout
+				_ = dops.setDrain(name)
+				_ = dops.setDriftRestart(name)
+				fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentDraining,
 					Actor:   "gc",
-					Subject: a.Name(),
+					Subject: tp.DisplayName(),
 					Message: "config drift detected",
 				})
 			} else {
 				// No drain ops — fall back to hard restart (backward compat).
-				fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", a.Name()) //nolint:errcheck // best-effort stdout
-				if err := a.Stop(); err != nil {
-					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				fmt.Fprintf(stdout, "Config changed for '%s', restarting...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
+				if err := sp.Stop(name); err != nil {
+					fmt.Fprintf(stderr, "gc start: stopping %s for restart: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				if err := a.Start(parentCtx); err != nil {
-					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", a.Name(), err) //nolint:errcheck // best-effort stderr
+				if err := sp.Start(parentCtx, name, cfg); err != nil {
+					fmt.Fprintf(stderr, "gc start: restarting %s: %v\n", tp.DisplayName(), err) //nolint:errcheck // best-effort stderr
 					continue
 				}
-				_ = a.ClearScrollback()
-				fmt.Fprintf(stdout, "Restarted agent '%s'\n", a.Name()) //nolint:errcheck // best-effort stdout
+				_ = sp.ClearScrollback(name)
+				fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
 					Type:    events.AgentStarted,
 					Actor:   "gc",
-					Subject: a.Name(),
+					Subject: tp.DisplayName(),
 				})
-				_ = rops.storeConfigHash(a.SessionName(), currentCore)
-				_ = rops.storeLiveHash(a.SessionName(), runtime.LiveFingerprint(cfg))
+				_ = rops.storeConfigHash(name, currentCore)
+				_ = rops.storeLiveHash(name, runtime.LiveFingerprint(cfg))
 			}
 			continue
 		}
 
 		// Core matches — check live-only drift.
-		storedLive, _ := rops.liveHash(a.SessionName())
+		storedLive, _ := rops.liveHash(name)
 		if storedLive == "" {
 			continue // No stored live hash — graceful upgrade, don't re-apply.
 		}
 		currentLive := runtime.LiveFingerprint(cfg)
 		if storedLive != currentLive {
 			// Live-only drift → re-apply session_live without restart.
-			fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", a.Name()) //nolint:errcheck // best-effort stdout
-			_ = rops.runLive(a.SessionName(), cfg)
-			_ = rops.storeLiveHash(a.SessionName(), currentLive)
+			fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
+			_ = rops.runLive(name, cfg)
+			_ = rops.storeLiveHash(name, currentLive)
 			rec.Record(events.Event{
 				Type:    events.AgentUpdated,
 				Actor:   "gc",
-				Subject: a.Name(),
+				Subject: tp.DisplayName(),
 				Message: "session_live re-applied",
 			})
 		}
@@ -394,16 +396,17 @@ func doReconcileAgents(agents []agent.Agent,
 	// Context carries the startup timeout so cancellation propagates
 	// cleanly to the session provider (no goroutine leak).
 	type startResult struct {
-		agent   agent.Agent
-		reason  string
-		err     error
-		elapsed time.Duration
+		sessionName string
+		tp          TemplateParams
+		reason      string
+		err         error
+		elapsed     time.Duration
 	}
 	results := make([]startResult, len(toStart))
 	var wg sync.WaitGroup
 	for i, c := range toStart {
 		wg.Add(1)
-		go func(idx int, a agent.Agent, reason string) {
+		go func(idx int, sn string, tp TemplateParams, reason string) {
 			defer wg.Done()
 			t0 := time.Now()
 			ctx := parentCtx
@@ -412,9 +415,9 @@ func doReconcileAgents(agents []agent.Agent,
 				ctx, cancel = context.WithTimeout(parentCtx, startupTimeout)
 				defer cancel()
 			}
-			err := a.Start(ctx)
-			results[idx] = startResult{agent: a, reason: reason, err: err, elapsed: time.Since(t0)}
-		}(i, c.agent, c.reason)
+			err := sp.Start(ctx, sn, templateParamsToConfig(tp))
+			results[idx] = startResult{sessionName: sn, tp: tp, reason: reason, err: err, elapsed: time.Since(t0)}
+		}(i, c.sessionName, c.tp, c.reason)
 	}
 	wg.Wait()
 
@@ -422,38 +425,38 @@ func doReconcileAgents(agents []agent.Agent,
 	// event recording, config hash storage.
 	for _, r := range results {
 		if r.err != nil {
-			fmt.Fprintf(stderr, "gc start: starting %s: %v\n", r.agent.Name(), r.err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc start: starting %s: %v\n", r.tp.DisplayName(), r.err) //nolint:errcheck // best-effort stderr
 			continue
 		}
 
 		// Record the start for crash tracking.
 		if ct != nil {
-			ct.recordStart(r.agent.SessionName(), time.Now())
+			ct.recordStart(r.sessionName, time.Now())
 			// Check if this start just tripped the threshold.
-			if ct.isQuarantined(r.agent.SessionName(), time.Now()) {
+			if ct.isQuarantined(r.sessionName, time.Now()) {
 				rec.Record(events.Event{
 					Type:    events.AgentQuarantined,
 					Actor:   "gc",
-					Subject: r.agent.Name(),
+					Subject: r.tp.DisplayName(),
 					Message: "crash loop detected",
 				})
-				telemetry.RecordAgentQuarantine(context.Background(), r.agent.Name())
-				fmt.Fprintf(stderr, "gc start: agent '%s' quarantined (crash loop: restarted too many times within window)\n", r.agent.Name()) //nolint:errcheck // best-effort stderr
+				telemetry.RecordAgentQuarantine(context.Background(), r.tp.DisplayName())
+				fmt.Fprintf(stderr, "gc start: agent '%s' quarantined (crash loop: restarted too many times within window)\n", r.tp.DisplayName()) //nolint:errcheck // best-effort stderr
 			}
 		}
 
-		fmt.Fprintf(stdout, "Started agent '%s' (%s, %s)\n", r.agent.Name(), r.reason, formatElapsed(r.elapsed)) //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Started agent '%s' (%s, %s)\n", r.tp.DisplayName(), r.reason, formatElapsed(r.elapsed)) //nolint:errcheck // best-effort stdout
 		rec.Record(events.Event{
 			Type:    events.AgentStarted,
 			Actor:   "gc",
-			Subject: r.agent.Name(),
+			Subject: r.tp.DisplayName(),
 		})
-		telemetry.RecordAgentStart(context.Background(), r.agent.SessionName(), r.agent.Name(), nil)
+		telemetry.RecordAgentStart(context.Background(), r.sessionName, r.tp.DisplayName(), nil)
 		// Store config hashes after successful start.
 		if rops != nil {
-			cfg := r.agent.SessionConfig()
-			_ = rops.storeConfigHash(r.agent.SessionName(), runtime.CoreFingerprint(cfg)) // best-effort
-			_ = rops.storeLiveHash(r.agent.SessionName(), runtime.LiveFingerprint(cfg))
+			cfg := templateParamsToConfig(r.tp)
+			_ = rops.storeConfigHash(r.sessionName, runtime.CoreFingerprint(cfg)) // best-effort
+			_ = rops.storeLiveHash(r.sessionName, runtime.LiveFingerprint(cfg))
 		}
 	}
 

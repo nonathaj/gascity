@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -18,12 +17,17 @@ import (
 
 func TestControllerLoopCancel(t *testing.T) {
 	sp := runtime.NewFake()
-	a := agent.New("mayor", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp)
+	name := "mayor"
+	tp := TemplateParams{
+		SessionName:  name,
+		TemplateName: name,
+		Command:      "echo hello",
+	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return []agent.Agent{a}
+		return map[string]TemplateParams{name: tp}
 	}
 
 	cfg := &config.City{Workspace: config.Workspace{Name: "test"}}
@@ -51,12 +55,17 @@ func TestControllerLoopCancel(t *testing.T) {
 
 func TestControllerLoopTick(t *testing.T) {
 	sp := runtime.NewFake()
-	a := agent.New("mayor", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp)
+	name := "mayor"
+	tp := TemplateParams{
+		SessionName:  name,
+		TemplateName: name,
+		Command:      "echo hello",
+	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return []agent.Agent{a}
+		return map[string]TemplateParams{name: tp}
 	}
 
 	cfg := &config.City{Workspace: config.Workspace{Name: "test"}}
@@ -103,11 +112,16 @@ func TestControllerLockExclusion(t *testing.T) {
 func TestControllerShutdown(t *testing.T) {
 	sp := runtime.NewFake()
 	// Pre-start an agent to verify shutdown stops it.
-	_ = sp.Start(context.Background(), "mayor", runtime.Config{Command: "echo hello"})
-	a := agent.New("mayor", "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp)
+	name := "mayor"
+	_ = sp.Start(context.Background(), name, runtime.Config{Command: "echo hello"})
+	tp := TemplateParams{
+		SessionName:  name,
+		TemplateName: name,
+		Command:      "echo hello",
+	}
 
-	buildFn := func(_ *config.City, _ runtime.Provider) []agent.Agent {
-		return []agent.Agent{a}
+	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+		return map[string]TemplateParams{name: tp}
 	}
 
 	dir := t.TempDir()
@@ -182,19 +196,23 @@ func TestControllerReloadsConfig(t *testing.T) {
 
 	sp := runtime.NewFake()
 
-	// buildFn creates agents from the config it receives.
+	// buildFn creates TemplateParams from the config it receives.
 	var lastAgentNames atomic.Value
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		var names []string
-		var agents []agent.Agent
+		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
 			names = append(names, a.Name)
-			agents = append(agents, agent.New(a.Name, "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp))
+			ds[a.Name] = TemplateParams{
+				SessionName:  a.Name,
+				TemplateName: a.Name,
+				Command:      "echo hello",
+			}
 		}
 		lastAgentNames.Store(names)
-		return agents
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -251,13 +269,17 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		var agents []agent.Agent
+		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
-			agents = append(agents, agent.New(a.Name, "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp))
+			ds[a.Name] = TemplateParams{
+				SessionName:  a.Name,
+				TemplateName: a.Name,
+				Command:      "echo hello",
+			}
 		}
-		return agents
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -314,13 +336,17 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		var agents []agent.Agent
+		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
-			agents = append(agents, agent.New(a.Name, "test", "echo hello", "", nil, agent.StartupHints{}, "", "", nil, sp))
+			ds[a.Name] = TemplateParams{
+				SessionName:  a.Name,
+				TemplateName: a.Name,
+				Command:      "echo hello",
+			}
 		}
-		return agents
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -391,9 +417,9 @@ func TestControllerPokeTriggersImmediate(t *testing.T) {
 	sp := runtime.NewFake()
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) []agent.Agent {
+	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return []agent.Agent{} //nolint:unparam // test helper
+		return map[string]TemplateParams{}
 	}
 
 	dir := t.TempDir()

@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/convergence"
@@ -34,7 +33,7 @@ func setupConvergenceRuntime(t *testing.T) (*CityRuntime, *beads.MemStore) {
 		cityName:            "test",
 		cfg:                 cfg,
 		sp:                  sp,
-		buildFn:             func(_ *config.City, _ runtime.Provider) []agent.Agent { return nil },
+		buildFn:             func(_ *config.City, _ runtime.Provider) map[string]TemplateParams { return nil },
 		rec:                 events.Discard,
 		convergenceReqCh:    convergenceReqCh,
 		standaloneCityStore: store,

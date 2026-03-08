@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -32,7 +31,7 @@ type CityRuntime struct {
 
 	cfg     *config.City
 	sp      runtime.Provider
-	buildFn func(*config.City, runtime.Provider) []agent.Agent
+	buildFn func(*config.City, runtime.Provider) map[string]TemplateParams
 
 	rops reconcileOps
 	dops drainOps
@@ -52,6 +51,7 @@ type CityRuntime struct {
 
 	// Bead-driven reconciler state (Phase 2f).
 	sessionDrains *drainTracker // in-memory drain tracker; nil when bead reconciler disabled
+	beaconTime    time.Time     // stable beacon timestamp; set once at run() start
 
 	convHandler      *convergence.Handler     // nil until bead store available
 	convStoreAdapter *convergenceStoreAdapter // typed reference; avoids type assertions in tick/reconcile
@@ -74,7 +74,7 @@ type CityRuntimeParams struct {
 
 	Cfg     *config.City
 	SP      runtime.Provider
-	BuildFn func(*config.City, runtime.Provider) []agent.Agent
+	BuildFn func(*config.City, runtime.Provider) map[string]TemplateParams
 	Dops    drainOps
 
 	Rec events.Recorder
@@ -164,6 +164,11 @@ func (cr *CityRuntime) crashTrack() crashTracker {
 // the per-city main loop — it watches config, reconciles agents, runs
 // wisp GC, and dispatches automations.
 func (cr *CityRuntime) run(ctx context.Context) {
+	// Capture beacon time once so config fingerprints remain stable across
+	// ticks. Without this, FormatBeacon(time.Now()) would produce different
+	// prompt strings each tick, causing spurious drift detection.
+	cr.beaconTime = time.Now()
+
 	dirty := &atomic.Bool{}
 	if cr.tomlPath != "" {
 		dirs := cr.watchDirs
@@ -235,8 +240,8 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// pre-reconcile reality and may lag by one tick after reconciliation
 	// starts/stops agents. This is acceptable — no external consumer reads
 	// bead state within a tick, and it converges on the next sync.
-	agents := cr.buildFn(cr.cfg, cr.sp)
-	cr.syncBeadsAndUpdateIndex(agents)
+	desiredState := cr.buildFn(cr.cfg, cr.sp)
+	cr.syncBeadsAndUpdateIndex(desiredState)
 
 	// Convergence startup reconciliation: recover in-progress convergence
 	// beads that were interrupted by a controller crash.
@@ -244,14 +249,13 @@ func (cr *CityRuntime) run(ctx context.Context) {
 
 	// Initial reconciliation.
 	if cr.sessionDrains != nil {
-		cr.beadReconcileTick(ctx, agents)
+		cr.beadReconcileTick(ctx, desiredState)
 	} else {
-		doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
+		doReconcileAgents(desiredState, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
 			cr.poolSessions, cr.suspendedNames,
 			cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
 			cr.stdout, cr.stderr, ctx)
 	}
-	ensureObservers(agents, observePaths)
 
 	fmt.Fprintln(cr.stdout, "City started.") //nolint:errcheck // best-effort stdout
 
@@ -329,20 +333,19 @@ func (cr *CityRuntime) tick(
 	// Post-reconcile sync was intentionally removed: the daemon's next tick
 	// corrects bead state, and the pre-reconcile sync is sufficient for
 	// beadReconcileOps to read/write hashes during reconciliation.
-	agents := cr.buildFn(cr.cfg, cr.sp)
-	cr.syncBeadsAndUpdateIndex(agents)
+	desiredState := cr.buildFn(cr.cfg, cr.sp)
+	cr.syncBeadsAndUpdateIndex(desiredState)
 
 	// Use bead-driven reconciler when drain tracker is initialized
 	// (requires bead store). Falls back to legacy reconciler otherwise.
 	if cr.sessionDrains != nil {
-		cr.beadReconcileTick(ctx, agents)
+		cr.beadReconcileTick(ctx, desiredState)
 	} else {
-		doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
+		doReconcileAgents(desiredState, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
 			cr.poolSessions, cr.suspendedNames,
 			cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
 			cr.stdout, cr.stderr, ctx)
 	}
-	ensureObservers(agents, *observePaths)
 
 	// Wisp GC: purge expired closed molecules.
 	if cr.wg != nil && cr.wg.shouldRun(time.Now()) {
@@ -530,9 +533,9 @@ func (cr *CityRuntime) reloadConfig(
 }
 
 // beadReconcileTick runs one reconciliation tick using the bead-driven
-// reconciler. It loads session beads from the store, indexes agents by
-// session name, and delegates to reconcileSessionBeads.
-func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Agent) {
+// reconciler. It loads session beads from the store, uses the provided
+// desired state, and delegates to reconcileSessionBeads.
+func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[string]TemplateParams) {
 	store := cr.cityBeadStore()
 	if store == nil {
 		return
@@ -545,19 +548,10 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Age
 		return
 	}
 
-	// Index agents by session name for O(1) lookup.
-	agentIndex := make(map[string]agent.Agent, len(agents))
-	for _, a := range agents {
-		agentIndex[a.SessionName()] = a
-	}
-
-	// Compute pool desired counts from the already-evaluated agent list.
-	poolDesired := derivePoolDesired(agents, cr.cfg)
+	// Compute pool desired counts from the desired state.
+	poolDesired := derivePoolDesired(desiredState, cr.cfg)
 
 	// Use cr.cityName consistently — it's the authoritative runtime name.
-	// cr.cfg.Workspace.Name may drift on config reload; using it here would
-	// cause allDependenciesAlive to build wrong session names for agentIndex
-	// lookups when the two values diverge.
 	cityName := cr.cityName
 
 	cfgNames := configuredSessionNames(cr.cfg, cityName)
@@ -566,7 +560,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Age
 	workSet := computeWorkSet(cr.cfg, shellScaleCheck, cr.cityPath)
 
 	reconcileSessionBeads(
-		ctx, open, agentIndex, cfgNames, cr.cfg, cr.sp, store,
+		ctx, open, desiredState, cfgNames, cr.cfg, cr.sp, store,
 		workSet, cr.sessionDrains, poolDesired, cityName,
 		clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
 		cr.cfg.Daemon.DriftDrainTimeoutDuration(),
@@ -592,10 +586,10 @@ func (cr *CityRuntime) upgradeToBeadReconcileOps() {
 
 // syncBeadsAndUpdateIndex runs syncSessionBeads and, if rops is a
 // beadReconcileOps, updates its session_name → bead_id index.
-func (cr *CityRuntime) syncBeadsAndUpdateIndex(agents []agent.Agent) {
+func (cr *CityRuntime) syncBeadsAndUpdateIndex(desiredState map[string]TemplateParams) {
 	store := cr.cityBeadStore()
 	cfgNames := configuredSessionNames(cr.cfg, cr.cityName)
-	idx := syncSessionBeads(store, agents, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil)
+	idx := syncSessionBeads(store, desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil)
 	if bro, ok := cr.rops.(*beadReconcileOps); ok && idx != nil {
 		bro.updateIndex(idx)
 	}
@@ -620,10 +614,11 @@ func (cr *CityRuntime) shutdown() {
 			running, _ := cr.rops.listRunning("")
 			gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
 		} else {
+			ds := cr.buildFn(cr.cfg, cr.sp)
 			var names []string
-			for _, a := range cr.buildFn(cr.cfg, cr.sp) {
-				if a.IsRunning() {
-					names = append(names, a.SessionName())
+			for sn := range ds {
+				if cr.sp.IsRunning(sn) {
+					names = append(names, sn)
 				}
 			}
 			gracefulStopAll(names, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)

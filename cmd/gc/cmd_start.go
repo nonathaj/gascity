@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -28,41 +27,24 @@ import (
 // suspended in the config or belonging to suspended rigs. Also includes
 // all agents when the city itself is suspended (workspace.suspended).
 // Used by the reconciler to distinguish suspended agents from true orphans
-// during Phase 2 cleanup. If multiReg is non-nil, suspended multi-instance
-// templates have their running instance sessions included too.
-func computeSuspendedNames(cfg *config.City, cityName, cityPath string, multiReg ...*multiRegistry) map[string]bool {
+// during Phase 2 cleanup.
+func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[string]bool {
 	names := make(map[string]bool)
 	st := cfg.Workspace.SessionTemplate
 
 	// City-level suspend: all agents are suspended.
 	if cfg.Workspace.Suspended {
 		for _, a := range cfg.Agents {
-			names[agent.SessionNameFor(cityName, a.QualifiedName(), st)] = true
+			names[sessionName(cityName, a.QualifiedName(), st)] = true
 		}
 		return names
-	}
-
-	// Extract optional multiReg.
-	var reg *multiRegistry
-	if len(multiReg) > 0 {
-		reg = multiReg[0]
 	}
 
 	// Individually suspended agents.
 	for _, a := range cfg.Agents {
 		if a.Suspended {
 			qn := a.QualifiedName()
-			names[agent.SessionNameFor(cityName, qn, st)] = true
-			// Suspended multi template: mark all its running instances as suspended.
-			if a.IsMulti() && reg != nil {
-				instances, err := reg.instancesForTemplate(qn)
-				if err == nil {
-					for _, mi := range instances {
-						instanceQN := qn + "/" + mi.Name
-						names[agent.SessionNameFor(cityName, instanceQN, st)] = true
-					}
-				}
-			}
+			names[sessionName(cityName, qn, st)] = true
 		}
 	}
 	// Agents in suspended rigs.
@@ -82,7 +64,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string, multiReg
 				continue
 			}
 			if suspendedRigPaths[filepath.Clean(workDir)] {
-				names[agent.SessionNameFor(cityName, a.QualifiedName(), st)] = true
+				names[sessionName(cityName, a.QualifiedName(), st)] = true
 			}
 		}
 	}
@@ -188,11 +170,11 @@ func buildIdleTracker(cfg *config.City, cityName string, sp runtime.Provider) id
 		if a.IsPool() && pool.IsMultiInstance() {
 			// Register each pool instance (worker-1, worker-2, ...).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := agent.SessionNameFor(cityName, qualifiedInstance, st)
+				sn := sessionName(cityName, qualifiedInstance, st)
 				it.setTimeout(sn, timeout)
 			}
 		} else {
-			sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
+			sn := sessionName(cityName, a.QualifiedName(), st)
 			it.setTimeout(sn, timeout)
 		}
 	}
@@ -415,20 +397,6 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	sp := newSessionProvider()
 
-	// Open multi registry if any agent is marked multi = true.
-	var multiReg *multiRegistry
-	for _, a := range cfg.Agents {
-		if a.IsMulti() {
-			store, code := openCityStore(stderr, "gc start")
-			if code != 0 {
-				fmt.Fprintln(stderr, "gc start: cannot open city store for multi agents") //nolint:errcheck // best-effort stderr
-			} else {
-				multiReg = newMultiRegistry(store)
-			}
-			break
-		}
-	}
-
 	// beaconTime is captured once so the beacon timestamp remains stable
 	// across reconcile ticks. Without this, FormatBeacon(time.Now()) would
 	// produce a different command string each tick, causing
@@ -439,8 +407,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	// Called once for one-shot, or on each tick for controller mode.
 	// Pool check commands are re-evaluated each call. Accepts a *config.City
 	// parameter so the controller loop can pass freshly-reloaded config.
-	buildAgents := func(c *config.City, currentSP runtime.Provider) []agent.Agent {
-		return buildAgentsFromConfig(cityName, cityPath, beaconTime, c, currentSP, multiReg, "gc start", stderr)
+	buildAgents := func(c *config.City, currentSP runtime.Provider) map[string]TemplateParams {
+		return buildDesiredState(cityName, cityPath, beaconTime, c, currentSP, stderr)
 	}
 
 	recorder := events.Discard
@@ -500,7 +468,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		}
 
 		cfgNames := configuredSessionNames(cfg, cityName)
-		idx := syncSessionBeads(store, agents, cfgNames, cfg, clock.Real{}, stderr, false)
+		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, stderr)
+		idx := syncSessionBeads(store, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false)
 		if idx != nil {
 			bro := newBeadReconcileOps(rops, func() beads.Store { return store })
 			bro.updateIndex(idx)
@@ -509,15 +478,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	} else {
 		fmt.Fprintf(stderr, "gc start: bead store unavailable, using provider hashes: %v\n", err) //nolint:errcheck
 	}
-	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath, multiReg)
+	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)
 	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr, sigCtx)
-	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths))
 	// Post-reconcile sync: update bead state to reflect post-start reality.
-	// Without this, beads created pre-reconcile permanently show state=stopped
-	// because one-shot mode has no next tick to correct them.
 	if oneShotStore != nil {
 		cfgNames := configuredSessionNames(cfg, cityName)
-		syncSessionBeads(oneShotStore, buildAgents(cfg, sp), cfgNames, cfg, clock.Real{}, stderr, false)
+		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, stderr)
+		syncSessionBeads(oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false)
 	}
 	if code == 0 {
 		fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
@@ -526,21 +493,16 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 }
 
 // printDryRunPreview prints what agents would be started without starting them.
-func printDryRunPreview(agents []agent.Agent, cfg *config.City, cityName string, stdout io.Writer) {
-	st := cfg.Workspace.SessionTemplate
-	fmt.Fprintf(stdout, "Dry-run: %d agent(s) would start in city %q\n\n", len(agents), cityName) //nolint:errcheck // best-effort stdout
+func printDryRunPreview(desiredState map[string]TemplateParams, cfg *config.City, cityName string, stdout io.Writer) {
+	fmt.Fprintf(stdout, "Dry-run: %d agent(s) would start in city %q\n\n", len(desiredState), cityName) //nolint:errcheck // best-effort stdout
 
-	if len(agents) == 0 {
+	if len(desiredState) == 0 {
 		fmt.Fprintln(stdout, "  (no agents to start)") //nolint:errcheck // best-effort stdout
 		return
 	}
 
-	for _, a := range agents {
-		session := a.SessionName()
-		if session == "" {
-			session = agent.SessionNameFor(cityName, a.Name(), st)
-		}
-		fmt.Fprintf(stdout, "  %-30s  session=%s\n", a.Name(), session) //nolint:errcheck // best-effort stdout
+	for sn, tp := range desiredState {
+		fmt.Fprintf(stdout, "  %-30s  session=%s\n", tp.TemplateName, sn) //nolint:errcheck // best-effort stdout
 	}
 
 	// Summary by suspension.
@@ -757,7 +719,7 @@ func checkAgentImages(sp runtime.Provider, agents []config.Agent, _ io.Writer) e
 // Uses ListRunning with the city prefix for a single batch call instead
 // of N individual IsRunning calls. For exec providers (K8s), this reduces
 // N subprocess spawns to 1.
-func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfig, cityName, sessionTemplate string, sp runtime.Provider) int {
+func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfig, cityName, sessionTemplate string, sp runtime.Provider) int { //nolint:unparam // agentName varies in production use
 	if pool.IsUnlimited() {
 		// Unlimited: count by prefix matching.
 		instances := discoverPoolInstances(agentName, agentDir, pool, cityName, sessionTemplate, sp)
@@ -803,14 +765,6 @@ func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfi
 		}
 	}
 	return count
-}
-
-// scaleDirection returns "up" or "down" based on current vs desired count.
-func scaleDirection(running, desired int) string {
-	if desired > running {
-		return "up"
-	}
-	return "down"
 }
 
 // buildFingerprintExtra builds the fpExtra map for an agent's fingerprint

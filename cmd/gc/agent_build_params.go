@@ -1,21 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"os/exec"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
-	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
-	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 )
 
 // agentBuildParams holds shared, per-city parameters for building agents.
-// These are constant across all agents in a single buildAgents call.
+// These are constant across all agents in a single buildDesiredState call.
 type agentBuildParams struct {
 	cityName        string
 	cityPath        string
@@ -32,45 +28,6 @@ type agentBuildParams struct {
 	rigOverlayDirs  map[string][]string
 	globalFragments []string
 	stderr          io.Writer
-}
-
-// buildOneAgent resolves a config.Agent into an agent.Agent. This is the
-// single canonical path for building agents — both fixed agents and pool
-// instances flow through here. The caller is responsible for setting the
-// correct Name and Dir on cfgAgent (pool callers modify these for each
-// instance before calling).
-//
-// qualifiedName is the agent's canonical identity (e.g., "mayor" or
-// "hello-world/polecat-2"). fpExtra carries additional data for config
-// fingerprinting (e.g., pool bounds); pass nil for pool instances.
-//
-// Internally delegates to resolveTemplate() for pure parameter resolution,
-// then handles side effects (hook installation, ACP route registration) and
-// creates the agent.Agent.
-func buildOneAgent(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName string, fpExtra map[string]string, onStop ...func() error) (agent.Agent, error) {
-	params, err := resolveTemplate(p, cfgAgent, qualifiedName, fpExtra)
-	if err != nil {
-		return nil, err
-	}
-
-	// Install provider hooks (idempotent filesystem side effect).
-	if ih := config.ResolveInstallHooks(cfgAgent, p.workspace); len(ih) > 0 {
-		if hErr := hooks.Install(p.fs, p.cityPath, params.WorkDir, ih); hErr != nil {
-			fmt.Fprintf(p.stderr, "agent %q: hooks: %v\n", qualifiedName, hErr) //nolint:errcheck
-		}
-	}
-
-	// Register ACP route on the auto provider for dynamic sessions
-	// (e.g., pool instances) not known at newSessionProvider() time.
-	if params.IsACP {
-		if autoSP, ok := p.sp.(*sessionauto.Provider); ok {
-			autoSP.RouteACP(params.SessionName)
-		}
-	}
-
-	return agent.New(qualifiedName, p.cityName, params.Command, params.Prompt,
-		params.Env, params.Hints, params.WorkDir, p.sessionTemplate,
-		params.FPExtra, p.sp, onStop...), nil
 }
 
 // newAgentBuildParams constructs agentBuildParams from the common startup values.

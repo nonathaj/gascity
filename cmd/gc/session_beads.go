@@ -107,25 +107,14 @@ func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
 	return result, nil
 }
 
-// syncSessionBeads ensures every config agent has a corresponding session bead.
-// This is an additive side-effect — it creates beads for agents that don't have
-// them and updates metadata for those that do. It does NOT change agent behavior;
-// the existing reconciler continues to manage agent lifecycle.
+// syncSessionBeads ensures every desired session has a corresponding session
+// bead. Accepts desiredState (sessionName → TemplateParams) instead of
+// map[string]TemplateParams, and uses runtime.Provider for liveness checks.
 //
 // configuredNames is the set of ALL configured agent session names (including
 // suspended agents). Beads for names not in this set are marked "orphaned".
-// Beads for names in configuredNames but not in the agents slice are marked
+// Beads for names in configuredNames but not in desiredState are marked
 // "suspended" (the agent exists in config but isn't currently runnable).
-//
-// Phase 1 (additive): beads record reality alongside the existing reconciler.
-// Phase 2 (lifecycle): beads are closed when agents are orphaned or suspended,
-// completing the bead lifecycle. A fresh bead is created when the agent returns.
-// Phase 3 (bead-driven): returns session_name → bead_id index for open beads,
-// enabling beadReconcileOps to store/retrieve config hashes from beads.
-//
-// When called pre-reconcile (the daemon tick pattern), bead state metadata
-// reflects the previous tick's reality — agents not yet started/stopped by
-// the current tick's reconciliation. State converges on the next tick.
 //
 // When skipClose is true, orphan/suspended beads are NOT closed. This is
 // used when the bead-driven reconciler is active — it handles drain/stop
@@ -135,9 +124,10 @@ func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
 // sync. Callers that don't need the index can ignore the return value.
 func syncSessionBeads(
 	store beads.Store,
-	agents []agent.Agent,
+	desiredState map[string]TemplateParams,
+	sp runtime.Provider,
 	configuredNames map[string]bool,
-	cfg *config.City,
+	_ *config.City,
 	clk clock.Clock,
 	stderr io.Writer,
 	skipClose bool,
@@ -166,27 +156,26 @@ func syncSessionBeads(
 		}
 	}
 
-	// Build a set of desired session names for orphan detection.
-	desired := make(map[string]bool, len(agents))
-
 	// Track open bead IDs for the returned index.
-	openIndex := make(map[string]string, len(agents))
+	openIndex := make(map[string]string, len(desiredState))
 
 	now := clk.Now().UTC()
 
-	for _, a := range agents {
-		sn := a.SessionName()
-		desired[sn] = true
-
-		agentCfg := a.SessionConfig()
+	for sn, tp := range desiredState {
+		agentCfg := templateParamsToConfig(tp)
 		coreHash := runtime.CoreFingerprint(agentCfg)
 		liveHash := runtime.LiveFingerprint(agentCfg)
 
-		// Use agent-level IsRunning which checks process liveness,
-		// not just session existence.
+		// Use provider for liveness check.
 		state := "stopped"
-		if a.IsRunning() {
+		if sp.IsRunning(sn) {
 			state = "active"
+		}
+
+		agentName := tp.TemplateName
+		// For pool instances, use the full session name as the agent_name.
+		if slot := resolvePoolSlot(sn, tp.TemplateName); slot > 0 {
+			agentName = sn
 		}
 
 		b, exists := bySessionName[sn]
@@ -194,7 +183,7 @@ func syncSessionBeads(
 			// Create a new session bead.
 			meta := map[string]string{
 				"session_name":   sn,
-				"agent_name":     a.Name(),
+				"agent_name":     agentName,
 				"config_hash":    coreHash,
 				"live_hash":      liveHash,
 				"generation":     "1",
@@ -202,20 +191,18 @@ func syncSessionBeads(
 				"state":          state,
 				"synced_at":      now.Format("2006-01-02T15:04:05Z07:00"),
 			}
-			// Store template and pool_slot for bead-driven reconciler.
-			tmpl := resolveAgentTemplate(a.Name(), cfg)
-			meta["template"] = tmpl
-			if slot := resolvePoolSlot(a.Name(), tmpl); slot > 0 {
+			meta["template"] = tp.TemplateName
+			if slot := resolvePoolSlot(sn, tp.TemplateName); slot > 0 {
 				meta["pool_slot"] = strconv.Itoa(slot)
 			}
 			newBead, createErr := store.Create(beads.Bead{
-				Title:    a.Name(),
+				Title:    agentName,
 				Type:     sessionBeadType,
-				Labels:   []string{sessionBeadLabel, "agent:" + a.Name()},
+				Labels:   []string{sessionBeadLabel, "agent:" + agentName},
 				Metadata: meta,
 			})
 			if createErr != nil {
-				fmt.Fprintf(stderr, "session beads: creating bead for %s: %v\n", a.Name(), createErr) //nolint:errcheck
+				fmt.Fprintf(stderr, "session beads: creating bead for %s: %v\n", agentName, createErr) //nolint:errcheck
 			} else {
 				openIndex[sn] = newBead.ID
 			}
@@ -226,21 +213,14 @@ func syncSessionBeads(
 		openIndex[sn] = b.ID
 
 		// Backfill template and pool_slot metadata for beads created
-		// before Phase 2f. Each field is checked independently so a
-		// partial failure (e.g., template succeeds but pool_slot fails)
-		// is retried on the next sync.
+		// before Phase 2f.
 		if b.Metadata["template"] == "" {
-			tmpl := resolveAgentTemplate(a.Name(), cfg)
-			if setMeta(store, b.ID, "template", tmpl, stderr) == nil {
-				b.Metadata["template"] = tmpl
+			if setMeta(store, b.ID, "template", tp.TemplateName, stderr) == nil {
+				b.Metadata["template"] = tp.TemplateName
 			}
 		}
 		if b.Metadata["pool_slot"] == "" {
-			tmpl := b.Metadata["template"]
-			if tmpl == "" {
-				tmpl = resolveAgentTemplate(a.Name(), cfg)
-			}
-			if slot := resolvePoolSlot(a.Name(), tmpl); slot > 0 {
+			if slot := resolvePoolSlot(sn, tp.TemplateName); slot > 0 {
 				if setMeta(store, b.ID, "pool_slot", strconv.Itoa(slot), stderr) == nil {
 					b.Metadata["pool_slot"] = strconv.Itoa(slot)
 				}
@@ -248,32 +228,17 @@ func syncSessionBeads(
 		}
 
 		// Update existing bead metadata.
-		//
-		// IMPORTANT: config_hash and live_hash are NOT updated here for
-		// existing beads. These fields record what config the session was
-		// STARTED with. The bead-driven reconciler (reconcileSessionBeads)
-		// detects drift by comparing bead config_hash against the current
-		// desired config. If we overwrote config_hash here, drift would
-		// be undetectable. The reconciler writes config_hash after a
-		// successful start/restart.
-		//
-		// For the legacy reconciler path (beadReconcileOps), config_hash
-		// is updated after successful start via beadReconcileOps.Started().
+		// config_hash and live_hash are NOT updated here — they record
+		// what config the session was STARTED with. The reconciler detects
+		// drift by comparing bead config_hash against desired config.
 		changed := false
 
-		// Update state.
 		if b.Metadata["state"] != state {
 			if setMeta(store, b.ID, "state", state, stderr) == nil {
 				changed = true
 			}
 		}
 
-		// Clear stale close metadata from a failed closeBead attempt.
-		// If closeBead partially wrote metadata before aborting (e.g.,
-		// close_reason set but store.Close failed), and the agent is
-		// now active again, clean up the stale terminal metadata.
-		// Check both fields — either may exist independently if a
-		// previous cleanup partially succeeded.
 		if b.Metadata["close_reason"] != "" || b.Metadata["closed_at"] != "" {
 			if setMeta(store, b.ID, "close_reason", "", stderr) == nil &&
 				setMeta(store, b.ID, "closed_at", "", stderr) == nil {
@@ -281,38 +246,27 @@ func syncSessionBeads(
 			}
 		}
 
-		// Only update synced_at when something actually changed,
-		// to avoid disk thrashing on every tick.
 		if changed {
 			setMeta(store, b.ID, "synced_at", now.Format("2006-01-02T15:04:05Z07:00"), stderr) //nolint:errcheck
 		}
 	}
 
-	// Classify and close beads with no matching runnable agent.
-	// - If the session name is in configuredNames but not in desired (runnable),
-	//   the agent is suspended/disabled — close the bead with reason "suspended".
-	// - If the session name is not in configuredNames at all, the agent was
-	//   removed from config — close the bead with reason "orphaned". This
-	//   includes pool/multi instances: they are ephemeral (not user-configured)
-	//   and correctly become orphaned when their template is suspended or removed.
-	//
-	// Closing the bead completes its lifecycle record. When the agent returns
-	// (e.g., resumed from suspension), a fresh bead is created automatically
-	// because the indexing loop above skips closed beads.
+	// Classify and close beads with no matching desired entry.
 	if !skipClose {
 		for _, b := range existing {
 			sn := b.Metadata["session_name"]
-			if sn == "" || desired[sn] {
+			if sn == "" {
+				continue
+			}
+			if _, hasDesired := desiredState[sn]; hasDesired {
 				continue
 			}
 			if b.Status == "closed" {
 				continue
 			}
 			if configuredNames[sn] {
-				// Still in config but not runnable (suspended/disabled).
 				closeBead(store, b.ID, "suspended", now, stderr)
 			} else {
-				// Not in config at all — orphaned.
 				closeBead(store, b.ID, "orphaned", now, stderr)
 			}
 		}

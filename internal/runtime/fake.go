@@ -14,15 +14,16 @@ import (
 // When broken is true (via [NewFailFake]), all mutating operations return
 // an error and IsRunning always returns false. Calls are still recorded.
 type Fake struct {
-	mu         sync.Mutex
-	sessions   map[string]Config            // live sessions
-	meta       map[string]map[string]string // session → key → value
-	Calls      []Call                       // recorded calls in order
-	broken     bool                         // when true, all ops fail
-	Zombies    map[string]bool              // sessions with dead agent processes
-	Attached   map[string]bool              // sessions with attached terminals
-	PeekOutput map[string]string            // session → canned peek output
-	Activity   map[string]time.Time         // session → last activity time
+	mu          sync.Mutex
+	sessions    map[string]Config            // live sessions
+	meta        map[string]map[string]string // session → key → value
+	Calls       []Call                       // recorded calls in order
+	broken      bool                         // when true, all ops fail
+	Zombies     map[string]bool              // sessions with dead agent processes
+	Attached    map[string]bool              // sessions with attached terminals
+	PeekOutput  map[string]string            // session → canned peek output
+	Activity    map[string]time.Time         // session → last activity time
+	StartErrors map[string]error             // per-session Start errors for testing
 }
 
 // Call records a single method invocation on [Fake].
@@ -68,6 +69,9 @@ func (f *Fake) Start(_ context.Context, name string, cfg Config) error {
 	f.Calls = append(f.Calls, Call{Method: "Start", Name: name, Config: cfg})
 	if f.broken {
 		return fmt.Errorf("session unavailable")
+	}
+	if err, ok := f.StartErrors[name]; ok {
+		return err
 	}
 	if _, exists := f.sessions[name]; exists {
 		return fmt.Errorf("session %q already exists", name)

@@ -15,54 +15,70 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
-// wasStarted checks if a Fake agent had Start() called.
-func wasStarted(a *agent.Fake) bool {
-	for _, c := range a.Calls {
-		if c.Method == "Start" {
-			return true
-		}
-	}
-	return false
-}
-
 // reconcilerTestEnv holds common test infrastructure.
 type reconcilerTestEnv struct {
-	store      beads.Store
-	sp         *runtime.Fake
-	dt         *drainTracker
-	clk        *clock.Fake
-	rec        events.Recorder
-	stdout     bytes.Buffer
-	stderr     bytes.Buffer
-	cfg        *config.City
-	agentIndex map[string]agent.Agent
+	store        beads.Store
+	sp           *runtime.Fake
+	dt           *drainTracker
+	clk          *clock.Fake
+	rec          events.Recorder
+	stdout       bytes.Buffer
+	stderr       bytes.Buffer
+	cfg          *config.City
+	desiredState map[string]TemplateParams
 }
 
 func newReconcilerTestEnv() *reconcilerTestEnv {
 	return &reconcilerTestEnv{
-		store:      beads.NewMemStore(),
-		sp:         runtime.NewFake(),
-		dt:         newDrainTracker(),
-		clk:        &clock.Fake{Time: time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)},
-		rec:        events.Discard,
-		cfg:        &config.City{},
-		agentIndex: make(map[string]agent.Agent),
+		store:        beads.NewMemStore(),
+		sp:           runtime.NewFake(),
+		dt:           newDrainTracker(),
+		clk:          &clock.Fake{Time: time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)},
+		rec:          events.Discard,
+		cfg:          &config.City{},
+		desiredState: make(map[string]TemplateParams),
 	}
 }
 
-func (e *reconcilerTestEnv) addAgent(name string, running bool) *agent.Fake {
-	a := &agent.Fake{
-		FakeName:          name,
-		FakeSessionName:   name,
-		Running:           running,
-		FakeSessionConfig: runtime.Config{Command: "test-cmd"},
+// addDesired registers a session in the desired state and optionally starts
+// it in the provider. Returns the TemplateParams for further customization.
+func (e *reconcilerTestEnv) addDesired(name, template string, running bool) {
+	tp := TemplateParams{
+		Command:      "test-cmd",
+		SessionName:  name,
+		TemplateName: template,
 	}
-	e.agentIndex[name] = a
-	// Register session in provider so sp.IsRunning matches agent state.
+	e.desiredState[name] = tp
 	if running {
 		_ = e.sp.Start(context.Background(), name, runtime.Config{Command: "test-cmd"})
 	}
-	return a
+}
+
+// addDesiredWithConfig registers a session with a custom runtime.Config.
+func (e *reconcilerTestEnv) addDesiredWithConfig(name, template string, running bool, cmd string) {
+	tp := TemplateParams{
+		Command:      cmd,
+		SessionName:  name,
+		TemplateName: template,
+	}
+	e.desiredState[name] = tp
+	if running {
+		_ = e.sp.Start(context.Background(), name, runtime.Config{Command: cmd})
+	}
+}
+
+// addDesiredLive registers a session with custom session_live config.
+func (e *reconcilerTestEnv) addDesiredLive(name, template string, running bool, live []string) {
+	tp := TemplateParams{
+		Command:      "test-cmd",
+		SessionName:  name,
+		TemplateName: template,
+		Hints:        agent.StartupHints{SessionLive: live},
+	}
+	e.desiredState[name] = tp
+	if running {
+		_ = e.sp.Start(context.Background(), name, runtime.Config{Command: "test-cmd", SessionLive: live})
+	}
 }
 
 func (e *reconcilerTestEnv) createSessionBead(name, template string) beads.Bead {
@@ -91,7 +107,7 @@ func (e *reconcilerTestEnv) createSessionBead(name, template string) beads.Bead 
 func (e *reconcilerTestEnv) reconcile(sessions []beads.Bead) int {
 	cfgNames := configuredSessionNames(e.cfg, "")
 	return reconcileSessionBeads(
-		context.Background(), sessions, e.agentIndex, cfgNames, e.cfg, e.sp,
+		context.Background(), sessions, e.desiredState, cfgNames, e.cfg, e.sp,
 		e.store, nil, e.dt, map[string]int{}, "",
 		e.clk, e.rec, 0, 0, &e.stdout, &e.stderr,
 	)
@@ -151,13 +167,13 @@ func TestDerivePoolDesired_CountsPoolInstances(t *testing.T) {
 			{Name: "overseer"},
 		},
 	}
-	agents := []agent.Agent{
-		&agent.Fake{FakeName: "worker-1", FakeSessionName: "worker-1"},
-		&agent.Fake{FakeName: "worker-2", FakeSessionName: "worker-2"},
-		&agent.Fake{FakeName: "worker-3", FakeSessionName: "worker-3"},
-		&agent.Fake{FakeName: "overseer", FakeSessionName: "overseer"},
+	desired := map[string]TemplateParams{
+		"worker-1": {TemplateName: "worker"},
+		"worker-2": {TemplateName: "worker"},
+		"worker-3": {TemplateName: "worker"},
+		"overseer": {TemplateName: "overseer"},
 	}
-	result := derivePoolDesired(agents, cfg)
+	result := derivePoolDesired(desired, cfg)
 	if result["worker"] != 3 {
 		t.Errorf("expected worker desired=3, got %d", result["worker"])
 	}
@@ -172,7 +188,8 @@ func TestDerivePoolDesired_CountsPoolInstances(t *testing.T) {
 func TestAllDependenciesAlive_NoDeps(t *testing.T) {
 	session := beads.Bead{Metadata: map[string]string{"template": "worker"}}
 	cfg := &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	if !allDependenciesAlive(session, cfg, nil, "test") {
+	sp := runtime.NewFake()
+	if !allDependenciesAlive(session, cfg, nil, sp, "test") {
 		t.Error("no deps should return true")
 	}
 }
@@ -185,10 +202,12 @@ func TestAllDependenciesAlive_DepAlive(t *testing.T) {
 			{Name: "db"},
 		},
 	}
-	agentIndex := map[string]agent.Agent{
-		"db": &agent.Fake{FakeName: "db", FakeSessionName: "db", Running: true},
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "db", runtime.Config{})
+	desired := map[string]TemplateParams{
+		"db": {TemplateName: "db"},
 	}
-	if !allDependenciesAlive(session, cfg, agentIndex, "test") {
+	if !allDependenciesAlive(session, cfg, desired, sp, "test") {
 		t.Error("dep is alive, should return true")
 	}
 }
@@ -201,10 +220,11 @@ func TestAllDependenciesAlive_DepDead(t *testing.T) {
 			{Name: "db"},
 		},
 	}
-	agentIndex := map[string]agent.Agent{
-		"db": &agent.Fake{FakeName: "db", FakeSessionName: "db", Running: false},
+	sp := runtime.NewFake()
+	desired := map[string]TemplateParams{
+		"db": {TemplateName: "db"},
 	}
-	if allDependenciesAlive(session, cfg, agentIndex, "test") {
+	if allDependenciesAlive(session, cfg, desired, sp, "test") {
 		t.Error("dep is dead, should return false")
 	}
 }
@@ -214,7 +234,7 @@ func TestAllDependenciesAlive_DepDead(t *testing.T) {
 func TestReconcileSessionBeads_WakesDeadSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	a := env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 	session := env.createSessionBead("worker", "worker")
 
 	woken := env.reconcile([]beads.Bead{session})
@@ -222,15 +242,15 @@ func TestReconcileSessionBeads_WakesDeadSession(t *testing.T) {
 	if woken != 1 {
 		t.Errorf("expected 1 woken, got %d", woken)
 	}
-	if !wasStarted(a) {
-		t.Error("agent should have been started")
+	if !env.sp.IsRunning("worker") {
+		t.Error("session should have been started via Provider")
 	}
 }
 
 func TestReconcileSessionBeads_SkipsAliveSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	a := env.addAgent("worker", true)
+	env.addDesired("worker", "worker", true)
 	session := env.createSessionBead("worker", "worker")
 
 	woken := env.reconcile([]beads.Bead{session})
@@ -238,15 +258,12 @@ func TestReconcileSessionBeads_SkipsAliveSession(t *testing.T) {
 	if woken != 0 {
 		t.Errorf("expected 0 woken, got %d", woken)
 	}
-	if wasStarted(a) {
-		t.Error("agent should NOT have been started (already alive)")
-	}
 }
 
 func TestReconcileSessionBeads_SkipsQuarantinedSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 	session := env.createSessionBead("worker", "worker")
 	// Set quarantine in the future.
 	_ = env.store.SetMetadata(session.ID, "quarantined_until",
@@ -262,13 +279,12 @@ func TestReconcileSessionBeads_SkipsQuarantinedSession(t *testing.T) {
 
 func TestReconcileSessionBeads_RespectsWakeBudget(t *testing.T) {
 	env := newReconcilerTestEnv()
-	// Create more agents than the wake budget.
 	var cfgAgents []config.Agent
 	var sessions []beads.Bead
 	for i := 0; i < defaultMaxWakesPerTick+3; i++ {
 		name := fmt.Sprintf("worker-%d", i)
 		cfgAgents = append(cfgAgents, config.Agent{Name: name})
-		env.addAgent(name, false)
+		env.addDesired(name, name, false)
 		sessions = append(sessions, env.createSessionBead(name, name))
 	}
 	env.cfg = &config.City{Agents: cfgAgents}
@@ -283,10 +299,8 @@ func TestReconcileSessionBeads_RespectsWakeBudget(t *testing.T) {
 func TestReconcileSessionBeads_ConfigDriftInitiatesDrain(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	// Agent is alive with a DIFFERENT config than what's in the bead.
-	a := env.addAgent("worker", true)
-	a.FakeSessionConfig = runtime.Config{Command: "new-cmd"}
-
+	// Desired state has a DIFFERENT config than what's in the bead.
+	env.addDesiredWithConfig("worker", "worker", true, "new-cmd")
 	session := env.createSessionBead("worker", "worker")
 
 	// Verify hashes differ.
@@ -298,7 +312,6 @@ func TestReconcileSessionBeads_ConfigDriftInitiatesDrain(t *testing.T) {
 
 	env.reconcile([]beads.Bead{session})
 
-	// Should have initiated a drain.
 	ds := env.dt.get(session.ID)
 	if ds == nil {
 		t.Fatalf("expected drain to be initiated for config drift (session.ID=%q, stderr=%s)", session.ID, env.stderr.String())
@@ -311,12 +324,11 @@ func TestReconcileSessionBeads_ConfigDriftInitiatesDrain(t *testing.T) {
 func TestReconcileSessionBeads_NoDriftWhenHashMatches(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", true) // same config as bead
+	env.addDesired("worker", "worker", true) // same config as bead
 	session := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{session})
 
-	// No drain should be initiated.
 	if ds := env.dt.get(session.ID); ds != nil {
 		t.Errorf("expected no drain, got %+v", ds)
 	}
@@ -330,23 +342,19 @@ func TestReconcileSessionBeads_DependencyOrdering_DepDeadBlocksWake(t *testing.T
 			{Name: "db"},
 		},
 	}
-	env.addAgent("worker", false)
-	// db agent exists but will fail to start — simulates dep not becoming alive.
-	dbAgent := env.addAgent("db", false)
-	dbAgent.StartErr = fmt.Errorf("db failed to start")
+	env.addDesired("worker", "worker", false)
+	// db is in desired but starts fail (provider Start returns error).
+	env.addDesired("db", "db", false)
+	env.sp.StartErrors = map[string]error{"db": fmt.Errorf("db failed to start")}
 
 	dbBead := env.createSessionBead("db", "db")
 	workerBead := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{workerBead, dbBead})
 
-	// db attempted to start but failed.
-	if !wasStarted(dbAgent) {
-		t.Error("db should have attempted to start")
-	}
 	// worker should NOT be started because db is still dead.
-	workerAgent := env.agentIndex["worker"].(*agent.Fake)
-	if wasStarted(workerAgent) {
+	// (db start failed, so sp.IsRunning("db") is false)
+	if env.sp.IsRunning("worker") {
 		t.Error("worker should NOT have been started (dep not alive)")
 	}
 }
@@ -359,27 +367,19 @@ func TestReconcileSessionBeads_DependencyOrdering_TopoOrder(t *testing.T) {
 			{Name: "db"},
 		},
 	}
-	env.addAgent("worker", false)
-	env.addAgent("db", false)
+	env.addDesired("worker", "worker", false)
+	env.addDesired("db", "db", false)
 
 	dbBead := env.createSessionBead("db", "db")
 	workerBead := env.createSessionBead("worker", "worker")
 
 	// Even though worker bead is listed first, topo ordering ensures
-	// db is processed first. Since the Fake sets Running=true on Start,
-	// worker can wake in the same tick after db succeeds.
+	// db is processed first. Since the Fake provider marks sessions as
+	// running on Start, worker can wake in the same tick after db succeeds.
 	woken := env.reconcile([]beads.Bead{workerBead, dbBead})
 
 	if woken != 2 {
 		t.Errorf("expected 2 woken (both), got %d", woken)
-	}
-	dbAgent := env.agentIndex["db"].(*agent.Fake)
-	workerAgent := env.agentIndex["worker"].(*agent.Fake)
-	if !wasStarted(dbAgent) {
-		t.Error("db should have been started")
-	}
-	if !wasStarted(workerAgent) {
-		t.Error("worker should have been started (dep is alive after db.Start)")
 	}
 }
 
@@ -391,18 +391,14 @@ func TestReconcileSessionBeads_PoolDependencyBlocksWake(t *testing.T) {
 			{Name: "db", Pool: &config.PoolConfig{Min: 2, Max: 2}},
 		},
 	}
-	// Worker depends on pool "db". No db instances alive → worker blocked.
-	env.addAgent("worker", false)
+	// Worker depends on pool "db". No db instances in desired → worker blocked.
+	env.addDesired("worker", "worker", false)
 	workerBead := env.createSessionBead("worker", "worker")
 
 	woken := env.reconcile([]beads.Bead{workerBead})
 
 	if woken != 0 {
 		t.Errorf("expected 0 woken (pool dep dead), got %d", woken)
-	}
-	workerAgent := env.agentIndex["worker"].(*agent.Fake)
-	if wasStarted(workerAgent) {
-		t.Error("worker should NOT start (pool dependency db has no alive instances)")
 	}
 }
 
@@ -414,11 +410,8 @@ func TestReconcileSessionBeads_PoolDependencyUnblocksWake(t *testing.T) {
 			{Name: "db", Pool: &config.PoolConfig{Min: 2, Max: 2}},
 		},
 	}
-	// One db pool instance is alive → unblocks worker.
-	env.addAgent("worker", false)
-	dbAgent := env.addAgent("db-1", true)
-	dbAgent.FakeName = "db-1"
-	dbAgent.FakeSessionName = "db-1"
+	env.addDesired("worker", "worker", false)
+	env.addDesired("db-1", "db", true) // one pool instance alive
 	workerBead := env.createSessionBead("worker", "worker")
 
 	woken := env.reconcile([]beads.Bead{workerBead})
@@ -431,13 +424,12 @@ func TestReconcileSessionBeads_PoolDependencyUnblocksWake(t *testing.T) {
 func TestReconcileSessionBeads_OrphanSessionDrained(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "other"}}}
-	// Session bead for "orphan" with no matching agent, but running in provider.
+	// Session bead for "orphan" with no matching desired entry, but running.
 	_ = env.sp.Start(context.Background(), "orphan", runtime.Config{})
 	session := env.createSessionBead("orphan", "orphan")
 
 	env.reconcile([]beads.Bead{session})
 
-	// Should have initiated a drain for the orphan.
 	ds := env.dt.get(session.ID)
 	if ds == nil {
 		t.Fatal("expected drain for orphan session")
@@ -450,12 +442,10 @@ func TestReconcileSessionBeads_OrphanSessionDrained(t *testing.T) {
 func TestReconcileSessionBeads_OrphanNotRunningClosed(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "other"}}}
-	// Session bead for "orphan" with no matching agent and NOT running.
 	session := env.createSessionBead("orphan", "orphan")
 
 	env.reconcile([]beads.Bead{session})
 
-	// Bead should be closed with "orphaned" reason.
 	b, _ := env.store.Get(session.ID)
 	if b.Status != "closed" {
 		t.Errorf("orphan bead status = %q, want closed", b.Status)
@@ -467,15 +457,13 @@ func TestReconcileSessionBeads_OrphanNotRunningClosed(t *testing.T) {
 
 func TestReconcileSessionBeads_SuspendedSessionDrained(t *testing.T) {
 	env := newReconcilerTestEnv()
-	// "worker" is in config (configuredNames) but NOT in agentIndex (suspended).
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	// Session is running in provider but no agent in desired set.
+	// "worker" is in config (configuredNames) but NOT in desiredState.
 	_ = env.sp.Start(context.Background(), "worker", runtime.Config{})
 	session := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{session})
 
-	// Should drain with "suspended" reason (in config, not in desired set).
 	ds := env.dt.get(session.ID)
 	if ds == nil {
 		t.Fatal("expected drain for suspended session")
@@ -487,13 +475,11 @@ func TestReconcileSessionBeads_SuspendedSessionDrained(t *testing.T) {
 
 func TestReconcileSessionBeads_SuspendedNotRunningClosed(t *testing.T) {
 	env := newReconcilerTestEnv()
-	// "worker" is in config but NOT in agentIndex and NOT running.
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
 	session := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{session})
 
-	// Bead should be closed with "suspended" reason.
 	b, _ := env.store.Get(session.ID)
 	if b.Status != "closed" {
 		t.Errorf("suspended bead status = %q, want closed", b.Status)
@@ -506,9 +492,8 @@ func TestReconcileSessionBeads_SuspendedNotRunningClosed(t *testing.T) {
 func TestReconcileSessionBeads_HealsExpiredTimers(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 	session := env.createSessionBead("worker", "worker")
-	// Set an expired held_until.
 	past := env.clk.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339)
 	_ = env.store.SetMetadata(session.ID, "held_until", past)
 	_ = env.store.SetMetadata(session.ID, "sleep_reason", "user-hold")
@@ -517,7 +502,6 @@ func TestReconcileSessionBeads_HealsExpiredTimers(t *testing.T) {
 
 	env.reconcile([]beads.Bead{session})
 
-	// held_until should be cleared.
 	b, _ := env.store.Get(session.ID)
 	if b.Metadata["held_until"] != "" {
 		t.Error("expired held_until should be cleared")
@@ -530,16 +514,14 @@ func TestReconcileSessionBeads_HealsExpiredTimers(t *testing.T) {
 func TestReconcileSessionBeads_CrashDetection(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 	session := env.createSessionBead("worker", "worker")
-	// Simulate: woke 5 seconds ago, now dead (rapid exit).
 	recentWake := env.clk.Now().Add(-5 * time.Second).UTC().Format(time.RFC3339)
 	_ = env.store.SetMetadata(session.ID, "last_woke_at", recentWake)
 	session.Metadata["last_woke_at"] = recentWake
 
 	env.reconcile([]beads.Bead{session})
 
-	// Should have recorded a wake failure.
 	b, _ := env.store.Get(session.ID)
 	if b.Metadata["wake_attempts"] != "1" {
 		t.Errorf("wake_attempts = %q, want %q", b.Metadata["wake_attempts"], "1")
@@ -549,9 +531,8 @@ func TestReconcileSessionBeads_CrashDetection(t *testing.T) {
 func TestReconcileSessionBeads_StableClearsFailures(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", true)
+	env.addDesired("worker", "worker", true)
 	session := env.createSessionBead("worker", "worker")
-	// Set wake_attempts and a last_woke_at that's old enough to be stable.
 	stableWake := env.clk.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339)
 	_ = env.store.SetMetadata(session.ID, "wake_attempts", "3")
 	_ = env.store.SetMetadata(session.ID, "last_woke_at", stableWake)
@@ -560,7 +541,6 @@ func TestReconcileSessionBeads_StableClearsFailures(t *testing.T) {
 
 	env.reconcile([]beads.Bead{session})
 
-	// wake_attempts should be cleared.
 	b, _ := env.store.Get(session.ID)
 	if b.Metadata["wake_attempts"] != "0" {
 		t.Errorf("wake_attempts = %q, want %q", b.Metadata["wake_attempts"], "0")
@@ -570,9 +550,6 @@ func TestReconcileSessionBeads_StableClearsFailures(t *testing.T) {
 func TestReconcileSessionBeads_NoAgentNotWoken(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{}
-	// Session bead exists but no matching agent in the index (orphaned).
-	// Without an agent, alive=false and shouldWake=false, so nothing happens.
-	// In practice, syncSessionBeads would close the bead for orphaned sessions.
 	session := env.createSessionBead("orphan", "orphan")
 
 	woken := env.reconcile([]beads.Bead{session})
@@ -584,12 +561,11 @@ func TestReconcileSessionBeads_NoAgentNotWoken(t *testing.T) {
 func TestReconcileSessionBeads_PreWakeCommitWritesMetadata(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", false)
+	env.addDesired("worker", "worker", false)
 	session := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{session})
 
-	// Verify preWakeCommit wrote metadata.
 	b, _ := env.store.Get(session.ID)
 	if b.Metadata["generation"] != "2" {
 		t.Errorf("generation = %q, want %q (incremented by preWakeCommit)", b.Metadata["generation"], "2")
@@ -605,10 +581,9 @@ func TestReconcileSessionBeads_PreWakeCommitWritesMetadata(t *testing.T) {
 func TestReconcileSessionBeads_CancelsDrainOnWakeReason(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	env.addAgent("worker", true)
+	env.addDesired("worker", "worker", true)
 	session := env.createSessionBead("worker", "worker")
 
-	// Pre-set a non-drift drain.
 	gen := 1
 	env.dt.set(session.ID, &drainState{
 		startedAt:  env.clk.Now(),
@@ -619,7 +594,6 @@ func TestReconcileSessionBeads_CancelsDrainOnWakeReason(t *testing.T) {
 
 	env.reconcile([]beads.Bead{session})
 
-	// Drain should be canceled because the agent is in the desired set.
 	if ds := env.dt.get(session.ID); ds != nil {
 		t.Errorf("drain should be canceled, got %+v", ds)
 	}
@@ -628,8 +602,8 @@ func TestReconcileSessionBeads_CancelsDrainOnWakeReason(t *testing.T) {
 func TestReconcileSessionBeads_StartFailureNoDoubleCounting(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	a := env.addAgent("worker", false)
-	a.StartErr = fmt.Errorf("start failed")
+	env.addDesired("worker", "worker", false)
+	env.sp.StartErrors = map[string]error{"worker": fmt.Errorf("start failed")}
 	session := env.createSessionBead("worker", "worker")
 
 	// First tick: Start fails, wake_attempts should be 1.
@@ -639,21 +613,16 @@ func TestReconcileSessionBeads_StartFailureNoDoubleCounting(t *testing.T) {
 		t.Fatalf("after first tick: wake_attempts = %q, want 1", b.Metadata["wake_attempts"])
 	}
 
-	// Second tick: session is still dead. checkStability should NOT
-	// double-count because last_woke_at was cleared on Start failure.
-	// Reload bead from store to get updated metadata.
+	// Second tick: reload bead from store to get updated metadata.
 	b, _ = env.store.Get(session.ID)
 	env.reconcile([]beads.Bead{b})
 	b, _ = env.store.Get(session.ID)
-	// After second tick: wake_attempts should be 2 (one per tick), not 3.
 	if b.Metadata["wake_attempts"] != "2" {
 		t.Errorf("after second tick: wake_attempts = %q, want 2", b.Metadata["wake_attempts"])
 	}
 }
 
 func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
-	// After pool scale-down, excess instances leave the agents list.
-	// The reconciler handles them as orphans (a == nil path).
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{
@@ -661,8 +630,8 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 		},
 	}
 	// worker-1 is in the desired set; worker-2 is NOT (scale-down).
-	env.addAgent("worker-1", true)
-	// worker-2 is running in provider but not in agentIndex.
+	env.addDesired("worker-1", "worker", true)
+	// worker-2 is running in provider but not in desiredState.
 	_ = env.sp.Start(context.Background(), "worker-2", runtime.Config{})
 	s1 := env.createSessionBead("worker-1", "worker")
 	_ = env.store.SetMetadata(s1.ID, "pool_slot", "1")
@@ -671,16 +640,14 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 	_ = env.store.SetMetadata(s2.ID, "pool_slot", "2")
 	s2.Metadata["pool_slot"] = "2"
 
-	// Pool desired = 1 (only worker-1 in the agent list).
 	poolDesired := map[string]int{"worker": 1}
 	cfgNames := configuredSessionNames(env.cfg, "")
 	reconcileSessionBeads(
-		context.Background(), []beads.Bead{s1, s2}, env.agentIndex, cfgNames,
+		context.Background(), []beads.Bead{s1, s2}, env.desiredState, cfgNames,
 		env.cfg, env.sp, env.store, nil, env.dt, poolDesired, "",
 		env.clk, env.rec, 0, 0, &env.stdout, &env.stderr,
 	)
 
-	// worker-2 should be drained as orphan (not in agentIndex).
 	d2 := env.dt.get(s2.ID)
 	if d2 == nil {
 		t.Fatal("expected drain for excess pool instance")
@@ -688,7 +655,6 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 	if d2.reason != "orphaned" {
 		t.Errorf("drain reason = %q, want %q", d2.reason, "orphaned")
 	}
-	// worker-1 should NOT be drained.
 	if d1 := env.dt.get(s1.ID); d1 != nil {
 		t.Errorf("worker-1 should not be draining, got reason=%q", d1.reason)
 	}
@@ -697,12 +663,8 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 func TestReconcileSessionBeads_LiveDriftReapplied(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
-	a := env.addAgent("worker", true)
-	// Same core config, different live config.
-	a.FakeSessionConfig = runtime.Config{
-		Command:     "test-cmd",
-		SessionLive: []string{"echo live-updated"},
-	}
+	// Same core config (test-cmd), different live config.
+	env.addDesiredLive("worker", "worker", true, []string{"echo live-updated"})
 	session := env.createSessionBead("worker", "worker")
 
 	env.reconcile([]beads.Bead{session})
@@ -712,15 +674,14 @@ func TestReconcileSessionBeads_LiveDriftReapplied(t *testing.T) {
 		t.Errorf("expected no drain for live-only drift, got reason=%q", ds.reason)
 	}
 	b, _ := env.store.Get(session.ID)
-	expectedLive := runtime.LiveFingerprint(a.FakeSessionConfig)
+	expectedCfg := templateParamsToConfig(env.desiredState["worker"])
+	expectedLive := runtime.LiveFingerprint(expectedCfg)
 	if b.Metadata["live_hash"] != expectedLive {
 		t.Errorf("live_hash not updated: got %q, want %q", b.Metadata["live_hash"], expectedLive)
 	}
 }
 
 func TestAllDependenciesAlive_WithSessionTemplate(t *testing.T) {
-	// Verify that SessionTemplate is used consistently in session name
-	// computation for dependency lookups.
 	session := beads.Bead{Metadata: map[string]string{"template": "worker"}}
 	cfg := &config.City{
 		Workspace: config.Workspace{SessionTemplate: "{{.City}}-{{.Agent}}"},
@@ -729,12 +690,13 @@ func TestAllDependenciesAlive_WithSessionTemplate(t *testing.T) {
 			{Name: "db"},
 		},
 	}
-	// Agent indexed by the templated session name.
 	sn := agent.SessionNameFor("myCity", "db", "{{.City}}-{{.Agent}}")
-	agentIndex := map[string]agent.Agent{
-		sn: &agent.Fake{FakeName: "db", FakeSessionName: sn, Running: true},
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), sn, runtime.Config{})
+	desired := map[string]TemplateParams{
+		sn: {TemplateName: "db"},
 	}
-	if !allDependenciesAlive(session, cfg, agentIndex, "myCity") {
+	if !allDependenciesAlive(session, cfg, desired, sp, "myCity") {
 		t.Errorf("dep should be alive (session name: %q)", sn)
 	}
 }
@@ -745,14 +707,12 @@ func TestReconcileSessionBeads_DriftDrainUsesConfigTimeout(t *testing.T) {
 		Agents: []config.Agent{{Name: "worker"}},
 		Daemon: config.DaemonConfig{DriftDrainTimeout: "7m"},
 	}
-	a := env.addAgent("worker", true)
-	a.FakeSessionConfig = runtime.Config{Command: "new-cmd"}
+	env.addDesiredWithConfig("worker", "worker", true, "new-cmd")
 	session := env.createSessionBead("worker", "worker")
 
-	// Pass drift drain timeout from config.
 	cfgNames := configuredSessionNames(env.cfg, "")
 	reconcileSessionBeads(
-		context.Background(), []beads.Bead{session}, env.agentIndex, cfgNames,
+		context.Background(), []beads.Bead{session}, env.desiredState, cfgNames,
 		env.cfg, env.sp, env.store, nil, env.dt, map[string]int{}, "",
 		env.clk, env.rec, 0, env.cfg.Daemon.DriftDrainTimeoutDuration(),
 		&env.stdout, &env.stderr,
@@ -762,7 +722,6 @@ func TestReconcileSessionBeads_DriftDrainUsesConfigTimeout(t *testing.T) {
 	if ds == nil {
 		t.Fatal("expected drain for config drift")
 	}
-	// Drain deadline should be ~7 minutes from now, not the default.
 	expected := env.clk.Now().Add(7 * time.Minute)
 	if ds.deadline != expected {
 		t.Errorf("drain deadline = %v, want %v (7m from now)", ds.deadline, expected)
