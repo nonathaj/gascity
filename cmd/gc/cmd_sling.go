@@ -773,7 +773,7 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 		for _, qn := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 			sn := agent.SessionNameFor(cityName, qn, st)
 			if sp.IsRunning(sn) {
-				if err := sp.Nudge(sn, "Work slung. Check your hook."); err != nil {
+				if err := sp.Nudge(sn, runtime.TextContent("Work slung. Check your hook.")); err != nil {
 					fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
 				} else {
 					fmt.Fprintf(stdout, "Nudged %s\n", qn) //nolint:errcheck // best-effort
@@ -801,7 +801,7 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 		}
 		return
 	}
-	if err := sp.Nudge(sn, "Work slung. Check your hook."); err != nil {
+	if err := sp.Nudge(sn, runtime.TextContent("Work slung. Check your hook.")); err != nil {
 		fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
 	} else {
 		fmt.Fprintf(stdout, "Nudged %s\n", a.QualifiedName()) //nolint:errcheck // best-effort

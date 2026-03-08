@@ -177,8 +177,12 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 }
 
 // Nudge sends a message to the session: script nudge <name>
-// The message is sent on stdin.
-func (p *Provider) Nudge(name, message string) error {
+// The message is sent on stdin. Content blocks are flattened to text.
+func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
+	message := runtime.FlattenText(content)
+	if message == "" {
+		return nil
+	}
 	_, err := p.run([]byte(message), "nudge", name)
 	return err
 }

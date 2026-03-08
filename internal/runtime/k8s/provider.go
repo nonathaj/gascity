@@ -324,8 +324,12 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 
 // Nudge types a message into the tmux session followed by Enter.
 // Uses -l (literal mode) so tmux key names in the message text are not
-// interpreted as keystrokes.
-func (p *Provider) Nudge(name, message string) error {
+// interpreted as keystrokes. Content blocks are flattened to text.
+func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
+	message := runtime.FlattenText(content)
+	if message == "" {
+		return nil
+	}
 	ctx := context.Background()
 	podName, err := p.findRunningPod(ctx, name)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
 )
 
@@ -467,7 +468,7 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 			}
 			sp := newSessionProvider()
 			sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
-			return sp.Nudge(sn, fmt.Sprintf("You have mail from %s", sender))
+			return sp.Nudge(sn, runtime.TextContent(fmt.Sprintf("You have mail from %s", sender)))
 		}
 	}
 

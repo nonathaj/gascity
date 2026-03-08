@@ -283,7 +283,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 
 	// Send initial nudge if configured (best-effort, outside lock).
 	if cfg.Nudge != "" {
-		_ = p.Nudge(name, cfg.Nudge)
+		_ = p.Nudge(name, runtime.TextContent(cfg.Nudge))
 	}
 
 	return nil
@@ -432,7 +432,7 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 // Nudge sends a session/prompt to the named session. Waits for the agent to
 // become idle before sending. Returns nil if the session doesn't exist
 // (best-effort).
-func (p *Provider) Nudge(name, message string) error {
+func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
 	p.mu.Lock()
 	sc, ok := p.conns[name]
 	p.mu.Unlock()
@@ -460,7 +460,7 @@ func (p *Provider) Nudge(name, message string) error {
 		return fmt.Errorf("session %q has no ACP session ID", name)
 	}
 
-	msg, id := newSessionPromptRequest(sessID, message)
+	msg, id := newSessionPromptRequest(sessID, content)
 
 	// Set busy state BEFORE sendRequest so that dispatch can match the
 	// response ID and clear it. If we set it after, a fast agent could

@@ -71,8 +71,8 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 }
 
 // Nudge delegates to the routed backend.
-func (p *Provider) Nudge(name, message string) error {
-	return p.route(name).Nudge(name, message)
+func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
+	return p.route(name).Nudge(name, content)
 }
 
 // Pending delegates to the routed backend when it supports structured

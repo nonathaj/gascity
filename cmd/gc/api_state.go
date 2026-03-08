@@ -380,7 +380,7 @@ func (cs *controllerState) NudgeAgent(name, message string) error {
 	if !sp.IsRunning(sessionName) {
 		return fmt.Errorf("agent %q not running", name)
 	}
-	return sp.Nudge(sessionName, message)
+	return sp.Nudge(sessionName, runtime.TextContent(message))
 }
 
 // SuspendRig writes suspended=true on the rig in city.toml.

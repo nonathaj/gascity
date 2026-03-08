@@ -190,7 +190,7 @@ func TestNudge_SendsPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Stop(name) })
 
-	if err := p.Nudge(name, "hello world"); err != nil {
+	if err := p.Nudge(name, runtime.TextContent("hello world")); err != nil {
 		t.Fatalf("Nudge: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestNudge_SendsPrompt(t *testing.T) {
 
 func TestNudge_MissingSession(t *testing.T) {
 	p := newTestProvider(t)
-	if err := p.Nudge("nonexistent", "hello"); err != nil {
+	if err := p.Nudge("nonexistent", runtime.TextContent("hello")); err != nil {
 		t.Errorf("Nudge on missing session should not error: %v", err)
 	}
 }
@@ -229,7 +229,7 @@ func TestPeek_ReturnsOutput(t *testing.T) {
 	t.Cleanup(func() { _ = p.Stop(name) })
 
 	// Send a nudge to generate output.
-	_ = p.Nudge(name, "test line")
+	_ = p.Nudge(name, runtime.TextContent("test line"))
 
 	deadline := time.Now().Add(3 * time.Second)
 	var output string
@@ -271,7 +271,7 @@ func TestGetLastActivity_UpdatedOnOutput(t *testing.T) {
 	before, _ := p.GetLastActivity(name)
 
 	// Send nudge to trigger output.
-	_ = p.Nudge(name, "activity test")
+	_ = p.Nudge(name, runtime.TextContent("activity test"))
 
 	deadline := time.Now().Add(3 * time.Second)
 	var after time.Time
@@ -299,7 +299,7 @@ func TestClearScrollback_ClearsBuffer(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = p.Stop(name) })
 
-	_ = p.Nudge(name, "some text")
+	_ = p.Nudge(name, runtime.TextContent("some text"))
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		output, _ := p.Peek(name, 0)

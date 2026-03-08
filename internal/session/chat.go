@@ -179,7 +179,7 @@ func (m *Manager) Send(ctx context.Context, id, message, resumeCommand string, h
 				return ErrPendingInteraction
 			}
 		}
-		if err := m.sp.Nudge(sessName, message); err != nil {
+		if err := m.sp.Nudge(sessName, runtime.TextContent(message)); err != nil {
 			return fmt.Errorf("sending message to session: %w", err)
 		}
 		return nil

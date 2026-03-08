@@ -108,7 +108,7 @@ func TestNudge(t *testing.T) {
 
 	addRunningPod(fake, "gc-test-agent", "gc-test-agent")
 
-	err := p.Nudge("gc-test-agent", "hello world")
+	err := p.Nudge("gc-test-agent", runtime.TextContent("hello world"))
 	if err != nil {
 		t.Fatalf("Nudge: %v", err)
 	}

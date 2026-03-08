@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +82,7 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 		sp := s.state.SessionProvider()
 		sessionName := agentSessionName(s.state.CityName(), body.Target, cfg.Workspace.SessionTemplate)
 		resp := map[string]string{"status": "slung", "molecule": rootID, "target": body.Target}
-		if err := sp.Nudge(sessionName, "New molecule assigned: "+rootID); err != nil {
+		if err := sp.Nudge(sessionName, runtime.TextContent("New molecule assigned: "+rootID)); err != nil {
 			resp["nudge_error"] = err.Error()
 		}
 		// Poke unconditionally: even if nudge succeeded, the target may be
@@ -96,7 +97,7 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 	sp := s.state.SessionProvider()
 	sessionName := agentSessionName(s.state.CityName(), body.Target, cfg.Workspace.SessionTemplate)
 	resp := map[string]string{"status": "slung", "target": body.Target, "bead": body.Bead}
-	if err := sp.Nudge(sessionName, "New work assigned: "+body.Bead); err != nil {
+	if err := sp.Nudge(sessionName, runtime.TextContent("New work assigned: "+body.Bead)); err != nil {
 		resp["nudge_error"] = err.Error()
 	}
 

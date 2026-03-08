@@ -710,7 +710,7 @@ func cmdAgentNudge(args []string, stdout, stderr io.Writer) int {
 // doAgentNudge is the pure logic for "gc agent nudge". Accepts provider,
 // session name, and display name for testability.
 func doAgentNudge(sp runtime.Provider, sessionName, displayName, message string, stdout, stderr io.Writer) int {
-	if err := sp.Nudge(sessionName, message); err != nil {
+	if err := sp.Nudge(sessionName, runtime.TextContent(message)); err != nil {
 		fmt.Fprintf(stderr, "gc agent nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}

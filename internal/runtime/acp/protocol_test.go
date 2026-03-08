@@ -2,7 +2,12 @@ package acp
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestJSONRPCMessage_RequestRoundTrip(t *testing.T) {
@@ -118,7 +123,7 @@ func TestJSONRPCMessage_ErrorRoundTrip(t *testing.T) {
 }
 
 func TestSessionPromptRequest_Structure(t *testing.T) {
-	msg, _ := newSessionPromptRequest("sess-1", "hello world")
+	msg, _ := newSessionPromptRequest("sess-1", runtime.TextContent("hello world"))
 	data, err := json.Marshal(msg)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -149,6 +154,85 @@ func TestSessionPromptRequest_Structure(t *testing.T) {
 	}
 	if len(params.Messages[0].Content) != 1 || params.Messages[0].Content[0].Text != "hello world" {
 		t.Errorf("content text = %q, want %q", params.Messages[0].Content[0].Text, "hello world")
+	}
+}
+
+func TestSessionPromptRequest_MultiBlock(t *testing.T) {
+	content := []runtime.ContentBlock{
+		{Type: "text", Text: "first"},
+		{Type: "text", Text: "second"},
+	}
+	msg, _ := newSessionPromptRequest("sess-1", content)
+	data, _ := json.Marshal(msg)
+
+	var decoded JSONRPCMessage
+	_ = json.Unmarshal(data, &decoded)
+	var params SessionPromptParams
+	_ = json.Unmarshal(decoded.Params, &params)
+
+	if len(params.Messages[0].Content) != 2 {
+		t.Fatalf("content blocks = %d, want 2", len(params.Messages[0].Content))
+	}
+	if params.Messages[0].Content[0].Text != "first" {
+		t.Errorf("block[0] = %q, want %q", params.Messages[0].Content[0].Text, "first")
+	}
+	if params.Messages[0].Content[1].Text != "second" {
+		t.Errorf("block[1] = %q, want %q", params.Messages[0].Content[1].Text, "second")
+	}
+}
+
+func TestSessionPromptRequest_FilePath(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(f, []byte("file content here"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	content := []runtime.ContentBlock{
+		{Type: "file_path", Path: f},
+	}
+	msg, _ := newSessionPromptRequest("sess-1", content)
+	data, _ := json.Marshal(msg)
+
+	var decoded JSONRPCMessage
+	_ = json.Unmarshal(data, &decoded)
+	var params SessionPromptParams
+	_ = json.Unmarshal(decoded.Params, &params)
+
+	if len(params.Messages[0].Content) != 1 {
+		t.Fatalf("content blocks = %d, want 1", len(params.Messages[0].Content))
+	}
+	block := params.Messages[0].Content[0]
+	if block.Type != "text" {
+		t.Errorf("type = %q, want %q", block.Type, "text")
+	}
+	if !strings.Contains(block.Text, "file content here") {
+		t.Errorf("block should contain file content, got %q", block.Text)
+	}
+	if !strings.Contains(block.Text, "test.txt") {
+		t.Errorf("block should reference filename, got %q", block.Text)
+	}
+}
+
+func TestSessionPromptRequest_FilePathError(t *testing.T) {
+	content := []runtime.ContentBlock{
+		{Type: "file_path", Path: "/nonexistent/path/to/file.txt"},
+	}
+	msg, _ := newSessionPromptRequest("sess-1", content)
+	data, _ := json.Marshal(msg)
+
+	var decoded JSONRPCMessage
+	_ = json.Unmarshal(data, &decoded)
+	var params SessionPromptParams
+	_ = json.Unmarshal(decoded.Params, &params)
+
+	block := params.Messages[0].Content[0]
+	if !strings.Contains(block.Text, "Error reading") {
+		t.Errorf("block should contain error, got %q", block.Text)
+	}
+	// Should NOT contain the full path (sanitized).
+	if strings.Contains(block.Text, "/nonexistent/path/to/") {
+		t.Errorf("block should not contain full path, got %q", block.Text)
 	}
 }
 

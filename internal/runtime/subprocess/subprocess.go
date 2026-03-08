@@ -239,7 +239,7 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 
 // Nudge is not supported by the subprocess provider — there is no
 // interactive terminal to send messages to. Returns nil (best-effort).
-func (p *Provider) Nudge(_, _ string) error {
+func (p *Provider) Nudge(_ string, _ []runtime.ContentBlock) error {
 	return nil
 }
 

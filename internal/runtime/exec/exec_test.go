@@ -229,7 +229,7 @@ esac
 `)
 	p := NewProvider(script)
 
-	if err := p.Nudge("test-sess", "wake up!"); err != nil {
+	if err := p.Nudge("test-sess", runtime.TextContent("wake up!")); err != nil {
 		t.Fatalf("Nudge: %v", err)
 	}
 

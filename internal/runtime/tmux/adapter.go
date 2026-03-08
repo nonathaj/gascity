@@ -148,7 +148,7 @@ func (p *Provider) Capabilities() runtime.ProviderCapabilities {
 // Delegates to [Tmux.NudgeSession] which handles per-session locking,
 // multi-pane resolution, retry with backoff, and SIGWINCH wake.
 // Best-effort: returns nil if the session doesn't exist.
-func (p *Provider) Nudge(name, message string) error {
+func (p *Provider) Nudge(name string, content []runtime.ContentBlock) error {
 	// Wait for the agent to be idle before sending, unless disabled.
 	// This prevents interrupting active tool calls — the prompt is visible
 	// in scrollback during inter-tool-call gaps, so immediate send-keys
@@ -158,6 +158,31 @@ func (p *Provider) Nudge(name, message string) error {
 		// with the nudge anyway. The message may arrive during active work,
 		// but Claude's cooperative queue will handle it at the next turn.
 		_ = p.tm.WaitForIdle(name, idleTimeout)
+	}
+
+	var parts []string
+	for _, b := range content {
+		switch b.Type {
+		case "file_path":
+			if b.Path != "" {
+				base := filepath.Base(b.Path)
+				if _, err := os.Stat(b.Path); err != nil {
+					parts = append(parts, "[File not found: ./"+base+"]")
+				} else if err := p.CopyTo(name, b.Path, base); err != nil {
+					parts = append(parts, "[File staging failed: ./"+base+": "+err.Error()+"]")
+				} else {
+					parts = append(parts, "[File staged: ./"+base+"]")
+				}
+			}
+		default: // "text"
+			if b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+	}
+	message := strings.Join(parts, "\n")
+	if message == "" {
+		return nil
 	}
 
 	err := p.tm.NudgeSession(name, message)

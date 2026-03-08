@@ -12,7 +12,13 @@ package acp
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync/atomic"
+
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // nextID is a package-level counter for JSON-RPC request IDs.
@@ -39,7 +45,12 @@ type JSONRPCError struct {
 type ContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	Path string `json:"path,omitempty"` // reserved for future ACP file support
+	Mime string `json:"mime,omitempty"` // reserved for future ACP file support
 }
+
+// maxFileInlineBytes is the maximum file size for inline content (1 MiB).
+const maxFileInlineBytes = 1 << 20
 
 // ClientInfo identifies the client in the initialize handshake.
 type ClientInfo struct {
@@ -126,15 +137,60 @@ func newSessionNewRequest() (JSONRPCMessage, int64) {
 	return newRequest("session/new", nil)
 }
 
-// newSessionPromptRequest creates a "session/prompt" request.
-func newSessionPromptRequest(sessionID, text string) (JSONRPCMessage, int64) {
+// newSessionPromptRequest creates a "session/prompt" request from
+// structured content blocks. File_path blocks are inlined as text
+// with a preamble (ACP agents receive file content inline).
+func newSessionPromptRequest(sessionID string, content []runtime.ContentBlock) (JSONRPCMessage, int64) {
+	var blocks []ContentBlock
+	for _, b := range content {
+		switch b.Type {
+		case "file_path":
+			blocks = append(blocks, inlineFileBlock(b.Path))
+		default: // "text"
+			if b.Text != "" {
+				blocks = append(blocks, ContentBlock{Type: "text", Text: b.Text})
+			}
+		}
+	}
+	if len(blocks) == 0 {
+		blocks = []ContentBlock{{Type: "text", Text: ""}}
+	}
 	return newRequest("session/prompt", SessionPromptParams{
 		SessionID: sessionID,
 		Messages: []PromptMessage{
 			{
 				Role:    "user",
-				Content: []ContentBlock{{Type: "text", Text: text}},
+				Content: blocks,
 			},
 		},
 	})
+}
+
+// inlineFileBlock reads a file and returns its content as a text block
+// with a preamble header. Returns an error placeholder on failure.
+func inlineFileBlock(path string) ContentBlock {
+	base := filepath.Base(path)
+	info, err := os.Stat(path)
+	switch {
+	case err != nil:
+		return ContentBlock{Type: "text", Text: fmt.Sprintf("[Error reading %s: %v]", base, sanitizePathErr(err))}
+	case info.Size() > maxFileInlineBytes:
+		return ContentBlock{Type: "text", Text: fmt.Sprintf("[File %s too large to inline: %d bytes]", base, info.Size())}
+	default:
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return ContentBlock{Type: "text", Text: fmt.Sprintf("[Error reading %s: %v]", base, sanitizePathErr(err))}
+		}
+		return ContentBlock{Type: "text", Text: fmt.Sprintf("--- %s ---\n%s", base, string(data))}
+	}
+}
+
+// sanitizePathErr strips the full path from *os.PathError to avoid
+// leaking server-side filesystem details.
+func sanitizePathErr(err error) error {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err
+	}
+	return err
 }

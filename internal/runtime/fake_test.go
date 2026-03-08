@@ -197,7 +197,7 @@ func TestFakeNudge(t *testing.T) {
 	f := NewFake()
 	_ = f.Start(context.Background(), "mayor", Config{})
 
-	if err := f.Nudge("mayor", "wake up"); err != nil {
+	if err := f.Nudge("mayor", TextContent("wake up")); err != nil {
 		t.Fatalf("Nudge: %v", err)
 	}
 
@@ -212,6 +212,9 @@ func TestFakeNudge(t *testing.T) {
 			if c.Message != "wake up" {
 				t.Errorf("Nudge Message = %q, want %q", c.Message, "wake up")
 			}
+			if len(c.Content) != 1 || c.Content[0].Type != "text" || c.Content[0].Text != "wake up" {
+				t.Errorf("Nudge Content = %v, want single text block", c.Content)
+			}
 		}
 	}
 	if !found {
@@ -222,7 +225,7 @@ func TestFakeNudge(t *testing.T) {
 func TestFakeNudgeBroken(t *testing.T) {
 	f := NewFailFake()
 
-	err := f.Nudge("mayor", "wake up")
+	err := f.Nudge("mayor", TextContent("wake up"))
 	if err == nil {
 		t.Fatal("expected Nudge to fail on broken fake")
 	}
@@ -367,5 +370,37 @@ func TestFakeMetaBroken(t *testing.T) {
 	}
 	if _, err := f.ListRunning("gc-"); err == nil {
 		t.Error("ListRunning should fail on broken fake")
+	}
+}
+
+func TestTextContent(t *testing.T) {
+	blocks := TextContent("hello")
+	if len(blocks) != 1 {
+		t.Fatalf("len = %d, want 1", len(blocks))
+	}
+	if blocks[0].Type != "text" || blocks[0].Text != "hello" {
+		t.Errorf("block = %+v, want text=hello", blocks[0])
+	}
+}
+
+func TestFlattenText(t *testing.T) {
+	blocks := []ContentBlock{
+		{Type: "text", Text: "hello"},
+		{Type: "file_path", Path: "/some/dir/readme.md"},
+		{Type: "text", Text: "world"},
+	}
+	got := FlattenText(blocks)
+	want := "hello\n[File: readme.md]\nworld"
+	if got != want {
+		t.Errorf("FlattenText = %q, want %q", got, want)
+	}
+}
+
+func TestFlattenText_Empty(t *testing.T) {
+	if got := FlattenText(nil); got != "" {
+		t.Errorf("FlattenText(nil) = %q, want empty", got)
+	}
+	if got := FlattenText([]ContentBlock{{Type: "text"}}); got != "" {
+		t.Errorf("FlattenText(empty text) = %q, want empty", got)
 	}
 }

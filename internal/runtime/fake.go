@@ -30,16 +30,17 @@ type Fake struct {
 
 // Call records a single method invocation on [Fake].
 type Call struct {
-	Method    string // method name (e.g. "Start", "Stop", "SetMeta")
-	Name      string // session name argument
-	Config    Config // only set for Start calls
-	Message   string // only set for Nudge/SendKeys calls
-	Key       string // only set for meta calls
-	Value     string // only set for SetMeta calls
-	Src       string // only set for CopyTo calls
-	Dst       string // only set for CopyTo calls
-	RequestID string // only set for Respond calls
-	Action    string // only set for Respond calls
+	Method    string         // method name (e.g. "Start", "Stop", "SetMeta")
+	Name      string         // session name argument
+	Config    Config         // only set for Start calls
+	Message   string         // only set for Nudge/SendKeys calls (flattened text)
+	Content   []ContentBlock // only set for Nudge calls (structured content)
+	Key       string         // only set for meta calls
+	Value     string         // only set for SetMeta calls
+	Src       string         // only set for CopyTo calls
+	Dst       string         // only set for CopyTo calls
+	RequestID string         // only set for Respond calls
+	Action    string         // only set for Respond calls
 }
 
 // NewFake returns a ready-to-use [Fake].
@@ -187,10 +188,15 @@ func (f *Fake) ProcessAlive(name string, processNames []string) bool {
 }
 
 // Nudge records the call and returns nil (or an error if broken).
-func (f *Fake) Nudge(name, message string) error {
+func (f *Fake) Nudge(name string, content []ContentBlock) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.Calls = append(f.Calls, Call{Method: "Nudge", Name: name, Message: message})
+	f.Calls = append(f.Calls, Call{
+		Method:  "Nudge",
+		Name:    name,
+		Message: FlattenText(content),
+		Content: content,
+	})
 	if f.broken {
 		return fmt.Errorf("session unavailable")
 	}

@@ -8,6 +8,8 @@ package runtime //nolint:revive // shadows stdlib runtime; isolated to internal
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -18,6 +20,39 @@ var ErrSessionExists = errors.New("session already exists")
 // ErrInteractionUnsupported reports that a provider does not implement the
 // structured pending/respond interaction capability for the requested session.
 var ErrInteractionUnsupported = errors.New("session interaction is unsupported")
+
+// ContentBlock represents a content element in a message.
+// Type is "text" or "file_path".
+type ContentBlock struct {
+	Type string `json:"type"`           // "text" or "file_path"
+	Text string `json:"text,omitempty"` // for type=text
+	Path string `json:"path,omitempty"` // for type=file_path (server-side path)
+}
+
+// TextContent is a convenience constructor for a single text block.
+func TextContent(text string) []ContentBlock {
+	return []ContentBlock{{Type: "text", Text: text}}
+}
+
+// FlattenText concatenates the Text fields of all content blocks,
+// separated by newlines. For file_path blocks, a placeholder reference
+// is included so downstream consumers know a file was referenced.
+func FlattenText(content []ContentBlock) string {
+	var parts []string
+	for _, b := range content {
+		switch b.Type {
+		case "file_path":
+			if b.Path != "" {
+				parts = append(parts, "[File: "+filepath.Base(b.Path)+"]")
+			}
+		default: // "text"
+			if b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
 
 // Provider manages agent sessions. Implementations handle the details
 // of creating, destroying, and connecting to running agent processes.
@@ -55,9 +90,10 @@ type Provider interface {
 	// Returns true if processNames is empty (no check possible).
 	ProcessAlive(name string, processNames []string) bool
 
-	// Nudge sends a message to the named session to wake or redirect
-	// the agent. Returns nil if the session does not exist (best-effort).
-	Nudge(name, message string) error
+	// Nudge sends structured content to the named session to wake or
+	// redirect the agent. Returns nil if the session does not exist
+	// (best-effort). Use [TextContent] to wrap a plain string.
+	Nudge(name string, content []ContentBlock) error
 
 	// SetMeta stores a key-value pair associated with the named session.
 	// Used for drain signaling and config fingerprint storage.
