@@ -31,6 +31,9 @@ gc agent claim <name> <bead-id>        # Put a bead on agent's hook
 
 Every configured template can now spawn sessions directly.
 
+For cities migrating off the old multi-instance model, see
+`docs/remove-agent-multi-migration.md`.
+
 Use the session commands directly:
 
 ```
