@@ -92,7 +92,7 @@ func (e *reconcilerTestEnv) reconcile(sessions []beads.Bead) int {
 	cfgNames := configuredSessionNames(e.cfg, "")
 	return reconcileSessionBeads(
 		context.Background(), sessions, e.agentIndex, cfgNames, e.cfg, e.sp,
-		e.store, e.dt, map[string]int{}, "",
+		e.store, nil, e.dt, map[string]int{}, "",
 		e.clk, e.rec, 0, 0, &e.stdout, &e.stderr,
 	)
 }
@@ -676,7 +676,7 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 	cfgNames := configuredSessionNames(env.cfg, "")
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{s1, s2}, env.agentIndex, cfgNames,
-		env.cfg, env.sp, env.store, env.dt, poolDesired, "",
+		env.cfg, env.sp, env.store, nil, env.dt, poolDesired, "",
 		env.clk, env.rec, 0, 0, &env.stdout, &env.stderr,
 	)
 
@@ -753,7 +753,7 @@ func TestReconcileSessionBeads_DriftDrainUsesConfigTimeout(t *testing.T) {
 	cfgNames := configuredSessionNames(env.cfg, "")
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{session}, env.agentIndex, cfgNames,
-		env.cfg, env.sp, env.store, env.dt, map[string]int{}, "",
+		env.cfg, env.sp, env.store, nil, env.dt, map[string]int{}, "",
 		env.clk, env.rec, 0, env.cfg.Daemon.DriftDrainTimeoutDuration(),
 		&env.stdout, &env.stderr,
 	)

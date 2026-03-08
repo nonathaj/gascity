@@ -6,6 +6,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -17,12 +18,14 @@ import (
 // wakeReasons computes why a session should be awake.
 // PURE FUNCTION — reads only, never writes metadata.
 // poolDesired is the per-tick snapshot from pool evaluation.
+// workSet is the per-tick snapshot of templates with assigned open work.
 // Returns nil if the session should be asleep.
 func wakeReasons(
 	session beads.Bead,
 	cfg *config.City,
 	sp runtime.Provider,
 	poolDesired map[string]int,
+	workSet map[string]bool,
 	clk clock.Clock,
 ) []WakeReason {
 	// User hold suppresses all reasons.
@@ -69,9 +72,48 @@ func wakeReasons(
 		}
 	}
 
-	// Phase 4: WakeWork — deferred until work-driven wake ships.
+	// WakeWork: session has open work assigned to its template.
+	if workSet[template] {
+		reasons = append(reasons, WakeWork)
+	}
 
 	return reasons
+}
+
+// computeWorkSet runs each agent's work_query command and returns the set
+// of template names that have pending work. Called once per reconciler tick.
+// The runner executes shell commands in the agent's working directory;
+// non-empty output means work exists. Agents without a work_query produce
+// no WakeWork reason.
+func computeWorkSet(cfg *config.City, runner ScaleCheckRunner, cityDir string) map[string]bool {
+	if cfg == nil || runner == nil {
+		return nil
+	}
+	work := make(map[string]bool)
+	seen := make(map[string]bool) // deduplicate pool instances
+	for _, a := range cfg.Agents {
+		qn := a.QualifiedName()
+		if seen[qn] {
+			continue
+		}
+		seen[qn] = true
+		wq := a.EffectiveWorkQuery()
+		if wq == "" {
+			continue
+		}
+		dir := a.Dir
+		if dir == "" {
+			dir = cityDir
+		}
+		out, err := runner(wq, dir)
+		if err != nil {
+			continue // command failed — treat as no work
+		}
+		if strings.TrimSpace(out) != "" {
+			work[qn] = true
+		}
+	}
+	return work
 }
 
 // findAgentByTemplate looks up a config agent by template name.

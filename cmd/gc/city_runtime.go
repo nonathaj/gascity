@@ -555,9 +555,13 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Age
 	cityName := cr.cityName
 
 	cfgNames := configuredSessionNames(cr.cfg, cityName)
+
+	// Compute work set via work_check commands for work-driven wake.
+	workSet := computeWorkSet(cr.cfg, shellScaleCheck, cr.cityPath)
+
 	reconcileSessionBeads(
 		ctx, open, agentIndex, cfgNames, cr.cfg, cr.sp, store,
-		cr.sessionDrains, poolDesired, cityName,
+		workSet, cr.sessionDrains, poolDesired, cityName,
 		clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
 		cr.cfg.Daemon.DriftDrainTimeoutDuration(),
 		cr.stdout, cr.stderr,

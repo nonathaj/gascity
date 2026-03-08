@@ -267,7 +267,7 @@ func sessionReason(s session.Info, beadIndex map[string]beads.Bead, cfg *config.
 	// If config is available, compute full wake reasons (including WakeConfig).
 	// Otherwise, only bead metadata (sleep/hold/quarantine) is shown.
 	if cfg != nil {
-		reasons := wakeReasons(b, cfg, sp, poolDesired, clock.Real{})
+		reasons := wakeReasons(b, cfg, sp, poolDesired, nil, clock.Real{})
 		if len(reasons) > 0 {
 			parts := make([]string, len(reasons))
 			for i, r := range reasons {

@@ -131,6 +131,7 @@ func reconcileSessionBeads(
 	cfg *config.City,
 	sp runtime.Provider,
 	store beads.Store,
+	workSet map[string]bool,
 	dt *drainTracker,
 	poolDesired map[string]int,
 	cityName string,
@@ -282,7 +283,7 @@ func reconcileSessionBeads(
 
 		// Compute wake reasons using the full contract (includes held_until,
 		// attachment checks, pool desired counts).
-		reasons := wakeReasons(*session, cfg, sp, poolDesired, clk)
+		reasons := wakeReasons(*session, cfg, sp, poolDesired, workSet, clk)
 		shouldWake := len(reasons) > 0
 
 		if shouldWake && !alive {
@@ -368,7 +369,7 @@ func reconcileSessionBeads(
 	sessionLookup := func(id string) *beads.Bead {
 		return beadByID[id]
 	}
-	advanceSessionDrains(dt, sp, store, sessionLookup, cfg, poolDesired, clk)
+	advanceSessionDrains(dt, sp, store, sessionLookup, cfg, poolDesired, workSet, clk)
 
 	return wakeCount
 }

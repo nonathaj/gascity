@@ -130,6 +130,7 @@ func advanceSessionDrains(
 	sessionLookup func(id string) *beads.Bead,
 	cfg *config.City,
 	poolDesired map[string]int,
+	workSet map[string]bool,
 	clk clock.Clock,
 ) {
 	for id, ds := range dt.all() {
@@ -151,7 +152,7 @@ func advanceSessionDrains(
 		// they represent explicit lifecycle decisions that should not be
 		// reversed by the wake contract (the session is leaving the desired set).
 		if ds.reason != "config-drift" && ds.reason != "orphaned" && ds.reason != "suspended" {
-			reasons := wakeReasons(*session, cfg, sp, poolDesired, clk)
+			reasons := wakeReasons(*session, cfg, sp, poolDesired, workSet, clk)
 			if len(reasons) > 0 {
 				dt.remove(id)
 				continue

@@ -287,7 +287,7 @@ func TestAdvanceSessionDrains_ProcessExited(t *testing.T) {
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, clk)
+	}, cfg, map[string]int{}, nil, clk)
 
 	// Drain should be cleaned up.
 	if dt.get(b.ID) != nil {
@@ -336,7 +336,7 @@ func TestAdvanceSessionDrains_Timeout(t *testing.T) {
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, clk)
+	}, cfg, map[string]int{}, nil, clk)
 
 	// Should have force-stopped.
 	if sp.IsRunning("test-session") {
@@ -383,7 +383,7 @@ func TestAdvanceSessionDrains_WakeReasonsReappear(t *testing.T) {
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, clk)
+	}, cfg, map[string]int{}, nil, clk)
 
 	// Drain should be canceled — wake reasons reappeared.
 	if dt.get(b.ID) != nil {
@@ -431,7 +431,7 @@ func TestAdvanceSessionDrains_ConfigDriftNotCancelable(t *testing.T) {
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, clk)
+	}, cfg, map[string]int{}, nil, clk)
 
 	// Drain should NOT be canceled — config-drift is non-cancelable.
 	// Session is alive and deadline not reached, so drain continues.
@@ -474,7 +474,7 @@ func TestAdvanceSessionDrains_TimeoutTokenMismatch(t *testing.T) {
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, clk)
+	}, cfg, map[string]int{}, nil, clk)
 
 	// Drain should be canceled (stale token), session still running.
 	if dt.get(b.ID) != nil {
