@@ -19,7 +19,7 @@ func TestACPConformance(t *testing.T) {
 	binDir := t.TempDir()
 	binPath := filepath.Join(binDir, "fakeacp")
 	cmd := exec.Command("go", "build", "-o", binPath, "./testdata/fakeacp")
-	cmd.Dir = filepath.Join(mustModRoot(t), "internal", "session", "acp")
+	cmd.Dir = filepath.Join(mustModRoot(t), "internal", "runtime", "acp")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("building fakeacp: %v", err)

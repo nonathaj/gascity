@@ -497,8 +497,8 @@ func TestHandleSessionCreate(t *testing.T) {
 	if !resp.Running {
 		t.Errorf("Running = %v, want true", resp.Running)
 	}
-	if resp.DisplayName != "Claude Code" {
-		t.Errorf("DisplayName = %q, want %q", resp.DisplayName, "Claude Code")
+	if resp.DisplayName != "Test Agent" {
+		t.Errorf("DisplayName = %q, want %q", resp.DisplayName, "Test Agent")
 	}
 }
 

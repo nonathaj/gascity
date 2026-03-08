@@ -255,7 +255,7 @@ func TestUpdatePackWithBranchRef(t *testing.T) {
 	workDir := filepath.Join(dir, "work")
 	bareDir := filepath.Join(dir, "test.git")
 
-	mustGit(t, "", "init", workDir)
+	mustGit(t, "", "init", "--initial-branch=main", workDir)
 	if err := os.WriteFile(filepath.Join(workDir, "pack.toml"), []byte("v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}

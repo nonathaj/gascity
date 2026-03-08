@@ -50,10 +50,13 @@ func newFakeState(t *testing.T) *fakeState {
 		cfg: &config.City{
 			Workspace: config.Workspace{Name: "test-city"},
 			Agents: []config.Agent{
-				{Name: "worker", Dir: "myrig"},
+				{Name: "worker", Dir: "myrig", Provider: "test-agent"},
 			},
 			Rigs: []config.Rig{
 				{Name: "myrig", Path: "/tmp/myrig"},
+			},
+			Providers: map[string]config.ProviderSpec{
+				"test-agent": {DisplayName: "Test Agent"},
 			},
 		},
 		sp:        runtime.NewFake(),

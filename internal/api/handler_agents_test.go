@@ -512,6 +512,9 @@ func TestAgentPeekViaQueryParam(t *testing.T) {
 func TestAgentModelAndContext(t *testing.T) {
 	state := newFakeState(t)
 	state.cfg.Workspace.Provider = "claude"
+	state.cfg.Agents = []config.Agent{
+		{Name: "worker", Dir: "myrig", Provider: "claude"},
+	}
 	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: "/tmp/myrig"}}
 	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 
