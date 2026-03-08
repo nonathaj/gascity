@@ -651,41 +651,46 @@ func TestReconcileSessionBeads_StartFailureNoDoubleCounting(t *testing.T) {
 	}
 }
 
-func TestReconcileSessionBeads_PoolExcessDrainsAliveSession(t *testing.T) {
+func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
+	// After pool scale-down, excess instances leave the agents list.
+	// The reconciler handles them as orphans (a == nil path).
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{
 			{Name: "worker", Pool: &config.PoolConfig{Min: 1, Max: 5}},
 		},
 	}
-	// Two pool instances alive, but desired count is 1.
+	// worker-1 is in the desired set; worker-2 is NOT (scale-down).
 	env.addAgent("worker-1", true)
-	env.addAgent("worker-2", true)
+	// worker-2 is running in provider but not in agentIndex.
+	_ = env.sp.Start(context.Background(), "worker-2", runtime.Config{})
 	s1 := env.createSessionBead("worker-1", "worker")
+	_ = env.store.SetMetadata(s1.ID, "pool_slot", "1")
+	s1.Metadata["pool_slot"] = "1"
 	s2 := env.createSessionBead("worker-2", "worker")
+	_ = env.store.SetMetadata(s2.ID, "pool_slot", "2")
+	s2.Metadata["pool_slot"] = "2"
 
-	// Pool desired = 1 (only 1 agent in desired set).
+	// Pool desired = 1 (only worker-1 in the agent list).
 	poolDesired := map[string]int{"worker": 1}
 	cfgNames := configuredSessionNames(env.cfg, "")
-
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{s1, s2}, env.agentIndex, cfgNames,
 		env.cfg, env.sp, env.store, env.dt, poolDesired, "",
 		env.clk, env.rec, 0, 0, &env.stdout, &env.stderr,
 	)
 
-	// At least one session should be draining due to pool excess.
-	d1 := env.dt.get(s1.ID)
+	// worker-2 should be drained as orphan (not in agentIndex).
 	d2 := env.dt.get(s2.ID)
-	drainCount := 0
-	if d1 != nil {
-		drainCount++
+	if d2 == nil {
+		t.Fatal("expected drain for excess pool instance")
 	}
-	if d2 != nil {
-		drainCount++
+	if d2.reason != "orphaned" {
+		t.Errorf("drain reason = %q, want %q", d2.reason, "orphaned")
 	}
-	if drainCount == 0 {
-		t.Error("expected at least one pool-excess drain")
+	// worker-1 should NOT be drained.
+	if d1 := env.dt.get(s1.ID); d1 != nil {
+		t.Errorf("worker-1 should not be draining, got reason=%q", d1.reason)
 	}
 }
 

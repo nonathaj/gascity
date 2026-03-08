@@ -115,6 +115,13 @@ func allDependenciesAlive(
 // suspended agents). Used to distinguish "orphaned" (removed from config)
 // from "suspended" (still in config, not runnable) when closing beads.
 //
+// Known limitation: sessions adopted via the adoption barrier (running
+// sessions found without beads on startup) have beads with config_hash
+// and live_hash from the CURRENT config, not the config they were started
+// with. Drift detection is approximate for these sessions until they are
+// restarted by the reconciler, at which point provenance fields are
+// backfilled accurately.
+//
 // Returns the number of sessions woken this tick.
 func reconcileSessionBeads(
 	ctx context.Context,
@@ -344,12 +351,12 @@ func reconcileSessionBeads(
 
 		if !shouldWake && alive {
 			// No reason to be awake — begin drain.
-			reason := "no-wake-reason"
-			if isPoolExcess(*session, cfg, poolDesired) {
-				reason = "pool-excess"
-			}
-			beginSessionDrain(*session, sp, dt, reason, clk, defaultDrainTimeout)
-			fmt.Fprintf(stdout, "Draining session '%s': %s\n", name, reason) //nolint:errcheck
+			// Note: pool excess instances don't reach here in practice.
+			// After pool scale-down, excess instances leave the agents list
+			// and are handled by the a==nil orphan path above. This branch
+			// handles edge cases like held_until expiry or attachment loss.
+			beginSessionDrain(*session, sp, dt, "no-wake-reason", clk, defaultDrainTimeout)
+			fmt.Fprintf(stdout, "Draining session '%s': no-wake-reason\n", name) //nolint:errcheck
 		}
 	}
 
