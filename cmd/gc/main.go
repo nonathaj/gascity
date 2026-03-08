@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
 	"github.com/gastownhall/gascity/internal/events"
@@ -135,7 +134,8 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 }
 
 // sessionName returns the session name for a city agent.
-// Delegates to agent.SessionNameFor — the single source of truth.
+// When a bead store is provided, it looks up the session bead first;
+// otherwise falls back to the legacy SessionNameFor function.
 // sessionTemplate is a Go text/template string (empty = default pattern).
 //
 // When running inside a container (Docker/K8s), the tmux session has a
@@ -143,11 +143,11 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 // session name. GC_TMUX_SESSION overrides the resolved name so agent-side
 // commands (drain-check, drain-ack, request-restart) target the correct
 // tmux session for metadata reads/writes.
-func sessionName(cityName, agentName, sessionTemplate string) string {
+func sessionName(store beads.Store, cityName, agentName, sessionTemplate string) string { //nolint:unparam // store is nil today; Phase 2 threads real stores
 	if override := os.Getenv("GC_TMUX_SESSION"); override != "" {
 		return override
 	}
-	return agent.SessionNameFor(cityName, agentName, sessionTemplate)
+	return lookupSessionNameOrLegacy(store, cityName, agentName, sessionTemplate)
 }
 
 // findCity walks dir upward looking for a directory containing .gc/.

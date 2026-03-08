@@ -33,7 +33,7 @@ func setupConvergenceRuntime(t *testing.T) (*CityRuntime, *beads.MemStore) {
 		cityName:            "test",
 		cfg:                 cfg,
 		sp:                  sp,
-		buildFn:             func(_ *config.City, _ runtime.Provider) map[string]TemplateParams { return nil },
+		buildFn:             func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams { return nil },
 		rec:                 events.Discard,
 		convergenceReqCh:    convergenceReqCh,
 		standaloneCityStore: store,

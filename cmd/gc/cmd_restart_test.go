@@ -40,7 +40,7 @@ func TestDoRigRestart(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -77,7 +77,7 @@ func TestDoRigRestartNoneRunning(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -107,7 +107,7 @@ func TestDoRigRestartWithPool(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -145,7 +145,7 @@ func TestDoRigRestartStopError(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(wrapper, rec, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(wrapper, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}

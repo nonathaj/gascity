@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -342,7 +341,7 @@ func (cs *controllerState) spAndSession(name string) (runtime.Provider, string) 
 	sp := cs.sp
 	tmpl := cs.cfg.Workspace.SessionTemplate
 	cs.mu.RUnlock()
-	return sp, agent.SessionNameFor(cs.cityName, name, tmpl)
+	return sp, lookupSessionNameOrLegacy(cs.cityBeadStore, cs.cityName, name, tmpl)
 }
 
 // SuspendAgent writes suspended=true to city.toml (durable desired state).

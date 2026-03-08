@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -17,21 +18,28 @@ import (
 // returning sessionName → TemplateParams. This is the canonical path
 // for constructing the desired agent set — both reconcilers use it.
 //
-// Performs idempotent side effects on each tick: hook installation and
-// ACP route registration. These are safe to repeat because hooks are
-// installed to stable filesystem paths and ACP routing is idempotent.
+// When store is non-nil, session names are derived from bead IDs
+// ("s-{beadID}") and session beads are auto-created for configured agents
+// that don't have them yet. When store is nil, the legacy SessionNameFor
+// function is used for backward compatibility.
+//
+// Performs idempotent side effects on each tick: hook installation,
+// ACP route registration, and session bead auto-creation. These are safe
+// to repeat because hooks are installed to stable filesystem paths,
+// ACP routing is idempotent, and bead creation is deduplicated by template.
 func buildDesiredState(
 	cityName, cityPath string,
 	beaconTime time.Time,
 	cfg *config.City,
 	sp runtime.Provider,
+	store beads.Store,
 	stderr io.Writer,
 ) map[string]TemplateParams {
 	if cfg.Workspace.Suspended {
 		return nil
 	}
 
-	bp := newAgentBuildParams(cityName, cityPath, cfg, sp, beaconTime, stderr)
+	bp := newAgentBuildParams(cityName, cityPath, cfg, sp, beaconTime, store, stderr)
 
 	// Pre-compute suspended rig paths.
 	suspendedRigPaths := make(map[string]bool)

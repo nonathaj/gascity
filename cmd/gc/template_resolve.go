@@ -115,7 +115,9 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	rigName := resolveRigForAgent(workDir, p.rigs)
 
 	// Step 7: Compute session name.
-	sessName := agent.SessionNameFor(p.cityName, qualifiedName, p.sessionTemplate)
+	// Uses bead-derived naming ("s-{beadID}") when a bead store is available,
+	// falling back to the legacy SessionNameFor for backward compatibility.
+	sessName := p.resolveSessionName(qualifiedName)
 
 	// Step 8: Build agent environment.
 	agentEnv := map[string]string{

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -25,7 +26,7 @@ func TestControllerLoopCancel(t *testing.T) {
 	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		return map[string]TemplateParams{name: tp}
 	}
@@ -63,7 +64,7 @@ func TestControllerLoopTick(t *testing.T) {
 	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		return map[string]TemplateParams{name: tp}
 	}
@@ -120,7 +121,7 @@ func TestControllerShutdown(t *testing.T) {
 		Command:      "echo hello",
 	}
 
-	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		return map[string]TemplateParams{name: tp}
 	}
 
@@ -199,7 +200,7 @@ func TestControllerReloadsConfig(t *testing.T) {
 	// buildFn creates TemplateParams from the config it receives.
 	var lastAgentNames atomic.Value
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		var names []string
 		ds := make(map[string]TemplateParams)
@@ -269,7 +270,7 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
@@ -336,7 +337,7 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
@@ -417,7 +418,7 @@ func TestControllerPokeTriggersImmediate(t *testing.T) {
 	sp := runtime.NewFake()
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		return map[string]TemplateParams{}
 	}

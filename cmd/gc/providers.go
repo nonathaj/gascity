@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
@@ -103,9 +102,11 @@ func newSessionProviderByName(name string, sc config.SessionConfig, cityName str
 func newSessionProvider() runtime.Provider {
 	var sc config.SessionConfig
 	var cityName string
+	var cityPath string
 	var agents []config.Agent
 	var sessionTemplate string
 	if cp, err := resolveCity(); err == nil {
+		cityPath = cp
 		if cfg, err := loadCityConfig(cp); err == nil {
 			sc = cfg.Session
 			cityName = cfg.Workspace.Name
@@ -135,9 +136,14 @@ func newSessionProvider() runtime.Provider {
 		autoSP := sessionauto.New(sp, acpSP)
 		// Pre-register routes for known ACP agents so one-off commands
 		// (gc status, gc agent nudge, etc.) route correctly.
+		// Best-effort store for bead-derived session name lookup.
+		var store beads.Store
+		if cityPath != "" {
+			store, _ = openCityStoreAt(cityPath)
+		}
 		for _, a := range agents {
 			if a.Session == "acp" {
-				sessName := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+				sessName := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), sessionTemplate)
 				autoSP.RouteACP(sessName)
 			}
 		}

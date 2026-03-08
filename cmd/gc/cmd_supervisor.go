@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -871,10 +872,10 @@ func effectiveProviderName(configured string) string {
 
 // supervisorBuildAgentsFn returns a buildFn suitable for CityRuntimeParams.
 // It delegates to buildDesiredState with a stable beacon timestamp.
-func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*config.City, runtime.Provider) map[string]TemplateParams {
+func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams {
 	beaconTime := time.Now()
-	return func(c *config.City, sp runtime.Provider) map[string]TemplateParams {
-		return buildDesiredState(cityName, cityPath, beaconTime, c, sp, stderr)
+	return func(c *config.City, sp runtime.Provider, store beads.Store) map[string]TemplateParams {
+		return buildDesiredState(cityName, cityPath, beaconTime, c, sp, store, stderr)
 	}
 }
 

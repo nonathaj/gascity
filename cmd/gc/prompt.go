@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/git"
@@ -40,7 +40,7 @@ type PromptContext struct {
 // the output after rendering. Returns empty string if templatePath is empty
 // or the file doesn't exist. On parse or execute error, logs a warning to
 // stderr and returns the raw text (graceful fallback).
-func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, packDirs []string, injectFragments []string) string {
+func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, packDirs []string, injectFragments []string, store ...beads.Store) string { //nolint:unparam // store is nil today; Phase 2 threads real stores
 	if templatePath == "" {
 		return ""
 	}
@@ -50,8 +50,12 @@ func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx Promp
 	}
 	raw := string(data)
 
+	var st beads.Store
+	if len(store) > 0 {
+		st = store[0]
+	}
 	tmpl := template.New("prompt").
-		Funcs(promptFuncMap(cityName, sessionTemplate)).
+		Funcs(promptFuncMap(cityName, sessionTemplate, st)).
 		Option("missingkey=zero")
 
 	// Load shared templates from pack dirs (lower priority).
@@ -174,13 +178,15 @@ func defaultBranchFor(dir string) string {
 
 // promptFuncMap returns template functions available in prompt templates.
 // sessionTemplate is the custom session naming template (empty = default).
-func promptFuncMap(cityName, sessionTemplate string) template.FuncMap {
+// store is used by the "session" function to look up bead-derived session
+// names; nil falls back to legacy naming.
+func promptFuncMap(cityName, sessionTemplate string, store beads.Store) template.FuncMap {
 	return template.FuncMap{
 		"cmd": func() string {
 			return filepath.Base(os.Args[0])
 		},
 		"session": func(agentName string) string {
-			return agent.SessionNameFor(cityName, agentName, sessionTemplate)
+			return lookupSessionNameOrLegacy(store, cityName, agentName, sessionTemplate)
 		},
 		"basename": func(qualifiedName string) string {
 			_, name := config.ParseQualifiedName(qualifiedName)

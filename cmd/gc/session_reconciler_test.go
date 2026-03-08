@@ -105,7 +105,7 @@ func (e *reconcilerTestEnv) createSessionBead(name, template string) beads.Bead 
 }
 
 func (e *reconcilerTestEnv) reconcile(sessions []beads.Bead) int {
-	cfgNames := configuredSessionNames(e.cfg, "")
+	cfgNames := configuredSessionNames(e.cfg, "", e.store)
 	return reconcileSessionBeads(
 		context.Background(), sessions, e.desiredState, cfgNames, e.cfg, e.sp,
 		e.store, nil, e.dt, map[string]int{}, "",
@@ -189,7 +189,7 @@ func TestAllDependenciesAlive_NoDeps(t *testing.T) {
 	session := beads.Bead{Metadata: map[string]string{"template": "worker"}}
 	cfg := &config.City{Agents: []config.Agent{{Name: "worker"}}}
 	sp := runtime.NewFake()
-	if !allDependenciesAlive(session, cfg, nil, sp, "test") {
+	if !allDependenciesAlive(session, cfg, nil, sp, "test", nil) {
 		t.Error("no deps should return true")
 	}
 }
@@ -207,7 +207,7 @@ func TestAllDependenciesAlive_DepAlive(t *testing.T) {
 	desired := map[string]TemplateParams{
 		"db": {TemplateName: "db"},
 	}
-	if !allDependenciesAlive(session, cfg, desired, sp, "test") {
+	if !allDependenciesAlive(session, cfg, desired, sp, "test", nil) {
 		t.Error("dep is alive, should return true")
 	}
 }
@@ -224,7 +224,7 @@ func TestAllDependenciesAlive_DepDead(t *testing.T) {
 	desired := map[string]TemplateParams{
 		"db": {TemplateName: "db"},
 	}
-	if allDependenciesAlive(session, cfg, desired, sp, "test") {
+	if allDependenciesAlive(session, cfg, desired, sp, "test", nil) {
 		t.Error("dep is dead, should return false")
 	}
 }
@@ -641,7 +641,7 @@ func TestReconcileSessionBeads_PoolScaleDownOrphansExcess(t *testing.T) {
 	s2.Metadata["pool_slot"] = "2"
 
 	poolDesired := map[string]int{"worker": 1}
-	cfgNames := configuredSessionNames(env.cfg, "")
+	cfgNames := configuredSessionNames(env.cfg, "", env.store)
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{s1, s2}, env.desiredState, cfgNames,
 		env.cfg, env.sp, env.store, nil, env.dt, poolDesired, "",
@@ -696,7 +696,7 @@ func TestAllDependenciesAlive_WithSessionTemplate(t *testing.T) {
 	desired := map[string]TemplateParams{
 		sn: {TemplateName: "db"},
 	}
-	if !allDependenciesAlive(session, cfg, desired, sp, "myCity") {
+	if !allDependenciesAlive(session, cfg, desired, sp, "myCity", nil) {
 		t.Errorf("dep should be alive (session name: %q)", sn)
 	}
 }
@@ -710,7 +710,7 @@ func TestReconcileSessionBeads_DriftDrainUsesConfigTimeout(t *testing.T) {
 	env.addDesiredWithConfig("worker", "worker", true, "new-cmd")
 	session := env.createSessionBead("worker", "worker")
 
-	cfgNames := configuredSessionNames(env.cfg, "")
+	cfgNames := configuredSessionNames(env.cfg, "", env.store)
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{session}, env.desiredState, cfgNames,
 		env.cfg, env.sp, env.store, nil, env.dt, map[string]int{}, "",

@@ -31,7 +31,7 @@ type CityRuntime struct {
 
 	cfg     *config.City
 	sp      runtime.Provider
-	buildFn func(*config.City, runtime.Provider) map[string]TemplateParams
+	buildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams
 
 	rops reconcileOps
 	dops drainOps
@@ -73,7 +73,7 @@ type CityRuntimeParams struct {
 
 	Cfg     *config.City
 	SP      runtime.Provider
-	BuildFn func(*config.City, runtime.Provider) map[string]TemplateParams
+	BuildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams
 	Dops    drainOps
 
 	Rec events.Recorder
@@ -232,7 +232,7 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// pre-reconcile reality and may lag by one tick after reconciliation
 	// starts/stops agents. This is acceptable — no external consumer reads
 	// bead state within a tick, and it converges on the next sync.
-	desiredState := cr.buildFn(cr.cfg, cr.sp)
+	desiredState := cr.buildFn(cr.cfg, cr.sp, cr.cityBeadStore())
 	cr.syncBeadsAndUpdateIndex(desiredState)
 
 	// Convergence startup reconciliation: recover in-progress convergence
@@ -324,7 +324,7 @@ func (cr *CityRuntime) tick(
 	// Post-reconcile sync was intentionally removed: the daemon's next tick
 	// corrects bead state, and the pre-reconcile sync is sufficient for
 	// beadReconcileOps to read/write hashes during reconciliation.
-	desiredState := cr.buildFn(cr.cfg, cr.sp)
+	desiredState := cr.buildFn(cr.cfg, cr.sp, cr.cityBeadStore())
 	cr.syncBeadsAndUpdateIndex(desiredState)
 
 	// Use bead-driven reconciler when drain tracker is initialized
@@ -542,7 +542,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[s
 	// Use cr.cityName consistently — it's the authoritative runtime name.
 	cityName := cr.cityName
 
-	cfgNames := configuredSessionNames(cr.cfg, cityName)
+	cfgNames := configuredSessionNames(cr.cfg, cityName, store)
 
 	// Compute work set via work_query commands for work-driven wake.
 	workSet := computeWorkSet(cr.cfg, shellScaleCheck, cr.cityPath)
@@ -576,7 +576,7 @@ func (cr *CityRuntime) upgradeToBeadReconcileOps() {
 // beadReconcileOps, updates its session_name → bead_id index.
 func (cr *CityRuntime) syncBeadsAndUpdateIndex(desiredState map[string]TemplateParams) {
 	store := cr.cityBeadStore()
-	cfgNames := configuredSessionNames(cr.cfg, cr.cityName)
+	cfgNames := configuredSessionNames(cr.cfg, cr.cityName, store)
 	idx := syncSessionBeads(store, desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil)
 	if bro, ok := cr.rops.(*beadReconcileOps); ok && idx != nil {
 		bro.updateIndex(idx)
@@ -602,7 +602,7 @@ func (cr *CityRuntime) shutdown() {
 			running, _ := cr.rops.listRunning("")
 			gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.stdout, cr.stderr)
 		} else {
-			ds := cr.buildFn(cr.cfg, cr.sp)
+			ds := cr.buildFn(cr.cfg, cr.sp, cr.cityBeadStore())
 			var names []string
 			for sn := range ds {
 				if cr.sp.IsRunning(sn) {

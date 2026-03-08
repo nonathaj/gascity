@@ -322,7 +322,7 @@ func TestDoRigListSuccess(t *testing.T) {
 // --- sessionName ---
 
 func TestSessionName(t *testing.T) {
-	got := sessionName("bright-lights", "mayor", "")
+	got := sessionName(nil, "bright-lights", "mayor", "")
 	want := "mayor"
 	if got != want {
 		t.Errorf("sessionName = %q, want %q", got, want)
@@ -334,7 +334,7 @@ func TestSessionNameTmuxOverride(t *testing.T) {
 	// agents inside Docker/K8s containers to target the correct tmux
 	// session for metadata (drain, restart).
 	t.Setenv("GC_TMUX_SESSION", "agent")
-	got := sessionName("bright-lights", "mayor", "")
+	got := sessionName(nil, "bright-lights", "mayor", "")
 	want := "agent"
 	if got != want {
 		t.Errorf("sessionName with GC_TMUX_SESSION = %q, want %q", got, want)

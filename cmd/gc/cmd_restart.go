@@ -5,7 +5,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -106,7 +106,8 @@ func cmdRigRestart(args []string, stdout, stderr io.Writer) int {
 	}
 	sp := newSessionProvider()
 	rec := openCityRecorder(stderr)
-	return doRigRestart(sp, rec, rigAgents, rigName, cityName, cfg.Workspace.SessionTemplate, stdout, stderr)
+	store, _ := openCityStoreAt(cityPath)
+	return doRigRestart(sp, rec, store, rigAgents, rigName, cityName, cfg.Workspace.SessionTemplate, stdout, stderr)
 }
 
 // doRigRestart kills sessions for all agents in a rig. The reconciler will
@@ -114,6 +115,7 @@ func cmdRigRestart(args []string, stdout, stderr io.Writer) int {
 func doRigRestart(
 	sp runtime.Provider,
 	rec events.Recorder,
+	store beads.Store,
 	agents []config.Agent,
 	rigName, cityName, sessionTemplate string,
 	stdout, stderr io.Writer,
@@ -123,7 +125,7 @@ func doRigRestart(
 		pool := a.EffectivePool()
 		if !pool.IsMultiInstance() {
 			// Single agent.
-			sn := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+			sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), sessionTemplate)
 			if sp.IsRunning(sn) {
 				if err := sp.Stop(sn); err != nil {
 					fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
@@ -139,7 +141,7 @@ func doRigRestart(
 		} else {
 			// Pool agent: discover instances (static for bounded, live for unlimited).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
-				sn := agent.SessionNameFor(cityName, qualifiedInstance, sessionTemplate)
+				sn := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, sessionTemplate)
 				if sp.IsRunning(sn) {
 					if err := sp.Stop(sn); err != nil {
 						fmt.Fprintf(stderr, "gc rig restart: stopping %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr

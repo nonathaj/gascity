@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -28,10 +29,19 @@ type agentBuildParams struct {
 	rigOverlayDirs  map[string][]string
 	globalFragments []string
 	stderr          io.Writer
+
+	// beadStore is the city-level bead store for session bead lookups.
+	// When non-nil, session names are derived from bead IDs ("s-{beadID}")
+	// instead of the legacy SessionNameFor function.
+	beadStore beads.Store
+
+	// beadNames caches qualifiedName → session_name mappings resolved
+	// during this build cycle. Populated lazily by resolveSessionName.
+	beadNames map[string]string
 }
 
 // newAgentBuildParams constructs agentBuildParams from the common startup values.
-func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp runtime.Provider, beaconTime time.Time, stderr io.Writer) *agentBuildParams {
+func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp runtime.Provider, beaconTime time.Time, store beads.Store, stderr io.Writer) *agentBuildParams {
 	return &agentBuildParams{
 		cityName:        cityName,
 		cityPath:        cityPath,
@@ -47,6 +57,8 @@ func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp runtime
 		packOverlayDirs: cfg.PackOverlayDirs,
 		rigOverlayDirs:  cfg.RigOverlayDirs,
 		globalFragments: cfg.Workspace.GlobalFragments,
+		beadStore:       store,
+		beadNames:       make(map[string]string),
 		stderr:          stderr,
 	}
 }

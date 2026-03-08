@@ -36,7 +36,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	// City-level suspend: all agents are suspended.
 	if cfg.Workspace.Suspended {
 		for _, a := range cfg.Agents {
-			names[sessionName(cityName, a.QualifiedName(), st)] = true
+			names[sessionName(nil, cityName, a.QualifiedName(), st)] = true
 		}
 		return names
 	}
@@ -45,7 +45,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	for _, a := range cfg.Agents {
 		if a.Suspended {
 			qn := a.QualifiedName()
-			names[sessionName(cityName, qn, st)] = true
+			names[sessionName(nil, cityName, qn, st)] = true
 		}
 	}
 	// Agents in suspended rigs.
@@ -65,7 +65,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 				continue
 			}
 			if suspendedRigPaths[filepath.Clean(workDir)] {
-				names[sessionName(cityName, a.QualifiedName(), st)] = true
+				names[sessionName(nil, cityName, a.QualifiedName(), st)] = true
 			}
 		}
 	}
@@ -87,7 +87,7 @@ func computePoolSessions(cfg *config.City, cityName string, sp runtime.Provider)
 		}
 		timeout := pool.DrainTimeoutDuration()
 		for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-			ps[sessionName(cityName, qualifiedInstance, st)] = timeout
+			ps[sessionName(nil, cityName, qualifiedInstance, st)] = timeout
 		}
 	}
 	return ps
@@ -126,7 +126,7 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp ru
 					dir = d
 				}
 			}
-			sn := sessionName(cityName, qualifiedInstance, st)
+			sn := sessionName(nil, cityName, qualifiedInstance, st)
 			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir}
 		}
 	}
@@ -171,11 +171,11 @@ func buildIdleTracker(cfg *config.City, cityName string, sp runtime.Provider) id
 		if a.IsPool() && pool.IsMultiInstance() {
 			// Register each pool instance (worker-1, worker-2, ...).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := sessionName(cityName, qualifiedInstance, st)
+				sn := sessionName(nil, cityName, qualifiedInstance, st)
 				it.setTimeout(sn, timeout)
 			}
 		} else {
-			sn := sessionName(cityName, a.QualifiedName(), st)
+			sn := sessionName(nil, cityName, a.QualifiedName(), st)
 			it.setTimeout(sn, timeout)
 		}
 	}
@@ -408,8 +408,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	// Called once for one-shot, or on each tick for controller mode.
 	// Pool check commands are re-evaluated each call. Accepts a *config.City
 	// parameter so the controller loop can pass freshly-reloaded config.
-	buildAgents := func(c *config.City, currentSP runtime.Provider) map[string]TemplateParams {
-		return buildDesiredState(cityName, cityPath, beaconTime, c, currentSP, stderr)
+	buildAgents := func(c *config.City, currentSP runtime.Provider, store beads.Store) map[string]TemplateParams {
+		return buildDesiredState(cityName, cityPath, beaconTime, c, currentSP, store, stderr)
 	}
 
 	recorder := events.Discard
@@ -428,7 +428,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	// --dry-run: build agents and print preview without starting.
 	if dryRunMode {
-		agents := buildAgents(cfg, sp)
+		agents := buildAgents(cfg, sp, nil)
 		printDryRunPreview(agents, cfg, cityName, stdout)
 		return 0
 	}
@@ -451,7 +451,6 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	enforceGCPermissions(cityPath, stderr)
 
 	runPoolOnBoot(cfg, cityPath, shellScaleCheck, stderr)
-	agents := buildAgents(cfg, sp)
 	rops := newReconcileOps(sp)
 	// Upgrade to bead-driven rops so one-shot writes hashes to the same
 	// store as the daemon, preventing false drift on next daemon start.
@@ -468,8 +467,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "adoption barrier: %d session(s) failed bead creation\n", result.Skipped) //nolint:errcheck
 		}
 
-		cfgNames := configuredSessionNames(cfg, cityName)
-		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, stderr)
+		cfgNames := configuredSessionNames(cfg, cityName, store)
+		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, store, stderr)
 		idx := syncSessionBeads(store, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false)
 		if idx != nil {
 			bro := newBeadReconcileOps(rops, func() beads.Store { return store })
@@ -479,12 +478,13 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	} else {
 		fmt.Fprintf(stderr, "gc start: bead store unavailable, using provider hashes: %v\n", err) //nolint:errcheck
 	}
+	agents := buildAgents(cfg, sp, oneShotStore)
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath)
 	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr, sigCtx)
 	// Post-reconcile sync: update bead state to reflect post-start reality.
 	if oneShotStore != nil {
-		cfgNames := configuredSessionNames(cfg, cityName)
-		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, stderr)
+		cfgNames := configuredSessionNames(cfg, cityName, oneShotStore)
+		ds := buildDesiredState(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, stderr)
 		syncSessionBeads(oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false)
 	}
 	if code == 0 {
@@ -732,7 +732,7 @@ func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfi
 		instances := discoverPoolInstances(agentName, agentDir, pool, cityName, sessionTemplate, sp)
 		count := 0
 		for _, qn := range instances {
-			sn := sessionName(cityName, qn, sessionTemplate)
+			sn := sessionName(nil, cityName, qn, sessionTemplate)
 			if sp.IsRunning(sn) {
 				count++
 			}
@@ -748,7 +748,7 @@ func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfi
 		if agentDir != "" {
 			qualifiedInstance = agentDir + "/" + instanceName
 		}
-		expected[sessionName(cityName, qualifiedInstance, sessionTemplate)] = true
+		expected[sessionName(nil, cityName, qualifiedInstance, sessionTemplate)] = true
 	}
 
 	// Single ListRunning call, then intersect with expected set.

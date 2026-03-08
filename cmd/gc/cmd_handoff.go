@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -74,7 +73,7 @@ func cmdHandoff(args []string, target string, stdout, stderr io.Writer) int {
 	if cityName == "" {
 		cityName = filepath.Base(cityDir)
 	}
-	sn := sessionName(cityName, agentName, cfg.Workspace.SessionTemplate)
+	sn := sessionName(nil, cityName, agentName, cfg.Workspace.SessionTemplate)
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorder(stderr)
@@ -128,7 +127,7 @@ func cmdHandoffRemote(args []string, target string, stdout, stderr io.Writer) in
 		sender = "human"
 	}
 
-	sn := agent.SessionNameFor(cityName, targetName, cfg.Workspace.SessionTemplate)
+	sn := lookupSessionNameOrLegacy(store, cityName, targetName, cfg.Workspace.SessionTemplate)
 	return doHandoffRemote(store, rec, sp, sn, targetName, sender, args, stdout, stderr)
 }
 

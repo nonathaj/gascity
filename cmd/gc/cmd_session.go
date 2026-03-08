@@ -796,7 +796,7 @@ func cmdSessionNudge(args []string, stdout, stderr io.Writer) int {
 	}
 
 	sp := newSessionProvider()
-	sn := sessionName(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+	sn := sessionName(nil, cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
 
 	if !sp.IsRunning(sn) {
 		fmt.Fprintf(stderr, "gc session nudge: session %q is not running\n", found.QualifiedName()) //nolint:errcheck // best-effort stderr

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/spf13/cobra"
@@ -79,6 +78,7 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 
 	sp := newSessionProvider()
 	st := cfg.Workspace.SessionTemplate
+	store, _ := openCityStoreAt(cityPath)
 	var sessionNames []string
 	desired := make(map[string]bool, len(cfg.Agents))
 	for _, a := range cfg.Agents {
@@ -86,13 +86,13 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 		qn := a.QualifiedName()
 		if !pool.IsMultiInstance() {
 			// Single agent.
-			sn := agent.SessionNameFor(cityName, qn, st)
+			sn := lookupSessionNameOrLegacy(store, cityName, qn, st)
 			sessionNames = append(sessionNames, sn)
 			desired[sn] = true
 		} else {
 			// Pool agent: discover instances (static for bounded, live for unlimited).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := agent.SessionNameFor(cityName, qualifiedInstance, st)
+				sn := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, st)
 				sessionNames = append(sessionNames, sn)
 				desired[sn] = true
 			}

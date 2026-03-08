@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -369,7 +370,7 @@ func TestControllerSocketPing(t *testing.T) {
 	writeCityTOML(t, dir, "test", "worker")
 
 	sp := runtime.NewFake()
-	buildFn := func(_ *config.City, _ runtime.Provider) map[string]TemplateParams {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		return map[string]TemplateParams{
 			"worker": {
 				SessionName:  "worker",

@@ -20,6 +20,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gastownhall/gascity/internal/api"
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/events"
@@ -366,7 +367,7 @@ func controllerLoop(
 	cityName string,
 	tomlPath string,
 	watchDirs []string,
-	buildFn func(*config.City, runtime.Provider) map[string]TemplateParams,
+	buildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams,
 	sp runtime.Provider,
 	rops reconcileOps,
 	dops drainOps,
@@ -459,7 +460,7 @@ func runController(
 	cityPath string,
 	tomlPath string,
 	cfg *config.City,
-	buildFn func(*config.City, runtime.Provider) map[string]TemplateParams,
+	buildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams,
 	sp runtime.Provider,
 	dops drainOps,
 	poolSessions map[string]time.Duration,

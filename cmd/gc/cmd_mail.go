@@ -10,7 +10,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
@@ -461,13 +460,14 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 		if cityName == "" {
 			cityName = filepath.Base(cityPath)
 		}
+		nudgeStore, _ := openCityStoreAt(cityPath)
 		nf = func(recipient string) error {
 			found, ok := resolveAgentIdentity(cfg, recipient, currentRigContext(cfg))
 			if !ok {
 				return fmt.Errorf("agent %q not found", recipient)
 			}
 			sp := newSessionProvider()
-			sn := agent.SessionNameFor(cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+			sn := lookupSessionNameOrLegacy(nudgeStore, cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
 			return sp.Nudge(sn, runtime.TextContent(fmt.Sprintf("You have mail from %s", sender)))
 		}
 	}

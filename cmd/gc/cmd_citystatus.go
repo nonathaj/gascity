@@ -174,7 +174,7 @@ func doCityStatus(
 				}
 				fmt.Fprintf(stdout, "  %-24spool (min=%d, %s)\n", a.QualifiedName(), pool.Min, maxDisplay) //nolint:errcheck // best-effort stdout
 				for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, cfg.Workspace.SessionTemplate, sp) {
-					sn := sessionName(cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
+					sn := sessionName(nil, cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
 					status := agentStatusLine(sp, dops, sn, suspended)
 					fmt.Fprintf(stdout, "    %-22s%s\n", qualifiedInstance, status) //nolint:errcheck // best-effort stdout
 					totalAgents++
@@ -184,7 +184,7 @@ func doCityStatus(
 				}
 			} else {
 				// Singleton agent.
-				sn := sessionName(cityName, a.QualifiedName(), cfg.Workspace.SessionTemplate)
+				sn := sessionName(nil, cityName, a.QualifiedName(), cfg.Workspace.SessionTemplate)
 				status := agentStatusLine(sp, dops, sn, suspended)
 				fmt.Fprintf(stdout, "  %-24s%s\n", a.QualifiedName(), status) //nolint:errcheck // best-effort stdout
 				totalAgents++
@@ -277,7 +277,7 @@ func doCityStatusJSON(
 			// Pool agent — emit each instance.
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, cfg.Workspace.SessionTemplate, sp) {
 				_, instanceName := config.ParseQualifiedName(qualifiedInstance)
-				sn := sessionName(cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
+				sn := sessionName(nil, cityName, qualifiedInstance, cfg.Workspace.SessionTemplate)
 				running := sp.IsRunning(sn)
 				agents = append(agents, StatusAgentJSON{
 					Name:          instanceName,
@@ -294,7 +294,7 @@ func doCityStatusJSON(
 			}
 		} else {
 			// Singleton agent.
-			sn := sessionName(cityName, a.QualifiedName(), cfg.Workspace.SessionTemplate)
+			sn := sessionName(nil, cityName, a.QualifiedName(), cfg.Workspace.SessionTemplate)
 			running := sp.IsRunning(sn)
 			agents = append(agents, StatusAgentJSON{
 				Name:          a.Name,

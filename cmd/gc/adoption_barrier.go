@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -98,7 +97,7 @@ func runAdoptionBarrier(
 	agentByQN := make(map[string]*config.Agent, len(cfg.Agents))
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
-		sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
+		sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)
 		agentBySession[sn] = a
 		agentByQN[a.QualifiedName()] = a
 	}
@@ -123,7 +122,7 @@ func runAdoptionBarrier(
 		cfgAgent, isConfigAgent := agentBySession[sessionName]
 		isPoolInstance := false
 		if !isConfigAgent {
-			if base := resolvePoolBase(sessionName, cityName, st, agentByQN); base != nil {
+			if base := resolvePoolBase(sessionName, store, cityName, st, agentByQN); base != nil {
 				cfgAgent = base
 				isConfigAgent = true
 				isPoolInstance = true
@@ -201,7 +200,7 @@ func runAdoptionBarrier(
 // base template agent. It strips the numeric suffix (e.g., "worker-3" -> "worker")
 // and checks whether the resulting base name corresponds to a configured agent.
 // Returns nil if no match is found.
-func resolvePoolBase(sessionName, cityName, sessionTemplate string, agentByQN map[string]*config.Agent) *config.Agent {
+func resolvePoolBase(sessionName string, store beads.Store, cityName, sessionTemplate string, agentByQN map[string]*config.Agent) *config.Agent {
 	slot := parsePoolSlot(sessionName)
 	if slot == 0 {
 		return nil
@@ -214,7 +213,7 @@ func resolvePoolBase(sessionName, cityName, sessionTemplate string, agentByQN ma
 		if a.Pool == nil {
 			continue
 		}
-		sn := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+		sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), sessionTemplate)
 		if sn == baseSessName {
 			return a
 		}

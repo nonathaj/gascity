@@ -14,7 +14,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -63,6 +62,7 @@ func allDependenciesAlive(
 	desiredState map[string]TemplateParams,
 	sp runtime.Provider,
 	cityName string,
+	store beads.Store,
 ) bool {
 	template := session.Metadata["template"]
 	cfgAgent := findAgentByTemplate(cfg, template)
@@ -89,7 +89,7 @@ func allDependenciesAlive(
 			}
 		} else {
 			// Fixed agent: check single instance via Provider.
-			sn := agent.SessionNameFor(cityName, dep, st)
+			sn := lookupSessionNameOrLegacy(store, cityName, dep, st)
 			depTP, hasDep := desiredState[sn]
 			var depProcessNames []string
 			if hasDep {
@@ -289,7 +289,7 @@ func reconcileSessionBeads(
 			if wakeCount >= defaultMaxWakesPerTick {
 				continue // budget exceeded, defer to next tick
 			}
-			if !allDependenciesAlive(*session, cfg, desiredState, sp, cityName) {
+			if !allDependenciesAlive(*session, cfg, desiredState, sp, cityName, store) {
 				continue // dependencies not ready
 			}
 

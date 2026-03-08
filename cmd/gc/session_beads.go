@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -278,11 +277,24 @@ func syncSessionBeads(
 // configuredSessionNames builds the set of ALL configured agent session names
 // from the config, including suspended agents. Used to distinguish "orphaned"
 // (removed from config) from "suspended" (still in config, not runnable).
-func configuredSessionNames(cfg *config.City, cityName string) map[string]bool {
+//
+// For non-pool agents, a bead-derived session name is used (falling back to
+// the legacy SessionNameFor). For pool agents, the base template name is
+// included — individual pool instances are NOT in this set, so scale-down
+// excess instances are correctly classified as "orphaned".
+func configuredSessionNames(cfg *config.City, cityName string, store beads.Store) map[string]bool {
 	st := cfg.Workspace.SessionTemplate
 	names := make(map[string]bool, len(cfg.Agents))
 	for _, a := range cfg.Agents {
-		names[agent.SessionNameFor(cityName, a.QualifiedName(), st)] = true
+		if a.IsPool() {
+			// Pool agents: include the base template name only.
+			// Pool instances (e.g., "worker-1", "worker-2") are NOT
+			// included — they match by desiredState membership, not
+			// configuredNames.
+			names[a.QualifiedName()] = true
+		} else {
+			names[lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)] = true
+		}
 	}
 	return names
 }

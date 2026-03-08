@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -400,7 +399,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 
 	// Nudge target if requested.
 	if opts.Nudge {
-		doSlingNudge(&a, deps.CityName, deps.CityPath, deps.Cfg, deps.SP, deps.Stdout, deps.Stderr)
+		doSlingNudge(&a, deps.CityName, deps.CityPath, deps.Cfg, deps.SP, deps.Store, deps.Stdout, deps.Stderr)
 	}
 
 	return 0
@@ -558,7 +557,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 
 	// Nudge once after all children.
 	if opts.Nudge && routed > 0 {
-		doSlingNudge(&a, deps.CityName, deps.CityPath, deps.Cfg, deps.SP, deps.Stdout, deps.Stderr)
+		doSlingNudge(&a, deps.CityName, deps.CityPath, deps.Cfg, deps.SP, deps.Store, deps.Stdout, deps.Stderr)
 	}
 
 	if failed > 0 {
@@ -758,7 +757,7 @@ func checkBeadState(q BeadQuerier, beadID string, a config.Agent) beadCheckResul
 // running, pokes the controller to trigger an immediate reconciler tick
 // so WakeWork can wake the session without waiting for the next patrol.
 func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
-	sp runtime.Provider, stdout, stderr io.Writer,
+	sp runtime.Provider, store beads.Store, stdout, stderr io.Writer,
 ) {
 	st := cfg.Workspace.SessionTemplate
 
@@ -771,7 +770,7 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 		// Find a running pool member to nudge.
 		pool := a.EffectivePool()
 		for _, qn := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-			sn := agent.SessionNameFor(cityName, qn, st)
+			sn := lookupSessionNameOrLegacy(store, cityName, qn, st)
 			if sp.IsRunning(sn) {
 				if err := sp.Nudge(sn, runtime.TextContent("Work slung. Check your hook.")); err != nil {
 					fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
@@ -791,7 +790,7 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 	}
 
 	// Fixed agent: nudge directly.
-	sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
+	sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)
 	if !sp.IsRunning(sn) {
 		// Session is asleep — poke controller for immediate wake.
 		if err := pokeController(cityPath); err != nil {
@@ -928,7 +927,7 @@ func dryRunSingle(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 
 	// Nudge section.
 	if opts.Nudge {
-		printNudgePreview(w, a, deps.CityName, deps.SP, deps.Cfg)
+		printNudgePreview(w, a, deps.CityName, deps.SP, deps.Store, deps.Cfg)
 	}
 
 	w("No side effects executed (--dry-run).")
@@ -1013,7 +1012,7 @@ func dryRunBatch(opts slingOpts, deps slingDeps,
 
 	// Nudge section.
 	if opts.Nudge {
-		printNudgePreview(w, a, deps.CityName, deps.SP, deps.Cfg)
+		printNudgePreview(w, a, deps.CityName, deps.SP, deps.Store, deps.Cfg)
 	}
 
 	w("No side effects executed (--dry-run).")
@@ -1079,11 +1078,11 @@ func printBeadInfo(w func(string), q BeadQuerier, beadID string) {
 
 // printNudgePreview prints the Nudge section for dry-run output.
 func printNudgePreview(w func(string), a config.Agent, cityName string,
-	sp runtime.Provider, cfg *config.City,
+	sp runtime.Provider, store beads.Store, cfg *config.City,
 ) {
 	st := cfg.Workspace.SessionTemplate
 	w("Nudge:")
-	sn := agent.SessionNameFor(cityName, a.QualifiedName(), st)
+	sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)
 	if sp.IsRunning(sn) {
 		w("  Would nudge " + a.QualifiedName() + " (session " + sn + ").")
 		w("  Currently: running ✓")
