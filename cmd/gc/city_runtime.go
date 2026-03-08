@@ -510,12 +510,13 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Age
 	// Compute pool desired counts from the already-evaluated agent list.
 	poolDesired := derivePoolDesired(agents, cr.cfg)
 
-	cityName := cr.cfg.Workspace.Name
-	if cityName == "" {
-		cityName = cr.cityName
-	}
+	// Use cr.cityName consistently — it's the authoritative runtime name.
+	// cr.cfg.Workspace.Name may drift on config reload; using it here would
+	// cause allDependenciesAlive to build wrong session names for agentIndex
+	// lookups when the two values diverge.
+	cityName := cr.cityName
 
-	cfgNames := configuredSessionNames(cr.cfg, cr.cityName)
+	cfgNames := configuredSessionNames(cr.cfg, cityName)
 	reconcileSessionBeads(
 		ctx, open, agentIndex, cfgNames, cr.cfg, cr.sp, store,
 		cr.sessionDrains, poolDesired, cityName,

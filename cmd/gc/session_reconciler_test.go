@@ -625,6 +625,32 @@ func TestReconcileSessionBeads_CancelsDrainOnWakeReason(t *testing.T) {
 	}
 }
 
+func TestReconcileSessionBeads_StartFailureNoDoubleCounting(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	a := env.addAgent("worker", false)
+	a.StartErr = fmt.Errorf("start failed")
+	session := env.createSessionBead("worker", "worker")
+
+	// First tick: Start fails, wake_attempts should be 1.
+	env.reconcile([]beads.Bead{session})
+	b, _ := env.store.Get(session.ID)
+	if b.Metadata["wake_attempts"] != "1" {
+		t.Fatalf("after first tick: wake_attempts = %q, want 1", b.Metadata["wake_attempts"])
+	}
+
+	// Second tick: session is still dead. checkStability should NOT
+	// double-count because last_woke_at was cleared on Start failure.
+	// Reload bead from store to get updated metadata.
+	b, _ = env.store.Get(session.ID)
+	env.reconcile([]beads.Bead{b})
+	b, _ = env.store.Get(session.ID)
+	// After second tick: wake_attempts should be 2 (one per tick), not 3.
+	if b.Metadata["wake_attempts"] != "2" {
+		t.Errorf("after second tick: wake_attempts = %q, want 2", b.Metadata["wake_attempts"])
+	}
+}
+
 func TestReconcileSessionBeads_PoolExcessDrainsAliveSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{

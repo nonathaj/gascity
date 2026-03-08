@@ -249,17 +249,20 @@ func reconcileSessionBeads(
 						currentLive := runtime.LiveFingerprint(agentCfg)
 						if storedLive != currentLive {
 							fmt.Fprintf(stdout, "Live config changed for '%s', re-applying...\n", a.Name()) //nolint:errcheck
-							_ = sp.RunLive(name, agentCfg)
-							_ = store.SetMetadataBatch(session.ID, map[string]string{
-								"live_hash":         currentLive,
-								"started_live_hash": currentLive,
-							})
-							rec.Record(events.Event{
-								Type:    events.AgentUpdated,
-								Actor:   "gc",
-								Subject: a.Name(),
-								Message: "session_live re-applied",
-							})
+							if err := sp.RunLive(name, agentCfg); err != nil {
+								fmt.Fprintf(stderr, "session reconciler: RunLive %s: %v\n", name, err) //nolint:errcheck
+							} else {
+								_ = store.SetMetadataBatch(session.ID, map[string]string{
+									"live_hash":         currentLive,
+									"started_live_hash": currentLive,
+								})
+								rec.Record(events.Event{
+									Type:    events.AgentUpdated,
+									Actor:   "gc",
+									Subject: a.Name(),
+									Message: "session_live re-applied",
+								})
+							}
 						}
 					}
 				}
@@ -301,6 +304,10 @@ func reconcileSessionBeads(
 			}
 			if err != nil {
 				fmt.Fprintf(stderr, "session reconciler: starting %s: %v\n", name, err) //nolint:errcheck
+				// Clear last_woke_at so checkStability on the next tick
+				// doesn't see a recent wake and double-count this failure.
+				_ = store.SetMetadata(session.ID, "last_woke_at", "")
+				session.Metadata["last_woke_at"] = ""
 				recordWakeFailure(session, store, clk)
 				continue
 			}
