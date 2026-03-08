@@ -123,7 +123,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		defer cleanup()
 
 		p.Record(events.Event{
-			Type:    events.AgentStarted,
+			Type:    events.SessionWoke,
 			Actor:   "controller",
 			Subject: "worker-1",
 			Message: "agent started successfully",
@@ -137,8 +137,8 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 			t.Fatalf("List returned %d events, want 1", len(got))
 		}
 		e := got[0]
-		if e.Type != events.AgentStarted {
-			t.Errorf("Type = %q, want %q", e.Type, events.AgentStarted)
+		if e.Type != events.SessionWoke {
+			t.Errorf("Type = %q, want %q", e.Type, events.SessionWoke)
 		}
 		if e.Actor != "controller" {
 			t.Errorf("Actor = %q, want %q", e.Actor, "controller")
@@ -157,7 +157,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
 		p.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 
 		got, err := p.List(events.Filter{})
 		if err != nil {
@@ -192,7 +192,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
 		p.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 
 		got, err := p.List(events.Filter{Type: events.BeadCreated})
 		if err != nil {
@@ -211,7 +211,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		defer cleanup()
 
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 		p.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
 
 		got, err := p.List(events.Filter{Actor: "gc"})
@@ -232,7 +232,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
 		p.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 
 		// Get all events to find seq values.
 		all, err := p.List(events.Filter{})
@@ -264,7 +264,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 
 		past := time.Now().Add(-2 * time.Hour)
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human", Ts: past})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"}) // auto-filled = now
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"}) // auto-filled = now
 
 		since := time.Now().Add(-1 * time.Hour)
 		got, err := p.List(events.Filter{Since: since})
@@ -274,8 +274,8 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		if len(got) != 1 {
 			t.Fatalf("List(Since) returned %d events, want 1", len(got))
 		}
-		if got[0].Type != events.AgentStarted {
-			t.Errorf("Type = %q, want %q", got[0].Type, events.AgentStarted)
+		if got[0].Type != events.SessionWoke {
+			t.Errorf("Type = %q, want %q", got[0].Type, events.SessionWoke)
 		}
 	})
 
@@ -358,7 +358,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
 		p.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
-		p.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 
 		seq, err := p.LatestSeq()
 		if err != nil {
@@ -484,7 +484,7 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		// Record a new event.
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			p.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "worker-1"})
+			p.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "worker-1"})
 		}()
 
 		e, err := w.Next()

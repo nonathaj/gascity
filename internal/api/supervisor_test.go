@@ -258,8 +258,8 @@ func TestSupervisorGlobalEventList(t *testing.T) {
 	s2.cityName = "beta"
 
 	// Record events in each city's event provider.
-	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
-	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "b1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionWoke, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionStopped, Actor: "b1"})
 
 	sm := newTestSupervisorMux(t, map[string]*fakeState{
 		"alpha": s1,
@@ -298,12 +298,12 @@ func TestSupervisorGlobalEventList(t *testing.T) {
 func TestSupervisorGlobalEventListWithFilter(t *testing.T) {
 	s1 := newFakeState(t)
 	s1.cityName = "alpha"
-	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
-	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "a1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionWoke, Actor: "a1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionStopped, Actor: "a1"})
 
 	sm := newTestSupervisorMux(t, map[string]*fakeState{"alpha": s1})
 
-	req := httptest.NewRequest("GET", "/v0/events?type=agent.started", nil)
+	req := httptest.NewRequest("GET", "/v0/events?type=session.woke", nil)
 	rec := httptest.NewRecorder()
 	sm.ServeHTTP(rec, req)
 
@@ -321,8 +321,8 @@ func TestSupervisorGlobalEventListWithFilter(t *testing.T) {
 	if resp.Total != 1 {
 		t.Errorf("total = %d, want 1", resp.Total)
 	}
-	if resp.Items[0].Type != events.AgentStarted {
-		t.Errorf("type = %q, want %q", resp.Items[0].Type, events.AgentStarted)
+	if resp.Items[0].Type != events.SessionWoke {
+		t.Errorf("type = %q, want %q", resp.Items[0].Type, events.SessionWoke)
 	}
 }
 
@@ -376,8 +376,8 @@ func TestSupervisorGlobalEventStreamCompositeCursor(t *testing.T) {
 
 	// Record events after the stream handler starts.
 	time.Sleep(50 * time.Millisecond)
-	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
-	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "b1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionWoke, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.SessionWoke, Actor: "b1"})
 
 	// Give events time to propagate through the stream.
 	time.Sleep(200 * time.Millisecond)

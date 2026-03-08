@@ -945,7 +945,7 @@ func doAgentKill(sp runtime.Provider, rec events.Recorder,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentStopped,
+		Type:    events.SessionStopped,
 		Actor:   eventActor(),
 		Subject: agentName,
 	})

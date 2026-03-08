@@ -71,7 +71,7 @@ func TestLastControllerStarted(t *testing.T) {
 		Ts   time.Time `json:"ts"`
 	}{
 		{"controller.started", ts1},
-		{"agent.started", time.Now()},
+		{"session.woke", time.Now()},
 		{"controller.started", ts2},
 	} {
 		b, _ := json.Marshal(ev)

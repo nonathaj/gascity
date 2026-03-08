@@ -148,7 +148,7 @@ func cmdAgentStop(input string, stdout, stderr io.Writer) int {
 		_ = reg.stop(templateQN, instanceName)
 		rec := openCityRecorder(stderr)
 		rec.Record(events.Event{
-			Type:    events.AgentStopped,
+			Type:    events.SessionStopped,
 			Actor:   eventActor(),
 			Subject: instanceQN,
 		})

@@ -158,8 +158,8 @@ func TestDoAgentDrain(t *testing.T) {
 	if got := stdout.String(); got != "Draining agent 'worker'\n" {
 		t.Errorf("stdout = %q, want %q", got, "Draining agent 'worker'\n")
 	}
-	if len(rec.Events) != 1 || rec.Events[0].Type != events.AgentDraining {
-		t.Errorf("events = %v, want one AgentDraining event", rec.Events)
+	if len(rec.Events) != 1 || rec.Events[0].Type != events.SessionDraining {
+		t.Errorf("events = %v, want one SessionDraining event", rec.Events)
 	}
 	if rec.Events[0].Subject != "worker" {
 		t.Errorf("event subject = %q, want %q", rec.Events[0].Subject, "worker")
@@ -222,8 +222,8 @@ func TestDoAgentUndrain(t *testing.T) {
 	if got := stdout.String(); got != "Undrained agent 'worker'\n" {
 		t.Errorf("stdout = %q, want %q", got, "Undrained agent 'worker'\n")
 	}
-	if len(rec.Events) != 1 || rec.Events[0].Type != events.AgentUndrained {
-		t.Errorf("events = %v, want one AgentUndrained event", rec.Events)
+	if len(rec.Events) != 1 || rec.Events[0].Type != events.SessionUndrained {
+		t.Errorf("events = %v, want one SessionUndrained event", rec.Events)
 	}
 }
 

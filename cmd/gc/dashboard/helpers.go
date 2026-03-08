@@ -158,13 +158,21 @@ func calculateWorkerWorkStatus(activityAge time.Duration, issueID, workerName st
 // eventCategory classifies an event type for filtering/display.
 func eventCategory(eventType string) string {
 	switch eventType {
-	case "spawn", "kill", "session_start", "session_end", "session_death", "mass_death", "nudge", "handoff":
-		return "agent"
-	case "sling", "hook", "unhook", "done", "merge_started", "merged", "merge_failed":
+	case "session.woke", "session.stopped", "session.crashed",
+		"session.draining", "session.undrained", "session.quarantined",
+		"session.idle_killed", "session.suspended", "session.updated":
+		return "session"
+	case "bead.created", "bead.closed", "bead.updated":
 		return "work"
-	case "mail", "escalation_sent", "escalation_acked", "escalation_closed":
+	case "mail.sent", "mail.read", "mail.archived",
+		"mail.marked_read", "mail.marked_unread",
+		"mail.replied", "mail.deleted":
 		return "comms"
-	case "boot", "halt", "patrol_started", "patrol_complete":
+	case "controller.started", "controller.stopped",
+		"city.suspended", "city.resumed",
+		"convoy.created", "convoy.closed",
+		"automation.fired", "automation.completed", "automation.failed",
+		"provider.swapped":
 		return "system"
 	default:
 		return "system"
@@ -183,29 +191,31 @@ func extractRig(actor string) string {
 // eventIcon returns an emoji for an event type.
 func eventIcon(eventType string) string {
 	icons := map[string]string{
-		"sling":             "\U0001f3af", // target
-		"hook":              "\U0001fa9d", // hook
-		"unhook":            "\U0001f513", // unlocked
-		"done":              "\u2705",     // check mark
-		"mail":              "\U0001f4ec", // mailbox
-		"spawn":             "\U0001f9a8", // skunk (polecat)
-		"kill":              "\U0001f480", // skull
-		"nudge":             "\U0001f449", // pointing right
-		"handoff":           "\U0001f91d", // handshake
-		"session_start":     "\u25b6\ufe0f",
-		"session_end":       "\u23f9\ufe0f",
-		"session_death":     "\u2620\ufe0f",
-		"mass_death":        "\U0001f4a5", // collision
-		"patrol_started":    "\U0001f50d", // magnifying glass
-		"patrol_complete":   "\u2714\ufe0f",
-		"escalation_sent":   "\u26a0\ufe0f",
-		"escalation_acked":  "\U0001f44d", // thumbs up
-		"escalation_closed": "\U0001f515", // bell slash
-		"merge_started":     "\U0001f500", // shuffle
-		"merged":            "\u2728",     // sparkles
-		"merge_failed":      "\u274c",     // cross mark
-		"boot":              "\U0001f680", // rocket
-		"halt":              "\U0001f6d1", // stop sign
+		"session.woke":         "\u25b6\ufe0f", // play
+		"session.stopped":      "\u23f9\ufe0f", // stop
+		"session.crashed":      "\u2620\ufe0f", // skull and crossbones
+		"session.draining":     "\u23f3",       // hourglass
+		"session.undrained":    "\u25b6\ufe0f", // play (resumed)
+		"session.quarantined":  "\U0001f6ab",   // no entry
+		"session.idle_killed":  "\U0001f480",   // skull
+		"session.suspended":    "\u23f8\ufe0f", // pause
+		"session.updated":      "\U0001f504",   // counterclockwise arrows
+		"bead.created":         "\U0001fa9d",   // hook
+		"bead.closed":          "\u2705",       // check mark
+		"bead.updated":         "\U0001f4dd",   // memo
+		"mail.sent":            "\U0001f4ec",   // mailbox
+		"mail.read":            "\U0001f4e8",   // incoming envelope
+		"mail.archived":        "\U0001f4e6",   // package
+		"controller.started":   "\U0001f680",   // rocket
+		"controller.stopped":   "\U0001f6d1",   // stop sign
+		"city.suspended":       "\u23f8\ufe0f", // pause
+		"city.resumed":         "\u25b6\ufe0f", // play
+		"convoy.created":       "\U0001f69a",   // delivery truck
+		"convoy.closed":        "\u2705",       // check mark
+		"automation.fired":     "\u26a1",       // lightning
+		"automation.completed": "\u2714\ufe0f", // check
+		"automation.failed":    "\u274c",       // cross mark
+		"provider.swapped":     "\U0001f500",   // shuffle
 	}
 	if icon, ok := icons[eventType]; ok {
 		return icon
@@ -214,52 +224,57 @@ func eventIcon(eventType string) string {
 }
 
 // eventSummary generates a human-readable summary for an event.
-func eventSummary(eventType, actor string, payload map[string]interface{}) string {
+// Real events use Actor/Subject/Message fields from events.Event.
+func eventSummary(eventType, actor, subject, message string) string {
 	shortActor := formatAgentAddress(actor)
 
 	switch eventType {
-	case "sling":
-		bead, _ := payload["bead"].(string)
-		target, _ := payload["target"].(string)
-		return fmt.Sprintf("%s slung to %s", bead, formatAgentAddress(target))
-	case "done":
-		bead, _ := payload["bead"].(string)
-		return fmt.Sprintf("%s completed %s", shortActor, bead)
-	case "mail":
-		to, _ := payload["to"].(string)
-		subject, _ := payload["subject"].(string)
-		if len(subject) > 25 {
-			subject = subject[:22] + "..."
+	case "session.woke":
+		return fmt.Sprintf("%s woke", formatAgentAddress(subject))
+	case "session.stopped":
+		return fmt.Sprintf("%s stopped", formatAgentAddress(subject))
+	case "session.crashed":
+		return fmt.Sprintf("%s crashed", formatAgentAddress(subject))
+	case "session.draining":
+		return fmt.Sprintf("%s draining", formatAgentAddress(subject))
+	case "session.undrained":
+		return fmt.Sprintf("%s undrained", formatAgentAddress(subject))
+	case "session.quarantined":
+		return fmt.Sprintf("%s quarantined", formatAgentAddress(subject))
+	case "session.idle_killed":
+		return fmt.Sprintf("%s idle-killed", formatAgentAddress(subject))
+	case "session.suspended":
+		return fmt.Sprintf("%s suspended", formatAgentAddress(subject))
+	case "session.updated":
+		return fmt.Sprintf("%s updated", formatAgentAddress(subject))
+	case "bead.created":
+		return fmt.Sprintf("%s created bead %s", shortActor, subject)
+	case "bead.closed":
+		return fmt.Sprintf("%s closed bead %s", shortActor, subject)
+	case "bead.updated":
+		return fmt.Sprintf("%s updated bead %s", shortActor, subject)
+	case "mail.sent":
+		return fmt.Sprintf("%s sent mail to %s", shortActor, formatAgentAddress(subject))
+	case "controller.started":
+		return "controller started"
+	case "controller.stopped":
+		return "controller stopped"
+	case "automation.fired":
+		if message != "" {
+			return fmt.Sprintf("automation fired: %s", message)
 		}
-		return fmt.Sprintf("\u2192 %s: %s", formatAgentAddress(to), subject)
-	case "spawn":
-		return fmt.Sprintf("%s spawned", shortActor)
-	case "kill":
-		return fmt.Sprintf("%s killed", shortActor)
-	case "hook":
-		bead, _ := payload["bead"].(string)
-		return fmt.Sprintf("%s hooked %s", shortActor, bead)
-	case "unhook":
-		bead, _ := payload["bead"].(string)
-		return fmt.Sprintf("%s unhooked %s", shortActor, bead)
-	case "merged":
-		branch, _ := payload["branch"].(string)
-		return fmt.Sprintf("merged %s", branch)
-	case "merge_failed":
-		reason, _ := payload["reason"].(string)
-		if len(reason) > 30 {
-			reason = reason[:27] + "..."
+		return "automation fired"
+	case "automation.completed":
+		return "automation completed"
+	case "automation.failed":
+		if message != "" {
+			return fmt.Sprintf("automation failed: %s", message)
 		}
-		return fmt.Sprintf("merge failed: %s", reason)
-	case "escalation_sent":
-		return "escalation created"
-	case "session_death":
-		role, _ := payload["role"].(string)
-		return fmt.Sprintf("%s session died", formatAgentAddress(role))
-	case "mass_death":
-		count, _ := payload["count"].(float64)
-		return fmt.Sprintf("%.0f sessions died", count)
+		return "automation failed"
 	default:
+		if message != "" {
+			return message
+		}
 		return eventType
 	}
 }

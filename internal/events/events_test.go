@@ -301,7 +301,7 @@ func TestFakeList(t *testing.T) {
 	f := NewFake()
 	f.Record(Event{Type: BeadCreated, Actor: "human", Subject: "gc-1"})
 	f.Record(Event{Type: BeadClosed, Actor: "human", Subject: "gc-1"})
-	f.Record(Event{Type: AgentStarted, Actor: "gc", Subject: "mayor"})
+	f.Record(Event{Type: SessionWoke, Actor: "gc", Subject: "mayor"})
 
 	all, err := f.List(Filter{})
 	if err != nil {
@@ -429,7 +429,7 @@ func TestReadFiltered(t *testing.T) {
 	past := now.Add(-2 * time.Hour)
 	rec.Record(Event{Type: BeadCreated, Actor: "human", Subject: "gc-1", Ts: past})
 	rec.Record(Event{Type: BeadClosed, Actor: "human", Subject: "gc-1", Ts: past})
-	rec.Record(Event{Type: AgentStarted, Actor: "gc", Subject: "mayor", Ts: now})
+	rec.Record(Event{Type: SessionWoke, Actor: "gc", Subject: "mayor", Ts: now})
 	rec.Close() //nolint:errcheck // test cleanup
 
 	t.Run("by_type", func(t *testing.T) {
@@ -467,8 +467,8 @@ func TestReadFiltered(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("got %d, want 1", len(got))
 		}
-		if got[0].Type != AgentStarted {
-			t.Errorf("Type = %q, want %q", got[0].Type, AgentStarted)
+		if got[0].Type != SessionWoke {
+			t.Errorf("Type = %q, want %q", got[0].Type, SessionWoke)
 		}
 	})
 
@@ -628,7 +628,7 @@ func TestReadFrom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec2.Record(Event{Type: AgentStarted, Actor: "gc", Subject: "mayor"})
+	rec2.Record(Event{Type: SessionWoke, Actor: "gc", Subject: "mayor"})
 	rec2.Close() //nolint:errcheck // test cleanup
 
 	// Read from mid-file offset → only new event
@@ -639,8 +639,8 @@ func TestReadFrom(t *testing.T) {
 	if len(evts2) != 1 {
 		t.Fatalf("ReadFrom(mid) got %d events, want 1", len(evts2))
 	}
-	if evts2[0].Type != AgentStarted {
-		t.Errorf("ReadFrom(mid) Type = %q, want %q", evts2[0].Type, AgentStarted)
+	if evts2[0].Type != SessionWoke {
+		t.Errorf("ReadFrom(mid) Type = %q, want %q", evts2[0].Type, SessionWoke)
 	}
 	if off2 <= off {
 		t.Errorf("ReadFrom(mid) offset = %d, want > %d", off2, off)
@@ -704,7 +704,7 @@ func TestFileRecorderList(t *testing.T) {
 
 	rec.Record(Event{Type: BeadCreated, Actor: "human", Subject: "gc-1"})
 	rec.Record(Event{Type: BeadClosed, Actor: "human", Subject: "gc-1"})
-	rec.Record(Event{Type: AgentStarted, Actor: "gc", Subject: "mayor"})
+	rec.Record(Event{Type: SessionWoke, Actor: "gc", Subject: "mayor"})
 
 	// List all
 	all, err := rec.List(Filter{})

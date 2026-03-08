@@ -130,7 +130,7 @@ func doRigRestart(
 					continue
 				}
 				rec.Record(events.Event{
-					Type:    events.AgentStopped,
+					Type:    events.SessionStopped,
 					Actor:   eventActor(),
 					Subject: a.QualifiedName(),
 				})
@@ -146,7 +146,7 @@ func doRigRestart(
 						continue
 					}
 					rec.Record(events.Event{
-						Type:    events.AgentStopped,
+						Type:    events.SessionStopped,
 						Actor:   eventActor(),
 						Subject: qualifiedInstance,
 					})

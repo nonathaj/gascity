@@ -167,7 +167,7 @@ func doHandoff(store beads.Store, rec events.Recorder, dops drainOps,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentDraining,
+		Type:    events.SessionDraining,
 		Actor:   agentName,
 		Subject: agentName,
 		Message: "handoff",
@@ -218,7 +218,7 @@ func doHandoffRemote(store beads.Store, rec events.Recorder, sp runtime.Provider
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentStopped,
+		Type:    events.SessionStopped,
 		Actor:   sender,
 		Subject: targetName,
 		Message: "handoff",

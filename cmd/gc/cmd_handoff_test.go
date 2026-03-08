@@ -57,8 +57,8 @@ func TestHandoffSuccess(t *testing.T) {
 	if rec.Events[0].Type != events.MailSent {
 		t.Errorf("event[0].Type = %q, want %q", rec.Events[0].Type, events.MailSent)
 	}
-	if rec.Events[1].Type != events.AgentDraining {
-		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.AgentDraining)
+	if rec.Events[1].Type != events.SessionDraining {
+		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.SessionDraining)
 	}
 	if rec.Events[1].Message != "handoff" {
 		t.Errorf("event[1].Message = %q, want %q", rec.Events[1].Message, "handoff")
@@ -176,15 +176,15 @@ func TestHandoffRemoteRunning(t *testing.T) {
 		t.Error("target session should be stopped")
 	}
 
-	// Verify events: MailSent + AgentStopped.
+	// Verify events: MailSent + SessionStopped.
 	if len(rec.Events) != 2 {
 		t.Fatalf("got %d events, want 2", len(rec.Events))
 	}
 	if rec.Events[0].Type != events.MailSent {
 		t.Errorf("event[0].Type = %q, want %q", rec.Events[0].Type, events.MailSent)
 	}
-	if rec.Events[1].Type != events.AgentStopped {
-		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.AgentStopped)
+	if rec.Events[1].Type != events.SessionStopped {
+		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.SessionStopped)
 	}
 
 	// Verify stdout says killed.
@@ -210,7 +210,7 @@ func TestHandoffRemoteNotRunning(t *testing.T) {
 		t.Fatalf("got %d beads, want 1", len(all))
 	}
 
-	// Only MailSent event (no AgentStopped since not running).
+	// Only MailSent event (no SessionStopped since not running).
 	if len(rec.Events) != 1 {
 		t.Fatalf("got %d events, want 1", len(rec.Events))
 	}

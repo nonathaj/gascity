@@ -93,7 +93,7 @@ func TestE2E_EventsSince(t *testing.T) {
 }
 
 // TestE2E_AgentLifecycleEvents verifies that starting and stopping agents
-// produces agent.started and agent.stopped events.
+// produces session.woke and session.stopped events.
 func TestE2E_AgentLifecycleEvents(t *testing.T) {
 	city := e2eCity{
 		Agents: []e2eAgent{
@@ -102,8 +102,8 @@ func TestE2E_AgentLifecycleEvents(t *testing.T) {
 	}
 	cityDir := setupE2ECity(t, nil, city)
 
-	// Verify agent.started event exists.
-	verifyEvents(t, cityDir, "agent.started")
+	// Verify session.woke event exists.
+	verifyEvents(t, cityDir, "session.woke")
 
 	// Stop the agent.
 	out, err := gc("", "stop", cityDir)
@@ -114,6 +114,6 @@ func TestE2E_AgentLifecycleEvents(t *testing.T) {
 	// Give the event log a moment.
 	time.Sleep(500 * time.Millisecond)
 
-	// Verify agent.stopped event exists.
-	verifyEvents(t, cityDir, "agent.stopped")
+	// Verify session.stopped event exists.
+	verifyEvents(t, cityDir, "session.stopped")
 }

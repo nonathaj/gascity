@@ -179,8 +179,6 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		lastProviderName = v
 	}
 
-	observePaths := observeSearchPaths(cr.cfg.Daemon.ObservePaths)
-
 	cityRoot := filepath.Dir(cr.tomlPath)
 
 	// Enforce restrictive permissions on .gc/ and its subdirectories.
@@ -263,12 +261,12 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			cr.tick(ctx, dirty, &lastProviderName, &observePaths, cityRoot, &prevPoolRunning)
+			cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning)
 		case <-cr.pokeCh:
 			// Event-driven wake path: sling or API assigned work to a sleeping
 			// session. Trigger an immediate tick so the reconciler computes
 			// workSet and wakes the target without waiting for the next patrol.
-			cr.tick(ctx, dirty, &lastProviderName, &observePaths, cityRoot, &prevPoolRunning)
+			cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning)
 		case req := <-cr.convergenceReqCh:
 			// Low-latency path: process convergence commands between ticks.
 			// processConvergenceRequests() in tick() drains any that arrived
@@ -291,7 +289,6 @@ func (cr *CityRuntime) tick(
 	ctx context.Context,
 	dirty *atomic.Bool,
 	lastProviderName *string,
-	observePaths *[]string,
 	cityRoot string,
 	prevPoolRunning *map[string]bool,
 ) {
@@ -320,7 +317,7 @@ func (cr *CityRuntime) tick(
 	}
 
 	if dirty.Swap(false) {
-		cr.reloadConfig(ctx, lastProviderName, observePaths, cityRoot)
+		cr.reloadConfig(ctx, lastProviderName, cityRoot)
 	}
 
 	// Session bead sync BEFORE reconciliation (one-tick state lag; see run()).
@@ -374,7 +371,6 @@ func (cr *CityRuntime) tick(
 func (cr *CityRuntime) reloadConfig(
 	ctx context.Context,
 	lastProviderName *string,
-	observePaths *[]string,
 	cityRoot string,
 ) {
 	result, err := tryReloadConfig(cr.tomlPath, cr.cityName, cityRoot, cr.stderr)
@@ -480,8 +476,6 @@ func (cr *CityRuntime) reloadConfig(
 	}
 
 	cr.ad = buildAutomationDispatcher(cityRoot, cr.cfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
-
-	*observePaths = observeSearchPaths(cr.cfg.Daemon.ObservePaths)
 
 	if cr.cs != nil {
 		cr.cs.update(cr.cfg, cr.sp)

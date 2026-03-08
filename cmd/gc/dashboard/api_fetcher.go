@@ -691,12 +691,6 @@ func (f *APIFetcher) FetchActivity() ([]ActivityRow, error) {
 	for i := len(events) - 1; i >= start; i-- {
 		event := events[i]
 
-		// Parse payload for event summary.
-		var payload map[string]interface{}
-		if len(event.Payload) > 0 {
-			_ = json.Unmarshal(event.Payload, &payload)
-		}
-
 		// Subject holds the agent identity (e.g. "myrig/polecats/polecat-1");
 		// Actor is who initiated the action (e.g. "gc", "controller", "human").
 		// Use Subject for display when available, fall back to Actor.
@@ -718,7 +712,7 @@ func (f *APIFetcher) FetchActivity() ([]ActivityRow, error) {
 			row.Time = formatTimestamp(event.Ts)
 		}
 
-		row.Summary = eventSummary(event.Type, agent, payload)
+		row.Summary = eventSummary(event.Type, event.Actor, event.Subject, event.Message)
 		rows = append(rows, row)
 	}
 

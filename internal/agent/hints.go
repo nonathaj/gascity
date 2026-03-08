@@ -1,3 +1,4 @@
+// Package agent defines agent-level types shared across Gas City subsystems.
 package agent
 
 import "github.com/gastownhall/gascity/internal/runtime"

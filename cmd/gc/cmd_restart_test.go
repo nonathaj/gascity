@@ -43,13 +43,13 @@ func TestDoRigRestart(t *testing.T) {
 		t.Error("worker session still running")
 	}
 
-	// 2 AgentStopped events recorded.
+	// 2 SessionStopped events recorded.
 	if len(rec.Events) != 2 {
 		t.Fatalf("got %d events, want 2", len(rec.Events))
 	}
 	for _, e := range rec.Events {
-		if e.Type != events.AgentStopped {
-			t.Errorf("event type = %q, want %q", e.Type, events.AgentStopped)
+		if e.Type != events.SessionStopped {
+			t.Errorf("event type = %q, want %q", e.Type, events.SessionStopped)
 		}
 	}
 

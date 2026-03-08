@@ -170,7 +170,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				output, err := sp.Peek(name, 50)
 				if err == nil && output != "" {
 					rec.Record(events.Event{
-						Type:    events.AgentCrashed,
+						Type:    events.SessionCrashed,
 						Actor:   "gc",
 						Subject: tp.DisplayName(),
 						Message: output,
@@ -211,7 +211,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				_ = dops.clearRestartRequested(name)                                                   // clear before stop to prevent re-fire
 				fmt.Fprintf(stdout, "Agent '%s' requested restart, restarting...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
-					Type:    events.AgentStopped,
+					Type:    events.SessionStopped,
 					Actor:   "gc",
 					Subject: tp.DisplayName(),
 					Message: "restart requested by agent",
@@ -228,7 +228,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				_ = sp.ClearScrollback(name)                                    // best-effort: clean slate after restart
 				fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
-					Type:    events.AgentStarted,
+					Type:    events.SessionWoke,
 					Actor:   "gc",
 					Subject: tp.DisplayName(),
 				})
@@ -247,7 +247,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 		if it != nil && it.checkIdle(name, sp, time.Now()) {
 			fmt.Fprintf(stdout, "Agent '%s' idle too long, restarting...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
-				Type:    events.AgentIdleKilled,
+				Type:    events.SessionIdleKilled,
 				Actor:   "gc",
 				Subject: tp.DisplayName(),
 			})
@@ -264,7 +264,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 			_ = sp.ClearScrollback(name)                                    // best-effort: clean slate after restart
 			fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
-				Type:    events.AgentStarted,
+				Type:    events.SessionWoke,
 				Actor:   "gc",
 				Subject: tp.DisplayName(),
 			})
@@ -306,7 +306,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 					_ = sp.ClearScrollback(name)
 					fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 					rec.Record(events.Event{
-						Type:    events.AgentStarted,
+						Type:    events.SessionWoke,
 						Actor:   "gc",
 						Subject: tp.DisplayName(),
 					})
@@ -342,7 +342,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				_ = dops.setDriftRestart(name)
 				fmt.Fprintf(stdout, "Config changed for '%s', draining for restart...\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
-					Type:    events.AgentDraining,
+					Type:    events.SessionDraining,
 					Actor:   "gc",
 					Subject: tp.DisplayName(),
 					Message: "config drift detected",
@@ -361,7 +361,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				_ = sp.ClearScrollback(name)
 				fmt.Fprintf(stdout, "Restarted agent '%s'\n", tp.DisplayName()) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
-					Type:    events.AgentStarted,
+					Type:    events.SessionWoke,
 					Actor:   "gc",
 					Subject: tp.DisplayName(),
 				})
@@ -383,7 +383,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 			_ = rops.runLive(name, cfg)
 			_ = rops.storeLiveHash(name, currentLive)
 			rec.Record(events.Event{
-				Type:    events.AgentUpdated,
+				Type:    events.SessionUpdated,
 				Actor:   "gc",
 				Subject: tp.DisplayName(),
 				Message: "session_live re-applied",
@@ -435,7 +435,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 			// Check if this start just tripped the threshold.
 			if ct.isQuarantined(r.sessionName, time.Now()) {
 				rec.Record(events.Event{
-					Type:    events.AgentQuarantined,
+					Type:    events.SessionQuarantined,
 					Actor:   "gc",
 					Subject: r.tp.DisplayName(),
 					Message: "crash loop detected",
@@ -447,7 +447,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 
 		fmt.Fprintf(stdout, "Started agent '%s' (%s, %s)\n", r.tp.DisplayName(), r.reason, formatElapsed(r.elapsed)) //nolint:errcheck // best-effort stdout
 		rec.Record(events.Event{
-			Type:    events.AgentStarted,
+			Type:    events.SessionWoke,
 			Actor:   "gc",
 			Subject: r.tp.DisplayName(),
 		})
@@ -519,7 +519,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				} else {
 					fmt.Fprintf(stdout, "Stopped suspended agent '%s'\n", name) //nolint:errcheck // best-effort stdout
 					rec.Record(events.Event{
-						Type:    events.AgentSuspended,
+						Type:    events.SessionSuspended,
 						Actor:   "gc",
 						Subject: name,
 					})

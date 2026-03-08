@@ -297,7 +297,7 @@ func gracefulStopAll(
 			} else {
 				fmt.Fprintf(stdout, "Stopped agent '%s'\n", name) //nolint:errcheck // best-effort stdout
 				rec.Record(events.Event{
-					Type: events.AgentStopped, Actor: "gc", Subject: name,
+					Type: events.SessionStopped, Actor: "gc", Subject: name,
 				})
 			}
 		}
@@ -338,7 +338,7 @@ func gracefulStopAll(
 		if !sp.IsRunning(name) {
 			fmt.Fprintf(stdout, "Agent '%s' exited gracefully\n", name) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
-				Type: events.AgentStopped, Actor: "gc", Subject: name,
+				Type: events.SessionStopped, Actor: "gc", Subject: name,
 			})
 			continue
 		}
@@ -347,7 +347,7 @@ func gracefulStopAll(
 		} else {
 			fmt.Fprintf(stdout, "Stopped agent '%s'\n", name) //nolint:errcheck // best-effort stdout
 			rec.Record(events.Event{
-				Type: events.AgentStopped, Actor: "gc", Subject: name,
+				Type: events.SessionStopped, Actor: "gc", Subject: name,
 			})
 		}
 	}

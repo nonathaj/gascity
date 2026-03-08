@@ -43,7 +43,7 @@ func TestEventsShowsAll(t *testing.T) {
 	dir := t.TempDir()
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1", Message: "Build Tower of Hanoi"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor", Message: "mayor"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor", Message: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEvents(ep, "", "", nil, &stdout, &stderr)
@@ -55,7 +55,7 @@ func TestEventsShowsAll(t *testing.T) {
 	for _, want := range []string{
 		"SEQ", "TYPE", "ACTOR", "SUBJECT", "MESSAGE", "TIME",
 		"1", "bead.created", "human", "gc-1", "Build Tower of Hanoi",
-		"2", "agent.started", "gc", "mayor",
+		"2", "session.woke", "gc", "mayor",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout missing %q:\n%s", want, out)
@@ -68,7 +68,7 @@ func TestEventsFilterByType(t *testing.T) {
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1"})
 	ep.Record(events.Event{Type: events.BeadClosed, Actor: "human", Subject: "gc-1"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEvents(ep, events.BeadCreated, "", nil, &stdout, &stderr)
@@ -83,7 +83,7 @@ func TestEventsFilterByType(t *testing.T) {
 	if strings.Contains(out, "bead.closed") {
 		t.Errorf("stdout should not contain 'bead.closed': %q", out)
 	}
-	if strings.Contains(out, "agent.started") {
+	if strings.Contains(out, "session.woke") {
 		t.Errorf("stdout should not contain 'agent.started': %q", out)
 	}
 }
@@ -93,7 +93,7 @@ func TestEventsFilterBySince(t *testing.T) {
 	ep := newTestProvider(t, dir)
 	old := time.Now().Add(-2 * time.Hour)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1", Ts: old})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEvents(ep, "", "1h", nil, &stdout, &stderr)
@@ -105,7 +105,7 @@ func TestEventsFilterBySince(t *testing.T) {
 	if strings.Contains(out, "bead.created") {
 		t.Errorf("stdout should not contain old event: %q", out)
 	}
-	if !strings.Contains(out, "agent.started") {
+	if !strings.Contains(out, "session.woke") {
 		t.Errorf("stdout missing recent event: %q", out)
 	}
 }
@@ -162,7 +162,7 @@ func TestEventsJSON(t *testing.T) {
 	dir := t.TempDir()
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1", Message: "Build Tower of Hanoi"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor", Message: "mayor"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor", Message: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEventsJSON(ep, "", "", nil, &stdout, &stderr)
@@ -208,7 +208,7 @@ func TestEventsJSONWithTypeFilter(t *testing.T) {
 	dir := t.TempDir()
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human", Subject: "gc-1"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEventsJSON(ep, events.BeadCreated, "", nil, &stdout, &stderr)
@@ -235,7 +235,7 @@ func TestDoEventsSeq(t *testing.T) {
 	ep := newTestProvider(t, dir)
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "human"})
 	ep.Record(events.Event{Type: events.BeadClosed, Actor: "human"})
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 
 	var stdout, stderr bytes.Buffer
 	code := doEventsSeq(ep, &stdout, &stderr)
@@ -390,8 +390,8 @@ func TestDoEventsWatchDefaultAfterSeq(t *testing.T) {
 		if err != nil {
 			return
 		}
-		rec2.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "mayor"}) // seq 2
-		rec2.Close()                                                                        //nolint:errcheck // test cleanup
+		rec2.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "mayor"}) // seq 2
+		rec2.Close()                                                                       //nolint:errcheck // test cleanup
 	}()
 
 	var stdout, stderr bytes.Buffer
@@ -402,8 +402,8 @@ func TestDoEventsWatchDefaultAfterSeq(t *testing.T) {
 
 	out := stdout.String()
 	// Should only contain the new event (seq 2), not the existing one (seq 1).
-	if !strings.Contains(out, "agent.started") {
-		t.Errorf("output missing 'agent.started': %q", out)
+	if !strings.Contains(out, "session.woke") {
+		t.Errorf("output missing 'session.woke': %q", out)
 	}
 
 	var e events.Event
@@ -430,7 +430,7 @@ func TestDoEventsWatchNoTypeFilter(t *testing.T) {
 			return
 		}
 		rec2.Record(events.Event{Type: events.BeadClosed, Actor: "human"}) // seq 2
-		rec2.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})  // seq 3
+		rec2.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})   // seq 3
 		rec2.Close()                                                       //nolint:errcheck // test cleanup
 	}()
 
@@ -446,7 +446,7 @@ func TestDoEventsWatchNoTypeFilter(t *testing.T) {
 		t.Fatalf("got %d lines, want >= 1; output: %q", len(lines), out)
 	}
 	// At least one event type should be present.
-	if !strings.Contains(out, "bead.closed") && !strings.Contains(out, "agent.started") {
+	if !strings.Contains(out, "bead.closed") && !strings.Contains(out, "session.woke") {
 		t.Errorf("output missing events: %q", out)
 	}
 }

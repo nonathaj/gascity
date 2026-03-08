@@ -310,8 +310,8 @@ func TestReconcileDriftDrainSignal(t *testing.T) {
 		t.Errorf("stdout missing drain message: %q", stdout.String())
 	}
 	// Should have recorded a draining event.
-	if len(rec.Events) != 1 || rec.Events[0].Type != events.AgentDraining {
-		t.Errorf("events = %v, want one AgentDraining event", rec.Events)
+	if len(rec.Events) != 1 || rec.Events[0].Type != events.SessionDraining {
+		t.Errorf("events = %v, want one SessionDraining event", rec.Events)
 	}
 	// Hash should NOT be updated yet (restart hasn't completed).
 	oldHash := runtime.CoreFingerprint(runtime.Config{Command: "claude --old-flag"})
@@ -842,8 +842,8 @@ func TestReconcileRecordsStartEvent(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(rec.Events))
 	}
 	e := rec.Events[0]
-	if e.Type != events.AgentStarted {
-		t.Errorf("event type = %q, want %q", e.Type, events.AgentStarted)
+	if e.Type != events.SessionWoke {
+		t.Errorf("event type = %q, want %q", e.Type, events.SessionWoke)
 	}
 	if e.Actor != "gc" {
 		t.Errorf("event actor = %q, want %q", e.Actor, "gc")
@@ -879,8 +879,8 @@ func TestReconcileRecordsEventOnDriftRestart(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(rec.Events))
 	}
 	e := rec.Events[0]
-	if e.Type != events.AgentStarted {
-		t.Errorf("event type = %q, want %q", e.Type, events.AgentStarted)
+	if e.Type != events.SessionWoke {
+		t.Errorf("event type = %q, want %q", e.Type, events.SessionWoke)
 	}
 	if e.Subject != "mayor" {
 		t.Errorf("event subject = %q, want %q", e.Subject, "mayor")
@@ -958,7 +958,7 @@ func TestReconcileZombieCaptureEmitsEvent(t *testing.T) {
 	// Should have emitted an agent.crashed event with the pane output.
 	var crashEvent *events.Event
 	for i := range rec.Events {
-		if rec.Events[i].Type == events.AgentCrashed {
+		if rec.Events[i].Type == events.SessionCrashed {
 			crashEvent = &rec.Events[i]
 			break
 		}
@@ -995,7 +995,7 @@ func TestReconcileNoZombieEventWhenSessionMissing(t *testing.T) {
 
 	// No agent.crashed event.
 	for _, e := range rec.Events {
-		if e.Type == events.AgentCrashed {
+		if e.Type == events.SessionCrashed {
 			t.Errorf("unexpected agent.crashed event: %+v", e)
 		}
 	}
@@ -1026,7 +1026,7 @@ func TestReconcileZombieEmptyPeekIgnored(t *testing.T) {
 
 	// No agent.crashed event for empty output.
 	for _, e := range rec.Events {
-		if e.Type == events.AgentCrashed {
+		if e.Type == events.SessionCrashed {
 			t.Errorf("unexpected agent.crashed event for empty peek: %+v", e)
 		}
 	}
@@ -1485,9 +1485,9 @@ func TestReconcileRecordsStartAndQuarantine(t *testing.T) {
 	var startedCount, quarantinedCount int
 	for _, e := range rec.Events {
 		switch e.Type {
-		case events.AgentStarted:
+		case events.SessionWoke:
 			startedCount++
-		case events.AgentQuarantined:
+		case events.SessionQuarantined:
 			quarantinedCount++
 			if e.Message != "crash loop detected" {
 				t.Errorf("quarantine message = %q, want %q", e.Message, "crash loop detected")
@@ -1559,8 +1559,8 @@ func TestReconcileSuspendedAgentMessaging(t *testing.T) {
 	if len(rec.Events) != 1 {
 		t.Fatalf("got %d events, want 1", len(rec.Events))
 	}
-	if rec.Events[0].Type != events.AgentSuspended {
-		t.Errorf("event type = %q, want %q", rec.Events[0].Type, events.AgentSuspended)
+	if rec.Events[0].Type != events.SessionSuspended {
+		t.Errorf("event type = %q, want %q", rec.Events[0].Type, events.SessionSuspended)
 	}
 }
 
@@ -1621,16 +1621,16 @@ func TestReconcileRestartRequestedRestartsAgent(t *testing.T) {
 		t.Errorf("stdout = %q, want restart confirmation", stdout.String())
 	}
 
-	// Events: AgentStopped + AgentStarted.
+	// Events: SessionStopped + SessionWoke.
 	var stoppedCount, startedCount int
 	for _, e := range rec.Events {
 		switch e.Type {
-		case events.AgentStopped:
+		case events.SessionStopped:
 			stoppedCount++
 			if e.Message != "restart requested by agent" {
 				t.Errorf("stopped event message = %q, want %q", e.Message, "restart requested by agent")
 			}
-		case events.AgentStarted:
+		case events.SessionWoke:
 			startedCount++
 		}
 	}
@@ -1765,15 +1765,15 @@ func TestReconcileIdleAgentRestarted(t *testing.T) {
 		t.Errorf("stdout = %q, want restart message", stdout.String())
 	}
 
-	// Events: AgentIdleKilled + AgentStarted.
+	// Events: SessionIdleKilled + SessionWoke.
 	if len(rec.Events) < 2 {
 		t.Fatalf("got %d events, want >= 2", len(rec.Events))
 	}
-	if rec.Events[0].Type != events.AgentIdleKilled {
-		t.Errorf("event[0].Type = %q, want %q", rec.Events[0].Type, events.AgentIdleKilled)
+	if rec.Events[0].Type != events.SessionIdleKilled {
+		t.Errorf("event[0].Type = %q, want %q", rec.Events[0].Type, events.SessionIdleKilled)
 	}
-	if rec.Events[1].Type != events.AgentStarted {
-		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.AgentStarted)
+	if rec.Events[1].Type != events.SessionWoke {
+		t.Errorf("event[1].Type = %q, want %q", rec.Events[1].Type, events.SessionWoke)
 	}
 }
 
@@ -1966,8 +1966,8 @@ func TestGracefulStopAllAgentExitsGracefully(t *testing.T) {
 	if len(rec.Events) != 1 {
 		t.Fatalf("got %d events, want 1", len(rec.Events))
 	}
-	if rec.Events[0].Type != events.AgentStopped {
-		t.Errorf("event type = %q, want %q", rec.Events[0].Type, events.AgentStopped)
+	if rec.Events[0].Type != events.SessionStopped {
+		t.Errorf("event type = %q, want %q", rec.Events[0].Type, events.SessionStopped)
 	}
 }
 

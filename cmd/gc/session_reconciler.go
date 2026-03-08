@@ -239,7 +239,7 @@ func reconcileSessionBeads(
 						beginSessionDrain(*session, sp, dt, "config-drift", clk, ddt)
 						fmt.Fprintf(stdout, "Draining session '%s': config-drift\n", name) //nolint:errcheck
 						rec.Record(events.Event{
-							Type:    events.AgentDraining,
+							Type:    events.SessionDraining,
 							Actor:   "gc",
 							Subject: tp.DisplayName(),
 							Message: "config drift detected",
@@ -264,7 +264,7 @@ func reconcileSessionBeads(
 									"started_live_hash": currentLive,
 								})
 								rec.Record(events.Event{
-									Type:    events.AgentUpdated,
+									Type:    events.SessionUpdated,
 									Actor:   "gc",
 									Subject: tp.DisplayName(),
 									Message: "session_live re-applied",
@@ -323,7 +323,7 @@ func reconcileSessionBeads(
 			wakeCount++
 			fmt.Fprintf(stdout, "Woke session '%s'\n", tp.DisplayName()) //nolint:errcheck
 			rec.Record(events.Event{
-				Type:    events.AgentStarted,
+				Type:    events.SessionWoke,
 				Actor:   "gc",
 				Subject: tp.DisplayName(),
 			})

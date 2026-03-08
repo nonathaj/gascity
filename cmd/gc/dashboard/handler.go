@@ -329,7 +329,7 @@ func computeSummary(workers []WorkerRow, assigned []AssignedRow, issues []IssueR
 		}
 	}
 	for _, a := range activity {
-		if a.Type == "session_death" || a.Type == "mass_death" {
+		if a.Type == "session.crashed" {
 			summary.DeadSessions++
 		}
 	}

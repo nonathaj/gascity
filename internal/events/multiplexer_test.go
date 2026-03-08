@@ -10,11 +10,11 @@ func TestMultiplexerListAll(t *testing.T) {
 	m := NewMultiplexer()
 
 	f1 := NewFake()
-	f1.Record(Event{Type: AgentStarted, Actor: "a1", Ts: time.Unix(1, 0)})
-	f1.Record(Event{Type: AgentStopped, Actor: "a1", Ts: time.Unix(3, 0)})
+	f1.Record(Event{Type: SessionWoke, Actor: "a1", Ts: time.Unix(1, 0)})
+	f1.Record(Event{Type: SessionStopped, Actor: "a1", Ts: time.Unix(3, 0)})
 
 	f2 := NewFake()
-	f2.Record(Event{Type: AgentStarted, Actor: "b1", Ts: time.Unix(2, 0)})
+	f2.Record(Event{Type: SessionWoke, Actor: "b1", Ts: time.Unix(2, 0)})
 
 	m.Add("city-a", f1)
 	m.Add("city-b", f2)
@@ -36,20 +36,20 @@ func TestMultiplexerListAllWithFilter(t *testing.T) {
 	m := NewMultiplexer()
 
 	f1 := NewFake()
-	f1.Record(Event{Type: AgentStarted, Actor: "a1"})
-	f1.Record(Event{Type: AgentStopped, Actor: "a1"})
+	f1.Record(Event{Type: SessionWoke, Actor: "a1"})
+	f1.Record(Event{Type: SessionStopped, Actor: "a1"})
 
 	m.Add("city-a", f1)
 
-	evts, err := m.ListAll(Filter{Type: AgentStarted})
+	evts, err := m.ListAll(Filter{Type: SessionWoke})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(evts) != 1 {
 		t.Fatalf("got %d events, want 1", len(evts))
 	}
-	if evts[0].Type != AgentStarted {
-		t.Errorf("got type %q, want %q", evts[0].Type, AgentStarted)
+	if evts[0].Type != SessionWoke {
+		t.Errorf("got type %q, want %q", evts[0].Type, SessionWoke)
 	}
 }
 
@@ -71,8 +71,8 @@ func TestMultiplexerWatch(t *testing.T) {
 	defer w.Close() //nolint:errcheck
 
 	// Record events after watch is started.
-	f1.Record(Event{Type: AgentStarted, Actor: "a1"})
-	f2.Record(Event{Type: AgentStarted, Actor: "b1"})
+	f1.Record(Event{Type: SessionWoke, Actor: "a1"})
+	f2.Record(Event{Type: SessionWoke, Actor: "b1"})
 
 	// Should receive both events.
 	got := make(map[string]bool)
@@ -92,8 +92,8 @@ func TestMultiplexerWatchWithCursors(t *testing.T) {
 	m := NewMultiplexer()
 
 	f1 := NewFake()
-	f1.Record(Event{Type: AgentStarted, Actor: "old"}) // seq=1
-	f1.Record(Event{Type: AgentStopped, Actor: "old"}) // seq=2
+	f1.Record(Event{Type: SessionWoke, Actor: "old"})    // seq=1
+	f1.Record(Event{Type: SessionStopped, Actor: "old"}) // seq=2
 	m.Add("city-a", f1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -119,7 +119,7 @@ func TestMultiplexerRemove(t *testing.T) {
 	m := NewMultiplexer()
 
 	f1 := NewFake()
-	f1.Record(Event{Type: AgentStarted, Actor: "a1"})
+	f1.Record(Event{Type: SessionWoke, Actor: "a1"})
 	m.Add("city-a", f1)
 	m.Remove("city-a")
 
@@ -180,7 +180,7 @@ func TestWrapForSSE(t *testing.T) {
 	w := WrapForSSE(mw)
 	defer w.Close() //nolint:errcheck
 
-	f1.Record(Event{Type: AgentStarted, Actor: "mayor"})
+	f1.Record(Event{Type: SessionWoke, Actor: "mayor"})
 
 	e, err := w.Next()
 	if err != nil {
@@ -195,7 +195,7 @@ func TestMultiplexerSkipsBrokenProvider(t *testing.T) {
 	m := NewMultiplexer()
 
 	f1 := NewFake()
-	f1.Record(Event{Type: AgentStarted, Actor: "a1"})
+	f1.Record(Event{Type: SessionWoke, Actor: "a1"})
 	m.Add("city-a", f1)
 
 	broken := NewFailFake()

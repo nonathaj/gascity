@@ -31,8 +31,8 @@ func TestDoAgentKill(t *testing.T) {
 		t.Error("session still running after kill")
 	}
 	// Event recorded.
-	if len(rec.Events) != 1 || rec.Events[0].Type != events.AgentStopped {
-		t.Errorf("events = %v, want one AgentStopped event", rec.Events)
+	if len(rec.Events) != 1 || rec.Events[0].Type != events.SessionStopped {
+		t.Errorf("events = %v, want one SessionStopped event", rec.Events)
 	}
 	if rec.Events[0].Subject != "worker" {
 		t.Errorf("event subject = %q, want %q", rec.Events[0].Subject, "worker")

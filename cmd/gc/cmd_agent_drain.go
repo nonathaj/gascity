@@ -186,7 +186,7 @@ func doAgentDrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentDraining,
+		Type:    events.SessionDraining,
 		Actor:   eventActor(),
 		Subject: agentName,
 	})
@@ -264,7 +264,7 @@ func doAgentUndrain(dops drainOps, sp runtime.Provider, rec events.Recorder,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentUndrained,
+		Type:    events.SessionUndrained,
 		Actor:   eventActor(),
 		Subject: agentName,
 	})
@@ -499,7 +499,7 @@ func doAgentRequestRestart(dops drainOps, rec events.Recorder,
 		return 1
 	}
 	rec.Record(events.Event{
-		Type:    events.AgentDraining,
+		Type:    events.SessionDraining,
 		Actor:   agentName,
 		Subject: agentName,
 		Message: "restart requested by agent",

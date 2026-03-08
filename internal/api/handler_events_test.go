@@ -15,7 +15,7 @@ import (
 func TestEventList(t *testing.T) {
 	state := newFakeState(t)
 	ep := state.eventProv.(*events.Fake)
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "worker"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "worker"})
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "worker", Subject: "gc-1"})
 	srv := New(state)
 
@@ -40,7 +40,7 @@ func TestEventList(t *testing.T) {
 func TestEventListFilterByType(t *testing.T) {
 	state := newFakeState(t)
 	ep := state.eventProv.(*events.Fake)
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc"})
 	ep.Record(events.Event{Type: events.BeadCreated, Actor: "worker"})
 	srv := New(state)
 
@@ -81,7 +81,7 @@ func TestEventStream(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Record an event.
-	ep.Record(events.Event{Type: events.AgentStarted, Actor: "gc", Subject: "worker"})
+	ep.Record(events.Event{Type: events.SessionWoke, Actor: "gc", Subject: "worker"})
 
 	// Wait for event to be delivered or timeout.
 	time.Sleep(100 * time.Millisecond)
@@ -89,7 +89,7 @@ func TestEventStream(t *testing.T) {
 	<-done
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "event: agent.started") {
+	if !strings.Contains(body, "event: session.woke") {
 		t.Errorf("SSE body missing event type, got: %s", body)
 	}
 	if !strings.Contains(body, "id: 1") {
