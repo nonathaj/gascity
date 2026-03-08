@@ -52,11 +52,30 @@ func (h *Handler) RetryHandler(_ context.Context, sourceBeadID, _ string, maxIte
 	evaluatePrompt := meta[FieldEvaluatePrompt]
 	vars := ExtractVars(meta)
 
+	// Step 4b: Validate gate config from source bead before creating state.
+	gateMeta := map[string]string{
+		FieldGateMode:          gateMode,
+		FieldGateCondition:     gateCondition,
+		FieldGateTimeout:       gateTimeout,
+		FieldGateTimeoutAction: gateTimeoutAction,
+	}
+	if _, err := ParseGateConfig(gateMeta); err != nil {
+		return RetryResult{}, fmt.Errorf("source bead %q has invalid gate config: %w", sourceBeadID, err)
+	}
+
 	// Step 5: Create new root bead.
 	title := "Retry of " + sourceBeadID
 	newBeadID, err := h.Store.CreateConvergenceBead(title)
 	if err != nil {
 		return RetryResult{}, fmt.Errorf("creating convergence bead: %w", err)
+	}
+
+	// closeBead terminates the root bead on partial-create failure so the
+	// reconciler does not try to resume an incomplete convergence loop.
+	closeBead := func(cause error) error {
+		_ = h.Store.SetMetadata(newBeadID, FieldState, StateTerminated)
+		_ = h.Store.CloseBead(newBeadID)
+		return cause
 	}
 
 	// Step 6: Set metadata on new bead.
@@ -75,14 +94,14 @@ func (h *Handler) RetryHandler(_ context.Context, sourceBeadID, _ string, maxIte
 	}
 	for _, mw := range metaWrites {
 		if err := h.Store.SetMetadata(newBeadID, mw.key, mw.value); err != nil {
-			return RetryResult{}, fmt.Errorf("setting %s on new bead: %w", mw.key, err)
+			return RetryResult{}, closeBead(fmt.Errorf("setting %s on new bead: %w", mw.key, err))
 		}
 	}
 
 	// Step 7: Copy template variables.
 	for k, v := range vars {
 		if err := h.Store.SetMetadata(newBeadID, VarPrefix+k, v); err != nil {
-			return RetryResult{}, fmt.Errorf("copying var %q to new bead: %w", k, err)
+			return RetryResult{}, closeBead(fmt.Errorf("copying var %q to new bead: %w", k, err))
 		}
 	}
 
@@ -90,12 +109,15 @@ func (h *Handler) RetryHandler(_ context.Context, sourceBeadID, _ string, maxIte
 	firstKey := IdempotencyKey(newBeadID, 1)
 	firstWispID, err := h.Store.PourWisp(newBeadID, formula, firstKey, vars, evaluatePrompt)
 	if err != nil {
-		return RetryResult{}, fmt.Errorf("pouring first wisp for retry bead %q: %w", newBeadID, err)
+		return RetryResult{}, closeBead(fmt.Errorf("pouring first wisp for retry bead %q: %w", newBeadID, err))
 	}
 
-	// Step 9: Set active_wisp.
+	// Step 9: Set active_wisp and iteration counter.
 	if err := h.Store.SetMetadata(newBeadID, FieldActiveWisp, firstWispID); err != nil {
-		return RetryResult{}, fmt.Errorf("setting active wisp on new bead: %w", err)
+		return RetryResult{}, closeBead(fmt.Errorf("setting active wisp on new bead: %w", err))
+	}
+	if err := h.Store.SetMetadata(newBeadID, FieldIteration, EncodeInt(1)); err != nil {
+		return RetryResult{}, closeBead(fmt.Errorf("setting iteration on new bead: %w", err))
 	}
 
 	// Step 10: Emit ConvergenceCreated event with retry_source.

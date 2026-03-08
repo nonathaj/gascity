@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
@@ -52,6 +53,9 @@ type CityRuntime struct {
 	// Bead-driven reconciler state (Phase 2f).
 	sessionDrains *drainTracker // in-memory drain tracker; nil when bead reconciler disabled
 
+	convHandler      *convergence.Handler    // nil until bead store available
+	convergenceReqCh chan convergenceRequest // receives CLI commands from controller.sock
+
 	shutdownOnce   sync.Once
 	logPrefix      string // "gc start" or "gc supervisor"
 	stdout, stderr io.Writer
@@ -75,6 +79,8 @@ type CityRuntimeParams struct {
 
 	PoolSessions      map[string]time.Duration
 	PoolDeathHandlers map[string]poolDeathInfo
+
+	ConvergenceReqCh chan convergenceRequest // may be nil
 
 	LogPrefix      string // "gc start" or "gc supervisor"; defaults to "gc start"
 	Stdout, Stderr io.Writer
@@ -126,6 +132,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 		poolSessions:      p.PoolSessions,
 		poolDeathHandlers: p.PoolDeathHandlers,
 		suspendedNames:    suspendedNames,
+		convergenceReqCh:  p.ConvergenceReqCh,
 		logPrefix:         logPrefix,
 		stdout:            p.Stdout,
 		stderr:            p.Stderr,
@@ -211,6 +218,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		}
 	}
 
+	// Initialize convergence handler (requires bead store).
+	cr.initConvergenceHandler()
+
 	// Session bead sync BEFORE reconciliation: ensures beads exist for
 	// beadReconcileOps to read/write hashes. Bead "state" metadata reflects
 	// pre-reconcile reality and may lag by one tick after reconciliation
@@ -218,6 +228,10 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// bead state within a tick, and it converges on the next sync.
 	agents := cr.buildFn(cr.cfg, cr.sp)
 	cr.syncBeadsAndUpdateIndex(agents)
+
+	// Convergence startup reconciliation: recover in-progress convergence
+	// beads that were interrupted by a controller crash.
+	cr.convergenceStartupReconcile(ctx)
 
 	// Initial reconciliation.
 	if cr.sessionDrains != nil {
@@ -243,6 +257,15 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			cr.tick(ctx, dirty, &lastProviderName, &observePaths, cityRoot, &prevPoolRunning)
+		case req := <-cr.convergenceReqCh:
+			// Low-latency path: process convergence commands between ticks.
+			// processConvergenceRequests() in tick() drains any that arrived
+			// during tick processing. Both paths are safe — channel receives
+			// are atomic, so each request is processed exactly once.
+			// Note: ordering relative to convergenceTick is non-deterministic
+			// via this path, but handlers are idempotent so interleaving is safe.
+			reply := cr.safeHandleConvergenceRequest(ctx, req)
+			req.replyCh <- reply
 		case <-ctx.Done():
 			return
 		}
@@ -326,6 +349,13 @@ func (cr *CityRuntime) tick(
 	if idleTimeout := cr.cfg.ChatSessions.IdleTimeoutDuration(); idleTimeout > 0 {
 		autoSuspendChatSessions(cr.cityBeadStore(), cr.sp, idleTimeout, cr.stdout, cr.stderr)
 	}
+
+	// Drain queued convergence requests (CLI commands) BEFORE tick so
+	// user commands (e.g. stop) take precedence over automated progression.
+	cr.processConvergenceRequests(ctx)
+
+	// Convergence tick: process active convergence loops.
+	cr.convergenceTick(ctx)
 }
 
 // reloadConfig attempts to reload city.toml and update all internal
