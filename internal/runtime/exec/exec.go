@@ -254,6 +254,13 @@ func (p *Provider) RunLive(_ string, _ runtime.Config) error {
 	return nil // exec providers don't support live re-apply yet
 }
 
+// Capabilities reports exec provider capabilities. The exec provider
+// delegates everything to a user-supplied script and does not natively
+// support attachment or activity detection.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	return runtime.ProviderCapabilities{}
+}
+
 // GetLastActivity returns the last activity time: script get-last-activity <name>
 // Expects RFC3339 on stdout, or empty for unsupported. Malformed → zero time.
 func (p *Provider) GetLastActivity(name string) (time.Time, error) {

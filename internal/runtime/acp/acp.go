@@ -722,6 +722,12 @@ func (p *Provider) stopBySocket(name string) error {
 	return nil
 }
 
+// Capabilities reports ACP provider capabilities. The ACP provider has
+// no terminal and does not natively support attachment or activity detection.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	return runtime.ProviderCapabilities{}
+}
+
 // terminateProcess sends SIGTERM then SIGKILL to a tracked process group.
 func terminateProcess(sc *sessionConn) error {
 	_ = syscall.Kill(-sc.cmd.Process.Pid, syscall.SIGTERM)

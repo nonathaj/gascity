@@ -127,3 +127,14 @@ func (p *Provider) SendKeys(name string, keys ...string) error {
 func (p *Provider) RunLive(name string, cfg runtime.Config) error {
 	return p.route(name).RunLive(name, cfg)
 }
+
+// Capabilities returns the intersection of both backends' capabilities.
+// A capability is reported only if both local and remote support it.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	lc := p.local.Capabilities()
+	rc := p.remote.Capabilities()
+	return runtime.ProviderCapabilities{
+		CanReportAttachment: lc.CanReportAttachment && rc.CanReportAttachment,
+		CanReportActivity:   lc.CanReportActivity && rc.CanReportActivity,
+	}
+}

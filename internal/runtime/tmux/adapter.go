@@ -132,6 +132,15 @@ func (p *Provider) ProcessAlive(name string, processNames []string) bool {
 	return p.tm.IsRuntimeRunning(name, processNames)
 }
 
+// Capabilities reports tmux provider capabilities.
+// Tmux supports both attachment detection and activity reporting.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	return runtime.ProviderCapabilities{
+		CanReportAttachment: true,
+		CanReportActivity:   true,
+	}
+}
+
 // Nudge sends a message to the named session to wake or redirect the agent.
 // By default, waits for the agent to be idle before sending (wait-idle mode)
 // to avoid interrupting active tool calls. If the agent doesn't become idle

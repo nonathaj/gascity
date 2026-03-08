@@ -118,6 +118,15 @@ type Store interface {
 	// ErrNotFound if the bead does not exist.
 	SetMetadata(id, key, value string) error
 
+	// SetMetadataBatch atomically sets multiple key-value metadata pairs
+	// on a bead. On failure, no visible change occurs (all-or-nothing).
+	// Returns ErrNotFound if the bead does not exist.
+	SetMetadataBatch(id string, kvs map[string]string) error
+
+	// Ping verifies that the store is operational. Returns nil on success,
+	// or an error describing why the store is unavailable.
+	Ping() error
+
 	// MolCook instantiates an ephemeral molecule (wisp) from a formula
 	// and returns the root bead ID.
 	MolCook(formula, title string, vars []string) (string, error)

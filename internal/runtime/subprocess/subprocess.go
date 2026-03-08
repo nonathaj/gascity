@@ -476,6 +476,12 @@ func terminateSessionConn(sc *sessionConn) error {
 	return nil
 }
 
+// Capabilities reports subprocess provider capabilities. The subprocess
+// provider has no terminal and no activity tracking.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	return runtime.ProviderCapabilities{}
+}
+
 // alive reports whether the process is still running.
 func (sc *sessionConn) alive() bool {
 	select {

@@ -249,6 +249,26 @@ func (s *Store) SetMetadata(id, key, value string) error {
 	return nil
 }
 
+// SetMetadataBatch sets multiple key-value metadata pairs on a bead.
+// Delegates to sequential SetMetadata calls.
+func (s *Store) SetMetadataBatch(id string, kvs map[string]string) error {
+	for k, v := range kvs {
+		if err := s.SetMetadata(id, k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Ping verifies the store script is accessible by running a list operation.
+func (s *Store) Ping() error {
+	_, err := s.run(nil, "list")
+	if err != nil {
+		return fmt.Errorf("exec store ping: %w", err)
+	}
+	return nil
+}
+
 // MolCook instantiates a molecule from a formula by delegating to the
 // script's mol-cook operation. Returns the root bead ID.
 func (s *Store) MolCook(formulaName, title string, vars []string) (string, error) {

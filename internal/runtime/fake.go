@@ -317,6 +317,15 @@ func (f *Fake) SendKeys(name string, keys ...string) error {
 	return nil
 }
 
+// Capabilities returns the fake provider's capabilities.
+// By default, reports both attachment and activity as available.
+func (f *Fake) Capabilities() ProviderCapabilities {
+	return ProviderCapabilities{
+		CanReportAttachment: true,
+		CanReportActivity:   true,
+	}
+}
+
 // LastStartConfig returns the Config used in the most recent Start call for
 // the named session, or nil if no Start was recorded for that name.
 func (f *Fake) LastStartConfig(name string) *Config {

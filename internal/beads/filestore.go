@@ -123,6 +123,21 @@ func (fs *FileStore) SetMetadata(id, key, value string) error {
 	return fs.save()
 }
 
+// SetMetadataBatch delegates to MemStore.SetMetadataBatch and flushes to disk.
+func (fs *FileStore) SetMetadataBatch(id string, kvs map[string]string) error {
+	fs.fmu.Lock()
+	defer fs.fmu.Unlock()
+	if err := fs.MemStore.SetMetadataBatch(id, kvs); err != nil {
+		return err
+	}
+	return fs.save()
+}
+
+// Ping checks that the store file is accessible.
+func (fs *FileStore) Ping() error {
+	return fs.MemStore.Ping()
+}
+
 // DepAdd delegates to MemStore.DepAdd and flushes to disk.
 func (fs *FileStore) DepAdd(issueID, dependsOnID, depType string) error {
 	fs.fmu.Lock()

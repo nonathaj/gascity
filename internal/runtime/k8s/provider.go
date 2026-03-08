@@ -483,6 +483,15 @@ func (p *Provider) ClearScrollback(name string) error {
 	return nil
 }
 
+// Capabilities reports K8s provider capabilities. The K8s provider
+// supports activity tracking via tmux session_activity but does not
+// support attachment detection from the controller host.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	return runtime.ProviderCapabilities{
+		CanReportActivity: true,
+	}
+}
+
 // CopyTo copies a local file/directory into the pod via tar.
 func (p *Provider) CopyTo(name, src, relDst string) error {
 	ctx := context.Background()

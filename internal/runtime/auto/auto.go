@@ -206,3 +206,14 @@ func (p *Provider) SendKeys(name string, keys ...string) error {
 func (p *Provider) RunLive(name string, cfg runtime.Config) error {
 	return p.route(name).RunLive(name, cfg)
 }
+
+// Capabilities returns the intersection of both backends' capabilities.
+// A capability is reported only if both default and ACP support it.
+func (p *Provider) Capabilities() runtime.ProviderCapabilities {
+	dc := p.defaultSP.Capabilities()
+	ac := p.acpSP.Capabilities()
+	return runtime.ProviderCapabilities{
+		CanReportAttachment: dc.CanReportAttachment && ac.CanReportAttachment,
+		CanReportActivity:   dc.CanReportActivity && ac.CanReportActivity,
+	}
+}

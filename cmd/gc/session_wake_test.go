@@ -1,0 +1,475 @@
+package main
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/clock"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/runtime"
+)
+
+func TestPreWakeCommit(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	store := beads.NewMemStore()
+
+	b, err := store.Create(beads.Bead{
+		Title: "test-session",
+		Metadata: map[string]string{
+			"session_name": "test-worker",
+			"template":     "worker",
+			"generation":   "2",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newGen, token, err := preWakeCommit(b, store, clk)
+	if err != nil {
+		t.Fatalf("preWakeCommit: %v", err)
+	}
+
+	if newGen != 3 {
+		t.Errorf("newGen = %d, want 3", newGen)
+	}
+	if token == "" {
+		t.Error("expected non-empty token")
+	}
+
+	// Verify persisted in store.
+	got, _ := store.Get(b.ID)
+	if got.Metadata["generation"] != "3" {
+		t.Errorf("stored generation = %q, want 3", got.Metadata["generation"])
+	}
+	if got.Metadata["instance_token"] != token {
+		t.Errorf("stored token mismatch")
+	}
+	if got.Metadata["last_woke_at"] == "" {
+		t.Error("expected last_woke_at to be set")
+	}
+	if got.Metadata["sleep_reason"] != "" {
+		t.Error("expected sleep_reason to be cleared")
+	}
+}
+
+func TestPreWakeCommit_InvalidName(t *testing.T) {
+	clk := &clock.Fake{Time: time.Now()}
+	store := beads.NewMemStore()
+
+	b, _ := store.Create(beads.Bead{
+		Title: "bad-session",
+		Metadata: map[string]string{
+			"session_name": "../bad",
+			"template":     "worker",
+		},
+	})
+
+	_, _, err := preWakeCommit(b, store, clk)
+	if err == nil {
+		t.Error("expected error for invalid session_name")
+	}
+}
+
+func TestValidateWorkDir(t *testing.T) {
+	// Valid: use temp dir.
+	dir := t.TempDir()
+	if err := validateWorkDir(dir); err != nil {
+		t.Errorf("valid dir: %v", err)
+	}
+
+	// Invalid: non-existent.
+	if err := validateWorkDir("/nonexistent/path/xyz"); err == nil {
+		t.Error("expected error for nonexistent path")
+	}
+
+	// Invalid: file, not directory.
+	f := dir + "/file.txt"
+	if err := writeTestFile(f); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkDir(f); err == nil {
+		t.Error("expected error for file path")
+	}
+}
+
+func writeTestFile(path string) error {
+	return os.WriteFile(path, []byte("test"), 0o644)
+}
+
+func TestVerifiedStop_MatchingToken(t *testing.T) {
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+	_ = sp.SetMeta("test-session", "GC_INSTANCE_TOKEN", "abc123")
+
+	session := makeBead("b1", map[string]string{
+		"session_name":   "test-session",
+		"instance_token": "abc123",
+	})
+
+	err := verifiedStop(session, sp)
+	if err != nil {
+		t.Errorf("verifiedStop with matching token: %v", err)
+	}
+	if sp.IsRunning("test-session") {
+		t.Error("expected session to be stopped")
+	}
+}
+
+func TestVerifiedStop_MismatchedToken(t *testing.T) {
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+	_ = sp.SetMeta("test-session", "GC_INSTANCE_TOKEN", "old-token")
+
+	session := makeBead("b1", map[string]string{
+		"session_name":   "test-session",
+		"instance_token": "new-token",
+	})
+
+	err := verifiedStop(session, sp)
+	if err == nil {
+		t.Error("expected error for mismatched token")
+	}
+	if !sp.IsRunning("test-session") {
+		t.Error("session should NOT be stopped on token mismatch")
+	}
+}
+
+func TestVerifiedStop_NoToken(t *testing.T) {
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	session := makeBead("b1", map[string]string{
+		"session_name":   "test-session",
+		"instance_token": "",
+	})
+
+	err := verifiedStop(session, sp)
+	if err != nil {
+		t.Errorf("verifiedStop with no token: %v", err)
+	}
+}
+
+func TestVerifiedInterrupt_MismatchedToken(t *testing.T) {
+	sp := runtime.NewFake()
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+	_ = sp.SetMeta("test-session", "GC_INSTANCE_TOKEN", "old-token")
+
+	session := makeBead("b1", map[string]string{
+		"session_name":   "test-session",
+		"instance_token": "new-token",
+	})
+
+	err := verifiedInterrupt(session, sp)
+	if err == nil {
+		t.Error("expected error for mismatched token")
+	}
+}
+
+func TestBeginSessionDrain(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	dt := newDrainTracker()
+
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	session := makeBead("b1", map[string]string{
+		"session_name": "test-session",
+		"generation":   "5",
+	})
+
+	beginSessionDrain(session, sp, dt, "idle", clk, 30*time.Second)
+
+	ds := dt.get("b1")
+	if ds == nil {
+		t.Fatal("expected drain state")
+	}
+	if ds.reason != "idle" {
+		t.Errorf("reason = %q, want idle", ds.reason)
+	}
+	if ds.generation != 5 {
+		t.Errorf("generation = %d, want 5", ds.generation)
+	}
+	if ds.deadline != now.Add(30*time.Second) {
+		t.Errorf("deadline = %v, want %v", ds.deadline, now.Add(30*time.Second))
+	}
+}
+
+func TestBeginSessionDrain_AlreadyDraining(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	dt := newDrainTracker()
+
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	session := makeBead("b1", map[string]string{
+		"session_name": "test-session",
+		"generation":   "5",
+	})
+
+	beginSessionDrain(session, sp, dt, "idle", clk, 30*time.Second)
+	beginSessionDrain(session, sp, dt, "config-drift", clk, 60*time.Second)
+
+	// Second drain should not overwrite first.
+	ds := dt.get("b1")
+	if ds.reason != "idle" {
+		t.Errorf("reason = %q, want idle (should not be overwritten)", ds.reason)
+	}
+}
+
+func TestCancelSessionDrain(t *testing.T) {
+	dt := newDrainTracker()
+	dt.set("b1", &drainState{
+		reason:     "idle",
+		generation: 5,
+	})
+
+	session := makeBead("b1", map[string]string{
+		"generation": "5",
+	})
+
+	if !cancelSessionDrain(session, dt) {
+		t.Error("expected cancel to succeed")
+	}
+	if dt.get("b1") != nil {
+		t.Error("drain should be removed after cancel")
+	}
+}
+
+func TestCancelSessionDrain_GenerationMismatch(t *testing.T) {
+	dt := newDrainTracker()
+	dt.set("b1", &drainState{
+		reason:     "idle",
+		generation: 5,
+	})
+
+	session := makeBead("b1", map[string]string{
+		"generation": "6", // re-woken
+	})
+
+	if cancelSessionDrain(session, dt) {
+		t.Error("cancel should fail when generation doesn't match")
+	}
+}
+
+func TestAdvanceSessionDrains_ProcessExited(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	dt := newDrainTracker()
+
+	// No session running (process exited).
+	b, _ := store.Create(beads.Bead{
+		Title: "test",
+		Metadata: map[string]string{
+			"session_name": "test-session",
+			"template":     "worker",
+			"generation":   "3",
+		},
+	})
+
+	dt.set(b.ID, &drainState{
+		startedAt:  now.Add(-10 * time.Second),
+		deadline:   now.Add(20 * time.Second),
+		reason:     "idle",
+		generation: 3,
+	})
+
+	cfg := &config.City{}
+
+	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
+		got, _ := store.Get(id)
+		return &got
+	}, cfg, map[string]int{}, clk)
+
+	// Drain should be cleaned up.
+	if dt.get(b.ID) != nil {
+		t.Error("drain should be removed after process exit")
+	}
+
+	// Metadata should be updated.
+	got, _ := store.Get(b.ID)
+	if got.Metadata["state"] != "asleep" {
+		t.Errorf("state = %q, want asleep", got.Metadata["state"])
+	}
+	if got.Metadata["sleep_reason"] != "idle" {
+		t.Errorf("sleep_reason = %q, want idle", got.Metadata["sleep_reason"])
+	}
+}
+
+func TestAdvanceSessionDrains_Timeout(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	dt := newDrainTracker()
+
+	// Session is still running.
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	b, _ := store.Create(beads.Bead{
+		Title: "test",
+		Metadata: map[string]string{
+			"session_name": "test-session",
+			"template":     "worker",
+			"generation":   "3",
+		},
+	})
+
+	// Drain deadline already passed.
+	dt.set(b.ID, &drainState{
+		startedAt:  now.Add(-60 * time.Second),
+		deadline:   now.Add(-10 * time.Second),
+		reason:     "pool-excess",
+		generation: 3,
+	})
+
+	cfg := &config.City{}
+
+	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
+		got, _ := store.Get(id)
+		return &got
+	}, cfg, map[string]int{}, clk)
+
+	// Should have force-stopped.
+	if sp.IsRunning("test-session") {
+		t.Error("session should be force-stopped after deadline")
+	}
+	if dt.get(b.ID) != nil {
+		t.Error("drain should be removed after timeout")
+	}
+}
+
+func TestAdvanceSessionDrains_WakeReasonsReappear(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	dt := newDrainTracker()
+
+	// Session is still running.
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	b, _ := store.Create(beads.Bead{
+		Title: "test",
+		Metadata: map[string]string{
+			"session_name": "test-session",
+			"template":     "worker",
+			"generation":   "3",
+		},
+	})
+
+	dt.set(b.ID, &drainState{
+		startedAt:  now.Add(-10 * time.Second),
+		deadline:   now.Add(20 * time.Second),
+		reason:     "idle", // NOT config-drift, so cancelable
+		generation: 3,
+	})
+
+	// Config has the worker agent — WakeConfig will reappear.
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker"},
+		},
+	}
+
+	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
+		got, _ := store.Get(id)
+		return &got
+	}, cfg, map[string]int{}, clk)
+
+	// Drain should be canceled — wake reasons reappeared.
+	if dt.get(b.ID) != nil {
+		t.Error("drain should be canceled when wake reasons reappear")
+	}
+	// Session should still be running.
+	if !sp.IsRunning("test-session") {
+		t.Error("session should still be running after drain cancel")
+	}
+}
+
+func TestAdvanceSessionDrains_ConfigDriftNotCancelable(t *testing.T) {
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	clk := &clock.Fake{Time: now}
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	dt := newDrainTracker()
+
+	// Session is still running.
+	_ = sp.Start(context.Background(), "test-session", runtime.Config{})
+
+	b, _ := store.Create(beads.Bead{
+		Title: "test",
+		Metadata: map[string]string{
+			"session_name": "test-session",
+			"template":     "worker",
+			"generation":   "3",
+		},
+	})
+
+	dt.set(b.ID, &drainState{
+		startedAt:  now.Add(-10 * time.Second),
+		deadline:   now.Add(20 * time.Second),
+		reason:     "config-drift", // NOT cancelable
+		generation: 3,
+	})
+
+	// Config has the worker agent — but config-drift drains are not canceled.
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker"},
+		},
+	}
+
+	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
+		got, _ := store.Get(id)
+		return &got
+	}, cfg, map[string]int{}, clk)
+
+	// Drain should NOT be canceled — config-drift is non-cancelable.
+	// Session is alive and deadline not reached, so drain continues.
+	if dt.get(b.ID) == nil {
+		t.Error("config-drift drain should not be canceled by wake reasons")
+	}
+}
+
+func TestNeedsConfigRestart(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", StartCommand: "claude --new-command"},
+		},
+	}
+
+	buildFn := func(a *config.Agent) runtime.Config {
+		return runtime.Config{Command: a.StartCommand}
+	}
+
+	// Hash matches — no restart needed.
+	currentHash := runtime.CoreFingerprint(buildFn(&cfg.Agents[0]))
+	session := makeBead("b1", map[string]string{
+		"template":    "worker",
+		"config_hash": currentHash,
+	})
+	if needsConfigRestart(session, cfg, buildFn) {
+		t.Error("should not need restart when hashes match")
+	}
+
+	// Hash differs — restart needed.
+	session.Metadata["config_hash"] = "old-hash"
+	if !needsConfigRestart(session, cfg, buildFn) {
+		t.Error("should need restart when hashes differ")
+	}
+
+	// No hash stored — can't detect drift.
+	session.Metadata["config_hash"] = ""
+	if needsConfigRestart(session, cfg, buildFn) {
+		t.Error("should not need restart when no hash stored")
+	}
+}

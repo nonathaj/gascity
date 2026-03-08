@@ -712,6 +712,61 @@ func RunDepTests(t *testing.T, newStore func() beads.Store) {
 			t.Errorf("DepList on empty store = %d deps, want 0", len(deps))
 		}
 	})
+
+	t.Run("SetMetadataBatch", func(t *testing.T) {
+		s := newStore()
+		b, err := s.Create(beads.Bead{Title: "batch-test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		kvs := map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+			"key3": "value3",
+		}
+		if err := s.SetMetadataBatch(b.ID, kvs); err != nil {
+			t.Fatalf("SetMetadataBatch: %v", err)
+		}
+		got, err := s.Get(b.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for k, want := range kvs {
+			if got.Metadata[k] != want {
+				t.Errorf("Metadata[%q] = %q, want %q", k, got.Metadata[k], want)
+			}
+		}
+	})
+
+	t.Run("SetMetadataBatchNotFound", func(t *testing.T) {
+		s := newStore()
+		err := s.SetMetadataBatch("nonexistent-999", map[string]string{"k": "v"})
+		if err == nil {
+			t.Fatal("SetMetadataBatch on nonexistent bead should return error")
+		}
+		if !errors.Is(err, beads.ErrNotFound) {
+			t.Errorf("error = %v, want wrapped ErrNotFound", err)
+		}
+	})
+
+	t.Run("SetMetadataBatchEmpty", func(t *testing.T) {
+		s := newStore()
+		b, err := s.Create(beads.Bead{Title: "empty-batch"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Empty batch should succeed without error.
+		if err := s.SetMetadataBatch(b.ID, map[string]string{}); err != nil {
+			t.Fatalf("SetMetadataBatch with empty map: %v", err)
+		}
+	})
+
+	t.Run("Ping", func(t *testing.T) {
+		s := newStore()
+		if err := s.Ping(); err != nil {
+			t.Fatalf("Ping on fresh store should succeed: %v", err)
+		}
+	})
 }
 
 // titlesOf extracts titles from a slice of beads.

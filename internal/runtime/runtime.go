@@ -95,6 +95,10 @@ type Provider interface {
 	// Called by the reconciler when only session_live config has changed
 	// (no restart needed). Best-effort: warnings on failure.
 	RunLive(name string, cfg Config) error
+
+	// Capabilities reports what this provider can reliably detect.
+	// Used by the reconciler to skip inapplicable wake reasons.
+	Capabilities() ProviderCapabilities
 }
 
 // CopyEntry describes a file or directory to stage in the session's
