@@ -23,9 +23,9 @@ func writeSSE(w http.ResponseWriter, eventType string, id uint64, data []byte) {
 	}
 }
 
-// writeSSEComment writes a comment line (keepalive) and flushes.
-func writeSSEComment(w http.ResponseWriter, comment string) {
-	fmt.Fprintf(w, ": %s\n\n", comment) //nolint:errcheck
+// writeSSEComment writes a keepalive comment line and flushes.
+func writeSSEComment(w http.ResponseWriter) {
+	fmt.Fprintf(w, ": keepalive\n\n") //nolint:errcheck
 	if err := http.NewResponseController(w).Flush(); err != nil {
 		_ = err
 	}
@@ -81,7 +81,7 @@ func streamEventsWithWatcher(ctx context.Context, w http.ResponseWriter, watcher
 			writeSSE(w, r.event.Type, r.event.Seq, data)
 			readNext()
 		case <-keepalive.C:
-			writeSSEComment(w, "keepalive")
+			writeSSEComment(w)
 		}
 	}
 }

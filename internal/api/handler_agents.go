@@ -155,16 +155,17 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	cityName := s.state.CityName()
 
 	// Try exact agent match first, then check for sub-resource suffix.
-	// This prevents agent names ending in "/peek" from being misrouted.
 	agentCfg, ok := findAgent(cfg, name)
 	if !ok {
 		// Not found as exact agent — check for sub-resource suffixes.
-		if after, found := strings.CutSuffix(name, "/peek"); found {
-			s.handleAgentPeek(w, r, after)
+		// Order matters: check longer suffixes first so /output doesn't
+		// partially match /output/stream.
+		if after, found := strings.CutSuffix(name, "/output/stream"); found {
+			s.handleAgentOutputStream(w, r, after)
 			return
 		}
-		if after, found := strings.CutSuffix(name, "/logs"); found {
-			s.handleAgentLogs(w, r, after)
+		if after, found := strings.CutSuffix(name, "/output"); found {
+			s.handleAgentOutput(w, r, after)
 			return
 		}
 		writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not found")
@@ -221,25 +222,6 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	writeIndexJSON(w, s.latestIndex(), resp)
 }
 
-func (s *Server) handleAgentPeek(w http.ResponseWriter, _ *http.Request, name string) {
-	sp := s.state.SessionProvider()
-	cfg := s.state.Config()
-	sessionName := agentSessionName(s.state.CityName(), name, cfg.Workspace.SessionTemplate)
-
-	if !sp.IsRunning(sessionName) {
-		writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not running")
-		return
-	}
-
-	output, err := sp.Peek(sessionName, 100)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"output": output})
-}
-
 func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
@@ -269,6 +251,9 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 	} else if after, found := strings.CutSuffix(name, "/nudge"); found {
 		name = after
 		action = "nudge"
+	} else if after, found := strings.CutSuffix(name, "/restart"); found {
+		name = after
+		action = "restart"
 	} else {
 		writeError(w, http.StatusNotFound, "not_found", "unknown agent action")
 		return
@@ -282,9 +267,11 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject mutations on the pool parent when max > 1.
-	// Runtime sessions are pool-1, pool-2, etc. — mutating the parent is a no-op.
-	if agentCfg.IsPool() {
+	// Reject runtime mutations on pool parents when max > 1.
+	// Runtime sessions are pool-1, pool-2, etc. — kill/drain/nudge the parent is a no-op.
+	// Suspend/resume target desired state in city.toml and correctly apply to the pool definition.
+	isRuntimeAction := action != "suspend" && action != "resume"
+	if isRuntimeAction && agentCfg.IsPool() {
 		pool := agentCfg.EffectivePool()
 		if pool.Max > 1 && name == agentCfg.QualifiedName() {
 			writeError(w, http.StatusBadRequest, "invalid",
@@ -314,9 +301,15 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = sm.NudgeAgent(name, body.Message)
+	case "restart":
+		err = sm.KillAgent(name) // reconciler restarts the agent
 	}
 
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "not_found", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}

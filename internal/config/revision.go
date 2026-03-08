@@ -76,8 +76,10 @@ func WatchDirs(prov *Provenance, cfg *City, cityRoot string) []string {
 	}
 
 	// Config source file directories.
-	for _, src := range prov.Sources {
-		addDir(filepath.Dir(src))
+	if prov != nil {
+		for _, src := range prov.Sources {
+			addDir(filepath.Dir(src))
+		}
 	}
 
 	// Rig pack directories (all pack sources).

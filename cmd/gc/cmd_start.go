@@ -9,16 +9,17 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
 )
@@ -93,7 +94,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string, multiReg
 // multi-instance pool agent in the config, mapped to the pool's drain
 // timeout. Used to distinguish excess pool members (drain) from true orphans
 // (kill) during reconciliation, and to enforce drain timeouts.
-func computePoolSessions(cfg *config.City, cityName string, sp session.Provider) map[string]time.Duration {
+func computePoolSessions(cfg *config.City, cityName string, sp runtime.Provider) map[string]time.Duration {
 	ps := make(map[string]time.Duration)
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -118,7 +119,7 @@ type poolDeathInfo struct {
 // computePoolDeathHandlers builds a map from session name to death handler
 // for every pool instance (static for bounded pools, currently running for
 // unlimited). Used to detect and handle pool deaths.
-func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp session.Provider) map[string]poolDeathInfo {
+func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp runtime.Provider) map[string]poolDeathInfo {
 	handlers := make(map[string]poolDeathInfo)
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -165,7 +166,7 @@ var dryRunMode bool
 // buildIdleTracker creates an idleTracker from the config, populating
 // timeouts for agents that have idle_timeout set. Returns nil if no
 // agents use idle timeout (disabled).
-func buildIdleTracker(cfg *config.City, cityName string, sp session.Provider) idleTracker {
+func buildIdleTracker(cfg *config.City, cityName string, sp runtime.Provider) idleTracker {
 	var hasAny bool
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -438,159 +439,8 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	// Called once for one-shot, or on each tick for controller mode.
 	// Pool check commands are re-evaluated each call. Accepts a *config.City
 	// parameter so the controller loop can pass freshly-reloaded config.
-	buildAgents := func(c *config.City, currentSP session.Provider) []agent.Agent {
-		// City-level suspension: no agents should start.
-		if c.Workspace.Suspended {
-			return nil
-		}
-
-		bp := newAgentBuildParams(cityName, cityPath, c, currentSP, beaconTime, stderr)
-
-		// Pre-compute suspended rig paths so we can skip agents in suspended rigs.
-		suspendedRigPaths := make(map[string]bool)
-		for _, r := range c.Rigs {
-			if r.Suspended {
-				suspendedRigPaths[filepath.Clean(r.Path)] = true
-			}
-		}
-
-		// poolEvalWork collects pool agents for parallel scale_check evaluation.
-		type poolEvalWork struct {
-			agentIdx int
-			pool     config.PoolConfig
-			poolDir  string
-		}
-
-		var agents []agent.Agent
-		var pendingPools []poolEvalWork
-		for i := range c.Agents {
-			if c.Agents[i].Suspended {
-				continue // Suspended agent — skip until resumed.
-			}
-
-			// Multi-instance template: build an agent for each running instance.
-			if c.Agents[i].IsMulti() {
-				if multiReg != nil {
-					instances, mErr := multiReg.instancesForTemplate(c.Agents[i].QualifiedName())
-					if mErr != nil {
-						fmt.Fprintf(stderr, "gc start: multi %q: %v (skipping)\n", c.Agents[i].QualifiedName(), mErr) //nolint:errcheck // best-effort stderr
-						continue
-					}
-					for _, mi := range instances {
-						if mi.State != "running" {
-							continue
-						}
-						instanceAgent := deepCopyAgent(&c.Agents[i], mi.Name, c.Agents[i].Dir)
-						instanceAgent.Multi = false
-						instanceAgent.PoolName = c.Agents[i].QualifiedName()
-						instanceQN := c.Agents[i].QualifiedName() + "/" + mi.Name
-						fpExtra := buildFingerprintExtra(&instanceAgent)
-						// Capture loop variables for closure.
-						templateQN := c.Agents[i].QualifiedName()
-						instName := mi.Name
-						onStop := func() error {
-							return multiReg.stop(templateQN, instName)
-						}
-						a, bErr := buildOneAgent(bp, &instanceAgent, instanceQN, fpExtra, onStop)
-						if bErr != nil {
-							fmt.Fprintf(stderr, "gc start: multi instance %q: %v (skipping)\n", instanceQN, bErr) //nolint:errcheck // best-effort stderr
-							continue
-						}
-						agents = append(agents, a)
-					}
-				}
-				continue // Template itself never runs.
-			}
-
-			pool := c.Agents[i].EffectivePool()
-
-			if pool.Max == 0 {
-				continue // Disabled agent.
-			}
-
-			if pool.Max == 1 && !c.Agents[i].IsPool() {
-				// Fixed agent: check rig suspension, then build via shared path.
-				expandedDir := expandDirTemplate(c.Agents[i].Dir, SessionSetupContext{
-					Agent:    c.Agents[i].QualifiedName(),
-					Rig:      c.Agents[i].Dir,
-					CityRoot: cityPath,
-					CityName: cityName,
-				})
-				workDir, err := resolveAgentDir(cityPath, expandedDir)
-				if err != nil {
-					fmt.Fprintf(stderr, "gc start: agent %q: %v (skipping)\n", c.Agents[i].QualifiedName(), err) //nolint:errcheck // best-effort stderr
-					continue
-				}
-				if suspendedRigPaths[filepath.Clean(workDir)] {
-					continue // Agent's rig is suspended — skip.
-				}
-
-				fpExtra := buildFingerprintExtra(&c.Agents[i])
-				a, err := buildOneAgent(bp, &c.Agents[i], c.Agents[i].QualifiedName(), fpExtra)
-				if err != nil {
-					fmt.Fprintf(stderr, "gc start: %v (skipping)\n", err) //nolint:errcheck // best-effort stderr
-					continue
-				}
-				agents = append(agents, a)
-				continue
-			}
-
-			// Pool agent (explicit [agents.pool] or implicit singleton with pool config).
-			// Collect for parallel scale_check evaluation below.
-			if c.Agents[i].Dir != "" {
-				poolDir, pdErr := resolveAgentDir(cityPath, c.Agents[i].Dir)
-				if pdErr == nil && suspendedRigPaths[filepath.Clean(poolDir)] {
-					continue // Agent's rig is suspended — skip.
-				}
-			}
-			// Resolve pool working directory for scale_check context.
-			poolDir := cityPath
-			if c.Agents[i].Dir != "" {
-				if pd, pdErr := resolveAgentDir(cityPath, c.Agents[i].Dir); pdErr == nil {
-					poolDir = pd
-				}
-			}
-			pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, pool: pool, poolDir: poolDir})
-		}
-
-		// Run pool scale_check commands in parallel. Each check is an
-		// independent shell command; running them concurrently reduces
-		// wall-clock time from sum(check_durations) to max(check_duration).
-		type poolEvalResult struct {
-			desired int
-			err     error
-		}
-		evalResults := make([]poolEvalResult, len(pendingPools))
-		var wg sync.WaitGroup
-		for j, pw := range pendingPools {
-			wg.Add(1)
-			go func(idx int, name string, pool config.PoolConfig, dir string) {
-				defer wg.Done()
-				desired, err := evaluatePool(name, pool, dir, shellScaleCheck)
-				evalResults[idx] = poolEvalResult{desired: desired, err: err}
-			}(j, c.Agents[pw.agentIdx].Name, pw.pool, pw.poolDir)
-		}
-		wg.Wait()
-
-		// Process results sequentially (logging, counting, agent building).
-		for j, pw := range pendingPools {
-			pr := evalResults[j]
-			if pr.err != nil {
-				fmt.Fprintf(stderr, "gc start: %v (using min=%d)\n", pr.err, pw.pool.Min) //nolint:errcheck // best-effort stderr
-			}
-			running := countRunningPoolInstances(c.Agents[pw.agentIdx].Name, c.Agents[pw.agentIdx].Dir, pw.pool, cityName, c.Workspace.SessionTemplate, currentSP)
-			if pr.desired != running {
-				fmt.Fprintf(stderr, "Pool '%s': check returned %d, %d running → scaling %s\n", //nolint:errcheck // best-effort stderr
-					c.Agents[pw.agentIdx].Name, pr.desired, running, scaleDirection(running, pr.desired))
-			}
-			pa, err := poolAgents(bp, &c.Agents[pw.agentIdx], pr.desired)
-			if err != nil {
-				fmt.Fprintf(stderr, "gc start: %v (skipping pool)\n", err) //nolint:errcheck // best-effort stderr
-				continue
-			}
-			agents = append(agents, pa...)
-		}
-		return agents
+	buildAgents := func(c *config.City, currentSP runtime.Provider) []agent.Agent {
+		return buildAgentsFromConfig(cityName, cityPath, beaconTime, c, currentSP, multiReg, "gc start", stderr)
 	}
 
 	recorder := events.Discard
@@ -627,12 +477,48 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	// Create a signal-aware context so Ctrl-C cancels in-flight starts.
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Enforce restrictive permissions on .gc/ and its subdirectories.
+	enforceGCPermissions(cityPath, stderr)
+
 	runPoolOnBoot(cfg, cityPath, shellScaleCheck, stderr)
 	agents := buildAgents(cfg, sp)
 	rops := newReconcileOps(sp)
+	// Upgrade to bead-driven rops so one-shot writes hashes to the same
+	// store as the daemon, preventing false drift on next daemon start.
+	var oneShotStore beads.Store
+	if store, err := openCityStoreAt(cityPath); err == nil {
+		oneShotStore = store
+
+		// Run adoption barrier before sync.
+		result, passed := runAdoptionBarrier(store, sp, cfg, cityName, clock.Real{}, stderr, false)
+		if result.Adopted > 0 {
+			fmt.Fprintf(stdout, "Adopted %d running session(s) into bead store.\n", result.Adopted) //nolint:errcheck
+		}
+		if !passed && result.Skipped > 0 {
+			fmt.Fprintf(stderr, "adoption barrier: %d session(s) failed bead creation\n", result.Skipped) //nolint:errcheck
+		}
+
+		cfgNames := configuredSessionNames(cfg, cityName)
+		idx := syncSessionBeads(store, agents, cfgNames, clock.Real{}, stderr)
+		if idx != nil {
+			bro := newBeadReconcileOps(rops, func() beads.Store { return store })
+			bro.updateIndex(idx)
+			rops = bro
+		}
+	} else {
+		fmt.Fprintf(stderr, "gc start: bead store unavailable, using provider hashes: %v\n", err) //nolint:errcheck
+	}
 	suspendedNames := computeSuspendedNames(cfg, cityName, cityPath, multiReg)
 	code := doReconcileAgents(agents, sp, rops, nil, nil, nil, recorder, nil, suspendedNames, 0, cfg.Session.StartupTimeoutDuration(), stdout, stderr, sigCtx)
-	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths), recorder)
+	ensureObservers(agents, observeSearchPaths(cfg.Daemon.ObservePaths))
+	// Post-reconcile sync: update bead state to reflect post-start reality.
+	// Without this, beads created pre-reconcile permanently show state=stopped
+	// because one-shot mode has no next tick to correct them.
+	if oneShotStore != nil {
+		cfgNames := configuredSessionNames(cfg, cityName)
+		syncSessionBeads(oneShotStore, buildAgents(cfg, sp), cfgNames, clock.Real{}, stderr)
+	}
 	if code == 0 {
 		fmt.Fprintln(stdout, "City started.") //nolint:errcheck // best-effort stdout
 	}
@@ -691,7 +577,7 @@ func settingsArgs(cityPath, providerName string) string {
 // copy_files list so container providers (K8s) can stage them into pods.
 // Docker doesn't need this (bind-mount), but the extra entries are harmless.
 // Avoids duplicating .gc/settings.json if settingsArgs already added it.
-func stageHookFiles(copyFiles []session.CopyEntry, cityPath, workDir string) []session.CopyEntry {
+func stageHookFiles(copyFiles []runtime.CopyEntry, cityPath, workDir string) []runtime.CopyEntry {
 	// workDir-based hooks: gemini, opencode, copilot, pi, omp.
 	for _, rel := range []string{
 		filepath.Join(".gemini", "settings.json"),
@@ -702,13 +588,13 @@ func stageHookFiles(copyFiles []session.CopyEntry, cityPath, workDir string) []s
 	} {
 		abs := filepath.Join(workDir, rel)
 		if _, err := os.Stat(abs); err == nil {
-			copyFiles = append(copyFiles, session.CopyEntry{Src: abs, RelDst: rel})
+			copyFiles = append(copyFiles, runtime.CopyEntry{Src: abs, RelDst: rel})
 		}
 	}
 	// Stage Claude skills directory (if materialized).
 	skillsDir := filepath.Join(workDir, ".claude", "skills")
 	if info, err := os.Stat(skillsDir); err == nil && info.IsDir() {
-		copyFiles = append(copyFiles, session.CopyEntry{
+		copyFiles = append(copyFiles, runtime.CopyEntry{
 			Src: skillsDir, RelDst: filepath.Join(".claude", "skills"),
 		})
 	}
@@ -725,7 +611,7 @@ func stageHookFiles(copyFiles []session.CopyEntry, cityPath, workDir string) []s
 			}
 		}
 		if !alreadyStaged {
-			copyFiles = append(copyFiles, session.CopyEntry{Src: settingsAbs, RelDst: settingsRel})
+			copyFiles = append(copyFiles, runtime.CopyEntry{Src: settingsAbs, RelDst: settingsRel})
 		}
 	}
 	return copyFiles
@@ -845,7 +731,7 @@ type imageChecker interface {
 // agents exist locally. Called once before the reconcile loop to fail fast
 // instead of discovering a missing image after N serial start timeouts.
 // Returns nil if the provider doesn't support image checking.
-func checkAgentImages(sp session.Provider, agents []config.Agent, _ io.Writer) error {
+func checkAgentImages(sp runtime.Provider, agents []config.Agent, _ io.Writer) error {
 	ic, ok := sp.(imageChecker)
 	if !ok {
 		return nil
@@ -871,7 +757,7 @@ func checkAgentImages(sp session.Provider, agents []config.Agent, _ io.Writer) e
 // Uses ListRunning with the city prefix for a single batch call instead
 // of N individual IsRunning calls. For exec providers (K8s), this reduces
 // N subprocess spawns to 1.
-func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfig, cityName, sessionTemplate string, sp session.Provider) int {
+func countRunningPoolInstances(agentName, agentDir string, pool config.PoolConfig, cityName, sessionTemplate string, sp runtime.Provider) int {
 	if pool.IsUnlimited() {
 		// Unlimited: count by prefix matching.
 		instances := discoverPoolInstances(agentName, agentDir, pool, cityName, sessionTemplate, sp)
@@ -937,6 +823,12 @@ func buildFingerprintExtra(a *config.Agent) map[string]string {
 		if a.Pool.Check != "" {
 			m["pool.check"] = a.Pool.Check
 		}
+	}
+	if len(a.DependsOn) > 0 {
+		m["depends_on"] = strings.Join(a.DependsOn, ",")
+	}
+	if a.WakeMode != "" && a.WakeMode != "resume" {
+		m["wake_mode"] = a.WakeMode
 	}
 	if len(m) == 0 {
 		return nil

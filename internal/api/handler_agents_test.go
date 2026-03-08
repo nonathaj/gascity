@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 func TestAgentList(t *testing.T) {
 	state := newFakeState(t)
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/agents", nil)
@@ -91,8 +91,8 @@ func TestAgentListUnlimitedPoolDiscovery(t *testing.T) {
 		},
 	}
 	// Start 2 running sessions matching the pool pattern.
-	state.sp.Start(context.Background(), "myrig--polecat-1", session.Config{}) //nolint:errcheck
-	state.sp.Start(context.Background(), "myrig--polecat-2", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--polecat-1", runtime.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--polecat-2", runtime.Config{}) //nolint:errcheck
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/agents", nil)
@@ -183,7 +183,7 @@ func TestAgentListFilterByRunning(t *testing.T) {
 		{Name: "running-agent"},
 		{Name: "stopped-agent"},
 	}
-	state.sp.Start(context.Background(), "running-agent", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "running-agent", runtime.Config{}) //nolint:errcheck
 	srv := New(state)
 
 	req := httptest.NewRequest("GET", "/v0/agents?running=true", nil)
@@ -235,13 +235,13 @@ func TestAgentGetNotFound(t *testing.T) {
 	}
 }
 
-func TestAgentPeek(t *testing.T) {
+func TestAgentOutputPeekFallback(t *testing.T) {
 	state := newFakeState(t)
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 	state.sp.SetPeekOutput("myrig--worker", "Hello from agent")
 	srv := New(state)
 
-	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/peek", nil)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -249,10 +249,22 @@ func TestAgentPeek(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var resp map[string]string
+	var resp agentOutputResponse
 	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
-	if resp["output"] != "Hello from agent" {
-		t.Errorf("output = %q, want %q", resp["output"], "Hello from agent")
+	if resp.Format != "text" {
+		t.Errorf("format = %q, want %q", resp.Format, "text")
+	}
+	if resp.Agent != "myrig/worker" {
+		t.Errorf("agent = %q, want %q", resp.Agent, "myrig/worker")
+	}
+	if len(resp.Turns) != 1 {
+		t.Fatalf("got %d turns, want 1", len(resp.Turns))
+	}
+	if resp.Turns[0].Text != "Hello from agent" {
+		t.Errorf("text = %q, want %q", resp.Turns[0].Text, "Hello from agent")
+	}
+	if resp.Turns[0].Role != "output" {
+		t.Errorf("role = %q, want %q", resp.Turns[0].Role, "output")
 	}
 }
 
@@ -277,11 +289,11 @@ func TestFindAgentPoolMaxZero(t *testing.T) {
 	}
 }
 
-func TestAgentPeekNotRunning(t *testing.T) {
+func TestAgentOutputNotRunning(t *testing.T) {
 	state := newFakeState(t)
 	srv := New(state)
 
-	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/peek", nil)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output", nil)
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
@@ -429,7 +441,7 @@ func TestAgentStateEnum(t *testing.T) {
 		{
 			name: "idle",
 			setup: func(s *fakeState) {
-				s.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+				s.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 			},
 			wantState: "idle",
 		},
@@ -469,7 +481,7 @@ func TestAgentStateEnum(t *testing.T) {
 
 func TestAgentPeekViaQueryParam(t *testing.T) {
 	state := newFakeState(t)
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 	state.sp.SetPeekOutput("myrig--worker", "line1\nline2\nline3")
 	srv := New(state)
 
@@ -501,7 +513,7 @@ func TestAgentModelAndContext(t *testing.T) {
 	state := newFakeState(t)
 	state.cfg.Workspace.Provider = "claude"
 	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: "/tmp/myrig"}}
-	state.sp.Start(context.Background(), "myrig--worker", session.Config{}) //nolint:errcheck
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 
 	// Create a fake session JSONL file for the rig path.
 	searchDir := t.TempDir()

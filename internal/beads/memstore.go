@@ -80,6 +80,12 @@ func (m *MemStore) Update(id string, opts UpdateOpts) error {
 	defer m.mu.Unlock()
 	for i := range m.beads {
 		if m.beads[i].ID == id {
+			if opts.Title != nil {
+				m.beads[i].Title = *opts.Title
+			}
+			if opts.Status != nil {
+				m.beads[i].Status = *opts.Status
+			}
 			if opts.Description != nil {
 				m.beads[i].Description = *opts.Description
 			}
@@ -215,6 +221,29 @@ func (m *MemStore) SetMetadata(id, key, value string) error {
 		}
 	}
 	return fmt.Errorf("setting metadata on %q: %w", id, ErrNotFound)
+}
+
+// SetMetadataBatch atomically sets multiple key-value metadata pairs on a bead.
+func (m *MemStore) SetMetadataBatch(id string, kvs map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, b := range m.beads {
+		if b.ID == id {
+			if b.Metadata == nil {
+				m.beads[i].Metadata = make(map[string]string)
+			}
+			for k, v := range kvs {
+				m.beads[i].Metadata[k] = v
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("setting metadata batch on %q: %w", id, ErrNotFound)
+}
+
+// Ping always succeeds for MemStore (in-memory, always available).
+func (m *MemStore) Ping() error {
+	return nil
 }
 
 // MolCook instantiates an ephemeral molecule (wisp) from a formula and returns

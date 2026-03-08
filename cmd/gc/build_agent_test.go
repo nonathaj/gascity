@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestBuildOneAgentMinimal(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "worker",
@@ -32,7 +32,7 @@ func TestBuildOneAgentMinimal(t *testing.T) {
 }
 
 func TestBuildOneAgentStartCommandBypassesProvider(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "custom",
@@ -52,7 +52,7 @@ func TestBuildOneAgentStartCommandBypassesProvider(t *testing.T) {
 }
 
 func TestBuildOneAgentUnknownProviderError(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	// Override lookPath to fail for the unknown provider.
 	p.lookPath = func(name string) (string, error) {
@@ -78,7 +78,7 @@ type lookPathErr struct{ name string }
 func (e *lookPathErr) Error() string { return e.name + ": not found" }
 
 func TestBuildOneAgentSetsEnvironment(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "envtest",
@@ -97,10 +97,17 @@ func TestBuildOneAgentSetsEnvironment(t *testing.T) {
 	if cfg.Env["GC_CITY"] != p.cityPath {
 		t.Errorf("GC_CITY = %q, want %q", cfg.Env["GC_CITY"], p.cityPath)
 	}
+	// New GC_SESSION_* vars (Phase 1 unified sessions).
+	if cfg.Env["GC_TEMPLATE"] != "envtest" {
+		t.Errorf("GC_TEMPLATE = %q, want %q", cfg.Env["GC_TEMPLATE"], "envtest")
+	}
+	if cfg.Env["GC_SESSION_NAME"] == "" {
+		t.Error("GC_SESSION_NAME is empty, want non-empty")
+	}
 }
 
 func TestBuildOneAgentPromptModeNoneSkipsPrompt(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	// Use a built-in provider with prompt_mode overridden to "none"
 	// via city-level providers.
@@ -129,7 +136,7 @@ func TestBuildOneAgentPromptModeNoneSkipsPrompt(t *testing.T) {
 }
 
 func TestBuildOneAgentFingerprintExtra(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "pooled",
@@ -149,7 +156,7 @@ func TestBuildOneAgentFingerprintExtra(t *testing.T) {
 }
 
 func TestBuildOneAgentQualifiedName(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "polecat",
@@ -170,7 +177,7 @@ func TestBuildOneAgentQualifiedName(t *testing.T) {
 }
 
 func TestBuildOneAgentStartsAndRuns(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:         "runner",
@@ -191,7 +198,7 @@ func TestBuildOneAgentStartsAndRuns(t *testing.T) {
 }
 
 func TestBuildOneAgentCustomSessionTemplate(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	p.sessionTemplate = "custom-{{.City}}-{{.Agent}}"
 	cfgAgent := &config.Agent{
@@ -209,7 +216,7 @@ func TestBuildOneAgentCustomSessionTemplate(t *testing.T) {
 }
 
 func TestBuildOneAgentClaudeProviderCommand(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	cfgAgent := &config.Agent{
 		Name:     "polecat",
@@ -239,7 +246,7 @@ func TestBuildOneAgentClaudeProviderCommand(t *testing.T) {
 }
 
 func TestNewAgentBuildParams(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	cfg := &config.City{
 		Workspace: config.Workspace{
 			Name:            "my-city",
@@ -321,7 +328,7 @@ func TestEffectiveOverlayDirs(t *testing.T) {
 }
 
 func TestBuildOneAgentPackOverlayDirs(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	p := testBuildParams(sp)
 	p.packOverlayDirs = []string{"/pack1/overlay", "/pack2/overlay"}
 
@@ -345,7 +352,7 @@ func TestBuildOneAgentPackOverlayDirs(t *testing.T) {
 }
 
 func TestNewAgentBuildParamsPackOverlayDirs(t *testing.T) {
-	sp := session.NewFake()
+	sp := runtime.NewFake()
 	cfg := &config.City{
 		Workspace:       config.Workspace{Name: "test"},
 		PackOverlayDirs: []string{"/x/overlay"},

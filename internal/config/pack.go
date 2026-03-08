@@ -574,6 +574,27 @@ func loadPack(fs fsys.FS, topoPath, topoDir, cityRoot, rigName string, seen map[
 		}
 	}
 
+	// Qualify depends_on entries AFTER patches so that patch-supplied
+	// bare names are also qualified. Pack agents have Dir = rigName,
+	// making their QualifiedName "rig/name", but DependsOn entries
+	// are written as bare names in pack TOML. Rewrite them to match.
+	if rigName != "" {
+		for i := range includedAgents {
+			if includedAgents[i].Dir != rigName || len(includedAgents[i].DependsOn) == 0 {
+				continue
+			}
+			qualified := make([]string, len(includedAgents[i].DependsOn))
+			for j, dep := range includedAgents[i].DependsOn {
+				if !strings.Contains(dep, "/") {
+					qualified[j] = rigName + "/" + dep
+				} else {
+					qualified[j] = dep
+				}
+			}
+			includedAgents[i].DependsOn = qualified
+		}
+	}
+
 	// Merge providers: parent wins over included.
 	mergedProviders := includedProviders
 	for name, spec := range tc.Providers {
@@ -835,6 +856,12 @@ func applyAgentOverride(a *Agent, ov *AgentOverride) {
 	}
 	if ov.Multi != nil {
 		a.Multi = *ov.Multi
+	}
+	if len(ov.DependsOn) > 0 {
+		a.DependsOn = append([]string(nil), ov.DependsOn...)
+	}
+	if ov.WakeMode != nil {
+		a.WakeMode = *ov.WakeMode
 	}
 	if len(ov.InjectFragments) > 0 {
 		a.InjectFragments = append([]string(nil), ov.InjectFragments...)

@@ -30,6 +30,8 @@ type Bead struct {
 
 // UpdateOpts specifies which fields to change. Nil pointers are skipped.
 type UpdateOpts struct {
+	Title        *string // set title (nil = no change)
+	Status       *string // set status (nil = no change)
 	Description  *string
 	ParentID     *string
 	Assignee     *string  // set assignee (nil = no change)
@@ -115,6 +117,18 @@ type Store interface {
 	// SetMetadata sets a key-value metadata pair on a bead. Returns
 	// ErrNotFound if the bead does not exist.
 	SetMetadata(id, key, value string) error
+
+	// SetMetadataBatch sets multiple key-value metadata pairs on a bead.
+	// In-memory stores (MemStore, FileStore) apply all writes atomically.
+	// External stores (BdStore, exec) apply writes sequentially; partial
+	// application is possible on mid-batch failure. Callers should design
+	// batch contents to be idempotent and tolerate partial writes.
+	// Returns ErrNotFound if the bead does not exist.
+	SetMetadataBatch(id string, kvs map[string]string) error
+
+	// Ping verifies that the store is operational. Returns nil on success,
+	// or an error describing why the store is unavailable.
+	Ping() error
 
 	// MolCook instantiates an ephemeral molecule (wisp) from a formula
 	// and returns the root bead ID.

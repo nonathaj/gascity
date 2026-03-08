@@ -14,7 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
@@ -148,7 +148,12 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 		Multi:               src.Multi,
 		IdleTimeout:         src.IdleTimeout,
 		Suspended:           src.Suspended,
+		WakeMode:            src.WakeMode,
 		PoolName:            src.QualifiedName(),
+	}
+	if len(src.DependsOn) > 0 {
+		dst.DependsOn = make([]string, len(src.DependsOn))
+		copy(dst.DependsOn, src.DependsOn)
 	}
 	if len(src.Args) > 0 {
 		dst.Args = make([]string, len(src.Args))
@@ -257,7 +262,8 @@ func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]ag
 		}
 
 		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
-		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, nil)
+		fpExtra := buildFingerprintExtra(&instanceAgent)
+		a, err := buildOneAgent(bp, &instanceAgent, qualifiedInstance, fpExtra)
 		if err != nil {
 			return nil, fmt.Errorf("agent %q instance %q: %w", cfgAgent.QualifiedName(), name, err)
 		}
@@ -271,7 +277,7 @@ func poolAgents(bp *agentBuildParams, cfgAgent *config.Agent, desired int) ([]ag
 // For unlimited pools (max < 0), discovers running instances via session provider
 // prefix matching.
 func discoverPoolInstances(agentName, agentDir string, pool config.PoolConfig,
-	cityName, st string, sp session.Provider,
+	cityName, st string, sp runtime.Provider,
 ) []string {
 	if !pool.IsUnlimited() {
 		// Bounded pool: static enumeration.

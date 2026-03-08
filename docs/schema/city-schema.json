@@ -211,6 +211,21 @@
         "multi": {
           "type": "boolean",
           "description": "Multi marks this agent as a multi-instance template. Users manually\nstart/stop named instances via \"gc agent start/stop/destroy\". Unlike\npools (declarative auto-scaling), multi is imperative. Multi and pool\nare mutually exclusive."
+        },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn lists agent names that must be awake before this agent wakes.\nUsed for dependency-ordered startup and shutdown. Validated for cycles\nat config load time."
+        },
+        "wake_mode": {
+          "type": "string",
+          "enum": [
+            "resume",
+            "fresh"
+          ],
+          "description": "WakeMode controls context freshness across sleep/wake cycles.\n\"resume\" (default): reuse provider session key for conversation continuity.\n\"fresh\": start a new provider session on every wake (polecat pattern)."
         }
       },
       "additionalProperties": false,
@@ -367,6 +382,21 @@
           "type": "boolean",
           "description": "Multi overrides the agent's multi-instance template flag."
         },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn overrides the agent's dependency list."
+        },
+        "wake_mode": {
+          "type": "string",
+          "enum": [
+            "resume",
+            "fresh"
+          ],
+          "description": "WakeMode overrides the agent's wake mode (\"resume\" or \"fresh\")."
+        },
         "inject_fragments_append": {
           "items": {
             "type": "string"
@@ -501,6 +531,21 @@
           "type": "boolean",
           "description": "Multi overrides the agent's multi-instance template flag."
         },
+        "depends_on": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DependsOn overrides the agent's dependency list."
+        },
+        "wake_mode": {
+          "type": "string",
+          "enum": [
+            "resume",
+            "fresh"
+          ],
+          "description": "WakeMode overrides the agent's wake mode (\"resume\" or \"fresh\")."
+        },
         "pre_start_append": {
           "items": {
             "type": "string"
@@ -632,6 +677,17 @@
       "type": "object",
       "description": "BeadsConfig holds bead store settings."
     },
+    "ChatSessionsConfig": {
+      "properties": {
+        "idle_timeout": {
+          "type": "string",
+          "description": "IdleTimeout is the duration after which a detached chat session\nis auto-suspended. Duration string (e.g., \"30m\", \"1h\"). 0 = disabled."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ChatSessionsConfig configures chat session behavior."
+    },
     "City": {
       "properties": {
         "include": {
@@ -712,6 +768,10 @@
         "api": {
           "$ref": "#/$defs/APIConfig",
           "description": "API configures the optional HTTP API server."
+        },
+        "chat_sessions": {
+          "$ref": "#/$defs/ChatSessionsConfig",
+          "description": "ChatSessions configures chat session behavior (auto-suspend)."
         }
       },
       "additionalProperties": false,
@@ -1118,6 +1178,18 @@
         "instructions_file": {
           "type": "string",
           "description": "InstructionsFile is the filename the provider reads for project instructions\n(e.g., \"CLAUDE.md\", \"AGENTS.md\"). Empty defaults to \"AGENTS.md\"."
+        },
+        "resume_flag": {
+          "type": "string",
+          "description": "ResumeFlag is the CLI flag for resuming a session by ID.\nEmpty means the provider does not support resume.\nExamples: \"--resume\" (claude), \"resume\" (codex)"
+        },
+        "resume_style": {
+          "type": "string",
+          "description": "ResumeStyle controls how ResumeFlag is applied:\n  \"flag\"       → command --resume \u003ckey\u003e              (default)\n  \"subcommand\" → command resume \u003ckey\u003e"
+        },
+        "session_id_flag": {
+          "type": "string",
+          "description": "SessionIDFlag is the CLI flag for creating a session with a specific ID.\nEnables the Generate \u0026 Pass strategy for session key management.\nExample: \"--session-id\" (claude)"
         }
       },
       "additionalProperties": false,

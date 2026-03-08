@@ -370,6 +370,12 @@ func (s *BdStore) Get(id string) (Bead, error) {
 // Update modifies fields of an existing bead via bd update.
 func (s *BdStore) Update(id string, opts UpdateOpts) error {
 	args := []string{"update", "--json", id}
+	if opts.Title != nil {
+		args = append(args, "--title", *opts.Title)
+	}
+	if opts.Status != nil {
+		args = append(args, "--status", *opts.Status)
+	}
 	if opts.Description != nil {
 		args = append(args, "--description", *opts.Description)
 	}
@@ -405,6 +411,27 @@ func (s *BdStore) SetMetadata(id, key, value string) error {
 		"--set-metadata", key+"="+value)
 	if err != nil {
 		return fmt.Errorf("setting metadata on %q: %w", id, err)
+	}
+	return nil
+}
+
+// SetMetadataBatch sets multiple key-value metadata pairs on a bead via
+// sequential bd update calls. Note: not truly atomic for external stores,
+// but each individual call is idempotent.
+func (s *BdStore) SetMetadataBatch(id string, kvs map[string]string) error {
+	for k, v := range kvs {
+		if err := s.SetMetadata(id, k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Ping verifies the bd binary is accessible by running a no-op command.
+func (s *BdStore) Ping() error {
+	_, err := s.runner(s.dir, "bd", "list", "--json", "--limit", "0")
+	if err != nil {
+		return fmt.Errorf("bd store ping: %w", err)
 	}
 	return nil
 }

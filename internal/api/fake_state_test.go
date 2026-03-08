@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // newPostRequest creates a POST httptest request with the X-GC-Request header
@@ -27,15 +28,18 @@ func newPostRequest(url string, body io.Reader) *http.Request {
 
 // fakeState implements State for testing.
 type fakeState struct {
-	cfg         *config.City
-	sp          *session.Fake
-	stores      map[string]beads.Store
-	mailProvs   map[string]mail.Provider
-	eventProv   events.Provider
-	cityName    string
-	cityPath    string
-	startedAt   time.Time
-	quarantined map[string]bool
+	cfg           *config.City
+	rawCfg        *config.City // optional: raw config for provenance detection
+	sp            *runtime.Fake
+	stores        map[string]beads.Store
+	cityBeadStore beads.Store // city-level store for session beads
+	mailProvs     map[string]mail.Provider
+	eventProv     events.Provider
+	cityName      string
+	cityPath      string
+	startedAt     time.Time
+	quarantined   map[string]bool
+	autos         []automations.Automation
 }
 
 func newFakeState(t *testing.T) *fakeState {
@@ -52,7 +56,7 @@ func newFakeState(t *testing.T) *fakeState {
 				{Name: "myrig", Path: "/tmp/myrig"},
 			},
 		},
-		sp:        session.NewFake(),
+		sp:        runtime.NewFake(),
 		stores:    map[string]beads.Store{"myrig": store},
 		mailProvs: map[string]mail.Provider{"myrig": mp},
 		eventProv: events.NewFake(),
@@ -63,7 +67,7 @@ func newFakeState(t *testing.T) *fakeState {
 }
 
 func (f *fakeState) Config() *config.City                    { return f.cfg }
-func (f *fakeState) SessionProvider() session.Provider       { return f.sp }
+func (f *fakeState) SessionProvider() runtime.Provider       { return f.sp }
 func (f *fakeState) BeadStore(rig string) beads.Store        { return f.stores[rig] }
 func (f *fakeState) BeadStores() map[string]beads.Store      { return f.stores }
 func (f *fakeState) MailProvider(rig string) mail.Provider   { return f.mailProvs[rig] }
@@ -74,6 +78,14 @@ func (f *fakeState) CityPath() string                        { return f.cityPath
 func (f *fakeState) Version() string                         { return "test" }
 func (f *fakeState) StartedAt() time.Time                    { return f.startedAt }
 func (f *fakeState) IsQuarantined(sessionName string) bool   { return f.quarantined[sessionName] }
+func (f *fakeState) CityBeadStore() beads.Store              { return f.cityBeadStore }
+func (f *fakeState) Automations() []automations.Automation   { return f.autos }
+func (f *fakeState) RawConfig() *config.City {
+	if f.rawCfg != nil {
+		return f.rawCfg
+	}
+	return f.cfg // fallback: raw == expanded when no packs
+}
 
 // fakeMutatorState extends fakeState with StateMutator for testing mutations.
 type fakeMutatorState struct {
@@ -101,6 +113,31 @@ func (f *fakeMutatorState) KillAgent(name string) error       { f.killed[name] =
 func (f *fakeMutatorState) DrainAgent(name string) error      { f.drained[name] = true; return nil }
 func (f *fakeMutatorState) UndrainAgent(name string) error    { delete(f.drained, name); return nil }
 func (f *fakeMutatorState) NudgeAgent(name, msg string) error { f.nudges[name] = msg; return nil }
+func (f *fakeMutatorState) EnableAutomation(name, rig string) error {
+	enabled := true
+	return f.SetAutomationOverrideEnabled(name, rig, &enabled)
+}
+
+func (f *fakeMutatorState) DisableAutomation(name, rig string) error {
+	enabled := false
+	return f.SetAutomationOverrideEnabled(name, rig, &enabled)
+}
+
+func (f *fakeMutatorState) SetAutomationOverrideEnabled(name, rig string, enabled *bool) error {
+	for i := range f.cfg.Automations.Overrides {
+		if f.cfg.Automations.Overrides[i].Name == name && f.cfg.Automations.Overrides[i].Rig == rig {
+			f.cfg.Automations.Overrides[i].Enabled = enabled
+			return nil
+		}
+	}
+	f.cfg.Automations.Overrides = append(f.cfg.Automations.Overrides, config.AutomationOverride{
+		Name:    name,
+		Rig:     rig,
+		Enabled: enabled,
+	})
+	return nil
+}
+
 func (f *fakeMutatorState) SuspendRig(name string) error {
 	cfg := f.Config()
 	found := false
@@ -151,4 +188,199 @@ func (f *fakeMutatorState) ResumeRig(name string) error {
 		}
 	}
 	return nil
+}
+
+func (f *fakeMutatorState) SuspendCity() error { f.cfg.Workspace.Suspended = true; return nil }
+func (f *fakeMutatorState) ResumeCity() error  { f.cfg.Workspace.Suspended = false; return nil }
+func (f *fakeMutatorState) CreateAgent(a config.Agent) error {
+	f.cfg.Agents = append(f.cfg.Agents, a)
+	return nil
+}
+
+func (f *fakeMutatorState) UpdateAgent(name string, patch AgentUpdate) error {
+	dir, base := config.ParseQualifiedName(name)
+	for i := range f.cfg.Agents {
+		if f.cfg.Agents[i].Dir == dir && f.cfg.Agents[i].Name == base {
+			if patch.Provider != "" {
+				f.cfg.Agents[i].Provider = patch.Provider
+			}
+			if patch.Scope != "" {
+				f.cfg.Agents[i].Scope = patch.Scope
+			}
+			if patch.Suspended != nil {
+				f.cfg.Agents[i].Suspended = *patch.Suspended
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("agent %q not found", name)
+}
+
+func (f *fakeMutatorState) DeleteAgent(name string) error {
+	dir, base := config.ParseQualifiedName(name)
+	for i := range f.cfg.Agents {
+		if f.cfg.Agents[i].Dir == dir && f.cfg.Agents[i].Name == base {
+			f.cfg.Agents = append(f.cfg.Agents[:i], f.cfg.Agents[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("agent %q not found", name)
+}
+
+func (f *fakeMutatorState) CreateRig(r config.Rig) error {
+	f.cfg.Rigs = append(f.cfg.Rigs, r)
+	return nil
+}
+
+func (f *fakeMutatorState) UpdateRig(name string, patch RigUpdate) error {
+	for i := range f.cfg.Rigs {
+		if f.cfg.Rigs[i].Name == name {
+			if patch.Path != "" {
+				f.cfg.Rigs[i].Path = patch.Path
+			}
+			if patch.Prefix != "" {
+				f.cfg.Rigs[i].Prefix = patch.Prefix
+			}
+			if patch.Suspended != nil {
+				f.cfg.Rigs[i].Suspended = *patch.Suspended
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("rig %q not found", name)
+}
+
+func (f *fakeMutatorState) DeleteRig(name string) error {
+	for i := range f.cfg.Rigs {
+		if f.cfg.Rigs[i].Name == name {
+			f.cfg.Rigs = append(f.cfg.Rigs[:i], f.cfg.Rigs[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("rig %q not found", name)
+}
+
+func (f *fakeMutatorState) CreateProvider(name string, spec config.ProviderSpec) error {
+	if f.cfg.Providers == nil {
+		f.cfg.Providers = make(map[string]config.ProviderSpec)
+	}
+	if _, exists := f.cfg.Providers[name]; exists {
+		return fmt.Errorf("provider %q already exists", name)
+	}
+	f.cfg.Providers[name] = spec
+	return nil
+}
+
+func (f *fakeMutatorState) UpdateProvider(name string, patch ProviderUpdate) error {
+	if f.cfg.Providers == nil {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	spec, ok := f.cfg.Providers[name]
+	if !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if patch.DisplayName != nil {
+		spec.DisplayName = *patch.DisplayName
+	}
+	if patch.Command != nil {
+		spec.Command = *patch.Command
+	}
+	if patch.Args != nil {
+		spec.Args = make([]string, len(patch.Args))
+		copy(spec.Args, patch.Args)
+	}
+	if patch.PromptMode != nil {
+		spec.PromptMode = *patch.PromptMode
+	}
+	if patch.PromptFlag != nil {
+		spec.PromptFlag = *patch.PromptFlag
+	}
+	if patch.ReadyDelayMs != nil {
+		spec.ReadyDelayMs = *patch.ReadyDelayMs
+	}
+	if len(patch.Env) > 0 {
+		if spec.Env == nil {
+			spec.Env = make(map[string]string, len(patch.Env))
+		}
+		for k, v := range patch.Env {
+			spec.Env[k] = v
+		}
+	}
+	f.cfg.Providers[name] = spec
+	return nil
+}
+
+func (f *fakeMutatorState) DeleteProvider(name string) error {
+	if f.cfg.Providers == nil {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	if _, ok := f.cfg.Providers[name]; !ok {
+		return fmt.Errorf("provider %q not found", name)
+	}
+	delete(f.cfg.Providers, name)
+	return nil
+}
+
+func (f *fakeMutatorState) SetAgentPatch(patch config.AgentPatch) error {
+	for i := range f.cfg.Patches.Agents {
+		if f.cfg.Patches.Agents[i].Dir == patch.Dir && f.cfg.Patches.Agents[i].Name == patch.Name {
+			f.cfg.Patches.Agents[i] = patch
+			return nil
+		}
+	}
+	f.cfg.Patches.Agents = append(f.cfg.Patches.Agents, patch)
+	return nil
+}
+
+func (f *fakeMutatorState) DeleteAgentPatch(name string) error {
+	dir, base := config.ParseQualifiedName(name)
+	for i := range f.cfg.Patches.Agents {
+		if f.cfg.Patches.Agents[i].Dir == dir && f.cfg.Patches.Agents[i].Name == base {
+			f.cfg.Patches.Agents = append(f.cfg.Patches.Agents[:i], f.cfg.Patches.Agents[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("agent patch %q not found", name)
+}
+
+func (f *fakeMutatorState) SetRigPatch(patch config.RigPatch) error {
+	for i := range f.cfg.Patches.Rigs {
+		if f.cfg.Patches.Rigs[i].Name == patch.Name {
+			f.cfg.Patches.Rigs[i] = patch
+			return nil
+		}
+	}
+	f.cfg.Patches.Rigs = append(f.cfg.Patches.Rigs, patch)
+	return nil
+}
+
+func (f *fakeMutatorState) DeleteRigPatch(name string) error {
+	for i := range f.cfg.Patches.Rigs {
+		if f.cfg.Patches.Rigs[i].Name == name {
+			f.cfg.Patches.Rigs = append(f.cfg.Patches.Rigs[:i], f.cfg.Patches.Rigs[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("rig patch %q not found", name)
+}
+
+func (f *fakeMutatorState) SetProviderPatch(patch config.ProviderPatch) error {
+	for i := range f.cfg.Patches.Providers {
+		if f.cfg.Patches.Providers[i].Name == patch.Name {
+			f.cfg.Patches.Providers[i] = patch
+			return nil
+		}
+	}
+	f.cfg.Patches.Providers = append(f.cfg.Patches.Providers, patch)
+	return nil
+}
+
+func (f *fakeMutatorState) DeleteProviderPatch(name string) error {
+	for i := range f.cfg.Patches.Providers {
+		if f.cfg.Patches.Providers[i].Name == name {
+			f.cfg.Patches.Providers = append(f.cfg.Patches.Providers[:i], f.cfg.Patches.Providers[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("provider patch %q not found", name)
 }

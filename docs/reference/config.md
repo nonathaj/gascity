@@ -26,6 +26,7 @@ City is the top-level configuration for a Gas City instance.
 | `daemon` | DaemonConfig |  |  | Daemon configures controller daemon settings. |
 | `automations` | AutomationsConfig |  |  | Automations configures automation settings (skip list). |
 | `api` | APIConfig |  |  | API configures the optional HTTP API server. |
+| `chat_sessions` | ChatSessionsConfig |  |  | ChatSessions configures chat session behavior (auto-suspend). |
 
 ## ACPSessionConfig
 
@@ -85,6 +86,8 @@ Agent defines a configured agent in the city.
 | `attach` | boolean |  |  | Attach controls whether the agent's session supports interactive attachment (e.g., tmux attach). When false, the agent can use a lighter runtime (subprocess instead of tmux). Defaults to true. |
 | `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 | `multi` | boolean |  |  | Multi marks this agent as a multi-instance template. Users manually start/stop named instances via "gc agent start/stop/destroy". Unlike pools (declarative auto-scaling), multi is imperative. Multi and pool are mutually exclusive. |
+| `depends_on` | []string |  |  | DependsOn lists agent names that must be awake before this agent wakes. Used for dependency-ordered startup and shutdown. Validated for cycles at config load time. |
+| `wake_mode` | string |  |  | WakeMode controls context freshness across sleep/wake cycles. "resume" (default): reuse provider session key for conversation continuity. "fresh": start a new provider session on every wake (polecat pattern). Enum: `resume`, `fresh` |
 
 ## AgentOverride
 
@@ -120,6 +123,8 @@ AgentOverride modifies a pack-stamped agent for a specific rig.
 | `install_agent_hooks_append` | []string |  |  | InstallAgentHooksAppend appends to the agent's install_agent_hooks list. |
 | `attach` | boolean |  |  | Attach overrides the agent's attach setting. |
 | `multi` | boolean |  |  | Multi overrides the agent's multi-instance template flag. |
+| `depends_on` | []string |  |  | DependsOn overrides the agent's dependency list. |
+| `wake_mode` | string |  |  | WakeMode overrides the agent's wake mode ("resume" or "fresh"). Enum: `resume`, `fresh` |
 | `inject_fragments_append` | []string |  |  | InjectFragmentsAppend appends to the agent's inject_fragments list. |
 
 ## AgentPatch
@@ -152,6 +157,8 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 | `inject_fragments` | []string |  |  | InjectFragments overrides the agent's inject_fragments list. |
 | `attach` | boolean |  |  | Attach overrides the agent's attach setting. |
 | `multi` | boolean |  |  | Multi overrides the agent's multi-instance template flag. |
+| `depends_on` | []string |  |  | DependsOn overrides the agent's dependency list. |
+| `wake_mode` | string |  |  | WakeMode overrides the agent's wake mode ("resume" or "fresh"). Enum: `resume`, `fresh` |
 | `pre_start_append` | []string |  |  | PreStartAppend appends commands to the agent's pre_start list (instead of replacing). Applied after PreStart if both are set. |
 | `session_setup_append` | []string |  |  | SessionSetupAppend appends commands to the agent's session_setup list. |
 | `session_live_append` | []string |  |  | SessionLiveAppend appends commands to the agent's session_live list. |
@@ -192,6 +199,14 @@ BeadsConfig holds bead store settings.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `provider` | string |  | `bd` | Provider selects the bead store backend: "bd" (default), "file", or "exec:<script>" for a user-supplied script. |
+
+## ChatSessionsConfig
+
+ChatSessionsConfig configures chat session behavior.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `idle_timeout` | string |  |  | IdleTimeout is the duration after which a detached chat session is auto-suspended. Duration string (e.g., "30m", "1h"). 0 = disabled. |
 
 ## DaemonConfig
 
@@ -338,6 +353,9 @@ ProviderSpec defines a named provider's startup parameters.
 | `supports_acp` | boolean |  |  | SupportsACP indicates the binary speaks the Agent Client Protocol (JSON-RPC 2.0 over stdio). When an agent sets session = "acp", its resolved provider must have SupportsACP = true. |
 | `supports_hooks` | boolean |  |  | SupportsHooks indicates the provider has an executable hook mechanism (settings.json, plugins, etc.) for lifecycle events. |
 | `instructions_file` | string |  |  | InstructionsFile is the filename the provider reads for project instructions (e.g., "CLAUDE.md", "AGENTS.md"). Empty defaults to "AGENTS.md". |
+| `resume_flag` | string |  |  | ResumeFlag is the CLI flag for resuming a session by ID. Empty means the provider does not support resume. Examples: "--resume" (claude), "resume" (codex) |
+| `resume_style` | string |  |  | ResumeStyle controls how ResumeFlag is applied:   "flag"       → command --resume <key>              (default)   "subcommand" → command resume <key> |
+| `session_id_flag` | string |  |  | SessionIDFlag is the CLI flag for creating a session with a specific ID. Enables the Generate & Pass strategy for session key management. Example: "--session-id" (claude) |
 
 ## Rig
 

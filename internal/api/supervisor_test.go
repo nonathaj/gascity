@@ -1,0 +1,423 @@
+package api
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gastownhall/gascity/internal/events"
+)
+
+// fakeCityResolver implements CityResolver for testing.
+type fakeCityResolver struct {
+	cities map[string]*fakeState // keyed by city name
+}
+
+func (f *fakeCityResolver) ListCities() []CityInfo {
+	var out []CityInfo
+	for name := range f.cities {
+		s := f.cities[name]
+		out = append(out, CityInfo{
+			Name:    name,
+			Path:    s.CityPath(),
+			Running: true,
+		})
+	}
+	return out
+}
+
+func (f *fakeCityResolver) CityState(name string) State {
+	if s, ok := f.cities[name]; ok {
+		return s
+	}
+	return nil
+}
+
+func newTestSupervisorMux(t *testing.T, cities map[string]*fakeState) *SupervisorMux {
+	t.Helper()
+	resolver := &fakeCityResolver{cities: cities}
+	return NewSupervisorMux(resolver, false, "test", time.Now())
+}
+
+func TestSupervisorCitiesList(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	req := httptest.NewRequest("GET", "/v0/cities", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []CityInfo `json:"items"`
+		Total int        `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 {
+		t.Errorf("Total = %d, want 2", resp.Total)
+	}
+	// Sorted by name.
+	if resp.Items[0].Name != "alpha" || resp.Items[1].Name != "beta" {
+		t.Errorf("items = %v, want alpha then beta", resp.Items)
+	}
+}
+
+func TestSupervisorCityNamespacedRoute(t *testing.T) {
+	s := newFakeState(t)
+	s.cityName = "bright-lights"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"bright-lights": s,
+	})
+
+	req := httptest.NewRequest("GET", "/v0/city/bright-lights/agents", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	// Should return the agent list from the city's state.
+	var resp struct {
+		Items []json.RawMessage `json:"items"`
+		Total int               `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("Total = %d, want 1 (one agent in fakeState)", resp.Total)
+	}
+}
+
+func TestSupervisorCityDetail(t *testing.T) {
+	s := newFakeState(t)
+	s.cityName = "bright-lights"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"bright-lights": s,
+	})
+
+	// /v0/city/{name} with no suffix should return status.
+	req := httptest.NewRequest("GET", "/v0/city/bright-lights", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp statusResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Name != "bright-lights" {
+		t.Errorf("Name = %q, want %q", resp.Name, "bright-lights")
+	}
+}
+
+func TestSupervisorCityNotFound(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest("GET", "/v0/city/unknown/agents", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestSupervisorBarePathSingleCity(t *testing.T) {
+	s := newFakeState(t)
+	s.cityName = "sole-city"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"sole-city": s,
+	})
+
+	// Bare /v0/status should route to the sole running city.
+	req := httptest.NewRequest("GET", "/v0/status", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp statusResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Name != "sole-city" {
+		t.Errorf("Name = %q, want %q", resp.Name, "sole-city")
+	}
+}
+
+func TestSupervisorBarePathNoCities(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest("GET", "/v0/status", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestSupervisorBarePathMultipleCities(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	// Bare /v0/status with multiple cities should return 400 requiring
+	// explicit city scope.
+	req := httptest.NewRequest("GET", "/v0/status", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "city_required") {
+		t.Errorf("body = %q, want city_required error", body)
+	}
+}
+
+func TestSupervisorHealth(t *testing.T) {
+	s := newFakeState(t)
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"test-city": s,
+	})
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Errorf("status = %v, want %q", resp["status"], "ok")
+	}
+	if resp["cities_total"] != float64(1) {
+		t.Errorf("cities_total = %v, want 1", resp["cities_total"])
+	}
+	if resp["cities_running"] != float64(1) {
+		t.Errorf("cities_running = %v, want 1", resp["cities_running"])
+	}
+}
+
+func TestSupervisorEmptyCityName(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest("GET", "/v0/city/", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestSupervisorGlobalEventList(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	// Record events in each city's event provider.
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "b1"})
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	req := httptest.NewRequest("GET", "/v0/events", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 2 {
+		t.Errorf("total = %d, want 2", resp.Total)
+	}
+
+	// Verify events are tagged with city names.
+	cities := make(map[string]bool)
+	for _, e := range resp.Items {
+		cities[e.City] = true
+	}
+	if !cities["alpha"] || !cities["beta"] {
+		t.Errorf("expected events from both cities, got: %v", cities)
+	}
+}
+
+func TestSupervisorGlobalEventListWithFilter(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStopped, Actor: "a1"})
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{"alpha": s1})
+
+	req := httptest.NewRequest("GET", "/v0/events?type=agent.started", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("total = %d, want 1", resp.Total)
+	}
+	if resp.Items[0].Type != events.AgentStarted {
+		t.Errorf("type = %q, want %q", resp.Items[0].Type, events.AgentStarted)
+	}
+}
+
+func TestSupervisorGlobalEventListEmpty(t *testing.T) {
+	sm := newTestSupervisorMux(t, map[string]*fakeState{})
+
+	req := httptest.NewRequest("GET", "/v0/events", nil)
+	rec := httptest.NewRecorder()
+	sm.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Items []events.TaggedEvent `json:"items"`
+		Total int                  `json:"total"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
+	}
+}
+
+func TestSupervisorGlobalEventStreamCompositeCursor(t *testing.T) {
+	s1 := newFakeState(t)
+	s1.cityName = "alpha"
+	s2 := newFakeState(t)
+	s2.cityName = "beta"
+
+	sm := newTestSupervisorMux(t, map[string]*fakeState{
+		"alpha": s1,
+		"beta":  s2,
+	})
+
+	// Use a cancellable context so we can stop the SSE stream.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest("GET", "/v0/events/stream", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	// Run ServeHTTP in a goroutine since it blocks.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sm.ServeHTTP(rec, req)
+	}()
+
+	// Record events after the stream handler starts.
+	time.Sleep(50 * time.Millisecond)
+	s1.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "a1"})
+	s2.eventProv.(*events.Fake).Record(events.Event{Type: events.AgentStarted, Actor: "b1"})
+
+	// Give events time to propagate through the stream.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	// Parse SSE events from the response body.
+	body := rec.Body.String()
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	var sseIDs []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "id: ") {
+			sseIDs = append(sseIDs, strings.TrimPrefix(line, "id: "))
+		}
+	}
+
+	if len(sseIDs) == 0 {
+		t.Fatalf("expected SSE events with id lines, got body: %s", body)
+	}
+
+	// Each id should be a composite cursor (containing ":" for city:seq format).
+	for _, id := range sseIDs {
+		if !strings.Contains(id, ":") {
+			t.Errorf("SSE id %q is not a composite cursor (expected city:seq format)", id)
+		}
+		// Verify round-trip: ParseCursor should produce a non-empty map.
+		cursors := events.ParseCursor(id)
+		if len(cursors) == 0 {
+			t.Errorf("ParseCursor(%q) returned empty map", id)
+		}
+	}
+
+	// The last cursor should contain both cities (once both have emitted events).
+	lastID := sseIDs[len(sseIDs)-1]
+	lastCursors := events.ParseCursor(lastID)
+	if _, ok := lastCursors["alpha"]; !ok {
+		t.Errorf("last cursor %q missing city 'alpha'", lastID)
+	}
+	if _, ok := lastCursors["beta"]; !ok {
+		t.Errorf("last cursor %q missing city 'beta'", lastID)
+	}
+}

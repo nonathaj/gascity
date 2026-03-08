@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,50 +9,63 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/api"
+	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/configedit"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
-	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 // controllerState implements api.State and api.StateMutator.
 // Protected by an RWMutex for hot-reload: readers take RLock,
 // the controller loop takes Lock when updating cfg/sp/stores.
 type controllerState struct {
-	mu         sync.RWMutex
-	cfg        *config.City
-	sp         session.Provider
-	beadStores map[string]beads.Store
-	mailProvs  map[string]mail.Provider
-	eventProv  events.Provider
-	cityName   string
-	cityPath   string
-	version    string
-	startedAt  time.Time
-	ct         crashTracker // nil if crash tracking disabled
+	mu            sync.RWMutex
+	cfg           *config.City
+	sp            runtime.Provider
+	beadStores    map[string]beads.Store
+	cityBeadStore beads.Store // city-level store for session beads
+	mailProvs     map[string]mail.Provider
+	eventProv     events.Provider
+	editor        *configedit.Editor
+	cityName      string
+	cityPath      string
+	version       string
+	startedAt     time.Time
+	ct            crashTracker // nil if crash tracking disabled
 }
 
 // newControllerState creates a controllerState with per-rig stores.
 func newControllerState(
 	cfg *config.City,
-	sp session.Provider,
+	sp runtime.Provider,
 	ep events.Provider,
 	cityName, cityPath string,
 ) *controllerState {
+	tomlPath := filepath.Join(cityPath, "city.toml")
 	cs := &controllerState{
 		cfg:       cfg,
 		sp:        sp,
 		eventProv: ep,
+		editor:    configedit.NewEditor(fsys.OSFS{}, tomlPath),
 		cityName:  cityName,
 		cityPath:  cityPath,
 		version:   version,
 		startedAt: time.Now(),
 	}
 	cs.beadStores, cs.mailProvs = cs.buildStores(cfg)
+	// Open city-level store for session beads (best-effort).
+	if store, err := openCityStoreAt(cityPath); err != nil {
+		fmt.Fprintf(os.Stderr, "api: city bead store: %v (session endpoints disabled)\n", err)
+	} else {
+		cs.cityBeadStore = store
+	}
 	return cs
 }
 
@@ -125,9 +137,14 @@ func (cs *controllerState) openRigStore(provider, rigPath string) beads.Store {
 
 // update replaces the config, session provider, and reopens stores.
 // Stores are built outside the lock to avoid blocking readers during I/O.
-func (cs *controllerState) update(cfg *config.City, sp session.Provider) {
+func (cs *controllerState) update(cfg *config.City, sp runtime.Provider) {
 	// Build new stores outside the lock (may do file I/O / subprocess spawns).
 	stores, provs := cs.buildStores(cfg)
+	// Reopen city-level store for session beads.
+	cityStore, err := openCityStoreAt(cs.cityPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "api: city bead store reload: %v\n", err) //nolint:errcheck // best-effort stderr
+	}
 
 	// Swap under short critical section.
 	cs.mu.Lock()
@@ -135,6 +152,10 @@ func (cs *controllerState) update(cfg *config.City, sp session.Provider) {
 	cs.sp = sp
 	cs.beadStores = stores
 	cs.mailProvs = provs
+	if cityStore != nil {
+		cs.cityBeadStore = cityStore
+	}
+	// Keep prior non-nil store if reopen fails.
 	cs.mu.Unlock()
 }
 
@@ -148,7 +169,7 @@ func (cs *controllerState) Config() *config.City {
 }
 
 // SessionProvider returns the current session provider.
-func (cs *controllerState) SessionProvider() session.Provider {
+func (cs *controllerState) SessionProvider() runtime.Provider {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	return cs.sp
@@ -229,11 +250,93 @@ func (cs *controllerState) IsQuarantined(sessionName string) bool {
 	return ct.isQuarantined(sessionName, time.Now())
 }
 
+// RawConfig returns the raw (pre-expansion) config for provenance detection.
+// Implements api.RawConfigProvider.
+//
+// Holds cs.mu.RLock during the load to ensure the raw config is from the
+// same generation as the expanded cs.cfg snapshot.
+func (cs *controllerState) RawConfig() *config.City {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	tomlPath := filepath.Join(cs.cityPath, "city.toml")
+	raw, err := config.Load(fsys.OSFS{}, tomlPath)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// CityBeadStore returns the city-level bead store for session beads.
+func (cs *controllerState) CityBeadStore() beads.Store {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.cityBeadStore
+}
+
+// Automations scans formula layers and returns all automations.
+func (cs *controllerState) Automations() []automations.Automation {
+	cs.mu.RLock()
+	cfg := cs.cfg
+	cs.mu.RUnlock()
+
+	cityLayers := cityFormulaLayers(cs.cityPath, cfg)
+	cityAA, err := automations.Scan(fsys.OSFS{}, cityLayers, cfg.Automations.Skip)
+	if err != nil {
+		return nil
+	}
+
+	var rigAA []automations.Automation
+	for rigName, layers := range cfg.FormulaLayers.Rigs {
+		exclusive := rigExclusiveLayers(layers, cityLayers)
+		if len(exclusive) == 0 {
+			continue
+		}
+		ra, err := automations.Scan(fsys.OSFS{}, exclusive, cfg.Automations.Skip)
+		if err != nil {
+			continue
+		}
+		for i := range ra {
+			ra[i].Rig = rigName
+		}
+		rigAA = append(rigAA, ra...)
+	}
+
+	allAA := make([]automations.Automation, 0, len(cityAA)+len(rigAA))
+	allAA = append(allAA, cityAA...)
+	allAA = append(allAA, rigAA...)
+
+	if len(cfg.Automations.Overrides) > 0 {
+		automations.ApplyOverrides(allAA, convertOverrides(cfg.Automations.Overrides)) //nolint:errcheck // best-effort
+	}
+
+	return allAA
+}
+
 // --- api.StateMutator implementation ---
+
+// EnableAutomation creates or updates an override with enabled=true.
+func (cs *controllerState) EnableAutomation(name, rig string) error {
+	enabled := true
+	return cs.editor.SetAutomationOverride(config.AutomationOverride{
+		Name:    name,
+		Rig:     rig,
+		Enabled: &enabled,
+	})
+}
+
+// DisableAutomation creates or updates an override with enabled=false.
+func (cs *controllerState) DisableAutomation(name, rig string) error {
+	enabled := false
+	return cs.editor.SetAutomationOverride(config.AutomationOverride{
+		Name:    name,
+		Rig:     rig,
+		Enabled: &enabled,
+	})
+}
 
 // spAndSession captures the session provider and computes the session name
 // in a single critical section to avoid TOCTOU with config reloads.
-func (cs *controllerState) spAndSession(name string) (session.Provider, string) {
+func (cs *controllerState) spAndSession(name string) (runtime.Provider, string) {
 	cs.mu.RLock()
 	sp := cs.sp
 	tmpl := cs.cfg.Workspace.SessionTemplate
@@ -241,16 +344,15 @@ func (cs *controllerState) spAndSession(name string) (session.Provider, string) 
 	return sp, agent.SessionNameFor(cs.cityName, name, tmpl)
 }
 
-// SuspendAgent marks an agent as suspended via session metadata.
+// SuspendAgent writes suspended=true to city.toml (durable desired state).
+// Uses configedit.Editor for provenance-aware edit (inline vs patch).
 func (cs *controllerState) SuspendAgent(name string) error {
-	sp, sessionName := cs.spAndSession(name)
-	return sp.SetMeta(sessionName, "suspended", "true")
+	return cs.editor.SuspendAgent(name)
 }
 
-// ResumeAgent removes the suspended flag.
+// ResumeAgent clears suspended in city.toml (durable desired state).
 func (cs *controllerState) ResumeAgent(name string) error {
-	sp, sessionName := cs.spAndSession(name)
-	return sp.RemoveMeta(sessionName, "suspended")
+	return cs.editor.ResumeAgent(name)
 }
 
 // KillAgent force-kills the agent session.
@@ -280,77 +382,113 @@ func (cs *controllerState) NudgeAgent(name, message string) error {
 	return sp.Nudge(sessionName, message)
 }
 
-// SuspendRig suspends all agents (including expanded pool members) in a rig.
+// SuspendRig writes suspended=true on the rig in city.toml.
 func (cs *controllerState) SuspendRig(name string) error {
-	cs.mu.RLock()
-	sp := cs.sp
-	cfg := cs.cfg
-	tmpl := cs.cfg.Workspace.SessionTemplate
-	cs.mu.RUnlock()
-	if !cs.rigExists(cfg, name) {
-		return fmt.Errorf("rig %q not found", name)
-	}
-	var errs []error
-	for _, qn := range cs.expandedAgentNames(cfg, name) {
-		sessionName := agent.SessionNameFor(cs.cityName, qn, tmpl)
-		if err := sp.SetMeta(sessionName, "suspended", "true"); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return cs.editor.SuspendRig(name)
 }
 
-// ResumeRig resumes all agents (including expanded pool members) in a rig.
+// ResumeRig clears suspended on the rig in city.toml.
 func (cs *controllerState) ResumeRig(name string) error {
-	cs.mu.RLock()
-	sp := cs.sp
-	cfg := cs.cfg
-	tmpl := cs.cfg.Workspace.SessionTemplate
-	cs.mu.RUnlock()
-	if !cs.rigExists(cfg, name) {
-		return fmt.Errorf("rig %q not found", name)
-	}
-	var errs []error
-	for _, qn := range cs.expandedAgentNames(cfg, name) {
-		sessionName := agent.SessionNameFor(cs.cityName, qn, tmpl)
-		if err := sp.RemoveMeta(sessionName, "suspended"); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return cs.editor.ResumeRig(name)
 }
 
-// expandedAgentNames returns qualified names for all agents in a rig,
-// expanding pool agents into individual member names (pool-1, pool-2, etc).
-func (cs *controllerState) expandedAgentNames(cfg *config.City, rig string) []string {
-	var names []string
-	for _, a := range cfg.Agents {
-		if a.Dir != rig {
-			continue
-		}
-		if !a.IsPool() {
-			names = append(names, a.QualifiedName())
-			continue
-		}
-		pool := a.EffectivePool()
-		if !pool.IsMultiInstance() {
-			// Single-instance pool: use bare name.
-			names = append(names, a.QualifiedName())
-			continue
-		}
-		// Multi-instance pool: discover instances. For unlimited pools with
-		// no running instances, this returns empty (acceptable for API).
-		names = append(names, discoverPoolInstances(a.Name, a.Dir, pool, cs.cityName, cfg.Workspace.SessionTemplate, cs.sp)...)
-	}
-	return names
+// SuspendCity sets workspace.suspended = true.
+func (cs *controllerState) SuspendCity() error {
+	return cs.editor.SuspendCity()
 }
 
-// rigExists checks if a rig name exists in the config.
-func (cs *controllerState) rigExists(cfg *config.City, name string) bool {
-	for _, r := range cfg.Rigs {
-		if r.Name == name {
-			return true
-		}
-	}
-	return false
+// ResumeCity sets workspace.suspended = false.
+func (cs *controllerState) ResumeCity() error {
+	return cs.editor.ResumeCity()
+}
+
+// CreateAgent adds a new agent to city.toml.
+func (cs *controllerState) CreateAgent(a config.Agent) error {
+	return cs.editor.CreateAgent(a)
+}
+
+// UpdateAgent partially updates an existing agent definition in city.toml.
+func (cs *controllerState) UpdateAgent(name string, patch api.AgentUpdate) error {
+	return cs.editor.UpdateAgent(name, configedit.AgentUpdate{
+		Provider:  patch.Provider,
+		Scope:     patch.Scope,
+		Suspended: patch.Suspended,
+	})
+}
+
+// DeleteAgent removes an agent from city.toml.
+func (cs *controllerState) DeleteAgent(name string) error {
+	return cs.editor.DeleteAgent(name)
+}
+
+// CreateRig adds a new rig to city.toml.
+func (cs *controllerState) CreateRig(r config.Rig) error {
+	return cs.editor.CreateRig(r)
+}
+
+// UpdateRig partially updates a rig in city.toml.
+func (cs *controllerState) UpdateRig(name string, patch api.RigUpdate) error {
+	return cs.editor.UpdateRig(name, configedit.RigUpdate{
+		Path:      patch.Path,
+		Prefix:    patch.Prefix,
+		Suspended: patch.Suspended,
+	})
+}
+
+// DeleteRig removes a rig from city.toml.
+func (cs *controllerState) DeleteRig(name string) error {
+	return cs.editor.DeleteRig(name)
+}
+
+// CreateProvider adds a new city-level provider to city.toml.
+func (cs *controllerState) CreateProvider(name string, spec config.ProviderSpec) error {
+	return cs.editor.CreateProvider(name, spec)
+}
+
+// UpdateProvider partially updates an existing city-level provider.
+func (cs *controllerState) UpdateProvider(name string, patch api.ProviderUpdate) error {
+	return cs.editor.UpdateProvider(name, configedit.ProviderUpdate{
+		DisplayName:  patch.DisplayName,
+		Command:      patch.Command,
+		Args:         patch.Args,
+		PromptMode:   patch.PromptMode,
+		PromptFlag:   patch.PromptFlag,
+		ReadyDelayMs: patch.ReadyDelayMs,
+		Env:          patch.Env,
+	})
+}
+
+// DeleteProvider removes a city-level provider from city.toml.
+func (cs *controllerState) DeleteProvider(name string) error {
+	return cs.editor.DeleteProvider(name)
+}
+
+// SetAgentPatch creates or replaces an agent patch in city.toml.
+func (cs *controllerState) SetAgentPatch(patch config.AgentPatch) error {
+	return cs.editor.SetAgentPatch(patch)
+}
+
+// DeleteAgentPatch removes an agent patch from city.toml.
+func (cs *controllerState) DeleteAgentPatch(name string) error {
+	return cs.editor.DeleteAgentPatch(name)
+}
+
+// SetRigPatch creates or replaces a rig patch in city.toml.
+func (cs *controllerState) SetRigPatch(patch config.RigPatch) error {
+	return cs.editor.SetRigPatch(patch)
+}
+
+// DeleteRigPatch removes a rig patch from city.toml.
+func (cs *controllerState) DeleteRigPatch(name string) error {
+	return cs.editor.DeleteRigPatch(name)
+}
+
+// SetProviderPatch creates or replaces a provider patch in city.toml.
+func (cs *controllerState) SetProviderPatch(patch config.ProviderPatch) error {
+	return cs.editor.SetProviderPatch(patch)
+}
+
+// DeleteProviderPatch removes a provider patch from city.toml.
+func (cs *controllerState) DeleteProviderPatch(name string) error {
+	return cs.editor.DeleteProviderPatch(name)
 }

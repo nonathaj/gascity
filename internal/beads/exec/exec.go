@@ -178,7 +178,7 @@ func (s *Store) Get(id string) (beads.Bead, error) {
 
 // Update modifies fields of an existing bead: script update <id> (stdin: JSON)
 func (s *Store) Update(id string, opts beads.UpdateOpts) error {
-	data, err := marshalUpdate(opts.Description, opts.ParentID, opts.Assignee, opts.Labels)
+	data, err := marshalUpdate(opts.Title, opts.Description, opts.ParentID, opts.Assignee, opts.Labels)
 	if err != nil {
 		return fmt.Errorf("exec beads update: marshaling: %w", err)
 	}
@@ -245,6 +245,26 @@ func (s *Store) SetMetadata(id, key, value string) error {
 	_, err := s.run([]byte(value), "set-metadata", id, key)
 	if err != nil {
 		return fmt.Errorf("setting metadata on %q: %w", id, err)
+	}
+	return nil
+}
+
+// SetMetadataBatch sets multiple key-value metadata pairs on a bead.
+// Delegates to sequential SetMetadata calls.
+func (s *Store) SetMetadataBatch(id string, kvs map[string]string) error {
+	for k, v := range kvs {
+		if err := s.SetMetadata(id, k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Ping verifies the store script is accessible by running a list operation.
+func (s *Store) Ping() error {
+	_, err := s.run(nil, "list")
+	if err != nil {
+		return fmt.Errorf("exec store ping: %w", err)
 	}
 	return nil
 }
