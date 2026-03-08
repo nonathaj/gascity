@@ -256,6 +256,9 @@ func discoverPoolInstances(agentName, agentDir string, pool config.PoolConfig,
 	}
 
 	// Unlimited pool: discover running instances via session prefix.
+	// TODO(Phase 2): This uses legacy SessionNameFor for prefix matching.
+	// When bead-derived session names ("s-{beadID}") are active, this prefix
+	// match will fail. Migrate to bead store query by template metadata.
 	qnPrefix := agentName + "-"
 	if agentDir != "" {
 		qnPrefix = agentDir + "/" + agentName + "-"

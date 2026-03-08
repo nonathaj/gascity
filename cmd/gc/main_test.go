@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -338,6 +339,48 @@ func TestSessionNameTmuxOverride(t *testing.T) {
 	want := "agent"
 	if got != want {
 		t.Errorf("sessionName with GC_TMUX_SESSION = %q, want %q", got, want)
+	}
+}
+
+func TestResolveSessionNameWithStore(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create a session bead for "worker" template.
+	b, err := store.Create(beads.Bead{
+		Title: "worker",
+		Type:  "session",
+		Labels: []string{
+			"gc:session",
+			"template:worker",
+		},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"common_name":  "worker",
+			"session_name": "s-gc-42",
+			"state":        "asleep",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// lookupSessionNameOrLegacy should find the bead-derived name.
+	got := lookupSessionNameOrLegacy(store, "city", "worker", "")
+	if got != "s-gc-42" {
+		t.Errorf("lookupSessionNameOrLegacy(store, worker) = %q, want %q", got, "s-gc-42")
+	}
+
+	// With nil store, should fall back to legacy.
+	got = lookupSessionNameOrLegacy(nil, "city", "worker", "")
+	if got != "worker" {
+		t.Errorf("lookupSessionNameOrLegacy(nil, worker) = %q, want %q", got, "worker")
+	}
+
+	// sessionNameFromBeadID derivation.
+	got = sessionNameFromBeadID(b.ID)
+	want := "s-" + strings.ReplaceAll(b.ID, "/", "--")
+	if got != want {
+		t.Errorf("sessionNameFromBeadID(%q) = %q, want %q", b.ID, got, want)
 	}
 }
 

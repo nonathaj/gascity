@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
@@ -287,11 +288,12 @@ func configuredSessionNames(cfg *config.City, cityName string, store beads.Store
 	names := make(map[string]bool, len(cfg.Agents))
 	for _, a := range cfg.Agents {
 		if a.IsPool() {
-			// Pool agents: include the base template name only.
-			// Pool instances (e.g., "worker-1", "worker-2") are NOT
-			// included — they match by desiredState membership, not
-			// configuredNames.
-			names[a.QualifiedName()] = true
+			// Pool agents: use legacy SessionNameFor for the tmux-sanitized
+			// base template name (e.g., "my-rig/worker" → "my-rig--worker").
+			// We intentionally skip bead lookup because findSessionNameByTemplate
+			// would return a pool INSTANCE name (e.g., "worker-1"), which would
+			// prevent scale-down orphan detection.
+			names[agent.SessionNameFor(cityName, a.QualifiedName(), st)] = true
 		} else {
 			names[lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)] = true
 		}

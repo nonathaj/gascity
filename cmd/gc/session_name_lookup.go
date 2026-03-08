@@ -14,8 +14,11 @@ import (
 // session bead and returns "s-{beadID}". When no store is available, it
 // falls back to the legacy SessionNameFor function.
 //
+// templateName is the base config template name (e.g., "worker" for pool
+// instance "worker-1"). For non-pool agents, templateName == qualifiedName.
+//
 // Results are cached in p.beadNames for the duration of the build cycle.
-func (p *agentBuildParams) resolveSessionName(qualifiedName string) string {
+func (p *agentBuildParams) resolveSessionName(qualifiedName, templateName string) string {
 	// Check cache first.
 	if sn, ok := p.beadNames[qualifiedName]; ok {
 		return sn
@@ -36,15 +39,17 @@ func (p *agentBuildParams) resolveSessionName(qualifiedName string) string {
 	}
 
 	// No existing bead — create one (auto-create for config agents).
+	// Use templateName (base config name) for the template metadata,
+	// and qualifiedName (instance name) for common_name/title.
 	b, err := p.beadStore.Create(beads.Bead{
 		Title: qualifiedName,
 		Type:  session.BeadType,
 		Labels: []string{
 			session.LabelSession,
-			"template:" + qualifiedName,
+			"template:" + templateName,
 		},
 		Metadata: map[string]string{
-			"template":    qualifiedName,
+			"template":    templateName,
 			"common_name": qualifiedName,
 			"state":       string(session.StateCreating),
 		},

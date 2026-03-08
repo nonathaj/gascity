@@ -117,7 +117,8 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	// Step 7: Compute session name.
 	// Uses bead-derived naming ("s-{beadID}") when a bead store is available,
 	// falling back to the legacy SessionNameFor for backward compatibility.
-	sessName := p.resolveSessionName(qualifiedName)
+	tmplName := templateNameFor(cfgAgent, qualifiedName)
+	sessName := p.resolveSessionName(qualifiedName, tmplName)
 
 	// Step 8: Build agent environment.
 	agentEnv := map[string]string{
@@ -146,7 +147,7 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 			WorkQuery:     cfgAgent.EffectiveWorkQuery(),
 			SlingQuery:    cfgAgent.EffectiveSlingQuery(),
 			Env:           cfgAgent.Env,
-		}, p.sessionTemplate, p.stderr, p.packDirs, fragments)
+		}, p.sessionTemplate, p.stderr, p.packDirs, fragments, p.beadStore)
 		hasHooks := config.AgentHasHooks(cfgAgent, p.workspace, resolved.Name)
 		beacon := runtime.FormatBeaconAt(p.cityName, qualifiedName, !hasHooks, p.beaconTime)
 		if prompt != "" {

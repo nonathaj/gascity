@@ -40,7 +40,7 @@ type PromptContext struct {
 // the output after rendering. Returns empty string if templatePath is empty
 // or the file doesn't exist. On parse or execute error, logs a warning to
 // stderr and returns the raw text (graceful fallback).
-func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, packDirs []string, injectFragments []string, store ...beads.Store) string { //nolint:unparam // store is nil today; Phase 2 threads real stores
+func renderPrompt(fs fsys.FS, cityPath, cityName, templatePath string, ctx PromptContext, sessionTemplate string, stderr io.Writer, packDirs []string, injectFragments []string, store ...beads.Store) string {
 	if templatePath == "" {
 		return ""
 	}
