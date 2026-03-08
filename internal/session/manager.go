@@ -51,6 +51,7 @@ type Info struct {
 	ID          string
 	Template    string
 	State       State
+	Closed      bool
 	Title       string
 	Provider    string
 	Command     string // resolved command stored at creation
@@ -494,13 +495,14 @@ func (m *Manager) infoFromBead(b beads.Bead) Info {
 	if sessName == "" {
 		sessName = sessionNameFor(b.ID)
 	}
-	if b.Status != "closed" {
+	closed := b.Status == "closed"
+	if !closed {
 		transport, _ := m.transportForBead(b, sessName)
 		_ = m.routeACPIfNeeded(b.Metadata["provider"], transport, sessName)
 	}
 
 	state := State(b.Metadata["state"])
-	if b.Status == "closed" {
+	if closed {
 		state = "" // closed beads have no runtime state
 	}
 
@@ -508,6 +510,7 @@ func (m *Manager) infoFromBead(b beads.Bead) Info {
 		ID:          b.ID,
 		Template:    b.Metadata["template"],
 		State:       state,
+		Closed:      closed,
 		Title:       b.Title,
 		Provider:    b.Metadata["provider"],
 		Command:     b.Metadata["command"],

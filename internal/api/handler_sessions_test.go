@@ -502,6 +502,30 @@ func TestHandleSessionCreate(t *testing.T) {
 	}
 }
 
+func TestHandleSessionCreateCanonicalizesBareTemplate(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	req := newPostRequest("/v0/sessions", strings.NewReader(`{"template":"worker"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Template != "myrig/worker" {
+		t.Errorf("Template = %q, want %q", resp.Template, "myrig/worker")
+	}
+	if resp.Title != "myrig/worker" {
+		t.Errorf("Title = %q, want %q", resp.Title, "myrig/worker")
+	}
+}
+
 func TestHandleSessionMessageResumesSuspendedSession(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)

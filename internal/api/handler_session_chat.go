@@ -79,29 +79,29 @@ func sessionResumeHints(resolved *config.ResolvedProvider, workDir string) runti
 	}
 }
 
-func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvider, string, string, error) {
+func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvider, string, string, string, error) {
 	cfg := s.state.Config()
 	if cfg == nil {
-		return nil, "", "", errors.New("no city config loaded")
+		return nil, "", "", "", errors.New("no city config loaded")
 	}
-	agentCfg, ok := findAgent(cfg, template)
+	agentCfg, ok := resolveSessionTemplateAgent(cfg, template)
 	if !ok {
-		return nil, "", "", errSessionTemplateNotFound
+		return nil, "", "", "", errSessionTemplateNotFound
 	}
 	resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
 	if err != nil {
-		return nil, "", "", err
+		return nil, "", "", "", err
 	}
 	workDir := s.resolveAgentWorkDir(agentCfg)
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}
-	return resolved, workDir, agentCfg.Session, nil
+	return resolved, workDir, agentCfg.Session, agentCfg.QualifiedName(), nil
 }
 
 func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config) {
 	cmd := session.BuildResumeCommand(info)
-	resolved, workDir, _, err := s.resolveSessionTemplate(info.Template)
+	resolved, workDir, _, _, err := s.resolveSessionTemplate(info.Template)
 	if err != nil {
 		return cmd, runtime.Config{WorkDir: info.WorkDir}
 	}
@@ -158,7 +158,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resolved, workDir, transport, err := s.resolveSessionTemplate(body.Template)
+	resolved, workDir, transport, template, err := s.resolveSessionTemplate(body.Template)
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		if errors.Is(err, errSessionTemplateNotFound) {
@@ -171,7 +171,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 
 	title := body.Title
 	if title == "" {
-		title = body.Template
+		title = template
 	}
 
 	resume := session.ProviderResume{
@@ -183,7 +183,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	mgr := s.sessionManager(store)
 	info, err := mgr.CreateWithTransport(
 		r.Context(),
-		body.Template,
+		template,
 		title,
 		resolved.CommandString(),
 		workDir,
@@ -490,7 +490,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if info.State == "" {
+	if info.Closed {
 		s.emitClosedSessionSnapshot(w, info, path)
 		return
 	}

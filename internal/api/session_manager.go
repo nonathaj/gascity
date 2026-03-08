@@ -11,7 +11,7 @@ func (s *Server) sessionManager(store beads.Store) *session.Manager {
 		return session.NewManager(store, s.state.SessionProvider())
 	}
 	return session.NewManagerWithTransportResolver(store, s.state.SessionProvider(), func(template string) string {
-		agentCfg, ok := findAgent(cfg, template)
+		agentCfg, ok := resolveSessionTemplateAgent(cfg, template)
 		if !ok {
 			return ""
 		}

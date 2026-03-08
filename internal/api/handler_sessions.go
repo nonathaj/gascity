@@ -77,7 +77,7 @@ func sessionToResponse(info session.Info, cfg *config.City) sessionResponse {
 // in the index), the reason is omitted.
 func sessionResponseWithReason(info session.Info, b *beads.Bead, cfg *config.City) sessionResponse {
 	r := sessionToResponse(info, cfg)
-	if b == nil || info.State == "" {
+	if b == nil || info.Closed {
 		return r
 	}
 	// Surface bead-persisted sleep/hold/quarantine reason.
