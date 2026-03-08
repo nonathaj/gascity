@@ -49,6 +49,9 @@ type CityRuntime struct {
 
 	standaloneCityStore beads.Store // non-nil when API disabled; for chat auto-suspend
 
+	// Bead-driven reconciler state (Phase 2f).
+	sessionDrains *drainTracker // in-memory drain tracker; nil when bead reconciler disabled
+
 	shutdownOnce   sync.Once
 	logPrefix      string // "gc start" or "gc supervisor"
 	stdout, stderr io.Writer
@@ -184,6 +187,12 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// Upgrade to bead-driven reconcile ops when a bead store is available.
 	cr.upgradeToBeadReconcileOps()
 
+	// Initialize bead-driven drain tracker when store is available and
+	// we have a real city path (not "." from empty tomlPath in tests).
+	if cr.cityBeadStore() != nil && cr.tomlPath != "" {
+		cr.sessionDrains = newDrainTracker()
+	}
+
 	// Adoption barrier: ensure every running session has a bead.
 	// Runs on every startup (rerunnable, crash-safe).
 	if cr.cityBeadStore() != nil {
@@ -205,10 +214,14 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	cr.syncBeadsAndUpdateIndex(agents)
 
 	// Initial reconciliation.
-	doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
-		cr.poolSessions, cr.suspendedNames,
-		cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
-		cr.stdout, cr.stderr, ctx)
+	if cr.sessionDrains != nil {
+		cr.beadReconcileTick(ctx, agents)
+	} else {
+		doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
+			cr.poolSessions, cr.suspendedNames,
+			cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
+			cr.stdout, cr.stderr, ctx)
+	}
 	ensureObservers(agents, observePaths)
 
 	fmt.Fprintln(cr.stdout, "City started.") //nolint:errcheck // best-effort stdout
@@ -276,10 +289,16 @@ func (cr *CityRuntime) tick(
 	agents := cr.buildFn(cr.cfg, cr.sp)
 	cr.syncBeadsAndUpdateIndex(agents)
 
-	doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
-		cr.poolSessions, cr.suspendedNames,
-		cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
-		cr.stdout, cr.stderr, ctx)
+	// Use bead-driven reconciler when drain tracker is initialized
+	// (requires bead store). Falls back to legacy reconciler otherwise.
+	if cr.sessionDrains != nil {
+		cr.beadReconcileTick(ctx, agents)
+	} else {
+		doReconcileAgents(agents, cr.sp, cr.rops, cr.dops, cr.ct, cr.it, cr.rec,
+			cr.poolSessions, cr.suspendedNames,
+			cr.cfg.Daemon.DriftDrainTimeoutDuration(), cr.cfg.Session.StartupTimeoutDuration(),
+			cr.stdout, cr.stderr, ctx)
+	}
 	ensureObservers(agents, *observePaths)
 
 	// Wisp GC: purge expired closed molecules.
@@ -440,6 +459,51 @@ func (cr *CityRuntime) reloadConfig(
 	telemetry.RecordConfigReload(ctx, result.Revision, nil)
 }
 
+// beadReconcileTick runs one reconciliation tick using the bead-driven
+// reconciler. It loads session beads from the store, indexes agents by
+// session name, and delegates to reconcileSessionBeads.
+func (cr *CityRuntime) beadReconcileTick(ctx context.Context, agents []agent.Agent) {
+	store := cr.cityBeadStore()
+	if store == nil {
+		return
+	}
+
+	// Load open session beads.
+	sessionBeads, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		fmt.Fprintf(cr.stderr, "%s: listing session beads: %v\n", cr.logPrefix, err) //nolint:errcheck
+		return
+	}
+	// Filter to open beads only.
+	var open []beads.Bead
+	for _, b := range sessionBeads {
+		if b.Status != "closed" {
+			open = append(open, b)
+		}
+	}
+
+	// Index agents by session name for O(1) lookup.
+	agentIndex := make(map[string]agent.Agent, len(agents))
+	for _, a := range agents {
+		agentIndex[a.SessionName()] = a
+	}
+
+	// Compute pool desired counts from the already-evaluated agent list.
+	poolDesired := derivePoolDesired(agents, cr.cfg)
+
+	cityName := cr.cfg.Workspace.Name
+	if cityName == "" {
+		cityName = cr.cityName
+	}
+
+	reconcileSessionBeads(
+		ctx, open, agentIndex, cr.cfg, cr.sp, store,
+		cr.sessionDrains, poolDesired, cityName,
+		clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
+		cr.stdout, cr.stderr,
+	)
+}
+
 // upgradeToBeadReconcileOps upgrades rops from providerReconcileOps to
 // beadReconcileOps when a bead store is available. Called during run()
 // after the bead store is opened, and again during reloadConfig() if the
@@ -461,7 +525,7 @@ func (cr *CityRuntime) upgradeToBeadReconcileOps() {
 func (cr *CityRuntime) syncBeadsAndUpdateIndex(agents []agent.Agent) {
 	store := cr.cityBeadStore()
 	cfgNames := configuredSessionNames(cr.cfg, cr.cityName)
-	idx := syncSessionBeads(store, agents, cfgNames, clock.Real{}, cr.stderr)
+	idx := syncSessionBeads(store, agents, cfgNames, cr.cfg, clock.Real{}, cr.stderr)
 	if bro, ok := cr.rops.(*beadReconcileOps); ok && idx != nil {
 		bro.updateIndex(idx)
 	}

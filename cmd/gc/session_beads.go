@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
@@ -47,6 +48,7 @@ func syncSessionBeads(
 	store beads.Store,
 	agents []agent.Agent,
 	configuredNames map[string]bool,
+	cfg *config.City,
 	clk clock.Clock,
 	stderr io.Writer,
 ) map[string]string {
@@ -100,20 +102,27 @@ func syncSessionBeads(
 		b, exists := bySessionName[sn]
 		if !exists {
 			// Create a new session bead.
+			meta := map[string]string{
+				"session_name":   sn,
+				"agent_name":     a.Name(),
+				"config_hash":    coreHash,
+				"live_hash":      liveHash,
+				"generation":     "1",
+				"instance_token": generateToken(),
+				"state":          state,
+				"synced_at":      now.Format("2006-01-02T15:04:05Z07:00"),
+			}
+			// Store template and pool_slot for bead-driven reconciler.
+			tmpl := resolveAgentTemplate(a.Name(), cfg)
+			meta["template"] = tmpl
+			if slot := resolvePoolSlot(a.Name(), tmpl); slot > 0 {
+				meta["pool_slot"] = strconv.Itoa(slot)
+			}
 			newBead, createErr := store.Create(beads.Bead{
-				Title:  a.Name(),
-				Type:   sessionBeadType,
-				Labels: []string{sessionBeadLabel, "agent:" + a.Name()},
-				Metadata: map[string]string{
-					"session_name":   sn,
-					"agent_name":     a.Name(),
-					"config_hash":    coreHash,
-					"live_hash":      liveHash,
-					"generation":     "1",
-					"instance_token": generateToken(),
-					"state":          state,
-					"synced_at":      now.Format("2006-01-02T15:04:05Z07:00"),
-				},
+				Title:    a.Name(),
+				Type:     sessionBeadType,
+				Labels:   []string{sessionBeadLabel, "agent:" + a.Name()},
+				Metadata: meta,
 			})
 			if createErr != nil {
 				fmt.Fprintf(stderr, "session beads: creating bead for %s: %v\n", a.Name(), createErr) //nolint:errcheck
@@ -125,6 +134,19 @@ func syncSessionBeads(
 
 		// Record existing open bead in index.
 		openIndex[sn] = b.ID
+
+		// Backfill template metadata for beads created before Phase 2f.
+		if b.Metadata["template"] == "" {
+			tmpl := resolveAgentTemplate(a.Name(), cfg)
+			if setMeta(store, b.ID, "template", tmpl, stderr) == nil {
+				b.Metadata["template"] = tmpl
+			}
+			if slot := resolvePoolSlot(a.Name(), tmpl); slot > 0 {
+				if setMeta(store, b.ID, "pool_slot", strconv.Itoa(slot), stderr) == nil {
+					b.Metadata["pool_slot"] = strconv.Itoa(slot)
+				}
+			}
+		}
 
 		// Update existing bead — check for drift.
 		// Write config_hash LAST so it serves as the "commit" signal.
@@ -263,6 +285,43 @@ func closeBead(store beads.Store, id, reason string, now time.Time, stderr io.Wr
 	if err := store.Close(id); err != nil {
 		fmt.Fprintf(stderr, "session beads: closing %s: %v\n", id, err) //nolint:errcheck
 	}
+}
+
+// resolveAgentTemplate returns the config agent template name for a given
+// agent name. For non-pool agents, this is the agent's QualifiedName.
+// For pool instances like "worker-3", this is the template "worker".
+func resolveAgentTemplate(agentName string, cfg *config.City) string {
+	if cfg == nil {
+		return agentName
+	}
+	// Direct match: non-pool or singleton pool agent.
+	for _, a := range cfg.Agents {
+		if a.QualifiedName() == agentName {
+			return a.QualifiedName()
+		}
+	}
+	// Pool instance: name matches "{template}-{slot}".
+	for _, a := range cfg.Agents {
+		qn := a.QualifiedName()
+		if a.IsPool() && strings.HasPrefix(agentName, qn+"-") {
+			suffix := agentName[len(qn)+1:]
+			if _, err := strconv.Atoi(suffix); err == nil {
+				return qn
+			}
+		}
+	}
+	return agentName // fallback: treat agent name as template
+}
+
+// resolvePoolSlot extracts the pool slot number from a pool instance name.
+// Returns 0 for non-pool agents or if template doesn't match.
+func resolvePoolSlot(agentName, template string) int {
+	if !strings.HasPrefix(agentName, template+"-") {
+		return 0
+	}
+	suffix := agentName[len(template)+1:]
+	slot, _ := strconv.Atoi(suffix)
+	return slot
 }
 
 // generateToken returns a cryptographically random hex token.

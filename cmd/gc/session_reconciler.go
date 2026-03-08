@@ -1,0 +1,267 @@
+// session_reconciler.go implements the bead-driven reconciliation loop.
+// It replaces doReconcileAgents with a wake/sleep model: for each session
+// bead, compute whether the session should be awake, and manage lifecycle
+// transitions using the Phase 2 building blocks.
+//
+// This is a bridge implementation: beads drive state tracking while
+// agent.Agent objects handle lifecycle operations (Start/Stop). A later
+// phase removes the agent.Agent dependency entirely.
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"time"
+
+	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/clock"
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/runtime"
+)
+
+// buildDepsMap extracts template dependency edges from config for topo ordering.
+// Maps template QualifiedName -> list of dependency template QualifiedNames.
+func buildDepsMap(cfg *config.City) map[string][]string {
+	if cfg == nil {
+		return nil
+	}
+	deps := make(map[string][]string)
+	for _, a := range cfg.Agents {
+		if len(a.DependsOn) > 0 {
+			deps[a.QualifiedName()] = append([]string(nil), a.DependsOn...)
+		}
+	}
+	return deps
+}
+
+// derivePoolDesired computes pool desired counts from the already-evaluated
+// agent list. Since buildAgentsFromConfig already ran evaluatePool, the
+// number of instances per template in the agent list IS the desired count.
+func derivePoolDesired(agents []agent.Agent, cfg *config.City) map[string]int {
+	if cfg == nil {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, a := range agents {
+		template := resolveAgentTemplate(a.Name(), cfg)
+		cfgAgent := findAgentByTemplate(cfg, template)
+		if cfgAgent != nil && cfgAgent.Pool != nil {
+			counts[template]++
+		}
+	}
+	return counts
+}
+
+// allDependenciesAlive checks that all template dependencies of a session
+// have at least one alive instance. Used to gate wake ordering so that
+// dependencies are alive before dependents try to wake.
+func allDependenciesAlive(
+	session beads.Bead,
+	cfg *config.City,
+	agentIndex map[string]agent.Agent,
+	cityName string,
+) bool {
+	template := session.Metadata["template"]
+	cfgAgent := findAgentByTemplate(cfg, template)
+	if cfgAgent == nil || len(cfgAgent.DependsOn) == 0 {
+		return true
+	}
+	st := cfg.Workspace.SessionTemplate
+	for _, dep := range cfgAgent.DependsOn {
+		depCfg := findAgentByTemplate(cfg, dep)
+		if depCfg == nil {
+			continue // dependency not in config — skip
+		}
+		if depCfg.Pool != nil {
+			// Pool: check if any instance is alive.
+			anyAlive := false
+			for _, a := range agentIndex {
+				t := resolveAgentTemplate(a.Name(), cfg)
+				if t == dep && a.IsRunning() {
+					anyAlive = true
+					break
+				}
+			}
+			if !anyAlive {
+				return false
+			}
+		} else {
+			// Fixed agent: check single instance.
+			sn := agent.SessionNameFor(cityName, dep, st)
+			a, ok := agentIndex[sn]
+			if !ok || !a.IsRunning() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// reconcileSessionBeads performs bead-driven reconciliation using wake/sleep
+// semantics. For each session bead, it determines if the session should be
+// awake (has a matching agent in the desired set) and manages lifecycle
+// transitions using the Phase 2 building blocks.
+//
+// The function assumes session beads are already synced (syncSessionBeads
+// called before this function). Beads for orphaned/suspended agents are
+// already closed by sync, so only open beads with matching agents appear
+// in the sessions slice.
+//
+// Returns the number of sessions woken this tick.
+func reconcileSessionBeads(
+	ctx context.Context,
+	sessions []beads.Bead,
+	agentIndex map[string]agent.Agent,
+	cfg *config.City,
+	sp runtime.Provider,
+	store beads.Store,
+	dt *drainTracker,
+	poolDesired map[string]int,
+	cityName string,
+	clk clock.Clock,
+	rec events.Recorder,
+	startupTimeout time.Duration,
+	stdout, stderr io.Writer,
+) int {
+	deps := buildDepsMap(cfg)
+
+	// Phase 0: Heal expired timers on all sessions.
+	for i := range sessions {
+		healExpiredTimers(&sessions[i], store, clk)
+	}
+
+	// Topo-order sessions by template dependencies.
+	ordered := topoOrder(sessions, deps)
+
+	// Build session ID -> *beads.Bead lookup for advanceSessionDrains.
+	beadByID := make(map[string]*beads.Bead, len(ordered))
+	for i := range ordered {
+		beadByID[ordered[i].ID] = &ordered[i]
+	}
+
+	// Phase 1: Forward pass (topo order) — wake sessions, handle alive state.
+	wakeCount := 0
+	for i := range ordered {
+		session := &ordered[i]
+		name := session.Metadata["session_name"]
+		a := agentIndex[name]
+		alive := a != nil && a.IsRunning()
+
+		// Heal advisory state metadata.
+		healState(session, alive, store)
+
+		// Stability check: detect rapid exit (crash).
+		if checkStability(session, alive, dt, store, clk) {
+			continue // crash recorded, skip further processing
+		}
+
+		// Clear wake failures for sessions that have been stable long enough.
+		if alive && stableLongEnough(*session, clk) {
+			clearWakeFailures(session, store)
+		}
+
+		// Config drift: if alive and config changed, drain for restart.
+		if alive && a != nil {
+			template := session.Metadata["template"]
+			storedHash := session.Metadata["config_hash"]
+			if template != "" && storedHash != "" {
+				cfgAgent := findAgentByTemplate(cfg, template)
+				if cfgAgent != nil {
+					currentHash := runtime.CoreFingerprint(a.SessionConfig())
+					if storedHash != currentHash {
+						beginSessionDrain(*session, sp, dt, "config-drift", clk, defaultDrainTimeout)
+						rec.Record(events.Event{
+							Type:    events.AgentDraining,
+							Actor:   "gc",
+							Subject: a.Name(),
+							Message: "config drift detected",
+						})
+						continue
+					}
+				}
+			}
+		}
+
+		// Should this session be awake? Agent presence in the desired set
+		// is the WakeConfig equivalent. (Full wakeReasons() integration
+		// comes in a later phase when beads persist independently of the
+		// agent list.)
+		shouldWake := a != nil
+
+		if shouldWake && !alive {
+			// Session should be awake but isn't — wake it.
+			if sessionIsQuarantined(*session, clk) {
+				continue // crash-loop protection
+			}
+			if wakeCount >= defaultMaxWakesPerTick {
+				continue // budget exceeded, defer to next tick
+			}
+			if !allDependenciesAlive(*session, cfg, agentIndex, cityName) {
+				continue // dependencies not ready
+			}
+
+			// Two-phase wake: persist metadata BEFORE starting process.
+			if _, _, err := preWakeCommit(session, store, clk); err != nil {
+				fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %v\n", name, err) //nolint:errcheck
+				continue
+			}
+
+			// Start via agent.Agent with startup timeout.
+			startCtx := ctx
+			var startCancel context.CancelFunc
+			if startupTimeout > 0 {
+				startCtx, startCancel = context.WithTimeout(ctx, startupTimeout)
+			}
+			err := a.Start(startCtx)
+			if startCancel != nil {
+				startCancel()
+			}
+			if err != nil {
+				fmt.Fprintf(stderr, "session reconciler: starting %s: %v\n", name, err) //nolint:errcheck
+				recordWakeFailure(session, store, clk)
+				continue
+			}
+
+			wakeCount++
+			fmt.Fprintf(stdout, "Woke session '%s'\n", a.Name()) //nolint:errcheck
+			rec.Record(events.Event{
+				Type:    events.AgentStarted,
+				Actor:   "gc",
+				Subject: a.Name(),
+			})
+
+			// Store config fingerprint after successful start.
+			agentCfg := a.SessionConfig()
+			_ = store.SetMetadataBatch(session.ID, map[string]string{
+				"config_hash": runtime.CoreFingerprint(agentCfg),
+				"live_hash":   runtime.LiveFingerprint(agentCfg),
+			})
+		}
+
+		if shouldWake && alive {
+			// Session is correctly awake. Cancel any non-drift drain
+			// (handles scale-back-up: agent returns to desired set while draining).
+			cancelSessionDrain(*session, dt)
+		}
+
+		if !shouldWake && alive {
+			// No reason to be awake — begin drain.
+			reason := "no-wake-reason"
+			if isPoolExcess(*session, cfg, poolDesired) {
+				reason = "pool-excess"
+			}
+			beginSessionDrain(*session, sp, dt, reason, clk, defaultDrainTimeout)
+		}
+	}
+
+	// Phase 2: Advance all in-flight drains.
+	sessionLookup := func(id string) *beads.Bead {
+		return beadByID[id]
+	}
+	advanceSessionDrains(dt, sp, store, sessionLookup, cfg, poolDesired, clk)
+
+	return wakeCount
+}
