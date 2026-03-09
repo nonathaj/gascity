@@ -207,30 +207,29 @@ scope the agent to a rig's working directory.`,
 	return cmd
 }
 
-func newAgentListCmd(_, stderr io.Writer) *cobra.Command {
+// deprecatedAgentCmd creates a hidden deprecation shim that prints a
+// migration message and exits. DisableFlagParsing ensures that old flags
+// (e.g., --json, --lines) don't cause "unknown flag" errors before the
+// migration message is printed.
+func deprecatedAgentCmd(stderr io.Writer, use, oldCmd, newCmd string) *cobra.Command {
 	return &cobra.Command{
-		Use:    "list",
-		Short:  "Deprecated: use \"gc session list\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
+		Use:                use,
+		Short:              fmt.Sprintf("Deprecated: use %q", newCmd),
+		Hidden:             true,
+		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent list: removed, use \"gc session list\" instead") //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "%s: removed, use %q instead\n", oldCmd, newCmd) //nolint:errcheck // best-effort stderr
 			return errExit
 		},
 	}
 }
 
+func newAgentListCmd(_, stderr io.Writer) *cobra.Command {
+	return deprecatedAgentCmd(stderr, "list", "gc agent list", "gc session list")
+}
+
 func newAgentAttachCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "attach",
-		Short:  "Deprecated: use \"gc session attach\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent attach: removed, use \"gc session attach\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "attach", "gc agent attach", "gc session attach")
 }
 
 // cmdAgentAdd is the CLI entry point for adding an agent. It locates
@@ -495,157 +494,49 @@ func doAgentResume(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) 
 }
 
 func newAgentNudgeCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "nudge",
-		Short:  "Deprecated: use \"gc session nudge\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent nudge: removed, use \"gc session nudge\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "nudge", "gc agent nudge", "gc session nudge")
 }
 
 func newAgentPeekCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "peek",
-		Short:  "Deprecated: use \"gc session peek\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent peek: removed, use \"gc session peek\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "peek", "gc agent peek", "gc session peek")
 }
 
 func newAgentKillCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "kill",
-		Short:  "Deprecated: use \"gc session kill\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent kill: removed, use \"gc session kill\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "kill", "gc agent kill", "gc session kill")
 }
 
 func newAgentDrainCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "drain",
-		Short:  "Deprecated: use \"gc runtime drain\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent drain: removed, use \"gc runtime drain\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "drain", "gc agent drain", "gc runtime drain")
 }
 
 func newAgentUndrainCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "undrain",
-		Short:  "Deprecated: use \"gc runtime undrain\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent undrain: removed, use \"gc runtime undrain\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "undrain", "gc agent undrain", "gc runtime undrain")
 }
 
 func newAgentDrainCheckCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "drain-check",
-		Short:  "Deprecated: use \"gc runtime drain-check\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent drain-check: removed, use \"gc runtime drain-check\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "drain-check", "gc agent drain-check", "gc runtime drain-check")
 }
 
 func newAgentDrainAckCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "drain-ack",
-		Short:  "Deprecated: use \"gc runtime drain-ack\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent drain-ack: removed, use \"gc runtime drain-ack\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "drain-ack", "gc agent drain-ack", "gc runtime drain-ack")
 }
 
 func newAgentRequestRestartCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "request-restart",
-		Short:  "Deprecated: use \"gc runtime request-restart\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent request-restart: removed, use \"gc runtime request-restart\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "request-restart", "gc agent request-restart", "gc runtime request-restart")
 }
 
 func newAgentLogsCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "logs",
-		Short:  "Deprecated: use \"gc session logs\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent logs: removed, use \"gc session logs\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "logs", "gc agent logs", "gc session logs")
 }
 
 func newAgentStartCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "start",
-		Short:  "Deprecated: use \"gc session new\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent start: removed, use \"gc session new\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "start", "gc agent start", "gc session new")
 }
 
 func newAgentStopCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "stop",
-		Short:  "Deprecated: use \"gc session suspend\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent stop: removed, use \"gc session suspend\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "stop", "gc agent stop", "gc session suspend")
 }
 
 func newAgentDestroyCmd(_, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:    "destroy",
-		Short:  "Deprecated: use \"gc session close\"",
-		Hidden: true,
-		Args:   cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintln(stderr, "gc agent destroy: removed, use \"gc session close\" instead") //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
+	return deprecatedAgentCmd(stderr, "destroy", "gc agent destroy", "gc session close")
 }

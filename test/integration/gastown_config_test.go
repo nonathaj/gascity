@@ -39,6 +39,7 @@ func TestGastown_ConfigWithPool(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
+	// Session list shows running sessions; config show shows pool config.
 	out, err := gc(cityDir, "session", "list")
 	if err != nil {
 		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
@@ -49,8 +50,13 @@ func TestGastown_ConfigWithPool(t *testing.T) {
 	if !strings.Contains(out, "dog") {
 		t.Errorf("expected 'dog' in session list:\n%s", out)
 	}
-	if !strings.Contains(out, "pool:") {
-		t.Errorf("expected pool info in session list:\n%s", out)
+	// Pool config annotations are in city.toml, not session beads.
+	cfgOut, err := gc(cityDir, "config", "show")
+	if err != nil {
+		t.Fatalf("gc config show failed: %v\noutput: %s", err, cfgOut)
+	}
+	if !strings.Contains(cfgOut, "pool") {
+		t.Errorf("expected pool config in config show:\n%s", cfgOut)
 	}
 }
 
@@ -81,11 +87,12 @@ func TestGastown_SuspendedAgentSkipped(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "session", "list")
+	// Suspended is a config-level flag, check via config show.
+	out, err := gc(cityDir, "config", "show")
 	if err != nil {
-		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc config show failed: %v\noutput: %s", err, out)
 	}
 	if !strings.Contains(out, "suspended") {
-		t.Errorf("expected 'suspended' in session list for worker:\n%s", out)
+		t.Errorf("expected 'suspended' in config show for worker:\n%s", out)
 	}
 }

@@ -55,12 +55,12 @@ func TestGastown_PoolMaxCap(t *testing.T) {
 	}
 	cityDir := setupGasTownCityNoGuard(t, agents)
 
-	out, err := gc(cityDir, "session", "list")
+	// Pool max is a config-level field; check via config show.
+	out, err := gc(cityDir, "config", "show")
 	if err != nil {
-		t.Fatalf("gc session list failed: %v\noutput: %s", err, out)
+		t.Fatalf("gc config show failed: %v\noutput: %s", err, out)
 	}
-	// Should show max=3 in pool info.
-	if !strings.Contains(out, "max=3") {
-		t.Errorf("expected 'max=3' in session list:\n%s", out)
+	if !strings.Contains(out, "max = 3") {
+		t.Errorf("expected 'max = 3' in config show:\n%s", out)
 	}
 }

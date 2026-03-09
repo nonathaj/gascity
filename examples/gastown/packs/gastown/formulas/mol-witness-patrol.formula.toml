@@ -144,16 +144,18 @@ bd list --status=open --json --limit=0
 
 Filter for beads assigned to polecat-pattern agents (e.g., `<rig>/polecats/<name>`).
 
-Cross-reference against running and desired agents:
+Cross-reference against running sessions and configured (desired) agents:
 ```bash
-gc session list --json
+gc session list --json   # running sessions
+gc config show           # configured agents (includes pool templates)
 ```
 
 For each bead with a polecat assignee:
-- If the assigned agent is running → not orphaned, skip
-- If the assigned agent is NOT running but IS a desired agent
-  (appears in agent config) → controller will restart it, skip
-- If the agent is neither running nor desired → **orphaned bead**
+- If the assigned agent has a running session → not orphaned, skip
+- If the assigned agent matches a configured agent name (or is a pool
+  instance like worker-3 matching template worker) → controller will
+  restart it, skip
+- If the agent is neither running nor configured → **orphaned bead**
 
 **Important**: Do NOT recover beads assigned to agents that are simply
 restarting (crash recovery). The controller restarts crashed agents,

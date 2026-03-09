@@ -213,4 +213,18 @@ func TestAgentDeprecationShims(t *testing.T) {
 			}
 		})
 	}
+
+	// Verify old flags don't cause "unknown flag" errors — migration
+	// message must be shown even when the user passes legacy flags.
+	t.Run("list_with_flags", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		cmd := newAgentCmd(&stdout, &stderr)
+		cmd.SetArgs([]string{"list", "--json"})
+		cmd.SilenceErrors = true
+		cmd.SilenceUsage = true
+		_ = cmd.Execute()
+		if !strings.Contains(stderr.String(), "gc session list") {
+			t.Errorf("stderr = %q, want migration message even with --json flag", stderr.String())
+		}
+	})
 }
