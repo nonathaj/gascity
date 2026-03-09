@@ -176,6 +176,37 @@ func TestDoRigAdd_ReAddWarnsDifferingFlags(t *testing.T) {
 	}
 }
 
+func TestDoRigAdd_ReAddNoSpuriousWarning(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-frontend")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Existing rig IS suspended with includes.
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agents]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nsuspended = true\nincludes = [\"packs/old\"]\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	// Re-add with default flags (no --start-suspended, no --include).
+	var stdout, stderr bytes.Buffer
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd should succeed, got code %d, stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "warning") {
+		t.Errorf("stderr should NOT warn when using default flags: %s", stderr.String())
+	}
+}
+
 func TestDoRigAdd_NotADirectory(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {

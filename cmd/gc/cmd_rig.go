@@ -172,10 +172,12 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 	w := func(s string) { fmt.Fprintln(stdout, s) } //nolint:errcheck // best-effort stdout
 	if reAdd {
 		w(fmt.Sprintf("Re-initializing rig '%s'...", name))
-		// Warn if provided flags differ from existing config.
-		if startSuspended != existingRig.Suspended {
-			fmt.Fprintf(stderr, "gc rig add: warning: --start-suspended=%v ignored (existing: suspended=%v); edit city.toml to change\n", //nolint:errcheck // best-effort stderr
-				startSuspended, existingRig.Suspended)
+		// Warn when explicitly-provided flags differ from existing config.
+		// Only warn for non-default values to avoid spurious warnings when
+		// re-running without flags (e.g., plain "gc rig add /path").
+		if startSuspended && startSuspended != existingRig.Suspended {
+			fmt.Fprintf(stderr, "gc rig add: warning: --start-suspended ignored (existing: suspended=%v); edit city.toml to change\n", //nolint:errcheck // best-effort stderr
+				existingRig.Suspended)
 		}
 		if include != "" && (len(existingRig.Includes) == 0 || existingRig.Includes[0] != include) {
 			fmt.Fprintf(stderr, "gc rig add: warning: --include=%s ignored (existing: %v); edit city.toml to change\n", //nolint:errcheck // best-effort stderr
@@ -271,6 +273,9 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 	}
 
 	// --- Phase 3: Routes (uses config, best-effort) ---
+
+	// Ensure rig paths are absolute before route generation.
+	resolveRigPaths(cityPath, cfg.Rigs)
 
 	// Generate routes for all rigs (HQ + all configured rigs).
 	allRigs := collectRigRoutes(cityPath, cfg)

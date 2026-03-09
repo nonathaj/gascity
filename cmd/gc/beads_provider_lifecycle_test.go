@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -183,7 +184,7 @@ func TestStartBeadsLifecycle_InstallsAgentHooks(t *testing.T) {
 		},
 	}
 
-	if err := startBeadsLifecycle(cityPath, "test-city", cfg, nil); err != nil {
+	if err := startBeadsLifecycle(cityPath, "test-city", cfg, io.Discard); err != nil {
 		t.Fatalf("startBeadsLifecycle: %v", err)
 	}
 
