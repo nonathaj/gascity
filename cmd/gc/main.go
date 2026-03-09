@@ -150,12 +150,24 @@ func sessionName(store beads.Store, cityName, agentName, sessionTemplate string)
 	return lookupSessionNameOrLegacy(store, cityName, agentName, sessionTemplate)
 }
 
+// cliStoreCache caches the bead store for CLI commands that call
+// cliSessionName repeatedly with the same cityPath. This avoids
+// opening the store on every call in loops over agents.
+var cliStoreCache struct {
+	path  string
+	store beads.Store
+}
+
 // cliSessionName resolves a session name for CLI commands that don't already
-// have a store open. Opens the bead store from cityPath (silently falls back
-// to legacy naming if the store is unavailable).
+// have a store open. Caches the bead store per cityPath so loops over
+// agents don't open the store repeatedly. Silently falls back to legacy
+// naming if the store is unavailable.
 func cliSessionName(cityPath, cityName, agentName, sessionTemplate string) string {
-	store, _ := openCityStoreAt(cityPath)
-	return sessionName(store, cityName, agentName, sessionTemplate)
+	if cliStoreCache.path != cityPath {
+		cliStoreCache.store, _ = openCityStoreAt(cityPath)
+		cliStoreCache.path = cityPath
+	}
+	return sessionName(cliStoreCache.store, cityName, agentName, sessionTemplate)
 }
 
 // findCity walks dir upward looking for a directory containing .gc/.

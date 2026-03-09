@@ -556,42 +556,66 @@ func TestDiscoverSessionBeads_SkipsNoTemplate(t *testing.T) {
 	}
 }
 
-func TestFindSessionNameByTemplate_MultipleBeadsSameTemplate(t *testing.T) {
+func TestFindSessionNameByTemplate_PrefersAgentNameMatch(t *testing.T) {
 	store := beads.NewMemStore()
 
-	// Create two open beads for the same template.
+	// Create a managed agent bead (has agent_name from syncSessionBeads).
 	_, err := store.Create(beads.Bead{
 		Title:  "worker",
 		Type:   "session",
-		Labels: []string{"gc:session", "template:worker"},
+		Labels: []string{"gc:session", "agent:worker"},
 		Metadata: map[string]string{
 			"template":     "worker",
-			"session_name": "s-gc-first",
+			"agent_name":   "worker",
+			"session_name": "s-managed",
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Create an ad-hoc session bead (no agent_name, from gc session new).
 	_, err = store.Create(beads.Bead{
 		Title:  "worker",
 		Type:   "session",
 		Labels: []string{"gc:session", "template:worker"},
 		Metadata: map[string]string{
 			"template":     "worker",
-			"session_name": "s-gc-second",
+			"session_name": "s-adhoc",
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Should return one of them (non-deterministic, but non-empty).
+	// Should prefer the managed bead (agent_name match).
 	got := findSessionNameByTemplate(store, "worker")
-	if got == "" {
-		t.Error("findSessionNameByTemplate with two beads returned empty, want non-empty")
+	if got != "s-managed" {
+		t.Errorf("findSessionNameByTemplate with managed + ad-hoc = %q, want s-managed", got)
 	}
-	if got != "s-gc-first" && got != "s-gc-second" {
-		t.Errorf("findSessionNameByTemplate returned %q, want s-gc-first or s-gc-second", got)
+}
+
+func TestFindSessionNameByTemplate_TemplateMismatchNotFound(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create a bead with template "worker" but query "myrig/worker".
+	_, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   "session",
+		Labels: []string{"gc:session", "template:worker"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"session_name": "s-gc-99",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Querying for rig-qualified name should NOT match bare template.
+	got := findSessionNameByTemplate(store, "myrig/worker")
+	if got != "" {
+		t.Errorf("findSessionNameByTemplate(myrig/worker) = %q, want empty (template mismatch)", got)
 	}
 }
 

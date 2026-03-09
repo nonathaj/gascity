@@ -53,7 +53,14 @@ func sessionNameFromBeadID(beadID string) string {
 // template and returns its session_name metadata. Returns "" if not found.
 // Pool instance beads (those with pool_slot metadata) are skipped to prevent
 // a template query like "worker" from matching pool instance "worker-1".
+//
+// To avoid ambiguity between managed agent beads (created by syncSessionBeads)
+// and ad-hoc session beads (created by gc session new), the function prefers
+// beads with an agent_name field matching the query. If no agent_name match
+// is found, falls back to template/common_name matching.
 func findSessionNameByTemplate(store beads.Store, template string) string {
+	var fallback string // template-only match (weaker signal)
+
 	// Search both labels (unified + legacy) for migration compatibility.
 	for _, label := range []string{sessionBeadLabel, legacySessionBeadLabel} {
 		all, err := store.ListByLabel(label, 0)
@@ -69,14 +76,23 @@ func findSessionNameByTemplate(store beads.Store, template string) string {
 			if b.Metadata["pool_slot"] != "" {
 				continue
 			}
-			if b.Metadata["template"] == template || b.Metadata["common_name"] == template {
+			// Prefer agent_name match (managed agent bead from syncSessionBeads).
+			if b.Metadata["agent_name"] == template {
 				if sn := b.Metadata["session_name"]; sn != "" {
 					return sn
 				}
 			}
+			// Record first template/common_name match as fallback.
+			if fallback == "" {
+				if b.Metadata["template"] == template || b.Metadata["common_name"] == template {
+					if sn := b.Metadata["session_name"]; sn != "" {
+						fallback = sn
+					}
+				}
+			}
 		}
 	}
-	return ""
+	return fallback
 }
 
 // lookupSessionName resolves a qualified agent name to its bead-derived
