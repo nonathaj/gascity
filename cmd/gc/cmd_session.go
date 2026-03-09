@@ -729,13 +729,14 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// Use the user-supplied name (agent or session ID) as Subject for
-	// consistency with other SessionStopped events which use agent names.
+	// Use the resolved session ID as the canonical Subject for event
+	// consumers. This ensures a stable key regardless of how the user
+	// specified the target (session ID, template name, or alias).
 	rec := openCityRecorder(stderr)
 	rec.Record(events.Event{
 		Type:    events.SessionStopped,
 		Actor:   eventActor(),
-		Subject: args[0],
+		Subject: sessionID,
 		Message: "killed",
 	})
 

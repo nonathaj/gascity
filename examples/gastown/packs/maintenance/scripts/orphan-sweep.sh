@@ -32,9 +32,21 @@ while IFS= read -r agent; do
 done <<< "$AGENTS"
 
 # Step 3: Find orphaned beads (assigned to non-existent agents).
+# Pool instances use names like "worker-3"; strip the -N suffix to match
+# the template name from config.
+is_known_agent() {
+    local name="$1"
+    # Direct match.
+    if [ -n "${KNOWN_AGENTS[$name]+x}" ]; then return 0; fi
+    # Pool instance: strip trailing -<digits> and check template name.
+    local base="${name%-[0-9]*}"
+    if [ "$base" != "$name" ] && [ -n "${KNOWN_AGENTS[$base]+x}" ]; then return 0; fi
+    return 1
+}
+
 ORPHANED=0
 echo "$IN_PROGRESS" | jq -r '.[] | select(.assignee != null and .assignee != "") | "\(.id)\t\(.assignee)"' 2>/dev/null | while IFS=$'\t' read -r bead_id assignee; do
-    if [ -z "${KNOWN_AGENTS[$assignee]+x}" ]; then
+    if ! is_known_agent "$assignee"; then
         bd update "$bead_id" --status=open --assignee="" 2>/dev/null || true
         ORPHANED=$((ORPHANED + 1))
     fi

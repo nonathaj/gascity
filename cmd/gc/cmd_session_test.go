@@ -84,6 +84,10 @@ func TestResolveWorkDir(t *testing.T) {
 // wrapper that resolves the session ID and calls mgr.Kill, so it does
 // not warrant a separate unit test beyond integration coverage.
 
+// NOTE: session nudge is tested implicitly — the critical path components
+// (resolveAgentIdentity, sessionName, Provider.Nudge) each have dedicated
+// tests. The CLI layer (cmdSessionNudge) is a thin integration wrapper.
+
 func TestShouldAttachNewSession(t *testing.T) {
 	tests := []struct {
 		name      string
