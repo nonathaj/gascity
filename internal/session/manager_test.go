@@ -76,6 +76,40 @@ func TestCreate(t *testing.T) {
 	}
 }
 
+func TestCreateBeadOnly(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.CreateBeadOnly("helper", "my chat", "claude", "/tmp", "claude", "", nil, ProviderResume{})
+	if err != nil {
+		t.Fatalf("CreateBeadOnly: %v", err)
+	}
+	if info.Template != "helper" {
+		t.Errorf("Template = %q, want %q", info.Template, "helper")
+	}
+	if info.ID == "" {
+		t.Error("ID is empty")
+	}
+
+	// Verify the runtime session was NOT started.
+	if sp.IsRunning(info.SessionName) {
+		t.Error("runtime session should not be started in bead-only mode")
+	}
+
+	// Verify bead was created with state "creating" (not "active").
+	b, err := store.Get(info.ID)
+	if err != nil {
+		t.Fatalf("store.Get: %v", err)
+	}
+	if b.Metadata["state"] != "creating" {
+		t.Errorf("bead state = %q, want %q", b.Metadata["state"], "creating")
+	}
+	if b.Metadata["session_name"] == "" {
+		t.Error("bead missing session_name metadata")
+	}
+}
+
 func TestCreateRoutesACPSessionsThroughAutoProvider(t *testing.T) {
 	store := beads.NewMemStore()
 	defaultSP := runtime.NewFake()

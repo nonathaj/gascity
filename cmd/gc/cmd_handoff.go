@@ -73,7 +73,7 @@ func cmdHandoff(args []string, target string, stdout, stderr io.Writer) int {
 	if cityName == "" {
 		cityName = filepath.Base(cityDir)
 	}
-	sn := sessionName(nil, cityName, agentName, cfg.Workspace.SessionTemplate)
+	sn := sessionName(store, cityName, agentName, cfg.Workspace.SessionTemplate)
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorder(stderr)

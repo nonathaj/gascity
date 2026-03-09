@@ -5,7 +5,6 @@ import (
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/session"
 )
 
 // resolveSessionName returns the session name for a qualified agent name.
@@ -55,8 +54,8 @@ func sessionNameFromBeadID(beadID string) string {
 // Pool instance beads (those with pool_slot metadata) are skipped to prevent
 // a template query like "worker" from matching pool instance "worker-1".
 func findSessionNameByTemplate(store beads.Store, template string) string {
-	// Search both session bead types.
-	for _, label := range []string{session.LabelSession, sessionBeadLabel} {
+	// Search both labels (unified + legacy) for migration compatibility.
+	for _, label := range []string{sessionBeadLabel, legacySessionBeadLabel} {
 		all, err := store.ListByLabel(label, 0)
 		if err != nil {
 			continue

@@ -83,6 +83,10 @@ city.toml. By default, attaches the terminal after creation.`,
 }
 
 // cmdSessionNew is the CLI entry point for "gc session new".
+//
+// Phase 2: creates a session bead and pokes the controller. The reconciler
+// handles process lifecycle (start). If the controller is not running,
+// falls back to direct process start via the session manager.
 func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io.Writer) int {
 	templateName := args[0]
 
@@ -124,14 +128,52 @@ func cmdSessionNew(args []string, title string, noAttach bool, stdout, stderr io
 	// Build the work directory.
 	workDir := resolveWorkDir(cityPath, &found)
 
-	// Build runtime.Config hints from provider.
+	// Try reconciler-first path: create bead, poke controller.
+	if pokeErr := pokeController(cityPath); pokeErr == nil {
+		// Controller is running — create bead only, let reconciler start it.
+		info, err := mgr.CreateBeadOnly(templateName, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, session.ProviderResume{
+			ResumeFlag:    resolved.ResumeFlag,
+			ResumeStyle:   resolved.ResumeStyle,
+			SessionIDFlag: resolved.SessionIDFlag,
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+
+		// Poke again after bead creation to trigger immediate reconciler tick.
+		_ = pokeController(cityPath)
+
+		fmt.Fprintf(stdout, "Session %s created from template %q (reconciler will start it).\n", info.ID, templateName) //nolint:errcheck // best-effort stdout
+
+		if !shouldAttachNewSession(noAttach, found.Session) {
+			if found.Session == "acp" && !noAttach {
+				fmt.Fprintln(stdout, "Session uses ACP transport; not attaching.") //nolint:errcheck // best-effort stdout
+			}
+			return 0
+		}
+
+		// Wait for the reconciler to start the session before attaching.
+		fmt.Fprintln(stdout, "Waiting for session to start...") //nolint:errcheck // best-effort stdout
+		if waitErr := waitForSession(sp, info.SessionName, 30*time.Second); waitErr != nil {
+			fmt.Fprintf(stderr, "gc session new: %v\n", waitErr) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		fmt.Fprintln(stdout, "Attaching...") //nolint:errcheck // best-effort stdout
+		if err := sp.Attach(info.SessionName); err != nil {
+			fmt.Fprintf(stderr, "gc session new: attaching: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		return 0
+	}
+
+	// Fallback: controller not running — direct start via session manager.
 	hints := runtime.Config{
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,
 		ReadyDelayMs:           resolved.ReadyDelayMs,
 		ProcessNames:           resolved.ProcessNames,
 		EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 	}
-
 	resume := session.ProviderResume{
 		ResumeFlag:    resolved.ResumeFlag,
 		ResumeStyle:   resolved.ResumeStyle,
@@ -173,6 +215,18 @@ func resolveSessionTemplate(cfg *config.City, input, currentRigDir string) (conf
 		}
 	}
 	return config.Agent{}, false
+}
+
+// waitForSession polls the provider until the session is running or timeout.
+func waitForSession(sp runtime.Provider, sessionName string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if sp.IsRunning(sessionName) {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("session %q did not start within %s", sessionName, timeout)
 }
 
 // newSessionListCmd creates the "gc session list" command.
@@ -449,6 +503,10 @@ Accepts a session ID (e.g., gc-42) or template name (e.g., overseer).`,
 }
 
 // cmdSessionSuspend is the CLI entry point for "gc session suspend".
+//
+// Phase 2: sets held_until metadata on the session bead and pokes the
+// controller. The reconciler handles the actual process stop. Falls back
+// to direct suspend via the session manager if the controller isn't running.
 func cmdSessionSuspend(args []string, stdout, stderr io.Writer) int {
 	store, code := openCityStore(stderr, "gc session suspend")
 	if store == nil {
@@ -461,6 +519,29 @@ func cmdSessionSuspend(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	cityPath, cityErr := resolveCity()
+
+	// Try reconciler-first path: set held_until metadata, poke controller.
+	if cityErr == nil {
+		if pokeErr := pokeController(cityPath); pokeErr == nil {
+			// Controller is running — metadata-only suspend.
+			// Set held_until far in the future so the reconciler drains/stops the session.
+			heldUntil := time.Now().Add(100 * 365 * 24 * time.Hour).UTC().Format(time.RFC3339)
+			if err := store.SetMetadataBatch(sessionID, map[string]string{
+				"held_until": heldUntil,
+				"state":      "suspended",
+			}); err != nil {
+				fmt.Fprintf(stderr, "gc session suspend: %v\n", err) //nolint:errcheck // best-effort stderr
+				return 1
+			}
+			// Poke again to trigger immediate reconciler tick.
+			_ = pokeController(cityPath)
+			fmt.Fprintf(stdout, "Session %s suspended. Resume with: gc session wake %s\n", sessionID, sessionID) //nolint:errcheck // best-effort stdout
+			return 0
+		}
+	}
+
+	// Fallback: controller not running — direct suspend via session manager.
 	sp := newSessionProvider()
 	mgr := newSessionManager(store, sp)
 

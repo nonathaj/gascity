@@ -99,7 +99,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 		ct = newCrashTracker(maxR, p.Cfg.Daemon.RestartWindowDuration())
 	}
 
-	it := buildIdleTracker(p.Cfg, p.CityName, p.SP)
+	it := buildIdleTracker(p.Cfg, p.CityName, p.CityPath, p.SP)
 
 	var wg wispGC
 	if p.Cfg.Daemon.WispGCEnabled() {
@@ -442,7 +442,7 @@ func (cr *CityRuntime) reloadConfig(
 		}
 	}
 
-	cr.poolSessions = computePoolSessions(cr.cfg, cr.cityName, cr.sp)
+	cr.poolSessions = computePoolSessions(cr.cfg, cr.cityName, cr.cityPath, cr.sp)
 	cr.poolDeathHandlers = computePoolDeathHandlers(cr.cfg, cr.cityName, cityRoot, cr.sp)
 	cr.suspendedNames = computeSuspendedNames(cr.cfg, cr.cityName, cr.cityPath)
 
@@ -466,7 +466,7 @@ func (cr *CityRuntime) reloadConfig(
 		cr.cs.mu.Unlock()
 	}
 
-	cr.it = buildIdleTracker(cr.cfg, cr.cityName, cr.sp)
+	cr.it = buildIdleTracker(cr.cfg, cr.cityName, cr.cityPath, cr.sp)
 
 	if cr.cfg.Daemon.WispGCEnabled() {
 		cr.wg = newWispGC(cr.cfg.Daemon.WispGCIntervalDuration(),

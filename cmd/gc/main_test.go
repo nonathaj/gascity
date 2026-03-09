@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -452,6 +454,114 @@ func TestFindSessionNameByTemplate_SkipsEmptySessionName(t *testing.T) {
 	if got != "" {
 		t.Errorf("findSessionNameByTemplate(empty session_name) = %q, want empty", got)
 	}
+}
+
+func TestDiscoverSessionBeads_IncludesBeadCreatedSessions(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create a session bead as if "gc session new" created it.
+	_, err := store.Create(beads.Bead{
+		Title:  "helper",
+		Type:   "session",
+		Labels: []string{sessionBeadLabel, "template:helper"},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"session_name": "s-gc-100",
+			"state":        "creating",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "helper"},
+		},
+	}
+	sp := runtime.NewFake()
+	bp := newAgentBuildParams("test", t.TempDir(), cfg, sp, time.Now(), store, io.Discard)
+
+	desired := make(map[string]TemplateParams)
+	discoverSessionBeads(bp, cfg, store, desired, io.Discard)
+
+	if _, ok := desired["s-gc-100"]; !ok {
+		t.Errorf("expected bead-created session s-gc-100 in desired state, got keys: %v", mapKeys(desired))
+	}
+}
+
+func TestDiscoverSessionBeads_SkipsAlreadyDesired(t *testing.T) {
+	store := beads.NewMemStore()
+
+	_, err := store.Create(beads.Bead{
+		Title:  "helper",
+		Type:   "session",
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"session_name": "s-gc-100",
+			"state":        "active",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "helper"},
+		},
+	}
+	sp := runtime.NewFake()
+	bp := newAgentBuildParams("test", t.TempDir(), cfg, sp, time.Now(), store, io.Discard)
+
+	// Pre-populate desired state — bead should be skipped.
+	desired := map[string]TemplateParams{
+		"s-gc-100": {SessionName: "s-gc-100"},
+	}
+	discoverSessionBeads(bp, cfg, store, desired, io.Discard)
+
+	// Should still be exactly 1 entry (not duplicated).
+	if len(desired) != 1 {
+		t.Errorf("expected 1 desired entry, got %d", len(desired))
+	}
+}
+
+func TestDiscoverSessionBeads_SkipsNoTemplate(t *testing.T) {
+	store := beads.NewMemStore()
+
+	_, err := store.Create(beads.Bead{
+		Title:  "orphan",
+		Type:   "session",
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "s-gc-200",
+			"state":        "active",
+			// No template metadata
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{}
+	sp := runtime.NewFake()
+	bp := newAgentBuildParams("test", t.TempDir(), cfg, sp, time.Now(), store, io.Discard)
+
+	desired := make(map[string]TemplateParams)
+	discoverSessionBeads(bp, cfg, store, desired, io.Discard)
+
+	if len(desired) != 0 {
+		t.Errorf("expected 0 desired entries for bead without template, got %d", len(desired))
+	}
+}
+
+func mapKeys(m map[string]TemplateParams) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // --- gc init (doInit with fsys.Fake) ---

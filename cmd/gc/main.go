@@ -143,11 +143,19 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 // session name. GC_TMUX_SESSION overrides the resolved name so agent-side
 // commands (drain-check, drain-ack, request-restart) target the correct
 // tmux session for metadata reads/writes.
-func sessionName(store beads.Store, cityName, agentName, sessionTemplate string) string { //nolint:unparam // store is nil today; Phase 2 threads real stores
+func sessionName(store beads.Store, cityName, agentName, sessionTemplate string) string {
 	if override := os.Getenv("GC_TMUX_SESSION"); override != "" {
 		return override
 	}
 	return lookupSessionNameOrLegacy(store, cityName, agentName, sessionTemplate)
+}
+
+// cliSessionName resolves a session name for CLI commands that don't already
+// have a store open. Opens the bead store from cityPath (silently falls back
+// to legacy naming if the store is unavailable).
+func cliSessionName(cityPath, cityName, agentName, sessionTemplate string) string {
+	store, _ := openCityStoreAt(cityPath)
+	return sessionName(store, cityName, agentName, sessionTemplate)
 }
 
 // findCity walks dir upward looking for a directory containing .gc/.

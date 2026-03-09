@@ -36,7 +36,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	// City-level suspend: all agents are suspended.
 	if cfg.Workspace.Suspended {
 		for _, a := range cfg.Agents {
-			names[sessionName(nil, cityName, a.QualifiedName(), st)] = true
+			names[cliSessionName(cityPath, cityName, a.QualifiedName(), st)] = true
 		}
 		return names
 	}
@@ -45,7 +45,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	for _, a := range cfg.Agents {
 		if a.Suspended {
 			qn := a.QualifiedName()
-			names[sessionName(nil, cityName, qn, st)] = true
+			names[cliSessionName(cityPath, cityName, qn, st)] = true
 		}
 	}
 	// Agents in suspended rigs.
@@ -65,7 +65,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 				continue
 			}
 			if suspendedRigPaths[filepath.Clean(workDir)] {
-				names[sessionName(nil, cityName, a.QualifiedName(), st)] = true
+				names[cliSessionName(cityPath, cityName, a.QualifiedName(), st)] = true
 			}
 		}
 	}
@@ -77,7 +77,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 // multi-instance pool agent in the config, mapped to the pool's drain
 // timeout. Used to distinguish excess pool members (drain) from true orphans
 // (kill) during reconciliation, and to enforce drain timeouts.
-func computePoolSessions(cfg *config.City, cityName string, sp runtime.Provider) map[string]time.Duration {
+func computePoolSessions(cfg *config.City, cityName, cityPath string, sp runtime.Provider) map[string]time.Duration {
 	ps := make(map[string]time.Duration)
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -87,7 +87,7 @@ func computePoolSessions(cfg *config.City, cityName string, sp runtime.Provider)
 		}
 		timeout := pool.DrainTimeoutDuration()
 		for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-			ps[sessionName(nil, cityName, qualifiedInstance, st)] = timeout
+			ps[cliSessionName(cityPath, cityName, qualifiedInstance, st)] = timeout
 		}
 	}
 	return ps
@@ -126,7 +126,7 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp ru
 					dir = d
 				}
 			}
-			sn := sessionName(nil, cityName, qualifiedInstance, st)
+			sn := cliSessionName(cityPath, cityName, qualifiedInstance, st)
 			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir}
 		}
 	}
@@ -149,7 +149,7 @@ var dryRunMode bool
 // buildIdleTracker creates an idleTracker from the config, populating
 // timeouts for agents that have idle_timeout set. Returns nil if no
 // agents use idle timeout (disabled).
-func buildIdleTracker(cfg *config.City, cityName string, sp runtime.Provider) idleTracker {
+func buildIdleTracker(cfg *config.City, cityName, cityPath string, sp runtime.Provider) idleTracker {
 	var hasAny bool
 	st := cfg.Workspace.SessionTemplate
 	for _, a := range cfg.Agents {
@@ -171,11 +171,11 @@ func buildIdleTracker(cfg *config.City, cityName string, sp runtime.Provider) id
 		if a.IsPool() && pool.IsMultiInstance() {
 			// Register each pool instance (worker-1, worker-2, ...).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := sessionName(nil, cityName, qualifiedInstance, st)
+				sn := cliSessionName(cityPath, cityName, qualifiedInstance, st)
 				it.setTimeout(sn, timeout)
 			}
 		} else {
-			sn := sessionName(nil, cityName, a.QualifiedName(), st)
+			sn := cliSessionName(cityPath, cityName, a.QualifiedName(), st)
 			it.setTimeout(sn, timeout)
 		}
 	}
@@ -435,7 +435,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 
 	tomlPath := filepath.Join(cityPath, "city.toml")
 	if controllerMode {
-		poolSessions := computePoolSessions(cfg, cityName, sp)
+		poolSessions := computePoolSessions(cfg, cityName, cityPath, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, cityPath, sp)
 		watchDirs := config.WatchDirs(prov, cfg, cityPath)
 		return runController(cityPath, tomlPath, cfg, buildAgents, sp,

@@ -160,7 +160,71 @@ func buildDesiredState(
 		}
 	}
 
+	// Phase 2: discover session beads created outside config iteration
+	// (e.g., by "gc session new"). Include them in desired state if they
+	// have a valid template and are not held/closed.
+	discoverSessionBeads(bp, cfg, store, desired, stderr)
+
 	return desired
+}
+
+// discoverSessionBeads queries the store for open session beads that are
+// not already in the desired state and adds them. This enables "gc session
+// new" to create a bead that the reconciler then starts.
+func discoverSessionBeads(
+	bp *agentBuildParams,
+	cfg *config.City,
+	store beads.Store,
+	desired map[string]TemplateParams,
+	stderr io.Writer,
+) {
+	if store == nil {
+		return
+	}
+	all, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		return
+	}
+	for _, b := range all {
+		if b.Status == "closed" {
+			continue
+		}
+		sn := b.Metadata["session_name"]
+		if sn == "" {
+			continue
+		}
+		// Skip beads already in desired state (from config iteration).
+		if _, exists := desired[sn]; exists {
+			continue
+		}
+		// Skip held beads — the reconciler's wakeReasons handles held_until,
+		// but we still need the bead in desired state so the reconciler
+		// doesn't classify it as orphaned. Only skip if we can't resolve
+		// the template.
+		template := b.Metadata["template"]
+		if template == "" {
+			template = b.Metadata["common_name"]
+		}
+		if template == "" {
+			continue
+		}
+		// Find the config agent for this template.
+		cfgAgent := findAgentByTemplate(cfg, template)
+		if cfgAgent == nil {
+			continue // no matching config agent — can't resolve template
+		}
+		// Resolve TemplateParams for this bead's session.
+		fpExtra := buildFingerprintExtra(cfgAgent)
+		tp, err := resolveTemplate(bp, cfgAgent, cfgAgent.QualifiedName(), fpExtra)
+		if err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: bead %s template %q: %v (skipping)\n", b.ID, template, err) //nolint:errcheck
+			continue
+		}
+		// Override the session name with the bead-derived name.
+		tp.SessionName = sn
+		installAgentSideEffects(bp, cfgAgent, tp, stderr)
+		desired[sn] = tp
+	}
 }
 
 // installAgentSideEffects performs idempotent side effects for a resolved

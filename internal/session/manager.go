@@ -244,6 +244,58 @@ func (m *Manager) CreateWithTransport(ctx context.Context, template, title, comm
 	return m.infoFromBead(b), nil
 }
 
+// CreateBeadOnly creates a session bead without starting the runtime process.
+// The bead is created with state "creating" — the controller's reconciler
+// will detect it in buildDesiredState and start the process on its next tick.
+//
+// This is the Phase 2 path: CLI creates intent (bead), reconciler executes.
+func (m *Manager) CreateBeadOnly(template, title, command, workDir, provider, transport string, _ map[string]string, resume ProviderResume) (Info, error) {
+	var sessionKey string
+	if resume.SessionIDFlag != "" {
+		var err error
+		sessionKey, err = generateSessionKey()
+		if err != nil {
+			return Info{}, fmt.Errorf("generating session key: %w", err)
+		}
+	}
+
+	meta := map[string]string{
+		"template":     template,
+		"state":        "creating",
+		"provider":     provider,
+		"work_dir":     workDir,
+		"command":      command,
+		"resume_flag":  resume.ResumeFlag,
+		"resume_style": resume.ResumeStyle,
+	}
+	if normalizedTransport := normalizeTransport(provider, transport); normalizedTransport != "" {
+		meta["transport"] = normalizedTransport
+	}
+	if sessionKey != "" {
+		meta["session_key"] = sessionKey
+	}
+	b, err := m.store.Create(beads.Bead{
+		Title: title,
+		Type:  BeadType,
+		Labels: []string{
+			LabelSession,
+			"template:" + template,
+		},
+		Metadata: meta,
+	})
+	if err != nil {
+		return Info{}, fmt.Errorf("creating session bead: %w", err)
+	}
+
+	sessName := sessionNameFor(b.ID)
+	if err := m.store.SetMetadata(b.ID, "session_name", sessName); err != nil {
+		_ = m.store.Close(b.ID)
+		return Info{}, fmt.Errorf("storing session name: %w", err)
+	}
+
+	return m.infoFromBead(b), nil
+}
+
 // Attach attaches the user's terminal to the session. If the session is
 // suspended, it is resumed first using resumeCommand. If the tmux session
 // died (active bead but no process), it is restarted.

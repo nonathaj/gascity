@@ -643,7 +643,7 @@ func reconcileCities(
 		}
 
 		dops := newDrainOps(sp)
-		poolSessions := computePoolSessions(cfg, cityName, sp)
+		poolSessions := computePoolSessions(cfg, cityName, path, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, path, sp)
 		watchDirs := config.WatchDirs(prov, cfg, path)
 		pokeCh := make(chan struct{}, 1)

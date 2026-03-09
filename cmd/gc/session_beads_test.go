@@ -551,7 +551,7 @@ func TestLoadSessionBeads_NewTypeOnly(t *testing.T) {
 	_, err := store.Create(beads.Bead{
 		Title:  "worker",
 		Type:   "session",
-		Labels: []string{newSessionBeadLabel},
+		Labels: []string{sessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker",
 			"state":        "active",
@@ -576,8 +576,8 @@ func TestLoadSessionBeads_DeduplicatesBySessionName(t *testing.T) {
 	// Create both a legacy and a new-type bead with the same session_name.
 	_, _ = store.Create(beads.Bead{
 		Title:  "worker-legacy",
-		Type:   sessionBeadType,
-		Labels: []string{sessionBeadLabel},
+		Type:   "agent_session",
+		Labels: []string{legacySessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker",
 			"state":        "active",
@@ -585,8 +585,8 @@ func TestLoadSessionBeads_DeduplicatesBySessionName(t *testing.T) {
 	})
 	_, _ = store.Create(beads.Bead{
 		Title:  "worker-new",
-		Type:   "session",
-		Labels: []string{newSessionBeadLabel},
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker",
 			"state":        "active",
@@ -621,8 +621,8 @@ func TestLoadSessionBeads_LegacyStateMapping(t *testing.T) {
 		store := beads.NewMemStore() // fresh store per subtest
 		_, _ = store.Create(beads.Bead{
 			Title:  "worker",
-			Type:   sessionBeadType,
-			Labels: []string{sessionBeadLabel},
+			Type:   "agent_session",
+			Labels: []string{legacySessionBeadLabel},
 			Metadata: map[string]string{
 				"session_name": "worker",
 				"state":        tt.legacyState,
@@ -646,11 +646,11 @@ func TestLoadSessionBeads_LegacyStateMapping(t *testing.T) {
 func TestLoadSessionBeads_HybridPoolOccupancy(t *testing.T) {
 	store := beads.NewMemStore()
 
-	// Two legacy beads + one new-type bead, all for different session names.
+	// Two legacy beads + one unified bead, all for different session names.
 	_, _ = store.Create(beads.Bead{
 		Title:  "worker-1",
-		Type:   sessionBeadType,
-		Labels: []string{sessionBeadLabel},
+		Type:   "agent_session",
+		Labels: []string{legacySessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker-1",
 			"template":     "worker",
@@ -660,8 +660,8 @@ func TestLoadSessionBeads_HybridPoolOccupancy(t *testing.T) {
 	})
 	_, _ = store.Create(beads.Bead{
 		Title:  "worker-2",
-		Type:   sessionBeadType,
-		Labels: []string{sessionBeadLabel},
+		Type:   "agent_session",
+		Labels: []string{legacySessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker-2",
 			"template":     "worker",
@@ -671,8 +671,8 @@ func TestLoadSessionBeads_HybridPoolOccupancy(t *testing.T) {
 	})
 	_, _ = store.Create(beads.Bead{
 		Title:  "worker-3",
-		Type:   "session",
-		Labels: []string{newSessionBeadLabel},
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker-3",
 			"template":     "worker",
