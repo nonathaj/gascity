@@ -33,7 +33,7 @@ continuity.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, rename, prune, peek, kill, logs)") //nolint:errcheck // best-effort stderr
+				fmt.Fprintln(stderr, "gc session: missing subcommand (new, list, attach, suspend, close, rename, prune, peek, kill, nudge, logs, wake)") //nolint:errcheck // best-effort stderr
 			} else {
 				fmt.Fprintf(stderr, "gc session: unknown subcommand %q\n", args[0]) //nolint:errcheck // best-effort stderr
 			}
@@ -746,14 +746,15 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 // newSessionNudgeCmd creates the "gc session nudge <id-or-name> <message>" command.
 func newSessionNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "nudge <session-id-or-name> <message>",
-		Short: "Send a text message to a running session",
-		Long: `Send text input to a running session via the runtime provider.
+		Use:   "nudge <agent-name> <message...>",
+		Short: "Send a text message to a running agent session",
+		Long: `Send text input to a running agent session via the runtime provider.
 
 The message is delivered as text content to the session's input. This is
 equivalent to typing the message into the session's terminal.
 
-Accepts a session ID (e.g., gc-42) or template name (e.g., overseer).`,
+Resolves the agent name from city.toml configuration to find the
+corresponding tmux session. Multi-word messages are joined automatically.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if cmdSessionNudge(args, stdout, stderr) != 0 {

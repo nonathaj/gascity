@@ -25,7 +25,7 @@ gc session new <template> --no-attach  # Create a detached background session
 gc session suspend <id-or-template>    # Suspend a session
 gc session close <id-or-template>      # Close a session permanently
 gc session kill <name>                 # Force-kill an agent session
-gc session nudge <name> <message>      # Send text to a running session
+gc session nudge <name> <message...>   # Send text to a running agent session
 gc session logs <name>                 # Show session logs for an agent
 ```
 
