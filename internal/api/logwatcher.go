@@ -16,6 +16,10 @@ type logFileWatcher struct {
 	watcher      *fsnotify.Watcher
 	fallbackPoll *time.Ticker
 	logPath      string
+	// onReset is called when the watcher switches to polling due to
+	// file rename/remove. Callers should reset their cached file state
+	// (size, cursor) so the next read doesn't skip the new file.
+	onReset func()
 }
 
 // newLogFileWatcher creates a watcher for logPath. If fsnotify is
@@ -50,6 +54,7 @@ func (lw *logFileWatcher) Close() {
 }
 
 // switchToPolling closes the fsnotify watcher and starts polling instead.
+// Calls onReset if set so callers can invalidate cached file state.
 func (lw *logFileWatcher) switchToPolling(reason string) {
 	if lw.watcher != nil {
 		lw.watcher.Close() //nolint:errcheck
@@ -58,6 +63,9 @@ func (lw *logFileWatcher) switchToPolling(reason string) {
 	if lw.fallbackPoll == nil {
 		lw.fallbackPoll = time.NewTicker(outputStreamPollInterval)
 		log.Printf("session stream: %s for %s, switching to polling", reason, lw.logPath)
+	}
+	if lw.onReset != nil {
+		lw.onReset()
 	}
 }
 

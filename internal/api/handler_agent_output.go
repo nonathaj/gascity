@@ -307,6 +307,7 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 	defer lw.Close()
 
 	var lastSize int64
+	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
 

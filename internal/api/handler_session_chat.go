@@ -559,8 +559,15 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		}
 	case format == "raw":
 		// No log file yet — raw format cannot fall back to peek (different
-		// response schema). Emit an empty raw snapshot so clients get the
-		// correct format and can wait for messages to arrive via retry.
+		// response schema). Emit an empty raw event so clients get the
+		// correct format and can distinguish "no data yet" from error.
+		data, _ := json.Marshal(sessionRawTranscriptResponse{
+			ID:       info.ID,
+			Template: info.Template,
+			Format:   "raw",
+			Messages: []json.RawMessage{},
+		})
+		writeSSE(w, "message", 1, data)
 		return
 	default:
 		s.streamSessionPeek(ctx, w, info)
@@ -637,6 +644,7 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 	defer lw.Close()
 
 	var lastSize int64
+	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
 
@@ -712,6 +720,7 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 	defer lw.Close()
 
 	var lastSize int64
+	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
 
