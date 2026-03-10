@@ -110,10 +110,9 @@ func (c *Client) RestartRig(name string) error {
 	return c.doMutation("POST", "/v0/rig/"+escapeName(name)+"/restart", nil)
 }
 
-// RestartAgent restarts an agent via POST /v0/agent/{name}/restart.
-// Kills the agent's session; the reconciler restarts it.
-func (c *Client) RestartAgent(name string) error {
-	return c.doMutation("POST", "/v0/agent/"+escapeName(name)+"/restart", nil)
+// KillSession force-kills a session via POST /v0/session/{id}/kill.
+func (c *Client) KillSession(id string) error {
+	return c.doMutation("POST", "/v0/session/"+url.PathEscape(id)+"/kill", nil)
 }
 
 // escapeName escapes each segment of a potentially qualified name (e.g.,

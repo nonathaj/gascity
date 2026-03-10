@@ -95,9 +95,6 @@ func (f *fakeState) RawConfig() *config.City {
 type fakeMutatorState struct {
 	*fakeState
 	suspended map[string]bool
-	killed    map[string]bool
-	drained   map[string]bool
-	nudges    map[string]string
 }
 
 func newFakeMutatorState(t *testing.T) *fakeMutatorState {
@@ -105,18 +102,11 @@ func newFakeMutatorState(t *testing.T) *fakeMutatorState {
 	return &fakeMutatorState{
 		fakeState: newFakeState(t),
 		suspended: make(map[string]bool),
-		killed:    make(map[string]bool),
-		drained:   make(map[string]bool),
-		nudges:    make(map[string]string),
 	}
 }
 
-func (f *fakeMutatorState) SuspendAgent(name string) error    { f.suspended[name] = true; return nil }
-func (f *fakeMutatorState) ResumeAgent(name string) error     { delete(f.suspended, name); return nil }
-func (f *fakeMutatorState) KillAgent(name string) error       { f.killed[name] = true; return nil }
-func (f *fakeMutatorState) DrainAgent(name string) error      { f.drained[name] = true; return nil }
-func (f *fakeMutatorState) UndrainAgent(name string) error    { delete(f.drained, name); return nil }
-func (f *fakeMutatorState) NudgeAgent(name, msg string) error { f.nudges[name] = msg; return nil }
+func (f *fakeMutatorState) SuspendAgent(name string) error { f.suspended[name] = true; return nil }
+func (f *fakeMutatorState) ResumeAgent(name string) error  { delete(f.suspended, name); return nil }
 func (f *fakeMutatorState) EnableAutomation(name, rig string) error {
 	enabled := true
 	return f.SetAutomationOverrideEnabled(name, rig, &enabled)

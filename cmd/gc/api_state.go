@@ -334,16 +334,6 @@ func (cs *controllerState) DisableAutomation(name, rig string) error {
 	})
 }
 
-// spAndSession captures the session provider and computes the session name
-// in a single critical section to avoid TOCTOU with config reloads.
-func (cs *controllerState) spAndSession(name string) (runtime.Provider, string) {
-	cs.mu.RLock()
-	sp := cs.sp
-	tmpl := cs.cfg.Workspace.SessionTemplate
-	cs.mu.RUnlock()
-	return sp, lookupSessionNameOrLegacy(cs.cityBeadStore, cs.cityName, name, tmpl)
-}
-
 // SuspendAgent writes suspended=true to city.toml (durable desired state).
 // Uses configedit.Editor for provenance-aware edit (inline vs patch).
 func (cs *controllerState) SuspendAgent(name string) error {
@@ -353,33 +343,6 @@ func (cs *controllerState) SuspendAgent(name string) error {
 // ResumeAgent clears suspended in city.toml (durable desired state).
 func (cs *controllerState) ResumeAgent(name string) error {
 	return cs.editor.ResumeAgent(name)
-}
-
-// KillAgent force-kills the agent session.
-func (cs *controllerState) KillAgent(name string) error {
-	sp, sessionName := cs.spAndSession(name)
-	return sp.Stop(sessionName)
-}
-
-// DrainAgent signals graceful wind-down.
-func (cs *controllerState) DrainAgent(name string) error {
-	sp, sessionName := cs.spAndSession(name)
-	return sp.SetMeta(sessionName, "drain", "true")
-}
-
-// UndrainAgent cancels a drain signal.
-func (cs *controllerState) UndrainAgent(name string) error {
-	sp, sessionName := cs.spAndSession(name)
-	return sp.RemoveMeta(sessionName, "drain")
-}
-
-// NudgeAgent sends a message to a running agent session.
-func (cs *controllerState) NudgeAgent(name, message string) error {
-	sp, sessionName := cs.spAndSession(name)
-	if !sp.IsRunning(sessionName) {
-		return fmt.Errorf("agent %q not running", name)
-	}
-	return sp.Nudge(sessionName, runtime.TextContent(message))
 }
 
 // SuspendRig writes suspended=true on the rig in city.toml.

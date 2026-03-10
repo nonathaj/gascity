@@ -232,6 +232,8 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse action suffix before validating agent name.
+	// Only config-level mutations (suspend/resume) are supported.
+	// Runtime operations (kill, drain, nudge, restart) moved to session APIs.
 	var action string
 	if after, found := strings.CutSuffix(name, "/suspend"); found {
 		name = after
@@ -239,45 +241,16 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 	} else if after, found := strings.CutSuffix(name, "/resume"); found {
 		name = after
 		action = "resume"
-	} else if after, found := strings.CutSuffix(name, "/kill"); found {
-		name = after
-		action = "kill"
-	} else if after, found := strings.CutSuffix(name, "/drain"); found {
-		name = after
-		action = "drain"
-	} else if after, found := strings.CutSuffix(name, "/undrain"); found {
-		name = after
-		action = "undrain"
-	} else if after, found := strings.CutSuffix(name, "/nudge"); found {
-		name = after
-		action = "nudge"
-	} else if after, found := strings.CutSuffix(name, "/restart"); found {
-		name = after
-		action = "restart"
 	} else {
-		writeError(w, http.StatusNotFound, "not_found", "unknown agent action")
+		writeError(w, http.StatusNotFound, "not_found", "unknown agent action; runtime operations moved to /v0/session/{id}/*")
 		return
 	}
 
 	// Validate agent exists in config.
 	cfg := s.state.Config()
-	agentCfg, ok := findAgent(cfg, name)
-	if !ok {
+	if _, ok := findAgent(cfg, name); !ok {
 		writeError(w, http.StatusNotFound, "not_found", "agent "+name+" not found")
 		return
-	}
-
-	// Reject runtime mutations on pool parents when max > 1.
-	// Runtime sessions are pool-1, pool-2, etc. — kill/drain/nudge the parent is a no-op.
-	// Suspend/resume target desired state in city.toml and correctly apply to the pool definition.
-	isRuntimeAction := action != "suspend" && action != "resume"
-	if isRuntimeAction && agentCfg.IsPool() {
-		pool := agentCfg.EffectivePool()
-		if pool.Max > 1 && name == agentCfg.QualifiedName() {
-			writeError(w, http.StatusBadRequest, "invalid",
-				"cannot mutate pool parent "+name+"; target a specific member (e.g. "+name+"-1)")
-			return
-		}
 	}
 
 	var err error
@@ -286,23 +259,6 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request) {
 		err = sm.SuspendAgent(name)
 	case "resume":
 		err = sm.ResumeAgent(name)
-	case "kill":
-		err = sm.KillAgent(name)
-	case "drain":
-		err = sm.DrainAgent(name)
-	case "undrain":
-		err = sm.UndrainAgent(name)
-	case "nudge":
-		var body struct {
-			Message string `json:"message"`
-		}
-		if decErr := decodeBody(r, &body); decErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid", decErr.Error())
-			return
-		}
-		err = sm.NudgeAgent(name, body.Message)
-	case "restart":
-		err = sm.KillAgent(name) // reconciler restarts the agent
 	}
 
 	if err != nil {

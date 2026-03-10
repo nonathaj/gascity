@@ -199,6 +199,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /v0/session/{id}", s.handleSessionPatch)
 	s.mux.HandleFunc("POST /v0/session/{id}/messages", s.handleSessionMessage)
 	s.mux.HandleFunc("POST /v0/session/{id}/stop", s.handleSessionStop)
+	s.mux.HandleFunc("POST /v0/session/{id}/kill", s.handleSessionKill)
 	s.mux.HandleFunc("POST /v0/session/{id}/respond", s.handleSessionRespond)
 	s.mux.HandleFunc("POST /v0/session/{id}/suspend", s.handleSessionSuspend)
 	s.mux.HandleFunc("POST /v0/session/{id}/close", s.handleSessionClose)

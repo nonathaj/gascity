@@ -399,6 +399,27 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, resp)
 }
 
+func (s *Server) handleSessionKill(w http.ResponseWriter, r *http.Request) {
+	store := s.state.CityBeadStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "no bead store configured")
+		return
+	}
+
+	id, err := session.ResolveSessionID(store, r.PathValue("id"))
+	if err != nil {
+		writeResolveError(w, err)
+		return
+	}
+
+	mgr := s.sessionManager(store)
+	if err := mgr.Kill(id); err != nil {
+		writeSessionManagerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "id": id})
+}
+
 func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	store := s.state.CityBeadStore()
 	if store == nil {

@@ -279,7 +279,7 @@ func TestClientRestartRig(t *testing.T) {
 	}
 }
 
-func TestClientRestartAgent(t *testing.T) {
+func TestClientKillSession(t *testing.T) {
 	var gotPath string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -289,11 +289,11 @@ func TestClientRestartAgent(t *testing.T) {
 	defer ts.Close()
 
 	c := NewClient(ts.URL)
-	if err := c.RestartAgent("myrig/worker"); err != nil {
-		t.Fatalf("RestartAgent: %v", err)
+	if err := c.KillSession("sess-123"); err != nil {
+		t.Fatalf("KillSession: %v", err)
 	}
-	if gotPath != "/v0/agent/myrig/worker/restart" {
-		t.Errorf("path = %q, want /v0/agent/myrig/worker/restart", gotPath)
+	if gotPath != "/v0/session/sess-123/kill" {
+		t.Errorf("path = %q, want /v0/session/sess-123/kill", gotPath)
 	}
 }
 

@@ -153,10 +153,6 @@ var _ interface {
 var _ interface {
 	SuspendAgent(string) error
 	ResumeAgent(string) error
-	KillAgent(string) error
-	DrainAgent(string) error
-	UndrainAgent(string) error
-	NudgeAgent(string, string) error
 	SuspendRig(string) error
 	ResumeRig(string) error
 } = (*controllerState)(nil)

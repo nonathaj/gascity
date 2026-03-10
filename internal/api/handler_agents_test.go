@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -331,36 +330,18 @@ func TestAgentSuspendResume(t *testing.T) {
 	}
 }
 
-func TestAgentKill(t *testing.T) {
+func TestAgentRuntimeActionsRemoved(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
-	req := newPostRequest("/v0/agent/myrig/worker/kill", nil)
-	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, req)
+	for _, action := range []string{"kill", "drain", "undrain", "nudge", "restart"} {
+		req := newPostRequest("/v0/agent/myrig/worker/"+action, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("kill: status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if !state.killed["myrig/worker"] {
-		t.Error("agent not killed")
-	}
-}
-
-func TestAgentNudge(t *testing.T) {
-	state := newFakeMutatorState(t)
-	srv := New(state)
-
-	body := strings.NewReader(`{"message":"wake up"}`)
-	req := newPostRequest("/v0/agent/myrig/worker/nudge", body)
-	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("nudge: status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if state.nudges["myrig/worker"] != "wake up" {
-		t.Errorf("nudge message = %q, want %q", state.nudges["myrig/worker"], "wake up")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want %d", action, rec.Code, http.StatusNotFound)
+		}
 	}
 }
 

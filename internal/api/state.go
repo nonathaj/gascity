@@ -186,18 +186,4 @@ type StateMutator interface {
 
 	// DisableAutomation disables an automation via overrides in city.toml.
 	DisableAutomation(name, rig string) error
-
-	// --- Runtime actions (ephemeral session operations) ---
-
-	// KillAgent force-kills an agent's session (reconciler restarts it).
-	KillAgent(name string) error
-
-	// DrainAgent signals an agent to wind down gracefully.
-	DrainAgent(name string) error
-
-	// UndrainAgent cancels a drain signal.
-	UndrainAgent(name string) error
-
-	// NudgeAgent sends a message to a running agent session.
-	NudgeAgent(name, message string) error
 }

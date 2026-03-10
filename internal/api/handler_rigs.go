@@ -89,7 +89,7 @@ func (s *Server) handleRigAction(w http.ResponseWriter, r *http.Request) {
 	case "resume":
 		err = sm.ResumeRig(name)
 	case "restart":
-		s.handleRigRestart(w, name, sm)
+		s.handleRigRestart(w, name)
 		return
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "unknown rig action: "+action)
@@ -108,8 +108,11 @@ func (s *Server) handleRigAction(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRigRestart kills all agents in a rig so the reconciler restarts them.
-func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMutator) {
+// Uses sp.Stop() directly — no StateMutator dependency for runtime kills.
+func (s *Server) handleRigRestart(w http.ResponseWriter, name string) {
 	cfg := s.state.Config()
+	sp := s.state.SessionProvider()
+	cityName := s.state.CityName()
 
 	// Verify rig exists.
 	rigFound := false
@@ -125,7 +128,7 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 	}
 
 	// Best-effort kill: the agent set may change between config read and each
-	// KillAgent call (pool scaling, config reload). The reconciler is the
+	// Stop call (pool scaling, config reload). The reconciler is the
 	// convergence mechanism — survivors will be caught on its next tick.
 	killed := make([]string, 0)
 	failed := make([]string, 0)
@@ -133,9 +136,10 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string, sm StateMu
 		if a.Dir != name {
 			continue
 		}
-		expanded := expandAgent(a, s.state.CityName(), cfg.Workspace.SessionTemplate, s.state.SessionProvider())
+		expanded := expandAgent(a, cityName, cfg.Workspace.SessionTemplate, sp)
 		for _, ea := range expanded {
-			if err := sm.KillAgent(ea.qualifiedName); err != nil {
+			sessionName := agentSessionName(cityName, ea.qualifiedName, cfg.Workspace.SessionTemplate)
+			if err := sp.Stop(sessionName); err != nil {
 				// "not found" / "not running" are benign — agent wasn't running.
 				if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "not running") {
 					failed = append(failed, ea.qualifiedName)
