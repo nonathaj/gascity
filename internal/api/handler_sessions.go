@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -91,7 +92,29 @@ func sessionResponseWithReason(info session.Info, b *beads.Bead, cfg *config.Cit
 	} else if b.Metadata["held_until"] != "" {
 		r.Reason = "user-hold"
 	}
+	// Expose only mc_* prefixed metadata keys to API consumers.
+	// Internal fields (session_key, command, work_dir, etc.) are redacted.
+	r.Metadata = filterMetadata(b.Metadata)
 	return r
+}
+
+// filterMetadata returns only metadata keys with the "mc_" prefix.
+// This allowlist approach prevents leaking internal bead fields
+// (session_key, command, work_dir, quarantine state) to API consumers.
+func filterMetadata(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	filtered := make(map[string]string)
+	for k, v := range m {
+		if strings.HasPrefix(k, "mc_") {
+			filtered[k] = v
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 // writeResolveError maps session.ResolveSessionID errors to HTTP responses.
@@ -138,9 +161,6 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	items := make([]sessionResponse, len(sessions))
 	for i, sess := range sessions {
 		items[i] = sessionResponseWithReason(sess, beadIndex[sess.ID], cfg)
-		if b := beadIndex[sess.ID]; b != nil && b.Metadata != nil {
-			items[i].Metadata = b.Metadata
-		}
 		s.enrichSessionResponse(&items[i], sess, cfg, sp, wantPeek)
 	}
 	writeJSON(w, http.StatusOK, listResponse{Items: items, Total: len(items)})
@@ -169,9 +189,6 @@ func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
 	b, _ := store.Get(id)
 	wantPeek := r.URL.Query().Get("peek") == "true"
 	resp := sessionResponseWithReason(info, &b, cfg)
-	if b.Metadata != nil {
-		resp.Metadata = b.Metadata
-	}
 	s.enrichSessionResponse(&resp, info, cfg, sp, wantPeek)
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -311,9 +328,6 @@ func (s *Server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, _ := store.Get(id)
 	rresp := sessionResponseWithReason(info, &updated, s.state.Config())
-	if updated.Metadata != nil {
-		rresp.Metadata = updated.Metadata
-	}
 	writeJSON(w, http.StatusOK, rresp)
 }
 
@@ -420,8 +434,5 @@ func (s *Server) handleSessionPatch(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, _ := store.Get(id)
 	presp := sessionResponseWithReason(info, &updated, s.state.Config())
-	if updated.Metadata != nil {
-		presp.Metadata = updated.Metadata
-	}
 	writeJSON(w, http.StatusOK, presp)
 }

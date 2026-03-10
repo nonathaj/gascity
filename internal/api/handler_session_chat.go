@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
@@ -252,6 +251,32 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		}
 		before := r.URL.Query().Get("before")
 
+		if wantRaw {
+			// Raw format uses ReadFileRaw (no display-type filtering) so
+			// all entry types are returned — consistent with the raw
+			// stream and snapshot paths.
+			var rawSess *sessionlog.Session
+			rawSess, err = sessionlog.ReadFileRaw(path, tail)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal", "reading session log: "+err.Error())
+				return
+			}
+			msgs := make([]json.RawMessage, 0, len(rawSess.Messages))
+			for _, entry := range rawSess.Messages {
+				if len(entry.Raw) > 0 {
+					msgs = append(msgs, entry.Raw)
+				}
+			}
+			writeJSON(w, http.StatusOK, sessionRawTranscriptResponse{
+				ID:         info.ID,
+				Template:   info.Template,
+				Format:     "raw",
+				Messages:   msgs,
+				Pagination: rawSess.Pagination,
+			})
+			return
+		}
+
 		var sess *sessionlog.Session
 		if before != "" {
 			sess, err = sessionlog.ReadFileOlder(path, tail, before)
@@ -260,26 +285,6 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		}
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", "reading session log: "+err.Error())
-			return
-		}
-
-		if wantRaw {
-			msgs := make([]json.RawMessage, 0, len(sess.Messages))
-			for _, entry := range sess.Messages {
-				switch entry.Type {
-				case "user", "assistant", "system", "result":
-					if len(entry.Raw) > 0 {
-						msgs = append(msgs, entry.Raw)
-					}
-				}
-			}
-			writeJSON(w, http.StatusOK, sessionRawTranscriptResponse{
-				ID:         info.ID,
-				Template:   info.Template,
-				Format:     "raw",
-				Messages:   msgs,
-				Pagination: sess.Pagination,
-			})
 			return
 		}
 
@@ -590,7 +595,7 @@ func (s *Server) emitClosedSessionSnapshotRaw(w http.ResponseWriter, info sessio
 	if logPath == "" {
 		return
 	}
-	sess, err := sessionlog.ReadFile(logPath, 0)
+	sess, err := sessionlog.ReadFileRaw(logPath, 0)
 	if err != nil {
 		return
 	}
@@ -619,27 +624,8 @@ func (s *Server) emitClosedSessionSnapshotRaw(w http.ResponseWriter, info sessio
 }
 
 func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.ResponseWriter, info session.Info, logPath string) {
-	keepalive := time.NewTicker(sseKeepalive)
-	defer keepalive.Stop()
-
-	// Try fsnotify for real-time delivery; fall back to polling.
-	watcher, watchErr := fsnotify.NewWatcher()
-	var fallbackPoll *time.Ticker
-	if watchErr == nil {
-		if addErr := watcher.Add(logPath); addErr != nil {
-			_ = watcher.Close()
-			watcher = nil
-		}
-	} else {
-		watcher = nil
-	}
-	if watcher != nil {
-		defer watcher.Close() //nolint:errcheck // best-effort cleanup
-	} else {
-		fallbackPoll = time.NewTicker(outputStreamPollInterval)
-		defer fallbackPoll.Stop()
-		log.Printf("session stream: fsnotify unavailable for %s, falling back to polling", logPath)
-	}
+	lw := newLogFileWatcher(logPath)
+	defer lw.Close()
 
 	var lastSize int64
 	var lastSentUUID string
@@ -654,7 +640,7 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 			return
 		}
 
-		sess, err := sessionlog.ReadFile(logPath, 0)
+		sess, err := sessionlog.ReadFileRaw(logPath, 0)
 		if err != nil {
 			return
 		}
@@ -675,11 +661,18 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 
 		startIdx := 0
 		if lastSentUUID != "" {
+			found := false
 			for i, uuid := range uuids {
 				if uuid == lastSentUUID {
 					startIdx = i + 1
+					found = true
 					break
 				}
+			}
+			if !found {
+				// Cursor lost (DAG rewrite, truncation). Log and re-sync
+				// from the beginning so the client gets a complete view.
+				log.Printf("session stream raw: cursor %s lost, re-syncing from start", lastSentUUID)
 			}
 		}
 		if startIdx >= len(rawMessages) {
@@ -700,67 +693,12 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 		writeSSE(w, "message", seq, data)
 	}
 
-	readAndEmit()
-
-	for {
-		if watcher != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if ev.Has(fsnotify.Write) {
-					readAndEmit()
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Printf("fsnotify: watcher error: %v, switching to polling", err)
-				watcher.Close() //nolint:errcheck // best-effort cleanup on error transition
-				watcher = nil
-				fallbackPoll = time.NewTicker(outputStreamPollInterval)
-				defer fallbackPoll.Stop() //nolint:staticcheck // deferred in loop is intentional; executed on function return
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				return
-			case <-fallbackPoll.C:
-				readAndEmit()
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		}
-	}
+	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })
 }
 
 func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.ResponseWriter, info session.Info, logPath string) {
-	keepalive := time.NewTicker(sseKeepalive)
-	defer keepalive.Stop()
-
-	// Try fsnotify for real-time delivery; fall back to polling.
-	watcher, watchErr := fsnotify.NewWatcher()
-	var fallbackPoll *time.Ticker
-	if watchErr == nil {
-		if addErr := watcher.Add(logPath); addErr != nil {
-			_ = watcher.Close()
-			watcher = nil
-		}
-	} else {
-		watcher = nil
-	}
-	if watcher != nil {
-		defer watcher.Close() //nolint:errcheck // best-effort cleanup
-	} else {
-		fallbackPoll = time.NewTicker(outputStreamPollInterval)
-		defer fallbackPoll.Stop()
-		log.Printf("session stream: fsnotify unavailable for %s, falling back to polling", logPath)
-	}
+	lw := newLogFileWatcher(logPath)
+	defer lw.Close()
 
 	var lastSize int64
 	var lastSentUUID string
@@ -797,11 +735,16 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 
 		startIdx := 0
 		if lastSentUUID != "" {
+			found := false
 			for i, uuid := range uuids {
 				if uuid == lastSentUUID {
 					startIdx = i + 1
+					found = true
 					break
 				}
+			}
+			if !found {
+				log.Printf("session stream: cursor %s lost, re-syncing from start", lastSentUUID)
 			}
 		}
 		if startIdx >= len(turns) {
@@ -822,43 +765,7 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 		writeSSE(w, "turn", seq, data)
 	}
 
-	readAndEmit()
-
-	for {
-		if watcher != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if ev.Has(fsnotify.Write) {
-					readAndEmit()
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Printf("fsnotify: watcher error: %v, switching to polling", err)
-				watcher.Close() //nolint:errcheck // best-effort cleanup on error transition
-				watcher = nil
-				fallbackPoll = time.NewTicker(outputStreamPollInterval)
-				defer fallbackPoll.Stop() //nolint:staticcheck // deferred in loop is intentional; executed on function return
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				return
-			case <-fallbackPoll.C:
-				readAndEmit()
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		}
-	}
+	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })
 }
 
 func (s *Server) streamSessionPeek(ctx context.Context, w http.ResponseWriter, info session.Info) {

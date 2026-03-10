@@ -88,6 +88,37 @@ func ReadFile(path string, tailCompactions int) (*Session, error) {
 	return sess, nil
 }
 
+// ReadFileRaw reads a session file without display-type filtering.
+// All DAG-resolved entries are returned, preserving tool_use, progress,
+// and other non-display types. Used by the raw transcript API.
+func ReadFileRaw(path string, tailCompactions int) (*Session, error) {
+	entries, err := parseFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	dag := BuildDag(entries)
+	messages := dag.ActiveBranch
+
+	base := filepath.Base(path)
+	sessionID := strings.TrimSuffix(base, filepath.Ext(base))
+
+	sess := &Session{
+		ID:                 sessionID,
+		Messages:           messages,
+		OrphanedToolUseIDs: dag.OrphanedToolUseIDs,
+		HasBranches:        dag.HasBranches,
+	}
+
+	if tailCompactions > 0 {
+		paginated, info := sliceAtCompactBoundaries(messages, tailCompactions, "")
+		sess.Messages = paginated
+		sess.Pagination = info
+	}
+
+	return sess, nil
+}
+
 // ReadFileOlder loads older messages before a cursor, returning the
 // previous tailCompactions segment.
 func ReadFileOlder(path string, tailCompactions int, beforeMessageID string) (*Session, error) {

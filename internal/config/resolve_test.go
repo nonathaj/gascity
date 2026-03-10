@@ -546,3 +546,53 @@ func TestResolveProviderInstructionsFileExplicit(t *testing.T) {
 		t.Errorf("InstructionsFile = %q, want %q", rp.InstructionsFile, "CLAUDE.md")
 	}
 }
+
+func TestResolveProviderPermissionModesDeepCopy(t *testing.T) {
+	agent := &Agent{Name: "worker", Provider: "claude"}
+	rp, err := ResolveProvider(agent, nil, nil, lookPathOnly("claude"))
+	if err != nil {
+		t.Fatalf("ResolveProvider: %v", err)
+	}
+
+	// Builtin Claude provider should have permission modes.
+	if len(rp.PermissionModes) == 0 {
+		t.Fatal("PermissionModes should not be empty for claude provider")
+	}
+	if _, ok := rp.PermissionModes["unrestricted"]; !ok {
+		t.Error("PermissionModes missing 'unrestricted' key")
+	}
+	if _, ok := rp.PermissionModes["plan"]; !ok {
+		t.Error("PermissionModes missing 'plan' key")
+	}
+
+	// Verify deep copy: mutating the resolved map must not affect builtins.
+	rp.PermissionModes["injected"] = "malicious"
+	builtins := BuiltinProviders()
+	if _, ok := builtins["claude"].PermissionModes["injected"]; ok {
+		t.Error("mutating ResolvedProvider.PermissionModes leaked into builtin ProviderSpec")
+	}
+}
+
+func TestResolveProviderCustomPermissionModes(t *testing.T) {
+	agent := &Agent{Name: "worker", Provider: "custom"}
+	providers := map[string]ProviderSpec{
+		"custom": {
+			Command:    "my-agent",
+			PromptMode: "arg",
+			PermissionModes: map[string]string{
+				"safe": "--safe-mode",
+				"yolo": "--unsafe",
+			},
+		},
+	}
+	rp, err := ResolveProvider(agent, nil, providers, lookPathOnly("my-agent"))
+	if err != nil {
+		t.Fatalf("ResolveProvider: %v", err)
+	}
+	if len(rp.PermissionModes) != 2 {
+		t.Fatalf("got %d permission modes, want 2", len(rp.PermissionModes))
+	}
+	if rp.PermissionModes["safe"] != "--safe-mode" {
+		t.Errorf("safe mode = %q, want %q", rp.PermissionModes["safe"], "--safe-mode")
+	}
+}

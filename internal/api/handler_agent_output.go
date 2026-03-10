@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 )
@@ -304,33 +303,13 @@ func (s *Server) handleAgentOutputStream(w http.ResponseWriter, r *http.Request,
 // Uses file size tracking to skip re-reads when the file hasn't grown, and
 // UUID-based cursor to correctly identify new turns after DAG resolution.
 func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, name string, logPath string) {
-	keepalive := time.NewTicker(sseKeepalive)
-	defer keepalive.Stop()
-
-	// Try fsnotify for real-time delivery; fall back to polling.
-	watcher, watchErr := fsnotify.NewWatcher()
-	var fallbackPoll *time.Ticker
-	if watchErr == nil {
-		if addErr := watcher.Add(logPath); addErr != nil {
-			_ = watcher.Close()
-			watcher = nil
-		}
-	} else {
-		watcher = nil
-	}
-	if watcher != nil {
-		defer watcher.Close() //nolint:errcheck // best-effort cleanup
-	} else {
-		fallbackPoll = time.NewTicker(outputStreamPollInterval)
-		defer fallbackPoll.Stop()
-		log.Printf("agent stream: fsnotify unavailable for %s, falling back to polling", logPath)
-	}
+	lw := newLogFileWatcher(logPath)
+	defer lw.Close()
 
 	var lastSize int64
-	var lastSentUUID string // UUID of the last turn we emitted
+	var lastSentUUID string
 	var seq uint64
 
-	// readAndEmit reads the file and sends any new turns.
 	readAndEmit := func() {
 		info, err := os.Stat(logPath)
 		if err != nil {
@@ -338,14 +317,13 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 		}
 		currentSize := info.Size()
 		if currentSize == lastSize {
-			return // file hasn't grown
+			return
 		}
 
 		// Use tail=1 (last compaction segment) to limit parsing scope.
-		// For streaming, we only care about recent activity.
 		sess, err := sessionlog.ReadFile(logPath, 1)
 		if err != nil {
-			return // don't update lastSize — retry on next poll
+			return
 		}
 		lastSize = currentSize
 
@@ -359,35 +337,34 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 			turns = append(turns, turn)
 			uuids = append(uuids, e.UUID)
 		}
-
 		if len(turns) == 0 {
 			return
 		}
 
-		// Find new turns by locating the last sent UUID.
 		startIdx := 0
 		if lastSentUUID != "" {
+			found := false
 			for i, uuid := range uuids {
 				if uuid == lastSentUUID {
 					startIdx = i + 1
+					found = true
 					break
 				}
 			}
-			// If lastSentUUID not found (branch switch/compaction), send all.
-			// This provides self-healing at the cost of potential duplicates.
+			if !found {
+				log.Printf("agent stream: cursor %s lost, re-syncing from start", lastSentUUID)
+			}
 		}
-
 		if startIdx >= len(turns) {
-			return // no new turns
+			return
 		}
-		newTurns := turns[startIdx:]
 		lastSentUUID = uuids[len(uuids)-1]
 		seq++
 
 		data, err := json.Marshal(agentOutputResponse{
 			Agent:  name,
 			Format: "conversation",
-			Turns:  newTurns,
+			Turns:  turns[startIdx:],
 		})
 		if err != nil {
 			return
@@ -398,44 +375,7 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 		}
 	}
 
-	// Emit initial state immediately.
-	readAndEmit()
-
-	for {
-		if watcher != nil {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if ev.Has(fsnotify.Write) {
-					readAndEmit()
-				}
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					return
-				}
-				log.Printf("fsnotify: watcher error: %v, switching to polling", err)
-				watcher.Close() //nolint:errcheck // best-effort cleanup on error transition
-				watcher = nil
-				fallbackPoll = time.NewTicker(outputStreamPollInterval)
-				defer fallbackPoll.Stop() //nolint:staticcheck // deferred in loop is intentional; executed on function return
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		} else {
-			select {
-			case <-ctx.Done():
-				return
-			case <-fallbackPoll.C:
-				readAndEmit()
-			case <-keepalive.C:
-				writeSSEComment(w)
-			}
-		}
-	}
+	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })
 }
 
 // streamPeekOutput polls Peek() and emits changes as SSE events.

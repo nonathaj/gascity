@@ -910,3 +910,150 @@ func TestStreamSessionTranscriptLogDoesNotSkipTurnsAcrossCompactionBoundaries(t 
 		t.Fatalf("stream body missing turn written after new compact boundary: %s", body)
 	}
 }
+
+func TestHandleSessionTranscriptRawIncludesAllTypes(t *testing.T) {
+	fs := newSessionFakeState(t)
+	searchBase := t.TempDir()
+	srv := New(fs)
+	srv.sessionLogSearchPaths = []string{searchBase}
+
+	mgr := session.NewManager(fs.cityBeadStore, fs.sp)
+	resume := session.ProviderResume{
+		ResumeFlag:    "--resume",
+		ResumeStyle:   "flag",
+		SessionIDFlag: "--session-id",
+	}
+	workDir := t.TempDir()
+	info, err := mgr.Create(context.Background(), "myrig/worker", "Chat", "claude", workDir, "claude", nil, resume, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Write entries of different types, including tool_use and progress.
+	writeNamedSessionJSONL(t, searchBase, workDir, info.SessionKey+".jsonl",
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
+		`{"uuid":"3","parentUuid":"2","type":"tool_use","message":"{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"name\":\"read\"}]}","timestamp":"2025-01-01T00:00:02Z"}`,
+		`{"uuid":"4","parentUuid":"3","type":"tool_result","message":"{\"role\":\"tool\",\"content\":\"file contents\"}","timestamp":"2025-01-01T00:00:03Z"}`,
+	)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/transcript?format=raw&tail=0", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp sessionRawTranscriptResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Format != "raw" {
+		t.Errorf("Format = %q, want %q", resp.Format, "raw")
+	}
+	// Raw format should include ALL entry types (user, assistant, tool_use, tool_result).
+	if len(resp.Messages) != 4 {
+		t.Fatalf("got %d raw messages, want 4 (all types included)", len(resp.Messages))
+	}
+}
+
+func TestFilterMetadataAllowlistsMCPrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		in   map[string]string
+		want map[string]string
+	}{
+		{
+			name: "nil metadata",
+			in:   nil,
+			want: nil,
+		},
+		{
+			name: "only internal keys",
+			in:   map[string]string{"session_key": "abc", "command": "claude", "work_dir": "/tmp"},
+			want: nil,
+		},
+		{
+			name: "mc_ keys preserved",
+			in:   map[string]string{"mc_starred": "true", "mc_permission_mode": "plan", "session_key": "secret"},
+			want: map[string]string{"mc_starred": "true", "mc_permission_mode": "plan"},
+		},
+		{
+			name: "mixed keys",
+			in:   map[string]string{"mc_starred": "true", "quarantined_until": "2025-01-01", "held_until": "2025-01-02"},
+			want: map[string]string{"mc_starred": "true"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterMetadata(tt.in)
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("got %v, want nil", got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("got %d keys, want %d: %v", len(got), len(tt.want), got)
+				return
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("key %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleSessionGetMetadataFiltered(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Test")
+
+	// Set metadata with both mc_ and internal keys.
+	if err := fs.cityBeadStore.SetMetadataBatch(info.ID, map[string]string{
+		"mc_starred":     "true",
+		"session_key":    "secret-key",
+		"command":        "claude --skip",
+		"work_dir":       "/private/dir",
+		"sleep_reason":   "",
+		"mc_custom_mode": "plan",
+	}); err != nil {
+		t.Fatalf("set metadata: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/session/"+info.ID, nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	// Only mc_ prefixed keys should be present.
+	if len(resp.Metadata) != 2 {
+		t.Fatalf("got %d metadata keys, want 2: %v", len(resp.Metadata), resp.Metadata)
+	}
+	if resp.Metadata["mc_starred"] != "true" {
+		t.Errorf("mc_starred = %q, want %q", resp.Metadata["mc_starred"], "true")
+	}
+	if resp.Metadata["mc_custom_mode"] != "plan" {
+		t.Errorf("mc_custom_mode = %q, want %q", resp.Metadata["mc_custom_mode"], "plan")
+	}
+	// Internal keys must NOT be present.
+	if _, ok := resp.Metadata["session_key"]; ok {
+		t.Error("session_key should not be exposed in API response")
+	}
+	if _, ok := resp.Metadata["command"]; ok {
+		t.Error("command should not be exposed in API response")
+	}
+}
