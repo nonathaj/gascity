@@ -150,6 +150,30 @@ func ReadFileOlder(path string, tailCompactions int, beforeMessageID string) (*S
 	}, nil
 }
 
+// ReadFileRawOlder loads older raw (unfiltered) messages before a cursor.
+func ReadFileRawOlder(path string, tailCompactions int, beforeMessageID string) (*Session, error) {
+	entries, err := parseFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	dag := BuildDag(entries)
+	messages := dag.ActiveBranch
+
+	base := filepath.Base(path)
+	sessionID := strings.TrimSuffix(base, filepath.Ext(base))
+
+	paginated, info := sliceAtCompactBoundaries(messages, tailCompactions, beforeMessageID)
+
+	return &Session{
+		ID:                 sessionID,
+		Messages:           paginated,
+		OrphanedToolUseIDs: dag.OrphanedToolUseIDs,
+		HasBranches:        dag.HasBranches,
+		Pagination:         info,
+	}, nil
+}
+
 // parseFile reads all JSONL lines from a file into entries.
 func parseFile(path string) ([]*Entry, error) {
 	f, err := os.Open(path)

@@ -256,7 +256,11 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 			// all entry types are returned — consistent with the raw
 			// stream and snapshot paths.
 			var rawSess *sessionlog.Session
-			rawSess, err = sessionlog.ReadFileRaw(path, tail)
+			if before != "" {
+				rawSess, err = sessionlog.ReadFileRawOlder(path, tail, before)
+			} else {
+				rawSess, err = sessionlog.ReadFileRaw(path, tail)
+			}
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "internal", "reading session log: "+err.Error())
 				return
@@ -553,6 +557,11 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		} else {
 			s.streamSessionTranscriptLog(ctx, w, info, path)
 		}
+	case format == "raw":
+		// No log file yet — raw format cannot fall back to peek (different
+		// response schema). Emit an empty raw snapshot so clients get the
+		// correct format and can wait for messages to arrive via retry.
+		return
 	default:
 		s.streamSessionPeek(ctx, w, info)
 	}
@@ -640,7 +649,9 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 			return
 		}
 
-		sess, err := sessionlog.ReadFileRaw(logPath, 0)
+		// Use tail=1 (last compaction segment) to limit parsing scope,
+		// consistent with the non-raw streaming path.
+		sess, err := sessionlog.ReadFileRaw(logPath, 1)
 		if err != nil {
 			return
 		}
