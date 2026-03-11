@@ -1087,13 +1087,13 @@ func TestFilterMetadataAllowlistsMCPrefix(t *testing.T) {
 		},
 		{
 			name: "mc_ keys preserved",
-			in:   map[string]string{"mc_starred": "true", "mc_permission_mode": "plan", "session_key": "secret"},
-			want: map[string]string{"mc_starred": "true", "mc_permission_mode": "plan"},
+			in:   map[string]string{"mc_session_kind": "agent", "mc_permission_mode": "plan", "session_key": "secret"},
+			want: map[string]string{"mc_session_kind": "agent", "mc_permission_mode": "plan"},
 		},
 		{
 			name: "mixed keys",
-			in:   map[string]string{"mc_starred": "true", "quarantined_until": "2025-01-01", "held_until": "2025-01-02"},
-			want: map[string]string{"mc_starred": "true"},
+			in:   map[string]string{"mc_project_id": "proj-1", "quarantined_until": "2025-01-01", "held_until": "2025-01-02"},
+			want: map[string]string{"mc_project_id": "proj-1"},
 		},
 	}
 
@@ -1127,7 +1127,7 @@ func TestHandleSessionGetMetadataFiltered(t *testing.T) {
 
 	// Set metadata with both mc_ and internal keys.
 	if err := fs.cityBeadStore.SetMetadataBatch(info.ID, map[string]string{
-		"mc_starred":     "true",
+		"mc_project_id":  "proj-1",
 		"session_key":    "secret-key",
 		"command":        "claude --skip",
 		"work_dir":       "/private/dir",
@@ -1154,8 +1154,8 @@ func TestHandleSessionGetMetadataFiltered(t *testing.T) {
 	if len(resp.Metadata) != 2 {
 		t.Fatalf("got %d metadata keys, want 2: %v", len(resp.Metadata), resp.Metadata)
 	}
-	if resp.Metadata["mc_starred"] != "true" {
-		t.Errorf("mc_starred = %q, want %q", resp.Metadata["mc_starred"], "true")
+	if resp.Metadata["mc_project_id"] != "proj-1" {
+		t.Errorf("mc_project_id = %q, want %q", resp.Metadata["mc_project_id"], "proj-1")
 	}
 	if resp.Metadata["mc_custom_mode"] != "plan" {
 		t.Errorf("mc_custom_mode = %q, want %q", resp.Metadata["mc_custom_mode"], "plan")

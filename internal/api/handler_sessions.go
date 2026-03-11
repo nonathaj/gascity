@@ -45,7 +45,7 @@ type sessionResponse struct {
 	// Activity indicates session turn state: "idle", "in-turn", or omitted.
 	Activity string `json:"activity,omitempty"`
 
-	// Metadata exposes bead metadata for external consumers (e.g., mc_starred).
+	// Metadata exposes mc_-prefixed bead metadata for external consumers.
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
