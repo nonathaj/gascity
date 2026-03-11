@@ -294,6 +294,11 @@ func (m *Manager) TranscriptPath(id string, searchPaths []string) (string, error
 		if other.Type != BeadType {
 			continue
 		}
+		// Only count active sessions — closed historical sessions should not
+		// make the lookup ambiguous for the one live session.
+		if other.Status == "closed" {
+			continue
+		}
 		if other.Metadata["work_dir"] == workDir {
 			matches++
 			if matches > 1 {

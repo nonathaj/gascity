@@ -253,7 +253,12 @@ func (cr *CityRuntime) handleConvergenceRetry(ctx context.Context, req convergen
 		return convergenceReply{Error: err.Error()}
 	}
 
-	result, err := cr.convHandler.RetryHandler(ctx, sourceBeadID, "", maxIter)
+	username := req.User
+	if username == "" {
+		username = currentUsername()
+	}
+
+	result, err := cr.convHandler.RetryHandler(ctx, sourceBeadID, username, maxIter)
 	if err != nil {
 		return convergenceReply{Error: err.Error()}
 	}

@@ -289,7 +289,7 @@ func (p *Provider) CopyTo(name, src, relDst string) error {
 	if relDst != "" {
 		dst = filepath.Join(wd, relDst)
 	}
-	return overlay.CopyDir(src, dst, io.Discard)
+	return overlay.CopyFileOrDir(src, dst, io.Discard)
 }
 
 // Attach connects the user's terminal to the named tmux session.

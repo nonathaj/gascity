@@ -384,7 +384,15 @@ func (s *Server) enrichSessionResponse(resp *sessionResponse, info session.Info,
 		if searchPaths == nil {
 			searchPaths = sessionlog.DefaultSearchPaths()
 		}
-		if sessionFile := sessionlog.FindSessionFile(searchPaths, workDir); sessionFile != "" {
+		// Prefer session-key lookup to avoid cross-reading another session's transcript.
+		var sessionFile string
+		if info.SessionKey != "" {
+			sessionFile = sessionlog.FindSessionFileByID(searchPaths, workDir, info.SessionKey)
+		}
+		if sessionFile == "" {
+			sessionFile = sessionlog.FindSessionFile(searchPaths, workDir)
+		}
+		if sessionFile != "" {
 			if meta, err := sessionlog.ExtractTailMeta(sessionFile); err == nil && meta != nil {
 				resp.Model = meta.Model
 				if meta.ContextUsage != nil {

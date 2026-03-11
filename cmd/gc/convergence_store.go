@@ -79,7 +79,12 @@ func (a *convergenceStoreAdapter) GetMetadata(id string) (map[string]string, err
 	if b.Metadata == nil {
 		return map[string]string{}, nil
 	}
-	return b.Metadata, nil
+	// Return a copy to prevent callers from mutating the store's internal state.
+	cp := make(map[string]string, len(b.Metadata))
+	for k, v := range b.Metadata {
+		cp[k] = v
+	}
+	return cp, nil
 }
 
 func (a *convergenceStoreAdapter) SetMetadata(id, key, value string) error {

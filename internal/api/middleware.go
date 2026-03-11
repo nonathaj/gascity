@@ -103,12 +103,28 @@ func isLocalhostOrigin(origin string) bool {
 		if origin == base {
 			return true
 		}
-		// Must be base + ":" + port (no other suffixes like ".evil.com")
-		if len(origin) > len(base) && origin[:len(base)] == base && origin[len(base)] == ':' {
-			return true
+		// Must be base + ":" + numeric port (no other suffixes like ".evil.com")
+		if len(origin) > len(base)+1 && origin[:len(base)] == base && origin[len(base)] == ':' {
+			port := origin[len(base)+1:]
+			if isNumeric(port) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// isNumeric returns true if s is non-empty and contains only ASCII digits.
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // withRequestID adds a unique X-GC-Request-Id header to every response.

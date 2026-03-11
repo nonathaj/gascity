@@ -264,9 +264,9 @@ func TestRenderSystemdTemplate(t *testing.T) {
 		"Type=simple",
 		"Restart=always",
 		"RestartSec=5s",
-		"ExecStart=/usr/local/bin/gc --city /home/user/bright-lights daemon run",
+		`ExecStart=/usr/local/bin/gc --city "/home/user/bright-lights" daemon run`,
 		"WantedBy=default.target",
-		"GC_CITY=/home/user/bright-lights",
+		`GC_CITY="/home/user/bright-lights"`,
 		"bright-lights",
 	}
 	for _, check := range checks {

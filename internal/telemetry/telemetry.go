@@ -85,6 +85,15 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// ResetForTest resets the global init state so tests can re-initialize.
+// Must be called only from tests, after Shutdown.
+func ResetForTest() {
+	initMu.Lock()
+	defer initMu.Unlock()
+	initDone = false
+	globalProvider = nil
+}
+
 // Init initializes OTel metric and log providers.
 //
 // Idempotent: subsequent calls return the provider created on the first call.

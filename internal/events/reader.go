@@ -31,6 +31,7 @@ func ReadAll(path string) ([]Event, error) {
 
 	var events []Event
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // handle lines up to 1MB
 	for scanner.Scan() {
 		var e Event
 		if err := json.Unmarshal(scanner.Bytes(), &e); err != nil {
@@ -86,6 +87,7 @@ func ReadLatestSeq(path string) (uint64, error) {
 
 	var maxSeq uint64
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // handle lines up to 1MB
 	for scanner.Scan() {
 		var e Event
 		if json.Unmarshal(scanner.Bytes(), &e) == nil && e.Seq > maxSeq {

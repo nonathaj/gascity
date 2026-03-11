@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -195,6 +196,7 @@ func packDirHash(dir string) string {
 		paths = append(paths, rel)
 		return nil
 	})
+	sort.Strings(paths)
 
 	h := sha256.New()
 	for _, rel := range paths {

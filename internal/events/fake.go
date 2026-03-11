@@ -121,6 +121,8 @@ func (w *fakeWatcher) Next() (Event, error) {
 		w.fake.mu.Unlock()
 
 		// Wait for notification, close, or context cancel.
+		// Use a short timeout to re-check even if the notify signal
+		// was consumed by another concurrent watcher.
 		select {
 		case <-w.done:
 			return Event{}, fmt.Errorf("watcher closed")
@@ -128,6 +130,9 @@ func (w *fakeWatcher) Next() (Event, error) {
 			return Event{}, w.ctx.Err()
 		case <-w.fake.notify:
 			// New event recorded — check again.
+		case <-time.After(50 * time.Millisecond):
+			// Guard against missed notifications when multiple watchers
+			// compete for the same buffered channel signal.
 		}
 	}
 }

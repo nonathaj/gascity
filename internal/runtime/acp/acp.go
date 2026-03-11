@@ -599,7 +599,7 @@ func (p *Provider) CopyTo(name, src, relDst string) error {
 	if relDst != "" {
 		dst = filepath.Join(wd, relDst)
 	}
-	return overlay.CopyDir(src, dst, io.Discard)
+	return overlay.CopyFileOrDir(src, dst, io.Discard)
 }
 
 // ListRunning returns the names of all running sessions whose names

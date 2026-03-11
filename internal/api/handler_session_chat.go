@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -318,6 +319,10 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		resumeCommand, nudgeHints := s.buildSessionResume(info)
 		if sendErr := mgr.Send(r.Context(), info.ID, msg, resumeCommand, nudgeHints); sendErr != nil {
 			log.Printf("session %s: initial message delivery failed: %v", info.ID, sendErr)
+			s.idem.unreserve(idemKey)
+			writeError(w, http.StatusInternalServerError, "message_delivery_failed",
+				fmt.Sprintf("session created but initial message failed: %v", sendErr))
+			return
 		}
 	}
 
@@ -332,6 +337,11 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 // Resolves a bare provider (not an agent template) and creates a session.
 func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, store beads.Store, body sessionCreateRequest, providerName, idemKey, bodyHash string) {
 	cfg := s.state.Config()
+	if cfg == nil {
+		s.idem.unreserve(idemKey)
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "city config not loaded yet")
+		return
+	}
 	resolved, err := config.ResolveProvider(
 		&config.Agent{Provider: providerName},
 		&cfg.Workspace,
@@ -421,6 +431,10 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 		resumeCommand, nudgeHints := s.buildSessionResume(info)
 		if sendErr := mgr.Send(r.Context(), info.ID, msg, resumeCommand, nudgeHints); sendErr != nil {
 			log.Printf("session %s: initial message delivery failed: %v", info.ID, sendErr)
+			s.idem.unreserve(idemKey)
+			writeError(w, http.StatusInternalServerError, "message_delivery_failed",
+				fmt.Sprintf("session created but initial message failed: %v", sendErr))
+			return
 		}
 	}
 

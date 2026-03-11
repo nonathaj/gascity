@@ -158,12 +158,20 @@ func doDaemonStart(args []string, stdout, stderr io.Writer) int {
 	}
 	childPID := child.Process.Pid
 
-	// Brief pause then verify the child took the lock.
-	time.Sleep(200 * time.Millisecond)
-	lock2, err := acquireControllerLock(dir)
-	if err == nil {
-		// Lock succeeded — child didn't start properly.
-		lock2.Close()                                                                  //nolint:errcheck // cleanup
+	// Poll to verify the child took the lock, with retries to shrink the
+	// race window between our release and the child's acquisition.
+	childGotLock := false
+	for i := 0; i < 5; i++ {
+		time.Sleep(100 * time.Millisecond)
+		lock2, lockErr := acquireControllerLock(dir)
+		if lockErr != nil {
+			// Lock is held — child (or another controller) has it.
+			childGotLock = true
+			break
+		}
+		lock2.Close() //nolint:errcheck // cleanup probe lock
+	}
+	if !childGotLock {
 		fmt.Fprintf(stderr, "gc daemon start: child process failed to acquire lock\n") //nolint:errcheck // best-effort stderr
 		return 1
 	}
@@ -513,12 +521,12 @@ const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.gascity.daemon.{{.SafeName}}</string>
+    <string>com.gascity.daemon.{{xmlesc .SafeName}}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{{.GCPath}}</string>
+        <string>{{xmlesc .GCPath}}</string>
         <string>--city</string>
-        <string>{{.CityRoot}}</string>
+        <string>{{xmlesc .CityRoot}}</string>
         <string>daemon</string>
         <string>run</string>
     </array>
@@ -532,13 +540,13 @@ const launchdPlistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>{{.LogPath}}</string>
+    <string>{{xmlesc .LogPath}}</string>
     <key>StandardErrorPath</key>
-    <string>{{.LogPath}}</string>
+    <string>{{xmlesc .LogPath}}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>GC_CITY</key>
-        <string>{{.CityRoot}}</string>
+        <string>{{xmlesc .CityRoot}}</string>
     </dict>
 </dict>
 </plist>
@@ -549,20 +557,27 @@ Description=Gas City daemon for {{.CityName}}
 
 [Service]
 Type=simple
-ExecStart={{.GCPath}} --city {{.CityRoot}} daemon run
+ExecStart={{.GCPath}} --city "{{.CityRoot}}" daemon run
 Restart=always
 RestartSec=5s
 StandardOutput=append:{{.LogPath}}
 StandardError=append:{{.LogPath}}
-Environment=GC_CITY={{.CityRoot}}
+Environment=GC_CITY="{{.CityRoot}}"
 
 [Install]
 WantedBy=default.target
 `
 
+// xmlEscape escapes XML special characters for use in plist templates.
+func xmlEscape(s string) string {
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&apos;")
+	return r.Replace(s)
+}
+
 // renderTemplate renders a text/template to a string.
 func renderTemplate(tmplStr string, data *supervisorData) (string, error) {
-	tmpl, err := template.New("service").Parse(tmplStr)
+	funcMap := template.FuncMap{"xmlesc": xmlEscape}
+	tmpl, err := template.New("service").Funcs(funcMap).Parse(tmplStr)
 	if err != nil {
 		return "", err
 	}
