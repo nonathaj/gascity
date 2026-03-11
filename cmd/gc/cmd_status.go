@@ -10,11 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newAgentStatusCmd is a deprecation shim for "gc agent status".
-func newAgentStatusCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "status", "gc agent status", "gc session list")
-}
-
 // ---------------------------------------------------------------------------
 // gc rig status <name>
 // ---------------------------------------------------------------------------

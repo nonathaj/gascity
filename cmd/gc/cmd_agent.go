@@ -157,23 +157,6 @@ have moved to "gc session" and "gc runtime".`,
 		newAgentAddCmd(stdout, stderr),
 		newAgentResumeCmd(stdout, stderr),
 		newAgentSuspendCmd(stdout, stderr),
-		// Deprecation shims — print removal message and exit.
-		newAgentAttachCmd(stdout, stderr),
-		newAgentDestroyCmd(stdout, stderr),
-		newAgentKillCmd(stdout, stderr),
-		newAgentListCmd(stdout, stderr),
-		newAgentNudgeCmd(stdout, stderr),
-		newAgentPeekCmd(stdout, stderr),
-		newAgentStartCmd(stdout, stderr),
-		newAgentStatusCmd(stdout, stderr),
-		newAgentStopCmd(stdout, stderr),
-		// Deprecation shims — runtime/session drain commands.
-		newAgentDrainCmd(stdout, stderr),
-		newAgentUndrainCmd(stdout, stderr),
-		newAgentDrainCheckCmd(stdout, stderr),
-		newAgentDrainAckCmd(stdout, stderr),
-		newAgentRequestRestartCmd(stdout, stderr),
-		newAgentLogsCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -205,31 +188,6 @@ scope the agent to a rig's working directory.`,
 	cmd.Flags().StringVar(&dir, "dir", "", "Working directory for the agent (relative to city root)")
 	cmd.Flags().BoolVar(&suspended, "suspended", false, "Register the agent in suspended state")
 	return cmd
-}
-
-// deprecatedAgentCmd creates a hidden deprecation shim that prints a
-// migration message and exits. DisableFlagParsing ensures that old flags
-// (e.g., --json, --lines) don't cause "unknown flag" errors before the
-// migration message is printed.
-func deprecatedAgentCmd(stderr io.Writer, use, oldCmd, newCmd string) *cobra.Command {
-	return &cobra.Command{
-		Use:                use,
-		Short:              fmt.Sprintf("Deprecated: use %q", newCmd),
-		Hidden:             true,
-		DisableFlagParsing: true,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			fmt.Fprintf(stderr, "%s: removed, use %q instead\n", oldCmd, newCmd) //nolint:errcheck // best-effort stderr
-			return errExit
-		},
-	}
-}
-
-func newAgentListCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "list", "gc agent list", "gc session list")
-}
-
-func newAgentAttachCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "attach", "gc agent attach", "gc session attach")
 }
 
 // cmdAgentAdd is the CLI entry point for adding an agent. It locates
@@ -491,52 +449,4 @@ func doAgentResume(fs fsys.FS, cityPath, name string, stdout, stderr io.Writer) 
 	// Not found anywhere.
 	fmt.Fprintln(stderr, agentNotFoundMsg("gc agent resume", name, expanded)) //nolint:errcheck // best-effort stderr
 	return 1
-}
-
-func newAgentNudgeCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "nudge", "gc agent nudge", "gc session nudge")
-}
-
-func newAgentPeekCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "peek", "gc agent peek", "gc session peek")
-}
-
-func newAgentKillCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "kill", "gc agent kill", "gc session kill")
-}
-
-func newAgentDrainCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "drain", "gc agent drain", "gc runtime drain")
-}
-
-func newAgentUndrainCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "undrain", "gc agent undrain", "gc runtime undrain")
-}
-
-func newAgentDrainCheckCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "drain-check", "gc agent drain-check", "gc runtime drain-check")
-}
-
-func newAgentDrainAckCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "drain-ack", "gc agent drain-ack", "gc runtime drain-ack")
-}
-
-func newAgentRequestRestartCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "request-restart", "gc agent request-restart", "gc runtime request-restart")
-}
-
-func newAgentLogsCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "logs", "gc agent logs", "gc session logs")
-}
-
-func newAgentStartCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "start", "gc agent start", "gc session new")
-}
-
-func newAgentStopCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "stop", "gc agent stop", "gc session suspend")
-}
-
-func newAgentDestroyCmd(_, stderr io.Writer) *cobra.Command {
-	return deprecatedAgentCmd(stderr, "destroy", "gc agent destroy", "gc session close")
 }

@@ -64,26 +64,6 @@ exec gc agent add --name dupe
 ! exec gc agent add --name dupe
 stderr 'already exists'
 
-# gc agent list prints deprecation.
-cd $WORK
-! exec gc agent list
-stderr 'removed, use "gc session list" instead'
-
-# gc agent attach prints deprecation.
-cd $WORK/err-city
-! exec gc agent attach
-stderr 'removed, use "gc session attach" instead'
-
-# gc agent attach prints deprecation (with args too).
-cd $WORK/bare-city
-! exec gc agent attach mayor
-stderr 'removed, use "gc session attach" instead'
-
-# gc agent attach prints deprecation (agent name).
-cd $WORK/err-city
-! exec gc agent attach nonexistent
-stderr 'removed, use "gc session attach" instead'
-
 # gc stop not in city.
 cd $WORK
 ! exec gc stop

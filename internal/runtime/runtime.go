@@ -251,4 +251,9 @@ type Config struct {
 	// startup command (e.g. pool config). Nil means no
 	// extra data — the fingerprint covers only Command + Env.
 	FingerprintExtra map[string]string
+
+	// PromptSuffix is appended to Command when starting the session but
+	// excluded from CoreFingerprint. Used for beacon text that includes
+	// timestamps or other volatile data that should not trigger restarts.
+	PromptSuffix string
 }

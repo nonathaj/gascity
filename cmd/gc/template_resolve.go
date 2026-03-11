@@ -220,12 +220,13 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 // internal/agent/agent.go:292-315 — for the same inputs, both must
 // produce identical output.
 func templateParamsToConfig(tp TemplateParams) runtime.Config {
-	cmd := tp.Command
+	var promptSuffix string
 	if tp.Prompt != "" {
-		cmd = cmd + " " + shellQuote(tp.Prompt)
+		promptSuffix = shellQuote(tp.Prompt)
 	}
 	return runtime.Config{
-		Command:                cmd,
+		Command:                tp.Command,
+		PromptSuffix:           promptSuffix,
 		Env:                    tp.Env,
 		WorkDir:                tp.WorkDir,
 		ReadyPromptPrefix:      tp.Hints.ReadyPromptPrefix,

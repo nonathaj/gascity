@@ -529,7 +529,11 @@ func runPreStart(ctx context.Context, ops startOps, _ string, cfg runtime.Config
 // Exception: if ProcessNames are configured and the agent is dead (zombie),
 // kills the zombie session and recreates it.
 func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
-	err := ops.createSession(name, cfg.WorkDir, cfg.Command, cfg.Env)
+	fullCommand := cfg.Command
+	if cfg.PromptSuffix != "" {
+		fullCommand = fullCommand + " " + cfg.PromptSuffix
+	}
+	err := ops.createSession(name, cfg.WorkDir, fullCommand, cfg.Env)
 	if err == nil {
 		return nil // created successfully
 	}
@@ -552,7 +556,7 @@ func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
 	if err := ops.killSession(name); err != nil {
 		return fmt.Errorf("killing zombie session: %w", err)
 	}
-	err = ops.createSession(name, cfg.WorkDir, cfg.Command, cfg.Env)
+	err = ops.createSession(name, cfg.WorkDir, fullCommand, cfg.Env)
 	if errors.Is(err, ErrSessionExists) {
 		return nil // race: another process created it
 	}
