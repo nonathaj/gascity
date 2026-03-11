@@ -123,15 +123,22 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 	}
 
 	// Build and create pod.
-	pod := buildPod(name, cfg, p)
+	pod, err := buildPod(name, cfg, p)
+	if err != nil {
+		return fmt.Errorf("building pod for session %q: %w", name, err)
+	}
 	_, err = p.ops.createPod(ctx, pod)
 	if err != nil {
 		return fmt.Errorf("creating pod for session %q: %w", name, err)
 	}
 
 	// cleanup deletes the pod on any startup failure after creation.
+	// Uses a fresh background context so cleanup succeeds even if the
+	// original ctx was canceled (which is the common failure path).
 	cleanup := func(_ string) {
-		_ = p.ops.deletePod(ctx, podName, 5)
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = p.ops.deletePod(cleanupCtx, podName, 5)
 	}
 
 	ctrlCity := cfg.Env["GC_CITY"]

@@ -224,8 +224,9 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-done:
 	case <-ctx.Done():
-		log.Printf("dashboard: fetch timeout after %v", h.fetchTimeout)
-		<-done
+		log.Printf("dashboard: fetch timeout after %v, using partial data", h.fetchTimeout)
+		// Proceed with whatever data has been collected so far.
+		// Blocking on <-done would defeat the timeout.
 	}
 
 	summary := computeSummary(workers, assigned, issues, convoys, escalations, activity)

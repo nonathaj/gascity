@@ -49,10 +49,14 @@ func (p *Provider) Inbox(recipient string) ([]mail.Message, error) {
 }
 
 // Get retrieves a message by ID without marking it read.
+// Returns an error if the bead is not a message type.
 func (p *Provider) Get(id string) (mail.Message, error) {
 	b, err := p.store.Get(id)
 	if err != nil {
 		return mail.Message{}, fmt.Errorf("beadmail get: %w", err)
+	}
+	if b.Type != "" && b.Type != "message" {
+		return mail.Message{}, fmt.Errorf("beadmail get: bead %s is type %q, not message", id, b.Type)
 	}
 	return beadToMessage(b), nil
 }

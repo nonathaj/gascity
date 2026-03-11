@@ -15,7 +15,7 @@ import (
 // buildPod creates a pod manifest compatible with gc-session-k8s.
 // Same labels, annotations, container names, volumes, and tmux-inside-pod
 // pattern so mixed-mode migration works.
-func buildPod(name string, cfg runtime.Config, p *Provider) *corev1.Pod {
+func buildPod(name string, cfg runtime.Config, p *Provider) (*corev1.Pod, error) {
 	podName := SanitizeName(name)
 	label := SanitizeLabel(name)
 	agentName := cfg.Env["GC_AGENT"]
@@ -111,7 +111,10 @@ func buildPod(name string, cfg runtime.Config, p *Provider) *corev1.Pod {
 	}
 
 	// Resources.
-	resources := buildResources(p)
+	resources, err := buildResources(p)
+	if err != nil {
+		return nil, err
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -164,7 +167,7 @@ func buildPod(name string, cfg runtime.Config, p *Provider) *corev1.Pod {
 		}}
 	}
 
-	return pod
+	return pod, nil
 }
 
 // buildPodEnv creates the env var list for the agent container.
@@ -249,27 +252,45 @@ func needsStaging(cfg runtime.Config, ctrlCity string) bool {
 }
 
 // buildResources creates resource requirements from the provider config.
-func buildResources(p *Provider) corev1.ResourceRequirements {
+// Returns an error if any resource quantity string is invalid, instead of
+// panicking via MustParse.
+func buildResources(p *Provider) (corev1.ResourceRequirements, error) {
 	req := corev1.ResourceRequirements{}
 	if p.cpuRequest != "" || p.memRequest != "" {
 		req.Requests = corev1.ResourceList{}
 		if p.cpuRequest != "" {
-			req.Requests[corev1.ResourceCPU] = resource.MustParse(p.cpuRequest)
+			q, err := resource.ParseQuantity(p.cpuRequest)
+			if err != nil {
+				return req, fmt.Errorf("parsing GC_K8S_CPU_REQUEST %q: %w", p.cpuRequest, err)
+			}
+			req.Requests[corev1.ResourceCPU] = q
 		}
 		if p.memRequest != "" {
-			req.Requests[corev1.ResourceMemory] = resource.MustParse(p.memRequest)
+			q, err := resource.ParseQuantity(p.memRequest)
+			if err != nil {
+				return req, fmt.Errorf("parsing GC_K8S_MEM_REQUEST %q: %w", p.memRequest, err)
+			}
+			req.Requests[corev1.ResourceMemory] = q
 		}
 	}
 	if p.cpuLimit != "" || p.memLimit != "" {
 		req.Limits = corev1.ResourceList{}
 		if p.cpuLimit != "" {
-			req.Limits[corev1.ResourceCPU] = resource.MustParse(p.cpuLimit)
+			q, err := resource.ParseQuantity(p.cpuLimit)
+			if err != nil {
+				return req, fmt.Errorf("parsing GC_K8S_CPU_LIMIT %q: %w", p.cpuLimit, err)
+			}
+			req.Limits[corev1.ResourceCPU] = q
 		}
 		if p.memLimit != "" {
-			req.Limits[corev1.ResourceMemory] = resource.MustParse(p.memLimit)
+			q, err := resource.ParseQuantity(p.memLimit)
+			if err != nil {
+				return req, fmt.Errorf("parsing GC_K8S_MEM_LIMIT %q: %w", p.memLimit, err)
+			}
+			req.Limits[corev1.ResourceMemory] = q
 		}
 	}
-	return req
+	return req, nil
 }
 
 func boolPtr(b bool) *bool { return &b }

@@ -122,18 +122,21 @@ func ReadFrom(path string, offset int64) ([]Event, int64, error) {
 	for {
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 {
-			bytesRead += int64(len(line))
-			trimmed := line
-			// Strip trailing \n and optional \r for CRLF compatibility.
-			trimmed = trimmed[:len(trimmed)-1]
-			if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '\r' {
-				trimmed = trimmed[:len(trimmed)-1]
+			if line[len(line)-1] == '\n' {
+				// Complete line — safe to advance offset past it.
+				bytesRead += int64(len(line))
+				trimmed := line[:len(line)-1]
+				if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '\r' {
+					trimmed = trimmed[:len(trimmed)-1]
+				}
+				var e Event
+				if jsonErr := json.Unmarshal(trimmed, &e); jsonErr == nil {
+					result = append(result, e)
+				}
+				// skip malformed lines (partial writes)
 			}
-			var e Event
-			if jsonErr := json.Unmarshal(trimmed, &e); jsonErr == nil {
-				result = append(result, e)
-			}
-			// skip malformed lines (partial writes)
+			// Partial line (no trailing \n): don't advance offset.
+			// The next ReadFrom call will re-read it once complete.
 		}
 		if err != nil {
 			if err == io.EOF {

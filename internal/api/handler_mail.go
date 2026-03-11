@@ -40,10 +40,11 @@ func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {
 				msgs = []mail.Message{}
 			}
 			if !pp.IsPaging {
+				total := len(msgs)
 				if pp.Limit < len(msgs) {
 					msgs = msgs[:pp.Limit]
 				}
-				writeListJSON(w, s.latestIndex(), msgs, len(msgs))
+				writeListJSON(w, s.latestIndex(), msgs, total)
 				return
 			}
 			page, total, nextCursor := paginate(msgs, pp)
@@ -68,10 +69,11 @@ func (s *Server) handleMailList(w http.ResponseWriter, r *http.Request) {
 			allMsgs = []mail.Message{}
 		}
 		if !pp.IsPaging {
+			total := len(allMsgs)
 			if pp.Limit < len(allMsgs) {
 				allMsgs = allMsgs[:pp.Limit]
 			}
-			writeListJSON(w, s.latestIndex(), allMsgs, len(allMsgs))
+			writeListJSON(w, s.latestIndex(), allMsgs, total)
 			break
 		}
 		page, total, nextCursor := paginate(allMsgs, pp)

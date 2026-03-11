@@ -52,6 +52,8 @@ func OpenFileStore(fs fsys.FS, path string) (*FileStore, error) {
 }
 
 // Create delegates to MemStore.Create and flushes to disk.
+// If the disk flush fails, the in-memory mutation is rolled back to keep
+// the MemStore and file in sync.
 func (fs *FileStore) Create(b Bead) (Bead, error) {
 	fs.fmu.Lock()
 	defer fs.fmu.Unlock()
@@ -60,6 +62,8 @@ func (fs *FileStore) Create(b Bead) (Bead, error) {
 		return Bead{}, err
 	}
 	if err := fs.save(); err != nil {
+		// Roll back in-memory state: remove the bead that was just created.
+		_ = fs.MemStore.Close(result.ID)
 		return Bead{}, err
 	}
 	return result, nil

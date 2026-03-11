@@ -33,7 +33,10 @@ func ApplyOverrides(aa []Automation, overrides []Override) error {
 			if aa[j].Name != ov.Name {
 				continue
 			}
-			if ov.Rig != "" && aa[j].Rig != ov.Rig {
+			// Scope matching: when ov.Rig is set, only match that rig.
+			// When ov.Rig is empty, only match city-level automations
+			// (those with no rig), not rig-scoped ones.
+			if aa[j].Rig != ov.Rig {
 				continue
 			}
 			applyOverride(&aa[j], &ov)

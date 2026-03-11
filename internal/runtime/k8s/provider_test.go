@@ -471,7 +471,10 @@ func TestPodManifestCompatibility(t *testing.T) {
 		},
 	}
 
-	pod := buildPod("gc-bright-demo-rig-polecat", cfg, p)
+	pod, err := buildPod("gc-bright-demo-rig-polecat", cfg, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Container name must be "agent".
 	if pod.Spec.Containers[0].Name != "agent" {
@@ -658,7 +661,10 @@ func TestBuildPodPrebaked(t *testing.T) {
 		OverlayDir: "/some/overlay", // would normally trigger staging
 	}
 
-	pod := buildPod("gc-bright-demo-rig-polecat", cfg, p)
+	pod, err := buildPod("gc-bright-demo-rig-polecat", cfg, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// No init containers when prebaked.
 	if len(pod.Spec.InitContainers) != 0 {

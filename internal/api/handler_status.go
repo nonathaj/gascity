@@ -108,6 +108,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, b := range list {
+			// Only count work beads (tasks, molecules). Skip mail,
+			// convoys, convergence, and other non-work bead types.
+			switch b.Type {
+			case "message", "convoy", "convergence":
+				continue
+			}
 			switch b.Status {
 			case "in_progress":
 				wc.InProgress++

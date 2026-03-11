@@ -17,8 +17,9 @@ const (
 
 // BlockingParams holds parsed blocking query parameters.
 type BlockingParams struct {
-	Index uint64
-	Wait  time.Duration
+	Index    uint64
+	Wait     time.Duration
+	HasIndex bool // true if the "index" query param was provided
 }
 
 // parseBlockingParams extracts index and wait from the request.
@@ -26,6 +27,7 @@ func parseBlockingParams(r *http.Request) BlockingParams {
 	bp := BlockingParams{Wait: defaultWait}
 	if v := r.URL.Query().Get("index"); v != "" {
 		bp.Index, _ = strconv.ParseUint(v, 10, 64)
+		bp.HasIndex = true
 	}
 	if v := r.URL.Query().Get("wait"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
@@ -39,8 +41,9 @@ func parseBlockingParams(r *http.Request) BlockingParams {
 }
 
 // isBlocking reports whether the request is a blocking query.
+// Index 0 is valid — it means "wait for the first event."
 func (bp BlockingParams) isBlocking() bool {
-	return bp.Index > 0
+	return bp.HasIndex
 }
 
 // waitForChange blocks until the event index exceeds bp.Index or timeout.

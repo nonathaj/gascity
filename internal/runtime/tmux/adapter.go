@@ -60,12 +60,16 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 	// Pack-level overlays (lower priority, merged additively).
 	if cfg.WorkDir != "" {
 		for _, od := range cfg.PackOverlayDirs {
-			_ = overlay.CopyDir(od, cfg.WorkDir, io.Discard)
+			if err := overlay.CopyDir(od, cfg.WorkDir, io.Discard); err != nil {
+				return fmt.Errorf("copying pack overlay %s: %w", od, err)
+			}
 		}
 	}
 	// Agent-level overlay (highest priority, overwrites on conflict).
 	if cfg.OverlayDir != "" && cfg.WorkDir != "" {
-		_ = overlay.CopyDir(cfg.OverlayDir, cfg.WorkDir, io.Discard)
+		if err := overlay.CopyDir(cfg.OverlayDir, cfg.WorkDir, io.Discard); err != nil {
+			return fmt.Errorf("copying overlay %s: %w", cfg.OverlayDir, err)
+		}
 	}
 	for _, cf := range cfg.CopyFiles {
 		dst := cfg.WorkDir

@@ -170,7 +170,9 @@ func (s *LocalStore) listManifests(wsDir string) ([]RecoveryManifest, error) {
 		}
 		m, err := s.readManifest(filepath.Join(wsDir, name))
 		if err != nil {
-			return nil, fmt.Errorf("corrupt checkpoint %s: %w", name, err)
+			// Skip corrupt historical checkpoints — the latest valid
+			// one is sufficient for recovery.
+			continue
 		}
 		manifests = append(manifests, m)
 	}

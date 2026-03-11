@@ -266,7 +266,16 @@ func (m *memoryAutomationDispatcher) dispatchWisp(ctx context.Context, a automat
 		args = append(args, fmt.Sprintf("--add-label=pool:%s", pool))
 	}
 	if _, err := m.runner(cityPath, "bd", args...); err != nil {
-		return // best-effort: skip label failure
+		// Label failure is critical for duplicate-dispatch prevention.
+		// Log and emit an event so operators can investigate.
+		fmt.Fprintf(m.stderr, "gc: automation %s: failed to label wisp %s: %v\n", scoped, rootID, err) //nolint:errcheck
+		m.rec.Record(events.Event{
+			Type:    events.AutomationFailed,
+			Actor:   "controller",
+			Subject: scoped,
+			Message: fmt.Sprintf("wisp %s created but label failed: %v", rootID, err),
+		})
+		return
 	}
 
 	m.rec.Record(events.Event{

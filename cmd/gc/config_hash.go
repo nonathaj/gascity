@@ -126,15 +126,21 @@ func canonicalConfigHash(params TemplateParams, overlay map[string]string) strin
 
 // stripBeaconPrefix removes the time-stamped beacon line from a prompt.
 // The beacon format is "[city] agent • timestamp\n\n<prompt body>".
+// Only strips when the first line matches the beacon pattern (contains "•").
 // If no beacon is detected, the prompt is returned unchanged.
 func stripBeaconPrefix(prompt string) string {
 	if !strings.HasPrefix(prompt, "[") {
 		return prompt
 	}
-	if idx := strings.Index(prompt, "\n\n"); idx >= 0 {
-		return prompt[idx+2:]
+	idx := strings.Index(prompt, "\n\n")
+	if idx < 0 {
+		return prompt
 	}
-	return prompt
+	// Only strip if the prefix looks like a beacon (contains bullet separator).
+	if !strings.Contains(prompt[:idx], "•") {
+		return prompt
+	}
+	return prompt[idx+2:]
 }
 
 // hashSortedStringMap writes map entries to h in deterministic sorted order.

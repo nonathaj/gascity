@@ -38,6 +38,7 @@ func NewFileRecorder(path string, stderr io.Writer) (*FileRecorder, error) {
 	var maxSeq uint64
 	if f, err := os.Open(path); err == nil {
 		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // handle lines up to 1MB
 		for scanner.Scan() {
 			var e Event
 			if json.Unmarshal(scanner.Bytes(), &e) == nil && e.Seq > maxSeq {
@@ -69,6 +70,10 @@ func NewFileRecorder(path string, stderr io.Writer) (*FileRecorder, error) {
 func (r *FileRecorder) Record(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if r.closed {
+		return
+	}
 
 	r.seq++
 	e.Seq = r.seq
