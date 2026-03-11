@@ -41,6 +41,9 @@ type sessionResponse struct {
 	ContextPct    *int   `json:"context_pct,omitempty"`
 	ContextWindow *int   `json:"context_window,omitempty"`
 
+	// Activity indicates session turn state: "idle", "in-turn", or omitted.
+	Activity string `json:"activity,omitempty"`
+
 	// Metadata exposes bead metadata for external consumers (e.g., mc_starred).
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
@@ -383,6 +386,7 @@ func (s *Server) enrichSessionResponse(resp *sessionResponse, info session.Info,
 					resp.ContextPct = &meta.ContextUsage.Percentage
 					resp.ContextWindow = &meta.ContextUsage.ContextWindow
 				}
+				resp.Activity = meta.Activity
 			}
 		}
 	}

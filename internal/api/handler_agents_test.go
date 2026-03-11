@@ -542,6 +542,47 @@ func TestAgentModelAndContext(t *testing.T) {
 	}
 }
 
+func TestAgentActivityFromSessionLog(t *testing.T) {
+	state := newFakeState(t)
+	state.cfg.Workspace.Provider = "claude"
+	state.cfg.Agents = []config.Agent{
+		{Name: "worker", Dir: "myrig", Provider: "claude"},
+	}
+	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: "/tmp/myrig"}}
+	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
+
+	searchDir := t.TempDir()
+	slug := sessionlog.ProjectSlug("/tmp/myrig")
+	slugDir := filepath.Join(searchDir, slug)
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write session JSONL ending with tool_use stop_reason → "in-turn".
+	sessionFile := filepath.Join(slugDir, "test-session.jsonl")
+	lines := `{"type":"assistant","message":{"role":"assistant","model":"claude-opus-4-5-20251101","stop_reason":"tool_use","content":[{"type":"tool_use"}],"usage":{"input_tokens":10000}}}` + "\n"
+	if err := os.WriteFile(sessionFile, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := New(state)
+	srv.sessionLogSearchPaths = []string{searchDir}
+
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp agentResponse
+	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
+	if resp.Activity != "in-turn" {
+		t.Errorf("Activity = %q, want %q", resp.Activity, "in-turn")
+	}
+}
+
 func TestResolveProviderInfo(t *testing.T) {
 	cfg := &config.City{
 		Workspace: config.Workspace{Provider: "claude"},

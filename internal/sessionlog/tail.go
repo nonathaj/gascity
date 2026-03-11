@@ -12,6 +12,7 @@ import (
 type TailMeta struct {
 	Model        string
 	ContextUsage *ContextUsage
+	Activity     string // "idle", "in-turn", or "" (unknown)
 }
 
 // ContextUsage holds computed context usage data.
@@ -80,7 +81,77 @@ func splitLines(data []byte) [][]byte {
 // tailEntry is the minimal structure we decode from each JSONL line.
 type tailEntry struct {
 	Type    string          `json:"type"`
+	Subtype string          `json:"subtype,omitempty"`
 	Message json.RawMessage `json:"message"`
+}
+
+// messageStopReason extracts stop_reason from an assistant message.
+type messageStopReason struct {
+	StopReason string `json:"stop_reason"`
+}
+
+// InferActivity derives session activity state from a JSONL entry.
+//
+// Returns:
+//   - "idle" — session finished its turn (end_turn stop reason or turn_duration system event)
+//   - "in-turn" — session is actively processing (tool_use stop reason or user message)
+//   - "" — unknown / insufficient data
+func InferActivity(entryType, subtype string, message json.RawMessage) string {
+	switch entryType {
+	case "system":
+		if subtype == "turn_duration" {
+			return "idle"
+		}
+	case "assistant":
+		if len(message) == 0 {
+			return ""
+		}
+		raw := unwrapJSONString(message)
+		var msg messageStopReason
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			return ""
+		}
+		switch msg.StopReason {
+		case "end_turn":
+			return "idle"
+		case "tool_use":
+			return "in-turn"
+		}
+	case "user":
+		if len(message) > 0 {
+			return "in-turn"
+		}
+	}
+	return ""
+}
+
+// InferActivityFromEntries walks entries backwards to find the last
+// activity-defining entry. This mirrors the backwards-walk in
+// extractFromLines but operates on parsed Entry values (for SSE streams).
+func InferActivityFromEntries(entries []*Entry) string {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i] == nil {
+			continue
+		}
+		if act := InferActivity(entries[i].Type, entries[i].Subtype, entries[i].Message); act != "" {
+			return act
+		}
+	}
+	return ""
+}
+
+// unwrapJSONString handles JSONL files where the message field is stored
+// as a JSON string (e.g. "message":"{\"role\":...}") rather than an
+// object. If raw is a JSON string, it returns the unquoted inner bytes;
+// otherwise returns raw unchanged.
+func unwrapJSONString(raw json.RawMessage) json.RawMessage {
+	if len(raw) > 0 && raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return json.RawMessage(s)
+		}
+	}
+	return raw
 }
 
 // assistantMessage is the structure inside the "message" field for assistant entries.
@@ -94,11 +165,12 @@ type assistantMessage struct {
 	} `json:"usage"`
 }
 
-// extractFromLines walks lines backwards to find model and context usage.
+// extractFromLines walks lines backwards to find model, context usage, and activity.
 func extractFromLines(lines [][]byte) *TailMeta {
 	var (
 		model     string
 		lastUsage *assistantMessage
+		activity  string
 	)
 
 	// Walk backwards — we want the last entries.
@@ -108,10 +180,21 @@ func extractFromLines(lines [][]byte) *TailMeta {
 			continue
 		}
 
+		// Unwrap string-encoded JSON once for reuse.
+		rawMsg := entry.Message
+		if entry.Type == "assistant" && len(rawMsg) > 0 {
+			rawMsg = unwrapJSONString(rawMsg)
+		}
+
+		// Infer activity from the last valid entry (first hit walking backwards).
+		if activity == "" {
+			activity = InferActivity(entry.Type, entry.Subtype, rawMsg)
+		}
+
 		// Check for assistant message with model/usage.
-		if entry.Type == "assistant" && len(entry.Message) > 0 {
+		if entry.Type == "assistant" && len(rawMsg) > 0 {
 			var msg assistantMessage
-			if err := json.Unmarshal(entry.Message, &msg); err != nil {
+			if err := json.Unmarshal(rawMsg, &msg); err != nil {
 				continue
 			}
 			if model == "" && msg.Model != "" {
@@ -123,16 +206,16 @@ func extractFromLines(lines [][]byte) *TailMeta {
 		}
 
 		// Once we have everything, stop scanning.
-		if model != "" && lastUsage != nil {
+		if model != "" && lastUsage != nil && activity != "" {
 			break
 		}
 	}
 
-	if model == "" && lastUsage == nil {
+	if model == "" && lastUsage == nil && activity == "" {
 		return nil
 	}
 
-	result := &TailMeta{Model: model}
+	result := &TailMeta{Model: model, Activity: activity}
 
 	if lastUsage != nil && lastUsage.Usage != nil {
 		effectiveModel := model

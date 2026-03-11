@@ -31,6 +31,9 @@ type agentResponse struct {
 	// Gap 5: peek preview
 	LastOutput string `json:"last_output,omitempty"`
 
+	// Activity indicates session turn state: "idle", "in-turn", or omitted.
+	Activity string `json:"activity,omitempty"`
+
 	// Gap 9: model + context
 	Model         string `json:"model,omitempty"`
 	ContextPct    *int   `json:"context_pct,omitempty"`
@@ -517,6 +520,7 @@ func (s *Server) enrichSessionMeta(resp *agentResponse, rig string, cfg *config.
 		resp.ContextPct = &meta.ContextUsage.Percentage
 		resp.ContextWindow = &meta.ContextUsage.ContextWindow
 	}
+	resp.Activity = meta.Activity
 }
 
 // canAttributeSession reports whether session file attribution is unambiguous

@@ -628,6 +628,9 @@ func (s *Server) emitClosedSessionSnapshot(w http.ResponseWriter, info session.I
 		return
 	}
 	writeSSE(w, "turn", 1, data)
+	// Closed session is definitionally idle.
+	actData, _ := json.Marshal(map[string]string{"activity": "idle"})
+	writeSSE(w, "activity", 2, actData)
 }
 
 func (s *Server) emitClosedSessionSnapshotRaw(w http.ResponseWriter, info session.Info, logPath string) {
@@ -660,6 +663,9 @@ func (s *Server) emitClosedSessionSnapshotRaw(w http.ResponseWriter, info sessio
 		return
 	}
 	writeSSE(w, "message", 1, data)
+	// Closed session is definitionally idle.
+	actData, _ := json.Marshal(map[string]string{"activity": "idle"})
+	writeSSE(w, "activity", 2, actData)
 }
 
 func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.ResponseWriter, info session.Info, logPath string) {
@@ -667,9 +673,10 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 	defer lw.Close()
 
 	var lastSize int64
-	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
+	var lastActivity string
+	lw.onReset = func() { lastSize = 0; lastActivity = "" }
 
 	readAndEmit := func() {
 		stat, err := os.Stat(logPath)
@@ -688,6 +695,9 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 		}
 		lastSize = stat.Size()
 
+		// Compute activity early (used after message emission).
+		activity := sessionlog.InferActivityFromEntries(sess.Messages)
+
 		rawMessages := make([]json.RawMessage, 0, len(sess.Messages))
 		uuids := make([]string, 0, len(sess.Messages))
 		for _, entry := range sess.Messages {
@@ -697,42 +707,48 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 			rawMessages = append(rawMessages, entry.Raw)
 			uuids = append(uuids, entry.UUID)
 		}
-		if len(rawMessages) == 0 {
-			return
-		}
 
-		startIdx := 0
-		if lastSentUUID != "" {
-			found := false
-			for i, uuid := range uuids {
-				if uuid == lastSentUUID {
-					startIdx = i + 1
-					found = true
-					break
+		// Emit messages if there are new ones.
+		if len(rawMessages) > 0 {
+			startIdx := 0
+			if lastSentUUID != "" {
+				found := false
+				for i, uuid := range uuids {
+					if uuid == lastSentUUID {
+						startIdx = i + 1
+						found = true
+						break
+					}
+				}
+				if !found {
+					// Cursor lost (DAG rewrite, truncation). Log and re-sync
+					// from the beginning so the client gets a complete view.
+					log.Printf("session stream raw: cursor %s lost, re-syncing from start", lastSentUUID)
 				}
 			}
-			if !found {
-				// Cursor lost (DAG rewrite, truncation). Log and re-sync
-				// from the beginning so the client gets a complete view.
-				log.Printf("session stream raw: cursor %s lost, re-syncing from start", lastSentUUID)
+			if startIdx < len(rawMessages) {
+				lastSentUUID = uuids[len(uuids)-1]
+				seq++
+
+				data, err := json.Marshal(sessionRawTranscriptResponse{
+					ID:       info.ID,
+					Template: info.Template,
+					Format:   "raw",
+					Messages: rawMessages[startIdx:],
+				})
+				if err == nil {
+					writeSSE(w, "message", seq, data)
+				}
 			}
 		}
-		if startIdx >= len(rawMessages) {
-			return
-		}
-		lastSentUUID = uuids[len(uuids)-1]
-		seq++
 
-		data, err := json.Marshal(sessionRawTranscriptResponse{
-			ID:       info.ID,
-			Template: info.Template,
-			Format:   "raw",
-			Messages: rawMessages[startIdx:],
-		})
-		if err != nil {
-			return
+		// Emit activity after content so clients receive data before state change.
+		if activity != "" && activity != lastActivity {
+			lastActivity = activity
+			seq++
+			actData, _ := json.Marshal(map[string]string{"activity": activity})
+			writeSSE(w, "activity", seq, actData)
 		}
-		writeSSE(w, "message", seq, data)
 	}
 
 	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })
@@ -743,9 +759,10 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 	defer lw.Close()
 
 	var lastSize int64
-	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
+	var lastActivity string
+	lw.onReset = func() { lastSize = 0; lastActivity = "" }
 
 	readAndEmit := func() {
 		stat, err := os.Stat(logPath)
@@ -762,6 +779,9 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 		}
 		lastSize = stat.Size()
 
+		// Compute activity early (used after turn emission).
+		activity := sessionlog.InferActivityFromEntries(sess.Messages)
+
 		turns := make([]outputTurn, 0, len(sess.Messages))
 		uuids := make([]string, 0, len(sess.Messages))
 		for _, entry := range sess.Messages {
@@ -772,40 +792,46 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 			turns = append(turns, turn)
 			uuids = append(uuids, entry.UUID)
 		}
-		if len(turns) == 0 {
-			return
-		}
 
-		startIdx := 0
-		if lastSentUUID != "" {
-			found := false
-			for i, uuid := range uuids {
-				if uuid == lastSentUUID {
-					startIdx = i + 1
-					found = true
-					break
+		// Emit turns if there are new ones.
+		if len(turns) > 0 {
+			startIdx := 0
+			if lastSentUUID != "" {
+				found := false
+				for i, uuid := range uuids {
+					if uuid == lastSentUUID {
+						startIdx = i + 1
+						found = true
+						break
+					}
+				}
+				if !found {
+					log.Printf("session stream: cursor %s lost, re-syncing from start", lastSentUUID)
 				}
 			}
-			if !found {
-				log.Printf("session stream: cursor %s lost, re-syncing from start", lastSentUUID)
+			if startIdx < len(turns) {
+				lastSentUUID = uuids[len(uuids)-1]
+				seq++
+
+				data, err := json.Marshal(sessionTranscriptResponse{
+					ID:       info.ID,
+					Template: info.Template,
+					Format:   "conversation",
+					Turns:    turns[startIdx:],
+				})
+				if err == nil {
+					writeSSE(w, "turn", seq, data)
+				}
 			}
 		}
-		if startIdx >= len(turns) {
-			return
-		}
-		lastSentUUID = uuids[len(uuids)-1]
-		seq++
 
-		data, err := json.Marshal(sessionTranscriptResponse{
-			ID:       info.ID,
-			Template: info.Template,
-			Format:   "conversation",
-			Turns:    turns[startIdx:],
-		})
-		if err != nil {
-			return
+		// Emit activity after content so clients receive data before state change.
+		if activity != "" && activity != lastActivity {
+			lastActivity = activity
+			seq++
+			actData, _ := json.Marshal(map[string]string{"activity": activity})
+			writeSSE(w, "activity", seq, actData)
 		}
-		writeSSE(w, "turn", seq, data)
 	}
 
 	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })

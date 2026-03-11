@@ -196,6 +196,171 @@ func TestExtractTailMetaMissingFile(t *testing.T) {
 	}
 }
 
+func TestInferActivity(t *testing.T) {
+	tests := []struct {
+		name    string
+		typ     string
+		subtype string
+		message string
+		wantAct string
+	}{
+		{
+			name:    "system turn_duration → idle",
+			typ:     "system",
+			subtype: "turn_duration",
+			wantAct: "idle",
+		},
+		{
+			name:    "system compact_boundary → unknown",
+			typ:     "system",
+			subtype: "compact_boundary",
+			wantAct: "",
+		},
+		{
+			name:    "assistant end_turn → idle",
+			typ:     "assistant",
+			message: `{"role":"assistant","stop_reason":"end_turn","content":"done"}`,
+			wantAct: "idle",
+		},
+		{
+			name:    "assistant tool_use → in-turn",
+			typ:     "assistant",
+			message: `{"role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use"}]}`,
+			wantAct: "in-turn",
+		},
+		{
+			name:    "assistant no stop_reason → unknown",
+			typ:     "assistant",
+			message: `{"role":"assistant","content":"partial"}`,
+			wantAct: "",
+		},
+		{
+			name:    "assistant empty message → unknown",
+			typ:     "assistant",
+			wantAct: "",
+		},
+		{
+			name:    "user with message → in-turn",
+			typ:     "user",
+			message: `{"role":"user","content":"hello"}`,
+			wantAct: "in-turn",
+		},
+		{
+			name:    "user empty message → unknown",
+			typ:     "user",
+			wantAct: "",
+		},
+		{
+			name:    "tool_result → unknown",
+			typ:     "tool_result",
+			message: `{"role":"tool","content":"result"}`,
+			wantAct: "",
+		},
+		{
+			name:    "assistant end_turn string-wrapped → idle",
+			typ:     "assistant",
+			message: `"{\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"content\":\"done\"}"`,
+			wantAct: "idle",
+		},
+		{
+			name:    "assistant tool_use string-wrapped → in-turn",
+			typ:     "assistant",
+			message: `"{\"role\":\"assistant\",\"stop_reason\":\"tool_use\"}"`,
+			wantAct: "in-turn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var msg json.RawMessage
+			if tt.message != "" {
+				msg = json.RawMessage(tt.message)
+			}
+			got := InferActivity(tt.typ, tt.subtype, msg)
+			if got != tt.wantAct {
+				t.Errorf("InferActivity(%q, %q, ...) = %q, want %q", tt.typ, tt.subtype, got, tt.wantAct)
+			}
+		})
+	}
+}
+
+func TestExtractTailMetaActivity(t *testing.T) {
+	tests := []struct {
+		name    string
+		lines   []map[string]any
+		wantAct string
+	}{
+		{
+			name: "ends with end_turn → idle",
+			lines: []map[string]any{
+				{"type": "user", "message": map[string]any{"role": "user", "content": "hello"}},
+				{"type": "assistant", "message": map[string]any{
+					"role": "assistant", "model": "claude-opus-4-5-20251101",
+					"stop_reason": "end_turn", "content": "done",
+					"usage": map[string]any{"input_tokens": 1000},
+				}},
+			},
+			wantAct: "idle",
+		},
+		{
+			name: "ends with tool_use → in-turn",
+			lines: []map[string]any{
+				{"type": "assistant", "message": map[string]any{
+					"role": "assistant", "model": "claude-opus-4-5-20251101",
+					"stop_reason": "tool_use",
+					"content":     []map[string]any{{"type": "tool_use"}},
+					"usage":       map[string]any{"input_tokens": 1000},
+				}},
+			},
+			wantAct: "in-turn",
+		},
+		{
+			name: "ends with user message → in-turn",
+			lines: []map[string]any{
+				{"type": "assistant", "message": map[string]any{
+					"role": "assistant", "model": "claude-opus-4-5-20251101",
+					"stop_reason": "end_turn", "content": "done",
+					"usage": map[string]any{"input_tokens": 1000},
+				}},
+				{"type": "user", "message": map[string]any{"role": "user", "content": "next"}},
+			},
+			wantAct: "in-turn",
+		},
+		{
+			name: "ends with turn_duration → idle",
+			lines: []map[string]any{
+				{"type": "user", "message": map[string]any{"role": "user", "content": "hello"}},
+				{"type": "assistant", "message": map[string]any{
+					"role": "assistant", "model": "claude-opus-4-5-20251101",
+					"stop_reason": "end_turn", "content": "done",
+					"usage": map[string]any{"input_tokens": 1000},
+				}},
+				{"type": "system", "subtype": "turn_duration"},
+			},
+			wantAct: "idle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "session.jsonl")
+			writeTailJSONL(t, path, tt.lines)
+
+			meta, err := ExtractTailMeta(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if meta == nil {
+				t.Fatal("expected non-nil TailMeta")
+			}
+			if meta.Activity != tt.wantAct {
+				t.Errorf("Activity = %q, want %q", meta.Activity, tt.wantAct)
+			}
+		})
+	}
+}
+
 func writeTailJSONL(t *testing.T, path string, lines []map[string]any) {
 	t.Helper()
 	f, err := os.Create(path)
