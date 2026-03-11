@@ -99,6 +99,76 @@ func TestHandleSessionListFilterByState(t *testing.T) {
 	}
 }
 
+func TestHandleSessionListPagination(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+
+	// Create 3 sessions.
+	createTestSession(t, fs.cityBeadStore, fs.sp, "S1")
+	createTestSession(t, fs.cityBeadStore, fs.sp, "S2")
+	createTestSession(t, fs.cityBeadStore, fs.sp, "S3")
+
+	// Limit without cursor truncates but returns no next_cursor.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v0/sessions?limit=2", nil)
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("limit-only: status %d", w.Code)
+	}
+	var resp listResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	items, _ := resp.Items.([]any)
+	if len(items) != 2 {
+		t.Errorf("limit-only: got %d items, want 2", len(items))
+	}
+	if resp.NextCursor != "" {
+		t.Errorf("limit-only: got next_cursor %q, want empty (no cursor mode)", resp.NextCursor)
+	}
+
+	// Cursor mode: first page.
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "/v0/sessions?cursor=&limit=2", nil)
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page1: status %d", w.Code)
+	}
+	var page1 listResponse
+	if err := json.NewDecoder(w.Body).Decode(&page1); err != nil {
+		t.Fatalf("decode page1: %v", err)
+	}
+	items1, _ := page1.Items.([]any)
+	if len(items1) != 2 {
+		t.Errorf("page1: got %d items, want 2", len(items1))
+	}
+	if page1.Total != 3 {
+		t.Errorf("page1: total = %d, want 3", page1.Total)
+	}
+	if page1.NextCursor == "" {
+		t.Fatal("page1: expected next_cursor, got empty")
+	}
+
+	// Cursor mode: second page.
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "/v0/sessions?cursor="+page1.NextCursor+"&limit=2", nil)
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("page2: status %d", w.Code)
+	}
+	var page2 listResponse
+	if err := json.NewDecoder(w.Body).Decode(&page2); err != nil {
+		t.Fatalf("decode page2: %v", err)
+	}
+	items2, _ := page2.Items.([]any)
+	if len(items2) != 1 {
+		t.Errorf("page2: got %d items, want 1", len(items2))
+	}
+	if page2.NextCursor != "" {
+		t.Errorf("page2: got next_cursor %q, want empty (last page)", page2.NextCursor)
+	}
+}
+
 func TestHandleSessionGet(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)

@@ -163,7 +163,20 @@ func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 		items[i] = sessionResponseWithReason(sess, beadIndex[sess.ID], cfg)
 		s.enrichSessionResponse(&items[i], sess, cfg, sp, wantPeek)
 	}
-	writeJSON(w, http.StatusOK, listResponse{Items: items, Total: len(items)})
+
+	pp := parsePagination(r, maxPaginationLimit)
+	if !pp.IsPaging {
+		if pp.Limit < len(items) {
+			items = items[:pp.Limit]
+		}
+		writeJSON(w, http.StatusOK, listResponse{Items: items, Total: len(items)})
+		return
+	}
+	page, total, nextCursor := paginate(items, pp)
+	if page == nil {
+		page = []sessionResponse{}
+	}
+	writeJSON(w, http.StatusOK, listResponse{Items: page, Total: total, NextCursor: nextCursor})
 }
 
 func (s *Server) handleSessionGet(w http.ResponseWriter, r *http.Request) {
