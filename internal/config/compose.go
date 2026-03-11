@@ -156,10 +156,9 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	}
 
 	// Compute formula layers from all sources.
-	cityLocalFormulas := ""
-	if root.Formulas.Dir != "" {
-		cityLocalFormulas = resolveConfigPath(root.FormulasDir(), cityRoot, cityRoot)
-	}
+	// Always use FormulasDir() which defaults to ".gc/formulas" when
+	// [formulas] is not explicitly configured in city.toml.
+	cityLocalFormulas := resolveConfigPath(root.FormulasDir(), cityRoot, cityRoot)
 	root.FormulaLayers = ComputeFormulaLayers(
 		cityTopoFormulas, cityLocalFormulas, rigFormulaDirs, root.Rigs, cityRoot)
 
