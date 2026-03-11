@@ -222,7 +222,13 @@ func syncSessionBeads(
 			if tp.WorkDir != "" {
 				meta["work_dir"] = tp.WorkDir
 			}
-			meta["template"] = tp.TemplateName
+			// Store the qualified template name so the API can derive the
+			// rig from it (e.g., "tower-of-hanoi/polecat" not just "polecat").
+			if tp.RigName != "" && !strings.Contains(tp.TemplateName, "/") {
+				meta["template"] = tp.RigName + "/" + tp.TemplateName
+			} else {
+				meta["template"] = tp.TemplateName
+			}
 			if slot := resolvePoolSlot(tp.InstanceName, tp.TemplateName); slot > 0 {
 				meta["pool_slot"] = strconv.Itoa(slot)
 			}
@@ -244,10 +250,15 @@ func syncSessionBeads(
 		openIndex[sn] = b.ID
 
 		// Backfill template and pool_slot metadata for beads created
-		// before Phase 2f.
-		if b.Metadata["template"] == "" {
-			if setMeta(store, b.ID, "template", tp.TemplateName, stderr) == nil {
-				b.Metadata["template"] = tp.TemplateName
+		// before Phase 2f. Also upgrade unqualified template names to
+		// qualified form so the API can derive the rig.
+		qualifiedTemplate := tp.TemplateName
+		if tp.RigName != "" && !strings.Contains(tp.TemplateName, "/") {
+			qualifiedTemplate = tp.RigName + "/" + tp.TemplateName
+		}
+		if b.Metadata["template"] == "" || (tp.RigName != "" && !strings.Contains(b.Metadata["template"], "/")) {
+			if setMeta(store, b.ID, "template", qualifiedTemplate, stderr) == nil {
+				b.Metadata["template"] = qualifiedTemplate
 			}
 		}
 		if b.Metadata["pool_slot"] == "" {
