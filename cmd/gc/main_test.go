@@ -1163,6 +1163,63 @@ func TestDoInitWithCustomTemplate(t *testing.T) {
 	}
 }
 
+func TestDoInitWithProviderFlagAndBootstrapProfile(t *testing.T) {
+	f := fsys.NewFake()
+	wiz := wizardConfig{
+		configName:       "tutorial",
+		provider:         "codex",
+		bootstrapProfile: bootstrapProfileK8sCell,
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/hosted-city", wiz, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %q", stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, `default provider "codex"`) {
+		t.Errorf("stdout missing provider message: %q", out)
+	}
+
+	data := f.Files[filepath.Join("/hosted-city", "city.toml")]
+	cfg, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("parsing written config: %v", err)
+	}
+	if cfg.Workspace.Provider != "codex" {
+		t.Errorf("Workspace.Provider = %q, want %q", cfg.Workspace.Provider, "codex")
+	}
+	if cfg.API.Bind != "0.0.0.0" {
+		t.Errorf("API.Bind = %q, want %q", cfg.API.Bind, "0.0.0.0")
+	}
+	if cfg.API.Port != config.DefaultAPIPort {
+		t.Errorf("API.Port = %d, want %d", cfg.API.Port, config.DefaultAPIPort)
+	}
+	if !cfg.API.AllowMutations {
+		t.Error("API.AllowMutations = false, want true")
+	}
+}
+
+func TestInitWizardConfigRejectsUnknownProvider(t *testing.T) {
+	if _, err := initWizardConfig("not-a-provider", ""); err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+}
+
+func TestInitWizardConfigNormalizesBootstrapAliases(t *testing.T) {
+	wiz, err := initWizardConfig("codex", "kubernetes")
+	if err != nil {
+		t.Fatalf("initWizardConfig returned error: %v", err)
+	}
+	if wiz.bootstrapProfile != bootstrapProfileK8sCell {
+		t.Errorf("bootstrapProfile = %q, want %q", wiz.bootstrapProfile, bootstrapProfileK8sCell)
+	}
+}
+
 // --- cmdInitFromTOMLFile ---
 
 func TestCmdInitFromTOMLFileSuccess(t *testing.T) {

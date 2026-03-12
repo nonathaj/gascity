@@ -946,8 +946,9 @@ Create a new Gas City workspace in the given directory (or cwd).
 
 Runs an interactive wizard to choose a config template and coding agent
 provider. Creates the .gc/ runtime directory, default
-prompts and formulas, and writes city.toml. Use --file to skip the
-wizard and initialize from an existing TOML config file.
+prompts and formulas, and writes city.toml. Use --provider to create the
+default mayor city non-interactively, or --file to initialize from an
+existing TOML config file.
 
 ```
 gc init [path] [flags]
@@ -958,13 +959,17 @@ gc init [path] [flags]
 ```
 gc init
   gc init ~/my-city
+  gc init --provider codex ~/my-city
+  gc init --provider codex --bootstrap-profile k8s-cell /city
   gc init --file examples/gastown.toml ~/bright-lights
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--bootstrap-profile` | string |  | bootstrap profile to apply for hosted/container defaults |
 | `--file` | string |  | path to a TOML file to use as city.toml |
 | `--from` | string |  | path to an example city directory to copy |
+| `--provider` | string |  | built-in workspace provider to use for the default mayor config |
 
 ## gc mail
 

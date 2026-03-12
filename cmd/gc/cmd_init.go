@@ -19,10 +19,11 @@ import (
 // wizardConfig carries the results of the interactive init wizard (or defaults
 // for non-interactive paths). doInit uses it to decide which config to write.
 type wizardConfig struct {
-	interactive  bool   // true if the wizard ran with user interaction
-	configName   string // "tutorial" or "custom"
-	provider     string // "claude", "codex", "gemini", or "" if startCommand set
-	startCommand string // custom start command (workspace-level)
+	interactive      bool   // true if the wizard ran with user interaction
+	configName       string // "tutorial" or "custom"
+	provider         string // built-in provider key, or "" if startCommand set
+	startCommand     string // custom start command (workspace-level)
+	bootstrapProfile string // hosted bootstrap profile, or "" for local defaults
 }
 
 // defaultWizardConfig returns a non-interactive wizardConfig that produces
@@ -30,6 +31,11 @@ type wizardConfig struct {
 func defaultWizardConfig() wizardConfig {
 	return wizardConfig{configName: "tutorial"}
 }
+
+const (
+	bootstrapProfileK8sCell          = "k8s-cell"
+	bootstrapProfileSingleHostCompat = "single-host-compat"
+)
 
 // isTerminal reports whether f is connected to a terminal (not a pipe or file).
 func isTerminal(f *os.File) bool {
@@ -155,6 +161,8 @@ func resolveAgentChoice(input string, order []string, builtins map[string]config
 func newInitCmd(stdout, stderr io.Writer) *cobra.Command {
 	var fileFlag string
 	var fromFlag string
+	var providerFlag string
+	var bootstrapProfileFlag string
 	cmd := &cobra.Command{
 		Use:   "init [path]",
 		Short: "Initialize a new city",
@@ -162,10 +170,13 @@ func newInitCmd(stdout, stderr io.Writer) *cobra.Command {
 
 Runs an interactive wizard to choose a config template and coding agent
 provider. Creates the .gc/ runtime directory, default
-prompts and formulas, and writes city.toml. Use --file to skip the
-wizard and initialize from an existing TOML config file.`,
+prompts and formulas, and writes city.toml. Use --provider to create the
+default mayor city non-interactively, or --file to initialize from an
+existing TOML config file.`,
 		Example: `  gc init
   gc init ~/my-city
+  gc init --provider codex ~/my-city
+  gc init --provider codex --bootstrap-profile k8s-cell /city
   gc init --file examples/gastown.toml ~/bright-lights`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -181,7 +192,7 @@ wizard and initialize from an existing TOML config file.`,
 				}
 				return nil
 			}
-			if cmdInit(args, stdout, stderr) != 0 {
+			if cmdInit(args, providerFlag, bootstrapProfileFlag, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
@@ -189,7 +200,13 @@ wizard and initialize from an existing TOML config file.`,
 	}
 	cmd.Flags().StringVar(&fileFlag, "file", "", "path to a TOML file to use as city.toml")
 	cmd.Flags().StringVar(&fromFlag, "from", "", "path to an example city directory to copy")
+	cmd.Flags().StringVar(&providerFlag, "provider", "", "built-in workspace provider to use for the default mayor config")
+	cmd.Flags().StringVar(&bootstrapProfileFlag, "bootstrap-profile", "", "bootstrap profile to apply for hosted/container defaults")
 	cmd.MarkFlagsMutuallyExclusive("file", "from")
+	cmd.MarkFlagsMutuallyExclusive("provider", "file")
+	cmd.MarkFlagsMutuallyExclusive("provider", "from")
+	cmd.MarkFlagsMutuallyExclusive("bootstrap-profile", "file")
+	cmd.MarkFlagsMutuallyExclusive("bootstrap-profile", "from")
 	return cmd
 }
 
@@ -197,7 +214,7 @@ wizard and initialize from an existing TOML config file.`,
 // Runs the interactive wizard to choose a config template and provider.
 // Creates .gc/ and city.toml. If the bead provider is "bd", also
 // runs bd init.
-func cmdInit(args []string, stdout, stderr io.Writer) int {
+func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, stderr io.Writer) int {
 	var cityPath string
 	if len(args) > 0 {
 		var err error
@@ -215,9 +232,17 @@ func cmdInit(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	var wiz wizardConfig
-	if isTerminal(os.Stdin) {
+	switch {
+	case providerFlag != "" || bootstrapProfileFlag != "":
+		var err error
+		wiz, err = initWizardConfig(providerFlag, bootstrapProfileFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+	case isTerminal(os.Stdin):
 		wiz = runWizard(os.Stdin, stdout)
-	} else {
+	default:
 		wiz = defaultWizardConfig()
 	}
 	cityName := filepath.Base(cityPath)
@@ -233,6 +258,46 @@ func cmdInit(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func initWizardConfig(providerFlag, bootstrapProfileFlag string) (wizardConfig, error) {
+	provider, err := normalizeInitProvider(providerFlag)
+	if err != nil {
+		return wizardConfig{}, err
+	}
+	bootstrapProfile, err := normalizeBootstrapProfile(bootstrapProfileFlag)
+	if err != nil {
+		return wizardConfig{}, err
+	}
+	return wizardConfig{
+		configName:       "tutorial",
+		provider:         provider,
+		bootstrapProfile: bootstrapProfile,
+	}, nil
+}
+
+func normalizeInitProvider(provider string) (string, error) {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return "", nil
+	}
+	if _, ok := config.BuiltinProviders()[provider]; ok {
+		return provider, nil
+	}
+	return "", fmt.Errorf("unknown provider %q (expected one of: %s)", provider, strings.Join(config.BuiltinProviderOrder(), ", "))
+}
+
+func normalizeBootstrapProfile(profile string) (string, error) {
+	switch strings.TrimSpace(profile) {
+	case "":
+		return "", nil
+	case bootstrapProfileK8sCell, "kubernetes", "kubernetes-cell":
+		return bootstrapProfileK8sCell, nil
+	case bootstrapProfileSingleHostCompat:
+		return bootstrapProfileSingleHostCompat, nil
+	default:
+		return "", fmt.Errorf("unknown bootstrap profile %q", profile)
+	}
 }
 
 // cmdInitFromFile initializes a city using the --file flag (non-interactive).
@@ -340,10 +405,10 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 }
 
 // doInit is the pure logic for "gc init". It creates the city directory
-// structure (.gc/) and writes city.toml. When wiz.interactive is true,
-// uses WizardCity (one agent + provider); otherwise uses DefaultCity (one
-// mayor, no provider). Errors if .gc/ already exists. Accepts an injected FS
-// for testability.
+// structure (.gc/) and writes city.toml. Tutorial configs use WizardCity
+// when a provider or start command is supplied; otherwise init writes the
+// default mayor-only city. Errors if .gc/ already exists. Accepts an
+// injected FS for testability.
 func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Writer) int {
 	gcDir := filepath.Join(cityPath, ".gc")
 
@@ -386,16 +451,19 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 	}
 
 	// Write city.toml — wizard path gets one agent + provider/startCommand;
-	// non-interactive path gets one mayor + no provider (backwards compat);
+	// --provider path gets the same city shape non-interactively;
 	// custom path gets one mayor + no provider (user configures manually).
 	cityName := filepath.Base(cityPath)
 	var cfg config.City
 	switch {
-	case !wiz.interactive, wiz.configName == "custom":
+	case wiz.configName == "custom":
 		cfg = config.DefaultCity(cityName)
-	default:
+	case wiz.provider != "" || wiz.startCommand != "":
 		cfg = config.WizardCity(cityName, wiz.provider, wiz.startCommand)
+	default:
+		cfg = config.DefaultCity(cityName)
 	}
+	applyBootstrapProfile(&cfg, wiz.bootstrapProfile)
 	content, err := cfg.Marshal()
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -407,13 +475,25 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		return 1
 	}
 
-	if wiz.interactive {
+	switch {
+	case wiz.interactive:
 		fmt.Fprintf(stdout, "Created %s config (Level 1) in %q.\n", wiz.configName, cityName) //nolint:errcheck // best-effort stdout
-	} else {
+	case wiz.provider != "":
+		fmt.Fprintln(stdout, "Welcome to Gas City!")                                                   //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Initialized city %q with default provider %q.\n", cityName, wiz.provider) //nolint:errcheck // best-effort stdout
+	default:
 		fmt.Fprintln(stdout, "Welcome to Gas City!")                                     //nolint:errcheck // best-effort stdout
 		fmt.Fprintf(stdout, "Initialized city %q with default mayor agent.\n", cityName) //nolint:errcheck // best-effort stdout
 	}
 	return 0
+}
+
+func applyBootstrapProfile(cfg *config.City, profile string) {
+	if profile == bootstrapProfileK8sCell {
+		cfg.API.Port = config.DefaultAPIPort
+		cfg.API.Bind = "0.0.0.0"
+		cfg.API.AllowMutations = true
+	}
 }
 
 // installClaudeHooks writes Claude Code hook settings for the city.

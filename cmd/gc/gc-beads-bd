@@ -412,9 +412,21 @@ find_dolt_pid() {
 
 # --- Operations ---
 
+# write_port_file writes the dolt server port to .beads/dolt-server.port.
+# This is the primary port discovery mechanism in beads v0.60.0+, replacing
+# the deprecated dolt_server_port field in metadata.json.
+write_port_file() {
+    local beads_dir="$1"
+    mkdir -p "$beads_dir"
+    printf '%s\n' "$DOLT_PORT" > "$beads_dir/dolt-server.port"
+}
+
 # ensure_metadata repairs missing/wrong metadata fields in an existing metadata.json.
 # Upstream EnsureMetadata patches: database, backend, dolt_mode, dolt_database.
 # Non-fatal — returns 0 even on repair failure.
+#
+# Also writes .beads/dolt-server.port (v0.60.0+ port discovery) and removes the
+# deprecated dolt_server_port field from metadata.json to silence warnings.
 ensure_metadata() {
     local meta_file="$1"
     local prefix="$2"
@@ -425,25 +437,22 @@ ensure_metadata() {
     local host
     host=$(connect_host)
 
-    # Check if all required fields are present and correct.
-    local current
-    current=$(jq -r '[.database // "", .backend // "", .dolt_mode // "", .dolt_database // ""] | join("|")' "$meta_file" 2>/dev/null) || return 0
-
-    local expected="dolt|dolt|server|$prefix"
-    if [ "$current" = "$expected" ]; then
-        return 0
-    fi
+    # Write port file for v0.60.0+ port discovery.
+    local beads_dir
+    beads_dir=$(dirname "$meta_file")
+    write_port_file "$beads_dir"
 
     # Patch missing/wrong fields (preserving other fields).
+    # Removes deprecated dolt_server_port and unused dolt_port fields
+    # to prevent beads v0.60.0+ deprecation warnings.
     local tmp_file
     tmp_file=$(mktemp)
     if jq --arg mode "server" \
           --arg host "$host" \
-          --arg port "$DOLT_PORT" \
           --arg user "$DOLT_USER" \
           --arg pass "$DOLT_PASSWORD" \
           --arg prefix "$prefix" \
-          '.database = "dolt" | .backend = "dolt" | .dolt_mode = $mode | .dolt_database = $prefix | .dolt_host = $host | .dolt_port = ($port | tonumber) | .dolt_user = $user | if $pass != "" then .dolt_password = $pass else . end' \
+          'del(.dolt_server_port, .dolt_port) | .database = "dolt" | .backend = "dolt" | .dolt_mode = $mode | .dolt_database = $prefix | .dolt_host = $host | .dolt_user = $user | if $pass != "" then .dolt_password = $pass else . end' \
           "$meta_file" > "$tmp_file" 2>/dev/null; then
         mv "$tmp_file" "$meta_file"
     else
@@ -647,6 +656,7 @@ op_init() {
         bd config set issue_prefix "$prefix" 2>/dev/null || true
         bd config set types.custom "$custom_types" 2>/dev/null || true
         ensure_config_yaml "$beads_dir" "$prefix"
+        write_port_file "$beads_dir"
         exit 0
     fi
 
