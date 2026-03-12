@@ -111,12 +111,15 @@ func InferActivity(entryType, subtype string, message json.RawMessage) string {
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return ""
 		}
-		switch msg.StopReason {
-		case "end_turn":
-			return "idle"
-		case "tool_use":
+		if msg.StopReason == "" {
+			return "" // no stop_reason yet — streaming or partial entry
+		}
+		if msg.StopReason == "tool_use" {
 			return "in-turn"
 		}
+		// Any other stop_reason (end_turn, stop_sequence, max_tokens, etc.)
+		// means the assistant finished its turn.
+		return "idle"
 	case "user":
 		if len(message) > 0 {
 			return "in-turn"

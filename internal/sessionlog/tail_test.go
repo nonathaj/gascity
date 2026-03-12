@@ -268,6 +268,18 @@ func TestInferActivity(t *testing.T) {
 			message: `"{\"role\":\"assistant\",\"stop_reason\":\"tool_use\"}"`,
 			wantAct: "in-turn",
 		},
+		{
+			name:    "assistant stop_sequence → idle",
+			typ:     "assistant",
+			message: `{"role":"assistant","stop_reason":"stop_sequence","content":[{"type":"text","text":"API Error: 401"}]}`,
+			wantAct: "idle",
+		},
+		{
+			name:    "assistant max_tokens → idle",
+			typ:     "assistant",
+			message: `{"role":"assistant","stop_reason":"max_tokens","content":[{"type":"text","text":"..."}]}`,
+			wantAct: "idle",
+		},
 	}
 
 	for _, tt := range tests {
