@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -306,6 +307,9 @@ func reconcileSessionBeads(
 				startCtx, startCancel = context.WithTimeout(ctx, startupTimeout)
 			}
 			agentCfg := templateParamsToConfig(tp)
+			if sk := session.Metadata["session_key"]; sk != "" && tp.ResolvedProvider != nil {
+				agentCfg.Command = applyResumeToCommand(agentCfg.Command, sk, tp.ResolvedProvider)
+			}
 			err := sp.Start(startCtx, name, agentCfg)
 			if startCancel != nil {
 				startCancel()
@@ -361,4 +365,23 @@ func reconcileSessionBeads(
 	advanceSessionDrains(dt, sp, store, sessionLookup, cfg, poolDesired, workSet, clk)
 
 	return wakeCount
+}
+
+// applyResumeToCommand modifies the command to resume an existing session
+// using the provider's resume semantics. The provider config determines the
+// flag and style; the session key comes from bead metadata.
+func applyResumeToCommand(command, sessionKey string, rp *config.ResolvedProvider) string {
+	if rp.ResumeFlag == "" {
+		return command
+	}
+	switch rp.ResumeStyle {
+	case "subcommand":
+		parts := strings.SplitN(command, " ", 2)
+		if len(parts) == 2 {
+			return parts[0] + " " + rp.ResumeFlag + " " + sessionKey + " " + parts[1]
+		}
+		return command + " " + rp.ResumeFlag + " " + sessionKey
+	default: // "flag"
+		return command + " " + rp.ResumeFlag + " " + sessionKey
+	}
 }

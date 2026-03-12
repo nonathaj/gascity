@@ -780,3 +780,50 @@ func TestResolvePoolSlot_NonNumericSuffix(t *testing.T) {
 		t.Errorf("got %d, want 0", got)
 	}
 }
+
+func TestApplyResumeToCommand(t *testing.T) {
+	tests := []struct {
+		name       string
+		command    string
+		sessionKey string
+		provider   *config.ResolvedProvider
+		want       string
+	}{
+		{
+			name:       "no resume flag → unchanged",
+			command:    "claude --dangerously-skip-permissions",
+			sessionKey: "abc-123",
+			provider:   &config.ResolvedProvider{},
+			want:       "claude --dangerously-skip-permissions",
+		},
+		{
+			name:       "flag style",
+			command:    "claude --dangerously-skip-permissions",
+			sessionKey: "abc-123",
+			provider:   &config.ResolvedProvider{ResumeFlag: "--resume"},
+			want:       "claude --dangerously-skip-permissions --resume abc-123",
+		},
+		{
+			name:       "subcommand style",
+			command:    "codex --model o3",
+			sessionKey: "def-456",
+			provider:   &config.ResolvedProvider{ResumeFlag: "resume", ResumeStyle: "subcommand"},
+			want:       "codex resume def-456 --model o3",
+		},
+		{
+			name:       "subcommand style no args",
+			command:    "codex",
+			sessionKey: "def-456",
+			provider:   &config.ResolvedProvider{ResumeFlag: "resume", ResumeStyle: "subcommand"},
+			want:       "codex resume def-456",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := applyResumeToCommand(tt.command, tt.sessionKey, tt.provider)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
