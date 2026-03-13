@@ -27,6 +27,7 @@ import (
 
 const (
 	defaultQueuedNudgeTTL         = 24 * time.Hour
+	defaultQueuedNudgeClaimTTL    = 2 * time.Minute
 	defaultQueuedNudgeRetryDelay  = 15 * time.Second
 	defaultQueuedNudgeMaxAttempts = 5
 	defaultNudgePollInterval      = 2 * time.Second
@@ -53,12 +54,15 @@ type queuedNudge struct {
 	Attempts      int       `json:"attempts,omitempty"`
 	LastAttemptAt time.Time `json:"last_attempt_at,omitempty"`
 	LastError     string    `json:"last_error,omitempty"`
+	ClaimedAt     time.Time `json:"claimed_at,omitempty"`
+	LeaseUntil    time.Time `json:"lease_until,omitempty"`
 	DeadAt        time.Time `json:"dead_at,omitempty"`
 }
 
 type nudgeQueueState struct {
-	Pending []queuedNudge `json:"pending,omitempty"`
-	Dead    []queuedNudge `json:"dead,omitempty"`
+	Pending  []queuedNudge `json:"pending,omitempty"`
+	InFlight []queuedNudge `json:"in_flight,omitempty"`
+	Dead     []queuedNudge `json:"dead,omitempty"`
 }
 
 type nudgeTarget struct {
@@ -162,15 +166,16 @@ func cmdNudgeStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	pending, dead, err := listQueuedNudges(target.cityPath, target.agent.QualifiedName(), time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(target.cityPath, target.agent.QualifiedName(), time.Now())
 	if err != nil {
 		fmt.Fprintf(stderr, "gc nudge status: %v\n", err) //nolint:errcheck
 		return 1
 	}
 
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "AGENT\tPENDING\tDEAD\tSESSION\n")                                                             //nolint:errcheck
-	fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", target.agent.QualifiedName(), len(pending), len(dead), target.sessionName) //nolint:errcheck
+	fmt.Fprintf(tw, "AGENT\tPENDING\tIN_FLIGHT\tDEAD\tSESSION\n") //nolint:errcheck
+	_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%s\n",
+		target.agent.QualifiedName(), len(pending), len(inFlight), len(dead), target.sessionName)
 	_ = tw.Flush()
 
 	if len(pending) > 0 {
@@ -178,6 +183,13 @@ func cmdNudgeStatus(args []string, stdout, stderr io.Writer) int {
 		for _, item := range pending {
 			_, _ = fmt.Fprintf(stdout, "pending  %s  due=%s  source=%s  %s\n",
 				item.ID, formatDueTime(item.DeliverAfter), item.Source, item.Message)
+		}
+	}
+	if len(inFlight) > 0 {
+		fmt.Fprintln(stdout, "") //nolint:errcheck
+		for _, item := range inFlight {
+			_, _ = fmt.Fprintf(stdout, "in-flight  %s  lease=%s  source=%s  %s\n",
+				item.ID, formatDueTime(item.LeaseUntil), item.Source, item.Message)
 		}
 	}
 	if len(dead) > 0 {
@@ -213,7 +225,7 @@ func cmdNudgeDrain(args []string, inject bool, stdout, stderr io.Writer) int {
 	}
 
 	now := time.Now()
-	items, err := dueQueuedNudges(target.cityPath, target.agent.QualifiedName(), now)
+	items, err := claimDueQueuedNudges(target.cityPath, target.agent.QualifiedName(), now)
 	if err != nil {
 		if inject {
 			return 0
@@ -235,6 +247,7 @@ func cmdNudgeDrain(args []string, inject bool, stdout, stderr io.Writer) int {
 		out = formatNudgeRuntimeMessage(items)
 	}
 	if _, err := io.WriteString(stdout, out); err != nil {
+		_ = recordQueuedNudgeFailure(target.cityPath, queuedNudgeIDs(items), err, time.Now())
 		if inject {
 			return 0
 		}
@@ -432,12 +445,12 @@ func parseNudgeDeliveryMode(raw string) (nudgeDeliveryMode, error) {
 }
 
 func tryDeliverQueuedNudgesByPoller(target nudgeTarget, sp runtime.Provider, quiescence time.Duration) (bool, error) {
-	items, err := dueQueuedNudges(target.cityPath, target.agent.QualifiedName(), time.Now())
-	if err != nil || len(items) == 0 {
-		return false, err
-	}
 	if !pollerSessionIdleEnough(sp, target.sessionName, quiescence) {
 		return false, nil
+	}
+	items, err := claimDueQueuedNudges(target.cityPath, target.agent.QualifiedName(), time.Now())
+	if err != nil || len(items) == 0 {
+		return false, err
 	}
 	msg := formatNudgeRuntimeMessage(items)
 	if err := deliverImmediateNudge(sp, target.sessionName, runtime.TextContent(msg)); err != nil {
@@ -476,22 +489,29 @@ func maybeStartCodexNudgePoller(target nudgeTarget) {
 
 func ensureNudgePoller(cityPath, agentName, sessionName string) error {
 	pidPath := nudgePollerPIDPath(cityPath, sessionName)
-	if running, _ := existingPollerPID(pidPath); running {
-		return nil
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command(exe, "nudge", "poll", "--city", cityPath, "--session", sessionName, agentName)
-	cmd.Env = os.Environ()
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
+	return withNudgePollerPIDLock(pidPath, func() error {
+		if running, _ := existingPollerPID(pidPath); running {
+			return nil
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		cmd := exec.Command(exe, "nudge", "poll", "--city", cityPath, "--session", sessionName, agentName)
+		cmd.Env = os.Environ()
+		cmd.Stdout = io.Discard
+		cmd.Stderr = io.Discard
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		if err := writeNudgePollerPID(pidPath, cmd.Process.Pid); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Process.Release()
+			return err
+		}
+		return cmd.Process.Release()
+	})
 }
 
 func formatNudgeInjectOutput(items []queuedNudge) string {
@@ -573,32 +593,48 @@ func queuedNudgeIDs(items []queuedNudge) []string {
 	return ids
 }
 
-func dueQueuedNudges(cityPath, agentName string, now time.Time) ([]queuedNudge, error) {
-	var out []queuedNudge
+func claimDueQueuedNudges(cityPath, agentName string, now time.Time) ([]queuedNudge, error) {
+	var claimed []queuedNudge
 	err := withNudgeQueueState(cityPath, func(state *nudgeQueueState) error {
+		recoverExpiredInFlightNudges(state, now)
 		pruneExpiredQueuedNudges(state, now)
+		pending := state.Pending[:0]
 		for _, item := range state.Pending {
 			if item.Agent != agentName {
+				pending = append(pending, item)
 				continue
 			}
 			if !item.DeliverAfter.IsZero() && item.DeliverAfter.After(now) {
+				pending = append(pending, item)
 				continue
 			}
-			out = append(out, item)
+			item.ClaimedAt = now.UTC()
+			item.LeaseUntil = now.Add(defaultQueuedNudgeClaimTTL).UTC()
+			state.InFlight = append(state.InFlight, item)
+			claimed = append(claimed, item)
 		}
+		state.Pending = pending
+		sortQueuedNudges(state)
 		return nil
 	})
-	return out, err
+	return claimed, err
 }
 
-func listQueuedNudges(cityPath, agentName string, now time.Time) ([]queuedNudge, []queuedNudge, error) {
+func listQueuedNudges(cityPath, agentName string, now time.Time) ([]queuedNudge, []queuedNudge, []queuedNudge, error) {
 	var pending []queuedNudge
+	var inFlight []queuedNudge
 	var dead []queuedNudge
 	err := withNudgeQueueState(cityPath, func(state *nudgeQueueState) error {
+		recoverExpiredInFlightNudges(state, now)
 		pruneExpiredQueuedNudges(state, now)
 		for _, item := range state.Pending {
 			if item.Agent == agentName {
 				pending = append(pending, item)
+			}
+		}
+		for _, item := range state.InFlight {
+			if item.Agent == agentName {
+				inFlight = append(inFlight, item)
 			}
 		}
 		for _, item := range state.Dead {
@@ -608,11 +644,12 @@ func listQueuedNudges(cityPath, agentName string, now time.Time) ([]queuedNudge,
 		}
 		return nil
 	})
-	return pending, dead, err
+	return pending, inFlight, dead, err
 }
 
 func enqueueQueuedNudge(cityPath string, item queuedNudge) error {
 	return withNudgeQueueState(cityPath, func(state *nudgeQueueState) error {
+		recoverExpiredInFlightNudges(state, time.Now())
 		pruneExpiredQueuedNudges(state, time.Now())
 		state.Pending = append(state.Pending, item)
 		sortQueuedNudges(state)
@@ -629,6 +666,7 @@ func ackQueuedNudges(cityPath string, ids []string) error {
 		want[id] = true
 	}
 	return withNudgeQueueState(cityPath, func(state *nudgeQueueState) error {
+		recoverExpiredInFlightNudges(state, time.Now())
 		pruneExpiredQueuedNudges(state, time.Now())
 		filtered := state.Pending[:0]
 		for _, item := range state.Pending {
@@ -637,6 +675,13 @@ func ackQueuedNudges(cityPath string, ids []string) error {
 			}
 		}
 		state.Pending = filtered
+		inFlight := state.InFlight[:0]
+		for _, item := range state.InFlight {
+			if !want[item.ID] {
+				inFlight = append(inFlight, item)
+			}
+		}
+		state.InFlight = inFlight
 		return nil
 	})
 }
@@ -650,28 +695,57 @@ func recordQueuedNudgeFailure(cityPath string, ids []string, cause error, now ti
 		want[id] = true
 	}
 	return withNudgeQueueState(cityPath, func(state *nudgeQueueState) error {
+		recoverExpiredInFlightNudges(state, now)
 		pruneExpiredQueuedNudges(state, now)
-		filtered := state.Pending[:0]
+		var requeued []queuedNudge
+		var dead []queuedNudge
+		pending := state.Pending[:0]
 		for _, item := range state.Pending {
 			if !want[item.ID] {
-				filtered = append(filtered, item)
+				pending = append(pending, item)
 				continue
 			}
-			item.Attempts++
-			item.LastAttemptAt = now.UTC()
-			item.LastError = cause.Error()
-			if item.Attempts >= defaultQueuedNudgeMaxAttempts || (!item.ExpiresAt.IsZero() && !item.ExpiresAt.After(now)) {
-				item.DeadAt = now.UTC()
-				state.Dead = append(state.Dead, item)
+			updated, deadLetter := failedQueuedNudge(item, cause, now)
+			if deadLetter {
+				dead = append(dead, updated)
 				continue
 			}
-			item.DeliverAfter = now.Add(defaultQueuedNudgeRetryDelay).UTC()
-			filtered = append(filtered, item)
+			requeued = append(requeued, updated)
 		}
-		state.Pending = filtered
+		state.Pending = pending
+		inFlight := state.InFlight[:0]
+		for _, item := range state.InFlight {
+			if !want[item.ID] {
+				inFlight = append(inFlight, item)
+				continue
+			}
+			updated, deadLetter := failedQueuedNudge(item, cause, now)
+			if deadLetter {
+				dead = append(dead, updated)
+				continue
+			}
+			requeued = append(requeued, updated)
+		}
+		state.InFlight = inFlight
+		state.Pending = append(state.Pending, requeued...)
+		state.Dead = append(state.Dead, dead...)
 		sortQueuedNudges(state)
 		return nil
 	})
+}
+
+func failedQueuedNudge(item queuedNudge, cause error, now time.Time) (queuedNudge, bool) {
+	item.Attempts++
+	item.LastAttemptAt = now.UTC()
+	item.LastError = cause.Error()
+	item.ClaimedAt = time.Time{}
+	item.LeaseUntil = time.Time{}
+	if item.Attempts >= defaultQueuedNudgeMaxAttempts || (!item.ExpiresAt.IsZero() && !item.ExpiresAt.After(now)) {
+		item.DeadAt = now.UTC()
+		return item, true
+	}
+	item.DeliverAfter = now.Add(defaultQueuedNudgeRetryDelay).UTC()
+	return item, false
 }
 
 func pruneExpiredQueuedNudges(state *nudgeQueueState, now time.Time) {
@@ -691,6 +765,30 @@ func pruneExpiredQueuedNudges(state *nudgeQueueState, now time.Time) {
 	sortQueuedNudges(state)
 }
 
+func recoverExpiredInFlightNudges(state *nudgeQueueState, now time.Time) {
+	filtered := state.InFlight[:0]
+	for _, item := range state.InFlight {
+		if !item.ExpiresAt.IsZero() && !item.ExpiresAt.After(now) {
+			item.DeadAt = now.UTC()
+			if item.LastError == "" {
+				item.LastError = "expired"
+			}
+			state.Dead = append(state.Dead, item)
+			continue
+		}
+		if item.LeaseUntil.IsZero() || !item.LeaseUntil.After(now) {
+			item.ClaimedAt = time.Time{}
+			item.LeaseUntil = time.Time{}
+			item.DeliverAfter = now.UTC()
+			state.Pending = append(state.Pending, item)
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	state.InFlight = filtered
+	sortQueuedNudges(state)
+}
+
 func sortQueuedNudges(state *nudgeQueueState) {
 	sort.SliceStable(state.Pending, func(i, j int) bool {
 		if !state.Pending[i].DeliverAfter.Equal(state.Pending[j].DeliverAfter) {
@@ -700,6 +798,15 @@ func sortQueuedNudges(state *nudgeQueueState) {
 			return state.Pending[i].CreatedAt.Before(state.Pending[j].CreatedAt)
 		}
 		return state.Pending[i].ID < state.Pending[j].ID
+	})
+	sort.SliceStable(state.InFlight, func(i, j int) bool {
+		if !state.InFlight[i].LeaseUntil.Equal(state.InFlight[j].LeaseUntil) {
+			return state.InFlight[i].LeaseUntil.Before(state.InFlight[j].LeaseUntil)
+		}
+		if !state.InFlight[i].ClaimedAt.Equal(state.InFlight[j].ClaimedAt) {
+			return state.InFlight[i].ClaimedAt.Before(state.InFlight[j].ClaimedAt)
+		}
+		return state.InFlight[i].ID < state.InFlight[j].ID
 	})
 	sort.SliceStable(state.Dead, func(i, j int) bool {
 		if !state.Dead[i].DeadAt.Equal(state.Dead[j].DeadAt) {
@@ -786,14 +893,8 @@ func acquireNudgePollerLease(cityPath, sessionName string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(pidPath), 0o755); err != nil {
 		return nil, fmt.Errorf("creating nudge poller dir: %w", err)
 	}
-	if running, _ := existingPollerPID(pidPath); running {
-		return nil, errNudgePollerRunning
-	}
 	pid := []byte(fmt.Sprintf("%d\n", os.Getpid()))
-	if err := fsys.WriteFileAtomic(fsys.OSFS{}, pidPath, pid, 0o644); err != nil {
-		return nil, fmt.Errorf("write nudge poller pid: %w", err)
-	}
-	return func() {
+	release := func() {
 		current, err := os.ReadFile(pidPath)
 		if err != nil {
 			return
@@ -801,7 +902,25 @@ func acquireNudgePollerLease(cityPath, sessionName string) (func(), error) {
 		if strings.TrimSpace(string(current)) == strings.TrimSpace(string(pid)) {
 			_ = os.Remove(pidPath)
 		}
-	}, nil
+	}
+	err := withNudgePollerPIDLock(pidPath, func() error {
+		current, err := os.ReadFile(pidPath)
+		switch {
+		case err == nil && strings.TrimSpace(string(current)) == strings.TrimSpace(string(pid)):
+			return nil
+		case err == nil:
+			if running, _ := existingPollerPID(pidPath); running {
+				return errNudgePollerRunning
+			}
+		case !errors.Is(err, os.ErrNotExist):
+			return fmt.Errorf("read nudge poller pid: %w", err)
+		}
+		return writeNudgePollerPID(pidPath, os.Getpid())
+	})
+	if err != nil {
+		return nil, err
+	}
+	return release, nil
 }
 
 func existingPollerPID(pidPath string) (bool, error) {
@@ -824,4 +943,29 @@ func existingPollerPID(pidPath string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func writeNudgePollerPID(pidPath string, pid int) error {
+	data := []byte(fmt.Sprintf("%d\n", pid))
+	if err := fsys.WriteFileAtomic(fsys.OSFS{}, pidPath, data, 0o644); err != nil {
+		return fmt.Errorf("write nudge poller pid: %w", err)
+	}
+	return nil
+}
+
+func withNudgePollerPIDLock(pidPath string, fn func() error) error {
+	lockPath := pidPath + ".lock"
+	if err := os.MkdirAll(filepath.Dir(pidPath), 0o755); err != nil {
+		return fmt.Errorf("creating nudge poller dir: %w", err)
+	}
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("opening nudge poller lock: %w", err)
+	}
+	defer lockFile.Close() //nolint:errcheck
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("locking nudge poller: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	return fn()
 }

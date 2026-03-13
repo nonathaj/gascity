@@ -3,6 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -39,12 +43,15 @@ func TestDeliverSessionNudgeWithProviderWaitIdleQueuesForCodex(t *testing.T) {
 		}
 	}
 
-	pending, dead, err := listQueuedNudges(dir, "worker", time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(dir, "worker", time.Now())
 	if err != nil {
 		t.Fatalf("listQueuedNudges: %v", err)
 	}
 	if len(pending) != 1 {
 		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if len(inFlight) != 0 {
+		t.Fatalf("inFlight = %d, want 0", len(inFlight))
 	}
 	if len(dead) != 0 {
 		t.Fatalf("dead = %d, want 0", len(dead))
@@ -67,12 +74,15 @@ func TestSendMailNotifyWithProviderQueuesWhenSessionSleeping(t *testing.T) {
 		t.Fatalf("sendMailNotifyWithProvider: %v", err)
 	}
 
-	pending, dead, err := listQueuedNudges(dir, "mayor", time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(dir, "mayor", time.Now())
 	if err != nil {
 		t.Fatalf("listQueuedNudges: %v", err)
 	}
 	if len(pending) != 1 {
 		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if len(inFlight) != 0 {
+		t.Fatalf("inFlight = %d, want 0", len(inFlight))
 	}
 	if len(dead) != 0 {
 		t.Fatalf("dead = %d, want 0", len(dead))
@@ -129,15 +139,104 @@ func TestTryDeliverQueuedNudgesByPollerDeliversAndAcks(t *testing.T) {
 		t.Fatalf("nudge message = %q, want original reminder", nudgeCalls[0].Message)
 	}
 
-	pending, dead, err := listQueuedNudges(dir, "worker", time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(dir, "worker", time.Now())
 	if err != nil {
 		t.Fatalf("listQueuedNudges: %v", err)
 	}
 	if len(pending) != 0 {
 		t.Fatalf("pending = %d, want 0", len(pending))
 	}
+	if len(inFlight) != 0 {
+		t.Fatalf("inFlight = %d, want 0", len(inFlight))
+	}
 	if len(dead) != 0 {
 		t.Fatalf("dead = %d, want 0", len(dead))
+	}
+}
+
+func TestClaimDueQueuedNudgesClaimsOnceUntilAck(t *testing.T) {
+	dir := t.TempDir()
+	item := newQueuedNudge("worker", "finish the audit", "session", time.Now().Add(-time.Minute))
+	if err := enqueueQueuedNudge(dir, item); err != nil {
+		t.Fatalf("enqueueQueuedNudge: %v", err)
+	}
+
+	claimed, err := claimDueQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("claimDueQueuedNudges: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("claimed = %d, want 1", len(claimed))
+	}
+
+	claimedAgain, err := claimDueQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("claimDueQueuedNudges second pass: %v", err)
+	}
+	if len(claimedAgain) != 0 {
+		t.Fatalf("claimedAgain = %d, want 0", len(claimedAgain))
+	}
+
+	pending, inFlight, dead, err := listQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending = %d, want 0", len(pending))
+	}
+	if len(inFlight) != 1 {
+		t.Fatalf("inFlight = %d, want 1", len(inFlight))
+	}
+	if len(dead) != 0 {
+		t.Fatalf("dead = %d, want 0", len(dead))
+	}
+
+	if err := ackQueuedNudges(dir, queuedNudgeIDs(claimed)); err != nil {
+		t.Fatalf("ackQueuedNudges: %v", err)
+	}
+	pending, inFlight, dead, err = listQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges after ack: %v", err)
+	}
+	if len(pending) != 0 || len(inFlight) != 0 || len(dead) != 0 {
+		t.Fatalf("after ack pending=%d inFlight=%d dead=%d, want all zero", len(pending), len(inFlight), len(dead))
+	}
+}
+
+func TestRecordQueuedNudgeFailureRequeuesClaimedNudge(t *testing.T) {
+	dir := t.TempDir()
+	item := newQueuedNudge("worker", "retry me", "session", time.Now().Add(-time.Minute))
+	if err := enqueueQueuedNudge(dir, item); err != nil {
+		t.Fatalf("enqueueQueuedNudge: %v", err)
+	}
+
+	claimed, err := claimDueQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("claimDueQueuedNudges: %v", err)
+	}
+	now := time.Now()
+	if err := recordQueuedNudgeFailure(dir, queuedNudgeIDs(claimed), context.DeadlineExceeded, now); err != nil {
+		t.Fatalf("recordQueuedNudgeFailure: %v", err)
+	}
+
+	pending, inFlight, dead, err := listQueuedNudges(dir, "worker", now)
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pending))
+	}
+	if len(inFlight) != 0 {
+		t.Fatalf("inFlight = %d, want 0", len(inFlight))
+	}
+	if len(dead) != 0 {
+		t.Fatalf("dead = %d, want 0", len(dead))
+	}
+	if pending[0].Attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", pending[0].Attempts)
+	}
+	if !pending[0].DeliverAfter.After(now) {
+		t.Fatalf("deliverAfter = %s, want after %s", pending[0].DeliverAfter, now)
 	}
 }
 
@@ -154,17 +253,42 @@ func TestQueuedNudgeFailureMovesToDeadLetter(t *testing.T) {
 		}
 	}
 
-	pending, dead, err := listQueuedNudges(dir, "worker", time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(dir, "worker", time.Now())
 	if err != nil {
 		t.Fatalf("listQueuedNudges: %v", err)
 	}
 	if len(pending) != 0 {
 		t.Fatalf("pending = %d, want 0", len(pending))
 	}
+	if len(inFlight) != 0 {
+		t.Fatalf("inFlight = %d, want 0", len(inFlight))
+	}
 	if len(dead) != 1 {
 		t.Fatalf("dead = %d, want 1", len(dead))
 	}
 	if dead[0].Attempts != defaultQueuedNudgeMaxAttempts {
 		t.Fatalf("attempts = %d, want %d", dead[0].Attempts, defaultQueuedNudgeMaxAttempts)
+	}
+}
+
+func TestAcquireNudgePollerLeaseAllowsBootstrapPID(t *testing.T) {
+	dir := t.TempDir()
+	pidPath := nudgePollerPIDPath(dir, "sess-worker")
+	if err := os.MkdirAll(filepath.Dir(pidPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	release, err := acquireNudgePollerLease(dir, "sess-worker")
+	if err != nil {
+		t.Fatalf("acquireNudgePollerLease: %v", err)
+	}
+	release()
+
+	_, err = os.Stat(pidPath)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pid file still exists after release: %v", err)
 	}
 }
