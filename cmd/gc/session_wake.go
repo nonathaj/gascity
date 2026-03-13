@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 // errTokenMismatch indicates the running session's instance token
@@ -106,6 +108,9 @@ func beginSessionDrain(
 	// Best-effort drain signal: interrupt the process.
 	// Verify instance_token before signaling.
 	_ = verifiedInterrupt(session, sp)
+
+	name := session.Metadata["session_name"]
+	telemetry.RecordDrainTransition(context.Background(), name, reason, "begin")
 }
 
 // cancelSessionDrain removes a drain if wake reasons reappeared for the same generation.
@@ -117,6 +122,8 @@ func cancelSessionDrain(session beads.Bead, dt *drainTracker) bool {
 	gen, _ := strconv.Atoi(session.Metadata["generation"])
 	if gen == ds.generation {
 		dt.remove(session.ID)
+		name := session.Metadata["session_name"]
+		telemetry.RecordDrainTransition(context.Background(), name, ds.reason, "cancel")
 		return true
 	}
 	return false
@@ -166,6 +173,7 @@ func advanceSessionDrains(
 			// Process exited — drain complete.
 			completeDrain(session, store, ds, clk)
 			dt.remove(id)
+			telemetry.RecordDrainTransition(context.Background(), name, ds.reason, "complete")
 			continue
 		}
 
@@ -186,6 +194,7 @@ func advanceSessionDrains(
 			if !sp.IsRunning(name) {
 				completeDrain(session, store, ds, clk)
 				dt.remove(id)
+				telemetry.RecordDrainTransition(context.Background(), name, ds.reason, "timeout")
 			}
 			// If still running after stop, keep drain for next tick.
 		}

@@ -15,6 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
@@ -41,25 +42,34 @@ func shellScaleCheck(command, dir string) (string, error) {
 // evaluatePool runs check, parses the output as an integer, and clamps
 // the result to [min, max]. Returns min on error (honors configured minimum).
 func evaluatePool(agentName string, pool config.PoolConfig, dir string, runner ScaleCheckRunner) (int, error) {
+	start := time.Now()
 	out, err := runner(pool.Check, dir)
+	durationMs := float64(time.Since(start).Milliseconds())
 	if err != nil {
+		telemetry.RecordPoolCheck(context.Background(), agentName, durationMs, pool.Min, err)
 		return pool.Min, fmt.Errorf("agent %q: %w", agentName, err)
 	}
 	trimmed := strings.TrimSpace(out)
 	if trimmed == "" {
-		return pool.Min, fmt.Errorf("agent %q: check %q produced empty output", agentName, pool.Check)
+		checkErr := fmt.Errorf("agent %q: check %q produced empty output", agentName, pool.Check)
+		telemetry.RecordPoolCheck(context.Background(), agentName, durationMs, pool.Min, checkErr)
+		return pool.Min, checkErr
 	}
 	n, err := strconv.Atoi(trimmed)
 	if err != nil {
-		return pool.Min, fmt.Errorf("agent %q: check output %q is not an integer", agentName, trimmed)
+		parseErr := fmt.Errorf("agent %q: check output %q is not an integer", agentName, trimmed)
+		telemetry.RecordPoolCheck(context.Background(), agentName, durationMs, pool.Min, parseErr)
+		return pool.Min, parseErr
 	}
-	if n < pool.Min {
-		return pool.Min, nil
+	desired := n
+	if desired < pool.Min {
+		desired = pool.Min
 	}
-	if pool.Max >= 0 && n > pool.Max {
-		return pool.Max, nil
+	if pool.Max >= 0 && desired > pool.Max {
+		desired = pool.Max
 	}
-	return n, nil
+	telemetry.RecordPoolCheck(context.Background(), agentName, durationMs, desired, nil)
+	return desired, nil
 }
 
 // SessionSetupContext holds template variables for session_setup command expansion.

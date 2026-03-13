@@ -101,9 +101,11 @@ func doMailArchive(mp mail.Provider, rec events.Recorder, args []string, stdout,
 			fmt.Fprintf(stdout, "Already archived %s\n", id) //nolint:errcheck // best-effort stdout
 			return 0
 		}
+		telemetry.RecordMailOp(context.Background(), "archive", err)
 		fmt.Fprintf(stderr, "gc mail archive: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	telemetry.RecordMailOp(context.Background(), "archive", nil)
 	rec.Record(events.Event{
 		Type:    events.MailArchived,
 		Actor:   eventActor(),
@@ -529,6 +531,7 @@ func doMailSend(mp mail.Provider, rec events.Recorder, validRecipients map[strin
 	}
 
 	m, err := mp.Send(sender, to, subject, body)
+	telemetry.RecordMailOp(context.Background(), "send", err)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail send: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -664,6 +667,7 @@ func doMailRead(mp mail.Provider, rec events.Recorder, args []string, stdout, st
 	id := args[0]
 
 	m, err := mp.Read(id)
+	telemetry.RecordMailOp(context.Background(), "read", err)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail read: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -736,6 +740,7 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 // doMailReply creates a reply to an existing message.
 func doMailReply(mp mail.Provider, rec events.Recorder, id, sender, subject, body string, _ bool, stdout, stderr io.Writer) int {
 	reply, err := mp.Reply(id, sender, subject, body)
+	telemetry.RecordMailOp(context.Background(), "reply", err)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -768,9 +773,11 @@ func doMailMarkRead(mp mail.Provider, rec events.Recorder, args []string, stdout
 	}
 	id := args[0]
 	if err := mp.MarkRead(id); err != nil {
+		telemetry.RecordMailOp(context.Background(), "mark_read", err)
 		fmt.Fprintf(stderr, "gc mail mark-read: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	telemetry.RecordMailOp(context.Background(), "mark_read", nil)
 	rec.Record(events.Event{
 		Type:    events.MailMarkedRead,
 		Actor:   eventActor(),
@@ -798,9 +805,11 @@ func doMailMarkUnread(mp mail.Provider, rec events.Recorder, args []string, stdo
 	}
 	id := args[0]
 	if err := mp.MarkUnread(id); err != nil {
+		telemetry.RecordMailOp(context.Background(), "mark_unread", err)
 		fmt.Fprintf(stderr, "gc mail mark-unread: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	telemetry.RecordMailOp(context.Background(), "mark_unread", nil)
 	rec.Record(events.Event{
 		Type:    events.MailMarkedUnread,
 		Actor:   eventActor(),
@@ -832,9 +841,11 @@ func doMailDelete(mp mail.Provider, rec events.Recorder, args []string, stdout, 
 			fmt.Fprintf(stdout, "Already deleted %s\n", id) //nolint:errcheck // best-effort stdout
 			return 0
 		}
+		telemetry.RecordMailOp(context.Background(), "delete", err)
 		fmt.Fprintf(stderr, "gc mail delete: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	telemetry.RecordMailOp(context.Background(), "delete", nil)
 	rec.Record(events.Event{
 		Type:    events.MailDeleted,
 		Actor:   eventActor(),

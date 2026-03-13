@@ -452,6 +452,9 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 			Subject: r.tp.DisplayName(),
 		})
 		telemetry.RecordAgentStart(context.Background(), r.sessionName, r.tp.DisplayName(), nil)
+		if r.reason == "pool scale-up" {
+			telemetry.RecordPoolSpawn(context.Background(), r.tp.DisplayName(), 0)
+		}
 		// Store config hashes after successful start.
 		if rops != nil {
 			cfg := templateParamsToConfig(r.tp)
@@ -484,6 +487,7 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 				if !draining {
 					_ = dops.setDrain(name)
 					fmt.Fprintf(stdout, "Draining '%s' (pool scaling down)\n", name) //nolint:errcheck // best-effort stdout
+					telemetry.RecordDrainTransition(context.Background(), name, "pool-excess", "begin")
 					continue
 				}
 				// Already draining — check if agent acknowledged.
@@ -494,6 +498,8 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 						fmt.Fprintf(stderr, "gc start: stopping drained %s: %v\n", name, err) //nolint:errcheck // best-effort stderr
 					} else {
 						fmt.Fprintf(stdout, "Stopped drained session '%s'\n", name) //nolint:errcheck // best-effort stdout
+						telemetry.RecordPoolRemove(context.Background(), name, "drain-ack")
+						telemetry.RecordDrainTransition(context.Background(), name, "pool-excess", "complete")
 					}
 					continue
 				}
@@ -506,6 +512,8 @@ func doReconcileAgents(desiredState map[string]TemplateParams,
 							fmt.Fprintf(stderr, "gc start: stopping timed-out %s: %v\n", name, err) //nolint:errcheck // best-effort stderr
 						} else {
 							fmt.Fprintf(stdout, "Killed drained session '%s' (timeout after %s)\n", name, drainTimeout) //nolint:errcheck // best-effort stdout
+							telemetry.RecordPoolRemove(context.Background(), name, "drain-timeout")
+							telemetry.RecordDrainTransition(context.Background(), name, "pool-excess", "timeout")
 						}
 						continue
 					}

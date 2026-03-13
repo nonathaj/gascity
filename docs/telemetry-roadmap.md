@@ -61,10 +61,10 @@ gc.drain.transitions.total        Counter    Agent drain lifecycle   2
 
 ## Phase definitions
 
-- **Phase 1** (this PR): Core package + 10 counters + 1 histogram.
+- **Phase 1** (done): Core package + 11 counters + 1 histogram.
   The minimum useful set for operator visibility.
-- **Phase 2** (next): Pool, worktree, hook, mail, formula, prime, drain.
-  Operations that exist today but aren't on the critical path.
+- **Phase 2** (done): Pool spawns/removes, pool check latency, mail operations, drain transitions.
+  4 new counters + 1 histogram.
 - **Phase 3** (later): Dolt health gauges, observable gauges for running
   agent counts. Requires OTel callback registration pattern.
 

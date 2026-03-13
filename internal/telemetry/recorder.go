@@ -1,5 +1,5 @@
 // Package telemetry — recorder.go
-// Recording helper functions for all GC telemetry events (Phase 1).
+// Recording helper functions for all GC telemetry events (Phases 1 & 2).
 // Each function emits both an OTel log event (→ VictoriaLogs) and increments
 // a metric counter (→ VictoriaMetrics).
 package telemetry
@@ -25,7 +25,7 @@ const (
 
 // recorderInstruments holds all lazy-initialized OTel metric instruments.
 type recorderInstruments struct {
-	// Counters (11)
+	// Counters — Phase 1 (11)
 	agentStartTotal      metric.Int64Counter
 	agentStopTotal       metric.Int64Counter
 	agentCrashTotal      metric.Int64Counter
@@ -38,11 +38,20 @@ type recorderInstruments struct {
 	bdTotal              metric.Int64Counter
 	slingTotal           metric.Int64Counter
 
+	// Counters — Phase 2 (4)
+	poolSpawnTotal  metric.Int64Counter
+	poolRemoveTotal metric.Int64Counter
+	mailOpsTotal    metric.Int64Counter
+	drainTotal      metric.Int64Counter
+
 	// Gauges (1)
 	beadStoreHealthy metric.Int64Gauge
 
-	// Histograms (1)
+	// Histograms — Phase 1 (1)
 	bdDurationHist metric.Float64Histogram
+
+	// Histograms — Phase 2 (1)
+	poolCheckDurationHist metric.Float64Histogram
 }
 
 var (
@@ -92,6 +101,20 @@ func initInstruments() {
 			metric.WithDescription("Total sling work dispatches"),
 		)
 
+		// Counters — Phase 2
+		inst.poolSpawnTotal, _ = m.Int64Counter("gc.pool.spawns.total",
+			metric.WithDescription("Total pool member instance spawns"),
+		)
+		inst.poolRemoveTotal, _ = m.Int64Counter("gc.pool.removes.total",
+			metric.WithDescription("Total pool member instance removals"),
+		)
+		inst.mailOpsTotal, _ = m.Int64Counter("gc.mail.operations.total",
+			metric.WithDescription("Total mail operations"),
+		)
+		inst.drainTotal, _ = m.Int64Counter("gc.drain.transitions.total",
+			metric.WithDescription("Total agent drain lifecycle transitions"),
+		)
+
 		// Gauges
 		inst.beadStoreHealthy, _ = m.Int64Gauge("gc.bead_store.healthy",
 			metric.WithDescription("Whether the bead store is healthy (1) or unavailable (0)"),
@@ -100,6 +123,12 @@ func initInstruments() {
 		// Histograms
 		inst.bdDurationHist, _ = m.Float64Histogram("gc.bd.duration_ms",
 			metric.WithDescription("bd CLI call round-trip latency in milliseconds"),
+			metric.WithUnit("ms"),
+		)
+
+		// Histograms — Phase 2
+		inst.poolCheckDurationHist, _ = m.Float64Histogram("gc.pool.check.duration_ms",
+			metric.WithDescription("Pool scale_check command latency in milliseconds"),
 			metric.WithUnit("ms"),
 		)
 	})
@@ -361,4 +390,92 @@ func RecordBDCall(ctx context.Context, args []string, durationMs float64, err er
 		)
 	}
 	emit(ctx, "bd.call", severity(err), kvs...)
+}
+
+// ── Phase 2 recording functions ──────────────────────────────────────────
+
+// RecordPoolSpawn records a pool member instance being spawned (metrics + log event).
+func RecordPoolSpawn(ctx context.Context, agent string, instance int) {
+	initInstruments()
+	inst.poolSpawnTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("agent", agent),
+			attribute.Int("instance", instance),
+		),
+	)
+	emit(ctx, "pool.spawn", otellog.SeverityInfo,
+		otellog.String("agent", agent),
+		otellog.Int("instance", instance),
+	)
+}
+
+// RecordPoolRemove records a pool member instance being removed (metrics + log event).
+// reason is "scale-down", "drain-timeout", "drain-ack", "orphan", etc.
+func RecordPoolRemove(ctx context.Context, agent, reason string) {
+	initInstruments()
+	inst.poolRemoveTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("agent", agent),
+			attribute.String("reason", reason),
+		),
+	)
+	emit(ctx, "pool.remove", otellog.SeverityInfo,
+		otellog.String("agent", agent),
+		otellog.String("reason", reason),
+	)
+}
+
+// RecordPoolCheck records a pool scale_check command execution (metrics + log event).
+func RecordPoolCheck(ctx context.Context, agent string, durationMs float64, desired int, err error) {
+	initInstruments()
+	status := statusStr(err)
+	inst.poolCheckDurationHist.Record(ctx, durationMs,
+		metric.WithAttributes(
+			attribute.String("agent", agent),
+			attribute.String("status", status),
+		),
+	)
+	emit(ctx, "pool.check", severity(err),
+		otellog.String("agent", agent),
+		otellog.Float64("duration_ms", durationMs),
+		otellog.Int("desired", desired),
+		otellog.String("status", status),
+		errKV(err),
+	)
+}
+
+// RecordMailOp records a mail operation (metrics + log event).
+// operation is "send", "read", "reply", "delete", "archive", "mark_read", "mark_unread".
+func RecordMailOp(ctx context.Context, operation string, err error) {
+	initInstruments()
+	status := statusStr(err)
+	inst.mailOpsTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("operation", operation),
+			attribute.String("status", status),
+		),
+	)
+	emit(ctx, "mail.operation", severity(err),
+		otellog.String("operation", operation),
+		otellog.String("status", status),
+		errKV(err),
+	)
+}
+
+// RecordDrainTransition records a drain lifecycle transition (metrics + log event).
+// transition is "begin", "complete", "cancel", "timeout".
+func RecordDrainTransition(ctx context.Context, sessionName, reason, transition string) {
+	initInstruments()
+	inst.drainTotal.Add(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("session", sessionName),
+			attribute.String("reason", reason),
+			attribute.String("transition", transition),
+		),
+	)
+	emit(ctx, "drain.transition", otellog.SeverityInfo,
+		otellog.String("session", sessionName),
+		otellog.String("reason", reason),
+		otellog.String("transition", transition),
+	)
 }
