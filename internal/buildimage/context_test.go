@@ -124,6 +124,38 @@ name = "test-city"
 	assertFileExists(t, outputDir, "workspace/my-rig/README.md")
 }
 
+func TestAssembleContextPreservesCustomReferencedCityFiles(t *testing.T) {
+	cityDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	writeFile(t, cityDir, "city.toml", `include = ["fragments/ops.toml"]
+
+[workspace]
+name = "test-city"
+
+[formulas]
+dir = "my-formulas"
+`)
+	writeFile(t, cityDir, "fragments/ops.toml", `[[agent]]
+name = "mayor"
+prompt_template = "prompts/mayor.md"
+`)
+	writeFile(t, cityDir, "my-formulas/custom.formula.toml", "name = \"custom\"\n")
+	writeFile(t, cityDir, "prompts/mayor.md", "You are the mayor.")
+
+	err := AssembleContext(Options{
+		CityPath:  cityDir,
+		OutputDir: outputDir,
+	})
+	if err != nil {
+		t.Fatalf("AssembleContext: %v", err)
+	}
+
+	assertFileExists(t, outputDir, "workspace/fragments/ops.toml")
+	assertFileExists(t, outputDir, "workspace/my-formulas/custom.formula.toml")
+	assertFileExists(t, outputDir, "workspace/prompts/mayor.md")
+}
+
 func TestAssembleContextRequiresCityPath(t *testing.T) {
 	err := AssembleContext(Options{OutputDir: t.TempDir()})
 	if err == nil {

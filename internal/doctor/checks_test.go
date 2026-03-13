@@ -267,6 +267,82 @@ func TestConfigRefsCheck_MultipleIssues(t *testing.T) {
 	}
 }
 
+// --- BuiltinPackFamilyCheck ---
+
+func TestBuiltinPackFamilyCheck_Unmodified(t *testing.T) {
+	c := NewBuiltinPackFamilyCheck(&config.City{}, t.TempDir())
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
+	}
+}
+
+func TestBuiltinPackFamilyCheck_FullOverrideOK(t *testing.T) {
+	dir := t.TempDir()
+	bdDir := filepath.Join(dir, "packs", "bd")
+	doltDir := filepath.Join(dir, "packs", "dolt")
+	for _, tc := range []struct {
+		dir  string
+		name string
+	}{
+		{dir: bdDir, name: "bd"},
+		{dir: doltDir, name: "dolt"},
+	} {
+		if err := os.MkdirAll(tc.dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tc.dir, "pack.toml"), []byte("[pack]\nname = \""+tc.name+"\"\nschema = 1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &config.City{PackDirs: []string{bdDir, doltDir}}
+	c := NewBuiltinPackFamilyCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
+	}
+}
+
+func TestBuiltinPackFamilyCheck_PartialOverrideFails(t *testing.T) {
+	dir := t.TempDir()
+	doltDir := filepath.Join(dir, "packs", "dolt")
+	if err := os.MkdirAll(doltDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDir, "pack.toml"), []byte("[pack]\nname = \"dolt\"\nschema = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{PackDirs: []string{doltDir}}
+	c := NewBuiltinPackFamilyCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusError {
+		t.Fatalf("status = %d, want Error; msg = %s", r.Status, r.Message)
+	}
+	if !strings.Contains(r.Message, "\"bd\"") {
+		t.Fatalf("message = %q, want missing bd", r.Message)
+	}
+}
+
+func TestBuiltinPackFamilyCheck_IgnoresSystemPacks(t *testing.T) {
+	dir := t.TempDir()
+	systemDolt := filepath.Join(dir, ".gc", "system", "packs", "dolt")
+	if err := os.MkdirAll(systemDolt, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(systemDolt, "pack.toml"), []byte("[pack]\nname = \"dolt\"\nschema = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.City{PackDirs: []string{systemDolt}}
+	c := NewBuiltinPackFamilyCheck(cfg, dir)
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
+	}
+}
+
 // --- BinaryCheck ---
 
 func TestBinaryCheck_Found(t *testing.T) {

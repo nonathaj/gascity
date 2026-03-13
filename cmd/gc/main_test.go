@@ -57,6 +57,21 @@ func TestVersion(t *testing.T) {
 // --- findCity ---
 
 func TestFindCity(t *testing.T) {
+	t.Run("canonical", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte("[workspace]\nname = \"test\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := findCity(dir)
+		if err != nil {
+			t.Fatalf("findCity(%q) error: %v", dir, err)
+		}
+		if got != dir {
+			t.Errorf("findCity(%q) = %q, want %q", dir, got, dir)
+		}
+	})
+
 	t.Run("found", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
@@ -91,11 +106,34 @@ func TestFindCity(t *testing.T) {
 		}
 	})
 
+	t.Run("parent_canonical_outranks_child_legacy", func(t *testing.T) {
+		parent := t.TempDir()
+		if err := os.WriteFile(filepath.Join(parent, "city.toml"), []byte("[workspace]\nname = \"parent\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		child := filepath.Join(parent, "child")
+		if err := os.MkdirAll(filepath.Join(child, ".gc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		nested := filepath.Join(child, "deep")
+		if err := os.MkdirAll(nested, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := findCity(nested)
+		if err != nil {
+			t.Fatalf("findCity(%q) error: %v", nested, err)
+		}
+		if got != parent {
+			t.Errorf("findCity(%q) = %q, want %q", nested, got, parent)
+		}
+	})
+
 	t.Run("not_found", func(t *testing.T) {
-		dir := t.TempDir() // no .gc/ inside
+		dir := t.TempDir() // no city.toml or .gc/ inside
 		_, err := findCity(dir)
 		if err == nil {
-			t.Fatal("findCity() should fail without .gc/")
+			t.Fatal("findCity() should fail without city.toml or .gc/")
 		}
 		if !strings.Contains(err.Error(), "not in a city directory") {
 			t.Errorf("error = %q, want 'not in a city directory'", err)
@@ -762,6 +800,27 @@ func TestDoInitAlreadyInitialized(t *testing.T) {
 	}
 }
 
+func TestDoInitBootstrapsExistingCityToml(t *testing.T) {
+	f := fsys.NewFake()
+	original := []byte("[workspace]\nname = \"city\"\n")
+	f.Files[filepath.Join("/city", "city.toml")] = original
+
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/city", defaultWizardConfig(), &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("doInit = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Bootstrapped city") {
+		t.Errorf("stdout = %q, want bootstrap message", stdout.String())
+	}
+	if got := string(f.Files[filepath.Join("/city", "city.toml")]); got != string(original) {
+		t.Errorf("city.toml overwritten:\ngot:\n%s\nwant:\n%s", got, original)
+	}
+	if !f.Dirs[filepath.Join("/city", ".gc")] {
+		t.Error(".gc/ should be created during bootstrap")
+	}
+}
+
 func TestDoInitMkdirGCFails(t *testing.T) {
 	f := fsys.NewFake()
 	f.Errors[filepath.Join("/city", ".gc")] = fmt.Errorf("permission denied")
@@ -1351,6 +1410,26 @@ func TestCmdInitFromTOMLFileAlreadyInitialized(t *testing.T) {
 	}
 }
 
+func TestCmdInitFromTOMLFileAlreadyInitializedByCityToml(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files[filepath.Join("/city", "city.toml")] = []byte("[workspace]\nname = \"city\"\n")
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(src, []byte("[workspace]\nname = \"x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := cmdInitFromTOMLFile(f, src, "/city", &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Errorf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "already initialized") {
+		t.Errorf("stderr = %q, want 'already initialized'", stderr.String())
+	}
+}
+
 // --- gc init --from tests ---
 
 func TestDoInitFromDirSuccess(t *testing.T) {
@@ -1532,6 +1611,37 @@ func TestDoInitFromDirAlreadyInitialized(t *testing.T) {
 
 	cityPath := filepath.Join(dir, "dst")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+	code := doInitFromDir(srcDir, cityPath, &bytes.Buffer{}, &stderr)
+	if code != 1 {
+		t.Errorf("code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "already initialized") {
+		t.Errorf("stderr = %q, want 'already initialized'", stderr.String())
+	}
+}
+
+func TestDoInitFromDirAlreadyInitializedByCityToml(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "city.toml"),
+		[]byte("[workspace]\nname = \"src\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cityPath := filepath.Join(dir, "dst")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"),
+		[]byte("[workspace]\nname = \"dst\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

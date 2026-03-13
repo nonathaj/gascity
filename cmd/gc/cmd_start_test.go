@@ -164,3 +164,26 @@ func TestStageHookFilesIncludesCodexAndCopilotExecutableHooks(t *testing.T) {
 		}
 	}
 }
+
+func TestStageHookFilesIncludesCanonicalClaudeHook(t *testing.T) {
+	cityDir := filepath.Join(t.TempDir(), "city")
+	workDir := filepath.Join(cityDir, "worker")
+	hookPath := filepath.Join(cityDir, "hooks", "claude.json")
+	if err := os.MkdirAll(filepath.Dir(hookPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", hookPath, err)
+	}
+	if err := os.WriteFile(hookPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", hookPath, err)
+	}
+
+	got := stageHookFiles(nil, cityDir, workDir)
+	for _, entry := range got {
+		if entry.RelDst == filepath.Join(".gc", "settings.json") {
+			if entry.Src != hookPath {
+				t.Fatalf("stageHookFiles() staged %q, want %q", entry.Src, hookPath)
+			}
+			return
+		}
+	}
+	t.Fatal("stageHookFiles() did not stage .gc/settings.json")
+}

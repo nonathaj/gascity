@@ -242,7 +242,10 @@ func cityAutomationRoots(cityPath string, cfg *config.City) []automations.ScanRo
 				FormulaLayer: localFormulas,
 			})
 			for _, root := range citylayout.ResolveCityAutomationRoots(fsys.OSFS{}, cityPath) {
-				roots = append(roots, automations.ScanRoot{Dir: root})
+				roots = append(roots, automations.ScanRoot{
+					Dir:          root,
+					FormulaLayer: localFormulas,
+				})
 			}
 			continue
 		}

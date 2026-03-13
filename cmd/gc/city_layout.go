@@ -28,6 +28,16 @@ func ensureCityScaffoldFS(fs fsys.FS, cityPath string) error {
 	return nil
 }
 
+func cityAlreadyInitializedFS(fs fsys.FS, cityPath string) bool {
+	if fi, err := fs.Stat(filepath.Join(cityPath, citylayout.CityConfigFile)); err == nil && !fi.IsDir() {
+		return true
+	}
+	if fi, err := fs.Stat(filepath.Join(cityPath, citylayout.RuntimeRoot)); err == nil && fi.IsDir() {
+		return true
+	}
+	return false
+}
+
 func normalizeInitFromLegacyContent(cityPath string) error {
 	steps := [][2]string{
 		{citylayout.LegacyPromptsRoot, citylayout.PromptsRoot},
@@ -92,7 +102,7 @@ func migrateLegacyContent(legacyPath, canonicalPath string) error {
 			return err
 		}
 	}
-	return pruneEmptyDirs(filepath.Dir(legacyPath), filepath.Dir(filepath.Dir(legacyPath)))
+	return pruneEmptyDirs(legacyPath, filepath.Dir(filepath.Dir(legacyPath)))
 }
 
 func pruneEmptyDirs(path, stop string) error {

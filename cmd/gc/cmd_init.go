@@ -34,6 +34,10 @@ func defaultWizardConfig() wizardConfig {
 	return wizardConfig{configName: "tutorial"}
 }
 
+func canBootstrapExistingCity(wiz wizardConfig) bool {
+	return wiz == defaultWizardConfig()
+}
+
 const (
 	bootstrapProfileK8sCell          = "k8s-cell"
 	bootstrapProfileSingleHostCompat = "single-host-compat"
@@ -353,8 +357,7 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 	}
 
 	// Create directory structure.
-	gcDir := filepath.Join(cityPath, citylayout.RuntimeRoot)
-	if _, err := fs.Stat(gcDir); err == nil {
+	if cityAlreadyInitializedFS(fs, cityPath) {
 		fmt.Fprintln(stderr, "gc init: already initialized") //nolint:errcheck // best-effort stderr
 		return 1
 	}
@@ -414,12 +417,27 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 // default mayor-only city. Errors if the runtime scaffold already exists. Accepts an
 // injected FS for testability.
 func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Writer) int {
+	tomlPath := filepath.Join(cityPath, citylayout.CityConfigFile)
 	gcDir := filepath.Join(cityPath, citylayout.RuntimeRoot)
-
-	// Check if already initialized.
 	if _, err := fs.Stat(gcDir); err == nil {
 		fmt.Fprintln(stderr, "gc init: already initialized") //nolint:errcheck // best-effort stderr
 		return 1
+	}
+	if _, err := fs.Stat(tomlPath); err == nil {
+		if !canBootstrapExistingCity(wiz) {
+			fmt.Fprintln(stderr, "gc init: already initialized") //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		if err := ensureCityScaffoldFS(fs, cityPath); err != nil {
+			fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
+			return code
+		}
+		fmt.Fprintln(stdout, "Welcome to Gas City!")                                             //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Bootstrapped city %q runtime scaffold.\n", filepath.Base(cityPath)) //nolint:errcheck // best-effort stdout
+		return 0
 	}
 
 	// Create directory structure.
@@ -473,7 +491,6 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	tomlPath := filepath.Join(cityPath, "city.toml")
 	if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -639,8 +656,7 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 	}
 
 	// Check target not already initialized.
-	gcDir := filepath.Join(cityPath, citylayout.RuntimeRoot)
-	if _, err := fs.Stat(gcDir); err == nil {
+	if cityAlreadyInitializedFS(fs, cityPath) {
 		fmt.Fprintln(stderr, "gc init: already initialized") //nolint:errcheck // best-effort stderr
 		return 1
 	}

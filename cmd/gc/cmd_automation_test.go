@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 // --- gc automation list ---
@@ -61,6 +64,27 @@ func TestAutomationListExecType(t *testing.T) {
 	if !strings.Contains(out, "formula") {
 		t.Errorf("stdout missing 'formula' type:\n%s", out)
 	}
+}
+
+func TestCityAutomationRootsUseLocalFormulaLayerForVisibleRoot(t *testing.T) {
+	cityDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityDir, "automations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	roots := cityAutomationRoots(cityDir, &config.City{})
+	visibleRoot := filepath.Join(cityDir, "automations")
+	wantLayer := filepath.Join(cityDir, "formulas")
+	for _, root := range roots {
+		if root.Dir != visibleRoot {
+			continue
+		}
+		if root.FormulaLayer != wantLayer {
+			t.Fatalf("FormulaLayer = %q, want %q", root.FormulaLayer, wantLayer)
+		}
+		return
+	}
+	t.Fatalf("cityAutomationRoots() missing %q", visibleRoot)
 }
 
 // --- gc automation show ---

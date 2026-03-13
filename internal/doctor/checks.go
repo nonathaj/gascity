@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/deps"
 
 	"github.com/gastownhall/gascity/internal/agent"
@@ -192,6 +193,113 @@ func (c *ConfigRefsCheck) CanFix() bool { return false }
 
 // Fix is a no-op.
 func (c *ConfigRefsCheck) Fix(_ *CheckContext) error { return nil }
+
+// BuiltinPackFamilyCheck fails when a city overrides only one member of the
+// builtin bd/dolt pack family. Mixed system/user families are unsupported.
+type BuiltinPackFamilyCheck struct {
+	cfg      *config.City
+	cityPath string
+}
+
+// NewBuiltinPackFamilyCheck creates a check for builtin bd/dolt family
+// overrides in non-system pack roots.
+func NewBuiltinPackFamilyCheck(cfg *config.City, cityPath string) *BuiltinPackFamilyCheck {
+	return &BuiltinPackFamilyCheck{cfg: cfg, cityPath: cityPath}
+}
+
+// Name returns the check identifier.
+func (c *BuiltinPackFamilyCheck) Name() string { return "builtin-pack-family" }
+
+// Run validates that bd/dolt overrides are all-or-nothing.
+func (c *BuiltinPackFamilyCheck) Run(_ *CheckContext) *CheckResult {
+	r := &CheckResult{Name: c.Name()}
+	provider := c.cfg.Beads.Provider
+	if v := os.Getenv("GC_BEADS"); v != "" {
+		provider = v
+	}
+	if provider != "" && provider != "bd" {
+		r.Status = StatusOK
+		r.Message = "builtin bd/dolt pack family not required"
+		return r
+	}
+
+	overrides := c.userBuiltinPackOverrides()
+	switch len(overrides) {
+	case 0:
+		r.Status = StatusOK
+		r.Message = "builtin bd/dolt pack family unmodified"
+	case 2:
+		r.Status = StatusOK
+		r.Message = "user overrides full builtin bd/dolt pack family"
+	default:
+		r.Status = StatusError
+		if overrides["bd"] {
+			r.Message = "user overrides builtin pack \"bd\" without also providing \"dolt\""
+		} else {
+			r.Message = "user overrides builtin pack \"dolt\" without also providing \"bd\""
+		}
+		r.FixHint = "override both builtin packs together or remove the partial override"
+	}
+	return r
+}
+
+// CanFix returns false.
+func (c *BuiltinPackFamilyCheck) CanFix() bool { return false }
+
+// Fix is a no-op.
+func (c *BuiltinPackFamilyCheck) Fix(_ *CheckContext) error { return nil }
+
+func (c *BuiltinPackFamilyCheck) userBuiltinPackOverrides() map[string]bool {
+	systemRoot := filepath.Clean(filepath.Join(c.cityPath, citylayout.SystemPacksRoot))
+	seenDirs := make(map[string]bool)
+	overrides := make(map[string]bool)
+
+	for _, dir := range packDirsForCheck(c.cfg) {
+		dir = filepath.Clean(dir)
+		if seenDirs[dir] || isSubpath(systemRoot, dir) {
+			continue
+		}
+		seenDirs[dir] = true
+		switch readPackName(dir) {
+		case "bd", "dolt":
+			overrides[readPackName(dir)] = true
+		}
+	}
+
+	return overrides
+}
+
+func packDirsForCheck(cfg *config.City) []string {
+	dirs := append([]string{}, cfg.PackDirs...)
+	for _, rigDirs := range cfg.RigPackDirs {
+		dirs = append(dirs, rigDirs...)
+	}
+	return dirs
+}
+
+func isSubpath(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+func readPackName(dir string) string {
+	data, err := os.ReadFile(filepath.Join(dir, "pack.toml"))
+	if err != nil {
+		return ""
+	}
+	var pc struct {
+		Pack struct {
+			Name string `toml:"name"`
+		} `toml:"pack"`
+	}
+	if _, err := toml.Decode(string(data), &pc); err != nil {
+		return ""
+	}
+	return pc.Pack.Name
+}
 
 // --- Infrastructure checks ---
 
