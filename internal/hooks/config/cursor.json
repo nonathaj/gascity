@@ -3,12 +3,12 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime"
+        "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime --hook"
       }
     ],
     "preCompact": [
       {
-        "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime"
+        "command": "export PATH=\"$HOME/go/bin:$HOME/.local/bin:$PATH\" && gc prime --hook"
       }
     ],
     "beforeSubmitPrompt": [

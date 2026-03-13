@@ -1960,6 +1960,48 @@ prompt_template = ".gc/prompts/mayor.md"
 	}
 }
 
+func TestDoPrimeUsesGCAgentEnv(t *testing.T) {
+	dir := t.TempDir()
+	gcDir := filepath.Join(dir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	promptContent := "You are the mayor. Plan and delegate work.\n"
+	if err := os.WriteFile(filepath.Join(promptsDir, "mayor.md"), []byte(promptContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toml := `[workspace]
+name = "test-city"
+
+[[agent]]
+name = "mayor"
+prompt_template = ".gc/prompts/mayor.md"
+`
+	if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GC_AGENT", "mayor")
+
+	var stdout, stderr bytes.Buffer
+	code := doPrime(nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doPrime = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stdout.String() != promptContent {
+		t.Errorf("stdout = %q, want %q", stdout.String(), promptContent)
+	}
+}
+
 func TestDoPrimeWithUnknownAgent(t *testing.T) {
 	// Set up a temp city with a mayor agent.
 	dir := t.TempDir()
@@ -2057,6 +2099,75 @@ max = 3
 	}
 	if stdout.String() != promptContent {
 		t.Errorf("stdout = %q, want pool worker prompt %q", stdout.String(), promptContent)
+	}
+}
+
+func TestDoPrimeHookPersistsSessionID(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	promptsDir := filepath.Join(dir, ".gc", "prompts")
+	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	promptContent := "You are the mayor. Plan and delegate work.\n"
+	if err := os.WriteFile(filepath.Join(promptsDir, "mayor.md"), []byte(promptContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	toml := `[workspace]
+name = "test-city"
+
+[[agent]]
+name = "mayor"
+prompt_template = ".gc/prompts/mayor.md"
+`
+	if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GC_AGENT", "mayor")
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldPrimeStdin := primeStdin
+	primeStdin = func() *os.File { return reader }
+	t.Cleanup(func() {
+		primeStdin = oldPrimeStdin
+		_ = reader.Close()
+	})
+	if err := json.NewEncoder(writer).Encode(map[string]string{
+		"session_id": "sess-123",
+		"source":     "startup",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doPrimeWithMode(nil, &stdout, &stderr, true)
+	if code != 0 {
+		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stdout.String() != promptContent {
+		t.Errorf("stdout = %q, want %q", stdout.String(), promptContent)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".runtime", "session_id"))
+	if err != nil {
+		t.Fatalf("reading persisted session ID: %v", err)
+	}
+	if got := strings.TrimSpace(string(data)); got != "sess-123" {
+		t.Errorf("persisted session ID = %q, want %q", got, "sess-123")
 	}
 }
 

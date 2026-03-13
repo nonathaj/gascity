@@ -1,6 +1,6 @@
 // Package hooks installs provider-specific agent hook files into working
-// directories. Each provider (Claude, Gemini, OpenCode, Copilot) has its own
-// file format and install location. Hook files are embedded at build time
+// directories. Each provider (Claude, Codex, Gemini, OpenCode, Copilot, etc.)
+// has its own file format and install location. Hook files are embedded at build time
 // and written idempotently — existing files are never overwritten.
 package hooks
 
@@ -17,10 +17,10 @@ import (
 var configFS embed.FS
 
 // supported lists provider names that have hook support.
-var supported = []string{"claude", "gemini", "opencode", "copilot", "cursor", "pi", "omp"}
+var supported = []string{"claude", "codex", "gemini", "opencode", "copilot", "cursor", "pi", "omp"}
 
 // unsupported lists provider names that have no hook mechanism.
-var unsupported = []string{"codex", "amp", "auggie"}
+var unsupported = []string{"amp", "auggie"}
 
 // SupportedProviders returns the list of provider names with hook support.
 func SupportedProviders() []string {
@@ -67,6 +67,8 @@ func Install(fs fsys.FS, cityDir, workDir string, providers []string) error {
 		switch p {
 		case "claude":
 			err = installClaude(fs, cityDir)
+		case "codex":
+			err = installCodex(fs, workDir)
 		case "gemini":
 			err = installGemini(fs, workDir)
 		case "opencode":
@@ -101,16 +103,26 @@ func installGemini(fs fsys.FS, workDir string) error {
 	return writeEmbedded(fs, "config/gemini.json", dst)
 }
 
+// installCodex writes .codex/hooks.json in the working directory.
+func installCodex(fs fsys.FS, workDir string) error {
+	dst := filepath.Join(workDir, ".codex", "hooks.json")
+	return writeEmbedded(fs, "config/codex.json", dst)
+}
+
 // installOpenCode writes .opencode/plugins/gascity.js in the working directory.
 func installOpenCode(fs fsys.FS, workDir string) error {
 	dst := filepath.Join(workDir, ".opencode", "plugins", "gascity.js")
 	return writeEmbedded(fs, "config/opencode.js", dst)
 }
 
-// installCopilot writes .github/copilot-instructions.md in the working directory.
+// installCopilot writes executable Copilot hooks plus a markdown companion file.
 func installCopilot(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".github", "copilot-instructions.md")
-	return writeEmbedded(fs, "config/copilot.md", dst)
+	hooksPath := filepath.Join(workDir, ".github", "hooks", "gascity.json")
+	if err := writeEmbedded(fs, "config/copilot.json", hooksPath); err != nil {
+		return err
+	}
+	instructionsPath := filepath.Join(workDir, ".github", "copilot-instructions.md")
+	return writeEmbedded(fs, "config/copilot.md", instructionsPath)
 }
 
 // installCursor writes .cursor/hooks.json in the working directory.

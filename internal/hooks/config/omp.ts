@@ -28,8 +28,8 @@ export default {
   name: "gascity",
 
   events: {
-    "session.created": () => run("gc prime"),
-    "session.compacted": () => run("gc prime"),
+    "session.created": () => run("gc prime --hook"),
+    "session.compacted": () => run("gc prime --hook"),
     "session.deleted": () => run("gc hook --inject"),
   },
 

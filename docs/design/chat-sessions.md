@@ -301,10 +301,10 @@ on stdin to SessionStart hooks. Gastown's `gt prime --hook` reads this
 JSON, persists the session ID to `.runtime/session_id`, and uses it
 for handoff/resume cycles.
 
-Gas City already installs hooks via `gc prime --hook`. The hook can
-read the session ID from stdin and store it in tmux session metadata
-(`SetMeta("session_key", id)`), confirming or supplementing the
-Generate & Pass ID.
+Gas City now installs `gc prime --hook` in the managed hook templates.
+The hook resolves the agent from `GC_AGENT`, reads session metadata from
+`GC_SESSION_ID`, `CLAUDE_SESSION_ID`, or stdin JSON, and persists the
+session ID to `.runtime/session_id` for later reconciliation.
 
 **Reliability: High.** The provider explicitly sends the ID. Requires
 hooks to be installed. Useful as a belt-and-suspenders validation

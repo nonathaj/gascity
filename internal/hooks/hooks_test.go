@@ -10,10 +10,10 @@ import (
 
 func TestSupportedProviders(t *testing.T) {
 	got := SupportedProviders()
-	if len(got) != 7 {
-		t.Fatalf("SupportedProviders() = %v, want 7 entries", got)
+	if len(got) != 8 {
+		t.Fatalf("SupportedProviders() = %v, want 8 entries", got)
 	}
-	want := map[string]bool{"claude": true, "gemini": true, "opencode": true, "copilot": true, "cursor": true, "pi": true, "omp": true}
+	want := map[string]bool{"claude": true, "codex": true, "gemini": true, "opencode": true, "copilot": true, "cursor": true, "pi": true, "omp": true}
 	for _, p := range got {
 		if !want[p] {
 			t.Errorf("unexpected provider %q", p)
@@ -22,18 +22,18 @@ func TestSupportedProviders(t *testing.T) {
 }
 
 func TestValidateAcceptsSupported(t *testing.T) {
-	if err := Validate([]string{"claude", "gemini"}); err != nil {
-		t.Errorf("Validate([claude gemini]) = %v, want nil", err)
+	if err := Validate([]string{"claude", "codex", "gemini"}); err != nil {
+		t.Errorf("Validate([claude codex gemini]) = %v, want nil", err)
 	}
 }
 
 func TestValidateRejectsUnsupported(t *testing.T) {
-	err := Validate([]string{"claude", "codex", "auggie", "bogus"})
+	err := Validate([]string{"claude", "amp", "auggie", "bogus"})
 	if err == nil {
-		t.Fatal("Validate should reject codex, auggie, and bogus")
+		t.Fatal("Validate should reject amp, auggie, and bogus")
 	}
-	if !strings.Contains(err.Error(), "codex (no hook mechanism)") {
-		t.Errorf("error should mention codex: %v", err)
+	if !strings.Contains(err.Error(), "amp (no hook mechanism)") {
+		t.Errorf("error should mention amp: %v", err)
 	}
 	if !strings.Contains(err.Error(), "auggie (no hook mechanism)") {
 		t.Errorf("error should mention auggie: %v", err)
@@ -95,6 +95,28 @@ func TestInstallGemini(t *testing.T) {
 	}
 }
 
+func TestInstallCodex(t *testing.T) {
+	fs := fsys.NewFake()
+	err := Install(fs, "/city", "/work", []string{"codex"})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, ok := fs.Files["/work/.codex/hooks.json"]
+	if !ok {
+		t.Fatal("expected /work/.codex/hooks.json to be written")
+	}
+	s := string(data)
+	if !strings.Contains(s, "SessionStart") {
+		t.Error("codex hooks should contain SessionStart")
+	}
+	if !strings.Contains(s, "gc prime --hook") {
+		t.Error("codex hooks should contain gc prime --hook")
+	}
+	if !strings.Contains(s, "gc hook --inject") {
+		t.Error("codex hooks should contain gc hook --inject")
+	}
+}
+
 func TestInstallOpenCode(t *testing.T) {
 	fs := fsys.NewFake()
 	err := Install(fs, "/city", "/work", []string{"opencode"})
@@ -116,29 +138,45 @@ func TestInstallCopilot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	data, ok := fs.Files["/work/.github/copilot-instructions.md"]
+	data, ok := fs.Files["/work/.github/hooks/gascity.json"]
 	if !ok {
-		t.Fatal("expected /work/.github/copilot-instructions.md to be written")
+		t.Fatal("expected /work/.github/hooks/gascity.json to be written")
 	}
-	if !strings.Contains(string(data), "gc prime") {
-		t.Error("copilot instructions should contain gc prime")
+	s := string(data)
+	if !strings.Contains(s, "sessionStart") {
+		t.Error("copilot hooks should contain sessionStart")
+	}
+	if !strings.Contains(s, "gc prime --hook") {
+		t.Error("copilot hooks should contain gc prime --hook")
+	}
+	if !strings.Contains(s, "gc mail check --inject") {
+		t.Error("copilot hooks should contain gc mail check --inject")
+	}
+	if !strings.Contains(s, "gc hook --inject") {
+		t.Error("copilot hooks should contain gc hook --inject")
+	}
+	if _, ok := fs.Files["/work/.github/copilot-instructions.md"]; !ok {
+		t.Fatal("expected /work/.github/copilot-instructions.md companion to be written")
 	}
 }
 
 func TestInstallMultipleProviders(t *testing.T) {
 	fs := fsys.NewFake()
-	err := Install(fs, "/city", "/work", []string{"claude", "gemini", "copilot"})
+	err := Install(fs, "/city", "/work", []string{"claude", "codex", "gemini", "copilot"})
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	if _, ok := fs.Files["/city/.gc/settings.json"]; !ok {
 		t.Error("missing claude settings")
 	}
+	if _, ok := fs.Files["/work/.codex/hooks.json"]; !ok {
+		t.Error("missing codex hooks")
+	}
 	if _, ok := fs.Files["/work/.gemini/settings.json"]; !ok {
 		t.Error("missing gemini settings")
 	}
-	if _, ok := fs.Files["/work/.github/copilot-instructions.md"]; !ok {
-		t.Error("missing copilot instructions")
+	if _, ok := fs.Files["/work/.github/hooks/gascity.json"]; !ok {
+		t.Error("missing copilot executable hooks")
 	}
 }
 
@@ -183,8 +221,8 @@ func TestInstallCursor(t *testing.T) {
 	if !strings.Contains(string(data), "sessionStart") {
 		t.Error("cursor hooks should contain sessionStart")
 	}
-	if !strings.Contains(string(data), "gc prime") {
-		t.Error("cursor hooks should contain gc prime")
+	if !strings.Contains(string(data), "gc prime --hook") {
+		t.Error("cursor hooks should contain gc prime --hook")
 	}
 	if !strings.Contains(string(data), "gc mail check --inject") {
 		t.Error("cursor hooks should contain gc mail check --inject")
@@ -202,8 +240,8 @@ func TestInstallPi(t *testing.T) {
 		t.Fatal("expected /work/.pi/extensions/gc-hooks.js to be written")
 	}
 	s := string(data)
-	if !strings.Contains(s, "gc prime") {
-		t.Error("pi hooks should contain gc prime")
+	if !strings.Contains(s, "gc prime --hook") {
+		t.Error("pi hooks should contain gc prime --hook")
 	}
 	if !strings.Contains(s, "gc hook --inject") {
 		t.Error("pi hooks should contain gc hook --inject")
@@ -221,8 +259,8 @@ func TestInstallOmp(t *testing.T) {
 		t.Fatal("expected /work/.omp/hooks/gc-hook.ts to be written")
 	}
 	s := string(data)
-	if !strings.Contains(s, "gc prime") {
-		t.Error("omp hooks should contain gc prime")
+	if !strings.Contains(s, "gc prime --hook") {
+		t.Error("omp hooks should contain gc prime --hook")
 	}
 	if !strings.Contains(s, "gc hook --inject") {
 		t.Error("omp hooks should contain gc hook --inject")

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -35,8 +38,18 @@ and execute it.
 4. Check for more work. Repeat until the queue is empty.
 `
 
+const primeHookReadTimeout = 500 * time.Millisecond
+
+var primeStdin = func() *os.File { return os.Stdin }
+
+type primeHookInput struct {
+	SessionID string `json:"session_id"`
+	Source    string `json:"source"`
+}
+
 // newPrimeCmd creates the "gc prime [agent-name]" command.
 func newPrimeCmd(stdout, stderr io.Writer) *cobra.Command {
+	var hookMode bool
 	cmd := &cobra.Command{
 		Use:   "prime [agent-name]",
 		Short: "Output the behavioral prompt for an agent",
@@ -46,16 +59,20 @@ Use it to prime any CLI coding agent with city-aware instructions:
   claude "$(gc prime mayor)"
   codex --prompt "$(gc prime worker)"
 
+Runtime hook profiles may call ` + "`gc prime --hook`" + `.
+When agent-name is omitted, ` + "`GC_AGENT`" + ` is used automatically.
+
 If agent-name matches a configured agent with a prompt_template,
 that template is output. Otherwise outputs a default worker prompt.`,
 		Args: cobra.MaximumNArgs(1),
 	}
 	cmd.RunE = func(_ *cobra.Command, args []string) error {
-		if doPrime(args, stdout, stderr) != 0 {
+		if doPrimeWithMode(args, stdout, stderr, hookMode) != 0 {
 			return errExit
 		}
 		return nil
 	}
+	cmd.Flags().BoolVar(&hookMode, "hook", false, "compatibility mode for runtime hook invocations")
 	return cmd
 }
 
@@ -63,9 +80,18 @@ that template is output. Otherwise outputs a default worker prompt.`,
 // city.toml and outputs the corresponding prompt template. Falls back to
 // the default run-once prompt if no match is found or no city exists.
 func doPrime(args []string, stdout, _ io.Writer) int { //nolint:unparam // always returns 0 by design (graceful fallback)
-	agentName := ""
+	return doPrimeWithMode(args, stdout, io.Discard, false)
+}
+
+func doPrimeWithMode(args []string, stdout, _ io.Writer, hookMode bool) int { //nolint:unparam // always returns 0 by design (graceful fallback)
+	agentName := os.Getenv("GC_AGENT")
 	if len(args) > 0 {
 		agentName = args[0]
+	}
+	if hookMode {
+		if sessionID, _ := readPrimeHookContext(); sessionID != "" {
+			persistPrimeHookSessionID(sessionID)
+		}
 	}
 
 	// Try to find city and load config.
@@ -116,6 +142,81 @@ func doPrime(args []string, stdout, _ io.Writer) int { //nolint:unparam // alway
 	// Fallback: default run-once prompt.
 	fmt.Fprint(stdout, defaultPrimePrompt) //nolint:errcheck // best-effort stdout
 	return 0
+}
+
+func readPrimeHookContext() (sessionID, source string) {
+	source = os.Getenv("GC_HOOK_SOURCE")
+	if id := os.Getenv("GC_SESSION_ID"); id != "" {
+		return id, source
+	}
+	if id := os.Getenv("CLAUDE_SESSION_ID"); id != "" {
+		return id, source
+	}
+	if input := readPrimeHookStdin(); input != nil {
+		if input.Source != "" {
+			source = input.Source
+		}
+		if input.SessionID != "" {
+			return input.SessionID, source
+		}
+	}
+	return "", source
+}
+
+func readPrimeHookStdin() *primeHookInput {
+	stdin := primeStdin()
+	stat, err := stdin.Stat()
+	if err != nil {
+		return nil
+	}
+	if (stat.Mode() & os.ModeCharDevice) != 0 {
+		return nil
+	}
+
+	type readResult struct {
+		line string
+		err  error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		ch <- readResult{line: line, err: err}
+	}()
+
+	var line string
+	select {
+	case res := <-ch:
+		if res.err != nil && res.line == "" {
+			return nil
+		}
+		line = strings.TrimSpace(res.line)
+	case <-time.After(primeHookReadTimeout):
+		return nil
+	}
+	if line == "" {
+		return nil
+	}
+
+	var input primeHookInput
+	if err := json.Unmarshal([]byte(line), &input); err != nil {
+		return nil
+	}
+	return &input
+}
+
+func persistPrimeHookSessionID(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	runtimeDir := filepath.Join(cwd, ".runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(runtimeDir, "session_id"), []byte(sessionID+"\n"), 0o644)
 }
 
 // findAgentByName looks up an agent by its bare config name, ignoring dir.

@@ -348,12 +348,13 @@ become role-agnostic infrastructure that any pack can use.
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
 | Hook installation (Claude) | Hook installation (Claude) | **DONE** | `.gc/settings.json` — includes `skipDangerousModePermissionPrompt`, `editorMode`, PATH export |
+| Hook installation (Codex) | Hook installation (Codex) | **DONE** | `.codex/hooks.json` — SessionStart primes via `gc prime --hook`; Stop checks queued work via `gc hook --inject` |
 | Hook installation (Gemini) | Hook installation (Gemini) | **DONE** | `.gemini/settings.json` — event names (`SessionStart`, `PreCompress`, `BeforeAgent`, `SessionEnd`) verified correct against Gemini CLI docs and gastown upstream. |
-| Hook installation (OpenCode) | Hook installation (OpenCode) | **DONE** | `.opencode/automations/gascity.js` |
-| Hook installation (Copilot) | Hook installation (Copilot) | **DONE** | `.github/copilot-instructions.md` |
+| Hook installation (OpenCode) | Hook installation (OpenCode) | **DONE** | `.opencode/plugins/gascity.js` |
+| Hook installation (Copilot) | Hook installation (Copilot) | **DONE** | `.github/hooks/gascity.json` with `.github/copilot-instructions.md` as a companion fallback |
 | Hook installation (Pi) | Hook installation (Pi) | **DONE** | `.pi/extensions/gc-hooks.js` |
 | Hook installation (OMP) | Hook installation (OMP) | **DONE** | `.omp/hooks/gc-hook.ts` |
-| Provider `SupportsHooks` flag | `ProviderSpec.SupportsHooks` | **DONE** | Per-provider hook support indicator; used in `AgentHasHooks` default |
+| Provider `SupportsHooks` flag | `ProviderSpec.SupportsHooks` | **DONE** | Per-provider hook metadata; cross-checked against installer support. `AgentHasHooks` still requires Claude, explicit `install_agent_hooks`, or `hooks_installed`. |
 | Provider `InstructionsFile` | `ProviderSpec.InstructionsFile` | **DONE** | Per-provider instructions file (e.g., `CLAUDE.md`, `AGENTS.md`) |
 | `gt hooks sync` | — | **TODO** | Regenerate all settings files from config |
 | `gt hooks diff` | — | **TODO** | Preview what sync would change |

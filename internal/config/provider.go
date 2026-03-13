@@ -150,8 +150,8 @@ func BuiltinProviderOrder() []string {
 
 // BuiltinProviders returns the built-in provider presets.
 // These are available without any [providers] section in city.toml.
-// Lifted from gastown's AgentPresetInfo table — only startup-relevant
-// fields are included (session resume, hooks, etc. are future work).
+// Lifted from gastown's AgentPresetInfo table — only the runtime-facing
+// fields Gas City currently uses are included here.
 func BuiltinProviders() map[string]ProviderSpec {
 	return map[string]ProviderSpec{
 		"claude": {
@@ -215,6 +215,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 			PromptMode:       "none",
 			ReadyDelayMs:     3000,
 			ProcessNames:     []string{"codex"},
+			SupportsHooks:    true,
 			InstructionsFile: "AGENTS.md",
 			PermissionModes: map[string]string{
 				"suggest":      "--ask-for-approval untrusted --sandbox read-only",

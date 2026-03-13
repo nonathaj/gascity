@@ -1232,12 +1232,19 @@ Use it to prime any CLI coding agent with city-aware instructions:
   claude "$(gc prime mayor)"
   codex --prompt "$(gc prime worker)"
 
+Runtime hook profiles may call `gc prime --hook`.
+When agent-name is omitted, `GC_AGENT` is used automatically.
+
 If agent-name matches a configured agent with a prompt_template,
 that template is output. Otherwise outputs a default worker prompt.
 
 ```
-gc prime [agent-name]
+gc prime [agent-name] [flags]
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--hook` | bool |  | compatibility mode for runtime hook invocations |
 
 ## gc register
 
@@ -1861,4 +1868,3 @@ When built with go install, VCS metadata is read from the binary.
 ```
 gc version
 ```
-

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -127,5 +129,38 @@ func TestPassthroughEnvSkipsClaudeNestingWhenUnset(t *testing.T) {
 	}
 	if _, ok := got["CLAUDE_CODE_ENTRYPOINT"]; ok {
 		t.Error("CLAUDE_CODE_ENTRYPOINT should not be present when unset in parent")
+	}
+}
+
+func TestStageHookFilesIncludesCodexAndCopilotExecutableHooks(t *testing.T) {
+	cityDir := filepath.Join(t.TempDir(), "city")
+	workDir := filepath.Join(cityDir, "worker")
+	for _, rel := range []string{
+		filepath.Join(".codex", "hooks.json"),
+		filepath.Join(".github", "hooks", "gascity.json"),
+		filepath.Join(".github", "copilot-instructions.md"),
+	} {
+		path := filepath.Join(workDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", path, err)
+		}
+	}
+
+	got := stageHookFiles(nil, cityDir, workDir)
+	rels := make(map[string]bool, len(got))
+	for _, entry := range got {
+		rels[entry.RelDst] = true
+	}
+	for _, rel := range []string{
+		filepath.Join(".codex", "hooks.json"),
+		filepath.Join(".github", "hooks", "gascity.json"),
+		filepath.Join(".github", "copilot-instructions.md"),
+	} {
+		if !rels[rel] {
+			t.Errorf("stageHookFiles() missing %q", rel)
+		}
 	}
 }

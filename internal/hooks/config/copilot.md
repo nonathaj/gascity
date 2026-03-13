@@ -1,6 +1,9 @@
 # Gas City Agent Instructions
 
-You are an agent in a Gas City orchestration. Follow these protocols:
+You are an agent in a Gas City orchestration.
+
+Executable Copilot hooks should already run these commands for you. If hooks
+are unavailable or stale, follow the protocols below manually.
 
 ## Startup
 
