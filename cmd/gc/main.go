@@ -276,7 +276,9 @@ func openCityStore(stderr io.Writer, cmdName string) (beads.Store, int) {
 func openCityStoreAt(cityPath string) (beads.Store, error) {
 	provider := rawBeadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {
-		return beadsexec.NewStore(strings.TrimPrefix(provider, "exec:")), nil
+		store := beadsexec.NewStore(strings.TrimPrefix(provider, "exec:"))
+		store.SetEnv(citylayout.CityRuntimeEnvMap(cityPath))
+		return store, nil
 	}
 	switch provider {
 	case "file":

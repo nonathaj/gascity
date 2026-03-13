@@ -23,7 +23,7 @@ reproduce. A blind restart destroys the evidence. Always:
 
 ```bash
 # 1. Capture goroutine dump (safe — does not kill the process)
-kill -QUIT $(cat {{ .CityRoot }}/.gc/dolt.pid)
+kill -QUIT $(cat {{ .CityRoot }}/.gc/runtime/packs/dolt/dolt.pid)
 
 # 2. Capture server status while it's still (mis)behaving
 gc dolt status 2>&1 | tee /tmp/dolt-hang-$(date +%s).log

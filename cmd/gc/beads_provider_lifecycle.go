@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
@@ -206,7 +207,7 @@ func runProviderProbe(script, cityPath string) bool {
 	cmd := exec.CommandContext(ctx, script, "probe")
 	cmd.WaitDelay = 2 * time.Second
 	if cityPath != "" {
-		cmd.Env = append(os.Environ(), "GC_CITY_PATH="+cityPath)
+		cmd.Env = append(os.Environ(), citylayout.CityRuntimeEnv(cityPath)...)
 	}
 	return cmd.Run() == nil
 }
@@ -223,7 +224,7 @@ func runProviderOp(script, cityPath string, args ...string) error {
 	cmd := exec.CommandContext(ctx, script, args...)
 	cmd.WaitDelay = 2 * time.Second
 	if cityPath != "" {
-		cmd.Env = append(os.Environ(), "GC_CITY_PATH="+cityPath)
+		cmd.Env = append(os.Environ(), citylayout.CityRuntimeEnv(cityPath)...)
 	}
 
 	var stderr bytes.Buffer

@@ -66,7 +66,10 @@ script = "commands/info.sh"
 	helloScript := `#!/bin/sh
 echo "hello from $GC_PACK_NAME"
 echo "city=$GC_CITY_PATH"
+echo "cityroot=$GC_CITY_ROOT"
+echo "runtime=$GC_CITY_RUNTIME_DIR"
 echo "packdir=$GC_PACK_DIR"
+echo "packstate=$GC_PACK_STATE_DIR"
 echo "cityname=$GC_CITY_NAME"
 echo "args=$*"
 `
@@ -253,8 +256,17 @@ func TestPackCommandExecution(t *testing.T) {
 	if !strings.Contains(out, "city="+cityPath) {
 		t.Errorf("stdout missing city path, got:\n%s", out)
 	}
+	if !strings.Contains(out, "cityroot="+cityPath) {
+		t.Errorf("stdout missing city root, got:\n%s", out)
+	}
+	if !strings.Contains(out, "runtime="+filepath.Join(cityPath, ".gc", "runtime")) {
+		t.Errorf("stdout missing runtime dir, got:\n%s", out)
+	}
 	if !strings.Contains(out, "packdir="+packDir) {
 		t.Errorf("stdout missing pack dir, got:\n%s", out)
+	}
+	if !strings.Contains(out, "packstate="+filepath.Join(cityPath, ".gc", "runtime", "packs", "mypack")) {
+		t.Errorf("stdout missing pack state dir, got:\n%s", out)
 	}
 	if !strings.Contains(out, "cityname=testcity") {
 		t.Errorf("stdout missing city name, got:\n%s", out)

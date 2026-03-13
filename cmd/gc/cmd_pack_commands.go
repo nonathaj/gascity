@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/spf13/cobra"
@@ -147,8 +148,8 @@ func runPackCommand(info config.PackCommandInfo, cityPath, cityName string, args
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = append(os.Environ(),
-		"GC_CITY_PATH="+cityPath,
+	cmd.Env = append(os.Environ(), citylayout.PackRuntimeEnv(cityPath, info.PackName)...)
+	cmd.Env = append(cmd.Env,
 		"GC_PACK_DIR="+info.PackDir,
 		"GC_PACK_NAME="+info.PackName,
 		"GC_CITY_NAME="+cityName,

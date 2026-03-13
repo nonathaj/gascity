@@ -1,0 +1,23 @@
+#!/bin/sh
+
+: "${GC_CITY_PATH:?GC_CITY_PATH must be set}"
+
+CITY_RUNTIME_DIR="${GC_CITY_RUNTIME_DIR:-$GC_CITY_PATH/.gc/runtime}"
+PACK_STATE_DIR="${GC_PACK_STATE_DIR:-$CITY_RUNTIME_DIR/packs/dolt}"
+LEGACY_GC_DIR="$GC_CITY_PATH/.gc"
+
+if [ -d "$PACK_STATE_DIR" ] || [ ! -d "$LEGACY_GC_DIR/dolt-data" ]; then
+  DOLT_STATE_DIR="$PACK_STATE_DIR"
+else
+  DOLT_STATE_DIR="$LEGACY_GC_DIR"
+fi
+
+DOLT_DATA_DIR="$DOLT_STATE_DIR/dolt-data"
+DOLT_LOG_FILE="$DOLT_STATE_DIR/dolt.log"
+DOLT_PID_FILE="$DOLT_STATE_DIR/dolt.pid"
+
+if [ -x "$GC_CITY_PATH/.gc/system/bin/gc-beads-bd" ]; then
+  GC_BEADS_BD_SCRIPT="$GC_CITY_PATH/.gc/system/bin/gc-beads-bd"
+else
+  GC_BEADS_BD_SCRIPT="$GC_CITY_PATH/.gc/bin/gc-beads-bd"
+fi

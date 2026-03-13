@@ -10,7 +10,9 @@ set -e
 
 : "${GC_DOLT_PORT:=3307}"
 : "${GC_DOLT_USER:=root}"
-data_dir="$GC_CITY_PATH/.gc/dolt-data"
+PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
+. "$PACK_DIR/scripts/runtime.sh"
+data_dir="$DOLT_DATA_DIR"
 
 # Check if the server is reachable.
 is_running() {

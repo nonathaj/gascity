@@ -6,7 +6,9 @@
 # Environment: GC_CITY_PATH
 set -e
 
-data_dir="$GC_CITY_PATH/.gc/dolt-data"
+PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
+. "$PACK_DIR/scripts/runtime.sh"
+data_dir="$DOLT_DATA_DIR"
 
 if [ ! -d "$data_dir" ]; then
   echo "No databases found."

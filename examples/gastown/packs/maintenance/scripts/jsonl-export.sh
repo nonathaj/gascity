@@ -10,15 +10,26 @@ set -euo pipefail
 
 CITY="${GC_CITY_ROOT:-.}"
 DOLT_PORT="${GC_DOLT_PORT:-3307}"
+PACK_STATE_DIR="${GC_PACK_STATE_DIR:-${GC_CITY_RUNTIME_DIR:-$CITY/.gc/runtime}/packs/maintenance}"
+LEGACY_ARCHIVE_REPO="$CITY/.gc/jsonl-archive"
+LEGACY_STATE_FILE="$CITY/.gc/jsonl-export-state.json"
 
 # Configurable via environment (defaults match the old formula).
 SPIKE_THRESHOLD="${GC_JSONL_SPIKE_THRESHOLD:-20}"  # percentage (0-100)
 MAX_PUSH_FAILURES="${GC_JSONL_MAX_PUSH_FAILURES:-3}"
 SCRUB="${GC_JSONL_SCRUB:-true}"
-ARCHIVE_REPO="${GC_JSONL_ARCHIVE_REPO:-$CITY/.gc/jsonl-archive}"
+ARCHIVE_REPO="${GC_JSONL_ARCHIVE_REPO:-$PACK_STATE_DIR/jsonl-archive}"
 
 # State file for tracking consecutive push failures.
-STATE_FILE="$CITY/.gc/jsonl-export-state.json"
+STATE_FILE="$PACK_STATE_DIR/jsonl-export-state.json"
+
+if [ -z "${GC_JSONL_ARCHIVE_REPO:-}" ] && [ ! -d "$ARCHIVE_REPO/.git" ] && [ -d "$LEGACY_ARCHIVE_REPO/.git" ]; then
+    ARCHIVE_REPO="$LEGACY_ARCHIVE_REPO"
+fi
+if [ ! -e "$STATE_FILE" ] && [ -e "$LEGACY_STATE_FILE" ]; then
+    STATE_FILE="$LEGACY_STATE_FILE"
+fi
+mkdir -p "$(dirname "$STATE_FILE")"
 
 # Discover databases.
 DATABASES=$(dolt sql -P "$DOLT_PORT" -r csv -q "SHOW DATABASES" 2>/dev/null | tail -n +2 | grep -v '^information_schema$\|^mysql$' || true)

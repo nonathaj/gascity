@@ -145,16 +145,16 @@ func TestRunProviderOp_errorNoStderr(t *testing.T) {
 	}
 }
 
-// TestRunProviderOp_setsGCCityPath verifies GC_CITY_PATH is set in the script env.
-func TestRunProviderOp_setsGCCityPath(t *testing.T) {
+// TestRunProviderOp_setsCityRuntimeEnv verifies city runtime env vars are set in the script env.
+func TestRunProviderOp_setsCityRuntimeEnv(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "check-env.sh")
-	content := "#!/bin/sh\nif [ \"$GC_CITY_PATH\" = \"" + dir + "\" ]; then exit 0; else exit 1; fi\n"
+	content := "#!/bin/sh\nif [ \"$GC_CITY_PATH\" = \"" + dir + "\" ] && [ \"$GC_CITY_ROOT\" = \"" + dir + "\" ] && [ \"$GC_CITY_RUNTIME_DIR\" = \"" + filepath.Join(dir, ".gc", "runtime") + "\" ]; then exit 0; else exit 1; fi\n"
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := runProviderOp(script, dir, "health"); err != nil {
-		t.Fatalf("expected GC_CITY_PATH to be set, got %v", err)
+		t.Fatalf("expected city runtime env to be set, got %v", err)
 	}
 }
 

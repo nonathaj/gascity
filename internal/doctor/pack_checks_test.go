@@ -23,6 +23,7 @@ func TestPackScriptCheckOK(t *testing.T) {
 		CheckName: "test-topo:check",
 		Script:    script,
 		PackDir:   dir,
+		PackName:  "test-topo",
 	}
 
 	if c.Name() != "test-topo:check" {
@@ -51,6 +52,7 @@ func TestPackScriptCheckWarning(t *testing.T) {
 		CheckName: "topo:warn",
 		Script:    script,
 		PackDir:   dir,
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: dir})
@@ -74,6 +76,7 @@ func TestPackScriptCheckError(t *testing.T) {
 		CheckName: "topo:err",
 		Script:    script,
 		PackDir:   dir,
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: dir})
@@ -94,6 +97,7 @@ func TestPackScriptCheckNotFound(t *testing.T) {
 		CheckName: "topo:missing",
 		Script:    "/nonexistent/script.sh",
 		PackDir:   t.TempDir(),
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: t.TempDir()})
@@ -117,6 +121,7 @@ func TestPackScriptCheckNotExecutable(t *testing.T) {
 		CheckName: "topo:noexec",
 		Script:    path,
 		PackDir:   dir,
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: dir})
@@ -134,6 +139,7 @@ func TestPackScriptCheckEmptyOutput(t *testing.T) {
 		CheckName: "topo:empty",
 		Script:    script,
 		PackDir:   dir,
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: dir})
@@ -151,12 +157,13 @@ func TestPackScriptCheckEnvVars(t *testing.T) {
 	cityPath := t.TempDir()
 	// Script echoes env vars to verify they're passed.
 	script := writeCheckScript(t, dir,
-		"#!/bin/sh\necho \"city=$GC_CITY_PATH topo=$GC_PACK_DIR\"\nexit 0\n")
+		"#!/bin/sh\necho \"city=$GC_CITY_PATH root=$GC_CITY_ROOT runtime=$GC_CITY_RUNTIME_DIR topo=$GC_PACK_DIR state=$GC_PACK_STATE_DIR\"\nexit 0\n")
 
 	c := &PackScriptCheck{
 		CheckName: "topo:env",
 		Script:    script,
 		PackDir:   dir,
+		PackName:  "topo",
 	}
 
 	result := c.Run(&CheckContext{CityPath: cityPath})
@@ -164,7 +171,11 @@ func TestPackScriptCheckEnvVars(t *testing.T) {
 	if result.Status != StatusOK {
 		t.Errorf("Status = %d, want StatusOK", result.Status)
 	}
-	expected := "city=" + cityPath + " topo=" + dir
+	expected := "city=" + cityPath +
+		" root=" + cityPath +
+		" runtime=" + filepath.Join(cityPath, ".gc", "runtime") +
+		" topo=" + dir +
+		" state=" + filepath.Join(cityPath, ".gc", "runtime", "packs", "topo")
 	if result.Message != expected {
 		t.Errorf("Message = %q, want %q", result.Message, expected)
 	}

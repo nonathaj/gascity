@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/citylayout"
 )
 
 // PackScriptCheck implements Check by running a script shipped with
@@ -24,6 +26,8 @@ type PackScriptCheck struct {
 	Script string
 	// PackDir is the absolute pack directory path.
 	PackDir string
+	// PackName is the logical pack name used for runtime env injection.
+	PackName string
 }
 
 // Name returns the check's fully-qualified name.
@@ -39,8 +43,8 @@ func (c *PackScriptCheck) Fix(_ *CheckContext) error { return nil }
 func (c *PackScriptCheck) Run(ctx *CheckContext) *CheckResult {
 	cmd := exec.Command(c.Script) //nolint:gosec // script path from pack config
 	cmd.Dir = c.PackDir
-	cmd.Env = append(cmd.Environ(),
-		"GC_CITY_PATH="+ctx.CityPath,
+	cmd.Env = append(cmd.Environ(), citylayout.PackRuntimeEnv(ctx.CityPath, c.PackName)...)
+	cmd.Env = append(cmd.Env,
 		"GC_PACK_DIR="+c.PackDir,
 	)
 

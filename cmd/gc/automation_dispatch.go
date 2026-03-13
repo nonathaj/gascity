@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 )
@@ -160,12 +161,9 @@ func (m *memoryAutomationDispatcher) dispatchExec(ctx context.Context, a automat
 	scoped := a.ScopedName()
 
 	// Build env with AUTOMATION_DIR and PACK_DIR.
-	var env []string
+	env := automationExecEnv(cityPath, a)
 	if a.Source != "" {
 		env = append(env, "AUTOMATION_DIR="+filepath.Dir(a.Source))
-	}
-	if a.FormulaLayer != "" {
-		env = append(env, "PACK_DIR="+filepath.Dir(a.FormulaLayer))
 	}
 
 	output, err := m.execRun(ctx, a.Exec, cityPath, env)
@@ -194,6 +192,24 @@ func (m *memoryAutomationDispatcher) dispatchExec(ctx context.Context, a automat
 
 	// Label tracking bead with outcome via store (not CLI).
 	m.store.Update(trackingID, beads.UpdateOpts{Labels: labels}) //nolint:errcheck // best-effort
+}
+
+func automationExecEnv(cityPath string, a automations.Automation) []string {
+	env := citylayout.CityRuntimeEnv(cityPath)
+	if a.FormulaLayer == "" {
+		return env
+	}
+
+	packDir := filepath.Dir(a.FormulaLayer)
+	env = append(env, "PACK_DIR="+packDir)
+	env = append(env, "GC_PACK_DIR="+packDir)
+
+	packName := filepath.Base(packDir)
+	if packName != "." && packName != string(filepath.Separator) {
+		env = append(env, "GC_PACK_NAME="+packName)
+		env = append(env, "GC_PACK_STATE_DIR="+citylayout.PackStateDir(cityPath, packName))
+	}
+	return env
 }
 
 // dispatchWisp instantiates a wisp from the automation's formula.

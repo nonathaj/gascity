@@ -302,7 +302,7 @@ func TestAutomationRun(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAutomationRun(aa, "digest", "", fakeRunner, store, nil, &stdout, &stderr)
+	code := doAutomationRun(aa, "digest", "", "/city", fakeRunner, store, nil, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doAutomationRun = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -338,7 +338,7 @@ func TestAutomationRunNoPool(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAutomationRun(aa, "cleanup", "", fakeRunner, store, nil, &stdout, &stderr)
+	code := doAutomationRun(aa, "cleanup", "", "/city", fakeRunner, store, nil, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doAutomationRun = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -361,7 +361,7 @@ func TestAutomationRunNoPool(t *testing.T) {
 
 func TestAutomationRunNotFound(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := doAutomationRun(nil, "nonexistent", "", nil, nil, nil, &stdout, &stderr)
+	code := doAutomationRun(nil, "nonexistent", "", "/city", nil, nil, nil, &stdout, &stderr)
 	if code != 1 {
 		t.Fatalf("doAutomationRun = %d, want 1", code)
 	}
@@ -597,7 +597,7 @@ func TestAutomationRunRigQualifiesPool(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doAutomationRun(aa, "db-health", "demo-repo", fakeRunner, store, nil, &stdout, &stderr)
+	code := doAutomationRun(aa, "db-health", "demo-repo", "/city", fakeRunner, store, nil, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doAutomationRun = %d, want 0; stderr: %s", code, stderr.String())
 	}

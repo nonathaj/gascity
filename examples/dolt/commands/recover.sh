@@ -11,8 +11,10 @@ set -e
 
 : "${GC_DOLT_PORT:=3307}"
 : "${GC_DOLT_USER:=root}"
+PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
+. "$PACK_DIR/scripts/runtime.sh"
 
-beads_bd="$GC_CITY_PATH/.gc/bin/gc-beads-bd"
+beads_bd="$GC_BEADS_BD_SCRIPT"
 
 # Reject remote servers — can't manage remote dolt processes.
 if [ -n "$GC_DOLT_HOST" ]; then

@@ -10,13 +10,15 @@ set -e
 
 : "${GC_DOLT_PORT:=3307}"
 : "${GC_DOLT_USER:=root}"
+PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
+. "$PACK_DIR/scripts/runtime.sh"
 
 dry_run=false
 force=false
 do_gc=false
 db_filter=""
-beads_bd="$GC_CITY_PATH/.gc/bin/gc-beads-bd"
-data_dir="$GC_CITY_PATH/.gc/dolt-data"
+beads_bd="$GC_BEADS_BD_SCRIPT"
+data_dir="$DOLT_DATA_DIR"
 
 while [ $# -gt 0 ]; do
   case "$1" in

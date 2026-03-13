@@ -351,17 +351,31 @@ func TestAutomationDispatchExecAutomationDir(t *testing.T) {
 	}}
 	ad := buildAutomationDispatcherFromListExec(aa, store, nil, noopRunner, fakeExec, nil)
 
-	ad.dispatch(context.Background(), t.TempDir(), time.Now())
+	ad.dispatch(context.Background(), "/city-root", time.Now())
 	time.Sleep(100 * time.Millisecond)
 
 	foundDir := false
+	foundCityRoot := false
+	foundRuntime := false
 	for _, e := range gotEnv {
 		if e == "AUTOMATION_DIR=/city/formulas/automations/poll" {
 			foundDir = true
 		}
+		if e == "GC_CITY_ROOT=/city-root" {
+			foundCityRoot = true
+		}
+		if e == "GC_CITY_RUNTIME_DIR=/city-root/.gc/runtime" {
+			foundRuntime = true
+		}
 	}
 	if !foundDir {
 		t.Errorf("AUTOMATION_DIR not set correctly, got env: %v", gotEnv)
+	}
+	if !foundCityRoot {
+		t.Errorf("GC_CITY_ROOT not set correctly, got env: %v", gotEnv)
+	}
+	if !foundRuntime {
+		t.Errorf("GC_CITY_RUNTIME_DIR not set correctly, got env: %v", gotEnv)
 	}
 }
 
@@ -384,11 +398,13 @@ func TestAutomationDispatchExecPackDir(t *testing.T) {
 	}}
 	ad := buildAutomationDispatcherFromListExec(aa, store, nil, noopRunner, fakeExec, nil)
 
-	ad.dispatch(context.Background(), t.TempDir(), time.Now())
+	ad.dispatch(context.Background(), "/city-root", time.Now())
 	time.Sleep(100 * time.Millisecond)
 
 	foundPackDir := false
 	foundAutoDir := false
+	foundPackName := false
+	foundPackState := false
 	for _, e := range gotEnv {
 		if e == "PACK_DIR=/city/packs/maintenance" {
 			foundPackDir = true
@@ -396,12 +412,24 @@ func TestAutomationDispatchExecPackDir(t *testing.T) {
 		if e == "AUTOMATION_DIR=/city/packs/maintenance/formulas/automations/gate-sweep" {
 			foundAutoDir = true
 		}
+		if e == "GC_PACK_NAME=maintenance" {
+			foundPackName = true
+		}
+		if e == "GC_PACK_STATE_DIR=/city-root/.gc/runtime/packs/maintenance" {
+			foundPackState = true
+		}
 	}
 	if !foundPackDir {
 		t.Errorf("PACK_DIR not set correctly, got env: %v", gotEnv)
 	}
 	if !foundAutoDir {
 		t.Errorf("AUTOMATION_DIR not set correctly, got env: %v", gotEnv)
+	}
+	if !foundPackName {
+		t.Errorf("GC_PACK_NAME not set correctly, got env: %v", gotEnv)
+	}
+	if !foundPackState {
+		t.Errorf("GC_PACK_STATE_DIR not set correctly, got env: %v", gotEnv)
 	}
 }
 
@@ -425,12 +453,15 @@ func TestAutomationDispatchExecPackDirEmpty(t *testing.T) {
 	}}
 	ad := buildAutomationDispatcherFromListExec(aa, store, nil, noopRunner, fakeExec, nil)
 
-	ad.dispatch(context.Background(), t.TempDir(), time.Now())
+	ad.dispatch(context.Background(), "/city-root", time.Now())
 	time.Sleep(100 * time.Millisecond)
 
 	for _, e := range gotEnv {
 		if strings.HasPrefix(e, "PACK_DIR=") {
 			t.Errorf("PACK_DIR should not be set when FormulaLayer is empty, got: %s", e)
+		}
+		if strings.HasPrefix(e, "GC_PACK_STATE_DIR=") {
+			t.Errorf("GC_PACK_STATE_DIR should not be set when FormulaLayer is empty, got: %s", e)
 		}
 	}
 }

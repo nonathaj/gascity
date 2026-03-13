@@ -1,0 +1,66 @@
+package citylayout
+
+import "path/filepath"
+
+const (
+	// RuntimeDataRoot is the canonical hidden runtime root for mutable city state.
+	RuntimeDataRoot = ".gc/runtime"
+	// RuntimePacksRoot is the canonical runtime root for pack-owned state.
+	RuntimePacksRoot = ".gc/runtime/packs"
+)
+
+// RuntimeDataDir returns the canonical hidden runtime directory for a city.
+func RuntimeDataDir(cityRoot string) string {
+	return RuntimePath(cityRoot, "runtime")
+}
+
+// RuntimePacksDir returns the canonical root for pack-owned runtime state.
+func RuntimePacksDir(cityRoot string) string {
+	return RuntimePath(cityRoot, "runtime", "packs")
+}
+
+// PackStateDir returns the canonical runtime directory for a named pack.
+func PackStateDir(cityRoot, packName string) string {
+	if packName == "" {
+		return RuntimePacksDir(cityRoot)
+	}
+	return filepath.Join(RuntimePacksDir(cityRoot), packName)
+}
+
+// CityRuntimeEnv returns compatibility-safe city runtime env vars.
+func CityRuntimeEnv(cityRoot string) []string {
+	runtimeDir := RuntimeDataDir(cityRoot)
+	return []string{
+		"GC_CITY_ROOT=" + cityRoot,
+		"GC_CITY_PATH=" + cityRoot,
+		"GC_CITY_RUNTIME_DIR=" + runtimeDir,
+	}
+}
+
+// CityRuntimeEnvMap returns compatibility-safe city runtime env vars.
+func CityRuntimeEnvMap(cityRoot string) map[string]string {
+	runtimeDir := RuntimeDataDir(cityRoot)
+	return map[string]string{
+		"GC_CITY_ROOT":        cityRoot,
+		"GC_CITY_PATH":        cityRoot,
+		"GC_CITY_RUNTIME_DIR": runtimeDir,
+	}
+}
+
+// PackRuntimeEnv returns city runtime env vars plus the canonical pack state dir.
+func PackRuntimeEnv(cityRoot, packName string) []string {
+	env := CityRuntimeEnv(cityRoot)
+	if packName != "" {
+		env = append(env, "GC_PACK_STATE_DIR="+PackStateDir(cityRoot, packName))
+	}
+	return env
+}
+
+// PackRuntimeEnvMap returns city runtime env vars plus the canonical pack state dir.
+func PackRuntimeEnvMap(cityRoot, packName string) map[string]string {
+	env := CityRuntimeEnvMap(cityRoot)
+	if packName != "" {
+		env["GC_PACK_STATE_DIR"] = PackStateDir(cityRoot, packName)
+	}
+	return env
+}

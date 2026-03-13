@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 	"unicode/utf8"
+
+	"github.com/gastownhall/gascity/internal/citylayout"
 )
 
 // SafePATH is the minimal PATH for gate script execution.
@@ -47,7 +49,9 @@ func (ce ConditionEnv) Environ() []string {
 		"TMPDIR=" + os.TempDir(),
 		"GC_BEAD_ID=" + ce.BeadID,
 		"GC_ITERATION=" + strconv.Itoa(ce.Iteration),
+		"GC_CITY_ROOT=" + ce.CityPath,
 		"GC_CITY_PATH=" + ce.CityPath,
+		"GC_CITY_RUNTIME_DIR=" + citylayout.RuntimeDataDir(ce.CityPath),
 		"GC_WISP_ID=" + ce.WispID,
 		"GC_ARTIFACT_DIR=" + ce.ArtifactDir,
 		"GC_ITERATION_DURATION_MS=" + strconv.FormatInt(ce.IterationDurationMs, 10),

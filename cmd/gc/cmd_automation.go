@@ -412,13 +412,13 @@ func cmdAutomationRun(name, rig string, stdout, stderr io.Writer) int {
 		return epCode
 	}
 	defer ep.Close() //nolint:errcheck // best-effort
-	return doAutomationRun(aa, name, rig, shellSlingRunner, store, ep, stdout, stderr)
+	return doAutomationRun(aa, name, rig, cityPath, shellSlingRunner, store, ep, stdout, stderr)
 }
 
 // doAutomationRun executes an automation manually: instantiates a wisp from the
 // automation's formula (or runs exec script directly) and routes it to the
 // target pool.
-func doAutomationRun(aa []automations.Automation, name, rig string, runner SlingRunner, store beads.Store, ep events.Provider, stdout, stderr io.Writer) int {
+func doAutomationRun(aa []automations.Automation, name, rig, cityPath string, runner SlingRunner, store beads.Store, ep events.Provider, stdout, stderr io.Writer) int {
 	a, ok := findAutomation(aa, name, rig)
 	if !ok {
 		fmt.Fprintf(stderr, "gc automation run: automation %q not found\n", name) //nolint:errcheck // best-effort stderr
@@ -427,7 +427,7 @@ func doAutomationRun(aa []automations.Automation, name, rig string, runner Sling
 
 	// Exec automations: run the script directly.
 	if a.IsExec() {
-		return doAutomationRunExec(a, stdout, stderr)
+		return doAutomationRunExec(a, cityPath, stdout, stderr)
 	}
 
 	// Capture event head before wisp creation (race-free cursor).
@@ -468,17 +468,17 @@ func doAutomationRun(aa []automations.Automation, name, rig string, runner Sling
 }
 
 // doAutomationRunExec runs an exec automation directly via shell.
-func doAutomationRunExec(a automations.Automation, stdout, stderr io.Writer) int {
+func doAutomationRunExec(a automations.Automation, cityPath string, stdout, stderr io.Writer) int {
 	timeout := a.TimeoutOrDefault()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	var env []string
+	env := automationExecEnv(cityPath, a)
 	if a.Source != "" {
 		env = append(env, "AUTOMATION_DIR="+filepath.Dir(a.Source))
 	}
 
-	output, err := shellExecRunner(ctx, a.Exec, ".", env)
+	output, err := shellExecRunner(ctx, a.Exec, cityPath, env)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc automation run: exec failed: %v\n", err) //nolint:errcheck
 		if len(output) > 0 {

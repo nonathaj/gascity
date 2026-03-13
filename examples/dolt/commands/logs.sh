@@ -8,6 +8,8 @@ set -e
 
 lines=50
 follow=false
+PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
+. "$PACK_DIR/scripts/runtime.sh"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -28,7 +30,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-log_file="$GC_CITY_PATH/.gc/dolt.log"
+log_file="$DOLT_LOG_FILE"
 
 if [ ! -f "$log_file" ]; then
   echo "gc dolt logs: log file not found: $log_file" >&2

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -151,6 +152,7 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 				CheckName: info.PackName + ":" + info.Entry.Name,
 				Script:    scriptPath,
 				PackDir:   info.TopoDir,
+				PackName:  info.PackName,
 			})
 		}
 	}
@@ -192,7 +194,9 @@ func openStore(dirPath string) (beads.Store, error) {
 	prov := rawBeadsProvider(dirPath)
 	switch {
 	case strings.HasPrefix(prov, "exec:"):
-		return beadsexec.NewStore(strings.TrimPrefix(prov, "exec:")), nil
+		store := beadsexec.NewStore(strings.TrimPrefix(prov, "exec:"))
+		store.SetEnv(citylayout.CityRuntimeEnvMap(dirPath))
+		return store, nil
 	case prov == "file":
 		return beads.OpenFileStore(fsys.OSFS{}, filepath.Join(dirPath, ".gc", "beads.json"))
 	default: // "bd"

@@ -13,6 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/configedit"
 	"github.com/gastownhall/gascity/internal/events"
@@ -122,6 +123,7 @@ func beadsProviderFor(cfg *config.City) string {
 func (cs *controllerState) openRigStore(provider, rigPath string) beads.Store {
 	if strings.HasPrefix(provider, "exec:") {
 		s := beadsexec.NewStore(strings.TrimPrefix(provider, "exec:"))
+		s.SetEnv(citylayout.CityRuntimeEnvMap(rigPath))
 		return s
 	}
 	switch provider {

@@ -12,8 +12,14 @@
 set -euo pipefail
 
 CITY="${GC_CITY_ROOT:-.}"
-LEDGER="$CITY/.gc/spawn-storm-counts.json"
+PACK_STATE_DIR="${GC_PACK_STATE_DIR:-${GC_CITY_RUNTIME_DIR:-$CITY/.gc/runtime}/packs/maintenance}"
+LEDGER="$PACK_STATE_DIR/spawn-storm-counts.json"
 THRESHOLD="${SPAWN_STORM_THRESHOLD:-2}"
+
+if [ ! -e "$LEDGER" ] && [ -e "$CITY/.gc/spawn-storm-counts.json" ]; then
+    LEDGER="$CITY/.gc/spawn-storm-counts.json"
+fi
+mkdir -p "$(dirname "$LEDGER")"
 
 # Initialize ledger if missing.
 if [ ! -f "$LEDGER" ]; then

@@ -123,11 +123,14 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 
 	// Step 8: Build agent environment.
 	agentEnv := map[string]string{
-		"GC_SESSION_NAME": sessName,
-		"GC_TEMPLATE":     templateNameFor(cfgAgent, qualifiedName),
-		"GC_AGENT":        qualifiedName,
-		"GC_CITY":         p.cityPath,
-		"GC_DIR":          workDir,
+		"GC_SESSION_NAME":     sessName,
+		"GC_TEMPLATE":         templateNameFor(cfgAgent, qualifiedName),
+		"GC_AGENT":            qualifiedName,
+		"GC_CITY":             p.cityPath,
+		"GC_CITY_ROOT":        p.cityPath,
+		"GC_CITY_PATH":        p.cityPath,
+		"GC_CITY_RUNTIME_DIR": citylayout.RuntimeDataDir(p.cityPath),
+		"GC_DIR":              workDir,
 	}
 	if rigName != "" {
 		agentEnv["GC_RIG"] = rigName
