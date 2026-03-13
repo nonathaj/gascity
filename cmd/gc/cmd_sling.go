@@ -797,13 +797,13 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 		for _, qn := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
 			sn := lookupSessionNameOrLegacy(store, cityName, qn, st)
 			if sp.IsRunning(sn) {
-				if err := sp.Nudge(sn, runtime.TextContent("Work slung. Check your hook.")); err != nil {
-					telemetry.RecordNudge(context.Background(), qn, err)
-					fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
-				} else {
-					telemetry.RecordNudge(context.Background(), qn, nil)
-					fmt.Fprintf(stdout, "Nudged %s\n", qn) //nolint:errcheck // best-effort
+				member, ok := resolveAgentIdentity(cfg, qn, currentRigContext(cfg))
+				if !ok {
+					fmt.Fprintf(stderr, "gc sling: agent %q not found in config\n", qn) //nolint:errcheck // best-effort
+					return
 				}
+				target := buildSlingNudgeTarget(member, cityName, cityPath, cfg, sn)
+				deliverSlingNudge(target, sp, cityPath, stdout, stderr)
 				return
 			}
 		}
@@ -818,22 +818,8 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 
 	// Fixed agent: nudge directly.
 	sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), st)
-	if !sp.IsRunning(sn) {
-		// Session is asleep — poke controller for immediate wake.
-		if err := pokeController(cityPath); err != nil {
-			fmt.Fprintf(stderr, "Session %q is asleep; poke failed: %v\n", a.QualifiedName(), err) //nolint:errcheck // best-effort
-		} else {
-			fmt.Fprintf(stdout, "Session %q is asleep — poked controller for wake\n", a.QualifiedName()) //nolint:errcheck // best-effort
-		}
-		return
-	}
-	if err := sp.Nudge(sn, runtime.TextContent("Work slung. Check your hook.")); err != nil {
-		telemetry.RecordNudge(context.Background(), a.QualifiedName(), err)
-		fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
-	} else {
-		telemetry.RecordNudge(context.Background(), a.QualifiedName(), nil)
-		fmt.Fprintf(stdout, "Nudged %s\n", a.QualifiedName()) //nolint:errcheck // best-effort
-	}
+	target := buildSlingNudgeTarget(*a, cityName, cityPath, cfg, sn)
+	deliverSlingNudge(target, sp, cityPath, stdout, stderr)
 }
 
 // pokeController sends a "poke" command to the controller socket to
@@ -842,6 +828,43 @@ func doSlingNudge(a *config.Agent, cityName, cityPath string, cfg *config.City,
 func pokeController(cityPath string) error {
 	_, err := sendControllerCommand(cityPath, "poke")
 	return err
+}
+
+func buildSlingNudgeTarget(agent config.Agent, cityName, cityPath string, cfg *config.City, sessionName string) nudgeTarget {
+	resolved, _ := config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	return nudgeTarget{
+		cityPath:    cityPath,
+		cityName:    cityName,
+		cfg:         cfg,
+		agent:       agent,
+		resolved:    resolved,
+		sessionName: sessionName,
+	}
+}
+
+func deliverSlingNudge(target nudgeTarget, sp runtime.Provider, cityPath string, stdout, stderr io.Writer) {
+	const msg = "Work slung. Check your hook."
+	running := sp.IsRunning(target.sessionName)
+	now := time.Now()
+	if running && tryDeliverWaitIdleNudge(target, sp, msg) {
+		telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
+		fmt.Fprintf(stdout, "Nudged %s\n", target.agent.QualifiedName()) //nolint:errcheck // best-effort
+		return
+	}
+
+	if err := enqueueQueuedNudge(target.cityPath, newQueuedNudge(target.agent.QualifiedName(), msg, "sling", now)); err != nil {
+		telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), err)
+		fmt.Fprintf(stderr, "gc sling: nudge failed: %v\n", err) //nolint:errcheck // best-effort
+		return
+	}
+	if running {
+		maybeStartCodexNudgePoller(target)
+	} else if err := pokeController(cityPath); err != nil {
+		fmt.Fprintf(stderr, "Session %q is asleep; poke failed: %v\n", target.agent.QualifiedName(), err) //nolint:errcheck // best-effort
+	} else {
+		fmt.Fprintf(stdout, "Session %q is asleep — poked controller for wake\n", target.agent.QualifiedName()) //nolint:errcheck // best-effort
+	}
+	fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck // best-effort
 }
 
 // dryRunSingle prints a step-by-step preview of what gc sling would do for a

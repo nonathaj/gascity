@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -406,6 +407,10 @@ func TestDoSlingNudgeFixedAgent(t *testing.T) {
 	a := config.Agent{Name: "mayor"}
 
 	deps, stdout, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir()
+	prev := startNudgePoller
+	startNudgePoller = func(_, _, _ string) error { return nil }
+	t.Cleanup(func() { startNudgePoller = prev })
 	opts := testOpts(a, "BL-1")
 	opts.Nudge = true
 	code := doSling(opts, deps, nil)
@@ -413,18 +418,18 @@ func TestDoSlingNudgeFixedAgent(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSling returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	// Check that nudge was sent.
-	var nudged bool
-	for _, c := range sp.Calls {
-		if c.Method == "Nudge" && c.Name == "mayor" {
-			nudged = true
-		}
+	pending, _, dead, err := listQueuedNudges(deps.CityPath, "mayor", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
 	}
-	if !nudged {
-		t.Errorf("expected nudge call for mayor; calls: %+v", sp.Calls)
+	if len(pending) != 1 || len(dead) != 0 {
+		t.Fatalf("pending=%d dead=%d, want 1/0", len(pending), len(dead))
 	}
-	if !strings.Contains(stdout.String(), "Nudged mayor") {
-		t.Errorf("stdout = %q, want nudge confirmation", stdout.String())
+	if pending[0].Source != "sling" {
+		t.Fatalf("source = %q, want sling", pending[0].Source)
+	}
+	if !strings.Contains(stdout.String(), "Queued nudge for mayor") {
+		t.Errorf("stdout = %q, want queue confirmation", stdout.String())
 	}
 }
 
@@ -446,6 +451,13 @@ func TestDoSlingNudgeNoSession(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "poke failed") {
 		t.Errorf("stderr = %q, want 'poke failed' message (no controller socket in test)", stderr.String())
+	}
+	pending, _, dead, err := listQueuedNudges(deps.CityPath, "mayor", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 || len(dead) != 0 {
+		t.Fatalf("pending=%d dead=%d, want 1/0", len(pending), len(dead))
 	}
 }
 
@@ -483,6 +495,10 @@ func TestDoSlingNudgePoolMember(t *testing.T) {
 	}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir()
+	prev := startNudgePoller
+	startNudgePoller = func(_, _, _ string) error { return nil }
+	t.Cleanup(func() { startNudgePoller = prev })
 	opts := testOpts(a, "BL-1")
 	opts.Nudge = true
 	code := doSling(opts, deps, nil)
@@ -490,15 +506,10 @@ func TestDoSlingNudgePoolMember(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSling returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	// Should nudge pool instance 2 (first running one found).
-	var nudged bool
 	for _, c := range sp.Calls {
 		if c.Method == "Nudge" {
-			nudged = true
+			t.Fatalf("expected queued sling reminder, got direct nudge calls: %+v", sp.Calls)
 		}
-	}
-	if !nudged {
-		t.Errorf("expected nudge call for pool member; calls: %+v", sp.Calls)
 	}
 }
 
@@ -1113,6 +1124,10 @@ func TestDoSlingBatchNudgeOnceAfterAll(t *testing.T) {
 	}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir()
+	prev := startNudgePoller
+	startNudgePoller = func(_, _, _ string) error { return nil }
+	t.Cleanup(func() { startNudgePoller = prev })
 	opts := testOpts(a, "CVY-1")
 	opts.Nudge = true
 	code := doSlingBatch(opts, deps, q)
@@ -1120,15 +1135,17 @@ func TestDoSlingBatchNudgeOnceAfterAll(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSlingBatch returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	// Count nudge calls — should be exactly one.
-	nudgeCount := 0
 	for _, c := range sp.Calls {
 		if c.Method == "Nudge" {
-			nudgeCount++
+			t.Fatalf("expected queued sling reminder, got direct nudge calls: %+v", sp.Calls)
 		}
 	}
-	if nudgeCount != 1 {
-		t.Errorf("got %d nudge calls, want 1; calls: %+v", nudgeCount, sp.Calls)
+	pending, _, dead, err := listQueuedNudges(deps.CityPath, "mayor", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 || len(dead) != 0 {
+		t.Fatalf("pending=%d dead=%d, want 1/0", len(pending), len(dead))
 	}
 }
 
@@ -1663,6 +1680,10 @@ func TestBatchOnNudgeOnce(t *testing.T) {
 	}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
+	deps.CityPath = t.TempDir()
+	prev := startNudgePoller
+	startNudgePoller = func(_, _, _ string) error { return nil }
+	t.Cleanup(func() { startNudgePoller = prev })
 	opts := testOpts(a, "CVY-1")
 	opts.Nudge = true
 	opts.OnFormula = "code-review"
@@ -1671,14 +1692,17 @@ func TestBatchOnNudgeOnce(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSlingBatch returned %d, want 0; stderr: %s", code, stderr.String())
 	}
-	nudgeCount := 0
 	for _, c := range sp.Calls {
 		if c.Method == "Nudge" {
-			nudgeCount++
+			t.Fatalf("expected queued sling reminder, got direct nudge calls: %+v", sp.Calls)
 		}
 	}
-	if nudgeCount != 1 {
-		t.Errorf("got %d nudge calls, want 1; calls: %+v", nudgeCount, sp.Calls)
+	pending, _, dead, err := listQueuedNudges(deps.CityPath, "mayor", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 || len(dead) != 0 {
+		t.Fatalf("pending=%d dead=%d, want 1/0", len(pending), len(dead))
 	}
 }
 
