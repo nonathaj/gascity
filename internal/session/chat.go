@@ -9,6 +9,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/sessionlog"
+	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 var (
@@ -180,8 +181,10 @@ func (m *Manager) Send(ctx context.Context, id, message, resumeCommand string, h
 			}
 		}
 		if err := m.sp.Nudge(sessName, runtime.TextContent(message)); err != nil {
+			telemetry.RecordNudge(context.Background(), sessName, err)
 			return fmt.Errorf("sending message to session: %w", err)
 		}
+		telemetry.RecordNudge(context.Background(), sessName, nil)
 		return nil
 	})
 }

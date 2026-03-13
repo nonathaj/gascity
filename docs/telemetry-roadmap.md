@@ -23,7 +23,7 @@ gt.prime.total                    gc.prime.total                      2
 gt.agent.state_changes.total      (defer — gc uses beads not states)  —
 gt.polecat.spawns.total           gc.pool.spawns.total                2
 gt.polecat.removes.total          gc.pool.removes.total               2
-gt.sling.dispatches.total         (defer — sling not built yet)       —
+gt.sling.dispatches.total         gc.sling.dispatches.total           1
 gt.mail.operations.total          gc.mail.operations.total            2
 gt.nudge.total                    (same as gc.session.nudges.total)   1
 gt.done.total                     (defer — done not built yet)        —

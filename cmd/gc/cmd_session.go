@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -912,10 +913,12 @@ func cmdSessionNudge(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if err := sp.Nudge(sn, runtime.TextContent(message)); err != nil {
+		telemetry.RecordNudge(context.Background(), found.QualifiedName(), err)
 		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
+	telemetry.RecordNudge(context.Background(), found.QualifiedName(), nil)
 	fmt.Fprintf(stdout, "Nudged %s\n", found.QualifiedName()) //nolint:errcheck // best-effort stdout
 	return 0
 }
