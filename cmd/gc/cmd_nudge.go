@@ -333,6 +333,9 @@ func deliverSessionNudgeWithProvider(target nudgeTarget, sp runtime.Provider, me
 			fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 			return 1
 		}
+		if sp.IsRunning(target.sessionName) {
+			maybeStartCodexNudgePoller(target)
+		}
 		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck
 		return 0
 	case nudgeDeliveryWaitIdle:
@@ -353,6 +356,7 @@ func deliverSessionNudgeWithProvider(target nudgeTarget, sp runtime.Provider, me
 			fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 			return 1
 		}
+		maybeStartCodexNudgePoller(target)
 		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck
 		return 0
 	default:
@@ -368,8 +372,15 @@ func sendMailNotify(target nudgeTarget, sender string) error {
 func sendMailNotifyWithProvider(target nudgeTarget, sp runtime.Provider, sender string) error {
 	msg := fmt.Sprintf("You have mail from %s", sender)
 	now := time.Now()
-	if !sp.IsRunning(target.sessionName) || !tryDeliverWaitIdleNudge(target, sp, msg) {
-		return enqueueQueuedNudge(target.cityPath, newQueuedNudge(target.agent.QualifiedName(), msg, "mail", now))
+	running := sp.IsRunning(target.sessionName)
+	if !running || !tryDeliverWaitIdleNudge(target, sp, msg) {
+		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudge(target.agent.QualifiedName(), msg, "mail", now)); err != nil {
+			return err
+		}
+		if running {
+			maybeStartCodexNudgePoller(target)
+		}
+		return nil
 	}
 	telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
 	return nil
@@ -482,10 +493,12 @@ func maybeStartCodexNudgePoller(target nudgeTarget) {
 	if target.sessionName == "" {
 		return
 	}
-	if err := ensureNudgePoller(target.cityPath, target.agent.QualifiedName(), target.sessionName); err != nil {
+	if err := startNudgePoller(target.cityPath, target.agent.QualifiedName(), target.sessionName); err != nil {
 		return
 	}
 }
+
+var startNudgePoller = ensureNudgePoller
 
 func ensureNudgePoller(cityPath, agentName, sessionName string) error {
 	pidPath := nudgePollerPIDPath(cityPath, sessionName)

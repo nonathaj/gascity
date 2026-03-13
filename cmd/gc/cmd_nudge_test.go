@@ -61,6 +61,41 @@ func TestDeliverSessionNudgeWithProviderWaitIdleQueuesForCodex(t *testing.T) {
 	}
 }
 
+func TestDeliverSessionNudgeWithProviderWaitIdleStartsCodexPollerWhenQueued(t *testing.T) {
+	dir := t.TempDir()
+	fake := runtime.NewFake()
+	if err := fake.Start(context.Background(), "sess-worker", runtime.Config{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	target := nudgeTarget{
+		cityPath:    dir,
+		agent:       config.Agent{Name: "worker"},
+		resolved:    &config.ResolvedProvider{Name: "codex"},
+		sessionName: "sess-worker",
+	}
+
+	called := false
+	prev := startNudgePoller
+	startNudgePoller = func(cityPath, agentName, sessionName string) error {
+		called = true
+		if cityPath != dir || agentName != "worker" || sessionName != "sess-worker" {
+			t.Fatalf("unexpected poller args city=%q agent=%q session=%q", cityPath, agentName, sessionName)
+		}
+		return nil
+	}
+	t.Cleanup(func() { startNudgePoller = prev })
+
+	var stdout, stderr bytes.Buffer
+	code := deliverSessionNudgeWithProvider(target, fake, "check deploy status", nudgeDeliveryWaitIdle, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("deliverSessionNudgeWithProvider = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !called {
+		t.Fatal("startNudgePoller was not called")
+	}
+}
+
 func TestSendMailNotifyWithProviderQueuesWhenSessionSleeping(t *testing.T) {
 	dir := t.TempDir()
 	target := nudgeTarget{
@@ -92,6 +127,38 @@ func TestSendMailNotifyWithProviderQueuesWhenSessionSleeping(t *testing.T) {
 	}
 	if !strings.Contains(pending[0].Message, "You have mail from human") {
 		t.Fatalf("message = %q, want mail reminder", pending[0].Message)
+	}
+}
+
+func TestSendMailNotifyWithProviderStartsCodexPollerWhenQueueingRunningSession(t *testing.T) {
+	dir := t.TempDir()
+	fake := runtime.NewFake()
+	if err := fake.Start(context.Background(), "sess-mayor", runtime.Config{}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	target := nudgeTarget{
+		cityPath:    dir,
+		agent:       config.Agent{Name: "mayor"},
+		resolved:    &config.ResolvedProvider{Name: "codex"},
+		sessionName: "sess-mayor",
+	}
+
+	called := false
+	prev := startNudgePoller
+	startNudgePoller = func(cityPath, agentName, sessionName string) error {
+		called = true
+		if cityPath != dir || agentName != "mayor" || sessionName != "sess-mayor" {
+			t.Fatalf("unexpected poller args city=%q agent=%q session=%q", cityPath, agentName, sessionName)
+		}
+		return nil
+	}
+	t.Cleanup(func() { startNudgePoller = prev })
+
+	if err := sendMailNotifyWithProvider(target, fake, "human"); err != nil {
+		t.Fatalf("sendMailNotifyWithProvider: %v", err)
+	}
+	if !called {
+		t.Fatal("startNudgePoller was not called")
 	}
 }
 
