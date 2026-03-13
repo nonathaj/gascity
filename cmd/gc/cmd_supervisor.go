@@ -45,6 +45,7 @@ hosting a unified API server. Use "gc register" to add cities.`,
 		newSupervisorStartCmd(stdout, stderr),
 		newSupervisorStopCmd(stdout, stderr),
 		newSupervisorStatusCmd(stdout, stderr),
+		newSupervisorReloadCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -126,7 +127,7 @@ func supervisorSocketPath() string {
 // startSupervisorSocket creates a Unix domain socket at the given path
 // and handles ping/stop commands. Unlike startControllerSocket (which
 // constructs its own path), this binds to the exact path provided.
-func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc) (net.Listener, error) {
+func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc, reconcileCh chan struct{}) (net.Listener, error) {
 	os.Remove(sockPath) //nolint:errcheck // remove stale socket from previous crash
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -144,15 +145,16 @@ func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc) (net.Li
 				fmt.Fprintf(os.Stderr, "gc supervisor: socket accept: %v\n", err) //nolint:errcheck
 				continue
 			}
-			go handleSupervisorConn(conn, cancelFn)
+			go handleSupervisorConn(conn, cancelFn, reconcileCh)
 		}
 	}()
 	return lis, nil
 }
 
 // handleSupervisorConn reads from a connection and dispatches commands.
-// Supported: "stop" (shutdown), "ping" (liveness check, returns PID).
-func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc) {
+// Supported: "stop" (shutdown), "ping" (liveness check, returns PID),
+// "reload" (trigger immediate reconciliation of all cities).
+func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc, reconcileCh chan struct{}) {
 	defer conn.Close()                                     //nolint:errcheck
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
 	scanner := bufio.NewScanner(conn)
@@ -163,6 +165,12 @@ func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc) {
 			conn.Write([]byte("ok\n")) //nolint:errcheck
 		case "ping":
 			fmt.Fprintf(conn, "%d\n", os.Getpid()) //nolint:errcheck
+		case "reload":
+			select {
+			case reconcileCh <- struct{}{}:
+			default: // reconcile already pending
+			}
+			conn.Write([]byte("ok\n")) //nolint:errcheck
 		}
 	}
 }
@@ -222,6 +230,46 @@ func supervisorStatus(stdout, _ io.Writer) int {
 	return 1
 }
 
+func newSupervisorReloadCmd(stdout, stderr io.Writer) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "reload",
+		Short: "Trigger immediate reconciliation of all cities",
+		Long: `Send a reload signal to the running supervisor, causing it to
+immediately re-read the registry and reconcile all cities. Use this
+after killing a child process to force the supervisor to detect the
+change and restart it without waiting for the next patrol tick.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if reloadSupervisor(stdout, stderr) != 0 {
+				return errExit
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+// reloadSupervisor sends a reload command to the running supervisor.
+func reloadSupervisor(stdout, stderr io.Writer) int {
+	sockPath := supervisorSocketPath()
+	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
+	if err != nil {
+		fmt.Fprintln(stderr, "gc supervisor reload: supervisor is not running") //nolint:errcheck
+		return 1
+	}
+	defer conn.Close()                                     //nolint:errcheck
+	conn.Write([]byte("reload\n"))                         //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
+	buf := make([]byte, 64)
+	n, _ := conn.Read(buf)
+	if n > 0 && string(buf[:n]) == "ok\n" {
+		fmt.Fprintln(stdout, "Reconciliation triggered.") //nolint:errcheck
+		return 0
+	}
+	fmt.Fprintln(stderr, "gc supervisor reload: no acknowledgment from supervisor") //nolint:errcheck
+	return 1
+}
+
 // managedCity tracks a running CityRuntime inside the supervisor.
 type managedCity struct {
 	cr     *CityRuntime
@@ -245,15 +293,32 @@ func runSupervisor(stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Signal handler.
+	// Reconcile channel — triggers immediate reconciliation from SIGHUP
+	// or the "reload" socket command.
+	reconcileCh := make(chan struct{}, 1)
+
+	// Signal handler: SIGINT/SIGTERM → shutdown, SIGHUP → immediate reconcile.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sigCh)
 	go func() {
-		select {
-		case <-sigCh:
-			cancel()
-		case <-ctx.Done():
+		for {
+			select {
+			case sig := <-sigCh:
+				if sig == syscall.SIGHUP {
+					fmt.Fprintln(stderr, "SIGHUP received, triggering reconciliation...") //nolint:errcheck
+					select {
+					case reconcileCh <- struct{}{}:
+					default: // reconcile already pending
+					}
+					continue
+				}
+				// SIGINT/SIGTERM → shutdown.
+				cancel()
+				return
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -263,7 +328,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc supervisor: creating socket dir: %v\n", err) //nolint:errcheck
 		return 1
 	}
-	lis, err := startSupervisorSocket(sockPath, cancel)
+	lis, err := startSupervisorSocket(sockPath, cancel, reconcileCh)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc supervisor: %v\n", err) //nolint:errcheck
 		return 1
@@ -345,6 +410,18 @@ func runSupervisor(stdout, stderr io.Writer) int {
 		select {
 		case <-ticker.C:
 			safeReconcile()
+		case <-reconcileCh:
+			safeReconcile()
+			// Also poke all running cities so they immediately reconcile
+			// their agents (e.g. after a child process was killed).
+			mu.RLock()
+			for _, mc := range cities {
+				select {
+				case mc.cr.pokeCh <- struct{}{}:
+				default: // poke already pending
+				}
+			}
+			mu.RUnlock()
 		case <-ctx.Done():
 			// Shutdown all cities. Collect under lock, then stop outside to
 			// avoid blocking API requests during graceful shutdown.
