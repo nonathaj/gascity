@@ -28,36 +28,37 @@ If nothing is available, exit. Do not loop or wait.
 
 ## Following Your Formula
 
-After claiming work, check if a molecule (structured workflow) is attached:
+After claiming a work bead, check if a molecule (structured workflow)
+is attached. Run `bd show <work-bead>` and look for a BLOCKS section
+referencing a molecule (an epic with a formula name like `mol-polecat-*`).
 
 ```bash
-bd mol current
+bd show <work-bead>            # Look for BLOCKS section with a molecule
+bd mol current <molecule-id>   # Show your position in the workflow
 ```
 
-If a molecule is attached, `bd mol current` shows your position in the
-workflow — a sequence of steps with status indicators:
+`bd mol current` shows the workflow steps with status indicators:
 
 - `[done]` — step is complete
 - `[current]` — step is in progress (you are here)
 - `[ready]` — step is ready to start
 - `[blocked]` — step is waiting on dependencies
 
-**Follow the steps in order.** Read each step's description (`bd show <step-id>`),
-execute it, close the step (`bd close <step-id>`), then check your position
-again with `bd mol current`. Do NOT skip ahead. Do NOT freelance.
+**Follow the steps in order.** Read each step's description with
+`bd show <step-id>`, execute it, close it with `bd close <step-id>`,
+then check your position again with `bd mol current <molecule-id>`.
+Do NOT skip ahead. Do NOT freelance.
 
-Use `bd mol progress` for a summary of how far along you are.
-
-If `bd mol current` shows no molecule, execute the work described in the
-bead's title and description directly.
+If no molecule is attached, execute the work described in the bead's
+title and description directly.
 
 ## Your Tools
 
 - `bd ready --label pool:$GC_AGENT_TEMPLATE` — find pool work
 - `bd update <id> --claim` — claim a work item
 - `bd show <id>` — see details of a work item or step
-- `bd mol current` — show current position in molecule workflow
-- `bd mol progress` — show molecule progress summary
+- `bd mol current <molecule-id>` — show position in molecule workflow
+- `bd mol progress <molecule-id>` — show molecule progress summary
 - `bd close <id>` — mark work or a step as done
 - `gc mail inbox` — check for messages
 
@@ -65,7 +66,7 @@ bead's title and description directly.
 
 1. Find work: `bd list --assignee=$GC_AGENT --status=in_progress` or `bd ready --label pool:$GC_AGENT_TEMPLATE`
 2. Claim if unclaimed: `bd update <id> --claim`
-3. Run `bd mol current` — if a molecule is attached, follow its steps in order
+3. Run `bd show <id>` — if a molecule is in BLOCKS, follow its steps with `bd mol current <mol-id>`
 4. If no molecule, execute the work directly from the bead description
 5. When done, close the bead: `bd close <id>`
 6. Exit — you are ephemeral, do not loop for more work
@@ -87,4 +88,4 @@ gc runtime request-restart
 ```
 
 This blocks until the controller restarts your session. The new session
-picks up where you left off using `bd mol current` to find its position.
+picks up where you left off — find your work bead and molecule position.
