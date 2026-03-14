@@ -29,15 +29,19 @@ If nothing is available, exit. Do not loop or wait.
 ## Following Your Formula
 
 After claiming a work bead, check if a molecule (structured workflow)
-is attached. Run `bd show <work-bead>` and look for a BLOCKS section
-referencing a molecule (an epic with a formula name like `mol-polecat-*`).
+is attached by reading the `molecule_id` metadata:
 
 ```bash
-bd show <work-bead>            # Look for BLOCKS section with a molecule
-bd mol current <molecule-id>   # Show your position in the workflow
+bd show <work-bead> --json | jq -r '.metadata.molecule_id // empty'
 ```
 
-`bd mol current` shows the workflow steps with status indicators:
+If a molecule ID is present, use `bd mol current` to see your position:
+
+```bash
+bd mol current <molecule-id>
+```
+
+This shows the workflow steps with status indicators:
 
 - `[done]` — step is complete
 - `[current]` — step is in progress (you are here)
@@ -49,8 +53,8 @@ bd mol current <molecule-id>   # Show your position in the workflow
 then check your position again with `bd mol current <molecule-id>`.
 Do NOT skip ahead. Do NOT freelance.
 
-If no molecule is attached, execute the work described in the bead's
-title and description directly.
+If there is no `molecule_id` metadata, execute the work described in
+the bead's title and description directly.
 
 ## Your Tools
 
@@ -66,7 +70,7 @@ title and description directly.
 
 1. Find work: `bd list --assignee=$GC_AGENT --status=in_progress` or `bd ready --label pool:$GC_AGENT_TEMPLATE`
 2. Claim if unclaimed: `bd update <id> --claim`
-3. Run `bd show <id>` — if a molecule is in BLOCKS, follow its steps with `bd mol current <mol-id>`
+3. Check `metadata.molecule_id` — if present, follow steps with `bd mol current <mol-id>`
 4. If no molecule, execute the work directly from the bead description
 5. When done, close the bead: `bd close <id>`
 6. Exit — you are ephemeral, do not loop for more work

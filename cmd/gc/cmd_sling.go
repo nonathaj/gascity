@@ -219,7 +219,14 @@ func cmdSling(args []string, isFormula, doNudge, force bool, title string, vars 
 		Force:         force,
 		DryRun:        dryRun,
 	}
-	store := beads.NewBdStore(cityPath, beads.ExecCommandRunner())
+	// Use the target agent's rig directory for the store so that mol
+	// operations (MolCook, MolCookOn) create beads in the correct rig
+	// database. City-scoped agents (no Dir) fall back to cityPath.
+	storeDir := cityPath
+	if rd := rigDirForAgent(cfg, a); rd != "" {
+		storeDir = rd
+	}
+	store := beads.NewBdStore(storeDir, beads.ExecCommandRunner())
 	deps := slingDeps{
 		CityName: cityName,
 		CityPath: cityPath,
@@ -255,6 +262,21 @@ func rigDirForBead(cfg *config.City, beadID string) string {
 	}
 	if rig, ok := findRigByPrefix(cfg, bp); ok {
 		return rig.Path
+	}
+	return ""
+}
+
+// rigDirForAgent returns the rig directory for an agent by matching its Dir
+// field to a rig Name. Returns "" if the agent has no Dir (city-scoped) or
+// no matching rig is found.
+func rigDirForAgent(cfg *config.City, a config.Agent) string {
+	if a.Dir == "" {
+		return ""
+	}
+	for _, r := range cfg.Rigs {
+		if r.Name == a.Dir {
+			return r.Path
+		}
 	}
 	return ""
 }
@@ -329,6 +351,12 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			fmt.Fprintf(deps.Stderr, "gc sling: instantiating formula %q on %s: %v\n", opts.OnFormula, beadID, err) //nolint:errcheck // best-effort
 			return 1
 		}
+		// Record molecule_id on the work bead so agents can discover it
+		// without traversing dependencies.
+		if err := deps.Store.SetMetadata(beadID, "molecule_id", wispRootID); err != nil {
+			fmt.Fprintf(deps.Stderr, "gc sling: setting molecule_id on %s: %v\n", beadID, err) //nolint:errcheck // best-effort
+			// Non-fatal — wisp was already attached.
+		}
 		fmt.Fprintf(deps.Stdout, "Attached wisp %s (formula %q) to %s\n", wispRootID, opts.OnFormula, beadID) //nolint:errcheck // best-effort
 		// beadID unchanged — route original bead.
 	}
@@ -345,6 +373,12 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			fmt.Fprintf(deps.Stderr, "gc sling: instantiating default formula %q on %s: %v\n", //nolint:errcheck // best-effort
 				a.DefaultSlingFormula, beadID, err)
 			return 1
+		}
+		// Record molecule_id on the work bead so agents can discover it
+		// without traversing dependencies.
+		if err := deps.Store.SetMetadata(beadID, "molecule_id", wispRootID); err != nil {
+			fmt.Fprintf(deps.Stderr, "gc sling: setting molecule_id on %s: %v\n", beadID, err) //nolint:errcheck // best-effort
+			// Non-fatal — wisp was already attached.
 		}
 		fmt.Fprintf(deps.Stdout, "Attached wisp %s (default formula %q) to %s\n", //nolint:errcheck // best-effort
 			wispRootID, a.DefaultSlingFormula, beadID)
@@ -528,6 +562,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 				failed++
 				continue
 			}
+			_ = deps.Store.SetMetadata(child.ID, "molecule_id", wispRootID) // best-effort
 			fmt.Fprintf(deps.Stdout, "  Attached wisp %s → %s\n", wispRootID, child.ID) //nolint:errcheck // best-effort
 		} else if !opts.NoFormula && a.DefaultSlingFormula != "" {
 			// Apply default formula per-child.
@@ -538,6 +573,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 				failed++
 				continue
 			}
+			_ = deps.Store.SetMetadata(child.ID, "molecule_id", wispRootID) // best-effort
 			fmt.Fprintf(deps.Stdout, "  Attached wisp %s (default formula) → %s\n", wispRootID, child.ID) //nolint:errcheck // best-effort
 		}
 
