@@ -49,7 +49,7 @@ type Instance interface {
 type Registry interface {
 	List() []Status
 	Get(name string) (Status, bool)
-	ServeHTTP(w http.ResponseWriter, r *http.Request) bool
+	AuthorizeAndServeHTTP(name string, w http.ResponseWriter, r *http.Request, authorize func(Status) bool) bool
 }
 
 // WorkflowFactory constructs a workflow service for a known contract.

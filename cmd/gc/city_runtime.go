@@ -206,7 +206,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	telemetry.RecordBeadStoreHealth(context.Background(), cr.cityName, cr.cityBeadStore() != nil)
 
 	// Upgrade to bead-driven reconcile ops when a bead store is available.
-	cr.upgradeToBeadReconcileOps()
+	cr.serviceStateMu.Lock()
+	cr.upgradeToBeadReconcileOpsLocked()
+	cr.serviceStateMu.Unlock()
 
 	// Initialize bead-driven drain tracker when explicitly enabled via config,
 	// a bead store is available, and we have a real city path.
@@ -496,19 +498,21 @@ func (cr *CityRuntime) reloadConfig(
 
 	cr.ad = buildAutomationDispatcher(cityRoot, nextCfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
 
-	if cr.cs != nil {
-		cr.cs.update(nextCfg, nextSp)
-	}
 	cr.serviceStateMu.Lock()
 	cr.cfg = nextCfg
 	cr.sp = nextSp
 	cr.rops = nextRops
 	cr.dops = nextDops
-	if providerSwapped {
-		cr.upgradeToBeadReconcileOps()
-	}
 	cr.serviceStateMu.Unlock()
 
+	if cr.cs != nil {
+		cr.cs.update(nextCfg, nextSp)
+		if providerSwapped {
+			cr.serviceStateMu.Lock()
+			cr.upgradeToBeadReconcileOpsLocked()
+			cr.serviceStateMu.Unlock()
+		}
+	}
 	if cr.svc != nil {
 		if err := cr.svc.Reload(); err != nil {
 			fmt.Fprintf(cr.stderr, "%s: service reload: %v\n", cr.logPrefix, err) //nolint:errcheck // best-effort stderr
@@ -517,7 +521,11 @@ func (cr *CityRuntime) reloadConfig(
 
 	if cr.cs != nil {
 		// Upgrade rops if store recovered from nil → non-nil.
-		cr.upgradeToBeadReconcileOps()
+		if !providerSwapped {
+			cr.serviceStateMu.Lock()
+			cr.upgradeToBeadReconcileOpsLocked()
+			cr.serviceStateMu.Unlock()
+		}
 	} else {
 		// Refresh standalone city store for auto-suspend.
 		// Also recovers from nil → non-nil when bd becomes available after startup.
@@ -529,7 +537,9 @@ func (cr *CityRuntime) reloadConfig(
 			cr.standaloneCityStore = s
 		}
 		// Upgrade rops if store recovered from nil → non-nil.
-		cr.upgradeToBeadReconcileOps()
+		cr.serviceStateMu.Lock()
+		cr.upgradeToBeadReconcileOpsLocked()
+		cr.serviceStateMu.Unlock()
 	}
 
 	// Recompute bead-driven reconciler activation from current config.
@@ -599,6 +609,12 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[s
 // store recovers from nil → non-nil. No-op if no store is available or
 // if rops is already a beadReconcileOps (double-wrap guard).
 func (cr *CityRuntime) upgradeToBeadReconcileOps() {
+	cr.serviceStateMu.Lock()
+	defer cr.serviceStateMu.Unlock()
+	cr.upgradeToBeadReconcileOpsLocked()
+}
+
+func (cr *CityRuntime) upgradeToBeadReconcileOpsLocked() {
 	if cr.cityBeadStore() == nil || cr.rops == nil {
 		return
 	}

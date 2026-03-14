@@ -43,15 +43,9 @@ func (s *Server) handleServiceProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "service route not found")
 		return
 	}
-	status, ok := reg.Get(name)
-	if !ok {
-		writeError(w, http.StatusNotFound, "not_found", "service route not found")
-		return
-	}
-	if !serviceRequestAllowed(w, status, r, s.readOnly) {
-		return
-	}
-	if !reg.ServeHTTP(w, r) {
+	if !reg.AuthorizeAndServeHTTP(name, w, r, func(status workspacesvc.Status) bool {
+		return serviceRequestAllowed(w, status, r, s.readOnly)
+	}) {
 		writeError(w, http.StatusNotFound, "not_found", "service route not found")
 	}
 }

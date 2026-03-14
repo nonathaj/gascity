@@ -30,7 +30,14 @@ func (f *fakeServiceRegistry) Get(name string) (workspacesvc.Status, bool) {
 	return workspacesvc.Status{}, false
 }
 
-func (f *fakeServiceRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) bool {
+func (f *fakeServiceRegistry) AuthorizeAndServeHTTP(name string, w http.ResponseWriter, r *http.Request, authorize func(workspacesvc.Status) bool) bool {
+	status, ok := f.Get(name)
+	if !ok {
+		return false
+	}
+	if authorize != nil && !authorize(status) {
+		return true
+	}
 	if f.serve == nil {
 		return false
 	}

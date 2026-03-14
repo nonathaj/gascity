@@ -3,6 +3,7 @@ package workspacesvc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -36,6 +37,7 @@ type testInstance struct {
 	status     Status
 	handleHTTP func(w http.ResponseWriter, r *http.Request, subpath string) bool
 	closed     bool
+	closeErr   error
 }
 
 func (t *testInstance) Status() Status { return t.status }
@@ -51,7 +53,7 @@ func (t *testInstance) Tick(context.Context, time.Time) {}
 
 func (t *testInstance) Close() error {
 	t.closed = true
-	return nil
+	return t.closeErr
 }
 
 func uniqueContract(t *testing.T) string {
@@ -59,9 +61,19 @@ func uniqueContract(t *testing.T) string {
 	return fmt.Sprintf("test.%s.%d", strings.ReplaceAll(t.Name(), "/", "."), time.Now().UnixNano())
 }
 
+func registerWorkflowContractForTest(t *testing.T, contract string, factory WorkflowFactory) {
+	t.Helper()
+	RegisterWorkflowContract(contract, factory)
+	t.Cleanup(func() {
+		workflowFactoriesMu.Lock()
+		delete(workflowFactories, contract)
+		workflowFactoriesMu.Unlock()
+	})
+}
+
 func TestManagerReloadWorkflowServiceCreatesStateRootAndDirectURL(t *testing.T) {
 	contract := uniqueContract(t)
-	RegisterWorkflowContract(contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		return &testInstance{
 			status: Status{
 				ServiceName:      svc.Name,
@@ -155,7 +167,7 @@ func TestManagerReloadReusesUnchangedInstances(t *testing.T) {
 	contract := uniqueContract(t)
 	first := &testInstance{}
 	callCount := 0
-	RegisterWorkflowContract(contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		callCount++
 		first.status = Status{
 			ServiceName:      svc.Name,
@@ -199,7 +211,7 @@ func TestManagerReloadClosesChangedInstances(t *testing.T) {
 	secondContract := uniqueContract(t)
 	first := &testInstance{}
 	second := &testInstance{}
-	RegisterWorkflowContract(firstContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, firstContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		first.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: firstContract,
@@ -208,7 +220,7 @@ func TestManagerReloadClosesChangedInstances(t *testing.T) {
 		}
 		return first, nil
 	})
-	RegisterWorkflowContract(secondContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, secondContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		second.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: secondContract,
@@ -249,7 +261,7 @@ func TestManagerReloadClosesChangedInstances(t *testing.T) {
 
 func TestManagerServeHTTPRoutesToWorkflowInstance(t *testing.T) {
 	contract := uniqueContract(t)
-	RegisterWorkflowContract(contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		return &testInstance{
 			status: Status{
 				ServiceName:      svc.Name,
@@ -335,5 +347,217 @@ func TestManagerServeHTTPUsesBuiltinHealthzWorkflow(t *testing.T) {
 	}
 	if got["contract"] != HealthzWorkflowContract {
 		t.Fatalf("contract = %#v, want %s", got["contract"], HealthzWorkflowContract)
+	}
+}
+
+func TestManagerCloseStopsRoutingAndProjectsStoppedStatus(t *testing.T) {
+	contract := uniqueContract(t)
+	inst := &testInstance{
+		status: Status{
+			ServiceState: "ready",
+			LocalState:   "ready",
+		},
+		handleHTTP: func(http.ResponseWriter, *http.Request, string) bool {
+			t.Fatal("closed service should not receive requests")
+			return false
+		},
+	}
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		inst.status.ServiceName = svc.Name
+		inst.status.WorkflowContract = contract
+		return inst, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !inst.closed {
+		t.Fatal("expected instance to be closed")
+	}
+
+	status, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing after close")
+	}
+	if status.ServiceState != "stopped" {
+		t.Fatalf("ServiceState = %q, want stopped", status.ServiceState)
+	}
+	if status.LocalState != "stopped" {
+		t.Fatalf("LocalState = %q, want stopped", status.LocalState)
+	}
+	if status.StateReason != "service_closed" {
+		t.Fatalf("StateReason = %q, want service_closed", status.StateReason)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/svc/review-intake/healthz", nil)
+	rec := httptest.NewRecorder()
+	if ok := mgr.AuthorizeAndServeHTTP("review-intake", rec, req, nil); ok {
+		t.Fatal("AuthorizeAndServeHTTP returned true after close, want false")
+	}
+}
+
+func TestManagerCloseProjectsCloseErrorWithoutRouting(t *testing.T) {
+	contract := uniqueContract(t)
+	inst := &testInstance{
+		status: Status{
+			ServiceState: "ready",
+			LocalState:   "ready",
+		},
+		closeErr: errors.New("close failed"),
+	}
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		inst.status.ServiceName = svc.Name
+		inst.status.WorkflowContract = contract
+		return inst, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if err := mgr.Close(); err == nil {
+		t.Fatal("Close returned nil, want error")
+	}
+	if !inst.closed {
+		t.Fatal("expected instance close attempt")
+	}
+
+	status, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing after failed close")
+	}
+	if status.ServiceState != "degraded" {
+		t.Fatalf("ServiceState = %q, want degraded", status.ServiceState)
+	}
+	if status.LocalState != "close_error" {
+		t.Fatalf("LocalState = %q, want close_error", status.LocalState)
+	}
+	if status.StateReason != "close failed" {
+		t.Fatalf("StateReason = %q, want close failed", status.StateReason)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/svc/review-intake/healthz", nil)
+	rec := httptest.NewRecorder()
+	if ok := mgr.AuthorizeAndServeHTTP("review-intake", rec, req, nil); ok {
+		t.Fatal("AuthorizeAndServeHTTP returned true after failed close, want false")
+	}
+}
+
+func TestManagerCloseRetriesFailedInstance(t *testing.T) {
+	contract := uniqueContract(t)
+	inst := &testInstance{
+		status: Status{
+			ServiceState: "ready",
+			LocalState:   "ready",
+		},
+		closeErr: errors.New("close failed"),
+	}
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		inst.status.ServiceName = svc.Name
+		inst.status.WorkflowContract = contract
+		return inst, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if err := mgr.Close(); err == nil {
+		t.Fatal("first Close returned nil, want error")
+	}
+
+	inst.closeErr = nil
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+
+	status, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing after retry")
+	}
+	if status.ServiceState != "stopped" {
+		t.Fatalf("ServiceState = %q, want stopped", status.ServiceState)
+	}
+	if status.LocalState != "stopped" {
+		t.Fatalf("LocalState = %q, want stopped", status.LocalState)
+	}
+	if status.StateReason != "service_closed" {
+		t.Fatalf("StateReason = %q, want service_closed", status.StateReason)
+	}
+}
+
+func TestManagerAuthorizeAndServeHTTPRunsAuthorizationWithoutInstance(t *testing.T) {
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: "missing.contract"},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/svc/review-intake/hooks/github", nil)
+	called := false
+	rec := httptest.NewRecorder()
+	if ok := mgr.AuthorizeAndServeHTTP("review-intake", rec, req, func(Status) bool {
+		called = true
+		return false
+	}); !ok {
+		t.Fatal("AuthorizeAndServeHTTP returned false, want true when authorization handled the request")
+	}
+	if !called {
+		t.Fatal("expected authorization callback to run without an active instance")
 	}
 }

@@ -22,7 +22,7 @@ func TestValidateRuntimeSupportRejectsMissingWorkflowContract(t *testing.T) {
 
 func TestValidateRuntimeSupportAcceptsRegisteredWorkflowContract(t *testing.T) {
 	contract := uniqueContract(t)
-	RegisterWorkflowContract(contract, func(RuntimeContext, config.Service) (Instance, error) {
+	registerWorkflowContractForTest(t, contract, func(RuntimeContext, config.Service) (Instance, error) {
 		return &testInstance{}, nil
 	})
 

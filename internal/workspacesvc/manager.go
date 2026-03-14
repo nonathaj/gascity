@@ -24,12 +24,18 @@ type Manager struct {
 	opMu    sync.Mutex
 	mu      sync.RWMutex
 	entries map[string]*entry
+	closed  bool
 }
 
 type entry struct {
 	spec   config.Service
 	status Status
 	inst   Instance
+}
+
+type closeTarget struct {
+	name string
+	inst Instance
 }
 
 // NewManager creates a service manager bound to one workspace runtime.
@@ -44,6 +50,13 @@ func NewManager(rt RuntimeContext) *Manager {
 func (m *Manager) Reload() error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
+
+	m.mu.RLock()
+	if m.closed {
+		m.mu.RUnlock()
+		return nil
+	}
+	m.mu.RUnlock()
 
 	cfg := m.rt.Config()
 	m.mu.RLock()
@@ -138,6 +151,10 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	defer m.opMu.Unlock()
 
 	m.mu.RLock()
+	if m.closed {
+		m.mu.RUnlock()
+		return
+	}
 	entries := make([]*entry, 0, len(m.entries))
 	for _, e := range m.entries {
 		entries = append(entries, e)
@@ -163,17 +180,62 @@ func (m *Manager) Close() error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 
+	now := time.Now().UTC()
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var firstErr error
-	for _, e := range m.entries {
-		if e.inst == nil {
+	m.closed = true
+	targets := make([]closeTarget, 0, len(m.entries))
+	for name, e := range m.entries {
+		if e.inst != nil {
+			targets = append(targets, closeTarget{name: name, inst: e.inst})
+			e.status.ServiceState = "stopping"
+			e.status.LocalState = "stopping"
+			e.status.StateReason = "service_closing"
+			e.status.UpdatedAt = now
 			continue
 		}
-		if err := e.inst.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		e.status.ServiceState = "stopped"
+		e.status.LocalState = "stopped"
+		e.status.StateReason = "service_closed"
+		e.status.UpdatedAt = now
+	}
+	m.mu.Unlock()
+	if len(targets) == 0 {
+		return nil
+	}
+
+	var firstErr error
+	results := make(map[string]error, len(targets))
+	for _, target := range targets {
+		if err := target.inst.Close(); err != nil {
+			results[target.name] = err
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
+	}
+
+	now = time.Now().UTC()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, target := range targets {
+		e, ok := m.entries[target.name]
+		if !ok {
+			continue
+		}
+		if err := results[target.name]; err != nil {
+			// Retain the instance so a subsequent Close() call can retry.
+			e.inst = target.inst
+			e.status.ServiceState = "degraded"
+			e.status.LocalState = "close_error"
+			e.status.StateReason = err.Error()
+			e.status.UpdatedAt = now
+			continue
+		}
+		e.inst = nil
+		e.status.ServiceState = "stopped"
+		e.status.LocalState = "stopped"
+		e.status.StateReason = "service_closed"
+		e.status.UpdatedAt = now
 	}
 	return firstErr
 }
@@ -205,31 +267,54 @@ func (m *Manager) Get(name string) (Status, bool) {
 	return e.status, true
 }
 
+// AuthorizeAndServeHTTP routes /svc/{name}/... requests to the matching
+// service instance using one registry snapshot for authorization and dispatch.
+func (m *Manager) AuthorizeAndServeHTTP(name string, w http.ResponseWriter, r *http.Request, authorize func(Status) bool) bool {
+	subpath, ok := serviceSubpath(r.URL.Path, name)
+	if !ok {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	e, ok := m.entries[name]
+	if !ok {
+		return false
+	}
+	if authorize != nil && !authorize(e.status) {
+		return true
+	}
+	if m.closed || e.inst == nil {
+		return false
+	}
+	return e.inst.HandleHTTP(w, r, subpath)
+}
+
 // ServeHTTP routes /svc/{name}/... requests to the matching service instance.
 func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) bool {
 	path := strings.TrimPrefix(r.URL.Path, "/svc/")
 	if path == r.URL.Path || path == "" {
 		return false
 	}
-
 	name := path
-	subpath := "/"
 	if i := strings.IndexByte(path, '/'); i >= 0 {
 		name = path[:i]
-		subpath = path[i:]
 	}
-	if name == "" {
-		return false
-	}
+	return m.AuthorizeAndServeHTTP(name, w, r, nil)
+}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	e, ok := m.entries[name]
-	if !ok || e.inst == nil {
-		return false
+func serviceSubpath(path, name string) (string, bool) {
+	mountPath := "/svc/" + name
+	switch {
+	case name == "":
+		return "", false
+	case path == mountPath:
+		return "/", true
+	case strings.HasPrefix(path, mountPath+"/"):
+		return path[len(mountPath):], true
+	default:
+		return "", false
 	}
-	return e.inst.HandleHTTP(w, r, subpath)
 }
 
 func baseStatus(cfg *config.City, svc config.Service, now time.Time) Status {
