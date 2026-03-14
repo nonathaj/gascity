@@ -156,8 +156,8 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 }
 
 // setControllerState sets the API state for this city. The controller
-// state is managed by the caller (who also owns the API server) and
-// passed in after construction.
+// state is managed by the caller (who also owns the API server), installed
+// before run starts, and never replaced afterward.
 func (cr *CityRuntime) setControllerState(cs *controllerState) {
 	cr.cs = cs
 }

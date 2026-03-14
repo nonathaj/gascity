@@ -8,6 +8,8 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
+const builtinHealthzContract = "gc.healthz.v1"
+
 func TestParseServiceConfig(t *testing.T) {
 	cfg, err := Parse([]byte(`
 [workspace]
@@ -22,7 +24,7 @@ name = "review-intake"
 publish_mode = "direct"
 
 [service.workflow]
-contract = "pack.gc/review-intake.v1"
+contract = "` + builtinHealthzContract + `"
 `))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -34,8 +36,8 @@ contract = "pack.gc/review-intake.v1"
 	if svc.Name != "review-intake" {
 		t.Fatalf("service name = %q, want review-intake", svc.Name)
 	}
-	if svc.Workflow.Contract != "pack.gc/review-intake.v1" {
-		t.Errorf("workflow.contract = %q, want pack.gc/review-intake.v1", svc.Workflow.Contract)
+	if svc.Workflow.Contract != builtinHealthzContract {
+		t.Errorf("workflow.contract = %q, want %q", svc.Workflow.Contract, builtinHealthzContract)
 	}
 	if svc.PublishModeOrDefault() != "direct" {
 		t.Errorf("PublishModeOrDefault() = %q, want direct", svc.PublishModeOrDefault())
@@ -61,13 +63,39 @@ func TestValidateServicesWorkflowRequiresContract(t *testing.T) {
 func TestValidateServicesRejectsUnsupportedKind(t *testing.T) {
 	err := ValidateServices([]Service{{
 		Name: "review-intake",
-		Kind: "proxy_process",
+		Kind: "mystery",
 	}})
 	if err == nil {
 		t.Fatal("expected error for unsupported service kind")
 	}
-	if !strings.Contains(err.Error(), `kind must be "workflow"`) {
+	if !strings.Contains(err.Error(), `kind must be "workflow" or "proxy_process"`) {
 		t.Fatalf("error = %v, want unsupported workflow-only error", err)
+	}
+}
+
+func TestValidateServicesProxyProcessRequiresCommand(t *testing.T) {
+	err := ValidateServices([]Service{{
+		Name: "bridge",
+		Kind: "proxy_process",
+	}})
+	if err == nil {
+		t.Fatal("expected error for missing process.command")
+	}
+	if !strings.Contains(err.Error(), "process.command is required") {
+		t.Fatalf("error = %v, want missing process.command", err)
+	}
+}
+
+func TestValidateServicesProxyProcessAcceptsCommand(t *testing.T) {
+	err := ValidateServices([]Service{{
+		Name: "bridge",
+		Kind: "proxy_process",
+		Process: ServiceProcessConfig{
+			Command: []string{"./scripts/start-bridge.sh"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("ValidateServices: %v", err)
 	}
 }
 
@@ -82,7 +110,7 @@ schema = 1
 name = "review-intake"
 
 [service.workflow]
-contract = "pack.gc/review-intake.v1"
+contract = "`+builtinHealthzContract+`"
 `)
 
 	cfg := &City{
@@ -97,8 +125,8 @@ contract = "pack.gc/review-intake.v1"
 	if cfg.Services[0].SourceDir != filepath.Join(dir, "packs/review") {
 		t.Errorf("service SourceDir = %q, want %q", cfg.Services[0].SourceDir, filepath.Join(dir, "packs/review"))
 	}
-	if cfg.Services[0].Workflow.Contract != "pack.gc/review-intake.v1" {
-		t.Errorf("workflow.contract = %q, want pack.gc/review-intake.v1", cfg.Services[0].Workflow.Contract)
+	if cfg.Services[0].Workflow.Contract != builtinHealthzContract {
+		t.Errorf("workflow.contract = %q, want %q", cfg.Services[0].Workflow.Contract, builtinHealthzContract)
 	}
 }
 
@@ -113,7 +141,7 @@ schema = 1
 name = "review-intake"
 
 [service.workflow]
-contract = "pack.gc/review-intake.v1"
+contract = "`+builtinHealthzContract+`"
 `)
 
 	cfg := &City{

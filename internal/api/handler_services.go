@@ -48,7 +48,7 @@ func (s *Server) handleServiceProxy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "service route not found")
 		return
 	}
-	if !serviceRequestAllowed(w, status, r) {
+	if !serviceRequestAllowed(w, status, r, s.readOnly) {
 		return
 	}
 	if !reg.ServeHTTP(w, r) {
@@ -67,9 +67,16 @@ func serviceNameFromPath(path string) string {
 	return path
 }
 
-func serviceRequestAllowed(w http.ResponseWriter, status workspacesvc.Status, r *http.Request) bool {
+func serviceRequestAllowed(w http.ResponseWriter, status workspacesvc.Status, r *http.Request, apiReadOnly bool) bool {
 	if status.PublishMode == "" {
 		status.PublishMode = "private"
+	}
+	// Read-only API mode still permits direct-published service mutations:
+	// service ingress uses a separate trust model from /v0/* and is how
+	// webhook-style services remain reachable on non-localhost binds.
+	if apiReadOnly && status.PublishMode != "direct" && isMutationMethod(r.Method) {
+		writeError(w, http.StatusForbidden, "read_only", "service mutations are disabled for non-direct services")
+		return false
 	}
 	if status.PublishMode == "private" {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {

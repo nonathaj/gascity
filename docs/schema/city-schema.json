@@ -1433,7 +1433,8 @@
         "kind": {
           "type": "string",
           "enum": [
-            "workflow"
+            "workflow",
+            "proxy_process"
           ],
           "description": "Kind selects how the service is implemented."
         },
@@ -1452,6 +1453,10 @@
         "workflow": {
           "$ref": "#/$defs/ServiceWorkflowConfig",
           "description": "Workflow configures controller-owned workflow services."
+        },
+        "process": {
+          "$ref": "#/$defs/ServiceProcessConfig",
+          "description": "Process configures controller-supervised proxy services."
         }
       },
       "additionalProperties": false,
@@ -1460,6 +1465,24 @@
         "name"
       ],
       "description": "Service declares a workspace-owned HTTP service mounted under /svc/{name}."
+    },
+    "ServiceProcessConfig": {
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Command is the argv used to start the local service process."
+        },
+        "health_path": {
+          "type": "string",
+          "description": "HealthPath, when set, is probed on the local listener before the\nservice is marked ready."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ServiceProcessConfig configures a controller-supervised local process that is reverse-proxied under /svc/{name}."
     },
     "ServiceWorkflowConfig": {
       "properties": {

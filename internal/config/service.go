@@ -16,7 +16,7 @@ type Service struct {
 	// Name is the unique service identifier within a workspace.
 	Name string `toml:"name" jsonschema:"required"`
 	// Kind selects how the service is implemented.
-	Kind string `toml:"kind,omitempty" jsonschema:"enum=workflow"`
+	Kind string `toml:"kind,omitempty" jsonschema:"enum=workflow,enum=proxy_process"`
 	// PublishMode declares how the service is intended to be published.
 	// v0 supports private services and direct reuse of the API listener.
 	PublishMode string `toml:"publish_mode,omitempty" jsonschema:"enum=private,enum=direct"`
@@ -25,6 +25,8 @@ type Service struct {
 	StateRoot string `toml:"state_root,omitempty"`
 	// Workflow configures controller-owned workflow services.
 	Workflow ServiceWorkflowConfig `toml:"workflow,omitempty"`
+	// Process configures controller-supervised proxy services.
+	Process ServiceProcessConfig `toml:"process,omitempty"`
 	// SourceDir records pack provenance for pack-stamped services.
 	SourceDir string `toml:"-" json:"-"`
 }
@@ -64,6 +66,16 @@ type ServiceWorkflowConfig struct {
 	Contract string `toml:"contract,omitempty"`
 }
 
+// ServiceProcessConfig configures a controller-supervised local process
+// that is reverse-proxied under /svc/{name}.
+type ServiceProcessConfig struct {
+	// Command is the argv used to start the local service process.
+	Command []string `toml:"command,omitempty"`
+	// HealthPath, when set, is probed on the local listener before the
+	// service is marked ready.
+	HealthPath string `toml:"health_path,omitempty"`
+}
+
 // ValidateServices checks workspace service declarations for configuration
 // errors that would prevent runtime activation.
 func ValidateServices(services []Service) error {
@@ -83,8 +95,10 @@ func ValidateServices(services []Service) error {
 		}
 		seen[svc.Name] = true
 
-		if svc.KindOrDefault() != "workflow" {
-			return fmt.Errorf("service %q: kind must be \"workflow\", got %q", svc.Name, svc.Kind)
+		switch svc.KindOrDefault() {
+		case "workflow", "proxy_process":
+		default:
+			return fmt.Errorf("service %q: kind must be \"workflow\" or \"proxy_process\", got %q", svc.Name, svc.Kind)
 		}
 		switch svc.PublishModeOrDefault() {
 		case "private", "direct":
@@ -101,8 +115,15 @@ func ValidateServices(services []Service) error {
 			return fmt.Errorf("service %q: state_root may not traverse upward, got %q", svc.Name, svc.StateRootOrDefault())
 		}
 
-		if svc.Workflow.Contract == "" {
-			return fmt.Errorf("service %q: workflow.contract is required for workflow services", svc.Name)
+		switch svc.KindOrDefault() {
+		case "workflow":
+			if svc.Workflow.Contract == "" {
+				return fmt.Errorf("service %q: workflow.contract is required for workflow services", svc.Name)
+			}
+		case "proxy_process":
+			if len(svc.Process.Command) == 0 || strings.TrimSpace(svc.Process.Command[0]) == "" {
+				return fmt.Errorf("service %q: process.command is required for proxy_process services", svc.Name)
+			}
 		}
 	}
 	return nil

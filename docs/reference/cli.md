@@ -38,6 +38,7 @@ gc [flags]
 | [gc init](#gc-init) | Initialize a new city |
 | [gc mail](#gc-mail) | Send and receive messages between agents and humans |
 | [gc migration](#gc-migration) | Migration tools for the unified session model |
+| [gc nudge](#gc-nudge) | Inspect and deliver deferred nudges |
 | [gc pack](#gc-pack) | Manage remote pack sources |
 | [gc prime](#gc-prime) | Output the behavioral prompt for an agent |
 | [gc register](#gc-register) | Register a city with the machine-wide supervisor |
@@ -867,8 +868,8 @@ Resolves dependencies via the bead store and prints each bead with its
 status and what blocks it. Convoys and epics are expanded to their
 children automatically. Readiness is computed within the displayed set.
 
-By default prints a table. Use --mermaid for a Mermaid.js flowchart
-you can paste into Markdown.
+By default prints a table. Use --tree for a Unicode tree view or
+--mermaid for a Mermaid.js flowchart you can paste into Markdown.
 
 ```
 gc graph <bead-ids|convoy-id|epic-id...> [flags]
@@ -879,12 +880,14 @@ gc graph <bead-ids|convoy-id|epic-id...> [flags]
 ```
 gc graph gc-42               # expand convoy or epic children
   gc graph gc-1 gc-2 gc-3     # arbitrary beads
+  gc graph gc-42 --tree        # dependency tree
   gc graph gc-42 --mermaid     # Mermaid.js diagram
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--mermaid` | bool |  | output Mermaid.js flowchart |
+| `--tree` | bool |  | output Unicode dependency tree |
 
 ## gc handoff
 
@@ -1182,6 +1185,31 @@ No changes are made. Run "gc start" to execute the actual adoption.
 
 ```
 gc migration plan
+```
+
+## gc nudge
+
+Inspect and deliver deferred nudges.
+
+Deferred nudges are reminders that were queued because the target agent
+was asleep or was not at a safe interactive boundary yet.
+
+```
+gc nudge
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| [gc nudge status](#gc-nudge-status) | Show queued and dead-letter nudges for an agent |
+
+## gc nudge status
+
+Show queued and dead-letter nudges for an agent.
+
+Defaults to $GC_AGENT when run inside an agent session.
+
+```
+gc nudge status [agent]
 ```
 
 ## gc pack
@@ -1609,8 +1637,12 @@ Resolves the agent name from city.toml configuration to find the
 corresponding tmux session. Multi-word messages are joined automatically.
 
 ```
-gc session nudge <agent-name> <message...>
+gc session nudge <agent-name> <message...> [flags]
 ```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--delivery` | string | `wait-idle` | delivery mode: immediate, wait-idle, or queue |
 
 ## gc session peek
 
@@ -1880,3 +1912,4 @@ When built with go install, VCS metadata is read from the binary.
 ```
 gc version
 ```
+

@@ -33,3 +33,24 @@ func TestValidateRuntimeSupportAcceptsRegisteredWorkflowContract(t *testing.T) {
 		t.Fatalf("ValidateRuntimeSupport: %v", err)
 	}
 }
+
+func TestValidateRuntimeSupportAcceptsBuiltinWorkflowContract(t *testing.T) {
+	if err := ValidateRuntimeSupport([]config.Service{{
+		Name:     "healthz",
+		Workflow: config.ServiceWorkflowConfig{Contract: HealthzWorkflowContract},
+	}}); err != nil {
+		t.Fatalf("ValidateRuntimeSupport: %v", err)
+	}
+}
+
+func TestValidateRuntimeSupportAcceptsProxyProcess(t *testing.T) {
+	if err := ValidateRuntimeSupport([]config.Service{{
+		Name: "bridge",
+		Kind: "proxy_process",
+		Process: config.ServiceProcessConfig{
+			Command: []string{"./scripts/start-bridge.sh"},
+		},
+	}}); err != nil {
+		t.Fatalf("ValidateRuntimeSupport: %v", err)
+	}
+}

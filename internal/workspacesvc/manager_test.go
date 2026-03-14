@@ -2,6 +2,7 @@ package workspacesvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -247,5 +248,44 @@ func TestManagerServeHTTPRoutesToWorkflowInstance(t *testing.T) {
 	}
 	if strings.TrimSpace(rec.Body.String()) != "POST /hooks/github" {
 		t.Errorf("body = %q, want %q", rec.Body.String(), "POST /hooks/github")
+	}
+}
+
+func TestManagerServeHTTPUsesBuiltinHealthzWorkflow(t *testing.T) {
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "healthz",
+				Workflow: config.ServiceWorkflowConfig{Contract: HealthzWorkflowContract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/svc/healthz/healthz", nil)
+	rec := httptest.NewRecorder()
+	if ok := mgr.ServeHTTP(rec, req); !ok {
+		t.Fatal("ServeHTTP returned false, want true")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var got map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["service"] != "healthz" {
+		t.Fatalf("service = %#v, want healthz", got["service"])
+	}
+	if got["contract"] != HealthzWorkflowContract {
+		t.Fatalf("contract = %#v, want %s", got["contract"], HealthzWorkflowContract)
 	}
 }

@@ -441,10 +441,20 @@ Service declares a workspace-owned HTTP service mounted under /svc/{name}.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | **yes** |  | Name is the unique service identifier within a workspace. |
-| `kind` | string |  |  | Kind selects how the service is implemented. Enum: `workflow` |
+| `kind` | string |  |  | Kind selects how the service is implemented. Enum: `workflow`, `proxy_process` |
 | `publish_mode` | string |  |  | PublishMode declares how the service is intended to be published. v0 supports private services and direct reuse of the API listener. Enum: `private`, `direct` |
 | `state_root` | string |  |  | StateRoot overrides the managed service state root. Defaults to .gc/services/{name}. The path must stay within .gc/services/. |
 | `workflow` | ServiceWorkflowConfig |  |  | Workflow configures controller-owned workflow services. |
+| `process` | ServiceProcessConfig |  |  | Process configures controller-supervised proxy services. |
+
+## ServiceProcessConfig
+
+ServiceProcessConfig configures a controller-supervised local process that is reverse-proxied under /svc/{name}.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `command` | []string |  |  | Command is the argv used to start the local service process. |
+| `health_path` | string |  |  | HealthPath, when set, is probed on the local listener before the service is marked ready. |
 
 ## ServiceWorkflowConfig
 

@@ -122,6 +122,31 @@ func TestServiceProxyDirectAllowsExternalMutationWithoutCSRF(t *testing.T) {
 	}
 }
 
+func TestServiceProxyReadOnlyBlocksPrivateMutation(t *testing.T) {
+	state := newFakeState(t)
+	state.services = &fakeServiceRegistry{
+		items: []workspacesvc.Status{{
+			ServiceName: "review-intake",
+			PublishMode: "private",
+		}},
+		serve: func(http.ResponseWriter, *http.Request) bool {
+			t.Fatal("service should not have been invoked in read-only mode")
+			return false
+		},
+	}
+	srv := NewReadOnly(state)
+
+	req := httptest.NewRequest(http.MethodPost, "/svc/review-intake/hooks/github", strings.NewReader(`{}`))
+	req.RemoteAddr = "127.0.0.1:9000"
+	req.Header.Set("X-GC-Request", "1")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
 func TestServiceProxyPrivateRejectsExternalRequests(t *testing.T) {
 	state := newFakeState(t)
 	state.services = &fakeServiceRegistry{

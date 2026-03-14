@@ -34,6 +34,8 @@ func (rt *serviceRuntime) SessionProvider() runtime.Provider {
 }
 
 func (rt *serviceRuntime) BeadStore(rig string) beads.Store {
+	// controllerState is installed before the runtime loop starts and is not
+	// swapped afterward, so reading the pointer here is race-free.
 	if rt.cr.cs != nil {
 		return rt.cr.cs.BeadStore(rig)
 	}

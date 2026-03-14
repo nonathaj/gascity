@@ -20,6 +20,7 @@ import (
 type Manager struct {
 	rt RuntimeContext
 
+	opMu    sync.Mutex
 	mu      sync.RWMutex
 	entries map[string]*entry
 }
@@ -40,6 +41,9 @@ func NewManager(rt RuntimeContext) *Manager {
 
 // Reload reconciles the manager against the current config snapshot.
 func (m *Manager) Reload() error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
 	cfg := m.rt.Config()
 	next := make(map[string]*entry, len(cfg.Services))
 	now := time.Now().UTC()
@@ -76,6 +80,17 @@ func (m *Manager) Reload() error {
 			}
 			base = mergeStatus(base, inst.Status())
 			next[svc.Name] = &entry{spec: svc, status: base, inst: inst}
+		case "proxy_process":
+			inst, err := newProxyProcessInstance(m.rt, svc)
+			if err != nil {
+				base.ServiceState = "degraded"
+				base.LocalState = "config_error"
+				base.StateReason = err.Error()
+				next[svc.Name] = &entry{spec: svc, status: base}
+				continue
+			}
+			base = mergeStatus(base, inst.Status())
+			next[svc.Name] = &entry{spec: svc, status: base, inst: inst}
 		default:
 			base.ServiceState = "degraded"
 			base.LocalState = "config_error"
@@ -103,6 +118,9 @@ func (m *Manager) Reload() error {
 
 // Tick runs one service reconciliation pass.
 func (m *Manager) Tick(ctx context.Context, now time.Time) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
 	m.mu.RLock()
 	entries := make([]*entry, 0, len(m.entries))
 	for _, e := range m.entries {
@@ -126,6 +144,9 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 
 // Close closes all runtime service instances.
 func (m *Manager) Close() error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
