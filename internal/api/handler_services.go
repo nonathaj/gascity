@@ -58,7 +58,7 @@ func (s *Server) handleServiceProxy(w http.ResponseWriter, r *http.Request) {
 
 func serviceNameFromPath(path string) string {
 	path = strings.TrimPrefix(path, "/svc/")
-	if path == "" || path == "/svc/" {
+	if path == "" {
 		return ""
 	}
 	if i := strings.IndexByte(path, '/'); i >= 0 {

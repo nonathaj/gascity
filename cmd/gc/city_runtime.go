@@ -394,12 +394,12 @@ func (cr *CityRuntime) reloadConfig(
 
 	oldAgentCount := len(cr.cfg.Agents)
 	oldRigCount := len(cr.cfg.Rigs)
-	cr.serviceStateMu.Lock()
-	cr.cfg = result.Cfg
-	cr.serviceStateMu.Unlock()
+	nextCfg := result.Cfg
+	nextSp := cr.sp
+	providerSwapped := false
 
 	// Detect session provider change.
-	newProviderName := cr.cfg.Session.Provider
+	newProviderName := nextCfg.Session.Provider
 	if v := os.Getenv("GC_SESSION"); v != "" {
 		newProviderName = v
 	}
@@ -407,19 +407,15 @@ func (cr *CityRuntime) reloadConfig(
 		if running, lErr := cr.rops.listRunning(""); lErr == nil && len(running) > 0 {
 			fmt.Fprintf(cr.stdout, "Provider changed (%s → %s), stopping %d agent(s)...\n", //nolint:errcheck
 				displayProviderName(*lastProviderName), displayProviderName(newProviderName), len(running))
-			gracefulStopAll(running, cr.sp, cr.cfg.Daemon.ShutdownTimeoutDuration(), cr.rec, cr.stdout, cr.stderr)
+			gracefulStopAll(running, cr.sp, nextCfg.Daemon.ShutdownTimeoutDuration(), cr.rec, cr.stdout, cr.stderr)
 		}
-		newSp, spErr := newSessionProviderByName(newProviderName, cr.cfg.Session, cr.cityName)
+		newSp, spErr := newSessionProviderByName(newProviderName, nextCfg.Session, cr.cityName)
 		if spErr != nil {
 			fmt.Fprintf(cr.stderr, "%s: new session provider %q: %v (keeping old provider)\n", //nolint:errcheck
 				cr.logPrefix, newProviderName, spErr)
 		} else {
-			cr.serviceStateMu.Lock()
-			cr.sp = newSp
-			cr.serviceStateMu.Unlock()
-			cr.rops = newReconcileOps(cr.sp)
-			cr.upgradeToBeadReconcileOps()
-			cr.dops = newDrainOps(cr.sp)
+			nextSp = newSp
+			providerSwapped = true
 			cr.rec.Record(events.Event{
 				Type:    events.ProviderSwapped,
 				Actor:   "gc",
@@ -433,39 +429,39 @@ func (cr *CityRuntime) reloadConfig(
 	// Re-materialize and prepend system formulas.
 	sysDir, _ := MaterializeSystemFormulas(systemFormulasFS, "system_formulas", cityRoot)
 	if sysDir != "" {
-		cr.cfg.FormulaLayers.City = append([]string{sysDir}, cr.cfg.FormulaLayers.City...)
-		for rigName, layers := range cr.cfg.FormulaLayers.Rigs {
-			cr.cfg.FormulaLayers.Rigs[rigName] = append([]string{sysDir}, layers...)
+		nextCfg.FormulaLayers.City = append([]string{sysDir}, nextCfg.FormulaLayers.City...)
+		for rigName, layers := range nextCfg.FormulaLayers.Rigs {
+			nextCfg.FormulaLayers.Rigs[rigName] = append([]string{sysDir}, layers...)
 		}
 	}
-	if err := config.ValidateRigs(cr.cfg.Rigs, cr.cityName); err != nil {
+	if err := config.ValidateRigs(nextCfg.Rigs, cr.cityName); err != nil {
 		fmt.Fprintf(cr.stderr, "%s: config reload: %v\n", cr.logPrefix, err) //nolint:errcheck
 	}
-	resolveRigPaths(cityRoot, cr.cfg.Rigs)
-	if err := startBeadsLifecycle(cityRoot, cr.cityName, cr.cfg, cr.stderr); err != nil {
+	resolveRigPaths(cityRoot, nextCfg.Rigs)
+	if err := startBeadsLifecycle(cityRoot, cr.cityName, nextCfg, cr.stderr); err != nil {
 		fmt.Fprintf(cr.stderr, "%s: config reload: %v\n", cr.logPrefix, err) //nolint:errcheck
 	}
-	if len(cr.cfg.FormulaLayers.City) > 0 {
-		if err := ResolveFormulas(cityRoot, cr.cfg.FormulaLayers.City); err != nil {
+	if len(nextCfg.FormulaLayers.City) > 0 {
+		if err := ResolveFormulas(cityRoot, nextCfg.FormulaLayers.City); err != nil {
 			fmt.Fprintf(cr.stderr, "%s: config reload: city formulas: %v\n", cr.logPrefix, err) //nolint:errcheck
 		}
 	}
-	for _, r := range cr.cfg.Rigs {
-		if layers, ok := cr.cfg.FormulaLayers.Rigs[r.Name]; ok && len(layers) > 0 {
+	for _, r := range nextCfg.Rigs {
+		if layers, ok := nextCfg.FormulaLayers.Rigs[r.Name]; ok && len(layers) > 0 {
 			if err := ResolveFormulas(r.Path, layers); err != nil {
 				fmt.Fprintf(cr.stderr, "%s: config reload: rig %q formulas: %v\n", cr.logPrefix, r.Name, err) //nolint:errcheck
 			}
 		}
 	}
 
-	cr.poolSessions = computePoolSessions(cr.cfg, cr.cityName, cr.cityPath, cr.sp)
-	cr.poolDeathHandlers = computePoolDeathHandlers(cr.cfg, cr.cityName, cityRoot, cr.sp)
-	cr.suspendedNames = computeSuspendedNames(cr.cfg, cr.cityName, cr.cityPath)
+	cr.poolSessions = computePoolSessions(nextCfg, cr.cityName, cr.cityPath, nextSp)
+	cr.poolDeathHandlers = computePoolDeathHandlers(nextCfg, cr.cityName, cityRoot, nextSp)
+	cr.suspendedNames = computeSuspendedNames(nextCfg, cr.cityName, cr.cityPath)
 
 	// Rebuild crash tracker if config values changed, otherwise clear all
 	// crash history so that a fixed config automatically unquarantines agents.
-	newMaxR := cr.cfg.Daemon.MaxRestartsOrDefault()
-	newWindow := cr.cfg.Daemon.RestartWindowDuration()
+	newMaxR := nextCfg.Daemon.MaxRestartsOrDefault()
+	newWindow := nextCfg.Daemon.RestartWindowDuration()
 	switch {
 	case newMaxR <= 0:
 		cr.ct = nil
@@ -485,16 +481,27 @@ func (cr *CityRuntime) reloadConfig(
 		cr.cs.mu.Unlock()
 	}
 
-	cr.it = buildIdleTracker(cr.cfg, cr.cityName, cr.cityPath, cr.sp)
+	cr.it = buildIdleTracker(nextCfg, cr.cityName, cr.cityPath, nextSp)
 
-	if cr.cfg.Daemon.WispGCEnabled() {
-		cr.wg = newWispGC(cr.cfg.Daemon.WispGCIntervalDuration(),
-			cr.cfg.Daemon.WispTTLDuration(), beads.ExecCommandRunner())
+	if nextCfg.Daemon.WispGCEnabled() {
+		cr.wg = newWispGC(nextCfg.Daemon.WispGCIntervalDuration(),
+			nextCfg.Daemon.WispTTLDuration(), beads.ExecCommandRunner())
 	} else {
 		cr.wg = nil
 	}
 
-	cr.ad = buildAutomationDispatcher(cityRoot, cr.cfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
+	cr.ad = buildAutomationDispatcher(cityRoot, nextCfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
+
+	cr.serviceStateMu.Lock()
+	cr.cfg = nextCfg
+	cr.sp = nextSp
+	cr.serviceStateMu.Unlock()
+
+	if providerSwapped {
+		cr.rops = newReconcileOps(nextSp)
+		cr.upgradeToBeadReconcileOps()
+		cr.dops = newDrainOps(nextSp)
+	}
 
 	if cr.svc != nil {
 		if err := cr.svc.Reload(); err != nil {
@@ -527,7 +534,7 @@ func (cr *CityRuntime) reloadConfig(
 	// off nils it so the next tick falls back to the legacy reconciler.
 	// In-flight drains are discarded on toggle-off; the legacy path
 	// re-reconciles those sessions within one tick.
-	if cr.cfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
+	if nextCfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
 		if cr.sessionDrains == nil {
 			cr.sessionDrains = newDrainTracker()
 			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler enabled (config reload)\n", cr.logPrefix) //nolint:errcheck
@@ -540,7 +547,7 @@ func (cr *CityRuntime) reloadConfig(
 	}
 
 	fmt.Fprintf(cr.stdout, "Config reloaded: %s (rev %s)\n", //nolint:errcheck
-		configReloadSummary(oldAgentCount, oldRigCount, len(cr.cfg.Agents), len(cr.cfg.Rigs)),
+		configReloadSummary(oldAgentCount, oldRigCount, len(nextCfg.Agents), len(nextCfg.Rigs)),
 		shortRev(result.Revision))
 	telemetry.RecordConfigReload(ctx, result.Revision, nil)
 }
