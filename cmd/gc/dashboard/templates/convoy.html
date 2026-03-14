@@ -629,7 +629,57 @@
                 </div>
             </div>
 
-            <!-- Row 3: Rigs, Dogs, Health -->
+            <!-- Row 3: Services, Rigs, Dogs, Health -->
+
+            <!-- Services Panel -->
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>🛰️ Services</h2>
+                    <span class="count">{{if .ServicesState}}n/a{{else}}{{len .Services}}{{end}}</span>
+                    <button class="collapse-btn" aria-label="Toggle panel">▼</button>
+                    <button class="expand-btn">Expand</button>
+                </div>
+                <div class="panel-body">
+                    {{if eq .ServicesState "unavailable"}}
+                    <div class="empty-state">
+                        <p>Workspace services unavailable on this city API</p>
+                    </div>
+                    {{else if eq .ServicesState "fetch_failed"}}
+                    <div class="empty-state">
+                        <p>Workspace services fetch failed</p>
+                    </div>
+                    {{else if eq .ServicesState "timed_out"}}
+                    <div class="empty-state">
+                        <p>Workspace services fetch timed out</p>
+                    </div>
+                    {{else if .Services}}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Kind</th>
+                                <th>Service</th>
+                                <th>Local</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Services}}
+                            <tr>
+                                <td><strong>{{.Name}}</strong></td>
+                                <td>{{.Kind}}</td>
+                                <td>{{.ServiceState}}</td>
+                                <td>{{.LocalState}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                    {{else}}
+                    <div class="empty-state">
+                        <p>No workspace services</p>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
 
             <!-- Rigs Panel -->
             <div class="panel">

@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"html/template"
 	"io/fs"
 	"log"
@@ -19,7 +20,8 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
-// ConvoyFetcher defines the interface for fetching convoy data.
+// ConvoyFetcher defines the legacy dashboard fetch contract for the
+// core non-service panels.
 type ConvoyFetcher interface {
 	FetchConvoys() ([]ConvoyRow, error)
 	FetchMergeQueue() ([]MergeQueueRow, error)
@@ -36,9 +38,38 @@ type ConvoyFetcher interface {
 	FetchActivity() ([]ActivityRow, error)
 }
 
+// ServiceFetcher defines the workspace-services dashboard fetch contract.
+type ServiceFetcher interface {
+	FetchServices() ([]ServiceRow, error)
+}
+
+type dashboardFetcher interface {
+	ConvoyFetcher
+	ServiceFetcher
+}
+
+type scopedDashboardFetcher interface {
+	dashboardFetcher
+	Scope(string) dashboardFetcher
+}
+
+type servicesUnavailable interface {
+	error
+	ServicesUnavailable() bool
+}
+
+type servicePanelState string
+
+const (
+	servicePanelStateNone        servicePanelState = ""
+	servicePanelStateUnavailable servicePanelState = "unavailable"
+	servicePanelStateFetchFailed servicePanelState = "fetch_failed"
+	servicePanelStateTimedOut    servicePanelState = "timed_out"
+)
+
 // ConvoyHandler handles HTTP requests for the convoy dashboard.
 type ConvoyHandler struct {
-	fetcher      *APIFetcher
+	fetcher      dashboardFetcher
 	template     *template.Template
 	fetchTimeout time.Duration
 	csrfToken    string
@@ -46,11 +77,52 @@ type ConvoyHandler struct {
 	apiURL       string // supervisor API URL for city list fetches
 }
 
+type dashboardFetchResult struct {
+	convoys          []ConvoyRow
+	mergeQueue       []MergeQueueRow
+	workers          []WorkerRow
+	mail             []MailRow
+	services         []ServiceRow
+	servicesFinished bool
+	servicesState    servicePanelState
+	rigs             []RigRow
+	dogs             []DogRow
+	escalations      []EscalationRow
+	health           *HealthRow
+	queues           []QueueRow
+	assigned         []AssignedRow
+	mayor            *MayorStatus
+	issues           []IssueRow
+	activity         []ActivityRow
+}
+
+type dashboardFetchState struct {
+	mu     sync.RWMutex
+	result dashboardFetchResult
+}
+
+func (s *dashboardFetchState) update(apply func(*dashboardFetchResult)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	apply(&s.result)
+}
+
+func (s *dashboardFetchState) snapshot() dashboardFetchResult {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.result
+}
+
 // NewConvoyHandler creates a new convoy handler.
-func NewConvoyHandler(fetcher *APIFetcher, isSupervisor bool, apiURL string, fetchTimeout time.Duration, csrfToken string) (*ConvoyHandler, error) {
+func NewConvoyHandler(fetcher dashboardFetcher, isSupervisor bool, apiURL string, fetchTimeout time.Duration, csrfToken string) (*ConvoyHandler, error) {
 	tmpl, err := LoadTemplates()
 	if err != nil {
 		return nil, err
+	}
+	if isSupervisor {
+		if _, ok := fetcher.(scopedDashboardFetcher); !ok {
+			return nil, errors.New("supervisor dashboard requires a scoped fetcher")
+		}
 	}
 
 	return &ConvoyHandler{
@@ -84,7 +156,9 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if selectedCity != "" {
-			fetcher = h.fetcher.WithScope(selectedCity)
+			if scoped, ok := h.fetcher.(scopedDashboardFetcher); ok {
+				fetcher = scoped.Scope(selectedCity)
+			}
 		}
 	}
 
@@ -92,124 +166,134 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var (
-		convoys     []ConvoyRow
-		mergeQueue  []MergeQueueRow
-		workers     []WorkerRow
-		mail        []MailRow
-		rigs        []RigRow
-		dogs        []DogRow
-		escalations []EscalationRow
-		health      *HealthRow
-		queues      []QueueRow
-		assigned    []AssignedRow
-		mayor       *MayorStatus
-		issues      []IssueRow
-		activity    []ActivityRow
-		wg          sync.WaitGroup
+		results dashboardFetchState
+		wg      sync.WaitGroup
 	)
 
-	wg.Add(13)
+	wg.Add(14)
 
 	go func() {
 		defer wg.Done()
-		var err error
-		convoys, err = fetcher.FetchConvoys()
+		convoys, err := fetcher.FetchConvoys()
+		results.update(func(r *dashboardFetchResult) { r.convoys = convoys })
 		if err != nil {
 			log.Printf("dashboard: FetchConvoys failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		mergeQueue, err = fetcher.FetchMergeQueue()
+		mergeQueue, err := fetcher.FetchMergeQueue()
+		results.update(func(r *dashboardFetchResult) { r.mergeQueue = mergeQueue })
 		if err != nil {
 			log.Printf("dashboard: FetchMergeQueue failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		workers, err = fetcher.FetchWorkers()
+		workers, err := fetcher.FetchWorkers()
+		results.update(func(r *dashboardFetchResult) { r.workers = workers })
 		if err != nil {
 			log.Printf("dashboard: FetchWorkers failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		mail, err = fetcher.FetchMail()
+		mail, err := fetcher.FetchMail()
+		results.update(func(r *dashboardFetchResult) { r.mail = mail })
 		if err != nil {
 			log.Printf("dashboard: FetchMail failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		rigs, err = fetcher.FetchRigs()
+		services, err := fetcher.FetchServices()
+		var unavailable servicesUnavailable
+		results.update(func(r *dashboardFetchResult) {
+			r.services = services
+			r.servicesFinished = true
+			switch {
+			case errors.As(err, &unavailable) && unavailable.ServicesUnavailable():
+				r.servicesState = servicePanelStateUnavailable
+			case err != nil:
+				r.servicesState = servicePanelStateFetchFailed
+			default:
+				r.servicesState = servicePanelStateNone
+			}
+		})
+		if err != nil {
+			if !errors.As(err, &unavailable) || !unavailable.ServicesUnavailable() {
+				log.Printf("dashboard: FetchServices failed: %v", err)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		rigs, err := fetcher.FetchRigs()
+		results.update(func(r *dashboardFetchResult) { r.rigs = rigs })
 		if err != nil {
 			log.Printf("dashboard: FetchRigs failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		dogs, err = fetcher.FetchDogs()
+		dogs, err := fetcher.FetchDogs()
+		results.update(func(r *dashboardFetchResult) { r.dogs = dogs })
 		if err != nil {
 			log.Printf("dashboard: FetchDogs failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		escalations, err = fetcher.FetchEscalations()
+		escalations, err := fetcher.FetchEscalations()
+		results.update(func(r *dashboardFetchResult) { r.escalations = escalations })
 		if err != nil {
 			log.Printf("dashboard: FetchEscalations failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		health, err = fetcher.FetchHealth()
+		health, err := fetcher.FetchHealth()
+		results.update(func(r *dashboardFetchResult) { r.health = health })
 		if err != nil {
 			log.Printf("dashboard: FetchHealth failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		queues, err = fetcher.FetchQueues()
+		queues, err := fetcher.FetchQueues()
+		results.update(func(r *dashboardFetchResult) { r.queues = queues })
 		if err != nil {
 			log.Printf("dashboard: FetchQueues failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		assigned, err = fetcher.FetchAssigned()
+		assigned, err := fetcher.FetchAssigned()
+		results.update(func(r *dashboardFetchResult) { r.assigned = assigned })
 		if err != nil {
 			log.Printf("dashboard: FetchAssigned failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		mayor, err = fetcher.FetchMayor()
+		mayor, err := fetcher.FetchMayor()
+		results.update(func(r *dashboardFetchResult) { r.mayor = mayor })
 		if err != nil {
 			log.Printf("dashboard: FetchMayor failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		issues, err = fetcher.FetchIssues()
+		issues, err := fetcher.FetchIssues()
+		results.update(func(r *dashboardFetchResult) { r.issues = issues })
 		if err != nil {
 			log.Printf("dashboard: FetchIssues failed: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		var err error
-		activity, err = fetcher.FetchActivity()
+		activity, err := fetcher.FetchActivity()
+		results.update(func(r *dashboardFetchResult) { r.activity = activity })
 		if err != nil {
 			log.Printf("dashboard: FetchActivity failed: %v", err)
 		}
@@ -221,35 +305,50 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		close(done)
 	}()
 
+	timedOut := false
 	select {
 	case <-done:
 	case <-ctx.Done():
+		timedOut = true
 		log.Printf("dashboard: fetch timeout after %v, using partial data", h.fetchTimeout)
 		// Proceed with whatever data has been collected so far.
 		// Blocking on <-done would defeat the timeout.
 	}
 
-	summary := computeSummary(workers, assigned, issues, convoys, escalations, activity)
+	snapshot := results.snapshot()
+	if timedOut && !snapshot.servicesFinished {
+		snapshot.servicesState = servicePanelStateTimedOut
+	}
+	summary := computeSummary(
+		snapshot.workers,
+		snapshot.assigned,
+		snapshot.issues,
+		snapshot.convoys,
+		snapshot.escalations,
+		snapshot.activity,
+	)
 
 	data := ConvoyData{
-		Convoys:      convoys,
-		MergeQueue:   mergeQueue,
-		Workers:      workers,
-		Mail:         mail,
-		Rigs:         rigs,
-		Dogs:         dogs,
-		Escalations:  escalations,
-		Health:       health,
-		Queues:       queues,
-		Assigned:     assigned,
-		Mayor:        mayor,
-		Issues:       enrichIssuesWithAssignees(issues, assigned),
-		Activity:     activity,
-		Summary:      summary,
-		Expand:       expandPanel,
-		CSRFToken:    h.csrfToken,
-		Cities:       cities,
-		SelectedCity: selectedCity,
+		Convoys:       snapshot.convoys,
+		MergeQueue:    snapshot.mergeQueue,
+		Workers:       snapshot.workers,
+		Mail:          snapshot.mail,
+		Services:      snapshot.services,
+		ServicesState: snapshot.servicesState,
+		Rigs:          snapshot.rigs,
+		Dogs:          snapshot.dogs,
+		Escalations:   snapshot.escalations,
+		Health:        snapshot.health,
+		Queues:        snapshot.queues,
+		Assigned:      snapshot.assigned,
+		Mayor:         snapshot.mayor,
+		Issues:        enrichIssuesWithAssignees(snapshot.issues, snapshot.assigned),
+		Activity:      snapshot.activity,
+		Summary:       summary,
+		Expand:        expandPanel,
+		CSRFToken:     h.csrfToken,
+		Cities:        cities,
+		SelectedCity:  selectedCity,
 	}
 
 	var buf bytes.Buffer
@@ -266,13 +365,15 @@ func (h *ConvoyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeActivityPanel handles GET /panels/activity for targeted panel refresh.
-// Only fetches activity data (1 API call instead of 13), renders just the
-// activity panel HTML fragment. Used by the JS event router for high-frequency
-// observation events that don't affect other panels.
+// Only fetches activity data, then renders just the activity panel HTML
+// fragment. Used by the JS event router for high-frequency observation events
+// that don't affect other panels.
 func (h *ConvoyHandler) ServeActivityPanel(w http.ResponseWriter, r *http.Request) {
 	fetcher := h.fetcher
 	if city := r.URL.Query().Get("city"); city != "" {
-		fetcher = h.fetcher.WithScope(city)
+		if scoped, ok := h.fetcher.(scopedDashboardFetcher); ok {
+			fetcher = scoped.Scope(city)
+		}
 	}
 	activity, err := fetcher.FetchActivity()
 	if err != nil {

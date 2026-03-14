@@ -20,22 +20,24 @@ type ActivityInfo struct {
 
 // ConvoyData represents data passed to the convoy template.
 type ConvoyData struct {
-	Convoys     []ConvoyRow
-	MergeQueue  []MergeQueueRow
-	Workers     []WorkerRow
-	Mail        []MailRow
-	Rigs        []RigRow
-	Dogs        []DogRow
-	Escalations []EscalationRow
-	Health      *HealthRow
-	Queues      []QueueRow
-	Assigned    []AssignedRow
-	Mayor       *MayorStatus
-	Issues      []IssueRow
-	Activity    []ActivityRow
-	Summary     *Summary
-	Expand      string // Panel to show fullscreen (from ?expand=name)
-	CSRFToken   string // Token for CSRF protection on POST requests
+	Convoys       []ConvoyRow
+	MergeQueue    []MergeQueueRow
+	Workers       []WorkerRow
+	Mail          []MailRow
+	Services      []ServiceRow
+	ServicesState servicePanelState
+	Rigs          []RigRow
+	Dogs          []DogRow
+	Escalations   []EscalationRow
+	Health        *HealthRow
+	Queues        []QueueRow
+	Assigned      []AssignedRow
+	Mayor         *MayorStatus
+	Issues        []IssueRow
+	Activity      []ActivityRow
+	Summary       *Summary
+	Expand        string // Panel to show fullscreen (from ?expand=name)
+	CSRFToken     string // Token for CSRF protection on POST requests
 
 	// Supervisor mode: city selector.
 	Cities       []CityTab // all managed cities (empty in standalone mode)
@@ -56,6 +58,14 @@ type RigRow struct {
 	CrewCount    int
 	HasWitness   bool
 	HasRefinery  bool
+}
+
+// ServiceRow represents a workspace service on the dashboard.
+type ServiceRow struct {
+	Name         string
+	Kind         string
+	ServiceState string
+	LocalState   string
 }
 
 // DogRow represents a utility pool worker.

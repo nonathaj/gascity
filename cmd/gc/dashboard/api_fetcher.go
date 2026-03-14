@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,15 @@ import (
 	"sync"
 	"time"
 )
+
+type servicesUnavailableError struct{}
+
+func (servicesUnavailableError) Error() string { return "dashboard services endpoint unavailable" }
+func (servicesUnavailableError) ServicesUnavailable() bool {
+	return true
+}
+
+var errServicesEndpointUnavailable error = servicesUnavailableError{}
 
 // APIFetcher implements ConvoyFetcher by calling the GC API server.
 type APIFetcher struct {
@@ -26,6 +36,12 @@ type APIFetcher struct {
 	sessionsOnce   sync.Once
 	sessionsCached []apiSessionResponse
 }
+
+var (
+	_ ConvoyFetcher          = (*APIFetcher)(nil)
+	_ ServiceFetcher         = (*APIFetcher)(nil)
+	_ scopedDashboardFetcher = (*APIFetcher)(nil)
+)
 
 // NewAPIFetcher creates a new API-backed fetcher.
 func NewAPIFetcher(baseURL, cityPath, cityName string) *APIFetcher {
@@ -50,6 +66,11 @@ func (f *APIFetcher) WithScope(cityScope string) *APIFetcher {
 		cityScope: cityScope,
 		client:    f.client,
 	}
+}
+
+// Scope returns a scoped dashboard fetcher without exposing the concrete type.
+func (f *APIFetcher) Scope(cityScope string) dashboardFetcher {
+	return f.WithScope(cityScope)
 }
 
 // --- API response types (matching internal/api JSON shapes) ---
@@ -87,6 +108,13 @@ type apiRigResponse struct {
 	Path      string `json:"path"`
 	Suspended bool   `json:"suspended"`
 	Prefix    string `json:"prefix,omitempty"`
+}
+
+type apiServiceResponse struct {
+	ServiceName  string `json:"service_name"`
+	Kind         string `json:"kind,omitempty"`
+	ServiceState string `json:"service_state"`
+	LocalState   string `json:"local_state"`
 }
 
 type apiConvoyDetail struct {
@@ -142,6 +170,16 @@ type apiStatusResponse struct {
 	Running    int    `json:"running"`
 }
 
+type apiHTTPError struct {
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e *apiHTTPError) Error() string {
+	return fmt.Sprintf("GET %s: status %d: %s", e.Path, e.StatusCode, e.Body)
+}
+
 // --- HTTP helpers ---
 
 // get performs a GET request and decodes the JSON response into result.
@@ -154,7 +192,11 @@ func (f *APIFetcher) get(path string, result any) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("GET %s: status %d: %s", path, resp.StatusCode, string(body))
+		return &apiHTTPError{
+			Path:       path,
+			StatusCode: resp.StatusCode,
+			Body:       string(body),
+		}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
@@ -195,6 +237,42 @@ func (f *APIFetcher) FetchRigs() ([]RigRow, error) {
 		return rows[i].Name < rows[j].Name
 	})
 	return rows, nil
+}
+
+// FetchServices returns all workspace services from the API.
+func (f *APIFetcher) FetchServices() ([]ServiceRow, error) {
+	var services []apiServiceResponse
+	if err := f.getList("/v0/services", &services); err != nil {
+		var httpErr *apiHTTPError
+		if errors.As(err, &httpErr) && serviceEndpointUnavailable(httpErr.StatusCode) {
+			return nil, errServicesEndpointUnavailable
+		}
+		return nil, fmt.Errorf("fetching services: %w", err)
+	}
+
+	rows := make([]ServiceRow, 0, len(services))
+	for _, svc := range services {
+		rows = append(rows, ServiceRow{
+			Name:         svc.ServiceName,
+			Kind:         svc.Kind,
+			ServiceState: svc.ServiceState,
+			LocalState:   svc.LocalState,
+		})
+	}
+
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].Name < rows[j].Name
+	})
+	return rows, nil
+}
+
+func serviceEndpointUnavailable(statusCode int) bool {
+	switch statusCode {
+	case http.StatusNotFound:
+		return true
+	default:
+		return false
+	}
 }
 
 // FetchWorkers returns all running worker sessions with activity data.
