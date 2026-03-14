@@ -5,25 +5,26 @@ The `bd` CLI is the primary interface for bead CRUD.
 
 ## Rig-scoped beads
 
-Each rig has its own `.beads/` database. When creating or querying beads
-for a rig, you **must run `bd` from the rig directory** so it finds the
-correct database. City-level beads (no rig) use the city root's `.beads/`.
+Each rig has its own `.beads/` database with its own ID prefix (e.g.
+`mc-` for mission-control, `be-` for beads). **A bead must live in the
+same database as the agent that will work on it.** When you sling a bead
+to a rig-scoped agent, sling operates on the agent's rig database — so
+the bead must already exist there. The bead ID prefix tells you which
+rig it belongs to.
 
-```
-bd create "title" --dir /path/to/rig   # Create in a specific rig's database
-cd /path/to/rig && bd create "title"   # Or run from the rig directory
-```
-
-Use `gc rig list` to find rig paths. The bead ID prefix (e.g. `hw-` for
-hello-world) tells you which rig a bead belongs to.
+Use `gc rig list` to see rig names, paths, and prefixes.
 
 ## Creating work
 
+**Use `--rig` to create beads in the right database.** If the work will
+be dispatched to a rig-scoped agent, create the bead in that agent's rig:
+
 ```
-bd create "title"                      # Create in current directory's .beads/
-bd create "title" -t bug               # Create with type
-bd create "title" --label priority=high # Create with labels
-bd create "title" --dir /path/to/rig   # Create in a specific rig
+bd create "title" --rig mission-control  # Create in mission-control's db (mc- prefix)
+bd create "title" --rig beads            # Create in beads db (be- prefix)
+bd create "title"                        # Create in current directory's .beads/
+bd create "title" -t bug                 # Create with type
+bd create "title" --label priority=high  # Create with labels
 ```
 
 ## Finding work
