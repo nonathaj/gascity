@@ -151,24 +151,19 @@ func TestManagerReloadUnsupportedContractDegradesService(t *testing.T) {
 	}
 }
 
-func TestManagerReloadClosesReplacedInstances(t *testing.T) {
+func TestManagerReloadReusesUnchangedInstances(t *testing.T) {
 	contract := uniqueContract(t)
 	first := &testInstance{}
-	second := &testInstance{}
 	callCount := 0
 	RegisterWorkflowContract(contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
 		callCount++
-		inst := first
-		if callCount > 1 {
-			inst = second
-		}
-		inst.status = Status{
+		first.status = Status{
 			ServiceName:      svc.Name,
 			WorkflowContract: contract,
 			ServiceState:     "ready",
 			LocalState:       "ready",
 		}
-		return inst, nil
+		return first, nil
 	})
 
 	rt := &testRuntime{
@@ -191,11 +186,64 @@ func TestManagerReloadClosesReplacedInstances(t *testing.T) {
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("second Reload: %v", err)
 	}
+	if callCount != 1 {
+		t.Fatalf("callCount = %d, want 1", callCount)
+	}
+	if first.closed {
+		t.Fatal("expected unchanged instance to remain open")
+	}
+}
+
+func TestManagerReloadClosesChangedInstances(t *testing.T) {
+	firstContract := uniqueContract(t)
+	secondContract := uniqueContract(t)
+	first := &testInstance{}
+	second := &testInstance{}
+	RegisterWorkflowContract(firstContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		first.status = Status{
+			ServiceName:      svc.Name,
+			WorkflowContract: firstContract,
+			ServiceState:     "ready",
+			LocalState:       "ready",
+		}
+		return first, nil
+	})
+	RegisterWorkflowContract(secondContract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		second.status = Status{
+			ServiceName:      svc.Name,
+			WorkflowContract: secondContract,
+			ServiceState:     "ready",
+			LocalState:       "ready",
+		}
+		return second, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: firstContract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("first Reload: %v", err)
+	}
+	rt.cfg.Services[0].Workflow.Contract = secondContract
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("second Reload: %v", err)
+	}
 	if !first.closed {
-		t.Fatal("expected first instance to be closed on replacement reload")
+		t.Fatal("expected first instance to be closed on changed reload")
 	}
 	if second.closed {
-		t.Fatal("expected current instance to remain open")
+		t.Fatal("expected replacement instance to remain open")
 	}
 }
 

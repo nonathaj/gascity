@@ -99,6 +99,37 @@ func TestValidateServicesProxyProcessAcceptsCommand(t *testing.T) {
 	}
 }
 
+func TestParseProxyProcessServiceConfig(t *testing.T) {
+	cfg, err := Parse([]byte(`
+[workspace]
+name = "test-city"
+
+[[service]]
+name = "bridge"
+kind = "proxy_process"
+
+[service.process]
+command = ["./scripts/start-bridge.sh"]
+health_path = "/healthz"
+`))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(cfg.Services) != 1 {
+		t.Fatalf("len(Services) = %d, want 1", len(cfg.Services))
+	}
+	svc := cfg.Services[0]
+	if svc.KindOrDefault() != "proxy_process" {
+		t.Fatalf("KindOrDefault = %q, want proxy_process", svc.KindOrDefault())
+	}
+	if len(svc.Process.Command) != 1 || svc.Process.Command[0] != "./scripts/start-bridge.sh" {
+		t.Fatalf("process.command = %#v, want start-bridge.sh", svc.Process.Command)
+	}
+	if svc.Process.HealthPath != "/healthz" {
+		t.Fatalf("process.health_path = %q, want /healthz", svc.Process.HealthPath)
+	}
+}
+
 func TestExpandCityPacks_ServiceFromPack(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "packs/review/pack.toml", `

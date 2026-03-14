@@ -24,6 +24,8 @@ const (
 	proxyProcessShutdownWait   = 2 * time.Second
 )
 
+var errProxyProcessExitedEarly = errors.New("process exited before listener became ready")
+
 type proxyProcessInstance struct {
 	rt           RuntimeContext
 	svc          config.Service
@@ -34,6 +36,7 @@ type proxyProcessInstance struct {
 
 	mu          sync.Mutex
 	cmd         *exec.Cmd
+	doneCh      chan struct{}
 	nextRestart time.Time
 	closed      bool
 	status      Status
@@ -186,6 +189,8 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 
 	p.mu.Lock()
 	p.cmd = cmd
+	doneCh := make(chan struct{})
+	p.doneCh = doneCh
 	p.nextRestart = time.Time{}
 	p.status.ServiceState = "starting"
 	p.status.LocalState = "starting"
@@ -193,11 +198,12 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 	p.status.UpdatedAt = now
 	p.mu.Unlock()
 
-	go func(cmd *exec.Cmd, logFile *os.File) {
+	go func(cmd *exec.Cmd, logFile *os.File, doneCh chan struct{}) {
 		err := cmd.Wait()
 		_ = logFile.Close()
 
 		p.mu.Lock()
+		defer close(doneCh)
 		defer p.mu.Unlock()
 		if p.cmd != cmd {
 			return
@@ -211,10 +217,12 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		p.status.StateReason = processExitReason(err)
 		p.status.UpdatedAt = time.Now().UTC()
 		p.nextRestart = time.Now().UTC().Add(proxyProcessRestartBackoff)
-	}(cmd, logFile)
+	}(cmd, logFile, doneCh)
 
 	if err := p.waitReady(now.Add(proxyProcessReadyTimeout)); err != nil {
-		_ = stopProcessGroup(cmd)
+		if !errors.Is(err, errProxyProcessExitedEarly) {
+			_ = stopProcessGroup(cmd)
+		}
 		return err
 	}
 
@@ -232,14 +240,16 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 func (p *proxyProcessInstance) waitReady(deadline time.Time) error {
 	for time.Now().Before(deadline) {
 		p.mu.Lock()
-		cmd := p.cmd
 		closed := p.closed
+		doneCh := p.doneCh
 		p.mu.Unlock()
 		if closed {
 			return errors.New("service closed")
 		}
-		if cmd == nil {
-			return errors.New("process exited before listener became ready")
+		select {
+		case <-doneCh:
+			return errProxyProcessExitedEarly
+		default:
 		}
 		if conn, err := net.DialTimeout("unix", p.socketPath, 100*time.Millisecond); err == nil {
 			_ = conn.Close()
@@ -324,7 +334,7 @@ func stopProcessGroup(cmd *exec.Cmd) error {
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	deadline := time.Now().Add(proxyProcessShutdownWait)
 	for time.Now().Before(deadline) {
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		if err := syscall.Kill(-cmd.Process.Pid, 0); errors.Is(err, syscall.ESRCH) {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)

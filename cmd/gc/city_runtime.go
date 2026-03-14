@@ -396,6 +396,8 @@ func (cr *CityRuntime) reloadConfig(
 	oldRigCount := len(cr.cfg.Rigs)
 	nextCfg := result.Cfg
 	nextSp := cr.sp
+	nextRops := cr.rops
+	nextDops := cr.dops
 	providerSwapped := false
 
 	// Detect session provider change.
@@ -416,6 +418,8 @@ func (cr *CityRuntime) reloadConfig(
 		} else {
 			nextSp = newSp
 			providerSwapped = true
+			nextRops = newReconcileOps(nextSp)
+			nextDops = newDrainOps(nextSp)
 			cr.rec.Record(events.Event{
 				Type:    events.ProviderSwapped,
 				Actor:   "gc",
@@ -492,16 +496,18 @@ func (cr *CityRuntime) reloadConfig(
 
 	cr.ad = buildAutomationDispatcher(cityRoot, nextCfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
 
+	if cr.cs != nil {
+		cr.cs.update(nextCfg, nextSp)
+	}
 	cr.serviceStateMu.Lock()
 	cr.cfg = nextCfg
 	cr.sp = nextSp
-	cr.serviceStateMu.Unlock()
-
+	cr.rops = nextRops
+	cr.dops = nextDops
 	if providerSwapped {
-		cr.rops = newReconcileOps(nextSp)
 		cr.upgradeToBeadReconcileOps()
-		cr.dops = newDrainOps(nextSp)
 	}
+	cr.serviceStateMu.Unlock()
 
 	if cr.svc != nil {
 		if err := cr.svc.Reload(); err != nil {
@@ -510,7 +516,6 @@ func (cr *CityRuntime) reloadConfig(
 	}
 
 	if cr.cs != nil {
-		cr.cs.update(cr.cfg, cr.sp)
 		// Upgrade rops if store recovered from nil → non-nil.
 		cr.upgradeToBeadReconcileOps()
 	} else {

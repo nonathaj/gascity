@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,7 +46,14 @@ func (m *Manager) Reload() error {
 	defer m.opMu.Unlock()
 
 	cfg := m.rt.Config()
+	m.mu.RLock()
+	oldEntries := make(map[string]*entry, len(m.entries))
+	for name, e := range m.entries {
+		oldEntries[name] = e
+	}
+	m.mu.RUnlock()
 	next := make(map[string]*entry, len(cfg.Services))
+	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
 
 	for _, svc := range cfg.Services {
@@ -57,6 +65,12 @@ func (m *Manager) Reload() error {
 			base.LocalState = "config_error"
 			base.StateReason = err.Error()
 			next[svc.Name] = &entry{spec: svc, status: base}
+			continue
+		}
+		if existing, ok := oldEntries[svc.Name]; ok && existing.inst != nil && reflect.DeepEqual(existing.spec, svc) {
+			existing.status = mergeStatus(base, existing.inst.Status())
+			next[svc.Name] = existing
+			reused[svc.Name] = true
 			continue
 		}
 
@@ -100,12 +114,14 @@ func (m *Manager) Reload() error {
 	}
 
 	m.mu.Lock()
-	old := m.entries
 	m.entries = next
 	m.mu.Unlock()
 
 	var firstErr error
-	for _, e := range old {
+	for name, e := range oldEntries {
+		if reused[name] {
+			continue
+		}
 		if e.inst != nil {
 			if err := e.inst.Close(); err != nil && firstErr == nil {
 				firstErr = err
