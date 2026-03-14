@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/workspacesvc"
 )
 
 func TestClientSuspendCity(t *testing.T) {
@@ -276,6 +278,65 @@ func TestClientRestartRig(t *testing.T) {
 	}
 	if gotPath != "/v0/rig/myrig/restart" {
 		t.Errorf("path = %q, want /v0/rig/myrig/restart", gotPath)
+	}
+}
+
+func TestClientListServices(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/services" {
+			t.Fatalf("path = %q, want /v0/services", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"items": []workspacesvc.Status{{
+				ServiceName:      "healthz",
+				Kind:             "workflow",
+				MountPath:        "/svc/healthz",
+				PublishMode:      "private",
+				ServiceState:     "ready",
+				LocalState:       "ready",
+				PublicationState: "private",
+			}},
+			"total": 1,
+		})
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	items, err := c.ListServices()
+	if err != nil {
+		t.Fatalf("ListServices: %v", err)
+	}
+	if len(items) != 1 || items[0].ServiceName != "healthz" {
+		t.Fatalf("items = %#v, want one healthz service", items)
+	}
+}
+
+func TestClientGetService(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/service/healthz" {
+			t.Fatalf("path = %q, want /v0/service/healthz", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(workspacesvc.Status{ //nolint:errcheck
+			ServiceName:      "healthz",
+			Kind:             "workflow",
+			MountPath:        "/svc/healthz",
+			PublishMode:      "private",
+			ServiceState:     "ready",
+			LocalState:       "ready",
+			PublicationState: "private",
+		})
+	}))
+	defer ts.Close()
+
+	c := NewClient(ts.URL)
+	status, err := c.GetService("healthz")
+	if err != nil {
+		t.Fatalf("GetService: %v", err)
+	}
+	if status.ServiceName != "healthz" {
+		t.Fatalf("ServiceName = %q, want healthz", status.ServiceName)
 	}
 }
 

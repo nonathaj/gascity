@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/workspacesvc"
 )
 
 // connError wraps transport-level errors (connection refused, timeout, etc.)
@@ -65,6 +67,26 @@ func NewClient(baseURL string) *Client {
 			Timeout: 10 * time.Second,
 		},
 	}
+}
+
+// ListServices fetches the current workspace service statuses.
+func (c *Client) ListServices() ([]workspacesvc.Status, error) {
+	var resp struct {
+		Items []workspacesvc.Status `json:"items"`
+	}
+	if err := c.doGet("/v0/services", &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+// GetService fetches one current workspace service status.
+func (c *Client) GetService(name string) (workspacesvc.Status, error) {
+	var resp workspacesvc.Status
+	if err := c.doGet("/v0/service/"+url.PathEscape(name), &resp); err != nil {
+		return workspacesvc.Status{}, err
+	}
+	return resp, nil
 }
 
 // SuspendCity suspends the city via PATCH /v0/city.
@@ -175,6 +197,44 @@ func (c *Client) doMutation(method, path string, body any) error {
 		return &readOnlyError{msg: msg}
 	}
 
+	if apiErr.Message != "" {
+		return fmt.Errorf("API error: %s", apiErr.Message)
+	}
+	if apiErr.Error != "" {
+		return fmt.Errorf("API error: %s", apiErr.Error)
+	}
+	return fmt.Errorf("API returned %d", resp.StatusCode)
+}
+
+func (c *Client) doGet(path string, out any) error {
+	req, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return &connError{err: fmt.Errorf("request failed: %w", err)}
+	}
+	defer resp.Body.Close() //nolint:errcheck // best-effort
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if out == nil {
+			return nil
+		}
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+		return nil
+	}
+
+	var apiErr struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiErr); err != nil {
+		return fmt.Errorf("API returned %d", resp.StatusCode)
+	}
 	if apiErr.Message != "" {
 		return fmt.Errorf("API error: %s", apiErr.Message)
 	}
