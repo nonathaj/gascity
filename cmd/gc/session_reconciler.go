@@ -234,6 +234,12 @@ func reconcileSessionBeads(
 					agentCfg := templateParamsToConfig(tp)
 					currentHash := runtime.CoreFingerprint(agentCfg)
 					if storedHash != currentHash {
+						// Defer config-drift drain while a user is attached.
+						// Killing a session mid-conversation is disruptive;
+						// the drift will be applied when the user detaches.
+						if sp.IsAttached(name) {
+							continue
+						}
 						ddt := driftDrainTimeout
 						if ddt <= 0 {
 							ddt = defaultDrainTimeout
