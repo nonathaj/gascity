@@ -14,24 +14,30 @@ import (
 
 // Status is the API-facing state projection for one workspace service.
 type Status struct {
-	ServiceName      string    `json:"service_name"`
-	Kind             string    `json:"kind,omitempty"`
-	WorkflowContract string    `json:"workflow_contract,omitempty"`
-	MountPath        string    `json:"mount_path"`
-	PublishMode      string    `json:"publish_mode"`
-	Visibility       string    `json:"visibility,omitempty"`
-	Hostname         string    `json:"hostname,omitempty"`
-	StateRoot        string    `json:"state_root"`
-	PublicURL        string    `json:"public_url,omitempty"`
-	URL              string    `json:"url,omitempty"`
-	ServiceState     string    `json:"service_state"`
-	State            string    `json:"state,omitempty"`
-	LocalState       string    `json:"local_state"`
-	PublicationState string    `json:"publication_state"`
-	StateReason      string    `json:"state_reason,omitempty"`
-	Reason           string    `json:"reason,omitempty"`
-	AllowWebSockets  bool      `json:"allow_websockets,omitempty"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ServiceName      string `json:"service_name"`
+	Kind             string `json:"kind,omitempty"`
+	WorkflowContract string `json:"workflow_contract,omitempty"`
+	MountPath        string `json:"mount_path"`
+	PublishMode      string `json:"publish_mode"`
+	Visibility       string `json:"visibility,omitempty"`
+	Hostname         string `json:"hostname,omitempty"`
+	StateRoot        string `json:"state_root"`
+	// PublicURL is the legacy compatibility alias for URL.
+	PublicURL string `json:"public_url,omitempty"`
+	// URL is the canonical published-service URL.
+	URL string `json:"url,omitempty"`
+	// ServiceState is the legacy compatibility alias for State.
+	ServiceState string `json:"service_state"`
+	// State is the canonical service state.
+	State            string `json:"state,omitempty"`
+	LocalState       string `json:"local_state"`
+	PublicationState string `json:"publication_state"`
+	// StateReason is the legacy compatibility alias for Reason.
+	StateReason string `json:"state_reason,omitempty"`
+	// Reason is the canonical human/actionable reason for State.
+	Reason          string    `json:"reason,omitempty"`
+	AllowWebSockets bool      `json:"allow_websockets,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // RuntimeContext provides the runtime hooks a workspace service can use.

@@ -70,6 +70,8 @@ func (s Service) PublishModeOrDefault() string {
 }
 
 // PublicationVisibilityOrDefault returns the normalized publication visibility.
+// Legacy publish_mode=direct maps to public publication intent for backward
+// compatibility with pre-supervisor workspace services.
 func (s Service) PublicationVisibilityOrDefault() string {
 	if v := strings.TrimSpace(strings.ToLower(s.Publication.Visibility)); v != "" {
 		return v

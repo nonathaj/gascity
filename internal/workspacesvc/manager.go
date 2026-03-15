@@ -378,6 +378,9 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 }
 
 func mergeStatus(base, override Status) Status {
+	// URL/State/Reason are the canonical fields. PublicURL/ServiceState/
+	// StateReason are retained as compatibility aliases for older API clients,
+	// so merges backfill whichever side is missing to keep the pair in sync.
 	if override.ServiceName != "" {
 		base.ServiceName = override.ServiceName
 	}

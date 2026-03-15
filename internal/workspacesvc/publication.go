@@ -68,7 +68,7 @@ func normalizeRouteLabel(value, fallback string) string {
 			b.WriteByte('-')
 			prevDash = true
 		}
-		if b.Len() >= 24 {
+		if b.Len() >= 63 {
 			break
 		}
 	}
@@ -80,6 +80,8 @@ func normalizeRouteLabel(value, fallback string) string {
 }
 
 func publicationHash(serviceLabel, workspaceLabel, tenantLabel, visibility string) string {
+	// Keep the hash input explicit and unambiguous; labels are normalized to
+	// ASCII route components before hashing, so the separators are structural.
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		serviceLabel,
 		workspaceLabel,

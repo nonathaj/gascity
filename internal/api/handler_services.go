@@ -90,6 +90,8 @@ func serviceExternallyReachable(status workspacesvc.Status) bool {
 	if status.PublishMode == "direct" {
 		return true
 	}
+	// This checks effective reachability, not publication intent. Services that
+	// want publication but are currently blocked must still fail closed here.
 	if strings.TrimSpace(status.PublicURL) != "" || strings.TrimSpace(status.URL) != "" {
 		return true
 	}
