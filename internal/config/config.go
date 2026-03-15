@@ -641,8 +641,9 @@ type EventsConfig struct {
 // DoltConfig holds optional dolt server overrides.
 // When present in city.toml, these override the defaults.
 type DoltConfig struct {
-	// Port is the dolt server port. Defaults to 3307.
-	Port int `toml:"port,omitempty" jsonschema:"default=3307"`
+	// Port is the dolt server port. 0 means use ephemeral port allocation
+	// (hashed from city path). Set explicitly to override.
+	Port int `toml:"port,omitempty" jsonschema:"default=0"`
 	// Host is the dolt server hostname. Defaults to localhost.
 	Host string `toml:"host,omitempty" jsonschema:"default=localhost"`
 }

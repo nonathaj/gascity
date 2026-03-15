@@ -659,6 +659,9 @@ func initBeadsInPod(ctx context.Context, ops k8sOps, podName string, cfg runtime
 		doltPort = cfg.Env["GC_DOLT_PORT"]
 	}
 	if doltPort == "" {
+		doltPort = os.Getenv("GC_DOLT_PORT")
+	}
+	if doltPort == "" {
 		doltPort = "3307"
 	}
 

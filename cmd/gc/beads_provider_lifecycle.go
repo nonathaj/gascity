@@ -45,6 +45,9 @@ func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, stderr io.
 	if err := ensureBeadsProvider(cityPath); err != nil {
 		return fmt.Errorf("bead store: %w", err)
 	}
+	// Propagate the actual dolt port to the process environment so
+	// passthroughEnv() includes it for all agent sessions.
+	readDoltPort(cityPath)
 	beadsPrefix := config.DeriveBeadsPrefix(cityName)
 	if err := initAndHookDir(cityPath, cityPath, beadsPrefix); err != nil {
 		return fmt.Errorf("init city beads: %w", err)
@@ -194,6 +197,56 @@ func healthBeadsProvider(cityPath string) error {
 		return nil
 	}
 	return nil // file: always healthy
+}
+
+// readDoltPort reads the dolt server port from the port file or state file
+// and sets GC_DOLT_PORT in the process environment. This ensures
+// passthroughEnv() propagates the ephemeral port to all agent sessions.
+// No-op if GC_DOLT_PORT is already set.
+func readDoltPort(cityPath string) {
+	if os.Getenv("GC_DOLT_PORT") != "" {
+		return
+	}
+
+	// Primary: .beads/dolt-server.port (plain text, single integer).
+	portFile := filepath.Join(cityPath, ".beads", "dolt-server.port")
+	if data, err := os.ReadFile(portFile); err == nil {
+		port := strings.TrimSpace(string(data))
+		if port != "" {
+			_ = os.Setenv("GC_DOLT_PORT", port)
+			return
+		}
+	}
+
+	// Fallback: dolt-state.json "port" field.
+	// Try pack state dir first, then legacy .gc/ dir.
+	for _, stateFile := range []string{
+		filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt", "dolt-state.json"),
+		filepath.Join(cityPath, ".gc", "dolt-state.json"),
+	} {
+		if data, err := os.ReadFile(stateFile); err == nil {
+			// Quick parse: extract "port":NNN without json dependency.
+			s := string(data)
+			if idx := strings.Index(s, `"port"`); idx >= 0 {
+				rest := s[idx+len(`"port"`):]
+				// Skip colon and whitespace.
+				rest = strings.TrimLeft(rest, ": \t")
+				// Read digits.
+				var port strings.Builder
+				for _, c := range rest {
+					if c >= '0' && c <= '9' {
+						port.WriteRune(c)
+					} else {
+						break
+					}
+				}
+				if port.Len() > 0 {
+					_ = os.Setenv("GC_DOLT_PORT", port.String())
+					return
+				}
+			}
+		}
+	}
 }
 
 // runProviderProbe runs a "probe" operation against an exec beads script.

@@ -13,7 +13,7 @@
 #   GC_PACK_STATE_DIR — canonical pack runtime root for dolt (optional)
 #   GC_DOLT       — set to "skip" to no-op all operations (exit 2)
 #   GC_DOLT_HOST  — dolt server host (empty = local server)
-#   GC_DOLT_PORT  — dolt server port (default: 3307)
+#   GC_DOLT_PORT  — dolt server port (default: ephemeral, hashed from city path)
 #   GC_DOLT_USER  — dolt user (default: root)
 #   GC_DOLT_PASSWORD — dolt password (default: empty)
 
@@ -21,7 +21,7 @@ set -e
 
 # --- Configuration ---
 
-DOLT_PORT="${GC_DOLT_PORT:-3307}"
+# DOLT_PORT is set after derived paths are resolved (see allocate_port below).
 DOLT_HOST="${GC_DOLT_HOST:-0.0.0.0}"
 DOLT_USER="${GC_DOLT_USER:-root}"
 DOLT_PASSWORD="${GC_DOLT_PASSWORD:-}"
@@ -413,6 +413,50 @@ find_dolt_pid() {
     ps ax -o pid,args 2>/dev/null | grep "dolt sql-server" | grep -- "--data-dir.*$(basename "$DATA_DIR")" | grep -v grep | awk '{print $1}' | head -1
 }
 
+# allocate_port determines the dolt server port.
+# Resolution order:
+#   1. GC_DOLT_PORT env var (explicit override) → use it
+#   2. State file has a port + PID is alive → reuse it (stable across restarts)
+#   3. Hash GC_CITY_PATH into range 10000–60000, probe with lsof, increment until free
+allocate_port() {
+    # 1. Explicit override.
+    if [ -n "$GC_DOLT_PORT" ]; then
+        echo "$GC_DOLT_PORT"
+        return
+    fi
+
+    # 2. State file port with live PID.
+    if [ -f "$STATE_FILE" ]; then
+        local state_port state_pid
+        state_port=$(load_state_field port)
+        state_pid=$(load_state_field pid)
+        if [ -n "$state_port" ] && [ -n "$state_pid" ] && kill -0 "$state_pid" 2>/dev/null; then
+            echo "$state_port"
+            return
+        fi
+    fi
+
+    # 3. Deterministic hash of city path, probe until free.
+    local hash_val
+    hash_val=$(printf '%s' "$GC_CITY_PATH" | cksum | awk '{print $1 % 50000 + 10000}')
+    local port="$hash_val"
+    local attempts=0
+    while [ "$attempts" -lt 100 ]; do
+        if ! lsof -i :"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            echo "$port"
+            return
+        fi
+        port=$((port + 1))
+        if [ "$port" -gt 60000 ]; then
+            port=10000
+        fi
+        attempts=$((attempts + 1))
+    done
+
+    # Exhausted probes — fall back to the hash value and hope for the best.
+    echo "$hash_val"
+}
+
 # --- Operations ---
 
 # write_port_file writes the dolt server port to .beads/dolt-server.port.
@@ -587,6 +631,9 @@ op_start() {
         save_state 0 false
         die "dolt server started (PID $server_pid) but not accepting connections after 30s (check $LOG_FILE)"
     fi
+
+    # Write port file so the Go side and agents can discover the port.
+    write_port_file "$GC_CITY_PATH/.beads"
 }
 
 # op_ensure_ready is a legacy alias for start.
@@ -909,6 +956,9 @@ else
     LOCK_FILE="$PACK_STATE_DIR/dolt.lock"
     CONFIG_FILE="$PACK_STATE_DIR/dolt-config.yaml"
 fi
+
+# Resolve DOLT_PORT now that STATE_FILE is set.
+DOLT_PORT=$(allocate_port)
 
 case "$op" in
     start)        op_start ;;

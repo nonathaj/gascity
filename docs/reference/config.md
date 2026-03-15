@@ -255,7 +255,7 @@ DoltConfig holds optional dolt server overrides.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `port` | integer |  | `3307` | Port is the dolt server port. Defaults to 3307. |
+| `port` | integer |  | `0` | Port is the dolt server port. 0 means use ephemeral port allocation (hashed from city path). Set explicitly to override. |
 | `host` | string |  | `localhost` | Host is the dolt server hostname. Defaults to localhost. |
 
 ## EventsConfig
