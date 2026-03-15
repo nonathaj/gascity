@@ -280,6 +280,24 @@ func TestInferActivity(t *testing.T) {
 			message: `{"role":"assistant","stop_reason":"max_tokens","content":[{"type":"text","text":"..."}]}`,
 			wantAct: "idle",
 		},
+		{
+			name:    "user interrupt array content → idle",
+			typ:     "user",
+			message: `{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}`,
+			wantAct: "idle",
+		},
+		{
+			name:    "user interrupt string content → idle",
+			typ:     "user",
+			message: `{"role":"user","content":"[Request interrupted by user]"}`,
+			wantAct: "idle",
+		},
+		{
+			name:    "user normal message → in-turn",
+			typ:     "user",
+			message: `{"role":"user","content":[{"type":"text","text":"Please fix the bug"}]}`,
+			wantAct: "in-turn",
+		},
 	}
 
 	for _, tt := range tests {

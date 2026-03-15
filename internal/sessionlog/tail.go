@@ -122,6 +122,10 @@ func InferActivity(entryType, subtype string, message json.RawMessage) string {
 		return "idle"
 	case "user":
 		if len(message) > 0 {
+			// Check for interrupt messages — these end the turn, not start one.
+			if isInterruptMessage(message) {
+				return "idle"
+			}
 			return "in-turn"
 		}
 	}
@@ -141,6 +145,39 @@ func InferActivityFromEntries(entries []*Entry) string {
 		}
 	}
 	return ""
+}
+
+// isInterruptMessage checks if a user message is an interrupt marker.
+// Claude Code writes these when the user presses Escape/Ctrl-C mid-turn.
+// The session is idle afterwards (waiting at the prompt), not starting a new turn.
+func isInterruptMessage(message json.RawMessage) bool {
+	raw := unwrapJSONString(message)
+	// Try object form: {"content": [{"text": "..."}]} or {"content": "..."}
+	var msg struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &msg); err != nil || len(msg.Content) == 0 {
+		return false
+	}
+	// String content
+	if msg.Content[0] == '"' {
+		var s string
+		if json.Unmarshal(msg.Content, &s) == nil {
+			return bytes.Contains([]byte(s), []byte("[Request interrupted by user]"))
+		}
+	}
+	// Array content: [{"type":"text","text":"..."}]
+	var blocks []struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(msg.Content, &blocks) == nil {
+		for _, b := range blocks {
+			if bytes.Contains([]byte(b.Text), []byte("[Request interrupted by user]")) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // unwrapJSONString handles JSONL files where the message field is stored
