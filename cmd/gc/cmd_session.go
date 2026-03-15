@@ -499,6 +499,18 @@ func buildResumeCommand(cfg *config.City, info session.Info) (string, runtime.Co
 	if err != nil {
 		return cmd, runtime.Config{WorkDir: info.WorkDir}
 	}
+	// If bead metadata had no command/resume fields (beads created before
+	// those fields were persisted), fall back to the resolved provider.
+	if cmd == "" {
+		fallbackInfo := info
+		fallbackInfo.Command = resolved.CommandString()
+		fallbackInfo.Provider = resolved.Name
+		fallbackInfo.ResumeFlag = resolved.ResumeFlag
+		fallbackInfo.ResumeStyle = resolved.ResumeStyle
+		fallbackInfo.ResumeCommand = resolved.ResumeCommand
+		cmd = session.BuildResumeCommand(fallbackInfo)
+	}
+
 	hints := runtime.Config{
 		WorkDir:                info.WorkDir,
 		ReadyPromptPrefix:      resolved.ReadyPromptPrefix,

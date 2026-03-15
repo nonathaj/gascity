@@ -241,6 +241,25 @@ func syncSessionBeads(
 			if slot := resolvePoolSlot(tp.InstanceName, tp.TemplateName); slot > 0 {
 				meta["pool_slot"] = strconv.Itoa(slot)
 			}
+			// Store command and resume fields so gc session attach can
+			// reconstruct the resume command from bead metadata alone.
+			if tp.Command != "" {
+				meta["command"] = tp.Command
+			}
+			if tp.ResolvedProvider != nil {
+				if tp.ResolvedProvider.Name != "" {
+					meta["provider"] = tp.ResolvedProvider.Name
+				}
+				if tp.ResolvedProvider.ResumeFlag != "" {
+					meta["resume_flag"] = tp.ResolvedProvider.ResumeFlag
+				}
+				if tp.ResolvedProvider.ResumeStyle != "" {
+					meta["resume_style"] = tp.ResolvedProvider.ResumeStyle
+				}
+				if tp.ResolvedProvider.ResumeCommand != "" {
+					meta["resume_command"] = tp.ResolvedProvider.ResumeCommand
+				}
+			}
 			newBead, createErr := store.Create(beads.Bead{
 				Title:    agentName,
 				Type:     sessionBeadType,
@@ -288,6 +307,25 @@ func syncSessionBeads(
 				if setMeta(store, b.ID, "session_key", key, stderr) == nil {
 					b.Metadata["session_key"] = key
 				}
+			}
+		}
+		// Backfill command and resume fields for beads created before
+		// these fields were persisted. Required for gc session attach.
+		if b.Metadata["command"] == "" && tp.Command != "" {
+			setMeta(store, b.ID, "command", tp.Command, stderr) //nolint:errcheck
+		}
+		if tp.ResolvedProvider != nil {
+			if b.Metadata["provider"] == "" && tp.ResolvedProvider.Name != "" {
+				setMeta(store, b.ID, "provider", tp.ResolvedProvider.Name, stderr) //nolint:errcheck
+			}
+			if b.Metadata["resume_flag"] == "" && tp.ResolvedProvider.ResumeFlag != "" {
+				setMeta(store, b.ID, "resume_flag", tp.ResolvedProvider.ResumeFlag, stderr) //nolint:errcheck
+			}
+			if b.Metadata["resume_style"] == "" && tp.ResolvedProvider.ResumeStyle != "" {
+				setMeta(store, b.ID, "resume_style", tp.ResolvedProvider.ResumeStyle, stderr) //nolint:errcheck
+			}
+			if b.Metadata["resume_command"] == "" && tp.ResolvedProvider.ResumeCommand != "" {
+				setMeta(store, b.ID, "resume_command", tp.ResolvedProvider.ResumeCommand, stderr) //nolint:errcheck
 			}
 		}
 
