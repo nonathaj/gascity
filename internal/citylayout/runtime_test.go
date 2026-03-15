@@ -39,3 +39,9 @@ func TestPackRuntimeEnvMapWithoutPackName(t *testing.T) {
 		t.Fatal("GC_PACK_STATE_DIR should be omitted when pack name is empty")
 	}
 }
+
+func TestPublishedServicesDir(t *testing.T) {
+	if got := PublishedServicesDir("/city"); got != "/city/.gc/services/.published" {
+		t.Fatalf("PublishedServicesDir = %q, want %q", got, "/city/.gc/services/.published")
+	}
+}

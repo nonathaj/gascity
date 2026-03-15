@@ -209,6 +209,7 @@ schema = 1
 
 [[service]]
 name = "review-intake"
+state_root = ".gc/services/github-intake"
 
 [service.workflow]
 contract = "`+builtinHealthzContract+`"
@@ -228,6 +229,9 @@ contract = "`+builtinHealthzContract+`"
 	}
 	if cfg.Services[0].Workflow.Contract != builtinHealthzContract {
 		t.Errorf("workflow.contract = %q, want %q", cfg.Services[0].Workflow.Contract, builtinHealthzContract)
+	}
+	if got := cfg.Services[0].StateRootOrDefault(); got != ".gc/services/github-intake" {
+		t.Errorf("StateRootOrDefault() = %q, want %q", got, ".gc/services/github-intake")
 	}
 }
 
@@ -258,5 +262,59 @@ contract = "`+builtinHealthzContract+`"
 	}
 	if !strings.Contains(err.Error(), "[[service]] is only allowed in city-scoped packs") {
 		t.Fatalf("error = %v, want rig pack service rejection", err)
+	}
+}
+
+func TestValidateServicesAllowsSharedStateRootWithinSamePack(t *testing.T) {
+	err := ValidateServices([]Service{
+		{
+			Name:      "github-webhook",
+			Kind:      "proxy_process",
+			StateRoot: ".gc/services/github-intake",
+			SourceDir: "/packs/github-intake",
+			Process: ServiceProcessConfig{
+				Command: []string{"python3", "scripts/service.py"},
+			},
+		},
+		{
+			Name:      "github-admin",
+			Kind:      "proxy_process",
+			StateRoot: ".gc/services/github-intake",
+			SourceDir: "/packs/github-intake",
+			Process: ServiceProcessConfig{
+				Command: []string{"python3", "scripts/service.py"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ValidateServices: %v", err)
+	}
+}
+
+func TestValidateServicesRejectsSharedStateRootAcrossSources(t *testing.T) {
+	err := ValidateServices([]Service{
+		{
+			Name:      "github-webhook",
+			Kind:      "proxy_process",
+			StateRoot: ".gc/services/github-intake",
+			SourceDir: "/packs/github-intake",
+			Process: ServiceProcessConfig{
+				Command: []string{"python3", "scripts/service.py"},
+			},
+		},
+		{
+			Name:      "review-intake",
+			Kind:      "proxy_process",
+			StateRoot: ".gc/services/github-intake",
+			Process: ServiceProcessConfig{
+				Command: []string{"./scripts/start-bridge.sh"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected state_root collision rejection")
+	}
+	if !strings.Contains(err.Error(), "shared state_root is only allowed within the same pack source") {
+		t.Fatalf("error = %v, want state_root collision rejection", err)
 	}
 }

@@ -9,6 +9,8 @@ const (
 	RuntimePacksRoot = ".gc/runtime/packs"
 	// RuntimeServicesRoot is the canonical root for workspace-owned services.
 	RuntimeServicesRoot = ".gc/services"
+	// RuntimePublishedServicesRoot is the canonical root for published-service metadata.
+	RuntimePublishedServicesRoot = ".gc/services/.published"
 )
 
 // RuntimeDataDir returns the canonical hidden runtime directory for a city.
@@ -24,6 +26,11 @@ func RuntimePacksDir(cityRoot string) string {
 // RuntimeServicesDir returns the canonical root for workspace-owned services.
 func RuntimeServicesDir(cityRoot string) string {
 	return RuntimePath(cityRoot, "services")
+}
+
+// PublishedServicesDir returns the canonical root for published-service metadata.
+func PublishedServicesDir(cityRoot string) string {
+	return RuntimePath(cityRoot, "services", ".published")
 }
 
 // ServiceStateDir returns the canonical runtime directory for a named service.

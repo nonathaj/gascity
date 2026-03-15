@@ -159,6 +159,7 @@ type ServiceProcessConfig struct {
 // errors that would prevent runtime activation.
 func ValidateServices(services []Service) error {
 	seen := make(map[string]bool, len(services))
+	seenRoots := make(map[string]Service, len(services))
 	for i, svc := range services {
 		if svc.Name == "" {
 			return fmt.Errorf("service[%d]: name is required", i)
@@ -203,6 +204,21 @@ func ValidateServices(services []Service) error {
 		}
 		if strings.Contains(root, "../") || strings.HasSuffix(root, "/..") {
 			return fmt.Errorf("service %q: state_root may not traverse upward, got %q", svc.Name, svc.StateRootOrDefault())
+		}
+		if existing, ok := seenRoots[root]; ok {
+			// Shared state roots are allowed only when both services come from the
+			// same pack source. This preserves the intended multi-service pack use
+			// case without letting one pack or a manual service collide with another.
+			if existing.SourceDir == "" || svc.SourceDir == "" || existing.SourceDir != svc.SourceDir {
+				return fmt.Errorf(
+					"service %q: state_root %q already used by service %q; shared state_root is only allowed within the same pack source",
+					svc.Name,
+					svc.StateRootOrDefault(),
+					existing.Name,
+				)
+			}
+		} else {
+			seenRoots[root] = svc
 		}
 
 		switch svc.KindOrDefault() {

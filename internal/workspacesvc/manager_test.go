@@ -190,6 +190,22 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 	if status.Reason != "route_active" {
 		t.Errorf("Reason = %q, want route_active", status.Reason)
 	}
+
+	metadataPath := filepath.Join(rt.cityPath, ".gc", "services", ".published", "review-intake.json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", metadataPath, err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", metadataPath, err)
+	}
+	if snapshot["current_url"] != status.URL {
+		t.Fatalf("current_url = %#v, want %q", snapshot["current_url"], status.URL)
+	}
+	if snapshot["url_version"] != float64(1) {
+		t.Fatalf("url_version = %#v, want 1", snapshot["url_version"])
+	}
 }
 
 func TestManagerReloadWorkflowServiceBlocksPublicationWithoutSupervisor(t *testing.T) {
@@ -279,6 +295,67 @@ func TestManagerReloadUnsupportedContractDegradesService(t *testing.T) {
 	}
 	if status.Reason != status.StateReason {
 		t.Errorf("Reason = %q, want %q", status.Reason, status.StateReason)
+	}
+}
+
+func TestManagerReloadPublishedMetadataBumpsURLVersionOnRouteChange(t *testing.T) {
+	contract := uniqueContract(t)
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		return &testInstance{
+			status: Status{
+				ServiceName:      svc.Name,
+				WorkflowContract: contract,
+				ServiceState:     "ready",
+				LocalState:       "ready",
+			},
+		}, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "review-intake",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("first Reload: %v", err)
+	}
+	rt.pubCfg.TenantSlug = "beta"
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("second Reload: %v", err)
+	}
+
+	metadataPath := filepath.Join(rt.cityPath, ".gc", "services", ".published", "review-intake.json")
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", metadataPath, err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		t.Fatalf("Unmarshal(%q): %v", metadataPath, err)
+	}
+	if snapshot["url_version"] != float64(2) {
+		t.Fatalf("url_version = %#v, want 2", snapshot["url_version"])
+	}
+	if got, _ := snapshot["current_url"].(string); !strings.Contains(got, "--beta--") {
+		t.Fatalf("current_url = %#v, want beta route", snapshot["current_url"])
 	}
 }
 

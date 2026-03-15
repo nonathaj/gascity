@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 )
 
@@ -170,15 +171,20 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		return fmt.Errorf("open service log: %w", err)
 	}
 	_ = os.Remove(p.socketPath)
+	status := baseStatus(p.rt.Config(), p.rt.PublicationConfig(), p.svc, now)
 
 	cmd := exec.Command(p.svc.Process.Command[0], p.svc.Process.Command[1:]...)
 	cmd.Dir = p.commandDir()
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(os.Environ(), citylayout.CityRuntimeEnv(p.rt.CityPath())...)
+	cmd.Env = append(cmd.Env,
 		"GC_SERVICE_NAME="+p.svc.Name,
 		"GC_SERVICE_STATE_ROOT="+p.absStateRoot,
 		"GC_SERVICE_RUN_ROOT="+filepath.Join(p.absStateRoot, "run"),
 		"GC_SERVICE_SOCKET="+p.socketPath,
 		"GC_SERVICE_URL_PREFIX="+p.svc.MountPathOrDefault(),
+		"GC_SERVICE_PUBLIC_URL="+status.URL,
+		"GC_SERVICE_VISIBILITY="+status.Visibility,
+		"GC_PUBLISHED_SERVICES_DIR="+citylayout.PublishedServicesDir(p.rt.CityPath()),
 	)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
