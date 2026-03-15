@@ -40,6 +40,46 @@ type Status struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+// SetPublishedURL updates the canonical and compatibility URL fields together.
+func (s *Status) SetPublishedURL(url string) {
+	s.URL = url
+	s.PublicURL = url
+}
+
+// SetState updates the canonical and compatibility state fields together.
+func (s *Status) SetState(state string) {
+	s.State = state
+	s.ServiceState = state
+}
+
+// SetReason updates the canonical and compatibility reason fields together.
+func (s *Status) SetReason(reason string) {
+	s.Reason = reason
+	s.StateReason = reason
+}
+
+// SyncAliases backfills whichever side of each compatibility pair is missing.
+func (s *Status) SyncAliases() {
+	if s.URL == "" {
+		s.URL = s.PublicURL
+	}
+	if s.PublicURL == "" {
+		s.PublicURL = s.URL
+	}
+	if s.State == "" {
+		s.State = s.ServiceState
+	}
+	if s.ServiceState == "" {
+		s.ServiceState = s.State
+	}
+	if s.Reason == "" {
+		s.Reason = s.StateReason
+	}
+	if s.StateReason == "" {
+		s.StateReason = s.Reason
+	}
+}
+
 // RuntimeContext provides the runtime hooks a workspace service can use.
 type RuntimeContext interface {
 	CityPath() string

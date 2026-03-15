@@ -88,7 +88,7 @@ func (s Service) PublicationHostnameOrDefault() string {
 	if v := strings.TrimSpace(strings.ToLower(s.Publication.Hostname)); v != "" {
 		return v
 	}
-	return normalizePublicationLabel(s.Name, "service")
+	return NormalizePublicationLabel(s.Name, "service")
 }
 
 // StateRootOrDefault returns the managed runtime root for the service.
@@ -99,7 +99,8 @@ func (s Service) StateRootOrDefault() string {
 	return filepath.Join(citylayout.RuntimeServicesRoot, s.Name)
 }
 
-func normalizePublicationLabel(value, fallback string) string {
+// NormalizePublicationLabel converts arbitrary input into a bounded DNS label.
+func NormalizePublicationLabel(value, fallback string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
 	var b strings.Builder
 	prevDash := false

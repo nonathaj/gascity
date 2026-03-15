@@ -129,7 +129,7 @@ func TestServiceProxyDirectAllowsExternalMutationWithoutCSRF(t *testing.T) {
 	}
 }
 
-func TestServiceProxyPublishedAllowsExternalMutationWithoutCSRF(t *testing.T) {
+func TestServiceProxyPublishedReadOnlyStillBlocksExternalMutation(t *testing.T) {
 	state := newFakeState(t)
 	state.services = &fakeServiceRegistry{
 		items: []workspacesvc.Status{{
@@ -138,13 +138,9 @@ func TestServiceProxyPublishedAllowsExternalMutationWithoutCSRF(t *testing.T) {
 			PublicURL:        "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
 			PublicationState: "published",
 		}},
-		serve: func(w http.ResponseWriter, r *http.Request) bool {
-			if r.URL.Path != "/svc/review-intake/hooks/github" {
-				t.Errorf("path = %q, want /svc/review-intake/hooks/github", r.URL.Path)
-			}
-			w.WriteHeader(http.StatusAccepted)
-			_, _ = w.Write([]byte("proxied"))
-			return true
+		serve: func(http.ResponseWriter, *http.Request) bool {
+			t.Fatal("published service should not bypass raw listener read-only checks")
+			return false
 		},
 	}
 	srv := NewReadOnly(state)
@@ -154,11 +150,34 @@ func TestServiceProxyPublishedAllowsExternalMutationWithoutCSRF(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
-	if strings.TrimSpace(rec.Body.String()) != "proxied" {
-		t.Errorf("body = %q, want proxied", rec.Body.String())
+}
+
+func TestServiceProxyPublishedRejectsExternalRequestsOnRawListener(t *testing.T) {
+	state := newFakeState(t)
+	state.services = &fakeServiceRegistry{
+		items: []workspacesvc.Status{{
+			ServiceName:      "review-intake",
+			Visibility:       "public",
+			PublicURL:        "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
+			PublicationState: "published",
+		}},
+		serve: func(http.ResponseWriter, *http.Request) bool {
+			t.Fatal("published service should not be directly reachable on the raw listener")
+			return false
+		},
+	}
+	srv := New(state)
+
+	req := httptest.NewRequest(http.MethodGet, "/svc/review-intake/healthz", nil)
+	req.RemoteAddr = "198.51.100.10:9000"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
 

@@ -64,13 +64,13 @@ func newProxyProcessInstance(rt RuntimeContext, svc config.Service) (Instance, e
 			},
 		},
 		status: Status{
-			ServiceName:  svc.Name,
-			Kind:         svc.KindOrDefault(),
-			ServiceState: "starting",
-			LocalState:   "starting",
-			UpdatedAt:    time.Now().UTC(),
+			ServiceName: svc.Name,
+			Kind:        svc.KindOrDefault(),
+			LocalState:  "starting",
+			UpdatedAt:   time.Now().UTC(),
 		},
 	}
+	inst.status.SetState("starting")
 	if err := inst.start(time.Now().UTC()); err != nil {
 		return nil, err
 	}
@@ -82,6 +82,7 @@ func (p *proxyProcessInstance) Status() Status {
 	defer p.mu.Unlock()
 	out := p.status
 	out.UpdatedAt = time.Now().UTC()
+	out.SyncAliases()
 	return out
 }
 
@@ -125,9 +126,9 @@ func (p *proxyProcessInstance) Tick(_ context.Context, now time.Time) {
 	if shouldStart {
 		if err := p.start(now); err != nil {
 			p.mu.Lock()
-			p.status.ServiceState = "degraded"
+			p.status.SetState("degraded")
 			p.status.LocalState = "degraded"
-			p.status.StateReason = err.Error()
+			p.status.SetReason(err.Error())
 			p.status.UpdatedAt = now
 			p.nextRestart = now.Add(proxyProcessRestartBackoff)
 			p.mu.Unlock()
@@ -137,9 +138,9 @@ func (p *proxyProcessInstance) Tick(_ context.Context, now time.Time) {
 	if err := p.checkHealth(now); err != nil {
 		p.mu.Lock()
 		if !p.closed && p.cmd != nil {
-			p.status.ServiceState = "degraded"
+			p.status.SetState("degraded")
 			p.status.LocalState = "degraded"
-			p.status.StateReason = err.Error()
+			p.status.SetReason(err.Error())
 			p.status.UpdatedAt = now
 		}
 		p.mu.Unlock()
@@ -151,9 +152,9 @@ func (p *proxyProcessInstance) Close() error {
 	p.closed = true
 	cmd := p.cmd
 	p.cmd = nil
-	p.status.ServiceState = "stopped"
+	p.status.SetState("stopped")
 	p.status.LocalState = "stopped"
-	p.status.StateReason = "service_closed"
+	p.status.SetReason("service_closed")
 	p.status.UpdatedAt = time.Now().UTC()
 	p.mu.Unlock()
 
@@ -192,9 +193,9 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 	doneCh := make(chan struct{})
 	p.doneCh = doneCh
 	p.nextRestart = time.Time{}
-	p.status.ServiceState = "starting"
+	p.status.SetState("starting")
 	p.status.LocalState = "starting"
-	p.status.StateReason = ""
+	p.status.SetReason("")
 	p.status.UpdatedAt = now
 	p.mu.Unlock()
 
@@ -212,9 +213,9 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		if p.closed {
 			return
 		}
-		p.status.ServiceState = "degraded"
+		p.status.SetState("degraded")
 		p.status.LocalState = "degraded"
-		p.status.StateReason = processExitReason(err)
+		p.status.SetReason(processExitReason(err))
 		p.status.UpdatedAt = time.Now().UTC()
 		p.nextRestart = time.Now().UTC().Add(proxyProcessRestartBackoff)
 	}(cmd, logFile, doneCh)
@@ -228,9 +229,9 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 
 	p.mu.Lock()
 	if p.cmd == cmd && !p.closed {
-		p.status.ServiceState = "ready"
+		p.status.SetState("ready")
 		p.status.LocalState = "ready"
-		p.status.StateReason = ""
+		p.status.SetReason("")
 		p.status.UpdatedAt = time.Now().UTC()
 	}
 	p.mu.Unlock()
@@ -269,9 +270,9 @@ func (p *proxyProcessInstance) checkHealth(now time.Time) error {
 	if p.healthPath == "" {
 		p.mu.Lock()
 		if p.cmd != nil && !p.closed {
-			p.status.ServiceState = "ready"
+			p.status.SetState("ready")
 			p.status.LocalState = "ready"
-			p.status.StateReason = ""
+			p.status.SetReason("")
 			p.status.UpdatedAt = now
 		}
 		p.mu.Unlock()
@@ -297,9 +298,9 @@ func (p *proxyProcessInstance) checkHealth(now time.Time) error {
 
 	p.mu.Lock()
 	if p.cmd != nil && !p.closed {
-		p.status.ServiceState = "ready"
+		p.status.SetState("ready")
 		p.status.LocalState = "ready"
-		p.status.StateReason = ""
+		p.status.SetReason("")
 		p.status.UpdatedAt = now
 	}
 	p.mu.Unlock()

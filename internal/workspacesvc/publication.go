@@ -43,40 +43,14 @@ func derivePublishedURL(pubCfg supervisor.PublicationConfig, workspaceName strin
 	workspaceLabel := normalizeRouteLabel(workspaceName, "workspace")
 	hash := publicationHash(serviceLabel, workspaceLabel, tenantSlug, visibility)
 	host := fmt.Sprintf("%s--%s--%s--%s.%s", serviceLabel, workspaceLabel, tenantSlug, hash, baseDomain)
+	if len(host) > 253 {
+		return "", "publication_hostname_too_long"
+	}
 	return "https://" + host, "route_active"
 }
 
 func normalizeRouteLabel(value, fallback string) string {
-	value = strings.TrimSpace(strings.ToLower(value))
-	var b strings.Builder
-	prevDash := false
-	for _, ch := range value {
-		switch {
-		case ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
-			b.WriteRune(ch)
-			prevDash = false
-		case ch == '-' || ch == '_':
-			if b.Len() == 0 || prevDash {
-				continue
-			}
-			b.WriteByte('-')
-			prevDash = true
-		default:
-			if b.Len() == 0 || prevDash {
-				continue
-			}
-			b.WriteByte('-')
-			prevDash = true
-		}
-		if b.Len() >= 63 {
-			break
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		return fallback
-	}
-	return out
+	return config.NormalizePublicationLabel(value, fallback)
 }
 
 func publicationHash(serviceLabel, workspaceLabel, tenantLabel, visibility string) string {

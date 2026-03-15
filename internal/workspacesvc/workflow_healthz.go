@@ -32,13 +32,14 @@ func newHealthzWorkflow(rt RuntimeContext, svc config.Service) (Instance, error)
 }
 
 func (h *healthzWorkflow) Status() Status {
-	return Status{
+	status := Status{
 		ServiceName:      h.svcName,
 		WorkflowContract: h.contract,
-		ServiceState:     "ready",
 		LocalState:       "ready",
 		UpdatedAt:        time.Now().UTC(),
 	}
+	status.SetState("ready")
+	return status
 }
 
 func (h *healthzWorkflow) HandleHTTP(w http.ResponseWriter, r *http.Request, subpath string) bool {

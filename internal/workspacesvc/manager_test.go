@@ -268,11 +268,17 @@ func TestManagerReloadUnsupportedContractDegradesService(t *testing.T) {
 	if status.ServiceState != "degraded" {
 		t.Errorf("ServiceState = %q, want degraded", status.ServiceState)
 	}
+	if status.State != "degraded" {
+		t.Errorf("State = %q, want degraded", status.State)
+	}
 	if status.LocalState != "config_error" {
 		t.Errorf("LocalState = %q, want config_error", status.LocalState)
 	}
 	if !strings.Contains(status.StateReason, "unsupported workflow contract") {
 		t.Errorf("StateReason = %q, want unsupported workflow contract", status.StateReason)
+	}
+	if status.Reason != status.StateReason {
+		t.Errorf("Reason = %q, want %q", status.Reason, status.StateReason)
 	}
 }
 
@@ -316,6 +322,56 @@ func TestManagerReloadReusesUnchangedInstances(t *testing.T) {
 	}
 	if first.closed {
 		t.Fatal("expected unchanged instance to remain open")
+	}
+}
+
+func TestManagerReloadSyncsCanonicalStateFromLegacyInstanceStatus(t *testing.T) {
+	contract := uniqueContract(t)
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		return &testInstance{
+			status: Status{
+				ServiceName:      svc.Name,
+				WorkflowContract: contract,
+				ServiceState:     "starting",
+				LocalState:       "starting",
+				StateReason:      "warming_up",
+			},
+		}, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Services: []config.Service{{
+				Name:     "review-intake",
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	status, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing")
+	}
+	if status.ServiceState != "starting" {
+		t.Fatalf("ServiceState = %q, want starting", status.ServiceState)
+	}
+	if status.State != "starting" {
+		t.Fatalf("State = %q, want starting", status.State)
+	}
+	if status.StateReason != "warming_up" {
+		t.Fatalf("StateReason = %q, want warming_up", status.StateReason)
+	}
+	if status.Reason != "warming_up" {
+		t.Fatalf("Reason = %q, want warming_up", status.Reason)
 	}
 }
 

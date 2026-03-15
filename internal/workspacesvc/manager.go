@@ -75,9 +75,9 @@ func (m *Manager) Reload() error {
 		stateRoot, err := ensureStateRoot(m.rt.CityPath(), svc)
 		base.StateRoot = stateRoot
 		if err != nil {
-			base.ServiceState = "degraded"
+			base.SetState("degraded")
 			base.LocalState = "config_error"
-			base.StateReason = err.Error()
+			base.SetReason(err.Error())
 			next[svc.Name] = &entry{spec: svc, status: base}
 			continue
 		}
@@ -92,17 +92,17 @@ func (m *Manager) Reload() error {
 		case "workflow":
 			factory := lookupWorkflowContract(svc.Workflow.Contract)
 			if factory == nil {
-				base.ServiceState = "degraded"
+				base.SetState("degraded")
 				base.LocalState = "config_error"
-				base.StateReason = fmt.Sprintf("unsupported workflow contract %q", svc.Workflow.Contract)
+				base.SetReason(fmt.Sprintf("unsupported workflow contract %q", svc.Workflow.Contract))
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
 			inst, err := factory(m.rt, svc)
 			if err != nil {
-				base.ServiceState = "degraded"
+				base.SetState("degraded")
 				base.LocalState = "config_error"
-				base.StateReason = err.Error()
+				base.SetReason(err.Error())
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
@@ -111,18 +111,18 @@ func (m *Manager) Reload() error {
 		case "proxy_process":
 			inst, err := newProxyProcessInstance(m.rt, svc)
 			if err != nil {
-				base.ServiceState = "degraded"
+				base.SetState("degraded")
 				base.LocalState = "config_error"
-				base.StateReason = err.Error()
+				base.SetReason(err.Error())
 				next[svc.Name] = &entry{spec: svc, status: base}
 				continue
 			}
 			base = mergeStatus(base, inst.Status())
 			next[svc.Name] = &entry{spec: svc, status: base, inst: inst}
 		default:
-			base.ServiceState = "degraded"
+			base.SetState("degraded")
 			base.LocalState = "config_error"
-			base.StateReason = fmt.Sprintf("unsupported service kind %q", svc.Kind)
+			base.SetReason(fmt.Sprintf("unsupported service kind %q", svc.Kind))
 			next[svc.Name] = &entry{spec: svc, status: base}
 		}
 	}
@@ -188,19 +188,15 @@ func (m *Manager) Close() error {
 	for name, e := range m.entries {
 		if e.inst != nil {
 			targets = append(targets, closeTarget{name: name, inst: e.inst})
-			e.status.ServiceState = "stopping"
-			e.status.State = "stopping"
+			e.status.SetState("stopping")
 			e.status.LocalState = "stopping"
-			e.status.StateReason = "service_closing"
-			e.status.Reason = "service_closing"
+			e.status.SetReason("service_closing")
 			e.status.UpdatedAt = now
 			continue
 		}
-		e.status.ServiceState = "stopped"
-		e.status.State = "stopped"
+		e.status.SetState("stopped")
 		e.status.LocalState = "stopped"
-		e.status.StateReason = "service_closed"
-		e.status.Reason = "service_closed"
+		e.status.SetReason("service_closed")
 		e.status.UpdatedAt = now
 	}
 	m.mu.Unlock()
@@ -230,20 +226,16 @@ func (m *Manager) Close() error {
 		if err := results[target.name]; err != nil {
 			// Retain the instance so a subsequent Close() call can retry.
 			e.inst = target.inst
-			e.status.ServiceState = "degraded"
-			e.status.State = "degraded"
+			e.status.SetState("degraded")
 			e.status.LocalState = "close_error"
-			e.status.StateReason = err.Error()
-			e.status.Reason = err.Error()
+			e.status.SetReason(err.Error())
 			e.status.UpdatedAt = now
 			continue
 		}
 		e.inst = nil
-		e.status.ServiceState = "stopped"
-		e.status.State = "stopped"
+		e.status.SetState("stopped")
 		e.status.LocalState = "stopped"
-		e.status.StateReason = "service_closed"
-		e.status.Reason = "service_closed"
+		e.status.SetReason("service_closed")
 		e.status.UpdatedAt = now
 	}
 	return firstErr
@@ -256,7 +248,9 @@ func (m *Manager) List() []Status {
 
 	out := make([]Status, 0, len(m.entries))
 	for _, e := range m.entries {
-		out = append(out, e.status)
+		status := e.status
+		status.SyncAliases()
+		out = append(out, status)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ServiceName < out[j].ServiceName
@@ -273,7 +267,9 @@ func (m *Manager) Get(name string) (Status, bool) {
 	if !ok {
 		return Status{}, false
 	}
-	return e.status, true
+	status := e.status
+	status.SyncAliases()
+	return status, true
 }
 
 // AuthorizeAndServeHTTP routes /svc/{name}/... requests to the matching
@@ -290,7 +286,9 @@ func (m *Manager) AuthorizeAndServeHTTP(name string, w http.ResponseWriter, r *h
 	if !ok {
 		return false
 	}
-	if authorize != nil && !authorize(e.status) {
+	status := e.status
+	status.SyncAliases()
+	if authorize != nil && !authorize(status) {
 		return true
 	}
 	if m.closed || e.inst == nil {
@@ -344,6 +342,7 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 		UpdatedAt:        now,
 		AllowWebSockets:  svc.Publication.AllowWebSockets,
 	}
+	status.SyncAliases()
 
 	switch visibility {
 	case "private":
@@ -351,36 +350,30 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 	default:
 		publishedURL, publicationReason := derivePublishedURL(pubCfg, workspaceName(cfg), svc)
 		if publishedURL != "" {
-			status.PublicURL = publishedURL
-			status.URL = publishedURL
+			status.SetPublishedURL(publishedURL)
 			status.PublicationState = "published"
-			status.StateReason = publicationReason
-			status.Reason = publicationReason
+			status.SetReason(publicationReason)
 			break
 		}
 		if status.PublishMode == "direct" {
 			if baseURL := directBaseURL(cfg); baseURL != "" {
-				status.PublicURL = strings.TrimRight(baseURL, "/") + status.MountPath
-				status.URL = status.PublicURL
+				status.SetPublishedURL(strings.TrimRight(baseURL, "/") + status.MountPath)
 				status.PublicationState = "direct"
-				status.StateReason = "route_active"
-				status.Reason = "route_active"
+				status.SetReason("route_active")
 				break
 			}
 			status.PublicationState = "blocked"
-			status.StateReason = "direct_base_url_unavailable"
-			status.Reason = status.StateReason
+			status.SetReason("direct_base_url_unavailable")
 			break
 		}
 		status.PublicationState = "blocked"
 		if publicationReason != "" {
-			status.StateReason = publicationReason
-			status.Reason = publicationReason
+			status.SetReason(publicationReason)
 		} else {
-			status.StateReason = "publication_unavailable"
-			status.Reason = status.StateReason
+			status.SetReason("publication_unavailable")
 		}
 	}
+	status.SyncAliases()
 
 	return status
 }
@@ -413,26 +406,19 @@ func mergeStatus(base, override Status) Status {
 	if override.StateRoot != "" {
 		base.StateRoot = override.StateRoot
 	}
-	if override.PublicURL != "" {
-		base.PublicURL = override.PublicURL
-		if base.URL == "" {
-			base.URL = override.PublicURL
+	if override.PublicURL != "" || override.URL != "" {
+		url := override.URL
+		if url == "" {
+			url = override.PublicURL
 		}
+		base.SetPublishedURL(url)
 	}
-	if override.URL != "" {
-		base.URL = override.URL
-		if base.PublicURL == "" {
-			base.PublicURL = override.URL
+	if override.ServiceState != "" || override.State != "" {
+		state := override.State
+		if state == "" {
+			state = override.ServiceState
 		}
-	}
-	if override.ServiceState != "" {
-		base.ServiceState = override.ServiceState
-		if base.State == "" {
-			base.State = override.ServiceState
-		}
-	}
-	if override.State != "" {
-		base.State = override.State
+		base.SetState(state)
 	}
 	if override.LocalState != "" {
 		base.LocalState = override.LocalState
@@ -440,19 +426,18 @@ func mergeStatus(base, override Status) Status {
 	if override.PublicationState != "" {
 		base.PublicationState = override.PublicationState
 	}
-	if override.StateReason != "" {
-		base.StateReason = override.StateReason
-		if base.Reason == "" {
-			base.Reason = override.StateReason
+	if override.StateReason != "" || override.Reason != "" {
+		reason := override.Reason
+		if reason == "" {
+			reason = override.StateReason
 		}
-	}
-	if override.Reason != "" {
-		base.Reason = override.Reason
+		base.SetReason(reason)
 	}
 	base.AllowWebSockets = base.AllowWebSockets || override.AllowWebSockets
 	if !override.UpdatedAt.IsZero() {
 		base.UpdatedAt = override.UpdatedAt
 	}
+	base.SyncAliases()
 	return base
 }
 

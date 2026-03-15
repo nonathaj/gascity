@@ -63,3 +63,22 @@ func TestDerivePublishedURLRequiresTenantAuthForTenantVisibility(t *testing.T) {
 		t.Fatalf("reason = %q, want publication_tenant_auth_policy_missing", reason)
 	}
 }
+
+func TestDerivePublishedURLRejectsOverlongHostname(t *testing.T) {
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{
+		Provider:         "hosted",
+		TenantSlug:       strings.Repeat("tenant", 8),
+		PublicBaseDomain: strings.Repeat("example", 20) + ".com",
+	}, strings.Repeat("workspace", 8), config.Service{
+		Name: strings.Repeat("service", 8),
+		Publication: config.ServicePublicationConfig{
+			Visibility: "public",
+		},
+	})
+	if url != "" {
+		t.Fatalf("url = %q, want empty", url)
+	}
+	if reason != "publication_hostname_too_long" {
+		t.Fatalf("reason = %q, want publication_hostname_too_long", reason)
+	}
+}
