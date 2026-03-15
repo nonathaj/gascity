@@ -1288,16 +1288,19 @@ func InjectImplicitAgents(cfg *City) {
 
 	providers := BuiltinProviderOrder()
 
+	promptTemplate := citylayout.SystemPromptsRoot + "/pool-worker.md"
+
 	// City-scoped implicit agents.
 	for _, name := range providers {
 		if existing[agentKey{"", name}] {
 			continue
 		}
 		cfg.Agents = append(cfg.Agents, Agent{
-			Name:     name,
-			Provider: name,
-			Pool:     &PoolConfig{Min: 0, Max: -1},
-			Implicit: true,
+			Name:           name,
+			Provider:       name,
+			PromptTemplate: promptTemplate,
+			Pool:           &PoolConfig{Min: 0, Max: -1},
+			Implicit:       true,
 		})
 	}
 
@@ -1308,11 +1311,12 @@ func InjectImplicitAgents(cfg *City) {
 				continue
 			}
 			cfg.Agents = append(cfg.Agents, Agent{
-				Name:     name,
-				Dir:      rig.Name,
-				Provider: name,
-				Pool:     &PoolConfig{Min: 0, Max: -1},
-				Implicit: true,
+				Name:           name,
+				Dir:            rig.Name,
+				Provider:       name,
+				PromptTemplate: promptTemplate,
+				Pool:           &PoolConfig{Min: 0, Max: -1},
+				Implicit:       true,
 			})
 		}
 	}

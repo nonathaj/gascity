@@ -2216,11 +2216,11 @@ max = 3
 }
 
 func TestDoPrimePoolAgentFallback(t *testing.T) {
-	// A pool agent with no prompt_template gets the built-in pool-worker
-	// prompt (which includes formula-following instructions).
+	// An explicit pool agent with no prompt_template reads the materialized
+	// pool-worker.md from .gc/system/prompts/ on disk.
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
+	if err := materializeBuiltinPrompts(dir); err != nil {
+		t.Fatalf("materializeBuiltinPrompts: %v", err)
 	}
 	tomlContent := `[workspace]
 name = "test-city"

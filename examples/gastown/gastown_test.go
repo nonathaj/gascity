@@ -58,7 +58,7 @@ func TestPromptFilesExist(t *testing.T) {
 	dir := exampleDir()
 	cfg := loadExpanded(t)
 	for _, a := range cfg.Agents {
-		if a.PromptTemplate == "" {
+		if a.PromptTemplate == "" || a.Implicit {
 			continue
 		}
 		path := filepath.Join(dir, a.PromptTemplate)
