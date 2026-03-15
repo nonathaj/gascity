@@ -21,7 +21,7 @@ func derivePublishedURL(pubCfg supervisor.PublicationConfig, workspaceName strin
 	if pubCfg.ProviderOrDefault() != "hosted" {
 		return "", "publication_provider_unsupported"
 	}
-	tenantSlug := normalizeRouteLabel(pubCfg.TenantSlugOrDefault(), "tenant")
+	tenantSlug := normalizeRouteLabel(pubCfg.TenantSlug, "")
 	if tenantSlug == "" {
 		return "", "publication_tenant_slug_missing"
 	}

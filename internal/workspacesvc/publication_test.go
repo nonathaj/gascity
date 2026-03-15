@@ -45,6 +45,24 @@ func TestDerivePublishedURLRequiresSupervisor(t *testing.T) {
 	}
 }
 
+func TestDerivePublishedURLRequiresTenantSlug(t *testing.T) {
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{
+		Provider:         "hosted",
+		PublicBaseDomain: "apps.example.com",
+	}, "Demo", config.Service{
+		Name: "review-intake",
+		Publication: config.ServicePublicationConfig{
+			Visibility: "public",
+		},
+	})
+	if url != "" {
+		t.Fatalf("url = %q, want empty", url)
+	}
+	if reason != "publication_tenant_slug_missing" {
+		t.Fatalf("reason = %q, want publication_tenant_slug_missing", reason)
+	}
+}
+
 func TestDerivePublishedURLRequiresTenantAuthForTenantVisibility(t *testing.T) {
 	url, reason := derivePublishedURL(supervisor.PublicationConfig{
 		Provider:         "hosted",
