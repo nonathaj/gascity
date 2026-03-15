@@ -55,7 +55,7 @@ func TestRegisterCityWithSupervisorRollsBackWhenCityNeverBecomesReady(t *testing
 	if err := os.MkdirAll(cityPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"bright-lights\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"bright-lights\"\n[session]\nstartup_timeout = \"20ms\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,6 +92,47 @@ func TestRegisterCityWithSupervisorRollsBackWhenCityNeverBecomesReady(t *testing
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected empty registry after rollback, got %v", entries)
+	}
+}
+
+func TestRegisterCityWithSupervisorWaitsForConfiguredStartupTimeout(t *testing.T) {
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	cityPath := filepath.Join(t.TempDir(), "bright-lights")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"bright-lights\"\n[session]\nstartup_timeout = \"200ms\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	startedAt := time.Now().Add(75 * time.Millisecond)
+	withSupervisorTestHooks(
+		t,
+		func(_, _ io.Writer) int { return 0 },
+		func(_, _ io.Writer) int { return 0 },
+		func() int { return 4242 },
+		func(string) (bool, bool) {
+			return time.Now().After(startedAt), true
+		},
+		20*time.Millisecond,
+		5*time.Millisecond,
+	)
+
+	var stdout, stderr bytes.Buffer
+	code := registerCityWithSupervisor(cityPath, &stdout, &stderr, "gc register")
+	if code != 0 {
+		t.Fatalf("registerCityWithSupervisor code = %d, want 0: %s", code, stderr.String())
+	}
+
+	reg := supervisor.NewRegistry(supervisor.RegistryPath())
+	entries, err := reg.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Path != cityPath {
+		t.Fatalf("expected retained registry entry for %s, got %v", cityPath, entries)
 	}
 }
 
@@ -276,7 +317,7 @@ func TestControllerStatusForSupervisorManagedCityStopped(t *testing.T) {
 	}
 }
 
-func TestCmdStopSupervisorManagedCityStopsLegacyControllerAndBeads(t *testing.T) {
+func TestCmdStopSupervisorManagedCityReliesOnSupervisorCleanup(t *testing.T) {
 	gcHome := t.TempDir()
 	t.Setenv("GC_HOME", gcHome)
 
@@ -306,7 +347,12 @@ func TestCmdStopSupervisorManagedCityStopsLegacyControllerAndBeads(t *testing.T)
 	withSupervisorTestHooks(
 		t,
 		func(_, _ io.Writer) int { return 0 },
-		func(_, _ io.Writer) int { return 0 },
+		func(_, _ io.Writer) int {
+			if err := shutdownBeadsProvider(cityPath); err != nil {
+				t.Fatalf("shutdownBeadsProvider: %v", err)
+			}
+			return 0
+		},
 		func() int { return 4242 },
 		func(string) (bool, bool) { return false, false },
 		20*time.Millisecond,
@@ -342,8 +388,8 @@ func TestCmdStopSupervisorManagedCityStopsLegacyControllerAndBeads(t *testing.T)
 	}
 	select {
 	case <-stopped:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected legacy controller stop request")
+		t.Fatal("did not expect a legacy controller stop request for a supervisor-managed city")
+	case <-time.After(100 * time.Millisecond):
 	}
 
 	entries, err := reg.List()

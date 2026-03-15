@@ -72,10 +72,6 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 			return code
 		}
 		if supervisorAliveHook() != 0 {
-			tryStopController(cityPath, stdout)
-			if err := shutdownBeadsProvider(cityPath); err != nil {
-				fmt.Fprintf(stderr, "gc stop: bead store: %v\n", err) //nolint:errcheck // best-effort stderr
-			}
 			fmt.Fprintln(stdout, "City stopped.") //nolint:errcheck // best-effort stdout
 			return 0
 		}

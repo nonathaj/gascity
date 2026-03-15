@@ -21,6 +21,18 @@ var (
 	supervisorCityPollInterval = 100 * time.Millisecond
 )
 
+func supervisorCityStartTimeout(cityPath string) time.Duration {
+	timeout := supervisorCityReadyTimeout
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		return timeout
+	}
+	if startup := cfg.Session.StartupTimeoutDuration(); startup > timeout {
+		timeout = startup
+	}
+	return timeout
+}
+
 func fetchCityPacksIfNeeded(cityPath string) error {
 	tomlPath := filepath.Join(cityPath, "city.toml")
 	if quickCfg, qErr := config.Load(fsys.OSFS{}, tomlPath); qErr == nil && len(quickCfg.Packs) > 0 {
@@ -143,7 +155,7 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 		return 1
 	}
 	if supervisorAliveHook() != 0 {
-		if err := waitForSupervisorCity(cityPath, true, supervisorCityReadyTimeout); err != nil {
+		if err := waitForSupervisorCity(cityPath, true, supervisorCityStartTimeout(cityPath)); err != nil {
 			rollbackRegisteredCity(reg, entry, stderr, commandName, err.Error(), true)
 			fmt.Fprintf(stderr, "%s: check 'gc supervisor logs' for details\n", commandName) //nolint:errcheck // best-effort stderr
 			return 1

@@ -228,6 +228,10 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 	if controllerMode || dryRunMode {
 		return doStartStandalone(args, controllerMode, stdout, stderr)
 	}
+	if len(extraConfigFiles) > 0 || noStrictMode {
+		fmt.Fprintln(stderr, "gc start: --file and --no-strict only apply to the legacy standalone controller; use --foreground or remove those flags") //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	dir, err := resolveStartDir(args)
 	if err != nil {

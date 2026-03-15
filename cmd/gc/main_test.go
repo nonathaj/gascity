@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +18,30 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/rogpeppe/go-internal/testscript"
 )
+
+func configureSupervisorHooksForTestscript() {
+	ensureSupervisorRunningHook = func(_, _ io.Writer) int { return 0 }
+	reloadSupervisorHook = func(stdout, stderr io.Writer) int {
+		entries, err := supervisor.NewRegistry(supervisor.RegistryPath()).List()
+		if err != nil {
+			fmt.Fprintf(stderr, "gc supervisor reload (test): %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Path < entries[j].Path
+		})
+		for _, entry := range entries {
+			if code := doStartStandalone([]string{entry.Path}, false, stdout, stderr); code != 0 {
+				return code
+			}
+		}
+		return 0
+	}
+	supervisorAliveHook = func() int { return 0 }
+}
 
 func TestMain(m *testing.M) {
 	gcHome, err := os.MkdirTemp("", "gascity-gc-home-*")
@@ -36,7 +59,10 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	testscript.Main(m, map[string]func(){
-		"gc": func() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) },
+		"gc": func() {
+			configureSupervisorHooksForTestscript()
+			os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+		},
 		"bd": bdTestCmd,
 	})
 }

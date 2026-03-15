@@ -320,3 +320,31 @@ func TestDoStartForegroundRejectsSupervisorManagedCity(t *testing.T) {
 		t.Fatalf("stderr = %q, want supervisor registration error", stderr.String())
 	}
 }
+
+func TestDoStartRejectsStandaloneOnlyFlagsUnderSupervisor(t *testing.T) {
+	cityPath := filepath.Join(t.TempDir(), "bright-lights")
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"bright-lights\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldExtraConfigFiles := extraConfigFiles
+	oldNoStrictMode := noStrictMode
+	extraConfigFiles = []string{"override.toml"}
+	noStrictMode = true
+	t.Cleanup(func() {
+		extraConfigFiles = oldExtraConfigFiles
+		noStrictMode = oldNoStrictMode
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := doStart([]string{cityPath}, false, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("doStart code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "only apply to the legacy standalone controller") {
+		t.Fatalf("stderr = %q, want standalone-flag rejection", stderr.String())
+	}
+}
