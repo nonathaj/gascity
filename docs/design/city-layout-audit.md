@@ -202,7 +202,7 @@ Command classes:
 | --- | --- | --- |
 | Config-only/read-only | `gc config`, `gc build-image`, `gc pack`, `gc migrate-layout --plan` | Must succeed without creating `.gc/` |
 | Read-only diagnostics | `gc doctor` | Must resolve the city and report missing runtime scaffold as a fixable issue, not "not a city" |
-| Runtime-mutating/bootstrap | `gc start`, `gc daemon start`, session creation/resume, order execution | May create the minimal `.gc/{runtime,system,cache}` scaffold before continuing |
+| Runtime-mutating/bootstrap | `gc init`, `gc start`, session creation/resume, automation execution | May create the minimal `.gc/{runtime,system,cache}` scaffold before continuing |
 
 Classification rule:
 

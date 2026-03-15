@@ -262,7 +262,7 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	_, code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
+	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
 	return code
 }
 
@@ -406,7 +406,7 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	_, code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
+	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
 	return code
 }
 
@@ -729,6 +729,6 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	_, code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
+	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
 	return code
 }

@@ -29,8 +29,12 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	os.Setenv("GC_HOME", gcHome)
-	os.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	if err := os.Setenv("GC_HOME", gcHome); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("XDG_RUNTIME_DIR", runtimeDir); err != nil {
+		panic(err)
+	}
 	testscript.Main(m, map[string]func(){
 		"gc": func() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) },
 		"bd": bdTestCmd,

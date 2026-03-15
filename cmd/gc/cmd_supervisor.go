@@ -131,7 +131,11 @@ func supervisorSocketPath() string {
 // startSupervisorSocket creates a Unix domain socket at the given path
 // and handles ping/stop commands. Unlike startControllerSocket (which
 // constructs its own path), this binds to the exact path provided.
-func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc, reconcileCh chan struct{}) (net.Listener, error) {
+type reconcileRequest struct {
+	done chan struct{}
+}
+
+func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc, reconcileCh chan reconcileRequest) (net.Listener, error) {
 	os.Remove(sockPath) //nolint:errcheck // remove stale socket from previous crash
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -158,9 +162,9 @@ func startSupervisorSocket(sockPath string, cancelFn context.CancelFunc, reconci
 // handleSupervisorConn reads from a connection and dispatches commands.
 // Supported: "stop" (shutdown), "ping" (liveness check, returns PID),
 // "reload" (trigger immediate reconciliation of all cities).
-func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc, reconcileCh chan struct{}) {
+func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc, reconcileCh chan reconcileRequest) {
 	defer conn.Close()                                     //nolint:errcheck
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
 	scanner := bufio.NewScanner(conn)
 	if scanner.Scan() {
 		switch scanner.Text() {
@@ -170,10 +174,9 @@ func handleSupervisorConn(conn net.Conn, cancelFn context.CancelFunc, reconcileC
 		case "ping":
 			fmt.Fprintf(conn, "%d\n", os.Getpid()) //nolint:errcheck
 		case "reload":
-			select {
-			case reconcileCh <- struct{}{}:
-			default: // reconcile already pending
-			}
+			req := reconcileRequest{done: make(chan struct{})}
+			reconcileCh <- req
+			<-req.done
 			conn.Write([]byte("ok\n")) //nolint:errcheck
 		}
 	}
@@ -263,7 +266,7 @@ func reloadSupervisor(stdout, stderr io.Writer) int {
 	}
 	defer conn.Close()                                     //nolint:errcheck
 	conn.Write([]byte("reload\n"))                         //nolint:errcheck
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
 	buf := make([]byte, 64)
 	n, _ := conn.Read(buf)
 	if n > 0 && string(buf[:n]) == "ok\n" {
@@ -299,7 +302,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 
 	// Reconcile channel — triggers immediate reconciliation from SIGHUP
 	// or the "reload" socket command.
-	reconcileCh := make(chan struct{}, 1)
+	reconcileCh := make(chan reconcileRequest, 1)
 
 	// Signal handler: SIGINT/SIGTERM → shutdown, SIGHUP → immediate reconcile.
 	sigCh := make(chan os.Signal, 1)
@@ -312,7 +315,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 				if sig == syscall.SIGHUP {
 					fmt.Fprintln(stderr, "SIGHUP received, triggering reconciliation...") //nolint:errcheck
 					select {
-					case reconcileCh <- struct{}{}:
+					case reconcileCh <- reconcileRequest{}:
 					default: // reconcile already pending
 					}
 					continue
@@ -415,7 +418,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 		select {
 		case <-ticker.C:
 			safeReconcile()
-		case <-reconcileCh:
+		case req := <-reconcileCh:
 			safeReconcile()
 			// Also poke all running cities so they immediately reconcile
 			// their agents (e.g. after a child process was killed).
@@ -427,6 +430,9 @@ func runSupervisor(stdout, stderr io.Writer) int {
 				}
 			}
 			mu.RUnlock()
+			if req.done != nil {
+				close(req.done)
+			}
 		case <-ctx.Done():
 			// Shutdown all cities. Collect under lock, then stop outside to
 			// avoid blocking API requests during graceful shutdown.
@@ -445,6 +451,9 @@ func runSupervisor(stdout, stderr io.Writer) int {
 					defer func() { recover() }() //nolint:errcheck
 					mc.cr.shutdown()
 				}()
+				if err := shutdownBeadsProvider(name); err != nil {
+					fmt.Fprintf(stderr, "gc supervisor: city '%s': bead store: %v\n", name, err) //nolint:errcheck
+				}
 				if mc.closer != nil {
 					mc.closer.Close() //nolint:errcheck
 				}
@@ -523,6 +532,9 @@ func reconcileCities(
 			defer func() { recover() }() //nolint:errcheck
 			mc.cr.shutdown()
 		}()
+		if err := shutdownBeadsProvider(toStopPaths[i]); err != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': bead store: %v\n", mc.name, err) //nolint:errcheck
+		}
 		if mc.closer != nil {
 			mc.closer.Close() //nolint:errcheck
 		}
@@ -797,6 +809,9 @@ func reconcileCities(
 						defer func() { recover() }() //nolint:errcheck
 						cr.shutdown()
 					}()
+					if err := shutdownBeadsProvider(p); err != nil {
+						fmt.Fprintf(stderr, "gc supervisor: city '%s': bead store: %v\n", n, err) //nolint:errcheck
+					}
 					// Close the file recorder (only on panic — normal exit
 					// leaves it for the external caller via mc.closer).
 					if cityFr != nil {

@@ -49,8 +49,7 @@ func doRegister(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc register: %s is not a city directory (no city.toml found)\n", cityPath) //nolint:errcheck
 		return 1
 	}
-	_, code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc register")
-	return code
+	return registerCityWithSupervisor(cityPath, stdout, stderr, "gc register")
 }
 
 func newUnregisterCmd(stdout, stderr io.Writer) *cobra.Command {

@@ -49,16 +49,16 @@ become role-agnostic infrastructure that any pack can use.
 
 ---
 
-## 2. Daemon / Controller
+## 2. Supervisor / Controller
 
 | Gastown | Gas City | Status | Notes |
 |---------|----------|--------|-------|
-| `gt daemon run` | `gc daemon run` | **DONE** | Foreground + log tee |
-| `gt daemon start` | `gc daemon start` | **DONE** | Background fork |
-| `gt daemon stop` | `gc daemon stop` | **DONE** | Socket shutdown |
-| `gt daemon status` | `gc daemon status` | **DONE** | PID + uptime |
-| `gt daemon logs` | `gc daemon logs` | **DONE** | Tail log file |
-| `gt daemon enable-supervisor` | `gc daemon install` / `uninstall` | **DONE** | launchd + systemd |
+| `gt daemon run` | `gc supervisor run` | **DONE** | Canonical foreground control loop |
+| `gt daemon start` | `gc supervisor start` | **DONE** | Background supervisor |
+| `gt daemon stop` | `gc supervisor stop` | **DONE** | Socket shutdown |
+| `gt daemon status` | `gc supervisor status` | **DONE** | PID + uptime |
+| `gt daemon logs` | `gc supervisor logs` | **DONE** | Tail supervisor log file |
+| `gt daemon enable-supervisor` | `gc supervisor install` / `uninstall` | **DONE** | launchd + systemd |
 | Controller flock | Controller flock | **DONE** | `acquireControllerLock` |
 | Controller socket IPC | Controller socket IPC | **DONE** | Unix socket + "stop" command |
 | Reconciliation loop | Reconciliation loop | **DONE** | Tick-based with fsnotify |

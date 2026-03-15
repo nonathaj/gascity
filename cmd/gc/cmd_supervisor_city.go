@@ -6,11 +6,17 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/supervisor"
+)
+
+var (
+	supervisorCityReadyTimeout = 5 * time.Second
+	supervisorCityPollInterval = 100 * time.Millisecond
 )
 
 func effectiveCityName(cityPath string) (string, error) {
@@ -55,34 +61,75 @@ func registeredCityEntry(cityPath string) (supervisor.CityEntry, bool, error) {
 	return supervisor.CityEntry{}, false, nil
 }
 
-func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, commandName string) (supervisor.CityEntry, int) {
+func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, commandName string) int {
 	name, err := effectiveCityName(cityPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
-		return supervisor.CityEntry{}, 1
+		return 1
 	}
 
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
 	if err := reg.Register(cityPath, name); err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
-		return supervisor.CityEntry{}, 1
+		return 1
 	}
 
 	entry, _, err := registeredCityEntry(cityPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
-		return supervisor.CityEntry{}, 1
+		return 1
 	}
 
 	fmt.Fprintf(stdout, "Registered city '%s' (%s)\n", entry.EffectiveName(), entry.Path) //nolint:errcheck // best-effort stdout
 
 	if ensureSupervisorRunningHook(stdout, stderr) != 0 {
-		return supervisor.CityEntry{}, 1
+		rollbackRegisteredCity(reg, entry, stderr, commandName, "supervisor did not start")
+		return 1
 	}
 	if reloadSupervisorHook(stdout, stderr) != 0 {
-		return supervisor.CityEntry{}, 1
+		rollbackRegisteredCity(reg, entry, stderr, commandName, "reconcile failed")
+		return 1
 	}
-	return entry, 0
+	if supervisorAliveHook() != 0 {
+		if err := waitForSupervisorCity(cityPath, true, supervisorCityReadyTimeout); err != nil {
+			rollbackRegisteredCity(reg, entry, stderr, commandName, err.Error())
+			fmt.Fprintf(stderr, "%s: check 'gc supervisor logs' for details\n", commandName) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+	}
+	return 0
+}
+
+func rollbackRegisteredCity(reg *supervisor.Registry, entry supervisor.CityEntry, stderr io.Writer, commandName, reason string) {
+	if err := reg.Unregister(entry.Path); err != nil {
+		fmt.Fprintf(stderr, "%s: %s; rollback failed for '%s': %v\n", commandName, reason, entry.Path, err) //nolint:errcheck // best-effort stderr
+		return
+	}
+	fmt.Fprintf(stderr, "%s: %s; registration rolled back for '%s'\n", commandName, reason, entry.EffectiveName()) //nolint:errcheck // best-effort stderr
+}
+
+func waitForSupervisorCity(cityPath string, wantRunning bool, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		running, known := supervisorCityRunningHook(cityPath)
+		if known {
+			if running == wantRunning {
+				return nil
+			}
+			if !wantRunning {
+				return fmt.Errorf("city is still running under supervisor")
+			}
+		} else if !wantRunning {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			if wantRunning {
+				return fmt.Errorf("city did not become ready under supervisor")
+			}
+			return fmt.Errorf("city did not stop under supervisor")
+		}
+		time.Sleep(supervisorCityPollInterval)
+	}
 }
 
 func unregisterCityFromSupervisor(cityPath string, stdout, stderr io.Writer, commandName string) (bool, int) {
@@ -103,8 +150,23 @@ func unregisterCityFromSupervisor(cityPath string, stdout, stderr io.Writer, com
 
 	fmt.Fprintf(stdout, "Unregistered city '%s' (%s)\n", entry.EffectiveName(), entry.Path) //nolint:errcheck // best-effort stdout
 
-	if supervisorAliveHook() != 0 && reloadSupervisorHook(stdout, stderr) != 0 {
-		return true, 1
+	if supervisorAliveHook() != 0 {
+		if reloadSupervisorHook(stdout, stderr) != 0 {
+			if reErr := reg.Register(entry.Path, entry.EffectiveName()); reErr != nil {
+				fmt.Fprintf(stderr, "%s: reconcile failed and restore failed for '%s': %v\n", commandName, entry.EffectiveName(), reErr) //nolint:errcheck
+			} else {
+				fmt.Fprintf(stderr, "%s: reconcile failed; restored registration for '%s'\n", commandName, entry.EffectiveName()) //nolint:errcheck
+			}
+			return true, 1
+		}
+		if err := waitForSupervisorCity(cityPath, false, supervisorCityReadyTimeout); err != nil {
+			if reErr := reg.Register(entry.Path, entry.EffectiveName()); reErr != nil {
+				fmt.Fprintf(stderr, "%s: %v; restore failed for '%s': %v\n", commandName, err, entry.EffectiveName(), reErr) //nolint:errcheck
+			} else {
+				fmt.Fprintf(stderr, "%s: %v; restored registration for '%s'\n", commandName, err, entry.EffectiveName()) //nolint:errcheck
+			}
+			return true, 1
+		}
 	}
 	return true, 0
 }
@@ -123,6 +185,8 @@ func supervisorAPIBaseURL() (string, error) {
 	}
 	return fmt.Sprintf("http://%s", net.JoinHostPort(bind, strconv.Itoa(cfg.Supervisor.PortOrDefault()))), nil
 }
+
+var supervisorCityRunningHook = supervisorCityRunning
 
 func supervisorCityAPIClient(cityPath string) *api.Client {
 	entry, registered, err := registeredCityEntry(cityPath)

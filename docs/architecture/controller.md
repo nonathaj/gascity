@@ -12,13 +12,13 @@ Update this document when the implementation changes.
 
 ## Summary
 
-The Controller is Gas City's infrastructure orchestrator -- a long-running
-daemon that drives all SDK operations without requiring any user-configured
-agent role to exist. It is not one of the five primitives or four derived
-mechanisms; it is the process that wires them together at runtime. The
-controller's main loop watches `city.toml` for changes (via fsnotify),
-periodically reconciles running agents against the desired config, evaluates
-pool scaling, dispatches orders, and garbage-collects expired wisps.
+The Controller is Gas City's per-city reconciliation runtime. The canonical
+long-running process is `gc supervisor run`, which hosts one controller
+runtime per registered city. A hidden `gc start --foreground` compatibility
+mode still launches the same per-city runtime directly. The controller loop
+watches `city.toml` for changes (via fsnotify), periodically reconciles
+running agents against the desired config, evaluates pool scaling, dispatches
+automations, and garbage-collects expired wisps.
 
 ## Key Concepts
 
@@ -37,10 +37,12 @@ pool scaling, dispatches orders, and garbage-collects expired wisps.
   (1) send Interrupt (Ctrl-C) to all sessions, (2) wait `shutdown_timeout`,
   (3) force-kill survivors via `Stop()`. Implemented in `gracefulStopAll()`.
 
-- **One-Shot vs Foreground**: `gc start` performs a single reconciliation
-  pass and exits. `gc start --foreground` (or `gc daemon run`) enters the
-  persistent controller loop. Both share the same `buildAgents()` and
-  `doReconcileAgents()` code paths.
+- **Supervisor vs Standalone Compatibility**: `gc start` now validates an
+  existing city, registers it with the machine-wide supervisor, ensures the
+  supervisor is running, and waits for the city to become active.
+  `gc supervisor run` is the canonical foreground control loop. Hidden
+  `gc start --foreground` remains as a compatibility path for the legacy
+  per-city controller.
 
 - **Pool Evaluation**: The process of running each pool agent's `check`
   shell command, parsing the output as an integer, clamping to `[min, max]`,
@@ -61,12 +63,12 @@ into the runtime orchestration loop.
 
 ### Data Flow
 
-A complete controller lifecycle proceeds as follows:
+The hidden standalone compatibility flow still proceeds as follows:
 
 ```
 gc start --foreground
   │
-  ├─ 1. Auto-init city if needed
+  ├─ 1. Require an initialized city
   ├─ 2. Fetch remote packs
   ├─ 3. LoadWithIncludes(city.toml)  →  *config.City + Provenance
   ├─ 4. ensureBeadsProvider()        →  start dolt server if bd backend
@@ -78,7 +80,6 @@ gc start --foreground
   ├─10. newSessionProvider()         →  tmux / exec / k8s / subprocess
   ├─11. runController()
   │     ├─ acquireControllerLock()   →  flock LOCK_EX|LOCK_NB
-  │     ├─ write daemon.pid
   │     ├─ startControllerSocket()   →  Unix socket for IPC
   │     ├─ build trackers (crash, idle, wisp GC, order)
   │     └─ controllerLoop()
@@ -157,7 +158,8 @@ Each tick of `controllerLoop()` (`cmd/gc/controller.go:268-320`) performs:
 These properties must hold for the controller to be correct. Violations
 indicate bugs.
 
-- **Single controller per city**: At most one controller runs per city
+- **Single standalone controller per city**: At most one standalone
+  controller runs per city
   directory. Enforced by `flock(LOCK_EX|LOCK_NB)` on
   `.gc/controller.lock`. A second `gc start --foreground` fails
   immediately with "controller already running."
@@ -180,11 +182,10 @@ indicate bugs.
   pool agents in a single `buildAgents()` invocation run concurrently via
   goroutines. Results are processed sequentially after `wg.Wait()`.
 
-- **One-shot and foreground share the same reconciliation code**:
-  `doReconcileAgents()` is called identically by both the one-shot path
-  (`gc start`) and the controller loop (`gc start --foreground`). The only
-  difference is that one-shot passes nil for drain ops, crash tracker, and
-  idle tracker.
+- **Supervisor-managed and standalone runtimes share reconciliation code**:
+  `CityRuntime.run()` and `doReconcileAgents()` power both the
+  machine-wide supervisor path and the hidden standalone
+  `gc start --foreground` path.
 
 - **Graceful shutdown sends Interrupt before Stop**: `gracefulStopAll()`
   always sends `Interrupt()` to all sessions before sleeping
@@ -222,8 +223,8 @@ indicate bugs.
 
 | Depended on by | How |
 |---|---|
-| `cmd/gc/cmd_start.go` | Entry point: `doStart()` calls `runController()` in foreground mode. |
-| `cmd/gc/cmd_daemon.go` | `doDaemonRun()` delegates to `doStart()` with log file teeing. `doDaemonStart()` forks a background `gc daemon run` child. |
+| `cmd/gc/cmd_start.go` | Hidden compatibility entry point: `doStartStandalone()` calls `runController()` in foreground mode. |
+| `cmd/gc/cmd_supervisor.go` | Canonical machine-wide entry point: starts and reconciles one `CityRuntime` per registered city. |
 | `cmd/gc/cmd_stop.go` | `tryStopController()` connects to the Unix socket and sends "stop". |
 
 ## Code Map
@@ -232,11 +233,12 @@ All controller implementation lives in `cmd/gc/`:
 
 | File | Responsibility |
 |---|---|
-| `cmd/gc/controller.go` | `acquireControllerLock()`, `startControllerSocket()`, `watchConfigDirs()`, `tryReloadConfig()`, `gracefulStopAll()`, `controllerLoop()`, `runController()` |
-| `cmd/gc/cmd_start.go` | `doStart()` (startup sequence), `buildAgents()` closure (agent list construction with parallel pool evaluation), `computeSuspendedNames()`, `computePoolSessions()`, `buildIdleTracker()` |
+| `cmd/gc/controller.go` | `acquireControllerLock()`, `startControllerSocket()`, `watchConfigDirs()`, `tryReloadConfig()`, `gracefulStopAll()`, `controllerLoop()` compatibility shim, `runController()` |
+| `cmd/gc/city_runtime.go` | `CityRuntime` shared per-city runtime used by both supervisor-managed and standalone controller paths |
+| `cmd/gc/cmd_start.go` | `doStart()` supervisor registration path, `doStartStandalone()` hidden compatibility path, `buildAgents()` closure, `computeSuspendedNames()`, `computePoolSessions()`, `buildIdleTracker()` |
+| `cmd/gc/cmd_supervisor.go` | Machine-wide supervisor lifecycle, registry reconciliation, API hosting, and child `CityRuntime` management |
 | `cmd/gc/cmd_stop.go` | `cmdStop()`, `tryStopController()` (Unix socket IPC), `doStop()`, `gracefulStopAll()` |
 | `cmd/gc/cmd_suspend.go` | `doSuspendCity()` (sets `workspace.suspended` in TOML), `citySuspended()`, `isAgentEffectivelySuspended()` |
-| `cmd/gc/cmd_daemon.go` | `doDaemonRun()` (foreground with log), `doDaemonStart()` (background fork), `doDaemonStop()`, `doDaemonStatus()`, `doDaemonInstall()` / `doDaemonUninstall()` (launchd/systemd) |
 | `cmd/gc/reconcile.go` | `reconcileOps` interface, `doReconcileAgents()` (4-state reconciliation + parallel starts + orphan cleanup) |
 | `cmd/gc/pool.go` | `evaluatePool()`, `poolAgents()`, `expandSessionSetup()`, `expandDirTemplate()` |
 | `cmd/gc/providers.go` | `newSessionProvider()`, `beadsProvider()`, `newMailProvider()`, `newEventsProvider()` |
@@ -311,9 +313,15 @@ Controller tests use in-memory fakes and require no external infrastructure:
 | `cmd/gc/pool_test.go` | `evaluatePool()` (clamping, error handling), `poolAgents()` (naming, deep-copy), `expandSessionSetup()`, `expandDirTemplate()` |
 | `cmd/gc/formula_resolve_test.go` | Layer priority, symlink creation/update/cleanup, idempotence, real file preservation |
 | `cmd/gc/wisp_gc_test.go` | TTL-based purging, `shouldRun()` interval, empty list handling |
+<<<<<<< HEAD
 | `cmd/gc/order_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped orders |
 | `cmd/gc/cmd_daemon_test.go` | Daemon run/start/stop/status, PID file lifecycle, service file generation |
 | `cmd/gc/cmd_start_test.go` | One-shot start, foreground mode, existing-city validation, provider resolution |
+=======
+| `cmd/gc/automation_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped automations |
+| `cmd/gc/cmd_start_test.go` | Supervisor registration path, hidden foreground compatibility mode, existing-city validation, provider resolution |
+| `cmd/gc/cmd_supervisor_test.go` | Supervisor lifecycle, status reporting, service file generation |
+>>>>>>> 6eec926e (fix: wait for supervisor lifecycle results)
 | `cmd/gc/cmd_suspend_test.go` | Suspend/resume TOML mutation, inheritance hierarchy |
 | `cmd/gc/beads_provider_lifecycle_test.go` | Provider ensure/shutdown/init lifecycle |
 
@@ -337,11 +345,10 @@ testing philosophy and tier boundaries.
   until all checks complete. A hung `check` command blocks the entire
   reconciliation cycle. There is no per-check timeout.
 
-- **PID file is for discovery, not liveness**: The `daemon.pid` file is
-  written for `gc daemon status` to find the controller process. It is
-  never used for liveness decisions -- `flock` on `controller.lock` is
-  the single-instance mechanism, and agent liveness uses
-  `session.Provider.IsRunning()`.
+- **Socket probes are for discovery, not liveness**: Per-city controller
+  status uses `controller.sock` ping responses, and supervisor status uses
+  `supervisor.sock`. Liveness still comes from `flock` for singleton
+  control loops and `session.Provider.IsRunning()` for agents.
 
 - **Unix socket has no authentication**: Any local process with filesystem
   access to `.gc/controller.sock` can send "stop" to shut down the

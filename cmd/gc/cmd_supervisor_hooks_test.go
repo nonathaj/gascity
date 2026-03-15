@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	ensureSupervisorRunningHook = func(stdout, stderr io.Writer) int { return 0 }
+	ensureSupervisorRunningHook = func(_, _ io.Writer) int { return 0 }
 	reloadSupervisorHook = func(stdout, stderr io.Writer) int {
 		entries, err := supervisor.NewRegistry(supervisor.RegistryPath()).List()
 		if err != nil {

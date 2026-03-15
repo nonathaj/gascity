@@ -21,7 +21,7 @@ $DEMO_SCRIPTS/run-lifecycle-demo.sh act1
 ```
 
 Each act script handles its own city setup, daemon start, and teardown —
-no manual `gc daemon` commands needed.
+no manual `gc supervisor` commands needed.
 
 The demo uses deterministic bash agents throughout — no Claude API calls,
 fully reproducible, zero cost. Every agent is a `start_command` script.
@@ -242,14 +242,14 @@ drain the queue. One number change.
 ## Troubleshooting
 
 ```bash
-# Daemon not running:
-gc daemon start --city ~/demo-city
+# Supervisor not running:
+gc supervisor start
 
 # Agents stuck:
 gc restart --city ~/demo-city
 
-# Daemon logs:
-gc daemon logs --city ~/demo-city
+# Supervisor logs:
+gc supervisor logs
 
 # Event history:
 gc events --city ~/demo-city

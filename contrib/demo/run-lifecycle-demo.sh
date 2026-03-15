@@ -31,7 +31,7 @@ cleanup_between_acts() {
     local demo_city="${DEMO_CITY:-$HOME/demo-city}"
     if [ -d "$demo_city" ]; then
         (cd "$demo_city" && gc stop 2>/dev/null) || true
-        (cd "$demo_city" && gc daemon stop 2>/dev/null) || true
+        gc supervisor stop 2>/dev/null || true
     fi
 
     # Stop any Docker containers from act 2.

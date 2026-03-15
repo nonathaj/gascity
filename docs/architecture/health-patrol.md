@@ -229,8 +229,9 @@ indicate bugs.
 
 - **No PID files for liveness**: Agent liveness is determined by querying
   `session.Provider.IsRunning()` and `ProcessAlive()`, which inspect the
-  live process tree. The controller writes a `daemon.pid` file only for
-  `gc daemon status` discovery, not for liveness decisions.
+  live process tree. Controller discovery uses Unix socket ping probes,
+  not PID files, and liveness decisions still come from the live process
+  tree.
 
 - **No role names in Go code**: Health Patrol operates on `agent.Agent`
   values constructed from config. No line of Go references a specific
@@ -273,8 +274,8 @@ Health Patrol follows Erlang/OTP patterns mapped to Gas City:
 
 | Depended on by | How |
 |---|---|
-| `cmd/gc/cmd_daemon.go` | Starts the controller via `runController()`. |
-| `cmd/gc/cmd_start.go` | Entry point for `gc start` which calls `runController()` after building the initial agent list and config. |
+| `cmd/gc/cmd_supervisor.go` | Starts and manages one `CityRuntime` per registered city under the machine-wide supervisor. |
+| `cmd/gc/cmd_start.go` | Hidden standalone compatibility path via `gc start --foreground`, which still calls `runController()` after building the initial agent list and config. |
 
 ## Code Map
 

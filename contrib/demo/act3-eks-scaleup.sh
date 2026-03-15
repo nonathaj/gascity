@@ -7,14 +7,14 @@
 #   Start with 5 agents on EKS working through a modest backlog.
 #   "New project approved, new budget approved."
 #   Presenter edits pool.max from 5 to 200 in city.toml. Saves.
-#   The daemon reconciles. 200 pods materialize. Queue drains.
+#   The supervisor reconciles. 200 pods materialize. Queue drains.
 #
 # Screen layout:
 #   ┌─────────────────────────────┬─────────────────────────────┐
 #   │ Controller logs             │ kubectl get pods -w          │
 #   │                             │                              │
-#   │ gc start --foreground or    │ Wall of pods materializing   │
-#   │ gc daemon logs --follow     │ as pool scales up.           │
+#   │ gc supervisor run or        │ Wall of pods materializing   │
+#   │ gc supervisor logs --follow │ as pool scales up.           │
 #   ├─────────────────────────────┼─────────────────────────────┤
 #   │ gc events --follow          │ mcp-mail dashboard           │
 #   │                             │                              │
