@@ -292,7 +292,7 @@ case "$op" in
         cache_recipient "$mid" "$recipient"
         local_st=$(msg_status "$mid")
         if [ -n "$local_st" ]; then
-          exclude_ids=$(echo "$exclude_ids" | jq --argjson id "$mid" '. + [$id]')
+          exclude_ids=$(echo "$exclude_ids" | jq --arg id "$mid" '. + [$id]')
         fi
       done
 
@@ -314,7 +314,7 @@ case "$op" in
       name_map=$(build_name_map_json)
       filtered=$(echo "$result" | jq --arg to "$recipient" --argjson nmap "$name_map" \
         --argjson excl "$exclude_ids" --argjson tmap "$thread_map" --argjson rmap "$reply_map" \
-        '[.[] | select(.id as $mid | $excl | index($mid) | not) | {
+        '[.[] | select((.id | tostring) as $mid | $excl | index($mid) | not) | {
           id: (.id | tostring),
           from: ($nmap[.from] // .from),
           to: $to,
@@ -351,7 +351,7 @@ case "$op" in
         cache_recipient "$mid" "$recipient"
         local_st=$(msg_status "$mid")
         if [ -n "$local_st" ]; then
-          exclude_ids=$(echo "$exclude_ids" | jq --argjson id "$mid" '. + [$id]')
+          exclude_ids=$(echo "$exclude_ids" | jq --arg id "$mid" '. + [$id]')
         fi
       done
 
@@ -372,7 +372,7 @@ case "$op" in
       name_map=$(build_name_map_json)
       filtered=$(echo "$result" | jq --arg to "$recipient" --argjson nmap "$name_map" \
         --argjson excl "$exclude_ids" --argjson tmap "$thread_map" --argjson rmap "$reply_map" \
-        '[.[] | select(.id as $mid | $excl | index($mid) | not) | {
+        '[.[] | select((.id | tostring) as $mid | $excl | index($mid) | not) | {
           id: (.id | tostring),
           from: ($nmap[.from] // .from),
           to: $to,
@@ -414,7 +414,7 @@ case "$op" in
     # Find the specific message by ID.
     msg=""
     if [ -n "$result" ] && [ "$result" != "null" ] && [ "$result" != "[]" ]; then
-      msg=$(echo "$result" | jq --argjson tid "$id" '[.[] | select(.id == $tid)] | .[0] // empty')
+      msg=$(echo "$result" | jq --arg tid "$id" '[.[] | select((.id | tostring) == $tid)] | .[0] // empty')
     fi
 
     if [ -z "$msg" ] || [ "$msg" = "null" ]; then
@@ -473,7 +473,7 @@ case "$op" in
 
     msg=""
     if [ -n "$result" ] && [ "$result" != "null" ] && [ "$result" != "[]" ]; then
-      msg=$(echo "$result" | jq --argjson tid "$id" '[.[] | select(.id == $tid)] | .[0] // empty')
+      msg=$(echo "$result" | jq --arg tid "$id" '[.[] | select((.id | tostring) == $tid)] | .[0] // empty')
     fi
 
     if [ -z "$msg" ] || [ "$msg" = "null" ]; then
@@ -551,7 +551,7 @@ case "$op" in
 
     reply_to=""
     if [ -n "$result" ] && [ "$result" != "null" ] && [ "$result" != "[]" ]; then
-      reply_to=$(echo "$result" | jq -r --argjson tid "$id" '[.[] | select(.id == $tid)] | .[0].from // empty')
+      reply_to=$(echo "$result" | jq -r --arg tid "$id" '[.[] | select((.id | tostring) == $tid)] | .[0].from // empty')
     fi
     if [ -z "$reply_to" ]; then
       reply_to="$recipient"
@@ -570,14 +570,12 @@ case "$op" in
       --arg to "$mcp_to" \
       --arg subject "$mcp_subject" \
       --arg body_md "$body" \
-      --argjson reply_to "$id" \
       '{
         project_key: $project,
         sender_name: $from,
         to: [$to],
         subject: $subject,
-        body_md: $body_md,
-        in_reply_to_id: $reply_to
+        body_md: $body_md
       }')")
 
     msg_id=$(echo "$reply_result" | jq -r '.deliveries[0].payload.id')

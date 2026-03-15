@@ -836,4 +836,3 @@ name = "inline-agent"
 		t.Errorf("city.toml should contain new rig:\n%s", data)
 	}
 }
-
