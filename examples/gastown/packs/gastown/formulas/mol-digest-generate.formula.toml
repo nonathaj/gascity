@@ -165,9 +165,10 @@ bd create --type=digest \
   --label=digest,{{period}}
 ```
 
-**4. Close work bead and exit:**
+**4. Close work bead, signal reconciler, and exit:**
 ```bash
 bd close <work-bead> --reason "Digest generated and sent"
+gc runtime drain-ack
 exit
 ```
 

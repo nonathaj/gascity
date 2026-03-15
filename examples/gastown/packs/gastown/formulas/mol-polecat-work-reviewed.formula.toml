@@ -440,6 +440,7 @@ while true; do
             gc mail send <rig>/witness -s "NOTICE: Plan rejected for {{issue}}" \
               -m "Reviewer rejected the implementation plan. Bead returned to pool."
             bd update {{issue}} --status=open --unset-metadata plan_status --assignee=""
+            gc runtime drain-ack
             exit
             ;;
         revise)
@@ -694,12 +695,15 @@ merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
-**5. Exit immediately.**
+**5. Signal reconciler and exit.**
 ```bash
+gc runtime drain-ack
 exit
 ```
 
+`gc runtime drain-ack` tells the reconciler to kill this session. The
+reconciler only restarts you if the pool check command finds more work.
 You are GONE. Done means gone. There is no idle state.
 
 **Exit criteria:** Branch pushed, metadata set (including integration
-branch target), bead reassigned, session exited."""
+branch target), bead reassigned, drain acknowledged, session exited."""

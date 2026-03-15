@@ -177,11 +177,14 @@ merge, and close the bead. If there's a conflict, the refinery puts the
 bead back in the pool with `rejection_reason` metadata — a new polecat
 picks it up and resumes from the existing branch.
 
-**6. Exit immediately.**
+**6. Signal reconciler and exit.**
 ```bash
+gc runtime drain-ack
 exit
 ```
 
+`gc runtime drain-ack` tells the reconciler to kill this session. The
+reconciler only restarts you if the pool check command finds more work.
 You are GONE. Done means gone. There is no idle state.
 
-**Exit criteria:** Branch pushed, metadata set, bead reassigned, session exited."""
+**Exit criteria:** Branch pushed, metadata set, bead reassigned, drain acknowledged, session exited."""

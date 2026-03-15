@@ -42,11 +42,14 @@ bd update <work-bead> \
   --set-metadata target={{ .DefaultBranch }} \
   --notes "Implemented: <brief summary>"
 bd update <work-bead> --status=open --assignee={{ .RigName }}/refinery
+gc runtime drain-ack
 exit
 ```
 
 This pushes your branch, sets metadata so the Refinery knows what to merge,
-and reassigns the work bead to the Refinery. No separate MR beads.
+reassigns the work bead to the Refinery, and signals the reconciler to kill
+this session. `gc runtime drain-ack` ensures the reconciler stops you
+immediately — even if `exit` doesn't fire. No separate MR beads.
 
 ### The Self-Cleaning Model
 

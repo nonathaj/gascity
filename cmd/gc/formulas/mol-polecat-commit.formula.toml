@@ -113,6 +113,7 @@ for attempt in 1 2 3; do
         echo "Push failed after 3 attempts"
         gc mail send <rig>/witness -s "HELP: Push conflict after 3 retries" \
           -m "Issue: {{issue}}. Cannot push to {{base_branch}}."
+        gc runtime drain-ack
         exit 1
     fi
     echo "Push failed (attempt $attempt), rebasing..."
@@ -136,11 +137,14 @@ bd update {{issue}} --notes "Committed directly to {{base_branch}}: <brief summa
 bd close {{issue}}
 ```
 
-**5. Exit immediately.**
+**5. Signal reconciler and exit.**
 ```bash
+gc runtime drain-ack
 exit
 ```
 
+`gc runtime drain-ack` tells the reconciler to kill this session. The
+reconciler only restarts you if the pool check command finds more work.
 You are GONE. Done means gone. There is no idle state.
 
 **Exit criteria:** Changes pushed to {{base_branch}}, worktree cleaned up,
