@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
-	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
+	"github.com/gastownhall/gascity/internal/orders"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
 )
@@ -40,7 +40,7 @@ type fakeState struct {
 	cityPath      string
 	startedAt     time.Time
 	quarantined   map[string]bool
-	autos         []automations.Automation
+	autos         []orders.Order
 	services      workspacesvc.Registry
 }
 
@@ -85,7 +85,7 @@ func (f *fakeState) StartedAt() time.Time                    { return f.startedA
 func (f *fakeState) IsQuarantined(sessionName string) bool   { return f.quarantined[sessionName] }
 func (f *fakeState) ClearCrashHistory(sessionName string)    { delete(f.quarantined, sessionName) }
 func (f *fakeState) CityBeadStore() beads.Store              { return f.cityBeadStore }
-func (f *fakeState) Automations() []automations.Automation   { return f.autos }
+func (f *fakeState) Orders() []orders.Order                  { return f.autos }
 func (f *fakeState) Poke()                                   {} // no-op in tests
 func (f *fakeState) ServiceRegistry() workspacesvc.Registry  { return f.services }
 
@@ -112,24 +112,24 @@ func newFakeMutatorState(t *testing.T) *fakeMutatorState {
 
 func (f *fakeMutatorState) SuspendAgent(name string) error { f.suspended[name] = true; return nil }
 func (f *fakeMutatorState) ResumeAgent(name string) error  { delete(f.suspended, name); return nil }
-func (f *fakeMutatorState) EnableAutomation(name, rig string) error {
+func (f *fakeMutatorState) EnableOrder(name, rig string) error {
 	enabled := true
-	return f.SetAutomationOverrideEnabled(name, rig, &enabled)
+	return f.SetOrderOverrideEnabled(name, rig, &enabled)
 }
 
-func (f *fakeMutatorState) DisableAutomation(name, rig string) error {
+func (f *fakeMutatorState) DisableOrder(name, rig string) error {
 	enabled := false
-	return f.SetAutomationOverrideEnabled(name, rig, &enabled)
+	return f.SetOrderOverrideEnabled(name, rig, &enabled)
 }
 
-func (f *fakeMutatorState) SetAutomationOverrideEnabled(name, rig string, enabled *bool) error {
-	for i := range f.cfg.Automations.Overrides {
-		if f.cfg.Automations.Overrides[i].Name == name && f.cfg.Automations.Overrides[i].Rig == rig {
-			f.cfg.Automations.Overrides[i].Enabled = enabled
+func (f *fakeMutatorState) SetOrderOverrideEnabled(name, rig string, enabled *bool) error {
+	for i := range f.cfg.Orders.Overrides {
+		if f.cfg.Orders.Overrides[i].Name == name && f.cfg.Orders.Overrides[i].Rig == rig {
+			f.cfg.Orders.Overrides[i].Enabled = enabled
 			return nil
 		}
 	}
-	f.cfg.Automations.Overrides = append(f.cfg.Automations.Overrides, config.AutomationOverride{
+	f.cfg.Orders.Overrides = append(f.cfg.Orders.Overrides, config.OrderOverride{
 		Name:    name,
 		Rig:     rig,
 		Enabled: enabled,

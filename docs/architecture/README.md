@@ -46,8 +46,8 @@ Each is provably composable from the primitives.
 ### Infrastructure
 
 12. **[Controller](controller.md)** — the main loop: config watch,
-    reconciliation tick, automation dispatch
-13. **[Automations](automations.md)** — gate-conditioned formula/exec
+    reconciliation tick, order dispatch
+13. **[Orders](orders.md)** — gate-conditioned formula/exec
     dispatch, rig-scoped labels
 
 ### End-to-End Traces

@@ -87,7 +87,7 @@ func (m *memoryWispGC) runGC(cityPath string, now time.Time) (int, error) {
 
 	// Purge expired closed tracking beads.
 	trackOut, trackErr := m.runner(cityPath, "bd", "list", "--json",
-		"--label=automation-tracking", "--all", "--limit=0")
+		"--label=order-tracking", "--all", "--limit=0")
 	if trackErr == nil {
 		var trackEntries []gcEntry
 		if err := json.Unmarshal(trackOut, &trackEntries); err == nil {

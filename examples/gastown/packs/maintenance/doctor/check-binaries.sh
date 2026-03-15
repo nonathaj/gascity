@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pack doctor check: verify binaries required by maintenance automations.
+# Pack doctor check: verify binaries required by maintenance orders.
 #
 # Exit codes: 0=OK, 1=Warning, 2=Error
 # stdout: first line=message, rest=details

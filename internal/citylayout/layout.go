@@ -22,8 +22,8 @@ const (
 	FormulasRoot       = "formulas"
 	LegacyFormulasRoot = ".gc/formulas"
 
-	AutomationsRoot       = "automations"
-	LegacyAutomationsRoot = ".gc/formulas/automations"
+	OrdersRoot       = "orders"
+	LegacyOrdersRoot = ".gc/formulas/orders"
 
 	HooksRoot            = "hooks"
 	ClaudeHookFile       = "hooks/claude.json"
@@ -58,7 +58,7 @@ const (
 	AssetUnknown ManagedAsset = iota
 	AssetPrompt
 	AssetFormula
-	AssetAutomation
+	AssetOrder
 	AssetClaudeHook
 	AssetScript
 )
@@ -220,12 +220,12 @@ func ResolveCityFormulasDir(fs fsys.FS, cityRoot, configured string) string {
 	}
 }
 
-// ResolveCityAutomationRoots returns the ordered city-local automation roots
+// ResolveCityOrderRoots returns the ordered city-local order roots
 // for compatibility scanning: legacy first, canonical second.
-func ResolveCityAutomationRoots(fs fsys.FS, cityRoot string) []string {
+func ResolveCityOrderRoots(fs fsys.FS, cityRoot string) []string {
 	var roots []string
-	legacy := filepath.Join(cityRoot, LegacyAutomationsRoot)
-	canonical := filepath.Join(cityRoot, AutomationsRoot)
+	legacy := filepath.Join(cityRoot, LegacyOrdersRoot)
+	canonical := filepath.Join(cityRoot, OrdersRoot)
 
 	if pathExists(fs, legacy) {
 		roots = append(roots, legacy)
@@ -266,7 +266,7 @@ func (m managedRoot) activePrefix(ref string) string {
 func managedRoots(ref string) (managedRoot, bool) {
 	for _, candidate := range []managedRoot{
 		{asset: AssetClaudeHook, canonical: ClaudeHookFile, legacy: LegacyClaudeHookFile},
-		{asset: AssetAutomation, canonical: AutomationsRoot, legacy: LegacyAutomationsRoot},
+		{asset: AssetOrder, canonical: OrdersRoot, legacy: LegacyOrdersRoot},
 		{asset: AssetPrompt, canonical: PromptsRoot, legacy: LegacyPromptsRoot},
 		{asset: AssetFormula, canonical: FormulasRoot, legacy: LegacyFormulasRoot},
 		{asset: AssetScript, canonical: ScriptsRoot, legacy: LegacyScriptsRoot},

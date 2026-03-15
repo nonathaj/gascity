@@ -60,7 +60,7 @@ BdStore exposes methods that other subsystems use directly via `*BdStore`:
 |--------|---------|---------|
 | `Init(prefix)` | `internal/dolt` | Initialize `.beads/` database |
 | `ConfigSet(key, value)` | `internal/dolt` | Set bd configuration |
-| `ListByLabel(label, limit)` | `cmd/gc/cmd_automation.go` | Query beads by label (automation history, cursors) |
+| `ListByLabel(label, limit)` | `cmd/gc/cmd_order.go` | Query beads by label (order history, cursors) |
 | `Purge(beadsDir, dryRun)` | `internal/dolt/sync.go` | Remove closed ephemeral beads |
 | `SetPurgeRunner(fn)` | Tests only | Test injection |
 
@@ -93,10 +93,10 @@ provider = "bd"    # or "file", or "exec:/path/to/script"
 
 ### 1. Promote ListByLabel to the Store Interface
 
-`ListByLabel` is used by the automation subsystem for:
-- **Automation history** — list all wisps for a automation
-- **Last run time** — find most recent wisp for a automation
-- **Event cursor** — find max `seq:` label across automation wisps
+`ListByLabel` is used by the order subsystem for:
+- **Order history** — list all wisps for a order
+- **Last run time** — find most recent wisp for a order
+- **Event cursor** — find max `seq:` label across order wisps
 
 This is a core query pattern, not a bd-specific feature. Any bead store
 can filter by label. The interface should include it:
@@ -222,7 +222,7 @@ The wire format matches `beads.Bead` JSON tags — the same shape that
   "ref": "",
   "needs": [],
   "description": "",
-  "labels": ["automation-run:digest", "pool:dog"]
+  "labels": ["order-run:digest", "pool:dog"]
 }
 ```
 
@@ -382,9 +382,9 @@ works with any provider.
 | Task loop | L2 | Ready, Get, Update, Close | — |
 | Molecules | L2 | Create, Children, Update, Close, MolCook | — |
 | Messaging | L2 | Create (type=message), List | — |
-| Automation check | L3 | — | ListByLabel (→ promote) |
-| Automation run | L3 | MolCook | ListByLabel (→ promote) |
-| Automation history | L3 | — | ListByLabel (→ promote) |
+| Order check | L3 | — | ListByLabel (→ promote) |
+| Order run | L3 | MolCook | ListByLabel (→ promote) |
+| Order history | L3 | — | ListByLabel (→ promote) |
 | Health patrol | L2 | Ready, SetMetadata | — |
 | Convoy | L3 | Create, Children, Close, Update | — |
 | Rig init | L0 | — | Init, ConfigSet |
@@ -496,7 +496,7 @@ get their own Go implementation.
 ### Phase 1: Interface Promotion (This PR)
 1. Add `ListByLabel(label string, limit int) ([]Bead, error)` to Store
 2. Implement on MemStore and FileStore (filter existing data)
-3. Change `cmd/gc/cmd_automation.go` functions from `*BdStore` to `Store`
+3. Change `cmd/gc/cmd_order.go` functions from `*BdStore` to `Store`
 
 ### Phase 2: Exec Provider
 1. Create `internal/beads/exec/` package

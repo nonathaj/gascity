@@ -115,20 +115,20 @@ Mail + nudge. No new primitive needed.
 ### 7. Formulas & Molecules
 
 Formula = TOML parsed by Config. Molecule = root bead + child step
-beads in Task Store. Wisps = ephemeral molecules. Automations =
+beads in Task Store. Wisps = ephemeral molecules. Orders =
 formulas with gate conditions on Event Bus.
 
 - **Formula derivation**: Config (primitive 4) parses TOML.
 - **Molecule derivation**: Bead Store (primitive 2) holds root +
   step beads. `CurrentStep()` computes next step from dependency state.
 - **Wisp derivation**: Molecule + TTL + garbage collection.
-- **Automation derivation**: Formula + Event Bus (primitive 3) gate
+- **Order derivation**: Formula + Event Bus (primitive 3) gate
   evaluation + Config (primitive 4) scheduling.
 - **Proof**: Uses Config, Bead Store, and Event Bus. No new
   infrastructure.
 
 **Details**: [Formulas & Molecules](formulas.md) |
-[Automations](automations.md)
+[Orders](orders.md)
 
 ### 8. Dispatch (Sling)
 
@@ -180,7 +180,7 @@ Capabilities activate based on config section presence:
 | 4 | `[mail]` | Messaging |
 | 5 | Formula files + `[formulas]` | Formulas & molecules |
 | 6 | `[daemon]` health fields | Health monitoring |
-| 7 | `automations/` directories | Automations |
+| 7 | `orders/` directories | Orders |
 | 8 | All sections | Full orchestration |
 
 ## See Also

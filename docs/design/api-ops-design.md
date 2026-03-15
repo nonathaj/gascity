@@ -90,7 +90,7 @@ Beyond the semantic mismatch, 26 CLI mutations have no API equivalent:
 | Rig CRUD | add, remove, restart |
 | Config | apply, validate, provider CRUD |
 | Packs | fetch |
-| Automations | run, enable/disable |
+| Orders | run, enable/disable |
 | Events | emit |
 | Misc | handoff, reconcile |
 
@@ -737,22 +737,22 @@ validation errors and warnings.
 **`GET /v0/config/explain`** — Returns config provenance (where each
 value came from). Accepts `?agent=` and `?rig=` filters.
 
-### 8.8 Automations
+### 8.8 Orders
 
 ```
-GET    /v0/automations                             (new)
-GET    /v0/automation/{name}                       (new)
-POST   /v0/automation/{name}/run                   (new)
-POST   /v0/automation/{name}/enable                (new)
-POST   /v0/automation/{name}/disable               (new)
-GET    /v0/automation/{name}/history               (new)
-GET    /v0/automations/check                       (new)
+GET    /v0/orders                             (new)
+GET    /v0/order/{name}                       (new)
+POST   /v0/order/{name}/run                   (new)
+POST   /v0/order/{name}/enable                (new)
+POST   /v0/order/{name}/disable               (new)
+GET    /v0/order/{name}/history               (new)
+GET    /v0/orders/check                       (new)
 ```
 
-**`POST /v0/automation/{name}/run`** — Manual trigger, bypasses gate.
+**`POST /v0/order/{name}/run`** — Manual trigger, bypasses gate.
 
-**`POST /v0/automation/{name}/enable`** / **`disable`** — Persists as
-`AutomationOverride` in city.toml.
+**`POST /v0/order/{name}/enable`** / **`disable`** — Persists as
+`OrderOverride` in city.toml.
 
 ### 8.9 Packs
 
@@ -852,7 +852,7 @@ optional `Idempotency-Key` support but no behavioral changes.
 | Providers | 0 | 0 | 6 | 6 |
 | Patches | 0 | 0 | 15 | 15 |
 | Config | 0 | 0 | 4 | 4 |
-| Automations | 0 | 0 | 7 | 7 |
+| Orders | 0 | 0 | 7 | 7 |
 | Packs | 0 | 0 | 2 | 2 |
 | Operations | 0 | 0 | 4 | 4 |
 | Events | 2 | 0 | 1 | 3 |
@@ -916,7 +916,7 @@ type DesiredStateMutator interface {
     ApplyConfig(partial config.City, dryRun bool) (*ApplyResult, error)
     ValidateConfig(partial config.City) (*ValidationResult, error)
 
-    // Automations
+    // Orders
     EnableAutomation(name, rig string) error
     DisableAutomation(name, rig string) error
 }
@@ -1354,13 +1354,13 @@ Patch resources (12):
 - PUT (full replace) for providers
 - Optimistic concurrency (ETags)
 
-### Phase 3: City Lifecycle + Automations + Operations ✅
+### Phase 3: City Lifecycle + Orders + Operations ✅
 
-**Status:** Delivered. Automations, events, enhanced status, rig restart all implemented.
+**Status:** Delivered. Orders, events, enhanced status, rig restart all implemented.
 
 **Endpoints implemented:**
 - `GET /v0/city` — city info
-- Automation CRUD: list/show/enable/disable
+- Order CRUD: list/show/enable/disable
 - `POST /v0/events` — event emission
 - Enhanced status with uptime, version, agent counts
 - `POST /v0/rig/{name}/restart` — kills all agents in rig (reconciler restarts)
@@ -1485,7 +1485,7 @@ Build-tagged `//go:build integration` tests:
 
 1. Default retention period for operations (recommend: 7 days)
 2. Whether `POST /v0/bead/{id}/update` should emit a `Deprecation` header
-3. Which phase adds `gc automation run` API parity (recommend: Phase 3)
+3. Which phase adds `gc order run` API parity (recommend: Phase 3)
 
 ---
 
@@ -1613,14 +1613,14 @@ Config
   POST   /v0/config/validate
   GET    /v0/config/explain
 
-Automations
-  GET    /v0/automations
-  GET    /v0/automation/{name}
-  POST   /v0/automation/{name}/run
-  POST   /v0/automation/{name}/enable
-  POST   /v0/automation/{name}/disable
-  GET    /v0/automation/{name}/history
-  GET    /v0/automations/check
+Orders
+  GET    /v0/orders
+  GET    /v0/order/{name}
+  POST   /v0/order/{name}/run
+  POST   /v0/order/{name}/enable
+  POST   /v0/order/{name}/disable
+  GET    /v0/order/{name}/history
+  GET    /v0/orders/check
 
 Packs
   GET    /v0/packs

@@ -12,7 +12,7 @@
 #
 # Becomes unnecessary when beads supports cross-rig computeBlockedIDs.
 #
-# Runs as an exec automation (no LLM, no agent, no wisp).
+# Runs as an exec order (no LLM, no agent, no wisp).
 set -euo pipefail
 
 CITY="${GC_CITY_ROOT:-.}"

@@ -36,7 +36,7 @@ DEMO_CITY="${DEMO_CITY:-$HOME/demo-city}"
 DEMO_SESSION="gc-lifecycle"
 EDIT="${EDITOR:-nano}"
 
-# Wasteland poll automation needs DOLTHUB_TOKEN for remote DoltHub API access.
+# Wasteland poll order needs DOLTHUB_TOKEN for remote DoltHub API access.
 if [[ -z "${DOLTHUB_TOKEN:-}" ]]; then
     WL_ENVRC="/data/projects/wasteland/.envrc"
     if [[ -f "$WL_ENVRC" ]]; then
@@ -96,7 +96,7 @@ export BEADS_DOLT_AUTO_START=0
 gc init --from "$GC_SRC/examples/lifecycle" "$DEMO_CITY"
 
 # Copy additional packs locally (remote fetch doesn't resolve formula
-# layers yet, so automations need local paths to be discovered).
+# layers yet, so orders need local paths to be discovered).
 cp -r "$GC_SRC/examples/swarm-lifecycle/packs/swarm-lifecycle" "$DEMO_CITY/packs/"
 cp -r "$GC_SRC/examples/wasteland-feeder" "$DEMO_CITY/packs/"
 
@@ -193,7 +193,7 @@ tmux send-keys -t "$PANE_EVENTS" \
     "cd $DEMO_CITY && gc events --follow" C-m
 
 # Pane bottom-right: Controller (foreground — stays alive, watches config).
-# Pass DOLTHUB_TOKEN so the wasteland-poll automation can access the remote API.
+# Pass DOLTHUB_TOKEN so the wasteland-poll order can access the remote API.
 tmux send-keys -t "$PANE_CTRL" \
     "export DOLTHUB_TOKEN='$DOLTHUB_TOKEN' && cd $DEMO_CITY && gc start --foreground" C-m
 
@@ -255,8 +255,8 @@ name = "demo-city"
 [daemon]
 patrol_interval = "1s"
 
-# Override remote pack automation interval for demo speed.
-[[automations.overrides]]
+# Override remote pack order interval for demo speed.
+[[orders.overrides]]
 name = "wasteland-poll"
 interval = "10s"
 

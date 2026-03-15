@@ -19,14 +19,12 @@ gc [flags]
 | Subcommand | Description |
 |------------|-------------|
 | [gc agent](#gc-agent) | Manage agent configuration |
-| [gc automation](#gc-automation) | Manage automations (periodic formula dispatch) |
 | [gc beads](#gc-beads) | Manage the beads provider |
 | [gc build-image](#gc-build-image) | Build a prebaked agent container image |
 | [gc cities](#gc-cities) | List registered cities |
 | [gc config](#gc-config) | Inspect and validate city configuration |
 | [gc converge](#gc-converge) | Manage convergence loops (bounded iterative refinement) |
 | [gc convoy](#gc-convoy) | Manage convoys (batch work tracking) |
-| [gc daemon](#gc-daemon) | Manage the city daemon (background controller) |
 | [gc dashboard](#gc-dashboard) | Web dashboard for monitoring the city |
 | [gc doctor](#gc-doctor) | Check workspace health |
 | [gc event](#gc-event) | Event operations |
@@ -39,6 +37,7 @@ gc [flags]
 | [gc mail](#gc-mail) | Send and receive messages between agents and humans |
 | [gc migration](#gc-migration) | Migration tools for the unified session model |
 | [gc nudge](#gc-nudge) | Inspect and deliver deferred nudges |
+| [gc order](#gc-order) | Manage orders (periodic formula dispatch) |
 | [gc pack](#gc-pack) | Manage remote pack sources |
 | [gc prime](#gc-prime) | Output the behavioral prompt for an agent |
 | [gc register](#gc-register) | Register a city with the machine-wide supervisor |
@@ -50,7 +49,7 @@ gc [flags]
 | [gc session](#gc-session) | Manage interactive chat sessions |
 | [gc skill](#gc-skill) | Show command reference for a topic |
 | [gc sling](#gc-sling) | Route work to an agent or pool |
-| [gc start](#gc-start) | Start the city (auto-initializes if needed) |
+| [gc start](#gc-start) | Start the city under the machine-wide supervisor |
 | [gc status](#gc-status) | Show city-wide status overview |
 | [gc stop](#gc-stop) | Stop all agent sessions in the city |
 | [gc supervisor](#gc-supervisor) | Manage the machine-wide supervisor |
@@ -125,96 +124,6 @@ replaced if they exit. Use "gc agent resume" to restore.
 gc agent suspend <name>
 ```
 
-## gc automation
-
-Manage automations — formulas with gate conditions for periodic dispatch.
-
-Automations are formulas annotated with scheduling gates (interval, cron
-schedule, or shell check commands). The controller evaluates gates
-periodically and dispatches automation formulas when they are due.
-
-```
-gc automation
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc automation check](#gc-automation-check) | Check which automations are due to run |
-| [gc automation history](#gc-automation-history) | Show automation execution history |
-| [gc automation list](#gc-automation-list) | List available automations |
-| [gc automation run](#gc-automation-run) | Execute an automation manually |
-| [gc automation show](#gc-automation-show) | Show details of an automation |
-
-## gc automation check
-
-Evaluate gate conditions for all automations and show which are due.
-
-Prints a table with each automation's gate, due status, and reason. Returns
-exit code 0 if any automation is due, 1 if none are due.
-
-```
-gc automation check
-```
-
-## gc automation history
-
-Show execution history for automations.
-
-Queries bead history for past automation runs. Optionally filter by automation
-name. Use --rig to filter by rig.
-
-```
-gc automation history [name] [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--rig` | string |  | rig name to filter automation history |
-
-## gc automation list
-
-List all available automations with their gate type, schedule, and target pool.
-
-Scans formula layers for formulas that have automation metadata
-(gate, interval, schedule, check, pool).
-
-```
-gc automation list
-```
-
-## gc automation run
-
-Execute an automation manually, bypassing its gate conditions.
-
-Instantiates a wisp from the automation's formula and routes it to the
-target pool (if configured). Useful for testing automations or triggering
-them outside their normal schedule.
-Use --rig to disambiguate same-name automations in different rigs.
-
-```
-gc automation run <name> [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--rig` | string |  | rig name to disambiguate same-name automations |
-
-## gc automation show
-
-Display detailed information about a named automation.
-
-Shows the automation name, description, formula reference, gate type,
-scheduling parameters, check command, target pool, and source file.
-Use --rig to disambiguate same-name automations in different rigs.
-
-```
-gc automation show <name> [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--rig` | string |  | rig name to disambiguate same-name automations |
-
 ## gc beads
 
 Manage the beads provider (backing store for issue tracking).
@@ -237,7 +146,7 @@ Delegates to the provider's lifecycle health operation. For exec
 providers (including bd/dolt), the script handles multi-tier checking
 and recovery internally. For the file provider, always succeeds (no-op).
 
-Also used by the beads-health system automation for periodic monitoring.
+Also used by the beads-health system order for periodic monitoring.
 
 ```
 gc beads health [flags]
@@ -626,123 +535,6 @@ Useful for identifying bottlenecks in convoy processing.
 
 ```
 gc convoy stranded
-```
-
-## gc daemon
-
-Manage the city daemon — a persistent background controller.
-
-The daemon runs "gc start --foreground" as a background process,
-continuously reconciling agent state. It can be managed as a system
-service via launchd (macOS) or systemd (Linux).
-
-```
-gc daemon
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc daemon install](#gc-daemon-install) | Install the daemon as a platform service (launchd/systemd) |
-| [gc daemon logs](#gc-daemon-logs) | Tail the daemon log file |
-| [gc daemon run](#gc-daemon-run) | Run the controller in the foreground (with log file) |
-| [gc daemon start](#gc-daemon-start) | Start the daemon in the background |
-| [gc daemon status](#gc-daemon-status) | Show daemon status (PID, uptime) |
-| [gc daemon stop](#gc-daemon-stop) | Stop the running daemon |
-| [gc daemon uninstall](#gc-daemon-uninstall) | Remove the platform service (launchd/systemd) |
-
-## gc daemon install
-
-Install the daemon as a platform service that starts on login.
-
-Generates and loads a launchd plist (macOS) or systemd user unit
-(Linux) that runs "gc daemon run" automatically.
-
-```
-gc daemon install [path]
-```
-
-## gc daemon logs
-
-Tail the daemon log file (.gc/daemon.log).
-
-Shows recent log output with optional follow mode. Equivalent to
-"tail -n 50 .gc/daemon.log" (or "tail -f" with --follow).
-
-```
-gc daemon logs [path] [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-f`, `--follow` | bool |  | follow log output |
-| `-n`, `--lines` | int | `50` | number of lines to show |
-
-## gc daemon run
-
-Run the controller in the foreground with log file output.
-
-Starts the persistent reconciliation loop, writing output to both
-stdout and .gc/daemon.log. This is the command that "gc daemon start"
-forks in the background.
-
-```
-gc daemon run [path] [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-f`, `--file` | stringArray |  | additional config files to layer (can be repeated) |
-| `--no-strict` | bool |  | disable strict config collision checking (strict is on by default) |
-
-## gc daemon start
-
-Fork the daemon as a background process.
-
-Spawns "gc daemon run" as a detached child process and verifies it
-acquired the controller lock. Only one daemon can run per city.
-
-```
-gc daemon start [path]
-```
-
-**Example:**
-
-```
-gc daemon start
-  gc daemon start ~/my-city
-```
-
-## gc daemon status
-
-Show whether the daemon is running, its PID, and uptime.
-
-Reads the PID file and verifies the process is alive. Derives uptime
-from the most recent controller.started event in the event log.
-
-```
-gc daemon status [path]
-```
-
-## gc daemon stop
-
-Signal the running daemon to shut down gracefully.
-
-Connects to the controller's unix socket and sends a stop command.
-The daemon performs graceful agent shutdown before exiting.
-
-```
-gc daemon stop [path]
-```
-
-## gc daemon uninstall
-
-Remove the platform service and stop the daemon.
-
-Unloads and deletes the launchd plist (macOS) or systemd unit (Linux)
-created by "gc daemon install".
-
-```
-gc daemon uninstall [path]
 ```
 
 ## gc dashboard
@@ -1213,6 +1005,96 @@ Defaults to $GC_AGENT when run inside an agent session.
 gc nudge status [agent]
 ```
 
+## gc order
+
+Manage orders — formulas with gate conditions for periodic dispatch.
+
+Orders are formulas annotated with scheduling gates (interval, cron
+schedule, or shell check commands). The controller evaluates gates
+periodically and dispatches order formulas when they are due.
+
+```
+gc order
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| [gc order check](#gc-order-check) | Check which orders are due to run |
+| [gc order history](#gc-order-history) | Show order execution history |
+| [gc order list](#gc-order-list) | List available orders |
+| [gc order run](#gc-order-run) | Execute an order manually |
+| [gc order show](#gc-order-show) | Show details of an order |
+
+## gc order check
+
+Evaluate gate conditions for all orders and show which are due.
+
+Prints a table with each order's gate, due status, and reason. Returns
+exit code 0 if any order is due, 1 if none are due.
+
+```
+gc order check
+```
+
+## gc order history
+
+Show execution history for orders.
+
+Queries bead history for past order runs. Optionally filter by order
+name. Use --rig to filter by rig.
+
+```
+gc order history [name] [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--rig` | string |  | rig name to filter order history |
+
+## gc order list
+
+List all available orders with their gate type, schedule, and target pool.
+
+Scans formula layers for formulas that have order metadata
+(gate, interval, schedule, check, pool).
+
+```
+gc order list
+```
+
+## gc order run
+
+Execute an order manually, bypassing its gate conditions.
+
+Instantiates a wisp from the order's formula and routes it to the
+target pool (if configured). Useful for testing orders or triggering
+them outside their normal schedule.
+Use --rig to disambiguate same-name orders in different rigs.
+
+```
+gc order run <name> [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--rig` | string |  | rig name to disambiguate same-name orders |
+
+## gc order show
+
+Display detailed information about a named order.
+
+Shows the order name, description, formula reference, gate type,
+scheduling parameters, check command, target pool, and source file.
+Use --rig to disambiguate same-name orders in different rigs.
+
+```
+gc order show <name> [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--rig` | string |  | rig name to disambiguate same-name orders |
+
 ## gc pack
 
 Manage remote pack sources that provide agent configurations.
@@ -1281,8 +1163,7 @@ Register a city directory with the machine-wide supervisor.
 
 If no path is given, registers the current city (discovered from cwd).
 Registration is idempotent — registering the same city twice is a no-op.
-City names (derived from directory basename or workspace.name) must be
-unique across all registered cities.
+The supervisor is started if needed and immediately reconciles the city.
 
 ```
 gc register [path]
@@ -1290,11 +1171,11 @@ gc register [path]
 
 ## gc restart
 
-Restart the city by stopping all agents then starting them again.
+Restart the city by stopping it then starting it again.
 
-Equivalent to running "gc stop" followed by "gc start". Performs a
-full one-shot reconciliation after stopping, which re-reads city.toml
-and starts all configured agents.
+Equivalent to running "gc stop" followed by "gc start". Under supervisor
+mode this unregisters the city, then re-registers it and triggers an
+immediate reconcile.
 
 ```
 gc restart [path]
@@ -1798,12 +1679,12 @@ gc sling [target] <bead-or-formula> [flags]
 
 ## gc start
 
-Start the city by launching all configured agent sessions.
+Start the city under the machine-wide supervisor.
 
-Auto-initializes the city if no .gc/ directory exists. Fetches remote
-packs, resolves providers, installs hooks, and starts agent sessions
-via one-shot reconciliation. Use --foreground for a persistent controller
-that continuously reconciles agent state.
+Requires an existing city bootstrapped by "gc init". Fetches remote
+packs as needed, registers the city with the machine-wide supervisor,
+ensures the supervisor is running, and triggers immediate reconciliation.
+Use "gc supervisor run" for foreground operation.
 
 ```
 gc start [path] [flags]
@@ -1814,16 +1695,13 @@ gc start [path] [flags]
 ```
 gc start
   gc start ~/my-city
-  gc start --foreground
-  gc start -f overlay.toml --no-strict
+  gc start --dry-run
+  gc supervisor run
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `-n`, `--dry-run` | bool |  | preview what agents would start without starting them |
-| `-f`, `--file` | stringArray |  | additional config files to layer (can be repeated) |
-| `--foreground` | bool |  | run as a persistent controller (reconcile loop) |
-| `--no-strict` | bool |  | disable strict config collision checking (strict is on by default) |
 
 ## gc status
 
@@ -1853,10 +1731,11 @@ gc stop [path]
 
 ## gc supervisor
 
-Manage the machine-wide supervisor daemon.
+Manage the machine-wide supervisor.
 
 The supervisor manages all registered cities from a single process,
-hosting a unified API server. Use "gc register" to add cities.
+hosting a unified API server. Use "gc init", "gc start", or "gc register"
+to add cities.
 
 ```
 gc supervisor
@@ -1864,10 +1743,38 @@ gc supervisor
 
 | Subcommand | Description |
 |------------|-------------|
+| [gc supervisor install](#gc-supervisor-install) | Install the supervisor as a platform service |
+| [gc supervisor logs](#gc-supervisor-logs) | Tail the supervisor log file |
 | [gc supervisor reload](#gc-supervisor-reload) | Trigger immediate reconciliation of all cities |
-| [gc supervisor start](#gc-supervisor-start) | Start the machine-wide supervisor (foreground) |
+| [gc supervisor run](#gc-supervisor-run) | Run the machine-wide supervisor in the foreground |
+| [gc supervisor start](#gc-supervisor-start) | Start the machine-wide supervisor in the background |
 | [gc supervisor status](#gc-supervisor-status) | Check if the supervisor is running |
 | [gc supervisor stop](#gc-supervisor-stop) | Stop the machine-wide supervisor |
+| [gc supervisor uninstall](#gc-supervisor-uninstall) | Remove the platform service |
+
+## gc supervisor install
+
+Install the machine-wide supervisor as a platform service that
+starts on login.
+
+```
+gc supervisor install
+```
+
+## gc supervisor logs
+
+Tail the machine-wide supervisor log file.
+
+Shows recent log output from background and service-managed supervisor runs.
+
+```
+gc supervisor logs [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-f`, `--follow` | bool |  | follow log output |
+| `-n`, `--lines` | int | `50` | number of lines to show |
 
 ## gc supervisor reload
 
@@ -1880,13 +1787,23 @@ change and restart it without waiting for the next patrol tick.
 gc supervisor reload
 ```
 
+## gc supervisor run
+
+Run the machine-wide supervisor in the foreground.
+
+This is the canonical long-running control loop. It reads ~/.gc/cities.toml
+for registered cities, manages them from one process, and hosts the shared
+API server.
+
+```
+gc supervisor run
+```
+
 ## gc supervisor start
 
-Start the machine-wide supervisor in the foreground.
+Start the machine-wide supervisor in the background.
 
-The supervisor reads ~/.gc/cities.toml for registered cities and
-~/.gc/supervisor.toml for configuration. It starts a CityRuntime
-for each registered city and hosts a single API server.
+This forks "gc supervisor run", verifies it became ready, and returns.
 
 ```
 gc supervisor start
@@ -1908,6 +1825,14 @@ Stop the running machine-wide supervisor and all its cities.
 gc supervisor stop
 ```
 
+## gc supervisor uninstall
+
+Remove the platform service and stop the machine-wide supervisor.
+
+```
+gc supervisor uninstall
+```
+
 ## gc suspend
 
 Suspends the city by setting workspace.suspended = true in city.toml.
@@ -1927,6 +1852,7 @@ gc suspend [path]
 Remove a city from the machine-wide supervisor registry.
 
 If no path is given, unregisters the current city (discovered from cwd).
+If the supervisor is running, it immediately stops managing the city.
 
 ```
 gc unregister [path]

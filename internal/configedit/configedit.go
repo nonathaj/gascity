@@ -617,34 +617,34 @@ func (e *Editor) DeleteProviderPatch(name string) error {
 	})
 }
 
-// SetAutomationOverride creates or updates an automation override in
-// [automations.overrides]. Matches by name and rig.
-func (e *Editor) SetAutomationOverride(ov config.AutomationOverride) error {
+// SetOrderOverride creates or updates an order override in
+// [orders.overrides]. Matches by name and rig.
+func (e *Editor) SetOrderOverride(ov config.OrderOverride) error {
 	return e.Edit(func(cfg *config.City) error {
 		if ov.Name == "" {
-			return fmt.Errorf("automation override: name is required")
+			return fmt.Errorf("order override: name is required")
 		}
-		for i := range cfg.Automations.Overrides {
-			if cfg.Automations.Overrides[i].Name == ov.Name && cfg.Automations.Overrides[i].Rig == ov.Rig {
-				cfg.Automations.Overrides[i] = ov
+		for i := range cfg.Orders.Overrides {
+			if cfg.Orders.Overrides[i].Name == ov.Name && cfg.Orders.Overrides[i].Rig == ov.Rig {
+				cfg.Orders.Overrides[i] = ov
 				return nil
 			}
 		}
-		cfg.Automations.Overrides = append(cfg.Automations.Overrides, ov)
+		cfg.Orders.Overrides = append(cfg.Orders.Overrides, ov)
 		return nil
 	})
 }
 
-// DeleteAutomationOverride removes an automation override by name and rig.
-func (e *Editor) DeleteAutomationOverride(name, rig string) error {
+// DeleteOrderOverride removes an order override by name and rig.
+func (e *Editor) DeleteOrderOverride(name, rig string) error {
 	return e.Edit(func(cfg *config.City) error {
-		for i := range cfg.Automations.Overrides {
-			if cfg.Automations.Overrides[i].Name == name && cfg.Automations.Overrides[i].Rig == rig {
-				cfg.Automations.Overrides = append(cfg.Automations.Overrides[:i], cfg.Automations.Overrides[i+1:]...)
+		for i := range cfg.Orders.Overrides {
+			if cfg.Orders.Overrides[i].Name == name && cfg.Orders.Overrides[i].Rig == rig {
+				cfg.Orders.Overrides = append(cfg.Orders.Overrides[:i], cfg.Orders.Overrides[i+1:]...)
 				return nil
 			}
 		}
-		return fmt.Errorf("automation override %q not found", name)
+		return fmt.Errorf("order override %q not found", name)
 	})
 }
 

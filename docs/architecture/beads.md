@@ -9,7 +9,7 @@ Layer 0-1 primitive that provides CRUD, parent-child relationships, labels,
 and molecule instantiation over work units called beads. Everything in Gas
 City is a bead: tasks, mail, molecules, convoys, and epics. The `Store`
 interface abstracts over four implementations (BdStore, FileStore, MemStore,
-and exec Store) so that higher-layer mechanisms like dispatch, automations,
+and exec Store) so that higher-layer mechanisms like dispatch, orders,
 and messaging compose purely against the interface without knowing the
 storage backend.
 
@@ -36,7 +36,7 @@ storage backend.
 
 - **Label**: A string tag on a bead's `Labels` field. Labels enable pool
   dispatch (e.g., `pool:worker`), rig scoping (e.g., `rig:frontend`),
-  automation tracking (e.g., `automation-run:lint`), and arbitrary
+  order tracking (e.g., `order-run:lint`), and arbitrary
   categorization. Beads are queryable by exact label match via
   `ListByLabel`.
 
@@ -197,10 +197,10 @@ enforced by the conformance suite in `internal/beads/beadstest/conformance.go`.
 
 | Depended on by | How |
 |---|---|
-| `cmd/gc/` (CLI commands) | `openCityStore` creates the appropriate Store; used by convoy, sling, automation, handoff, and hook commands |
+| `cmd/gc/` (CLI commands) | `openCityStore` creates the appropriate Store; used by convoy, sling, order, handoff, and hook commands |
 | `internal/mail/beadmail` | Implements mail.Provider backed by beads.Store -- mail messages are beads with type `"message"` |
 | `internal/formula` | `formula.CurrentStep` and `formula.ComposeMolCook` operate on bead slices and Store respectively |
-| `internal/automations` | Automation dispatch uses Store for cooldown tracking (`ListByLabel` with `automation-run:` labels) and cursor-based event gates |
+| `internal/orders` | Order dispatch uses Store for cooldown tracking (`ListByLabel` with `order-run:` labels) and cursor-based event gates |
 | `internal/doctor` | Health checks verify Store accessibility for both city-level and per-rig bead databases |
 | `cmd/gc/cmd_convoy.go` | Convoy operations (create, list, status, add, close, check, stranded) all operate through Store |
 | `cmd/gc/cmd_handoff.go` | Work handoff between agents reads and writes beads through Store |

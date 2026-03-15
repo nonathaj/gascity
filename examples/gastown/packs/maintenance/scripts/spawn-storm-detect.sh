@@ -8,7 +8,7 @@
 # State file tracks cumulative reset counts across runs. Closed beads
 # are pruned from the ledger automatically.
 #
-# Runs as an exec automation (no LLM, no agent, no wisp).
+# Runs as an exec order (no LLM, no agent, no wisp).
 set -euo pipefail
 
 CITY="${GC_CITY_ROOT:-.}"

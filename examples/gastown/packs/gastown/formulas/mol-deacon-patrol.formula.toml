@@ -27,7 +27,7 @@ can't or shouldn't do.
 4. **System diagnostics** — run `gc doctor`, act on findings.
 
 Mechanical tasks (gate evaluation, cross-rig deps, orphan bead sweeps,
-wisp compaction) are handled by exec automations in the maintenance
+wisp compaction) are handled by exec orders in the maintenance
 pack — no LLM needed.
 
 ## Idle Town Principle
@@ -255,7 +255,7 @@ gc mail send mayor/ -s "ESCALATION: Dolt server unreachable [CRITICAL]" \\
 
 **Commit bloat (commits > 50k in any DB):**
 The compactor dog (`mol-dog-compactor`) may have failed. Log for awareness.
-If the compactor automation is configured, it will self-dispatch. Otherwise
+If the compactor order is configured, it will self-dispatch. Otherwise
 nudge the dog pool:
 ```bash
 gc nudge dog/ "Compactor needed: <db_name> has <count> commits"
@@ -263,7 +263,7 @@ gc nudge dog/ "Compactor needed: <db_name> has <count> commits"
 
 **Stale backups:**
 The backup dog (`mol-dog-backup`) may have failed. Same pattern — log and
-nudge if automation hasn't self-healed:
+nudge if order hasn't self-healed:
 ```bash
 gc nudge dog/ "Backup needed: dolt backup is <age> old"
 ```

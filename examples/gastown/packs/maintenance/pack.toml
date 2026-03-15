@@ -1,7 +1,7 @@
 # Maintenance — generic multi-agent infrastructure pack.
 #
 # Reusable infrastructure layer: dog pool (shutdown dance), plus exec
-# automations for mechanical housekeeping (gates, orphans, branches, wisps).
+# orders for mechanical housekeeping (gates, orphans, branches, wisps).
 # Include this alongside any domain-specific pack.
 #
 # city_agents: dog pool is city-scoped (no rig directory).

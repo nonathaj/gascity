@@ -4,29 +4,33 @@ env GC_SESSION=fake
 env GC_BEADS=file
 env GC_DOLT=skip
 
-# gc start auto-initializes a new city.
-exec gc start $WORK/my-city
+# gc init bootstraps a new city.
+exec gc init $WORK/my-city
 stdout 'Welcome to Gas City!'
 stdout 'Initialized city'
-stdout 'City started.'
+stdout 'Registered city'
+
+# gc start operates on an existing city.
+exec gc start $WORK/my-city
+stdout 'City started'
 
 # gc start is idempotent — no init message when city already exists.
 exec gc start $WORK/my-city
 ! stdout 'Welcome to Gas City!'
-stdout 'City started.'
+stdout 'City started'
 
 # gc start with an agent that has start_command — actually exercises sessions.
 exec gc start $WORK/cmd-city
 stdout 'Started agent'
-stdout 'City started.'
+stdout 'City started'
 
 # gc stop with path.
 exec gc stop $WORK/cmd-city
 stdout 'City stopped.'
 
-# gc start with path (city auto-inited above, just starts).
+# gc start with path (city bootstrapped above, just starts).
 exec gc start $WORK/my-city
-stdout 'City started.'
+stdout 'City started'
 
 # gc stop with path.
 exec gc stop $WORK/my-city

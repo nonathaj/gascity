@@ -317,7 +317,7 @@ func TestListByLabel(t *testing.T) {
 	script := writeScript(t, dir, allOpsScript())
 	s := NewStore(script)
 
-	got, err := s.ListByLabel("automation-run:lint", 0)
+	got, err := s.ListByLabel("order-run:lint", 0)
 	if err != nil {
 		t.Fatalf("ListByLabel: %v", err)
 	}

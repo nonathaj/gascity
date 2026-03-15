@@ -14,10 +14,10 @@ Update this document when the implementation changes.
 
 The Event Bus is Gas City's Layer 0-1 primitive providing an append-only
 pub/sub log of all system activity -- the universal observation substrate.
-Every state change in the system (agent started, bead created, automation
+Every state change in the system (agent started, bead created, order
 fired, controller lifecycle) is recorded as an immutable event with a
 monotonically increasing sequence number. The event bus enables
-infrastructure mechanisms like automation gate evaluation, CLI event
+infrastructure mechanisms like order gate evaluation, CLI event
 tailing, and audit logging without coupling producers to consumers.
 
 ## Key Concepts
@@ -229,14 +229,14 @@ are enforced by the conformance suite in
 |---|---|
 | `cmd/gc/controller.go` | Records `controller.started` and `controller.stopped` events at lifecycle boundaries; passes `Recorder` to reconciliation and shutdown |
 | `cmd/gc/reconcile.go` | Records `agent.started`, `agent.stopped`, `agent.crashed`, `agent.idle_killed`, `agent.quarantined`, `agent.suspended` events during reconciliation |
-| `cmd/gc/automation_dispatch.go` | Records `automation.fired`, `automation.completed`, `automation.failed` events during automation dispatch |
+| `cmd/gc/order_dispatch.go` | Records `order.fired`, `order.completed`, `order.failed` events during order dispatch |
 | `cmd/gc/cmd_events.go` | CLI `gc events` command: reads and displays events with filtering (`--type`, `--since`), watch mode (`--watch`), and sequence query (`--seq`) |
 | `cmd/gc/cmd_event_emit.go` | CLI `gc event emit` command: records custom events from scripts and bd hooks (best-effort, always exits 0) |
 | `cmd/gc/cmd_agent.go` | Records agent lifecycle events during start/stop/restart operations |
 | `cmd/gc/cmd_suspend.go` | Records `city.suspended` and `city.resumed` events |
 | `cmd/gc/cmd_mail.go` | Records `mail.sent` and `mail.read` events |
 | `cmd/gc/cmd_convoy.go` | Records `convoy.created` and `convoy.closed` events |
-| `internal/automations/gates.go` | Event gates query the Provider via `List(Filter{Type, AfterSeq})` to check if matching events exist since the last cursor position |
+| `internal/orders/gates.go` | Event gates query the Provider via `List(Filter{Type, AfterSeq})` to check if matching events exist since the last cursor position |
 
 ## Code Map
 
@@ -280,9 +280,9 @@ All event type constants are defined in `internal/events/events.go`:
 | `ControllerStopped` | `controller.stopped` | Controller shutdown |
 | `CitySuspended` | `city.suspended` | City suspend command |
 | `CityResumed` | `city.resumed` | City resume command |
-| `AutomationFired` | `automation.fired` | Automation dispatch when gate is due |
-| `AutomationCompleted` | `automation.completed` | Automation dispatch on successful completion |
-| `AutomationFailed` | `automation.failed` | Automation dispatch on failure |
+| `AutomationFired` | `order.fired` | Order dispatch when gate is due |
+| `AutomationCompleted` | `order.completed` | Order dispatch on successful completion |
+| `AutomationFailed` | `order.failed` | Order dispatch on failure |
 
 ## Configuration
 
@@ -420,7 +420,7 @@ suite against a stateful jq-based mock script.
 ## See Also
 
 - [Architecture glossary](glossary.md) -- authoritative definitions of
-  event bus, automation, gate, and other terms used in this document
+  event bus, order, gate, and other terms used in this document
 - [Health Patrol architecture](health-patrol.md) -- how the controller
   reconciliation loop records agent lifecycle events on every tick
 - [Bead Store architecture](beads.md) -- the other Layer 0-1 primitive;

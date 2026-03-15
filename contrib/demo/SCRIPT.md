@@ -43,7 +43,7 @@ end at full Gas Town. The daemon live-reconciles on every save.
 name = "my-city"
 includes = ["packs/wasteland-feeder"]
 ```
-Just an automation. Polls Wasteland, contributes inference. Anyone can join.
+Just an order. Polls Wasteland, contributes inference. Anyone can join.
 
 **Step 2: Uncomment the `[[rigs]]` block** (swarm pack)
 ```toml
@@ -75,7 +75,7 @@ Branches, worktrees, merge handoff. Full Gas Town.
 ### What to Say
 
 > "Step 1: six lines of TOML. This city has no agents — just a wasteland
-> automation. It polls the global pool and contributes inference. Anyone
+> order. It polls the global pool and contributes inference. Anyone
 > can set this up in 30 seconds."
 
 > "Step 2: I uncomment the rigs block. Save. The daemon detects

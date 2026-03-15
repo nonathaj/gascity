@@ -69,18 +69,18 @@ func TestMemStoreListByLabel(t *testing.T) {
 	s := beads.NewMemStore()
 
 	// Create beads: two with matching label, one without.
-	if _, err := s.Create(beads.Bead{Title: "first", Labels: []string{"automation-run:lint"}}); err != nil {
+	if _, err := s.Create(beads.Bead{Title: "first", Labels: []string{"order-run:lint"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Create(beads.Bead{Title: "unrelated"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Create(beads.Bead{Title: "third", Labels: []string{"automation-run:lint", "extra"}}); err != nil {
+	if _, err := s.Create(beads.Bead{Title: "third", Labels: []string{"order-run:lint", "extra"}}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Unlimited — should return 2 in newest-first order.
-	got, err := s.ListByLabel("automation-run:lint", 0)
+	got, err := s.ListByLabel("order-run:lint", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestMemStoreListByLabel(t *testing.T) {
 	}
 
 	// With limit 1 — should return only the newest.
-	got, err = s.ListByLabel("automation-run:lint", 1)
+	got, err = s.ListByLabel("order-run:lint", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

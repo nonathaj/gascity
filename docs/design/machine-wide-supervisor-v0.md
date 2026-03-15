@@ -216,7 +216,7 @@ machine supervisor process (PID 1234)
 |           +-- agent start/stop/drift detection (unchanged)
 |           +-- crash loop quarantine (unchanged)
 |           +-- idle timeout (unchanged)
-|           +-- automation dispatch (unchanged)
+|           +-- order dispatch (unchanged)
 |
 +-- per-city isolation:
     +-- bright-lights/

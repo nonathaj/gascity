@@ -18,13 +18,13 @@ agent role to exist. It is not one of the five primitives or four derived
 mechanisms; it is the process that wires them together at runtime. The
 controller's main loop watches `city.toml` for changes (via fsnotify),
 periodically reconciles running agents against the desired config, evaluates
-pool scaling, dispatches automations, and garbage-collects expired wisps.
+pool scaling, dispatches orders, and garbage-collects expired wisps.
 
 ## Key Concepts
 
 - **Controller Loop**: The persistent `select` loop in `controllerLoop()`
   that fires on a configurable ticker (default 30s) and on config file
-  changes. Each tick runs the full reconciliation, wisp GC, and automation
+  changes. Each tick runs the full reconciliation, wisp GC, and order
   dispatch pipeline. Implemented in `cmd/gc/controller.go`.
 
 - **Config Reload**: The debounced mechanism by which filesystem changes
@@ -48,7 +48,7 @@ pool scaling, dispatches automations, and garbage-collects expired wisps.
   parallel via goroutines.
 
 - **Nil-Guard Tracker Pattern**: Optional subsystems (crash tracker, idle
-  tracker, wisp GC, automation dispatcher) follow a nil-means-disabled
+  tracker, wisp GC, order dispatcher) follow a nil-means-disabled
   convention. Callers check `if tracker != nil` before use. This avoids
   conditional plumbing and keeps the loop body clean.
 
@@ -80,7 +80,7 @@ gc start --foreground
   │     ├─ acquireControllerLock()   →  flock LOCK_EX|LOCK_NB
   │     ├─ write daemon.pid
   │     ├─ startControllerSocket()   →  Unix socket for IPC
-  │     ├─ build trackers (crash, idle, wisp GC, automation)
+  │     ├─ build trackers (crash, idle, wisp GC, order)
   │     └─ controllerLoop()
   │           ├─ watchConfigDirs()   →  fsnotify on config + pack dirs
   │           ├─ initial reconciliation
@@ -89,7 +89,7 @@ gc start --foreground
   │                 ├─ buildAgents(cfg)  →  evaluate pools in parallel
   │                 ├─ doReconcileAgents()
   │                 ├─ wispGC.runGC()
-  │                 └─ automationDispatcher.dispatch()
+  │                 └─ orderDispatcher.dispatch()
   │
   └─ shutdown:
         ├─ gracefulStopAll()         →  interrupt → wait → kill
@@ -123,8 +123,8 @@ Each tick of `controllerLoop()` (`cmd/gc/controller.go:268-320`) performs:
    `wisp_ttl` both set), queries closed molecules via `bd list` and
    deletes those older than the TTL cutoff.
 
-5. **Automation dispatch** (`ad.dispatch()`): Evaluates gate conditions
-   for all non-manual automations. See
+5. **Order dispatch** (`ad.dispatch()`): Evaluates gate conditions
+   for all non-manual orders. See
    [Health Patrol](health-patrol.md) for gate evaluation and dispatch
    details.
 
@@ -167,7 +167,7 @@ indicate bugs.
   startup; changing it requires a controller restart.
 
 - **Tracker rebuild is atomic per tick**: When config reloads, all four
-  trackers (crash, idle, wisp GC, automation) are rebuilt in the same tick
+  trackers (crash, idle, wisp GC, order) are rebuilt in the same tick
   before reconciliation runs. No tick ever uses a mix of old and new
   tracker state.
 
@@ -201,7 +201,7 @@ indicate bugs.
   role name.
 
 - **SDK self-sufficiency**: All controller operations (config watch,
-  reconciliation, pool scaling, automation dispatch, wisp GC, graceful
+  reconciliation, pool scaling, order dispatch, wisp GC, graceful
   shutdown) function with only the controller process running. No user-
   configured agent role is required for any infrastructure operation.
 
@@ -212,9 +212,9 @@ indicate bugs.
 | `internal/config` | `LoadWithIncludes()` for config parsing, `DaemonConfig` for loop timing, `Revision()` for reload detection, `WatchDirs()` for fsnotify targets, `ValidateAgents()`/`ValidateRigs()` for validation, `ResolveProvider()` for agent commands. |
 | `internal/session` | `Provider` interface for Start/Stop/IsRunning/ListRunning/Interrupt/Peek/SetMeta/GetMeta/ClearScrollback. `ConfigFingerprint()` for drift detection. Provider implementations: tmux, exec, subprocess, k8s, fake. |
 | `internal/agent` | `Agent` interface wrapping config + session provider. `New()` constructs instances. `SessionNameFor()` computes session names. |
-| `internal/events` | `Recorder` for emitting lifecycle events. `Provider` for event gate queries in automation dispatch. `NewFileRecorder()` for JSONL persistence. |
-| `internal/beads` | `Store` for automation tracking beads. `CommandRunner` for bd CLI invocation. `NewBdStore()` for rig-scoped stores. |
-| `internal/automations` | `Scan()` for automation discovery. `CheckGate()` for gate evaluation. |
+| `internal/events` | `Recorder` for emitting lifecycle events. `Provider` for event gate queries in order dispatch. `NewFileRecorder()` for JSONL persistence. |
+| `internal/beads` | `Store` for order tracking beads. `CommandRunner` for bd CLI invocation. `NewBdStore()` for rig-scoped stores. |
+| `internal/orders` | `Scan()` for order discovery. `CheckGate()` for gate evaluation. |
 | `internal/hooks` | `Install()` for provider-specific agent hooks. `Validate()` for hook name validation. |
 | `internal/dolt` | `EnsureRunning()` / `StopCity()` / `InitRigBeads()` for dolt server lifecycle. |
 | `internal/fsys` | `OSFS{}` filesystem abstraction for testability. |
@@ -243,7 +243,7 @@ All controller implementation lives in `cmd/gc/`:
 | `cmd/gc/beads_provider_lifecycle.go` | `ensureBeadsProvider()`, `shutdownBeadsProvider()`, `initBeadsForDir()` |
 | `cmd/gc/formula_resolve.go` | `ResolveFormulas()` (layered symlink materialization) |
 | `cmd/gc/wisp_gc.go` | `wispGC` interface, `memoryWispGC` (TTL-based closed molecule purging) |
-| `cmd/gc/automation_dispatch.go` | `automationDispatcher` interface, `memoryAutomationDispatcher`, `buildAutomationDispatcher()` |
+| `cmd/gc/order_dispatch.go` | `orderDispatcher` interface, `memoryOrderDispatcher`, `buildOrderDispatcher()` |
 | `cmd/gc/crash_tracker.go` | `crashTracker` interface, `memoryCrashTracker` |
 | `cmd/gc/idle_tracker.go` | `idleTracker` interface, `memoryIdleTracker` |
 | `cmd/gc/cmd_agent_drain.go` | `drainOps` interface, `providerDrainOps` (session metadata-backed drain signals) |
@@ -278,19 +278,19 @@ Session provider selection (affects all controller session operations):
 provider = ""               # "", "fake", "fail", "subprocess", "exec:<script>", "k8s"
 ```
 
-Beads provider selection (affects automation tracking, wisp GC):
+Beads provider selection (affects order tracking, wisp GC):
 
 ```toml
 [beads]
 provider = "bd"             # "bd" (default), "file", "exec:<script>"
 ```
 
-Automation filtering:
+Order filtering:
 
 ```toml
-[automations]
-skip = ["noisy-automation"] # automations to exclude from dispatch
-max_timeout = "120s"        # hard cap on per-automation timeout
+[orders]
+skip = ["noisy-order"] # orders to exclude from dispatch
+max_timeout = "120s"        # hard cap on per-order timeout
 ```
 
 City-level suspension:
@@ -306,14 +306,14 @@ Controller tests use in-memory fakes and require no external infrastructure:
 
 | Test file | Coverage |
 |---|---|
-| `cmd/gc/controller_test.go` | Controller loop tick behavior, config reload, dirty flag, fsnotify debounce, tracker rebuild on reload, automation dispatch integration |
+| `cmd/gc/controller_test.go` | Controller loop tick behavior, config reload, dirty flag, fsnotify debounce, tracker rebuild on reload, order dispatch integration |
 | `cmd/gc/reconcile_test.go` | All reconciliation states, parallel starts, zombie capture, crash quarantine integration, idle restart, pool drain, suspended agent handling, orphan cleanup |
 | `cmd/gc/pool_test.go` | `evaluatePool()` (clamping, error handling), `poolAgents()` (naming, deep-copy), `expandSessionSetup()`, `expandDirTemplate()` |
 | `cmd/gc/formula_resolve_test.go` | Layer priority, symlink creation/update/cleanup, idempotence, real file preservation |
 | `cmd/gc/wisp_gc_test.go` | TTL-based purging, `shouldRun()` interval, empty list handling |
-| `cmd/gc/automation_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped automations |
+| `cmd/gc/order_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped orders |
 | `cmd/gc/cmd_daemon_test.go` | Daemon run/start/stop/status, PID file lifecycle, service file generation |
-| `cmd/gc/cmd_start_test.go` | One-shot start, foreground mode, auto-init, provider resolution |
+| `cmd/gc/cmd_start_test.go` | One-shot start, foreground mode, existing-city validation, provider resolution |
 | `cmd/gc/cmd_suspend_test.go` | Suspend/resume TOML mutation, inheritance hierarchy |
 | `cmd/gc/beads_provider_lifecycle_test.go` | Provider ensure/shutdown/init lifecycle |
 
@@ -349,7 +349,7 @@ testing philosophy and tier boundaries.
   control.
 
 - **Tracker state is in-memory only**: Crash tracker history, idle
-  tracker timestamps, and automation dispatch state are all lost on
+  tracker timestamps, and order dispatch state are all lost on
   controller restart. This is intentional (matches Erlang/OTP supervisor
   restart semantics) but may surprise operators expecting persistence
   across restarts.
@@ -357,15 +357,15 @@ testing philosophy and tier boundaries.
 ## See Also
 
 - [Health Patrol](health-patrol.md) -- reconciliation state machine,
-  crash loop quarantine, idle tracking, and automation dispatch details
+  crash loop quarantine, idle tracking, and order dispatch details
 - [Architecture glossary](glossary.md) -- authoritative definitions
   of controller, pool, provider, rig, and other terms used in this doc
 - [Config struct definitions](../../internal/config/config.go) --
   `DaemonConfig`, `City`, `Agent`, `PoolConfig` struct fields and defaults
 - [Session Provider interface](../../internal/session/session.go) --
   the provider interface that the controller uses for all session operations
-- [Automations architecture](automations.md) -- gate types, dispatch
-  model, and automation configuration
+- [Orders architecture](orders.md) -- gate types, dispatch
+  model, and order configuration
 - [Formulas architecture](formulas.md) -- formula resolution, layering,
   and symlink materialization
 - [Nine Concepts overview](nine-concepts.md) -- how the controller relates

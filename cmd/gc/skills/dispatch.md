@@ -145,12 +145,12 @@ gc convoy stranded                     # Find convoys with no progress
 gc convoy autoclose                    # Close convoys where all beads done
 ```
 
-## Automations
+## Orders
 
 ```
-gc automation list                     # List automation rules
-gc automation show <name>              # Show automation definition
-gc automation run <name>               # Manually trigger an automation
-gc automation check <name>             # Check if gate conditions are met
-gc automation history <name>           # Show automation run history
+gc order list                     # List order rules
+gc order show <name>              # Show order definition
+gc order run <name>               # Manually trigger an order
+gc order check <name>             # Check if gate conditions are met
+gc order history <name>           # Show order run history
 ```

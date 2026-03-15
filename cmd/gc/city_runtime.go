@@ -42,7 +42,7 @@ type CityRuntime struct {
 	ct   crashTracker
 	it   idleTracker
 	wg   wispGC
-	ad   automationDispatcher
+	od   orderDispatcher
 
 	rec events.Recorder
 	cs  *controllerState // nil when API is disabled
@@ -95,7 +95,7 @@ type CityRuntimeParams struct {
 }
 
 // newCityRuntime creates a CityRuntime, building internal components
-// (reconcileOps, crash tracker, idle tracker, wisp GC, automation
+// (reconcileOps, crash tracker, idle tracker, wisp GC, order
 // dispatcher) from the provided parameters.
 func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 	rops := newReconcileOps(p.SP)
@@ -113,7 +113,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 			p.Cfg.Daemon.WispTTLDuration(), beads.ExecCommandRunner())
 	}
 
-	ad := buildAutomationDispatcher(p.CityPath, p.Cfg, beads.ExecCommandRunner(), p.Rec, p.Stderr)
+	od := buildOrderDispatcher(p.CityPath, p.Cfg, beads.ExecCommandRunner(), p.Rec, p.Stderr)
 
 	suspendedNames := computeSuspendedNames(p.Cfg, p.CityName, p.CityPath)
 
@@ -136,7 +136,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 		ct:                ct,
 		it:                it,
 		wg:                wg,
-		ad:                ad,
+		od:                od,
 		rec:               p.Rec,
 		poolSessions:      p.PoolSessions,
 		poolDeathHandlers: p.PoolDeathHandlers,
@@ -173,7 +173,7 @@ func (cr *CityRuntime) crashTrack() crashTracker {
 
 // run executes the reconciliation loop until ctx is canceled. This is
 // the per-city main loop — it watches config, reconciles agents, runs
-// wisp GC, and dispatches automations.
+// wisp GC, and dispatches orders.
 func (cr *CityRuntime) run(ctx context.Context) {
 	dirty := &atomic.Bool{}
 	if cr.tomlPath != "" {
@@ -297,7 +297,7 @@ func (cr *CityRuntime) run(ctx context.Context) {
 }
 
 // tick performs one reconciliation tick: pool death detection, config
-// reload (if dirty), agent reconciliation, wisp GC, and automation
+// reload (if dirty), agent reconciliation, wisp GC, and order
 // dispatch.
 func (cr *CityRuntime) tick(
 	ctx context.Context,
@@ -362,9 +362,9 @@ func (cr *CityRuntime) tick(
 		}
 	}
 
-	// Automation dispatch.
-	if cr.ad != nil {
-		cr.ad.dispatch(ctx, cityRoot, time.Now())
+	// Order dispatch.
+	if cr.od != nil {
+		cr.od.dispatch(ctx, cityRoot, time.Now())
 	}
 
 	if cr.svc != nil {
@@ -500,7 +500,7 @@ func (cr *CityRuntime) reloadConfig(
 		cr.wg = nil
 	}
 
-	cr.ad = buildAutomationDispatcher(cityRoot, nextCfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
+	cr.od = buildOrderDispatcher(cityRoot, nextCfg, beads.ExecCommandRunner(), cr.rec, cr.stderr)
 
 	cr.serviceStateMu.Lock()
 	cr.cfg = nextCfg

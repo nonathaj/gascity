@@ -382,7 +382,7 @@ func controllerLoop(
 	ct crashTracker,
 	it idleTracker,
 	wg wispGC,
-	ad automationDispatcher,
+	od orderDispatcher,
 	rec events.Recorder,
 	poolSessions map[string]time.Duration,
 	poolDeathHandlers map[string]poolDeathInfo,
@@ -415,7 +415,7 @@ func controllerLoop(
 		ct:                ct,
 		it:                it,
 		wg:                wg,
-		ad:                ad,
+		od:                od,
 		rec:               rec,
 		cs:                cs,
 		poolSessions:      poolSessions,
@@ -511,7 +511,7 @@ func runController(
 	// Generate and write the controller token for convergence loop ACL.
 	// The token is written to .gc/controller.token and kept in memory only.
 	// It is NOT set in os.Environ() to prevent leaking to child processes
-	// (exec scripts, git commands, automation hooks). Future waves that need
+	// (exec scripts, git commands, order hooks). Future waves that need
 	// the token from controller code use convergence.ReadToken() or pass it
 	// explicitly through function parameters.
 	controllerToken, err := convergence.GenerateToken()

@@ -108,7 +108,7 @@ func knownTOMLKeys() []string {
 		reflect.TypeOf(DoltConfig{}),
 		reflect.TypeOf(FormulasConfig{}),
 		reflect.TypeOf(DaemonConfig{}),
-		reflect.TypeOf(AutomationsConfig{}),
+		reflect.TypeOf(OrdersConfig{}),
 		reflect.TypeOf(APIConfig{}),
 		reflect.TypeOf(ConvergenceConfig{}),
 		reflect.TypeOf(Service{}),

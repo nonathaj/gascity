@@ -24,7 +24,7 @@ City is the top-level configuration for a Gas City instance.
 | `dolt` | DoltConfig |  |  | Dolt configures optional dolt server connection overrides. |
 | `formulas` | FormulasConfig |  |  | Formulas configures formula directory settings. |
 | `daemon` | DaemonConfig |  |  | Daemon configures controller daemon settings. |
-| `automations` | AutomationsConfig |  |  | Automations configures automation settings (skip list). |
+| `orders` | OrdersConfig |  |  | Orders configures order settings (skip list). |
 | `api` | APIConfig |  |  | API configures the optional HTTP API server. |
 | `chat_sessions` | ChatSessionsConfig |  |  | ChatSessions configures chat session behavior (auto-suspend). |
 | `convergence` | ConvergenceConfig |  |  | Convergence configures convergence loop limits. |
@@ -181,33 +181,6 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 | `install_agent_hooks_append` | []string |  |  | InstallAgentHooksAppend appends to the agent's install_agent_hooks list. |
 | `inject_fragments_append` | []string |  |  | InjectFragmentsAppend appends to the agent's inject_fragments list. |
 
-## AutomationOverride
-
-AutomationOverride modifies a scanned automation's scheduling fields.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | string | **yes** |  | Name is the automation name to target (required). |
-| `rig` | string |  |  | Rig scopes the override to a specific rig's automation. Empty matches city-level automations. |
-| `enabled` | boolean |  |  | Enabled overrides whether the automation is active. |
-| `gate` | string |  |  | Gate overrides the gate type. |
-| `interval` | string |  |  | Interval overrides the cooldown interval. Go duration string. |
-| `schedule` | string |  |  | Schedule overrides the cron expression. |
-| `check` | string |  |  | Check overrides the condition gate check command. |
-| `on` | string |  |  | On overrides the event gate event type. |
-| `pool` | string |  |  | Pool overrides the target agent/pool. |
-| `timeout` | string |  |  | Timeout overrides the per-automation timeout. Go duration string. |
-
-## AutomationsConfig
-
-AutomationsConfig holds automation settings.
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `skip` | []string |  |  | Skip lists automation names to exclude from scanning. |
-| `max_timeout` | string |  |  | MaxTimeout is an operator hard cap on per-automation timeouts. No automation gets more than this duration. Go duration string (e.g., "60s"). Empty means uncapped (no override). |
-| `overrides` | []AutomationOverride |  |  | Overrides apply per-automation field overrides after scanning. Each override targets an automation by name and optionally by rig. |
-
 ## BeadsConfig
 
 BeadsConfig holds bead store settings.
@@ -306,6 +279,33 @@ OptionChoice is one allowed value for a "select" option.
 | `value` | string | **yes** |  |  |
 | `label` | string | **yes** |  |  |
 | `flag_args` | []string | **yes** |  | FlagArgs are the CLI arguments injected when this choice is selected. json:"-" is intentional: FlagArgs must never appear in the public API DTO (security boundary — prevents clients from seeing internal CLI flags). |
+
+## OrderOverride
+
+OrderOverride modifies a scanned order's scheduling fields.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `name` | string | **yes** |  | Name is the order name to target (required). |
+| `rig` | string |  |  | Rig scopes the override to a specific rig's order. Empty matches city-level orders. |
+| `enabled` | boolean |  |  | Enabled overrides whether the order is active. |
+| `gate` | string |  |  | Gate overrides the gate type. |
+| `interval` | string |  |  | Interval overrides the cooldown interval. Go duration string. |
+| `schedule` | string |  |  | Schedule overrides the cron expression. |
+| `check` | string |  |  | Check overrides the condition gate check command. |
+| `on` | string |  |  | On overrides the event gate event type. |
+| `pool` | string |  |  | Pool overrides the target agent/pool. |
+| `timeout` | string |  |  | Timeout overrides the per-order timeout. Go duration string. |
+
+## OrdersConfig
+
+OrdersConfig holds order settings.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `skip` | []string |  |  | Skip lists order names to exclude from scanning. |
+| `max_timeout` | string |  |  | MaxTimeout is an operator hard cap on per-order timeouts. No order gets more than this duration. Go duration string (e.g., "60s"). Empty means uncapped (no override). |
+| `overrides` | []OrderOverride |  |  | Overrides apply per-order field overrides after scanning. Each override targets an order by name and optionally by rig. |
 
 ## PackSource
 

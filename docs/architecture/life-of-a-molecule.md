@@ -17,7 +17,7 @@ A molecule is a formula instantiated at runtime as a bead tree. This
 document traces a single molecule from the `*.formula.toml` file on disk,
 through parsing, resolution, instantiation as beads, assignment to an
 agent, step-by-step execution, completion, and garbage collection. It also
-traces the parallel automation path where a gate fires and the controller
+traces the parallel order path where a gate fires and the controller
 creates a wisp without any human invocation.
 
 ```
@@ -160,7 +160,7 @@ When all step beads are closed, `CurrentStep()` returns nil. The agent
 closes the root bead: `bd close BD-1`. The molecule is now fully closed.
 
 The event bus records `bead.closed` events in `.gc/events.jsonl`. These
-can trigger downstream automations with `gate = "event"`.
+can trigger downstream orders with `gate = "event"`.
 
 ## Phase 7: Garbage Collection
 
@@ -184,31 +184,31 @@ When due, `runGC(cityPath, now)`:
 3. Deletes each entry older than cutoff: `bd delete BD-1 --force`
 4. Returns purged count (individual failures are best-effort)
 
-## The Automation Path
+## The Order Path
 
-Automations create wisps without `gc sling`. An automation lives at
-`<formula-layer>/automations/<name>/automation.toml`:
+Orders create wisps without `gc sling`. An order lives at
+`<formula-layer>/orders/<name>/order.toml`:
 
 ```toml
-[automation]
+[order]
 formula = "code-review"
 gate = "cooldown"
 interval = "1h"
 pool = "reviewer"
 ```
 
-**Scanning:** `automations.Scan()` (`internal/automations/scanner.go`)
-walks `<layer>/automations/*/automation.toml` across formula layers.
-Higher-priority layers override by name. Disabled and skipped automations
+**Scanning:** `orders.Scan()` (`internal/orders/scanner.go`)
+walks `<layer>/orders/*/order.toml` across formula layers.
+Higher-priority layers override by name. Disabled and skipped orders
 are excluded.
 
-**Dispatcher build:** `buildAutomationDispatcher()` (`cmd/gc/automation_dispatch.go`)
-scans city and per-rig layers, stamps rig automations with their `Rig`
-field, and filters out manual-gate automations. Returns nil if none.
+**Dispatcher build:** `buildOrderDispatcher()` (`cmd/gc/order_dispatch.go`)
+scans city and per-rig layers, stamps rig orders with their `Rig`
+field, and filters out manual-gate orders. Returns nil if none.
 
-**Gate evaluation:** On each tick, `CheckGate()` (`internal/automations/gates.go`)
-evaluates each automation: cooldown (elapsed time via
-`store.ListByLabel("automation-run:<name>", 1)`), cron (schedule match),
+**Gate evaluation:** On each tick, `CheckGate()` (`internal/orders/gates.go`)
+evaluates each order: cooldown (elapsed time via
+`store.ListByLabel("order-run:<name>", 1)`), cron (schedule match),
 condition (shell exit 0), event (new events past cursor), or manual
 (always false).
 
@@ -218,14 +218,14 @@ condition (shell exit 0), event (new events past cursor), or manual
 1. Records `AutomationFired` event
 2. Cooks wisp: `instantiateWisp()` -> `BdStore.MolCook()`
    (`bd mol cook --formula=code-review`)
-3. Labels root bead: `bd update BD-1 --label=automation-run:<name> --label=pool:reviewer`
+3. Labels root bead: `bd update BD-1 --label=order-run:<name> --label=pool:reviewer`
    (rig-scoped: `pool:my-rig/reviewer`)
 4. Records `AutomationCompleted` event
 
 The labeled wisp is discoverable by pool agents via their work query.
 From here, lifecycle continues at Phase 5.
 
-**Exec automations** bypass the molecule pipeline. The controller runs the
+**Exec orders** bypass the molecule pipeline. The controller runs the
 script directly; no wisp or agent is involved.
 
 ## Function Reference
@@ -246,10 +246,10 @@ script directly; no wisp or agent is involved.
 | Step progress | `formula.CompletedCount()` | `internal/formula/formula.go` |
 | GC creation | `newWispGC()` | `cmd/gc/wisp_gc.go` |
 | GC execution | `memoryWispGC.runGC()` | `cmd/gc/wisp_gc.go` |
-| Automation scan | `automations.Scan()` | `internal/automations/scanner.go` |
-| Gate evaluation | `automations.CheckGate()` | `internal/automations/gates.go` |
-| Dispatcher build | `buildAutomationDispatcher()` | `cmd/gc/automation_dispatch.go` |
-| Wisp dispatch | `dispatchWisp()` | `cmd/gc/automation_dispatch.go` |
+| Order scan | `orders.Scan()` | `internal/orders/scanner.go` |
+| Gate evaluation | `orders.CheckGate()` | `internal/orders/gates.go` |
+| Dispatcher build | `buildOrderDispatcher()` | `cmd/gc/order_dispatch.go` |
+| Wisp dispatch | `dispatchWisp()` | `cmd/gc/order_dispatch.go` |
 
 ## See Also
 
@@ -257,5 +257,5 @@ script directly; no wisp or agent is involved.
   pipeline, invariants, and configuration
 - [Bead Store](./beads.md) -- MolCook across store backends
 - [Dispatch](./dispatch.md) -- sling routing and container expansion
-- [Automations](./automations.md) -- gate types, scanning, dispatch paths
+- [Orders](./orders.md) -- gate types, scanning, dispatch paths
 - [Glossary](./glossary.md) -- authoritative definitions of all terms

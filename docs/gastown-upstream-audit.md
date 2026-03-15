@@ -164,7 +164,7 @@ Support for integration branches (not just always merging to main).
 
 ### 6b. Spawn storm detection
 - [x] **70c1cbf8** — Track bead respawn count, escalate on threshold.
-  **Disposition:** Implemented as exec automation `spawn-storm-detect` in
+  **Disposition:** Implemented as exec order `spawn-storm-detect` in
   maintenance pack. Script tracks reset counts in a ledger, mails mayor
   when any bead exceeds threshold. Witness sets `metadata.recovered=true`
   on reset beads to feed the detector.
@@ -243,8 +243,8 @@ From batch 3 analysis (session summary).
 - [x] **427c6e8a** — Lifecycle defaults: Wisp Reaper (30m), Compactor (24h),
   Doctor (5m), Janitor (15m), JSONL Backup (15m), FS Backup (15m),
   Maintenance (daily 03:00, threshold 1000).
-  **Done:** 7 automation wrappers in `maintenance/formulas/automations/mol-dog-*/`
-  dispatch existing dog formulas on cooldown intervals via the generic automation
+  **Done:** 7 order wrappers in `maintenance/formulas/orders/mol-dog-*/`
+  dispatch existing dog formulas on cooldown intervals via the generic order
   system. No Go code needed — ZFC-compliant.
 
 ### 8d. CLI: `gc dolt cleanup`
@@ -256,7 +256,7 @@ From batch 3 analysis (session summary).
 
 ### 8e. Dolt-health pack extraction
 - [x] Dolt health formulas extracted from gastown into standalone reusable
-  pack at `examples/dolt-health/`. Dog formulas + exec automations.
+  pack at `examples/dolt-health/`. Dog formulas + exec orders.
 - [x] Fallback agents (`fallback = true`) — pack composition primitive.
   Non-fallback wins silently over fallback; two fallbacks keep first loaded.
   `resolveFallbackAgents()` runs before collision detection.
@@ -371,7 +371,7 @@ Go code making decisions that belong in prompts — moved to prompts.
   now configurable via config sub-sections (session, nudge, daemon, deacon,
   polecat, dolt, mail, web).
 - N/A — Gas City was designed config-first; thresholds were never hardcoded.
-  `[session]`, `[daemon]`, `[dolt]`, `[automations]` cover all operational
+  `[session]`, `[daemon]`, `[dolt]`, `[orders]` cover all operational
   knobs. JSON schema (via `genschema`) documents all fields with defaults.
 
 ### 12d. Multi-instance isolation
@@ -571,7 +571,7 @@ Extends Section 12b. Dispatch improvements and error handling.
 
 - [-] **a6fa0b91** + **5c9c749a** + **65ee6d6d** — Per-bead respawn circuit
   breaker. Already covered by Gas City's `spawn-storm-detect` exec
-  automation in maintenance pack (ported in S6b).
+  order in maintenance pack (ported in S6b).
 - [-] **783cbf77** — `--agent` override for formula run. Gas City sling
   already takes target agent as positional arg. N/A.
 - [-] **d980d0dc** — Resolve rig-prefixed beads in sling. Already at parity:
@@ -962,7 +962,7 @@ Extends Section 12d.
   All thresholds configurable via env vars. Sets precedent that new guards
   don't need Go PRs.
   Deferred: interesting capability for maintenance pack. Would be a hook
-  script or exec automation that monitors agent context usage and triggers
+  script or exec order that monitors agent context usage and triggers
   handoff/restart. Requires `GC_CONTEXT_BUDGET_TOKENS` env var plumbing.
 
 ---
@@ -1192,7 +1192,7 @@ bucketed into SDK gaps, Gastown example gaps, or no-action items.
   These are for the Wasteland domain, not Gastown-on-Gas-City.
 
 - [-] **5a5deaac + 7a4ac8f7 + 879ea531 + 7478fd2b + f428b4f5 + 4369ae3f + 0f33903b + 94cd895d + 2fc2bab2 + 37346f36 + 7b322036 + a246a57f + 380fc9c2 + 59783678 + 44fe386a + d5b5d209 + c7cfa2d6 + d852cd4c + b38e8755 + a5feda45** — Plugin and dog ecosystem changes we are not porting.
-  This whole cluster assumes upstream's plugin-oriented dog system (`plugin.md`, `run.sh`, `gt plugin sync`, exec-wrapper plugins, dolt-snapshots, git-hygiene, github-sheriff). Our current Gastown example uses formula/automation scripts instead, so these are outside the migration scope.
+  This whole cluster assumes upstream's plugin-oriented dog system (`plugin.md`, `run.sh`, `gt plugin sync`, exec-wrapper plugins, dolt-snapshots, git-hygiene, github-sheriff). Our current Gastown example uses formula/order scripts instead, so these are outside the migration scope.
 
 - [-] **b3e154ca + 60743cb3 + 53567e64 + 4db877a0 + cf565d0b + a3fb88a4 + 630e879b + c1b25f94 + 3bf8a66e + 039f8dae + 1a568fb1 + 014bb428 + 2721ca2e + 6202ffc0 + 5e0d1c33 + fcb8f0e0 + 274f83b1 + dc1d11db + 8eea55bb + 554f4e92 + b965060d + aac5cfca + 67af59b3 + 309e0b08 + 3164aad7** — Beads routing / parser hardening.
   Upstream spent a lot of commits hardening `bd` JSON parsing, route/prefix lookup, hook-bead plumbing, and rig-db selection. Gas City already has tolerant `bd` parsing and route files, and the remaining fixes are tightly coupled to upstream's internal beads layer. Treat as no-action unless we later rebase onto that exact implementation.

@@ -188,7 +188,7 @@ func (f *fakeGCRunner) run(_, name string, args ...string) ([]byte, error) {
 	cmdLine := strings.Join(append([]string{name}, args...), " ")
 	if strings.Contains(cmdLine, "list") {
 		// Route tracking bead queries to trackingListOutput.
-		if strings.Contains(cmdLine, "automation-tracking") {
+		if strings.Contains(cmdLine, "order-tracking") {
 			if f.trackingListOutput != nil {
 				return f.trackingListOutput, nil
 			}

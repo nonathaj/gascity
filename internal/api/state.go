@@ -8,11 +8,11 @@ package api
 import (
 	"time"
 
-	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/mail"
+	"github.com/gastownhall/gascity/internal/orders"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
 )
@@ -68,9 +68,9 @@ type State interface {
 	// Returns nil if no store is available.
 	CityBeadStore() beads.Store
 
-	// Automations returns the current set of scanned automations.
-	// Returns nil if automations are not configured.
-	Automations() []automations.Automation
+	// Orders returns the current set of scanned orders.
+	// Returns nil if orders are not configured.
+	Orders() []orders.Order
 
 	// Poke signals the controller to trigger an immediate reconciler tick.
 	// Used after sling assigns work so WakeWork wakes the target without
@@ -189,11 +189,11 @@ type StateMutator interface {
 	// DeleteProviderPatch removes a provider patch by name.
 	DeleteProviderPatch(name string) error
 
-	// --- Automation overrides ---
+	// --- Order overrides ---
 
-	// EnableAutomation enables an automation via overrides in city.toml.
-	EnableAutomation(name, rig string) error
+	// EnableOrder enables an order via overrides in city.toml.
+	EnableOrder(name, rig string) error
 
-	// DisableAutomation disables an automation via overrides in city.toml.
-	DisableAutomation(name, rig string) error
+	// DisableOrder disables an order via overrides in city.toml.
+	DisableOrder(name, rig string) error
 }

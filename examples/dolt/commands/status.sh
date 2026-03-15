@@ -2,7 +2,7 @@
 # gc dolt status — Check if the Dolt server is running.
 #
 # Exits 0 if the server is reachable, 1 otherwise.
-# Used by the dolt-health automation to detect crashes.
+# Used by the dolt-health order to detect crashes.
 #
 # Environment: GC_CITY_PATH
 set -e

@@ -985,7 +985,7 @@ provider = "exec:/usr/local/bin/events-bridge"
 	}
 }
 
-func TestLoadWithIncludes_AutomationsSectionOverride(t *testing.T) {
+func TestLoadWithIncludes_OrdersSectionOverride(t *testing.T) {
 	fs := fsys.NewFake()
 	fs.Files["/city/city.toml"] = []byte(`
 include = ["infra.toml"]
@@ -993,19 +993,19 @@ include = ["infra.toml"]
 [workspace]
 name = "test"
 
-[automations]
+[orders]
 max_timeout = "30s"
 `)
 	fs.Files["/city/infra.toml"] = []byte(`
-[automations]
+[orders]
 max_timeout = "120s"
 `)
 	cfg, _, err := LoadWithIncludes(fs, "/city/city.toml")
 	if err != nil {
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
-	if cfg.Automations.MaxTimeout != "120s" {
-		t.Errorf("Automations.MaxTimeout = %q, want %q", cfg.Automations.MaxTimeout, "120s")
+	if cfg.Orders.MaxTimeout != "120s" {
+		t.Errorf("Orders.MaxTimeout = %q, want %q", cfg.Orders.MaxTimeout, "120s")
 	}
 }
 

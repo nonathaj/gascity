@@ -30,7 +30,7 @@ $DEMO_SCRIPTS/run-lifecycle-demo.sh act3   # EKS scale-up
 Three manual edits to city.toml, three capability levels on a running city.
 The daemon live-reconciles on every save via fsnotify.
 
-1. **Wasteland-feeder only** — no rigs, no agents, just a global inference automation
+1. **Wasteland-feeder only** — no rigs, no agents, just a global inference order
 2. **Uncomment `[[rigs]]` block** — coder pool + merger appear (swarm pack)
 3. **Change `swarm-lifecycle` → `lifecycle`** — polecats + refinery (full Gas Town)
 

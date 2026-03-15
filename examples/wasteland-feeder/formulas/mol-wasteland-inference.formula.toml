@@ -1,7 +1,7 @@
 description = """
 Execute a claimed inference job via ollama and submit the result.
 
-This formula is dispatched by the wasteland-feeder poll automation when
+This formula is dispatched by the wasteland-feeder poll order when
 it finds an open inference item on the wanted board. The feeder auto-claims
 the item and creates a bead with `formula:mol-wasteland-inference` and
 metadata containing the `wasteland_id`.

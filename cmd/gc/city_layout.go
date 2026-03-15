@@ -39,12 +39,12 @@ func cityAlreadyInitializedFS(fs fsys.FS, cityPath string) bool {
 }
 
 func normalizeInitFromLegacyContent(cityPath string) error {
-	// Automations must migrate before the broader formulas root so legacy
-	// .gc/formulas/automations content lands in top-level automations/ rather
-	// than being swept into formulas/automations.
+	// Orders must migrate before the broader formulas root so legacy
+	// .gc/formulas/orders content lands in top-level orders/ rather
+	// than being swept into formulas/orders.
 	steps := [][2]string{
 		{citylayout.LegacyPromptsRoot, citylayout.PromptsRoot},
-		{citylayout.LegacyAutomationsRoot, citylayout.AutomationsRoot},
+		{citylayout.LegacyOrdersRoot, citylayout.OrdersRoot},
 		{citylayout.LegacyFormulasRoot, citylayout.FormulasRoot},
 		{citylayout.LegacyClaudeHookFile, citylayout.ClaudeHookFile},
 		{citylayout.LegacyScriptsRoot, citylayout.ScriptsRoot},

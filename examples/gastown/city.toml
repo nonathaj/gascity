@@ -3,13 +3,13 @@
 # This proves the Gas City thesis: any orchestration pack is pure config.
 # Three composable packs:
 #   maintenance  — generic infrastructure: dog pool, shutdown dance, exec
-#                  automations (gate-sweep, orphan-sweep, prune-branches,
+#                  orders (gate-sweep, orphan-sweep, prune-branches,
 #                  wisp-compact)
 #   dolt         — reusable Dolt database management (dog formulas + exec
-#                  automations + CLI commands), requires a dog pool from
+#                  orders + CLI commands), requires a dog pool from
 #                  maintenance
 #   gastown      — domain-specific coding workflow: mayor, deacon, boot,
-#                  witness, refinery, polecat, crew + digest automations
+#                  witness, refinery, polecat, crew + digest orders
 #
 # City-scoped agents come from both packs: dog (maintenance) + mayor,
 # deacon, boot (gastown). Rig-scoped agents (witness, refinery, polecat)

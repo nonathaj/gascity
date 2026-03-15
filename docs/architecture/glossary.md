@@ -37,12 +37,12 @@ other source should be updated.
 
 ## Derived Mechanisms
 
-- **Automation**: A formula or shell script dispatch triggered by a
+- **Order**: A formula or shell script dispatch triggered by a
   gate condition. Lives in formula directories as
-  `automations/<name>/automation.toml`. Exec automations run shell
-  scripts directly (no LLM, no agent, no wisp). Formula automations
+  `orders/<name>/order.toml`. Exec orders run shell
+  scripts directly (no LLM, no agent, no wisp). Formula orders
   create wisps dispatched to agents. See
-  [`internal/automations/`](../../internal/automations/).
+  [`internal/orders/`](../../internal/orders/).
 
 - **Convoy**: A container bead that groups related issues as a batch
   work tracking unit. Child beads link to a convoy via ParentID.
@@ -62,11 +62,11 @@ other source should be updated.
   Formulas define sequences of named work items with dependency
   ordering. See [`internal/formula/`](../../internal/formula/).
 
-- **Gate**: The trigger condition for an automation. Types: `cooldown`
+- **Gate**: The trigger condition for an order. Types: `cooldown`
   (interval since last run), `cron` (schedule), `condition` (shell
   exits 0), `event` (specific event type occurs), `manual` (explicit
   invocation only). See
-  [`internal/automations/gates.go`](../../internal/automations/gates.go).
+  [`internal/orders/gates.go`](../../internal/orders/gates.go).
 
 - **Health Patrol**: Ping agents (Agent Protocol), compare thresholds
   (Config), publish stalls (Event Bus), restart with backoff. The
@@ -98,7 +98,7 @@ other source should be updated.
   in `Agent.Nudge` config and delivered via `session.Provider.Nudge()`.
 
 - **Wisp**: An ephemeral molecule. Created by `gc sling --formula` or
-  automation dispatch. Wisps auto-close and are garbage-collected after
+  order dispatch. Wisps auto-close and are garbage-collected after
   a configurable TTL (`wisp_ttl`). The bead store's `MolCook` method
   instantiates wisps from formulas.
 
@@ -110,8 +110,8 @@ other source should be updated.
 
 - **Controller**: The long-running daemon that drives all SDK
   infrastructure: config watch (fsnotify), reconciliation tick
-  (start/stop agents to match config), automation dispatch (evaluate
-  gates, fire due automations). See
+  (start/stop agents to match config), order dispatch (evaluate
+  gates, fire due orders). See
   [`cmd/gc/controller.go`](../../cmd/gc/controller.go).
 
 - **Overlay**: A directory tree copied into an agent's working
@@ -137,7 +137,7 @@ other source should be updated.
 
 - **Pack**: A reusable agent configuration directory loaded from
   `pack.toml`. Contains agent definitions, formulas, prompts, and
-  automations. City-level packs stamp city-scoped agents;
+  orders. City-level packs stamp city-scoped agents;
   rig-level packs stamp rig-scoped agents. `city_agents` in the
   pack metadata partitions which agents are city-scoped vs
   rig-scoped. See

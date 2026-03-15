@@ -15,7 +15,7 @@ Update this document when the implementation changes.
 Health Patrol is Gas City's Layer 2-4 derived mechanism for agent
 supervision. It is the subsystem within the controller that monitors
 agent liveness, detects configuration drift, enforces crash loop
-quarantine, kills idle agents, and dispatches automations on a periodic
+quarantine, kills idle agents, and dispatches orders on a periodic
 tick. Health Patrol follows the Erlang/OTP supervision model: the
 controller is the supervisor, agents are workers, `[[agent]]` entries
 are child specs, and "let it crash" is realized through GUPP + beads
@@ -43,10 +43,10 @@ are child specs, and "let it crash" is realized through GUPP + beads
   with no session I/O activity is killed and restarted. Queries
   `session.Provider.GetLastActivity()` on each tick.
 
-- **Automation Dispatch**: The controller evaluates gate conditions
+- **Order Dispatch**: The controller evaluates gate conditions
   (cooldown, cron, condition, event, manual) on every tick and fires
-  due automations. Exec automations run shell scripts directly. Formula
-  automations instantiate wisps dispatched to agent pools.
+  due orders. Exec orders run shell scripts directly. Formula
+  orders instantiate wisps dispatched to agent pools.
 
 - **Patrol Interval**: The tick frequency for the controller loop.
   Defaults to 30 seconds. Configured via `[daemon] patrol_interval`.
@@ -94,7 +94,7 @@ use):
                      │  └──────────────┬──────────────┘   │
                      │                 ▼                   │
                      │  ┌─────────────────────────────┐   │
-                     │  │ automationDispatcher         │   │
+                     │  │ orderDispatcher         │   │
                      │  │   .dispatch()                │   │
                      │  └─────────────────────────────┘   │
                      └─────────────────────────────────────┘
@@ -108,7 +108,7 @@ A single controller tick proceeds as follows:
    (via fsnotify debounce on config directory changes),
    `tryReloadConfig()` re-parses `city.toml` with includes and patches.
    If the reload succeeds, the crash tracker, idle tracker, wisp GC, and
-   automation dispatcher are all rebuilt from the new config.
+   order dispatcher are all rebuilt from the new config.
 
 2. **Agent list build**. `buildFn(cfg)` re-evaluates the desired agent
    set, including pool `check` commands for elastic scaling.
@@ -120,8 +120,8 @@ A single controller tick proceeds as follows:
 4. **Wisp GC**. If enabled, purges expired closed molecules older than
    `wisp_ttl`.
 
-5. **Automation dispatch** (`ad.dispatch()`). Evaluates all non-manual
-   automation gates. For each due automation, creates a tracking bead
+5. **Order dispatch** (`ad.dispatch()`). Evaluates all non-manual
+   order gates. For each due order, creates a tracking bead
    synchronously (to prevent re-fire), then dispatches in a goroutine.
 
 ### Reconciliation State Machine
@@ -181,9 +181,9 @@ crash tracking, event recording, and config hash storage.
   `storeConfigHash()`, `configHash()`. Backed by
   `session.Provider.SetMeta()`/`GetMeta()` for hash persistence.
 
-- **`automationDispatcher`** (`cmd/gc/automation_dispatch.go`): Interface
-  for automation gate evaluation and dispatch. Production impl
-  `memoryAutomationDispatcher` holds the scanned automation list, a bead
+- **`orderDispatcher`** (`cmd/gc/order_dispatch.go`): Interface
+  for order gate evaluation and dispatch. Production impl
+  `memoryOrderDispatcher` holds the scanned order list, a bead
   store for tracking, an events provider for event gates, and an exec
   runner for shell commands.
 
@@ -223,7 +223,7 @@ indicate bugs.
   extras. Two configs with identical content always produce the same hash
   regardless of when they were loaded.
 
-- **Automation tracking beads are created synchronously before dispatch
+- **Order tracking beads are created synchronously before dispatch
   goroutines**: This prevents the cooldown gate from re-firing on the
   next tick while the dispatch is still running.
 
@@ -237,7 +237,7 @@ indicate bugs.
   role name.
 
 - **SDK self-sufficiency**: All Health Patrol operations (reconciliation,
-  crash tracking, idle detection, automation dispatch) function with only
+  crash tracking, idle detection, order dispatch) function with only
   the controller running. No user-configured agent role is required.
 
 ## Interactions
@@ -265,9 +265,9 @@ Health Patrol follows Erlang/OTP patterns mapped to Gas City:
 |---|---|
 | `internal/config` | Parses `DaemonConfig` for patrol interval, max restarts, restart window, shutdown timeout. Provides `Revision()` for config reload detection. |
 | `internal/session` | `Provider` interface for Start/Stop/IsRunning/ListRunning/GetLastActivity/SetMeta/GetMeta. `ConfigFingerprint()` for drift detection. |
-| `internal/events` | `Recorder` interface for emitting lifecycle events (`agent.started`, `agent.stopped`, `agent.crashed`, `agent.quarantined`, `agent.idle_killed`, `agent.suspended`, `controller.started`, `controller.stopped`, `automation.fired`, `automation.completed`, `automation.failed`). `Provider` interface for event gate queries. |
-| `internal/beads` | `Store` interface for automation tracking beads (create, update, list by label). `CommandRunner` for bd CLI invocation. |
-| `internal/automations` | `Scan()` to discover automations from formula layers. `CheckGate()` to evaluate gate conditions. `Automation` struct for dispatch metadata. |
+| `internal/events` | `Recorder` interface for emitting lifecycle events (`agent.started`, `agent.stopped`, `agent.crashed`, `agent.quarantined`, `agent.idle_killed`, `agent.suspended`, `controller.started`, `controller.stopped`, `order.fired`, `order.completed`, `order.failed`). `Provider` interface for event gate queries. |
+| `internal/beads` | `Store` interface for order tracking beads (create, update, list by label). `CommandRunner` for bd CLI invocation. |
+| `internal/orders` | `Scan()` to discover orders from formula layers. `CheckGate()` to evaluate gate conditions. `Order` struct for dispatch metadata. |
 | `internal/agent` | `Agent` interface wrapping config + session provider for `Start()`/`Stop()`/`IsRunning()`/`SessionName()` operations. |
 | `github.com/fsnotify/fsnotify` | File system watcher for config directory change detection. |
 
@@ -286,16 +286,16 @@ All Health Patrol implementation lives in `cmd/gc/`:
 | `cmd/gc/reconcile.go` | `reconcileOps` interface, `doReconcileAgents()` (4-state reconciliation + parallel starts + orphan cleanup), `doStopOrphans()` |
 | `cmd/gc/crash_tracker.go` | `crashTracker` interface, `memoryCrashTracker` (in-memory restart history with sliding window pruning) |
 | `cmd/gc/idle_tracker.go` | `idleTracker` interface, `memoryIdleTracker` (per-agent timeout + GetLastActivity query) |
-| `cmd/gc/automation_dispatch.go` | `automationDispatcher` interface, `memoryAutomationDispatcher` (gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle) |
+| `cmd/gc/order_dispatch.go` | `orderDispatcher` interface, `memoryOrderDispatcher` (gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle) |
 | `internal/config/config.go` | `DaemonConfig` struct with `PatrolIntervalDuration()`, `MaxRestartsOrDefault()`, `RestartWindowDuration()`, `ShutdownTimeoutDuration()` |
 | `internal/config/revision.go` | `Revision()` (SHA-256 bundle hash of all config sources + pack dirs), `WatchDirs()` |
 | `internal/session/fingerprint.go` | `ConfigFingerprint()` (SHA-256 of command + env + extras for drift detection) |
-| `internal/automations/gates.go` | `CheckGate()` with cooldown, cron, condition, event, and manual gate evaluators |
-| `internal/automations/automation.go` | `Automation` struct definition, `Scan()` for discovery |
+| `internal/orders/gates.go` | `CheckGate()` with cooldown, cron, condition, event, and manual gate evaluators |
+| `internal/orders/order.go` | `Order` struct definition, `Scan()` for discovery |
 
 ## Configuration
 
-Health Patrol is configured via the `[daemon]` and `[automations]`
+Health Patrol is configured via the `[daemon]` and `[orders]`
 sections of `city.toml`:
 
 ```toml
@@ -307,9 +307,9 @@ shutdown_timeout = "5s"     # grace period before force-kill on shutdown (defaul
 wisp_gc_interval = "5m"     # how often to purge expired wisps (disabled if unset)
 wisp_ttl = "24h"            # how long closed wisps survive (disabled if unset)
 
-[automations]
-skip = ["noisy-automation"] # automation names to exclude from dispatch
-max_timeout = "120s"        # hard cap on per-automation timeout (default: uncapped)
+[orders]
+skip = ["noisy-order"] # order names to exclude from dispatch
+max_timeout = "120s"        # hard cap on per-order timeout (default: uncapped)
 ```
 
 Per-agent idle timeout is configured on individual `[[agent]]` entries:
@@ -326,11 +326,11 @@ Each Health Patrol component has dedicated unit tests:
 
 | Test file | Coverage |
 |---|---|
-| `cmd/gc/controller_test.go` | Controller loop tick behavior, config reload, dirty flag, fsnotify debounce, automation dispatch integration |
+| `cmd/gc/controller_test.go` | Controller loop tick behavior, config reload, dirty flag, fsnotify debounce, order dispatch integration |
 | `cmd/gc/reconcile_test.go` | All four reconciliation states (not running/healthy/orphan/drifted), parallel starts, zombie capture, crash loop quarantine integration, idle restart, pool drain, suspended agent handling |
 | `cmd/gc/crash_tracker_test.go` | Sliding window pruning, quarantine threshold, clear history, nil-guard (disabled tracker) |
 | `cmd/gc/idle_tracker_test.go` | Timeout detection, zero time handling, per-agent timeout configuration, nil-guard |
-| `cmd/gc/automation_dispatch_test.go` | Gate evaluation (cooldown, cron, condition, event, manual), exec dispatch, wisp dispatch, tracking bead creation, timeout capping, rig-scoped automations |
+| `cmd/gc/order_dispatch_test.go` | Gate evaluation (cooldown, cron, condition, event, manual), exec dispatch, wisp dispatch, tracking bead creation, timeout capping, rig-scoped orders |
 
 All tests use in-memory fakes (`session.Fake`, `events.Discard`,
 stubbed `ExecRunner`) with no external infrastructure dependencies. See
@@ -353,9 +353,9 @@ stubbed `ExecRunner`) with no external infrastructure dependencies. See
   tracking. In that case, idle detection silently does nothing (no
   false positives, but also no idle kills).
 
-- **Automation dispatch is fire-and-forget**: Once a goroutine is
-  launched for a due automation, the controller does not track its
-  completion. Failed automations emit events but do not retry. The
+- **Order dispatch is fire-and-forget**: Once a goroutine is
+  launched for a due order, the controller does not track its
+  completion. Failed orders emit events but do not retry. The
   tracking bead prevents re-fire within the same cooldown window.
 
 - **No hot-reload for structural changes**: Changing `workspace.name`
@@ -371,7 +371,7 @@ stubbed `ExecRunner`) with no external infrastructure dependencies. See
 - [Session Provider interface](../../internal/session/session.go) --
   the provider interface that Health Patrol queries for liveness, metadata,
   and activity
-- [Automation gate evaluation](../../internal/automations/gates.go) --
+- [Order gate evaluation](../../internal/orders/gates.go) --
   gate types (cooldown, cron, condition, event, manual) and their
   check logic
 - [Event type constants](../../internal/events/events.go) -- all event

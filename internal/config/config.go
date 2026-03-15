@@ -70,8 +70,8 @@ type City struct {
 	Formulas FormulasConfig `toml:"formulas,omitempty"`
 	// Daemon configures controller daemon settings.
 	Daemon DaemonConfig `toml:"daemon,omitempty"`
-	// Automations configures automation settings (skip list).
-	Automations AutomationsConfig `toml:"automations,omitempty"`
+	// Orders configures order settings (skip list).
+	Orders OrdersConfig `toml:"orders,omitempty"`
 	// API configures the optional HTTP API server.
 	API APIConfig `toml:"api,omitempty"`
 	// ChatSessions configures chat session behavior (auto-suspend).
@@ -257,13 +257,13 @@ type PackMeta struct {
 	// remote git URL (SSH or HTTPS) with optional //subpath and #ref.
 	Includes []string `toml:"includes,omitempty"`
 	// Requires declares agents that must exist in the expanded config
-	// for this pack's formulas/automations to function. Validated
+	// for this pack's formulas/orders to function. Validated
 	// after all packs are expanded.
 	Requires []PackRequirement `toml:"requires,omitempty"`
 }
 
 // PackRequirement declares an agent that must exist in the
-// expanded config for this pack's formulas/automations to function.
+// expanded config for this pack's formulas/orders to function.
 type PackRequirement struct {
 	// Scope is the agent scope: "city" or "rig".
 	Scope string `toml:"scope" jsonschema:"required,enum=city,enum=rig"`
@@ -654,28 +654,28 @@ type FormulasConfig struct {
 	Dir string `toml:"dir,omitempty" jsonschema:"default=formulas"`
 }
 
-// AutomationsConfig holds automation settings.
-type AutomationsConfig struct {
-	// Skip lists automation names to exclude from scanning.
+// OrdersConfig holds order settings.
+type OrdersConfig struct {
+	// Skip lists order names to exclude from scanning.
 	Skip []string `toml:"skip,omitempty"`
-	// MaxTimeout is an operator hard cap on per-automation timeouts.
-	// No automation gets more than this duration. Go duration string (e.g., "60s").
+	// MaxTimeout is an operator hard cap on per-order timeouts.
+	// No order gets more than this duration. Go duration string (e.g., "60s").
 	// Empty means uncapped (no override).
 	MaxTimeout string `toml:"max_timeout,omitempty"`
-	// Overrides apply per-automation field overrides after scanning.
-	// Each override targets an automation by name and optionally by rig.
-	Overrides []AutomationOverride `toml:"overrides,omitempty"`
+	// Overrides apply per-order field overrides after scanning.
+	// Each override targets an order by name and optionally by rig.
+	Overrides []OrderOverride `toml:"overrides,omitempty"`
 }
 
-// AutomationOverride modifies a scanned automation's scheduling fields.
+// OrderOverride modifies a scanned order's scheduling fields.
 // Uses pointer fields to distinguish "not set" from "set to zero value."
-type AutomationOverride struct {
-	// Name is the automation name to target (required).
+type OrderOverride struct {
+	// Name is the order name to target (required).
 	Name string `toml:"name" jsonschema:"required"`
-	// Rig scopes the override to a specific rig's automation.
-	// Empty matches city-level automations.
+	// Rig scopes the override to a specific rig's order.
+	// Empty matches city-level orders.
 	Rig string `toml:"rig,omitempty"`
-	// Enabled overrides whether the automation is active.
+	// Enabled overrides whether the order is active.
 	Enabled *bool `toml:"enabled,omitempty"`
 	// Gate overrides the gate type.
 	Gate *string `toml:"gate,omitempty"`
@@ -689,13 +689,13 @@ type AutomationOverride struct {
 	On *string `toml:"on,omitempty"`
 	// Pool overrides the target agent/pool.
 	Pool *string `toml:"pool,omitempty"`
-	// Timeout overrides the per-automation timeout. Go duration string.
+	// Timeout overrides the per-order timeout. Go duration string.
 	Timeout *string `toml:"timeout,omitempty"`
 }
 
 // MaxTimeoutDuration parses MaxTimeout as a Go duration.
 // Returns 0 if unset or unparseable (meaning no cap).
-func (c AutomationsConfig) MaxTimeoutDuration() time.Duration {
+func (c OrdersConfig) MaxTimeoutDuration() time.Duration {
 	if c.MaxTimeout == "" {
 		return 0
 	}

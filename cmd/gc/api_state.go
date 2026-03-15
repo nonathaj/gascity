@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
-	"github.com/gastownhall/gascity/internal/automations"
 	"github.com/gastownhall/gascity/internal/beads"
 	beadsexec "github.com/gastownhall/gascity/internal/beads/exec"
 	"github.com/gastownhall/gascity/internal/citylayout"
@@ -20,6 +19,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/beadmail"
+	"github.com/gastownhall/gascity/internal/orders"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
 )
@@ -289,19 +289,19 @@ func (cs *controllerState) CityBeadStore() beads.Store {
 	return cs.cityBeadStore
 }
 
-// Automations scans formula layers and returns all automations.
-func (cs *controllerState) Automations() []automations.Automation {
+// Orders scans formula layers and returns all orders.
+func (cs *controllerState) Orders() []orders.Order {
 	cs.mu.RLock()
 	cfg := cs.cfg
 	cs.mu.RUnlock()
 
-	allAA, err := scanAllAutomations(cs.cityPath, cfg, io.Discard, "gc api: automation scan")
+	allAA, err := scanAllOrders(cs.cityPath, cfg, io.Discard, "gc api: order scan")
 	if err != nil {
 		return nil
 	}
 
-	if len(cfg.Automations.Overrides) > 0 {
-		automations.ApplyOverrides(allAA, convertOverrides(cfg.Automations.Overrides)) //nolint:errcheck // best-effort
+	if len(cfg.Orders.Overrides) > 0 {
+		orders.ApplyOverrides(allAA, convertOverrides(cfg.Orders.Overrides)) //nolint:errcheck // best-effort
 	}
 
 	return allAA
@@ -309,20 +309,20 @@ func (cs *controllerState) Automations() []automations.Automation {
 
 // --- api.StateMutator implementation ---
 
-// EnableAutomation creates or updates an override with enabled=true.
-func (cs *controllerState) EnableAutomation(name, rig string) error {
+// EnableOrder creates or updates an override with enabled=true.
+func (cs *controllerState) EnableOrder(name, rig string) error {
 	enabled := true
-	return cs.editor.SetAutomationOverride(config.AutomationOverride{
+	return cs.editor.SetOrderOverride(config.OrderOverride{
 		Name:    name,
 		Rig:     rig,
 		Enabled: &enabled,
 	})
 }
 
-// DisableAutomation creates or updates an override with enabled=false.
-func (cs *controllerState) DisableAutomation(name, rig string) error {
+// DisableOrder creates or updates an override with enabled=false.
+func (cs *controllerState) DisableOrder(name, rig string) error {
 	enabled := false
-	return cs.editor.SetAutomationOverride(config.AutomationOverride{
+	return cs.editor.SetOrderOverride(config.OrderOverride{
 		Name:    name,
 		Rig:     rig,
 		Enabled: &enabled,

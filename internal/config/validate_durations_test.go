@@ -110,9 +110,9 @@ func TestValidateDurationsBadPoolDrainTimeout(t *testing.T) {
 
 func TestValidateDurationsMultipleIssues(t *testing.T) {
 	cfg := &City{
-		Session:     SessionConfig{NudgeReadyTimeout: "bad1"},
-		Daemon:      DaemonConfig{WispGCInterval: "bad2", WispTTL: "bad3"},
-		Automations: AutomationsConfig{MaxTimeout: "bad4"},
+		Session: SessionConfig{NudgeReadyTimeout: "bad1"},
+		Daemon:  DaemonConfig{WispGCInterval: "bad2", WispTTL: "bad3"},
+		Orders:  OrdersConfig{MaxTimeout: "bad4"},
 		Agents: []Agent{
 			{Name: "a1", IdleTimeout: "bad5"},
 		},

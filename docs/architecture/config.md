@@ -25,7 +25,7 @@ without forking.
   presence. An empty `city.toml` with just `[workspace]` and
   `[[agent]]` gives Level 0-1 (agent + tasks). Adding `[daemon]`
   activates health monitoring. Adding `[[rigs]]` with packs
-  activates formulas and automations. No feature flags -- the config IS
+  activates formulas and orders. No feature flags -- the config IS
   the feature flag.
 
 - **Composition**: Multiple TOML files are merged into one `City` struct.
@@ -35,7 +35,7 @@ without forking.
   with collision warnings.
 
 - **Pack**: A reusable agent configuration directory containing
-  `pack.toml`, prompts, formulas, and automations. City-level
+  `pack.toml`, prompts, formulas, and orders. City-level
   packs stamp city-scoped agents (dir=""). Rig-level packs
   stamp rig-scoped agents (dir=rig-name). The `city_agents` metadata
   field partitions which agents from a shared pack are city-scoped
@@ -121,7 +121,7 @@ Provider resolution happens later, at agent startup time, via
 - **`City`** (`internal/config/config.go`): Top-level config struct.
   Contains Workspace, Agents, Rigs, Providers, Packs, Patches,
   FormulaLayers, and subsystem configs (Beads, Session, Mail, Events,
-  Daemon, Formulas, Automations). The single struct that all subsystems
+  Daemon, Formulas, Orders). The single struct that all subsystems
   read from after loading.
 
 - **`Agent`** (`internal/config/config.go`): Defines a configured agent.
@@ -229,7 +229,7 @@ Provider resolution happens later, at agent startup time, via
 | `internal/city/` | Uses `Load` for basic config operations (init, add rig) |
 | `internal/hooks/` | Reads agent config for hook installation decisions via `ResolveInstallHooks` |
 | `internal/session/` | Receives `ResolvedProvider` to determine session startup parameters |
-| `internal/automations/` | Reads `AutomationsConfig` skip list and formula layers |
+| `internal/orders/` | Reads `OrdersConfig` skip list and formula layers |
 | `internal/formula/` | Uses `FormulaLayers` to resolve formula directory symlinks |
 | `cmd/gc/cmd_sling.go` | Reads `Agent.EffectiveSlingQuery` for bead routing |
 

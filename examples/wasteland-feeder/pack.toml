@@ -1,7 +1,7 @@
 # Wasteland Feeder — shareable pack.
 #
 # Bridges the Wasteland federation wanted board with a city's worker pool.
-# An exec automation polls for open items and creates beads. A polecat
+# An exec order polls for open items and creates beads. A polecat
 # worker pool claims those beads and runs the inference via `wl`.
 #
 # Usage in city.toml:

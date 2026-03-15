@@ -37,8 +37,8 @@ func ValidateDurations(cfg *City, source string) []string {
 	check("[daemon]", "wisp_ttl", cfg.Daemon.WispTTL)
 	check("[daemon]", "drift_drain_timeout", cfg.Daemon.DriftDrainTimeout)
 
-	// Automations config durations.
-	check("[automations]", "max_timeout", cfg.Automations.MaxTimeout)
+	// Orders config durations.
+	check("[orders]", "max_timeout", cfg.Orders.MaxTimeout)
 
 	// Chat sessions config durations.
 	check("[chat_sessions]", "idle_timeout", cfg.ChatSessions.IdleTimeout)

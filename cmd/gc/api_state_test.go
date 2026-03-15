@@ -139,14 +139,14 @@ func TestControllerStateNilEventProvider(t *testing.T) {
 	}
 }
 
-func TestControllerStateAutomationsIncludeVisibleCityRoot(t *testing.T) {
+func TestControllerStateOrdersIncludeVisibleCityRoot(t *testing.T) {
 	cityDir := t.TempDir()
-	autoDir := filepath.Join(cityDir, "automations", "digest")
+	autoDir := filepath.Join(cityDir, "orders", "digest")
 	if err := os.MkdirAll(autoDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(autoDir, "automation.toml"), []byte(`
-[automation]
+	if err := os.WriteFile(filepath.Join(autoDir, "order.toml"), []byte(`
+[order]
 formula = "mol-digest"
 gate = "cooldown"
 interval = "24h"
@@ -158,12 +158,12 @@ interval = "24h"
 		Workspace: config.Workspace{Name: "test-city"},
 	}, runtime.NewFake(), events.NewFake(), "test-city", cityDir)
 
-	aa := cs.Automations()
+	aa := cs.Orders()
 	if len(aa) != 1 {
-		t.Fatalf("Automations() returned %d entries, want 1", len(aa))
+		t.Fatalf("Orders() returned %d entries, want 1", len(aa))
 	}
 	if aa[0].Name != "digest" {
-		t.Fatalf("automation name = %q, want digest", aa[0].Name)
+		t.Fatalf("order name = %q, want digest", aa[0].Name)
 	}
 }
 

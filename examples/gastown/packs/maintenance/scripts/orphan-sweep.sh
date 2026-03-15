@@ -8,7 +8,7 @@
 #
 # Does NOT do worktree salvage — that's the witness's job.
 #
-# Runs as an exec automation (no LLM, no agent, no wisp).
+# Runs as an exec order (no LLM, no agent, no wisp).
 set -euo pipefail
 
 CITY="${GC_CITY_ROOT:-.}"

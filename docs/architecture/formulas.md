@@ -19,7 +19,7 @@ multi-step workflows as TOML files (formulas) and instantiates them at
 runtime as bead trees (molecules). A formula specifies a DAG of named
 steps with dependency ordering; a molecule is that DAG materialized as
 one root bead plus one child bead per step, persisted through the Bead
-Store. Wisps are ephemeral molecules created by dispatch or automations,
+Store. Wisps are ephemeral molecules created by dispatch or orders,
 garbage-collected after a configurable TTL.
 
 ## Key Concepts
@@ -41,7 +41,7 @@ garbage-collected after a configurable TTL.
   `formula.ComposeMolCook()`.
 
 - **Wisp**: An ephemeral molecule. Created by `gc sling --formula` or
-  automation dispatch. Wisps auto-close and are garbage-collected by wisp
+  order dispatch. Wisps auto-close and are garbage-collected by wisp
   GC after a configurable TTL (`wisp_ttl`). There is no structural
   difference between a wisp and a molecule -- "wisp" is the operational
   term for molecules created ephemerally by the system.
@@ -56,9 +56,9 @@ garbage-collected after a configurable TTL.
   Higher-priority layers shadow lower ones by filename. Defined in
   `internal/config/config.go`.
 
-- **Automation**: A formula (or shell script) dispatch triggered by a
+- **Order**: A formula (or shell script) dispatch triggered by a
   gate condition. Lives in formula directories as
-  `automations/<name>/automation.toml`. Inherits the formula layer
+  `orders/<name>/order.toml`. Inherits the formula layer
   resolution system. See
   [Health Patrol architecture](./health-patrol.md) for gate evaluation
   details.
@@ -84,7 +84,7 @@ FormulaLayers     ResolveFormulas()    symlinks in
 gc sling --formula    instantiateWisp()    Store.MolCook()
   (CLI)             ────────────────────> ───────────────> root bead ID
 
-Automation.dispatch   dispatchWisp()    instantiateWisp()
+Order.dispatch   dispatchWisp()    instantiateWisp()
   (controller tick) ──────────────────> ────────────────> root bead ID
 ```
 
@@ -178,7 +178,7 @@ by its Ref.
 | Depended on by | How |
 |---|---|
 | `cmd/gc/cmd_sling.go` (Dispatch) | `gc sling --formula` instantiates wisps from formulas via `instantiateWisp()` -> `Store.MolCook()`. |
-| `cmd/gc/automation_dispatch.go` (Automations) | Formula automations create wisps via `dispatchWisp()` -> `instantiateWisp()`. |
+| `cmd/gc/order_dispatch.go` (Orders) | Formula orders create wisps via `dispatchWisp()` -> `instantiateWisp()`. |
 | `cmd/gc/formula_resolve.go` (Resolution) | `ResolveFormulas()` materializes formula layer winners as symlinks. |
 | `cmd/gc/wisp_gc.go` (Garbage Collection) | Wisp GC purges closed molecules past TTL. |
 | `cmd/gc/cmd_formula.go` (CLI) | `gc formula list` and `gc formula show` use `Parse()` and `Validate()`. |
@@ -196,10 +196,10 @@ by its Ref.
 | `cmd/gc/wisp_gc.go` | `wispGC` interface, `memoryWispGC` -- TTL-based garbage collection of closed molecules |
 | `cmd/gc/cmd_formula.go` | CLI commands: `gc formula list`, `gc formula show` |
 | `cmd/gc/cmd_sling.go` | `instantiateWisp()` -- wisp creation during dispatch |
-| `cmd/gc/automation_dispatch.go` | `dispatchWisp()` -- wisp creation from automation triggers |
+| `cmd/gc/order_dispatch.go` | `dispatchWisp()` -- wisp creation from order triggers |
 | `internal/config/config.go` | `FormulaLayers` struct, `DaemonConfig.WispGCInterval`, `DaemonConfig.WispTTL` |
 | `internal/config/pack.go` | `ComputeFormulaLayers()` -- builds formula layers from pack expansion |
-| `internal/automations/automation.go` | `Automation` struct -- references formulas by name for gate-triggered dispatch |
+| `internal/orders/order.go` | `Order` struct -- references formulas by name for gate-triggered dispatch |
 | `internal/beads/beads.go` | `Store.MolCook()` interface method |
 | `internal/beads/memstore.go` | `MemStore.MolCook()` -- in-memory molecule creation |
 | `internal/beads/bdstore.go` | `BdStore.MolCook()` -- delegates to `bd mol cook` CLI |
@@ -274,12 +274,12 @@ descriptions use `{{key}}` syntax and are replaced at cook time.
 gc sling my-agent code-review --formula --var repo=gascity --var pr=42
 ```
 
-### Automation formula dispatch
+### Order formula dispatch
 
-Automations reference formulas by name in their `automation.toml`:
+Orders reference formulas by name in their `order.toml`:
 
 ```toml
-[automation]
+[order]
 formula = "code-review"
 gate = "cooldown"
 interval = "1h"
@@ -318,7 +318,7 @@ and dispatch mechanics.
   variable passing, empty output handling, and composed vs delegated
   modes.
 
-- **`cmd/gc/automation_dispatch_test.go`**: Tests automation-triggered
+- **`cmd/gc/order_dispatch_test.go`**: Tests order-triggered
   wisp dispatch including tracking bead creation and label stamping.
 
 See [TESTING.md](../../TESTING.md) for overall testing philosophy and
@@ -355,11 +355,11 @@ tier boundaries.
   as bead trees and how `MolCook()` is implemented across store backends
 - [Config architecture](./config.md) -- pack expansion and
   `ComputeFormulaLayers()` that builds the formula resolution chain
-- [Health Patrol architecture](./health-patrol.md) -- automation gate
+- [Health Patrol architecture](./health-patrol.md) -- order gate
   evaluation and dispatch mechanics that trigger formula instantiation
 - [Formula TOML schema](../reference/formula.md) -- auto-generated
   field reference for `*.formula.toml` files
 - [Config reference](../reference/config.md) -- `[daemon]` section
   covering `wisp_gc_interval` and `wisp_ttl` configuration
 - [Glossary](./glossary.md) -- authoritative definitions of formula,
-  molecule, wisp, automation, gate, and related terms
+  molecule, wisp, order, gate, and related terms

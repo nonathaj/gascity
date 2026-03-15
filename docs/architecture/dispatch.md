@@ -188,7 +188,7 @@ CLI layer (cmd/gc/cmd_sling.go)
 | Depended on by | How |
 |---|---|
 | `cmd/gc/cmd_convoy.go` | Convoys are the batch tracking containers that dispatch creates and expands |
-| `internal/automations` | Automation dispatch creates wisps and routes them through the same formula instantiation path (`Store.MolCook`) |
+| `internal/orders` | Order dispatch creates wisps and routes them through the same formula instantiation path (`Store.MolCook`) |
 | `cmd/gc/cmd_handoff.go` | Work handoff between agents uses similar agent resolution and bead routing patterns |
 | Controller | The controller's reconciliation loop drives pool sizing via `evaluatePool` which determines how many pool instances exist to receive slung work |
 
@@ -200,7 +200,7 @@ CLI layer (cmd/gc/cmd_sling.go)
 | `cmd/gc/cmd_sling_test.go` | Unit tests: command building, single-bead dispatch, formula dispatch, container expansion, nudge behavior, merge strategy, auto-convoy, pre-flight warnings |
 | `cmd/gc/cmd_convoy.go` | Convoy CRUD: create, list, status, add, close, check (auto-close), stranded, autoclose (hidden hook) |
 | `cmd/gc/system_formulas.go` | `MaterializeSystemFormulas`, `ListEmbeddedSystemFormulas`, stale file cleanup |
-| `cmd/gc/system_formulas_test.go` | Tests for materialization: empty FS, write, overwrite, stale cleanup, idempotency, automations |
+| `cmd/gc/system_formulas_test.go` | Tests for materialization: empty FS, write, overwrite, stale cleanup, idempotency, orders |
 | `cmd/gc/pool.go` | `evaluatePool` (scale check), `poolAgents` (instance expansion), `expandSessionSetup` (template context) |
 | `internal/config/config.go` | `Agent.SlingQuery`, `Agent.EffectiveSlingQuery()`, `Agent.EffectiveWorkQuery()`, `Agent.IsPool()` |
 | `internal/beads/beads.go` | `IsContainerType`, `Store.MolCook`, `Store.Children`, `Store.SetMetadata` |
@@ -269,7 +269,7 @@ shell commands), `session.NewFake()` (fake session provider), and
 **System formula tests** (`cmd/gc/system_formulas_test.go`): Cover
 materialization from embedded FS including empty FS (no-op), file
 writing, overwrite semantics, stale file cleanup, idempotency, and
-automation subdirectory support.
+order subdirectory support.
 
 **Config tests** (`internal/config/config_test.go`):
 `TestEffectiveSlingQuery*` tests verify default sling query generation

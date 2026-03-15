@@ -86,14 +86,14 @@ same invariants.
 their ParentID. Sling also creates auto-convoys (line 199 of
 `cmd/gc/cmd_sling.go`) to track individual bead routing.
 
-### Path E: Automation dispatch
+### Path E: Order dispatch
 
-The controller's automation dispatcher (`cmd/gc/automation_dispatch.go`)
-fires due automations. Formula automations call `Store.MolCook()` to
+The controller's order dispatcher (`cmd/gc/order_dispatch.go`)
+fires due orders. Formula orders call `Store.MolCook()` to
 instantiate wisps, then route the root bead via `buildSlingCommand()`.
-Exec automations run shell scripts directly and may create beads as a
+Exec orders run shell scripts directly and may create beads as a
 side effect. Both paths record a tracking bead with an
-`automation-run:<name>` label for cooldown gating.
+`order-run:<name>` label for cooldown gating.
 
 ### The exec.Store variant
 
@@ -264,8 +264,8 @@ Bead lifecycle events are recorded on the event bus. The event types
 - `bead.updated` -- emitted on updates
 - `convoy.closed` -- emitted when a convoy auto-closes
 
-These events feed into automation gates. An `event` gate type triggers
-when a specific event type occurs, enabling reactive automation chains.
+These events feed into order gates. An `event` gate type triggers
+when a specific event type occurs, enabling reactive order chains.
 
 ### Convoy auto-close
 
@@ -330,13 +330,13 @@ timeout. This is an admin operation outside the Store interface, used by
 the controller for periodic database maintenance. It removes closed
 ephemeral beads from the Dolt database entirely.
 
-### Automation cooldown tracking
+### Order cooldown tracking
 
-Closed automation-tracking beads persist for cooldown gating. When an
-automation fires, a bead is created with label `automation-run:<name>`.
-On the next tick, `Store.ListByLabel("automation-run:<name>", 1)` finds
+Closed order-tracking beads persist for cooldown gating. When an
+order fires, a bead is created with label `order-run:<name>`.
+On the next tick, `Store.ListByLabel("order-run:<name>", 1)` finds
 the most recent run. If it is younger than the cooldown period, the
-automation is suppressed. The tracking bead's afterlife IS the cooldown
+order is suppressed. The tracking bead's afterlife IS the cooldown
 mechanism.
 
 ## State Transition Summary
@@ -390,8 +390,8 @@ maps to closed, in_progress maps to in_progress, everything else to open.
   and pools, including container expansion
 - [Formulas architecture](formulas.md) -- formula parsing, molecule
   instantiation, and step dependency resolution
-- [Automations architecture](automations.md) -- gate conditions, cooldown
-  tracking via automation-run labels, and wisp dispatch
+- [Orders architecture](orders.md) -- gate conditions, cooldown
+  tracking via order-run labels, and wisp dispatch
 - [Messaging architecture](messaging.md) -- how mail composes on top of
   beads (messages are beads with type "message")
 - [Glossary](glossary.md) -- authoritative definitions of bead, molecule,

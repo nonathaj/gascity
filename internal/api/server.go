@@ -232,14 +232,14 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v0/events/stream", s.handleEventStream)
 	s.mux.HandleFunc("POST /v0/events", s.handleEventEmit)
 
-	// Automations
-	s.mux.HandleFunc("GET /v0/automations", s.handleAutomationList)
-	s.mux.HandleFunc("GET /v0/automations/check", s.handleAutomationCheck)
-	s.mux.HandleFunc("GET /v0/automations/history", s.handleAutomationHistory)
-	s.mux.HandleFunc("GET /v0/automation/history/{bead_id}", s.handleAutomationHistoryDetail)
-	s.mux.HandleFunc("GET /v0/automation/{name}", s.handleAutomationGet)
-	s.mux.HandleFunc("POST /v0/automation/{name}/enable", s.handleAutomationEnable)
-	s.mux.HandleFunc("POST /v0/automation/{name}/disable", s.handleAutomationDisable)
+	// Orders
+	s.mux.HandleFunc("GET /v0/orders", s.handleOrderList)
+	s.mux.HandleFunc("GET /v0/orders/check", s.handleOrderCheck)
+	s.mux.HandleFunc("GET /v0/orders/history", s.handleOrderHistory)
+	s.mux.HandleFunc("GET /v0/order/history/{bead_id}", s.handleOrderHistoryDetail)
+	s.mux.HandleFunc("GET /v0/order/{name}", s.handleOrderGet)
+	s.mux.HandleFunc("POST /v0/order/{name}/enable", s.handleOrderEnable)
+	s.mux.HandleFunc("POST /v0/order/{name}/disable", s.handleOrderDisable)
 
 	// Sessions (chat sessions) — id accepts bead ID or template name
 	s.mux.HandleFunc("POST /v0/sessions", s.handleSessionCreate)

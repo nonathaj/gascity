@@ -49,7 +49,7 @@ Now start the city to launch the mayor:
 ```shell
 $ cd ~/bright-lights
 $ gc start
-City started.
+City started under supervisor.
 ```
 
 Starting a city uses the configuration to ensure that you have the agents you
@@ -238,12 +238,12 @@ To resume later, start it again:
 
 ```shell
 $ gc start
-City started.
+City started under supervisor.
 ```
 
-If you run `gc start` in a directory that isn't a city yet, it auto-initializes
-one for you — so `gc start` in an empty directory is equivalent to `gc init`
-followed by `gc start`.
+If you point `gc start` at a directory that is not bootstrapped yet, it now
+fails fast and tells you to run `gc init` first. Bootstrap happens in
+`gc init`; `gc start` is for starting an existing city.
 
 ---
 
@@ -285,8 +285,8 @@ as they're started.
 > into `gas-city-spec.md`. Don't delete until the spec is updated.
 
 - **City-as-directory model.** A city is a folder (`~/bright-lights`), not a
-  config file embedded in a project repo. `gc init <path>` creates a city at
-  that directory; `gc start` boots it (auto-initing if needed). The spec
+  config file embedded in a project repo. `gc init <path>` creates and
+  bootstraps a city at that directory; `gc start` starts it. The spec
   currently assumes workspace.toml inside the project.
 
 - **`gc rig add <path>`** — new command to associate a project with a city.
@@ -310,9 +310,9 @@ as they're started.
   No AGENTS.md or CLAUDE.md is written into rigs — the prompt is passed
   directly at launch time via the agent's prompt argument.
 
-- **`gc init` / `gc start` semantics.** `gc init [path]` creates a complete
-  city (like `git init`). `gc start [path]` boots it, auto-initing if needed.
-  Spec doesn't distinguish init from start.
+- **`gc init` / `gc start` semantics.** `gc init [path]` creates and
+  bootstraps a complete city (like `git init`). `gc start [path]` starts an
+  existing city. Spec doesn't distinguish init from start.
 
 - **`bd claim` is implicit.** Agents pick up beads by working on them; the
   `open → active` transition happens internally. No explicit `bd claim` command

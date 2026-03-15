@@ -452,7 +452,7 @@ Capabilities activate based on which config sections are present. Each level is 
 | 4 | Messaging config | Inter-agent mail and nudge |
 | 5 | `[formulas]` | Structured multi-step workflow DAGs |
 | 6 | Health monitoring config | Ping, stall detection, auto-restart |
-| 7 | Automation/plugin config | Gate-conditioned automations (cron, event, cooldown) |
+| 7 | Order/plugin config | Gate-conditioned orders (cron, event, cooldown) |
 | 8 | Full pack + all mechanisms | Complete orchestration: Gas Town in a config file |
 
 **Every level independently useful.** A Level 1 city runs real work, not a demo stub. A Level 3 city manages a team of workers. A Level 8 city is a full Gas Town deployment. The SDK is constant; the config grows.
@@ -604,7 +604,7 @@ The system converges to correct outcomes because work (beads), hooks, and molecu
 
 ### SDK Self-Sufficiency
 
-Every infrastructure operation (gate evaluation, health patrol, bead lifecycle, automation dispatch) must function with only the controller running. No SDK operation may depend on a specific user-configured agent role existing. Test: if removing an `[[agent]]` entry breaks an SDK feature, it's a violation. The controller drives infrastructure; user agents execute work.
+Every infrastructure operation (gate evaluation, health patrol, bead lifecycle, order dispatch) must function with only the controller running. No SDK operation may depend on a specific user-configured agent role existing. Test: if removing an `[[agent]]` entry breaks an SDK feature, it's a violation. The controller drives infrastructure; user agents execute work.
 
 ## City Directory Layout
 

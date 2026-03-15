@@ -41,7 +41,7 @@ Delegates to the provider's lifecycle health operation. For exec
 providers (including bd/dolt), the script handles multi-tier checking
 and recovery internally. For the file provider, always succeeds (no-op).
 
-Also used by the beads-health system automation for periodic monitoring.`,
+Also used by the beads-health system order for periodic monitoring.`,
 		Example: `  gc beads health
   gc beads health --quiet`,
 		Args: cobra.NoArgs,

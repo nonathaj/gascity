@@ -248,8 +248,8 @@ func mergeFragment(base, fragment *City, fragMeta toml.MetaData, fragPath string
 	if fragMeta.IsDefined("events") {
 		base.Events = fragment.Events
 	}
-	if fragMeta.IsDefined("automations") {
-		base.Automations = fragment.Automations
+	if fragMeta.IsDefined("orders") {
+		base.Orders = fragment.Orders
 	}
 	if fragMeta.IsDefined("api") {
 		base.API = fragment.API

@@ -6,7 +6,7 @@ Move city-authored content out of `.gc/` and into explicit top-level folders:
 
 - `prompts/`
 - `formulas/`
-- `automations/`
+- `orders/`
 - `packs/`
 - `hooks/`
 - `scripts/`
@@ -19,7 +19,7 @@ material only.
 Scope:
 
 - Re-architect the layout of a city checkout on disk.
-- Preserve current override behavior for prompts, formulas, automations, and
+- Preserve current override behavior for prompts, formulas, orders, and
   builtin packs.
 - Make the migration safe for mixed-mode cities that temporarily contain both
   legacy `.gc/...` content and new visible roots.
@@ -40,7 +40,7 @@ Non-goals for this design:
 | --- | --- | --- | --- |
 | `.gc/prompts/*` | Seeded by `gc init`; re-materialized on `gc start` and overwritten | `prompts/*` | This is the clearest mismatch today: docs and CLI examples already point toward top-level `prompts/`, but startup still writes into `.gc/prompts/`. |
 | `.gc/formulas/*.formula.toml` | Seeded by `gc init`; re-materialized on `gc start` and overwritten | `formulas/*.formula.toml` | This is the default city-local formula layer today. |
-| `.gc/formulas/automations/*/automation.toml` | Supported implicitly because automation scanning looks under each formula layer root | `automations/*/automation.toml` | Requires scanner and layer model changes; today automations are coupled to formula roots. |
+| `.gc/formulas/orders/*/order.toml` | Supported implicitly because order scanning looks under each formula layer root | `orders/*/order.toml` | Requires scanner and layer model changes; today orders are coupled to formula roots. |
 | `.gc/settings.json` | City-level Claude hook config; installed if missing and then staged into workdirs/pods | `hooks/claude.json` | Runtime destination inside session workdirs/pods stays `.gc/settings.json`. Only the city source path moves. |
 | `.gc/scripts/*` | No core writer; staged into workdirs if present | `scripts/*` | This is effectively a hidden source directory today. |
 
@@ -141,7 +141,7 @@ city/
   pack.lock
   prompts/
   formulas/
-  automations/
+  orders/
   packs/
   hooks/
   scripts/
@@ -202,7 +202,7 @@ Command classes:
 | --- | --- | --- |
 | Config-only/read-only | `gc config`, `gc build-image`, `gc pack`, `gc migrate-layout --plan` | Must succeed without creating `.gc/` |
 | Read-only diagnostics | `gc doctor` | Must resolve the city and report missing runtime scaffold as a fixable issue, not "not a city" |
-| Runtime-mutating/bootstrap | `gc start`, `gc daemon start`, session creation/resume, automation execution | May create the minimal `.gc/{runtime,system,cache}` scaffold before continuing |
+| Runtime-mutating/bootstrap | `gc start`, `gc daemon start`, session creation/resume, order execution | May create the minimal `.gc/{runtime,system,cache}` scaffold before continuing |
 
 Classification rule:
 
@@ -214,7 +214,7 @@ Classification rule:
 ## Canonical Path Resolution And Mixed-Mode Rules
 
 Path handling must be centralized in one resolver used by config loading,
-prompt rendering, automation scanning, hook staging, doctor checks, and K8s
+prompt rendering, order scanning, hook staging, doctor checks, and K8s
 staging. Legacy `.gc/...` strings are compatibility inputs, not equal-
 precedence peers.
 
@@ -224,7 +224,7 @@ precedence peers.
 | --- | --- | --- | --- |
 | Prompt templates | `prompts/` | `.gc/prompts/` | New visible path wins; legacy path is ignored with warning |
 | City-local formulas | `formulas/` | `.gc/formulas/` | New visible path wins; legacy path is ignored with warning |
-| City-local automations | `automations/` | `.gc/formulas/automations/` | New visible path wins; legacy path is ignored with warning |
+| City-local orders | `orders/` | `.gc/formulas/orders/` | New visible path wins; legacy path is ignored with warning |
 | Claude hook source | `hooks/claude.json` | `.gc/settings.json` | New visible path wins; legacy path is ignored with warning |
 | Session helper scripts | `scripts/` | `.gc/scripts/` | New visible path wins; legacy path is ignored with warning |
 
@@ -245,8 +245,8 @@ Config canonicalization:
   pair for that content type:
   - `prompts/foo.md` == `.gc/prompts/foo.md`
   - `formulas/bar.formula.toml` == `.gc/formulas/bar.formula.toml`
-  - `automations/baz/automation.toml` ==
-    `.gc/formulas/automations/baz/automation.toml`
+  - `orders/baz/order.toml` ==
+    `.gc/formulas/orders/baz/order.toml`
 - Known legacy user-owned references such as `.gc/prompts/...`,
   `.gc/formulas/...`, `.gc/settings.json`, and `.gc/scripts/...` are
   canonicalized at load time to logical asset identities.
@@ -257,8 +257,8 @@ Config canonicalization:
 
 ## Content Layer Model
 
-Moving automations into `automations/` is a model change, not a path rename.
-The scanner must stop inferring automation precedence from formula directory
+Moving orders into `orders/` is a model change, not a path rename.
+The scanner must stop inferring order precedence from formula directory
 shape and instead consume explicit logical layers.
 
 Proposed abstraction:
@@ -276,39 +276,39 @@ Rules:
 
 - Formula precedence remains exactly:
   `system < city pack < city local < rig pack < rig local`
-- Automation precedence uses the same five-rank lattice.
-- A city-root `automations/` directory participates at `city local` rank only.
+- Order precedence uses the same five-rank lattice.
+- A city-root `orders/` directory participates at `city local` rank only.
   It does not outrank rig-local content.
-- Automation identity is the automation directory name within the effective
+- Order identity is the order directory name within the effective
   layer lattice.
-- Higher-rank layers override lower-rank layers by automation name, matching
+- Higher-rank layers override lower-rank layers by order name, matching
   the current implicit scanner behavior.
 - Within the same rank, existing root ordering remains authoritative:
   - city-pack and rig-pack roots follow the current pack expansion/topological
     order
   - later roots shadow earlier roots
-  - automation resolution must mirror formula resolution for same-rank ties
+  - order resolution must mirror formula resolution for same-rank ties
 
 ### Compatibility within a layer
 
-Each layer can expose multiple automation roots during migration, ordered
+Each layer can expose multiple order roots during migration, ordered
 low -> high precedence:
 
 - city-local layer:
-  - `.gc/formulas/automations/`
-  - `automations/`
+  - `.gc/formulas/orders/`
+  - `orders/`
 - pack or rig layers:
-  - current pack/rig legacy automation roots derived from formula roots remain
+  - current pack/rig legacy order roots derived from formula roots remain
     valid during this design's compatibility window
-  - canonical pack/rig automation roots are out of scope for Release N/N+1 and
+  - canonical pack/rig order roots are out of scope for Release N/N+1 and
     must not be introduced until a follow-up design defines their precedence
 
 Within a single layer:
 
-- new root wins over legacy root for the same automation name
+- new root wins over legacy root for the same order name
 - legacy roots still contribute names absent from the canonical root
 - the loser is not loaded
-- a warning is emitted once per shadowed automation name
+- a warning is emitted once per shadowed order name
 
 This preserves deterministic behavior and avoids double execution.
 
@@ -321,9 +321,9 @@ Resolver iteration rule:
   - declaration order is preserved among sibling packs
   - included packs are expanded before the including pack
   - the resulting topological order is the authoritative low -> high order
-- Automation ordering is required to use the exact same per-rank root order as
+- Order ordering is required to use the exact same per-rank root order as
   formula ordering.
-- If a pack- or rig-level canonical automation root appears before the follow-up
+- If a pack- or rig-level canonical order root appears before the follow-up
   design lands, doctor must flag it as unsupported instead of guessing.
 
 ## Override And Compatibility Analysis
@@ -354,32 +354,32 @@ Required compatibility:
   `.gc/system/prompts/`.
 - In mixed mode, `prompts/...` wins over `.gc/prompts/...`.
 
-### Formulas and automations
+### Formulas and orders
 
 Current state:
 
 - Default city formula directory is `.gc/formulas`.
 - Formula precedence is deterministic:
   `system < city pack < city local < rig pack < rig local`
-- Automation discovery is coupled to formula roots because the scanner looks
-  for `<layer>/automations/*/automation.toml`.
+- Order discovery is coupled to formula roots because the scanner looks
+  for `<layer>/orders/*/order.toml`.
 
 Breakage risk:
 
 - Moving local formulas from `.gc/formulas` to `formulas/` breaks default path
   resolution, tests, docs, and examples unless a compatibility alias is
   introduced.
-- Splitting automations into a top-level `automations/` folder is a real model
+- Splitting orders into a top-level `orders/` folder is a real model
   change, not just a path rename.
 
 Required compatibility:
 
 - Preserve formula precedence exactly.
-- Make automation precedence explicitly equal to formula precedence.
+- Make order precedence explicitly equal to formula precedence.
 - Accept legacy `.gc/formulas` and new `formulas/` during migration.
-- Accept legacy `.gc/formulas/automations/...` and new top-level
-  `automations/...` during migration.
-- In mixed mode for the same layer, `automations/...` wins over the legacy
+- Accept legacy `.gc/formulas/orders/...` and new top-level
+  `orders/...` during migration.
+- In mixed mode for the same layer, `orders/...` wins over the legacy
   subdirectory.
 
 ### Builtin prompts, formulas, and packs
@@ -504,7 +504,7 @@ surface.
 | --- | --- | --- | --- | --- |
 | Prompt templates | `prompts/...` | Not copied into workdir; resolved from city root | Included in city source baked/copied into pod city root | Include verbatim |
 | Formulas | `formulas/...` | Not copied into workdir; consumed by controller/runtime from city root | Included in city source baked/copied into pod city root | Include verbatim |
-| City-local automations | `automations/...` | Not copied into workdir; consumed by controller/runtime from city root | Included in city source baked/copied into pod city root | Include verbatim |
+| City-local orders | `orders/...` | Not copied into workdir; consumed by controller/runtime from city root | Included in city source baked/copied into pod city root | Include verbatim |
 | User packs | `packs/...` | Not copied into workdir directly | Included in city source baked/copied into pod city root | Include verbatim |
 | Claude hooks | `hooks/claude.json` | Stage as `.gc/settings.json` | Stage as `.gc/settings.json` | Include `hooks/claude.json`, not staged runtime copy |
 | Helper scripts | `scripts/...` | Stage as `.gc/scripts/...` | Stage as `.gc/scripts/...` | Include `scripts/...` |
@@ -515,7 +515,7 @@ Build-image contract:
 - Base allowlist:
   - `city.toml`
   - `pack.lock`
-  - visible content roots: `prompts/`, `formulas/`, `automations/`, `packs/`,
+  - visible content roots: `prompts/`, `formulas/`, `orders/`, `packs/`,
     `hooks/`, `scripts/`
 - Resolver-backed closure allowlist:
   - every checked-in config file reachable from `city.toml` via known resolver
@@ -689,7 +689,7 @@ Operator observability:
   - discovery via legacy `.gc/` fallback
   - missing `city.toml`
   - legacy config references even when visible roots exist
-  - shadowed mixed-mode duplicates for prompts, formulas, automations, hooks,
+  - shadowed mixed-mode duplicates for prompts, formulas, orders, hooks,
     and scripts
   - tracked `.gc/**` content in git
   - secret-pattern violations in `hooks/` and `packs/`
@@ -727,7 +727,7 @@ Release N:
 - `gc doctor` gains checks for:
   - legacy `.gc/prompts/`
   - legacy `.gc/formulas/`
-  - legacy `.gc/formulas/automations/`
+  - legacy `.gc/formulas/orders/`
   - legacy `.gc/settings.json`
   - legacy `.gc/scripts/`
   - mixed-mode duplicates where both new and legacy copies exist
@@ -771,7 +771,7 @@ Release N+2 earliest:
 - Remove reads from legacy `.gc/prompts/`, `.gc/formulas/`, `.gc/settings.json`,
   and `.gc/scripts/` only if Release N and N+1 both shipped warnings and doctor
   coverage.
-- Legacy automation discovery from `.gc/formulas/automations/` should be
+- Legacy order discovery from `.gc/formulas/orders/` should be
   removed no earlier than the same release, and only after the `ContentLayer`
   scanner is already stable.
 
@@ -786,8 +786,8 @@ These are the main places the migration has to touch:
 - Default config paths: `internal/config/config.go`
 - Composition and path resolution: `internal/config/compose.go`
 - Formula layer computation: `internal/config/pack.go`
-- Automation scanning: `internal/automations/scanner.go`
-- Automation CLI loading: `cmd/gc/cmd_automation.go`
+- Order scanning: `internal/orders/scanner.go`
+- Order CLI loading: `cmd/gc/cmd_order.go`
 - Startup materialization and staging: `cmd/gc/cmd_start.go`
 - Template/session copy-files staging: `cmd/gc/template_resolve.go`
 - Runtime reload path handling: `cmd/gc/city_runtime.go`
@@ -805,7 +805,7 @@ These are the main places the migration has to touch:
 ### Phase 1: Resolver and discovery
 
 - Introduce canonical visible roots:
-  `prompts/`, `formulas/`, `automations/`, `hooks/`, `scripts/`.
+  `prompts/`, `formulas/`, `orders/`, `hooks/`, `scripts/`.
 - Centralize mixed-mode path resolution.
 - Switch discovery to `city.toml` first with legacy `.gc/` fallback.
 - Add warnings, doctor checks, and migration planning output.
@@ -814,7 +814,7 @@ These are the main places the migration has to touch:
 
 - Stop re-materializing builtin prompts/formulas into user-owned locations.
 - Move binary-owned assets under `.gc/system/`.
-- Refactor automation scanning to consume `ContentLayer` metadata.
+- Refactor order scanning to consume `ContentLayer` metadata.
 - Update hook/script staging to source visible roots and stage compatibility
   destinations.
 
@@ -841,7 +841,7 @@ The folder move is feasible, but it is not just a rename.
 The risky parts are:
 
 - city discovery currently depending on `.gc/`
-- automation discovery being coupled to formula roots
+- order discovery being coupled to formula roots
 - builtin prompt/formula materialization currently overwriting hidden paths that are treated elsewhere as user content
 - builtin pack injection and cache layout sharing the same namespace
 - pack scripts hard-coding `.gc/...` runtime paths
