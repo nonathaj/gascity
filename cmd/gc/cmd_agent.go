@@ -110,7 +110,6 @@ func resolvePoolInstance(cfg *config.City, input string) (config.Agent, bool) {
 		}
 		instance := a
 		instance.Name = a.Name + "-" + suffix
-		instance.Pool = nil
 		return instance, true
 	}
 	return config.Agent{}, false
@@ -136,7 +135,6 @@ func matchPoolInstance(a config.Agent, input string) (config.Agent, bool) {
 	}
 	instance := a
 	instance.Name = input
-	instance.Pool = nil
 	return instance, true
 }
 

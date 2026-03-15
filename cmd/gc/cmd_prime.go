@@ -156,7 +156,9 @@ func doPrimeWithMode(args []string, stdout, _ io.Writer, hookMode bool) int { //
 		}
 		// Pool agents without a prompt_template get the built-in
 		// pool-worker prompt which includes formula-following instructions.
-		if ok && a.PromptTemplate == "" && a.IsPool() {
+		// Pool instances have Pool=nil after resolution, so also check the
+		// template agent via findAgentByName.
+		if ok && a.PromptTemplate == "" && (a.IsPool() || isPoolInstance(cfg, a)) {
 			fmt.Fprint(stdout, builtinPoolWorkerPrompt()) //nolint:errcheck // best-effort stdout
 			return 0
 		}
@@ -250,6 +252,25 @@ func persistPrimeHookSessionID(sessionID string) {
 		return
 	}
 	_ = os.WriteFile(filepath.Join(runtimeDir, "session_id"), []byte(sessionID+"\n"), 0o644)
+}
+
+// isPoolInstance reports whether a resolved agent (with Pool=nil) originated
+// from a pool template. Checks if the agent's base name (without -N suffix)
+// matches a configured pool agent in the same dir.
+func isPoolInstance(cfg *config.City, a config.Agent) bool {
+	for _, ca := range cfg.Agents {
+		if ca.Pool == nil || !ca.Pool.IsMultiInstance() {
+			continue
+		}
+		if ca.Dir != a.Dir {
+			continue
+		}
+		prefix := ca.Name + "-"
+		if strings.HasPrefix(a.Name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // findAgentByName looks up an agent by its bare config name, ignoring dir.
