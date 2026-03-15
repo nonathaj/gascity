@@ -131,12 +131,13 @@ func (s *BdStore) MolCookOn(formula, beadID, _ string, vars []string) (string, e
 
 // wispResult is the JSON structure returned by bd mol wisp and bd mol bond.
 type wispResult struct {
-	NewEpicID string `json:"new_epic_id"`
-	RootID    string `json:"root_id"`
-	ResultID  string `json:"result_id"`
+	NewEpicID string            `json:"new_epic_id"`
+	RootID    string            `json:"root_id"`
+	ResultID  string            `json:"result_id"`
+	IDMapping map[string]string `json:"id_mapping"`
 }
 
-// parseWispJSON extracts the root bead ID from bd mol wisp/bond JSON output.
+// parseWispJSON extracts the molecule root bead ID from bd mol wisp/bond JSON output.
 func parseWispJSON(data []byte) (string, error) {
 	jsonBytes := extractJSON(data)
 	var result wispResult
@@ -148,11 +149,20 @@ func parseWispJSON(data []byte) (string, error) {
 		return result.NewEpicID, nil
 	case result.RootID != "":
 		return result.RootID, nil
-	case result.ResultID != "":
-		return result.ResultID, nil
 	default:
-		return "", fmt.Errorf("no ID in output: %s", strings.TrimSpace(string(data)))
 	}
+	// For bd mol bond, the molecule epic ID is in id_mapping under the
+	// formula root key (no dot separator, e.g. "mol-polecat-pr").
+	// result_id is the work bead itself, not the molecule.
+	for key, id := range result.IDMapping {
+		if !strings.Contains(key, ".") {
+			return id, nil
+		}
+	}
+	if result.ResultID != "" {
+		return result.ResultID, nil
+	}
+	return "", fmt.Errorf("no ID in output: %s", strings.TrimSpace(string(data)))
 }
 
 // SetPurgeRunner overrides the default exec-based purge implementation.

@@ -740,6 +740,80 @@ func TestBdStoreMolCookEmptyOutput(t *testing.T) {
 	}
 }
 
+// --- MolCookOn ---
+
+func TestBdStoreMolCookOnReturnsEpicID(t *testing.T) {
+	// bd mol bond returns result_id=work-bead (not the molecule) and
+	// id_mapping with the formula root key. MolCookOn should return the
+	// epic ID from id_mapping, not result_id.
+	runner := fakeRunner(map[string]struct {
+		out []byte
+		err error
+	}{
+		`bd mol bond mol-polecat-pr bd-work --json --var issue=bd-work`: {
+			out: []byte(`{
+				"result_id": "bd-work",
+				"result_type": "compound_molecule",
+				"bond_type": "sequential",
+				"spawned": 7,
+				"id_mapping": {
+					"mol-polecat-pr": "bd-epic-42",
+					"mol-polecat-pr.load-context": "bd-step-1",
+					"mol-polecat-pr.implement": "bd-step-2"
+				}
+			}`),
+		},
+	})
+	s := beads.NewBdStore("/city", runner)
+	rootID, err := s.MolCookOn("mol-polecat-pr", "bd-work", "", []string{"issue=bd-work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootID != "bd-epic-42" {
+		t.Errorf("MolCookOn returned %q, want %q (epic from id_mapping)", rootID, "bd-epic-42")
+	}
+}
+
+func TestBdStoreMolCookOnFallsBackToResultID(t *testing.T) {
+	// When id_mapping is absent, should fall back to result_id.
+	runner := fakeRunner(map[string]struct {
+		out []byte
+		err error
+	}{
+		`bd mol bond my-formula bd-x --json`: {
+			out: []byte(`{"result_id": "bd-x"}`),
+		},
+	})
+	s := beads.NewBdStore("/city", runner)
+	rootID, err := s.MolCookOn("my-formula", "bd-x", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootID != "bd-x" {
+		t.Errorf("MolCookOn returned %q, want %q", rootID, "bd-x")
+	}
+}
+
+func TestBdStoreMolCookOnPrefersNewEpicID(t *testing.T) {
+	// new_epic_id takes precedence over id_mapping.
+	runner := fakeRunner(map[string]struct {
+		out []byte
+		err error
+	}{
+		`bd mol bond my-formula bd-x --json`: {
+			out: []byte(`{"new_epic_id": "bd-epic-1", "result_id": "bd-x", "id_mapping": {"my-formula": "bd-epic-2"}}`),
+		},
+	})
+	s := beads.NewBdStore("/city", runner)
+	rootID, err := s.MolCookOn("my-formula", "bd-x", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootID != "bd-epic-1" {
+		t.Errorf("MolCookOn returned %q, want %q (new_epic_id)", rootID, "bd-epic-1")
+	}
+}
+
 // --- Create with labels and parent ---
 
 func TestBdStoreCreateWithLabels(t *testing.T) {
