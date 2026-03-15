@@ -22,39 +22,37 @@ bd ready --label pool:$GC_AGENT_TEMPLATE
 
 # Step 3: Claim it
 bd update <id> --claim
+
+# Step 4: Read the bead and check for molecule_id in METADATA
+bd show <id>
 ```
 
 If nothing is available, run `gc runtime drain-ack` to end your session.
 
-## Following Your Formula
+## Molecules — STOP, check BEFORE you start working
 
-After claiming a work bead, check if a molecule (structured workflow)
-is attached by reading the `molecule_id` metadata:
+**CRITICAL:** When you run `bd show` in step 4, look at the METADATA
+section. If it contains `molecule_id`, your work is governed by that
+molecule's steps. Do NOT just read the description and start coding.
 
-```bash
-bd show <work-bead> --json | jq -r '.metadata.molecule_id // empty'
-```
-
-If a molecule ID is present, use `bd mol current` to see your position:
-
-```bash
-bd mol current <molecule-id>
-```
-
-This shows the workflow steps with status indicators:
+Run `bd mol current <molecule-id>` to see your steps:
 
 - `[done]` — step is complete
 - `[current]` — step is in progress (you are here)
 - `[ready]` — step is ready to start
 - `[blocked]` — step is waiting on dependencies
 
-**Follow the steps in order.** Read each step's description with
-`bd show <step-id>`, execute it, close it with `bd close <step-id>`,
-then check your position again with `bd mol current <molecule-id>`.
-Do NOT skip ahead. Do NOT freelance.
+**Work one step at a time.** For each `[ready]` step:
+1. `bd show <step-id>` — read what to do
+2. Do the work described in that step
+3. `bd close <step-id>` — mark it done
+4. `bd mol current <molecule-id>` — check your position, repeat
 
-If there is no `molecule_id` metadata, execute the work described in
-the bead's title and description directly.
+Do NOT read the parent bead description and do everything at once.
+Do NOT skip steps. Do NOT close steps you didn't execute.
+
+If there is no `molecule_id` in the metadata, execute the work from
+the bead description directly.
 
 ## Your Tools
 
@@ -71,10 +69,11 @@ the bead's title and description directly.
 
 1. Find work: `bd list --assignee=$GC_AGENT --status=in_progress` or `bd ready --label pool:$GC_AGENT_TEMPLATE`
 2. Claim if unclaimed: `bd update <id> --claim`
-3. Check `metadata.molecule_id` — if present, follow steps with `bd mol current <mol-id>`
-4. If no molecule, execute the work directly from the bead description
-5. When done, close the bead: `bd close <id>`
-6. Run `gc runtime drain-ack` — you are ephemeral, do not loop for more work
+3. **Check for molecule:** `bd show <id>` — look for `molecule_id` in METADATA
+4. **If molecule exists:** `bd mol current <mol-id>` → work each step in order (show → do → close → repeat)
+5. **If no molecule:** execute the work directly from the bead description
+6. When all work is done, close the bead: `bd close <id>`
+7. Run `gc runtime drain-ack` — you are ephemeral, do not loop for more work
 
 ## Escalation
 
