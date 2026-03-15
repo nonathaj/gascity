@@ -383,7 +383,7 @@ func TestComputeWorkSet_ResolvesRigDir(t *testing.T) {
 		},
 	}
 
-	runner := func(command, dir string) (string, error) {
+	runner := func(_ string, dir string) (string, error) {
 		// The dir must be the resolved absolute path, not the relative "myrig".
 		if dir == rigDir {
 			return "MC-1\n", nil
