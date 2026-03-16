@@ -623,6 +623,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[s
 
 	reconcileSessionBeads(
 		ctx, open, desiredState, cfgNames, cr.cfg, cr.sp, store,
+		cr.dops,
 		workSet, readyWaitSet, cr.sessionDrains, poolDesired, cityName,
 		clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
 		cr.cfg.Daemon.DriftDrainTimeoutDuration(),

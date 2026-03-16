@@ -134,6 +134,7 @@ func reconcileSessionBeads(
 	cfg *config.City,
 	sp runtime.Provider,
 	store beads.Store,
+	dops drainOps,
 	workSet map[string]bool,
 	readyWaitSet map[string]bool,
 	dt *drainTracker,
@@ -221,6 +222,42 @@ func reconcileSessionBeads(
 		// Clear wake failures for sessions that have been stable long enough.
 		if alive && stableLongEnough(*session, clk) {
 			clearWakeFailures(session, store)
+		}
+
+		// Drain-ack: agent signaled it's done (gc runtime drain-ack).
+		// Stop the session immediately so the pool can reclaim the slot
+		// and a fresh session handles the next work item.
+		if alive && dops != nil {
+			if acked, _ := dops.isDrainAcked(name); acked {
+				_ = dops.clearDrain(name)
+				if err := sp.Stop(name); err != nil {
+					fmt.Fprintf(stderr, "session reconciler: stopping drain-acked %s: %v\n", name, err) //nolint:errcheck
+				} else {
+					fmt.Fprintf(stdout, "Stopped drain-acked session '%s'\n", name) //nolint:errcheck
+					rec.Record(events.Event{
+						Type:    events.SessionStopped,
+						Actor:   "gc",
+						Subject: tp.DisplayName(),
+						Message: "drain acknowledged by agent",
+					})
+				}
+				continue
+			}
+		}
+
+		// Restart-requested: agent asked for a fresh session
+		// (gc runtime request-restart). Stop immediately; the next
+		// tick will re-create and re-wake.
+		if alive && dops != nil {
+			if requested, _ := dops.isRestartRequested(name); requested {
+				_ = dops.clearRestartRequested(name)
+				if err := sp.Stop(name); err != nil {
+					fmt.Fprintf(stderr, "session reconciler: stopping restart-requested %s: %v\n", name, err) //nolint:errcheck
+				} else {
+					fmt.Fprintf(stdout, "Stopped restart-requested session '%s'\n", name) //nolint:errcheck
+				}
+				continue
+			}
 		}
 
 		// Config drift: if alive and config changed, drain for restart.
