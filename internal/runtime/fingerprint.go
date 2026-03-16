@@ -55,10 +55,24 @@ func LiveFingerprint(cfg Config) string {
 // reconciler process, causing spurious config-drift restarts.
 var envFingerprintIncludePrefix = []string{"GC_"}
 
+// envFingerprintExcludeExact lists GC_* keys that should NOT contribute
+// to the fingerprint despite matching the prefix. These are runtime
+// identity or transport details, not behavioral config.
+var envFingerprintExcludeExact = map[string]bool{
+	"GC_SESSION_NAME":     true, // changes per pool slot
+	"GC_AGENT":            true, // pool instance name varies (claude-1 vs claude-2)
+	"GC_HOME":             true, // supervisor isolation, not agent config
+	"GC_DOLT_PORT":        true, // ephemeral port, changes on dolt restart
+	"GC_CITY_RUNTIME_DIR": true, // derived from city path
+}
+
 // envFingerprintInclude returns true if the key should contribute to the
-// config fingerprint. Only GC_* prefixed vars are included — all others
-// are ambient environment that varies between processes.
+// config fingerprint. Only GC_* prefixed vars are included, minus
+// runtime-identity keys that vary between pool slots or restarts.
 func envFingerprintInclude(key string) bool {
+	if envFingerprintExcludeExact[key] {
+		return false
+	}
 	for _, prefix := range envFingerprintIncludePrefix {
 		if strings.HasPrefix(key, prefix) {
 			return true

@@ -222,8 +222,8 @@ part2() {
     echo ""
 
     step "Sling the bead to the pool"
-    echo -e "  ${NARR_DIM}\$ gc sling $POOL $bead_id --nudge${NARR_NC}"
-    (cd "$DEMO_CITY" && gc sling "$POOL" "$bead_id" --nudge)
+    echo -e "  ${NARR_DIM}\$ gc sling $POOL $bead_id${NARR_NC}"
+    (cd "$DEMO_CITY" && gc sling "$POOL" "$bead_id")
     echo ""
 
     step "Watch the bead get picked up (Ctrl+C to stop)"
@@ -278,8 +278,8 @@ part3() {
     echo ""
 
     step "Sling the convoy — expands to 3 parallel pool agents"
-    echo -e "  ${NARR_DIM}\$ gc sling $POOL $convoy_id --nudge${NARR_NC}"
-    (cd "$DEMO_CITY" && gc sling "$POOL" "$convoy_id" --nudge)
+    echo -e "  ${NARR_DIM}\$ gc sling $POOL $convoy_id${NARR_NC}"
+    (cd "$DEMO_CITY" && gc sling "$POOL" "$convoy_id")
     echo ""
 
     step "Watch 3 pool agents spin up"
