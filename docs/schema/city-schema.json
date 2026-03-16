@@ -824,7 +824,8 @@
         },
         "bead_reconciler": {
           "type": "boolean",
-          "description": "BeadReconciler enables the bead-driven session reconciler (Phase 2f).\nWhen true, session lifecycle is managed through bead state with\ndependency-aware wake ordering, config drift detection, and crash\nquarantine. When false (default), the legacy reconciler is used."
+          "description": "BeadReconciler enables the bead-driven session reconciler (Phase 2f).\nWhen true, session lifecycle is managed through bead state with\ndependency-aware wake ordering, config drift detection, and crash\nquarantine. Defaults to true when omitted. Set false to force the\nlegacy reconciler.",
+          "default": true
         }
       },
       "additionalProperties": false,

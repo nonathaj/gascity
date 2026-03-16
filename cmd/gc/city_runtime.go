@@ -219,7 +219,7 @@ func (cr *CityRuntime) run(ctx context.Context) {
 
 	// Initialize bead-driven drain tracker when explicitly enabled via config,
 	// a bead store is available, and we have a real city path.
-	if cr.cfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
+	if cr.cfg.Daemon.BeadReconcilerEnabled() && cr.cityBeadStore() != nil && cr.tomlPath != "" {
 		cr.sessionDrains = newDrainTracker()
 		fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler enabled\n", cr.logPrefix) //nolint:errcheck
 	}
@@ -559,7 +559,7 @@ func (cr *CityRuntime) reloadConfig(
 	// off nils it so the next tick falls back to the legacy reconciler.
 	// In-flight drains are discarded on toggle-off; the legacy path
 	// re-reconciles those sessions within one tick.
-	if nextCfg.Daemon.BeadReconciler && cr.cityBeadStore() != nil && cr.tomlPath != "" {
+	if nextCfg.Daemon.BeadReconcilerEnabled() && cr.cityBeadStore() != nil && cr.tomlPath != "" {
 		if cr.sessionDrains == nil {
 			cr.sessionDrains = newDrainTracker()
 			fmt.Fprintf(cr.stdout, "%s: bead-driven reconciler enabled (config reload)\n", cr.logPrefix) //nolint:errcheck
