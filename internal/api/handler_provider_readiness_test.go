@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -556,7 +557,7 @@ func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutHostsFile(t *testing.
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir bin: %v", err)
 	}
-	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	writeGitHubCLIAuthStatusScript(t, binDir, 1)
 	unsetGitHubCLITokenEnv(t)
 
 	t.Setenv("HOME", homeDir)
@@ -605,6 +606,38 @@ func TestHandleReadinessReturnsConfiguredForGitHubCLIEnvToken(t *testing.T) {
 	assertGitHubCLIReadinessStatus(t, srv, probeStatusConfigured)
 }
 
+func TestHandleReadinessReturnsConfiguredForGitHubCLICustomConfigDir(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeGitHubCLIAuthStatusScript(t, binDir, 1)
+	configDir := filepath.Join(homeDir, "custom-gh")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir custom gh config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(configDir, "hosts.yml"),
+		[]byte("github.com:\n    user: octocat\n    oauth_token: token\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write custom gh hosts: %v", err)
+	}
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("GH_CONFIG_DIR", configDir)
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusConfigured)
+}
+
 func TestHandleReadinessReturnsNotInstalledForGitHubCLIWithoutBinary(t *testing.T) {
 	homeDir := t.TempDir()
 	unsetGitHubCLITokenEnv(t)
@@ -626,7 +659,7 @@ func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutStoredTokens(t *testi
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir bin: %v", err)
 	}
-	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	writeGitHubCLIAuthStatusScript(t, binDir, 1)
 	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "gh"), 0o755); err != nil {
 		t.Fatalf("mkdir gh config dir: %v", err)
 	}
@@ -650,13 +683,43 @@ func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutStoredTokens(t *testi
 	assertGitHubCLIReadinessStatus(t, srv, probeStatusNeedsAuth)
 }
 
+func TestHandleReadinessReturnsConfiguredForGitHubCLIAuthStatusFallback(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeGitHubCLIAuthStatusScript(t, binDir, 0)
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "gh"), 0o755); err != nil {
+		t.Fatalf("mkdir gh config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".config", "gh", "hosts.yml"),
+		[]byte("github.com:\n    user: octocat\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gh hosts: %v", err)
+	}
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusConfigured)
+}
+
 func TestHandleReadinessReturnsProbeErrorForGitHubCLIMalformedHostsFile(t *testing.T) {
 	homeDir := t.TempDir()
 	binDir := filepath.Join(homeDir, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir bin: %v", err)
 	}
-	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	writeGitHubCLIAuthStatusScript(t, binDir, 1)
 	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "gh"), 0o755); err != nil {
 		t.Fatalf("mkdir gh config dir: %v", err)
 	}
@@ -686,6 +749,21 @@ func writeExecutable(t *testing.T, dir, name, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
+}
+
+func writeGitHubCLIAuthStatusScript(t *testing.T, dir string, exitCode int) {
+	t.Helper()
+	writeExecutable(t, dir, "gh", fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+	if [ %d -eq 0 ]; then
+		exit 0
+	fi
+	echo "not logged in" >&2
+	exit %d
+fi
+echo "unexpected gh args: $*" >&2
+exit 2
+`, exitCode, exitCode))
 }
 
 func assertProviderStatus(t *testing.T, srv *Server, path, provider, want string) {

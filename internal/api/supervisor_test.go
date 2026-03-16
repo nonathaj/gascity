@@ -142,6 +142,7 @@ func TestSupervisorReadinessRoute(t *testing.T) {
 		t.Fatalf("write gh hosts: %v", err)
 	}
 
+	unsetGitHubCLITokenEnv(t)
 	t.Setenv("HOME", homeDir)
 	originalPathEnv := providerProbePathEnv
 	providerProbePathEnv = binDir

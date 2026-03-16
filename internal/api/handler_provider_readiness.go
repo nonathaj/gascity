@@ -69,9 +69,7 @@ var (
 		"github_cli": {
 			displayName: "GitHub CLI",
 			kind:        probeKindTool,
-			probe: func(_ context.Context, homeDir string) providerProbeResult {
-				return probeGitHubCLI(homeDir)
-			},
+			probe:       probeGitHubCLI,
 		},
 	}
 )
@@ -444,33 +442,42 @@ func probeGemini(homeDir string) providerProbeResult {
 	}
 }
 
-func probeGitHubCLI(homeDir string) providerProbeResult {
-	if _, ok := findProbeBinary("gh"); !ok {
+func probeGitHubCLI(ctx context.Context, homeDir string) providerProbeResult {
+	ghPath, ok := findProbeBinary("gh")
+	if !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
 	if githubCLITokenConfigured() {
 		return providerProbeResult{status: probeStatusConfigured}
 	}
 
-	data, err := os.ReadFile(filepath.Join(homeDir, ".config", "gh", "hosts.yml"))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return providerProbeResult{status: probeStatusNeedsAuth}
+	data, err := os.ReadFile(githubCLIHostsPath(homeDir))
+	if err == nil {
+		var hosts map[string]githubAuthHost
+		if err := yaml.Unmarshal(data, &hosts); err != nil {
+			return providerProbeResult{status: probeStatusProbeError}
 		}
+
+		for _, host := range hosts {
+			if nonEmptyString(host.OAuthToken) || nonEmptyString(host.Token) {
+				return providerProbeResult{status: probeStatusConfigured}
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return providerProbeResult{status: probeStatusProbeError}
 	}
 
-	var hosts map[string]githubAuthHost
-	if err := yaml.Unmarshal(data, &hosts); err != nil {
-		return providerProbeResult{status: probeStatusProbeError}
-	}
+	return probeGitHubCLIAuthStatus(ctx, homeDir, ghPath)
+}
 
-	for _, host := range hosts {
-		if nonEmptyString(host.OAuthToken) || nonEmptyString(host.Token) {
-			return providerProbeResult{status: probeStatusConfigured}
-		}
+func githubCLIHostsPath(homeDir string) string {
+	if configDir := strings.TrimSpace(os.Getenv("GH_CONFIG_DIR")); configDir != "" {
+		return filepath.Join(configDir, "hosts.yml")
 	}
-	return providerProbeResult{status: probeStatusNeedsAuth}
+	if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
+		return filepath.Join(xdgConfigHome, "gh", "hosts.yml")
+	}
+	return filepath.Join(homeDir, ".config", "gh", "hosts.yml")
 }
 
 func githubCLITokenConfigured() bool {
@@ -478,6 +485,28 @@ func githubCLITokenConfigured() bool {
 		nonEmptyString(os.Getenv("GITHUB_TOKEN")) ||
 		nonEmptyString(os.Getenv("GH_ENTERPRISE_TOKEN")) ||
 		nonEmptyString(os.Getenv("GITHUB_ENTERPRISE_TOKEN"))
+}
+
+func probeGitHubCLIAuthStatus(ctx context.Context, homeDir, ghPath string) providerProbeResult {
+	stdout, stderr, err := runProbeCommand(
+		ctx,
+		homeDir,
+		2*time.Second,
+		ghPath,
+		"auth",
+		"status",
+	)
+	if err == nil {
+		return providerProbeResult{status: probeStatusConfigured}
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if strings.TrimSpace(stdout) != "" || strings.TrimSpace(stderr) != "" {
+			return providerProbeResult{status: probeStatusNeedsAuth}
+		}
+	}
+	return providerProbeResult{status: probeStatusProbeError}
 }
 
 func findProbeBinary(name string) (string, bool) {
@@ -513,15 +542,7 @@ func runProbeCommand(
 
 	cmd := providerProbeCommandContext(ctx, path, args...)
 	cmd.Dir = homeDir
-	cmd.Env = []string{
-		"HOME=" + homeDir,
-		"PATH=" + providerProbePathEnv,
-		"TERM=dumb",
-		"NO_COLOR=1",
-		"LC_ALL=C.UTF-8",
-		"XDG_CONFIG_HOME=" + filepath.Join(homeDir, ".config"),
-		"XDG_STATE_HOME=" + filepath.Join(homeDir, ".local", "state"),
-	}
+	cmd.Env = probeCommandEnv(homeDir)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -529,6 +550,36 @@ func runProbeCommand(
 
 	err := cmd.Run()
 	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
+}
+
+func probeCommandEnv(homeDir string) []string {
+	env := []string{
+		"HOME=" + homeDir,
+		"PATH=" + providerProbePathEnv,
+		"TERM=dumb",
+		"NO_COLOR=1",
+		"LC_ALL=C.UTF-8",
+		"XDG_STATE_HOME=" + filepath.Join(homeDir, ".local", "state"),
+	}
+	if configDir := strings.TrimSpace(os.Getenv("GH_CONFIG_DIR")); configDir != "" {
+		env = append(env, "GH_CONFIG_DIR="+configDir)
+	} else if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
+		env = append(env, "XDG_CONFIG_HOME="+xdgConfigHome)
+	} else {
+		env = append(env, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+	}
+	for _, key := range []string{
+		"GH_HOST",
+		"GH_TOKEN",
+		"GITHUB_TOKEN",
+		"GH_ENTERPRISE_TOKEN",
+		"GITHUB_ENTERPRISE_TOKEN",
+	} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
 }
 
 func codexTokensConfigured(tokens json.RawMessage) bool {
