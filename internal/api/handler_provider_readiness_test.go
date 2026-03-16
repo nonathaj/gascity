@@ -182,6 +182,36 @@ func TestHandleProviderReadinessReturnsNeedsAuthForCodexWithoutTokens(t *testing
 	}
 }
 
+func TestHandleProviderReadinessReturnsNeedsAuthForCodexWithEmptyTokensObject(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "codex", "#!/bin/sh\nexit 0\n")
+
+	if err := os.MkdirAll(filepath.Join(homeDir, ".codex"), 0o755); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".codex", "auth.json"),
+		[]byte(`{"auth_mode":"chatgpt","tokens":{}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write codex auth: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertProviderStatus(t, srv, "/v0/provider-readiness?providers=codex&fresh=1", "codex", probeStatusNeedsAuth)
+}
+
 func TestHandleProviderReadinessReturnsNeedsAuthForLoggedOutClaude(t *testing.T) {
 	homeDir := t.TempDir()
 	binDir := filepath.Join(homeDir, "bin")
@@ -336,6 +366,43 @@ func TestHandleProviderReadinessReturnsNeedsAuthForGeminiWithoutSelectedType(t *
 		0o600,
 	); err != nil {
 		t.Fatalf("write gemini settings: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertProviderStatus(t, srv, "/v0/provider-readiness?providers=gemini&fresh=1", "gemini", probeStatusNeedsAuth)
+}
+
+func TestHandleProviderReadinessReturnsNeedsAuthForGeminiWithoutRefreshToken(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gemini", "#!/bin/sh\nexit 0\n")
+
+	if err := os.MkdirAll(filepath.Join(homeDir, ".gemini"), 0o755); err != nil {
+		t.Fatalf("mkdir gemini dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".gemini", "settings.json"),
+		[]byte(`{"security":{"auth":{"selectedType":"oauth-personal"}}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gemini settings: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".gemini", "oauth_creds.json"),
+		[]byte(`{}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gemini creds: %v", err)
 	}
 
 	t.Setenv("HOME", homeDir)

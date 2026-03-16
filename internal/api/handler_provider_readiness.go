@@ -270,7 +270,7 @@ func probeCodex(homeDir string) providerProbeResult {
 
 	switch strings.ToLower(strings.TrimSpace(auth.AuthMode)) {
 	case "chatgpt":
-		if len(bytes.TrimSpace(auth.Tokens)) == 0 || string(bytes.TrimSpace(auth.Tokens)) == "null" {
+		if !codexTokensConfigured(auth.Tokens) {
 			return providerProbeResult{status: probeStatusNeedsAuth}
 		}
 		return providerProbeResult{status: probeStatusConfigured}
@@ -317,6 +317,9 @@ func probeGemini(homeDir string) providerProbeResult {
 		var payload map[string]any
 		if err := json.Unmarshal(credData, &payload); err != nil {
 			return providerProbeResult{status: probeStatusProbeError}
+		}
+		if !geminiOAuthCredsConfigured(payload) {
+			return providerProbeResult{status: probeStatusNeedsAuth}
 		}
 		return providerProbeResult{status: probeStatusConfigured}
 	case "gemini-api-key", "vertex-ai", "compute-default-credentials":
@@ -375,4 +378,28 @@ func runProbeCommand(
 
 	err := cmd.Run()
 	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
+}
+
+func codexTokensConfigured(tokens json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(tokens)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return false
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(trimmed, &payload); err != nil {
+		return false
+	}
+	return nonEmptyString(payload["access_token"]) ||
+		nonEmptyString(payload["id_token"]) ||
+		nonEmptyString(payload["refresh_token"])
+}
+
+func geminiOAuthCredsConfigured(payload map[string]any) bool {
+	return nonEmptyString(payload["refresh_token"])
+}
+
+func nonEmptyString(value any) bool {
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
 }
