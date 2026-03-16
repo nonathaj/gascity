@@ -448,6 +448,9 @@ func probeGitHubCLI(homeDir string) providerProbeResult {
 	if _, ok := findProbeBinary("gh"); !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
+	if githubCLITokenConfigured() {
+		return providerProbeResult{status: probeStatusConfigured}
+	}
 
 	data, err := os.ReadFile(filepath.Join(homeDir, ".config", "gh", "hosts.yml"))
 	if err != nil {
@@ -468,6 +471,13 @@ func probeGitHubCLI(homeDir string) providerProbeResult {
 		}
 	}
 	return providerProbeResult{status: probeStatusNeedsAuth}
+}
+
+func githubCLITokenConfigured() bool {
+	return nonEmptyString(os.Getenv("GH_TOKEN")) ||
+		nonEmptyString(os.Getenv("GITHUB_TOKEN")) ||
+		nonEmptyString(os.Getenv("GH_ENTERPRISE_TOKEN")) ||
+		nonEmptyString(os.Getenv("GITHUB_ENTERPRISE_TOKEN"))
 }
 
 func findProbeBinary(name string) (string, bool) {

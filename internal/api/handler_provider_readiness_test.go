@@ -2,13 +2,50 @@ package api
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 )
+
+func TestReadinessRegistrySync(t *testing.T) {
+	for item := range readinessProbeSpecs {
+		if _, ok := supportedReadiness[item]; !ok {
+			t.Fatalf("readiness probe spec %q missing from supportedReadiness", item)
+		}
+	}
+
+	for item := range supportedReadiness {
+		if _, ok := readinessProbeSpecs[item]; !ok {
+			t.Fatalf("supported readiness item %q missing probe spec", item)
+		}
+	}
+
+	for _, item := range defaultReadinessItems {
+		if _, ok := supportedReadiness[item]; !ok {
+			t.Fatalf("default readiness item %q missing from supportedReadiness", item)
+		}
+	}
+
+	for _, item := range defaultProviderReadinessItems {
+		if _, ok := supportedProviderReadiness[item]; !ok {
+			t.Fatalf("default provider readiness item %q missing from supportedProviderReadiness", item)
+		}
+		if spec, ok := readinessProbeSpecs[item]; !ok {
+			t.Fatalf("default provider readiness item %q missing probe spec", item)
+		} else if spec.kind != probeKindProvider {
+			t.Fatalf("default provider readiness item %q kind = %q, want %q", item, spec.kind, probeKindProvider)
+		}
+	}
+
+	if got, want := slices.Sorted(maps.Keys(supportedProviderReadiness)), defaultProviderReadinessItems; !slices.Equal(got, want) {
+		t.Fatalf("supportedProviderReadiness keys = %v, want %v", got, want)
+	}
+}
 
 func TestHandleProviderReadinessReturnsConfiguredStatuses(t *testing.T) {
 	homeDir := t.TempDir()
@@ -520,6 +557,7 @@ func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutHostsFile(t *testing.
 		t.Fatalf("mkdir bin: %v", err)
 	}
 	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	unsetGitHubCLITokenEnv(t)
 
 	t.Setenv("HOME", homeDir)
 	originalPathEnv := providerProbePathEnv
@@ -544,6 +582,102 @@ func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutHostsFile(t *testing.
 	if got := resp.Items["github_cli"].Status; got != probeStatusNeedsAuth {
 		t.Fatalf("github_cli status = %q, want %q", got, probeStatusNeedsAuth)
 	}
+}
+
+func TestHandleReadinessReturnsConfiguredForGitHubCLIEnvToken(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("GH_TOKEN", "token")
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusConfigured)
+}
+
+func TestHandleReadinessReturnsNotInstalledForGitHubCLIWithoutBinary(t *testing.T) {
+	homeDir := t.TempDir()
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = filepath.Join(homeDir, "bin")
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusNotInstalled)
+}
+
+func TestHandleReadinessReturnsNeedsAuthForGitHubCLIWithoutStoredTokens(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "gh"), 0o755); err != nil {
+		t.Fatalf("mkdir gh config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".config", "gh", "hosts.yml"),
+		[]byte("github.com:\n    user: octocat\n    git_protocol: https\n"),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gh hosts: %v", err)
+	}
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusNeedsAuth)
+}
+
+func TestHandleReadinessReturnsProbeErrorForGitHubCLIMalformedHostsFile(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "gh", "#!/bin/sh\nexit 0\n")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "gh"), 0o755); err != nil {
+		t.Fatalf("mkdir gh config dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".config", "gh", "hosts.yml"),
+		[]byte("github.com: ["),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gh hosts: %v", err)
+	}
+	unsetGitHubCLITokenEnv(t)
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	assertGitHubCLIReadinessStatus(t, srv, probeStatusProbeError)
 }
 
 func writeExecutable(t *testing.T, dir, name, body string) {
@@ -571,4 +705,31 @@ func assertProviderStatus(t *testing.T, srv *Server, path, provider, want string
 	if got := resp.Providers[provider].Status; got != want {
 		t.Fatalf("%s status = %q, want %q", provider, got, want)
 	}
+}
+
+func assertGitHubCLIReadinessStatus(t *testing.T, srv *Server, want string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/v0/readiness?items=github_cli&fresh=1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp readinessResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := resp.Items["github_cli"].Status; got != want {
+		t.Fatalf("github_cli status = %q, want %q", got, want)
+	}
+}
+
+func unsetGitHubCLITokenEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_ENTERPRISE_TOKEN", "")
+	t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
 }
