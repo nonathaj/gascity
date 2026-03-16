@@ -561,12 +561,13 @@ func probeCommandEnv(homeDir string) []string {
 		"LC_ALL=C.UTF-8",
 		"XDG_STATE_HOME=" + filepath.Join(homeDir, ".local", "state"),
 	}
-	if configDir := strings.TrimSpace(os.Getenv("GH_CONFIG_DIR")); configDir != "" {
-		env = append(env, "GH_CONFIG_DIR="+configDir)
-	} else if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
+	if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
 		env = append(env, "XDG_CONFIG_HOME="+xdgConfigHome)
 	} else {
 		env = append(env, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+	}
+	if configDir := strings.TrimSpace(os.Getenv("GH_CONFIG_DIR")); configDir != "" {
+		env = append(env, "GH_CONFIG_DIR="+configDir)
 	}
 	for _, key := range []string{
 		"GH_HOST",

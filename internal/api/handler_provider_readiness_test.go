@@ -48,6 +48,20 @@ func TestReadinessRegistrySync(t *testing.T) {
 	}
 }
 
+func TestProbeCommandEnvPreservesXDGConfigHomeWhenGHConfigDirIsSet(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(homeDir, "xdg"))
+	t.Setenv("GH_CONFIG_DIR", filepath.Join(homeDir, "gh"))
+
+	env := probeCommandEnv(homeDir)
+	if !slices.Contains(env, "XDG_CONFIG_HOME="+filepath.Join(homeDir, "xdg")) {
+		t.Fatalf("probeCommandEnv missing XDG_CONFIG_HOME override: %v", env)
+	}
+	if !slices.Contains(env, "GH_CONFIG_DIR="+filepath.Join(homeDir, "gh")) {
+		t.Fatalf("probeCommandEnv missing GH_CONFIG_DIR override: %v", env)
+	}
+}
+
 func TestHandleProviderReadinessReturnsConfiguredStatuses(t *testing.T) {
 	homeDir := t.TempDir()
 	binDir := filepath.Join(homeDir, "bin")
