@@ -73,7 +73,14 @@ the bead description directly.
 4. **If molecule exists:** `bd mol current <mol-id>` → work each step in order (show → do → close → repeat)
 5. **If no molecule:** execute the work directly from the bead description
 6. When all work is done, close the bead: `bd close <id>`
-7. Run `gc runtime drain-ack` — you are ephemeral, do not loop for more work
+7. **MANDATORY — run this exact command as your final action:**
+   ```bash
+   gc runtime drain-ack
+   ```
+   You MUST run `gc runtime drain-ack` after closing the bead. This is
+   not optional. Without it, you will block other work from being picked
+   up. Do NOT say "drained" without actually running the command. Do NOT
+   output any text after running it.
 
 ## Escalation
 

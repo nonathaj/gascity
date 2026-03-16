@@ -5,7 +5,7 @@
 #
 #   Part 1: Init city, add rig, sling inline text → pool agent writes README
 #   Part 2: Create explicit bead, sling it → agent writes hello-world
-#   Part 3: Create epic with 3 variants, sling epic → 3 parallel pool agents
+#   Part 3: Create convoy with 3 variants, sling convoy → 3 parallel pool agents
 #
 # Prerequisites:
 #   - gc, bd, jq, tmux in PATH
@@ -170,25 +170,31 @@ part1() {
 
     step "Sling inline text — creates a bead and routes it to the pool"
     echo -e "  ${NARR_DIM}\$ gc sling $POOL \"Write a README.md for this project\" ${NARR_NC}"
-    (cd "$DEMO_CITY" && gc sling "$POOL" "Write a README.md for this project" )
+    local sling_output
+    sling_output=$(cd "$DEMO_CITY" && gc sling "$POOL" "Write a README.md for this project" 2>&1) || true
+    echo "$sling_output"
     echo ""
 
-    step "Watch pool agent spin up"
-    wait_for_pool_agent 60
+    # Extract bead ID from "Created mp-xxx" line.
+    local sling_bead_id
+    sling_bead_id=$(echo "$sling_output" | grep -oP 'Created \K\S+' || true)
 
-    step "Check rig status"
-    echo -e "  ${NARR_DIM}\$ gc rig status $RIG_NAME${NARR_NC}"
-    (cd "$DEMO_CITY" && gc rig status "$RIG_NAME" 2>/dev/null) || true
-    echo ""
-
-    step "Watch the agent work (Ctrl+C to stop)"
-    echo -e "  ${NARR_DIM}\$ gc session logs $RIG_NAME/claude-1 -f${NARR_NC}"
+    step "Watch the agent work (Ctrl+C to skip ahead)"
+    echo -e "  ${NARR_DIM}Tracking bead $sling_bead_id${NARR_NC}"
     trap true INT
-    (cd "$DEMO_CITY" && gc session logs "$RIG_NAME/claude-1" -f 2>/dev/null) || true
+    while true; do
+        local status
+        status=$(cd "$RIG_DIR" && bd show --json "$sling_bead_id" 2>/dev/null \
+            | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+        printf "\r  Bead %s: %s  " "$sling_bead_id" "$status"
+        if [ "$status" = "closed" ]; then
+            echo ""
+            break
+        fi
+        sleep 3
+    done
     trap - INT
     echo ""
-
-    pause "Press Enter to see the result..."
 
     step "The agent wrote a README"
     echo -e "  ${NARR_DIM}\$ cat $RIG_DIR/README.md${NARR_NC}"
@@ -216,8 +222,8 @@ part2() {
     echo ""
 
     step "Sling the bead to the pool"
-    echo -e "  ${NARR_DIM}\$ gc sling $POOL $bead_id ${NARR_NC}"
-    (cd "$DEMO_CITY" && gc sling "$POOL" "$bead_id" )
+    echo -e "  ${NARR_DIM}\$ gc sling $POOL $bead_id --nudge${NARR_NC}"
+    (cd "$DEMO_CITY" && gc sling "$POOL" "$bead_id" --nudge)
     echo ""
 
     step "Watch the bead get picked up (Ctrl+C to stop)"
@@ -248,36 +254,38 @@ part2() {
     pause "Part 2 complete — press Enter to continue to Part 3..."
 }
 
-# ── Part 3: Epic Fan-Out ────────────────────────────────────────────────
+# ── Part 3: Convoy Fan-Out ──────────────────────────────────────────────
 
 part3() {
-    narrate "Part 3: Epic Fan-Out" --sub "3 beads in an epic → 3 parallel pool agents"
+    narrate "Part 3: Convoy Fan-Out" --sub "3 beads in a convoy → 3 parallel pool agents"
 
-    step "Create an epic (container for related work)"
-    local epic_id
-    epic_id=$(bd_create_in_rig "Hello World Variants" -t epic)
-    echo "  Created epic: $epic_id"
-    echo ""
-
-    step "Create 3 beads under the epic"
+    step "Create 3 beads"
     local id1 id2 id3
-    id1=$(bd_create_in_rig "Hello world in Python" --parent "$epic_id")
+    id1=$(bd_create_in_rig "Hello world in Python")
     echo "  $id1 — Hello world in Python"
-    id2=$(bd_create_in_rig "Hello world in Rust" --parent "$epic_id")
+    id2=$(bd_create_in_rig "Hello world in Rust")
     echo "  $id2 — Hello world in Rust"
-    id3=$(bd_create_in_rig "Hello world in Haskell" --parent "$epic_id")
+    id3=$(bd_create_in_rig "Hello world in Haskell")
     echo "  $id3 — Hello world in Haskell"
     echo ""
 
-    step "Sling the epic — expands to 3 parallel pool agents"
-    echo -e "  ${NARR_DIM}\$ gc sling $POOL $epic_id ${NARR_NC}"
-    (cd "$DEMO_CITY" && gc sling "$POOL" "$epic_id" )
+    step "Group them in a convoy"
+    echo -e "  ${NARR_DIM}\$ gc convoy create \"Hello World Variants\" $id1 $id2 $id3${NARR_NC}"
+    local convoy_output convoy_id
+    convoy_output=$(cd "$DEMO_CITY" && gc convoy create "Hello World Variants" "$id1" "$id2" "$id3" 2>&1) || true
+    echo "$convoy_output"
+    convoy_id=$(echo "$convoy_output" | grep -oP 'convoy \K\S+')
+    echo ""
+
+    step "Sling the convoy — expands to 3 parallel pool agents"
+    echo -e "  ${NARR_DIM}\$ gc sling $POOL $convoy_id --nudge${NARR_NC}"
+    (cd "$DEMO_CITY" && gc sling "$POOL" "$convoy_id" --nudge)
     echo ""
 
     step "Watch 3 pool agents spin up"
     wait_for_pool_agent 60
 
-    step "Watch epic progress (Ctrl+C to stop)"
+    step "Watch convoy progress (Ctrl+C to stop)"
     echo -e "  ${NARR_DIM}Tracking: $id1, $id2, $id3${NARR_NC}"
     trap true INT
     while true; do
@@ -319,7 +327,7 @@ finale() {
     echo ""
     echo "    1. Inline sling    — text in, agent out, zero setup"
     echo "    2. Explicit beads  — create work, route it, track it"
-    echo "    3. Epic fan-out    — one sling, N parallel agents"
+    echo "    3. Convoy fan-out    — one sling, N parallel agents"
     echo ""
     echo "  Same city. Same pool. Progressive complexity."
     echo ""
@@ -357,7 +365,7 @@ main() {
             narrate "Gas City Onboarding Demo" --sub "Zero to orchestration in 3 minutes"
             echo "  Part 1: Inline sling    — init city, sling text, watch agent work"
             echo "  Part 2: Explicit bead   — create bead, sling it"
-            echo "  Part 3: Epic fan-out    — 3 beads → 3 parallel agents"
+            echo "  Part 3: Convoy fan-out    — 3 beads → 3 parallel agents"
             echo ""
             pause "Press Enter to begin..."
 

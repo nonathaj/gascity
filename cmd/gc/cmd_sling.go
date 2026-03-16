@@ -398,7 +398,10 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			fmt.Fprintf(deps.Stderr, "gc sling: %v\n", err) //nolint:errcheck // best-effort
 			return 1
 		}
-		wispRootID, err := deps.Store.MolCookOn(a.DefaultSlingFormula, beadID, opts.Title, opts.Vars)
+		// Auto-inject issue=beadID so mol-do-work (and similar formulas)
+		// can reference the work bead without the caller passing --var.
+		defaultVars := append([]string{"issue=" + beadID}, opts.Vars...)
+		wispRootID, err := deps.Store.MolCookOn(a.DefaultSlingFormula, beadID, opts.Title, defaultVars)
 		if err != nil {
 			fmt.Fprintf(deps.Stderr, "gc sling: instantiating default formula %q on %s: %v\n", //nolint:errcheck // best-effort
 				a.DefaultSlingFormula, beadID, err)
@@ -472,6 +475,10 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 	default:
 		fmt.Fprintf(deps.Stdout, "Slung %s → %s\n", beadID, a.QualifiedName()) //nolint:errcheck // best-effort
 	}
+
+	// Poke controller/supervisor to trigger immediate reconciliation
+	// so pool agents wake without waiting for the next patrol tick.
+	_ = pokeController(deps.CityPath)
 
 	// Nudge target if requested.
 	if opts.Nudge {
@@ -585,7 +592,8 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 
 		// Attach wisp if --on.
 		if opts.OnFormula != "" {
-			wispRootID, err := deps.Store.MolCookOn(opts.OnFormula, child.ID, opts.Title, opts.Vars)
+			childVars := append([]string{"issue=" + child.ID}, opts.Vars...)
+			wispRootID, err := deps.Store.MolCookOn(opts.OnFormula, child.ID, opts.Title, childVars)
 			if err != nil {
 				fmt.Fprintf(deps.Stderr, "  Failed %s: instantiating formula %q: %v\n", child.ID, opts.OnFormula, err) //nolint:errcheck // best-effort
 				telemetry.RecordSling(context.Background(), a.QualifiedName(), targetType(&a), batchMethod, err)
@@ -596,7 +604,8 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 			fmt.Fprintf(deps.Stdout, "  Attached wisp %s → %s\n", wispRootID, child.ID) //nolint:errcheck // best-effort
 		} else if !opts.NoFormula && a.DefaultSlingFormula != "" {
 			// Apply default formula per-child.
-			wispRootID, err := deps.Store.MolCookOn(a.DefaultSlingFormula, child.ID, opts.Title, opts.Vars)
+			childVars := append([]string{"issue=" + child.ID}, opts.Vars...)
+			wispRootID, err := deps.Store.MolCookOn(a.DefaultSlingFormula, child.ID, opts.Title, childVars)
 			if err != nil {
 				fmt.Fprintf(deps.Stderr, "  Failed %s: instantiating default formula %q: %v\n", child.ID, a.DefaultSlingFormula, err) //nolint:errcheck // best-effort
 				telemetry.RecordSling(context.Background(), a.QualifiedName(), targetType(&a), batchMethod, err)

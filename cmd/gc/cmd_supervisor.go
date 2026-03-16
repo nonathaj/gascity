@@ -968,7 +968,13 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 		}
 	}
 	for _, r := range cfg.Rigs {
-		if layers, ok := cfg.FormulaLayers.Rigs[r.Name]; ok && len(layers) > 0 {
+		layers, ok := cfg.FormulaLayers.Rigs[r.Name]
+		if !ok || len(layers) == 0 {
+			// Rigs without explicit formula layers inherit city formulas
+			// so pool agents can use default sling formulas (mol-do-work).
+			layers = cfg.FormulaLayers.City
+		}
+		if len(layers) > 0 {
 			if err := ResolveFormulas(r.Path, layers); err != nil {
 				fmt.Fprintf(stderr, "gc supervisor: city '%s': rig %q formulas: %v\n", cityName, r.Name, err) //nolint:errcheck
 			}

@@ -57,3 +57,16 @@ gc mail inbox
 ```
 
 **Exit criteria:** The work described in the bead is complete and the bead is closed."""
+
+[[steps]]
+id = "drain"
+title = "Signal completion"
+needs = ["do-work"]
+description = """
+Work is done. Signal the controller to reclaim this session:
+
+```bash
+gc runtime drain-ack
+```
+
+Run this command and nothing else."""

@@ -415,7 +415,11 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		}
 	}
 	for _, r := range cfg.Rigs {
-		if layers, ok := cfg.FormulaLayers.Rigs[r.Name]; ok && len(layers) > 0 {
+		layers, ok := cfg.FormulaLayers.Rigs[r.Name]
+		if !ok || len(layers) == 0 {
+			layers = cfg.FormulaLayers.City
+		}
+		if len(layers) > 0 {
 			if err := ResolveFormulas(r.Path, layers); err != nil {
 				fmt.Fprintf(stderr, "gc start: rig %q formulas: %v\n", r.Name, err) //nolint:errcheck // best-effort stderr
 			}

@@ -91,6 +91,107 @@ func TestConvoyCreateBadIssueID(t *testing.T) {
 	}
 }
 
+func TestConvoyCreateMultiRig(t *testing.T) {
+	// Simulate cross-rig convoy: convoy in city store, children in rig store.
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	// Create children in rig store.
+	child1, _ := rigStore.Create(beads.Bead{Title: "task A"})
+	child2, _ := rigStore.Create(beads.Bead{Title: "task B"})
+
+	// Test 1: single-store mode (cfg=nil) — all beads in same store.
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCreateWith(cityStore, nil, "", events.Discard,
+		[]string{"cross-rig batch", child1.ID, child2.ID}, ConvoyFields{}, &stdout, &stderr)
+	// Should fail because children are in rigStore, not cityStore.
+	if code != 1 {
+		t.Fatalf("expected failure (children not in city store), got code %d", code)
+	}
+
+	// Test 2: same store — children and convoy in same store.
+	stdout.Reset()
+	stderr.Reset()
+	child3, _ := cityStore.Create(beads.Bead{Title: "city task"})
+	child4, _ := cityStore.Create(beads.Bead{Title: "city task 2"})
+	code = doConvoyCreateWith(cityStore, nil, "", events.Discard,
+		[]string{"same-store batch", child3.ID, child4.ID}, ConvoyFields{}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("same-store convoy failed: %s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "tracking 2 issue") {
+		t.Errorf("stdout = %q, want tracking 2 issues", stdout.String())
+	}
+
+	// Verify children have parent set.
+	got3, _ := cityStore.Get(child3.ID)
+	got4, _ := cityStore.Get(child4.ID)
+	convoyID := got3.ParentID
+	if convoyID == "" {
+		t.Fatal("child3 has no parent")
+	}
+	if got4.ParentID != convoyID {
+		t.Errorf("child4 parent = %q, want %q", got4.ParentID, convoyID)
+	}
+	convoy, _ := cityStore.Get(convoyID)
+	if convoy.Type != "convoy" {
+		t.Errorf("convoy type = %q, want convoy", convoy.Type)
+	}
+}
+
+// TestConvoyCreateRigChildrenShareStore is a regression test: when children
+// have a rig prefix, the convoy must be created in the same store as the
+// children (not the city root store). Otherwise bd update --parent fails
+// because the parent bead doesn't exist in the child's database.
+func TestConvoyCreateRigChildrenShareStore(t *testing.T) {
+	store := beads.NewMemStore()
+
+	// Create children first.
+	c1, _ := store.Create(beads.Bead{Title: "Python hello"})
+	c2, _ := store.Create(beads.Bead{Title: "Rust hello"})
+	c3, _ := store.Create(beads.Bead{Title: "Haskell hello"})
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCreateWith(store, nil, "", events.Discard,
+		[]string{"Hello World Variants", c1.ID, c2.ID, c3.ID}, ConvoyFields{}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("convoy create failed: %s", stderr.String())
+	}
+
+	// All children must have parent set to the convoy.
+	got1, _ := store.Get(c1.ID)
+	got2, _ := store.Get(c2.ID)
+	got3, _ := store.Get(c3.ID)
+	convoyID := got1.ParentID
+	if convoyID == "" {
+		t.Fatal("child1 has no parent — convoy not linked")
+	}
+	if got2.ParentID != convoyID || got3.ParentID != convoyID {
+		t.Errorf("children have different parents: %q, %q, %q", got1.ParentID, got2.ParentID, got3.ParentID)
+	}
+
+	// Convoy must exist in the SAME store as children.
+	convoy, err := store.Get(convoyID)
+	if err != nil {
+		t.Fatalf("convoy %s not in child store: %v", convoyID, err)
+	}
+	if convoy.Type != "convoy" {
+		t.Errorf("convoy type = %q, want convoy", convoy.Type)
+	}
+	if convoy.Title != "Hello World Variants" {
+		t.Errorf("convoy title = %q, want Hello World Variants", convoy.Title)
+	}
+
+	// Verify the convoy is expandable (Children returns all 3).
+	children, err := store.Children(convoyID)
+	if err != nil {
+		t.Fatalf("listing children: %v", err)
+	}
+	if len(children) != 3 {
+		t.Errorf("got %d children, want 3", len(children))
+	}
+}
+
 // --- gc convoy list ---
 
 func TestConvoyList(t *testing.T) {
@@ -841,7 +942,7 @@ func TestConvoyCreateWithFields(t *testing.T) {
 	fields := ConvoyFields{Owner: "mayor", Merge: "mr"}
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreateWith(store, events.Discard, []string{"deploy"}, fields, &stdout, &stderr)
+	code := doConvoyCreateWith(store, nil, "", events.Discard, []string{"deploy"}, fields, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyCreateWith = %d, want 0; stderr: %s", code, stderr.String())
 	}

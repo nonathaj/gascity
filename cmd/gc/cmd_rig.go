@@ -276,10 +276,23 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 	}
 	w("  Generated routes.jsonl for cross-rig routing")
 
+	// Resolve formulas for the new rig. Rigs inherit city formulas
+	// so pool agents can use default sling formulas (mol-do-work).
+	reloadedCfg, _, _ := config.LoadWithIncludes(fsys.OSFS{}, tomlPath)
+	if reloadedCfg != nil {
+		layers, ok := reloadedCfg.FormulaLayers.Rigs[name]
+		if !ok || len(layers) == 0 {
+			layers = reloadedCfg.FormulaLayers.City
+		}
+		if len(layers) > 0 {
+			if rfErr := ResolveFormulas(rigPath, layers); rfErr != nil {
+				fmt.Fprintf(stderr, "gc rig add: resolving formulas: %v\n", rfErr) //nolint:errcheck // best-effort
+			}
+		}
+	}
+
 	// Poke controller after config is committed so it picks up
 	// deferred beads init and implicit agents for the new rig.
-	// Best-effort — if the controller isn't running (no socket),
-	// the next patrol tick or gc start will pick it up.
 	_ = pokeController(cityPath)
 
 	switch {

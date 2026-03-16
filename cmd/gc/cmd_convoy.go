@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/spf13/cobra"
 )
 
@@ -72,22 +75,47 @@ the new convoy. Issues can also be added later with "gc convoy add".`,
 }
 
 // cmdConvoyCreateWithFields is the CLI entry point for creating a convoy with optional fields.
+// The convoy is created in the store determined by the first child bead's prefix.
+// If no children are provided, it's created in the city root store.
 func cmdConvoyCreateWithFields(args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
-	store, code := openCityStore(stderr, "gc convoy create")
-	if store == nil {
-		return code
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc convoy create: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
 	}
+	readDoltPort(cityPath)
+	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		fmt.Fprintf(stderr, "gc convoy create: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Determine which store to use: if children are provided, use the
+	// first child's rig store so convoy and children share a database.
+	// This avoids cross-store parent references that bd can't resolve.
+	storeDir := cityPath
+	if len(args) > 1 {
+		if rd := rigDirForBead(cfg, args[1]); rd != "" {
+			storeDir = rd
+		}
+	}
+	store := beads.NewBdStore(storeDir, beads.ExecCommandRunner())
+
 	rec := openCityRecorder(stderr)
-	return doConvoyCreateWith(store, rec, args, fields, stdout, stderr)
+	return doConvoyCreateWith(store, cfg, cityPath, rec, args, fields, stdout, stderr)
 }
 
 // doConvoyCreate creates a convoy bead and optionally adds issues to it.
+// When cfg/cityPath are nil/empty, all beads are assumed to be in the same store.
 func doConvoyCreate(store beads.Store, rec events.Recorder, args []string, stdout, stderr io.Writer) int {
-	return doConvoyCreateWith(store, rec, args, ConvoyFields{}, stdout, stderr)
+	return doConvoyCreateWith(store, nil, "", rec, args, ConvoyFields{}, stdout, stderr)
 }
 
 // doConvoyCreateWith creates a convoy bead with optional metadata fields.
-func doConvoyCreateWith(store beads.Store, rec events.Recorder, args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
+// The convoy bead is created in the city root store. Child beads may live
+// in different rig stores — each child is resolved to its rig store by
+// bead prefix.
+func doConvoyCreateWith(store beads.Store, cfg *config.City, cityPath string, rec events.Recorder, args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "gc convoy create: missing convoy name") //nolint:errcheck // best-effort stderr
 		return 1
@@ -113,12 +141,21 @@ func doConvoyCreateWith(store beads.Store, rec events.Recorder, args []string, f
 	}
 
 	for _, id := range issueIDs {
-		if _, err := store.Get(id); err != nil {
+		// Resolve the correct store for this child bead. Children may
+		// live in a rig store (different from the city root store where
+		// the convoy was created).
+		childStore := store
+		if cfg != nil {
+			if rd := rigDirForBead(cfg, id); rd != "" {
+				childStore = beads.NewBdStore(rd, beads.ExecCommandRunner())
+			}
+		}
+		if _, err := childStore.Get(id); err != nil {
 			fmt.Fprintf(stderr, "gc convoy create: issue %s: %v\n", id, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		parentID := convoy.ID
-		if err := store.Update(id, beads.UpdateOpts{ParentID: &parentID}); err != nil {
+		if err := childStore.Update(id, beads.UpdateOpts{ParentID: &parentID}); err != nil {
 			fmt.Fprintf(stderr, "gc convoy create: setting parent on %s: %v\n", id, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}

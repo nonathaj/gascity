@@ -467,7 +467,11 @@ func (cr *CityRuntime) reloadConfig(
 		}
 	}
 	for _, r := range nextCfg.Rigs {
-		if layers, ok := nextCfg.FormulaLayers.Rigs[r.Name]; ok && len(layers) > 0 {
+		layers, ok := nextCfg.FormulaLayers.Rigs[r.Name]
+		if !ok || len(layers) == 0 {
+			layers = nextCfg.FormulaLayers.City
+		}
+		if len(layers) > 0 {
 			if err := ResolveFormulas(r.Path, layers); err != nil {
 				fmt.Fprintf(cr.stderr, "%s: config reload: rig %q formulas: %v\n", cr.logPrefix, r.Name, err) //nolint:errcheck
 			}
