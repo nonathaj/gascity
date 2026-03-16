@@ -375,7 +375,10 @@ func controllerStatusLine(ctrl ControllerJSON) string {
 		if ctrl.Running {
 			return fmt.Sprintf("supervisor (PID %d)", ctrl.PID)
 		}
-		return "supervisor-managed (stopped)"
+		if ctrl.PID != 0 {
+			return fmt.Sprintf("supervisor (PID %d, city stopped)", ctrl.PID)
+		}
+		return "supervisor-managed (supervisor not running)"
 	case "standalone":
 		if ctrl.Running {
 			return fmt.Sprintf("standalone (PID %d)", ctrl.PID)

@@ -316,3 +316,35 @@ func TestCityStatusAgentSuspendedByRig(t *testing.T) {
 		t.Errorf("stdout missing 'stopped  (suspended)' for rig-suspended agent, got:\n%s", out)
 	}
 }
+
+func TestControllerStatusLine(t *testing.T) {
+	tests := []struct {
+		name string
+		ctrl ControllerJSON
+		want string
+	}{
+		{
+			name: "supervisor not running",
+			ctrl: ControllerJSON{Mode: "supervisor"},
+			want: "supervisor-managed (supervisor not running)",
+		},
+		{
+			name: "supervisor city stopped",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321},
+			want: "supervisor (PID 4321, city stopped)",
+		},
+		{
+			name: "supervisor running",
+			ctrl: ControllerJSON{Mode: "supervisor", PID: 4321, Running: true},
+			want: "supervisor (PID 4321)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := controllerStatusLine(tt.ctrl); got != tt.want {
+				t.Fatalf("controllerStatusLine(%+v) = %q, want %q", tt.ctrl, got, tt.want)
+			}
+		})
+	}
+}
