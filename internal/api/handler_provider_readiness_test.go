@@ -96,6 +96,139 @@ func TestHandleProviderReadinessRejectsUnknownProviders(t *testing.T) {
 	}
 }
 
+func TestHandleProviderReadinessReturnsNeedsAuthForCodexWithoutTokens(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "codex", "#!/bin/sh\nexit 0\n")
+
+	if err := os.MkdirAll(filepath.Join(homeDir, ".codex"), 0o755); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".codex", "auth.json"),
+		[]byte(`{"auth_mode":"chatgpt","tokens":null}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write codex auth: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	req := httptest.NewRequest(http.MethodGet, "/v0/provider-readiness?providers=codex", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp providerReadinessResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := resp.Providers["codex"].Status; got != probeStatusNeedsAuth {
+		t.Errorf("codex status = %q, want %q", got, probeStatusNeedsAuth)
+	}
+}
+
+func TestHandleProviderReadinessReturnsNotInstalledWhenBinaryMissing(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = filepath.Join(homeDir, "bin")
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	req := httptest.NewRequest(http.MethodGet, "/v0/provider-readiness?providers=claude,codex,gemini", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp providerReadinessResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, provider := range []string{"claude", "codex", "gemini"} {
+		if got := resp.Providers[provider].Status; got != probeStatusNotInstalled {
+			t.Errorf("%s status = %q, want %q", provider, got, probeStatusNotInstalled)
+		}
+	}
+}
+
+func TestHandleProviderReadinessReturnsInvalidConfigurationForUnsupportedAuthModes(t *testing.T) {
+	homeDir := t.TempDir()
+	binDir := filepath.Join(homeDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	writeExecutable(t, binDir, "codex", "#!/bin/sh\nexit 0\n")
+	writeExecutable(t, binDir, "gemini", "#!/bin/sh\nexit 0\n")
+
+	if err := os.MkdirAll(filepath.Join(homeDir, ".codex"), 0o755); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".codex", "auth.json"),
+		[]byte(`{"auth_mode":"api_key","tokens":{"access_token":"token"}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write codex auth: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(homeDir, ".gemini"), 0o755); err != nil {
+		t.Fatalf("mkdir gemini dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".gemini", "settings.json"),
+		[]byte(`{"security":{"auth":{"selectedType":"gemini-api-key"}}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("write gemini settings: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	originalPathEnv := providerProbePathEnv
+	providerProbePathEnv = binDir
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+	}()
+
+	srv := New(newFakeState(t))
+	req := httptest.NewRequest(http.MethodGet, "/v0/provider-readiness?providers=codex,gemini", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp providerReadinessResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := resp.Providers["codex"].Status; got != probeStatusInvalidConfiguration {
+		t.Errorf("codex status = %q, want %q", got, probeStatusInvalidConfiguration)
+	}
+	if got := resp.Providers["gemini"].Status; got != probeStatusInvalidConfiguration {
+		t.Errorf("gemini status = %q, want %q", got, probeStatusInvalidConfiguration)
+	}
+}
+
 func writeExecutable(t *testing.T, dir, name, body string) {
 	t.Helper()
 	path := filepath.Join(dir, name)

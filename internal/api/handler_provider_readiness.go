@@ -206,7 +206,7 @@ func probeCodex(homeDir string) providerProbeResult {
 	switch strings.ToLower(strings.TrimSpace(auth.AuthMode)) {
 	case "chatgpt":
 		if len(bytes.TrimSpace(auth.Tokens)) == 0 || string(bytes.TrimSpace(auth.Tokens)) == "null" {
-			return providerProbeResult{status: probeStatusProbeError}
+			return providerProbeResult{status: probeStatusNeedsAuth}
 		}
 		return providerProbeResult{status: probeStatusConfigured}
 	case "", "none":
