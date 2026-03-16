@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -69,7 +70,32 @@ func cmdSessionLogs(args []string, follow bool, tail int, stdout, stderr io.Writ
 		return 1
 	}
 
-	path := sessionlog.FindSessionFile(sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths), workDir)
+	searchPaths := sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths)
+
+	// For pool instances (e.g. "claude-2"), look up the session bead to
+	// get the session key. This resolves the correct JSONL file when
+	// multiple pool agents share the same working directory.
+	var path string
+	readDoltPort(cityPath)
+	if store, code := openCityStore(stderr, "gc session logs"); store != nil {
+		cityName := cfg.Workspace.Name
+		if cityName == "" {
+			cityName = filepath.Base(cityPath)
+		}
+		sn := lookupSessionNameOrLegacy(store, cityName, found.QualifiedName(), cfg.Workspace.SessionTemplate)
+		if b, err := store.ListByLabel("agent:"+sn, 1); err == nil && len(b) > 0 {
+			if sk := b[0].Metadata["session_key"]; sk != "" {
+				path = sessionlog.FindSessionFileByID(searchPaths, workDir, sk)
+			}
+		}
+	} else if code != 0 {
+		// Store unavailable — fall through to work-dir lookup.
+		_ = code
+	}
+
+	if path == "" {
+		path = sessionlog.FindSessionFile(searchPaths, workDir)
+	}
 	if path == "" {
 		fmt.Fprintf(stderr, "gc session logs: no session file found for %q\n", agentName) //nolint:errcheck // best-effort stderr
 		return 1

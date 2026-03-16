@@ -3132,12 +3132,18 @@ func TestLooksLikeBeadID(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// Valid bead IDs.
+		// Valid bead IDs (digits-only suffix).
 		{"BL-42", true},
 		{"gc-1", true},
 		{"HW-7", true},
 		{"FE-123", true},
 		{"abc-0", true},
+
+		// Valid bead IDs (base36 hash suffix from bd).
+		{"mp-1j1", true},
+		{"mp-bfg", true},
+		{"od-2ie", true},
+		{"BL-42a", true},
 
 		// Inline text (not bead IDs).
 		{"write a README", false},
@@ -3151,10 +3157,8 @@ func TestLooksLikeBeadID(t *testing.T) {
 		{"-1", false},
 		{"42-abc", false},      // digits before dash
 		{"BL-", false},         // nothing after dash
-		{"BL-abc", false},      // letters after dash
-		{"BL-42a", false},      // mixed after dash
-		{"code-review", false}, // letters after dash (formula name)
-		{"hello-world", false}, // letters after dash
+		{"code-review", false}, // multiple words (formula name)
+		{"hello-world", false}, // multiple words
 	}
 	for _, tt := range tests {
 		got := looksLikeBeadID(tt.input)

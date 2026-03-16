@@ -178,6 +178,20 @@ part1() {
     (cd "$DEMO_CITY" && gc rig status "$RIG_NAME" 2>/dev/null) || true
     echo ""
 
+    step "Watch the agent work (Ctrl+C to stop)"
+    echo -e "  ${NARR_DIM}\$ gc session logs $RIG_NAME/claude-1 -f${NARR_NC}"
+    trap true INT
+    (cd "$DEMO_CITY" && gc session logs "$RIG_NAME/claude-1" -f 2>/dev/null) || true
+    trap - INT
+    echo ""
+
+    pause "Press Enter to see the result..."
+
+    step "The agent wrote a README"
+    echo -e "  ${NARR_DIM}\$ cat $RIG_DIR/README.md${NARR_NC}"
+    cat "$RIG_DIR/README.md" 2>/dev/null || echo "  (README.md not yet created — agent may still be working)"
+    echo ""
+
     pause "Part 1 complete — press Enter to continue to Part 2..."
 }
 
@@ -204,8 +218,17 @@ part2() {
     echo ""
 
     step "Watch pool agent pick up work"
-    echo -e "  ${NARR_DIM}\$ gc rig status $RIG_NAME${NARR_NC}"
-    (cd "$DEMO_CITY" && gc rig status "$RIG_NAME" 2>/dev/null) || true
+    wait_for_pool_agent 60
+
+    step "Watch the agent work (Ctrl+C to stop)"
+    # Find the latest pool agent (claude-2 for part 2, etc.)
+    local latest_agent
+    latest_agent=$(cd "$DEMO_CITY" && gc rig status "$RIG_NAME" 2>/dev/null \
+        | grep -oP "$RIG_NAME/claude-\d+" | tail -1)
+    if [ -n "$latest_agent" ]; then
+        echo -e "  ${NARR_DIM}\$ gc session logs $latest_agent -f${NARR_NC}"
+        (cd "$DEMO_CITY" && gc session logs "$latest_agent" -f 2>/dev/null) || true
+    fi
     echo ""
 
     pause "Part 2 complete — press Enter to continue to Part 3..."

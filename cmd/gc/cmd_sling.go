@@ -1241,12 +1241,20 @@ func isCustomSlingQuery(a config.Agent) bool {
 }
 
 // looksLikeBeadID reports whether s matches the bead ID pattern: one or more
-// ASCII letters, a dash, one or more digits (e.g. "BL-42", "gc-1").
-// Strings with spaces, missing dashes, or non-digit suffixes are treated as
-// inline text for ad-hoc bead creation.
+// ASCII letters, a dash, one or more alphanumeric chars (e.g. "BL-42", "mp-1j1").
+// bd uses base36 hashes so suffixes contain both letters and digits.
+// Strings with spaces or multiple dashes (like "code-review" or "hello-world")
+// are treated as inline text for ad-hoc bead creation.
 func looksLikeBeadID(s string) bool {
+	if strings.ContainsAny(s, " \t\n") {
+		return false
+	}
 	i := strings.Index(s, "-")
 	if i <= 0 || i == len(s)-1 {
+		return false
+	}
+	// Must have exactly one dash.
+	if strings.Count(s, "-") != 1 {
 		return false
 	}
 	for _, c := range s[:i] {
@@ -1254,12 +1262,15 @@ func looksLikeBeadID(s string) bool {
 			return false
 		}
 	}
-	for _, c := range s[i+1:] {
-		if c < '0' || c > '9' {
+	suffix := s[i+1:]
+	for _, c := range suffix {
+		if ('0' > c || c > '9') && ('a' > c || c > 'z') && ('A' > c || c > 'Z') {
 			return false
 		}
 	}
-	return true
+	// Bead ID suffixes from bd are short base36 hashes (2-4 chars).
+	// Names like "code-review" or "hello-world" have longer suffixes.
+	return len(suffix) <= 4
 }
 
 // beadPrefix extracts the rig prefix from a bead ID by taking the lowercase
