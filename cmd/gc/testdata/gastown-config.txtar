@@ -65,7 +65,7 @@ stdout 'City stopped.'
 
 exec gc start $WORK/gastown-min
 stdout 'City started.'
-! stdout 'dog'
+! stdout 'Started agent .dog'
 
 exec gc stop $WORK/gastown-min
 stdout 'City stopped.'

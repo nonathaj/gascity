@@ -44,7 +44,7 @@ exec gc stop $WORK/min-pool-city
 # --- 4. Dog-style pool (min=0, max=3) with check=0 → no dogs ---
 
 exec gc start $WORK/dog-city
-! stdout 'dog'
+! stdout 'Started agent .dog'
 stdout 'City started.'
 
 exec gc stop $WORK/dog-city

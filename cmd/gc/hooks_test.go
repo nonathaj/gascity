@@ -109,6 +109,7 @@ func TestInstallBeadHooksInitIntegration(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_SESSION", "fake")
+	configureIsolatedRuntimeEnv(t)
 
 	dir := t.TempDir()
 	cityPath := filepath.Join(dir, "bright-lights")

@@ -1,5 +1,6 @@
 # Error paths for gc CLI.
 
+env GC_SESSION=fake
 env GC_BEADS=file
 env GC_DOLT=skip
 

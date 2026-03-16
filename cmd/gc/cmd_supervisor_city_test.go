@@ -27,6 +27,7 @@ func withSupervisorTestHooks(t *testing.T, ensure func(stdout, stderr io.Writer)
 	oldReload := reloadSupervisorHook
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
+	oldRegister := registerCityWithSupervisorTestHook
 	oldTimeout := supervisorCityReadyTimeout
 	oldPoll := supervisorCityPollInterval
 
@@ -34,6 +35,7 @@ func withSupervisorTestHooks(t *testing.T, ensure func(stdout, stderr io.Writer)
 	reloadSupervisorHook = reload
 	supervisorAliveHook = alive
 	supervisorCityRunningHook = running
+	registerCityWithSupervisorTestHook = nil
 	supervisorCityReadyTimeout = timeout
 	supervisorCityPollInterval = poll
 
@@ -42,6 +44,7 @@ func withSupervisorTestHooks(t *testing.T, ensure func(stdout, stderr io.Writer)
 		reloadSupervisorHook = oldReload
 		supervisorAliveHook = oldAlive
 		supervisorCityRunningHook = oldRunning
+		registerCityWithSupervisorTestHook = oldRegister
 		supervisorCityReadyTimeout = oldTimeout
 		supervisorCityPollInterval = oldPoll
 	})

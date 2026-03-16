@@ -21,6 +21,11 @@ var (
 	supervisorCityPollInterval = 100 * time.Millisecond
 )
 
+// registerCityWithSupervisorTestHook lets tests intercept registration after
+// the registry entry is written but before any real supervisor lifecycle runs.
+// It is nil in production.
+var registerCityWithSupervisorTestHook func(cityPath, commandName string, stdout, stderr io.Writer) (bool, int)
+
 func supervisorCityStartTimeout(cityPath string) time.Duration {
 	timeout := supervisorCityReadyTimeout
 	cfg, err := loadCityConfig(cityPath)
@@ -145,6 +150,12 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 	}
 
 	fmt.Fprintf(stdout, "Registered city '%s' (%s)\n", entry.EffectiveName(), entry.Path) //nolint:errcheck // best-effort stdout
+
+	if registerCityWithSupervisorTestHook != nil {
+		if handled, code := registerCityWithSupervisorTestHook(cityPath, commandName, stdout, stderr); handled {
+			return code
+		}
+	}
 
 	if ensureSupervisorRunningHook(stdout, stderr) != 0 {
 		rollbackRegisteredCity(reg, entry, stderr, commandName, "supervisor did not start", false)

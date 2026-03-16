@@ -36,11 +36,12 @@ These are the tutorial regression tests — each `.txtar` corresponds to a
 tutorial's shell interactions.
 
 - Uses `github.com/rogpeppe/go-internal/testscript`
-- Env vars swap real infra for fakes: `GC_SESSION=fake`
+- Testscript defaults missing backend env vars to local fakes:
+  `GC_SESSION=fake`, `GC_BEADS=file`, `GC_DOLT=skip`
 - Fakes have at most three modes per dependency:
   - `GC_SESSION=fake` — works, but in-memory
   - `GC_SESSION=fail` — all operations return errors
-  - (absent) — use real tmux
+  - `GC_SESSION=tmux` — use real tmux explicitly
 - `!` prefix means command should fail
 - `stdout` / `stderr` assert on output
 - `-- filename --` blocks create test fixtures
@@ -65,7 +66,8 @@ When to use: CLI output format, command success/failure, user-facing error
 messages, tutorial flows end to end.
 
 **The env var rule:** if you need more than two env vars to set up a failure
-scenario, it's a unit test, not a testscript.
+scenario, it's a unit test, not a testscript. In testscript, omitting the
+session/beads env vars now means "use the fake defaults," not "use real tmux."
 
 ### 3. Integration tests (`//go:build integration`)
 

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,29 +17,56 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
-	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/rogpeppe/go-internal/testscript"
 )
 
-func configureSupervisorHooksForTestscript() {
-	ensureSupervisorRunningHook = func(_, _ io.Writer) int { return 0 }
-	reloadSupervisorHook = func(stdout, stderr io.Writer) int {
-		entries, err := supervisor.NewRegistry(supervisor.RegistryPath()).List()
-		if err != nil {
-			fmt.Fprintf(stderr, "gc supervisor reload (test): %v\n", err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].Path < entries[j].Path
-		})
-		for _, entry := range entries {
-			if code := doStartStandalone([]string{entry.Path}, false, stdout, stderr); code != 0 {
-				return code
-			}
-		}
-		return 0
+func setTestscriptEnvDefault(key, value string) {
+	if os.Getenv(key) != "" {
+		return
 	}
+	_ = os.Setenv(key, value)
+}
+
+func configureTestscriptEnvDefaults() {
+	// Testscript defaults to fake/local backends so a missing env line in a
+	// txtar file never falls through to real tmux or auto-detected agent CLIs.
+	// Tests can still opt into a specific backend explicitly, e.g.
+	// GC_SESSION=fail or GC_SESSION=tmux.
+	setTestscriptEnvDefault("GC_SESSION", "fake")
+	setTestscriptEnvDefault("GC_BEADS", "file")
+	setTestscriptEnvDefault("GC_DOLT", "skip")
+}
+
+func configureIsolatedRuntimeEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("GC_HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	if os.Getenv("GC_SESSION") == "" {
+		t.Setenv("GC_SESSION", "fake")
+	}
+	if os.Getenv("GC_BEADS") == "" {
+		t.Setenv("GC_BEADS", "file")
+	}
+	if os.Getenv("GC_DOLT") == "" {
+		t.Setenv("GC_DOLT", "skip")
+	}
+}
+
+func configureSupervisorHooksForTests() {
+	ensureSupervisorRunningHook = func(_, _ io.Writer) int { return 0 }
+	reloadSupervisorHook = func(_, _ io.Writer) int { return 0 }
 	supervisorAliveHook = func() int { return 0 }
+	startNudgePoller = func(string, string, string) error { return nil }
+	registerCityWithSupervisorTestHook = func(cityPath, commandName string, stdout, stderr io.Writer) (bool, int) {
+		switch commandName {
+		case "gc start":
+			return true, doStartStandalone([]string{cityPath}, false, stdout, stderr)
+		case "gc init", "gc register":
+			return true, 0
+		default:
+			return false, 0
+		}
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -58,9 +84,10 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("XDG_RUNTIME_DIR", runtimeDir); err != nil {
 		panic(err)
 	}
+	configureSupervisorHooksForTests()
 	testscript.Main(m, map[string]func(){
 		"gc": func() {
-			configureSupervisorHooksForTestscript()
+			configureTestscriptEnvDefaults()
 			os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 		},
 		"bd": bdTestCmd,
@@ -70,6 +97,19 @@ func TestMain(m *testing.M) {
 func TestTutorial01(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata",
+		Setup: func(env *testscript.Env) error {
+			gcHome := filepath.Join(env.WorkDir, ".gc-home")
+			runtimeDir := filepath.Join(env.WorkDir, ".runtime")
+			if err := os.MkdirAll(gcHome, 0o755); err != nil {
+				return err
+			}
+			if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+				return err
+			}
+			env.Setenv("GC_HOME", gcHome)
+			env.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+			return nil
+		},
 	})
 }
 
@@ -91,6 +131,42 @@ func TestVersion(t *testing.T) {
 	}
 	if !strings.Contains(out, "built:") {
 		t.Errorf("stdout missing 'built:': %q", out)
+	}
+}
+
+func TestConfigureTestscriptEnvDefaultsSetsMissingValues(t *testing.T) {
+	t.Setenv("GC_SESSION", "")
+	t.Setenv("GC_BEADS", "")
+	t.Setenv("GC_DOLT", "")
+
+	configureTestscriptEnvDefaults()
+
+	if got := os.Getenv("GC_SESSION"); got != "fake" {
+		t.Fatalf("GC_SESSION = %q, want fake", got)
+	}
+	if got := os.Getenv("GC_BEADS"); got != "file" {
+		t.Fatalf("GC_BEADS = %q, want file", got)
+	}
+	if got := os.Getenv("GC_DOLT"); got != "skip" {
+		t.Fatalf("GC_DOLT = %q, want skip", got)
+	}
+}
+
+func TestConfigureTestscriptEnvDefaultsPreservesOverrides(t *testing.T) {
+	t.Setenv("GC_SESSION", "fail")
+	t.Setenv("GC_BEADS", "exec:/tmp/custom-beads")
+	t.Setenv("GC_DOLT", "run")
+
+	configureTestscriptEnvDefaults()
+
+	if got := os.Getenv("GC_SESSION"); got != "fail" {
+		t.Fatalf("GC_SESSION = %q, want fail", got)
+	}
+	if got := os.Getenv("GC_BEADS"); got != "exec:/tmp/custom-beads" {
+		t.Fatalf("GC_BEADS = %q, want explicit override", got)
+	}
+	if got := os.Getenv("GC_DOLT"); got != "run" {
+		t.Fatalf("GC_DOLT = %q, want explicit override", got)
 	}
 }
 
@@ -1393,6 +1469,7 @@ func TestInitWizardConfigNormalizesBootstrapAliases(t *testing.T) {
 func TestCmdInitFromTOMLFileSuccess(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
 
 	// Use real temp dirs since cmdInitFromTOMLFile calls initBeads which
 	// uses real filesystem via beadsProvider.
@@ -1544,6 +1621,7 @@ func TestCmdInitFromTOMLFileAlreadyInitializedByCityToml(t *testing.T) {
 func TestDoInitFromDirSuccess(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
 
 	dir := t.TempDir()
 
@@ -1612,6 +1690,7 @@ func TestDoInitFromDirSuccess(t *testing.T) {
 func TestDoInitFromDirSkipsGCDir(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
 
 	dir := t.TempDir()
 
@@ -1652,6 +1731,7 @@ func TestDoInitFromDirSkipsGCDir(t *testing.T) {
 func TestDoInitFromDirSkipsTestFiles(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
 
 	dir := t.TempDir()
 
@@ -1767,6 +1847,7 @@ func TestDoInitFromDirAlreadyInitializedByCityToml(t *testing.T) {
 func TestDoInitFromDirPreservesPermissions(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
 
 	dir := t.TempDir()
 
