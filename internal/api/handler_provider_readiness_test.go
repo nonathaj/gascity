@@ -43,21 +43,30 @@ func TestReadinessRegistrySync(t *testing.T) {
 		}
 	}
 
-	if got, want := slices.Sorted(maps.Keys(supportedProviderReadiness)), defaultProviderReadinessItems; !slices.Equal(got, want) {
-		t.Fatalf("supportedProviderReadiness keys = %v, want %v", got, want)
+	wantProviders := slices.Clone(defaultProviderReadinessItems)
+	slices.Sort(wantProviders)
+	if got := slices.Sorted(maps.Keys(supportedProviderReadiness)); !slices.Equal(got, wantProviders) {
+		t.Fatalf("supportedProviderReadiness keys = %v, want %v", got, wantProviders)
 	}
 }
 
-func TestProbeCommandEnvPreservesXDGConfigHomeWhenGHConfigDirIsSet(t *testing.T) {
+func TestProbeCommandEnvPreservesXDGOverridesWhenGHConfigDirIsSet(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(homeDir, "xdg"))
-	t.Setenv("GH_CONFIG_DIR", filepath.Join(homeDir, "gh"))
+	xdgConfigHome := filepath.Join(homeDir, "xdg-config")
+	xdgStateHome := filepath.Join(homeDir, "xdg-state")
+	ghConfigDir := filepath.Join(homeDir, "gh")
+	t.Setenv("XDG_CONFIG_HOME", xdgConfigHome)
+	t.Setenv("XDG_STATE_HOME", xdgStateHome)
+	t.Setenv("GH_CONFIG_DIR", ghConfigDir)
 
 	env := probeCommandEnv(homeDir)
-	if !slices.Contains(env, "XDG_CONFIG_HOME="+filepath.Join(homeDir, "xdg")) {
+	if !slices.Contains(env, "XDG_CONFIG_HOME="+xdgConfigHome) {
 		t.Fatalf("probeCommandEnv missing XDG_CONFIG_HOME override: %v", env)
 	}
-	if !slices.Contains(env, "GH_CONFIG_DIR="+filepath.Join(homeDir, "gh")) {
+	if !slices.Contains(env, "XDG_STATE_HOME="+xdgStateHome) {
+		t.Fatalf("probeCommandEnv missing XDG_STATE_HOME override: %v", env)
+	}
+	if !slices.Contains(env, "GH_CONFIG_DIR="+ghConfigDir) {
 		t.Fatalf("probeCommandEnv missing GH_CONFIG_DIR override: %v", env)
 	}
 }
