@@ -262,11 +262,14 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		p, cleanup := newProvider(t)
 		defer cleanup()
 
-		past := time.Now().Add(-2 * time.Hour)
+		// Use a UTC time base so shell-backed test providers that compare
+		// RFC3339 strings do not see mixed-offset timestamps.
+		now := time.Now().UTC()
+		past := now.Add(-2 * time.Hour)
 		p.Record(events.Event{Type: events.BeadCreated, Actor: "human", Ts: past})
 		p.Record(events.Event{Type: events.SessionWoke, Actor: "gc"}) // auto-filled = now
 
-		since := time.Now().Add(-1 * time.Hour)
+		since := now.Add(-1 * time.Hour)
 		got, err := p.List(events.Filter{Since: since})
 		if err != nil {
 			t.Fatalf("List: %v", err)
