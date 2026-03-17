@@ -196,8 +196,11 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 		w(fmt.Sprintf("  Detected git repo at %s", rigPath))
 	}
 	w(fmt.Sprintf("  Prefix: %s", prefix))
-	if include != "" {
+	switch {
+	case include != "":
 		w(fmt.Sprintf("  Include: %s", include))
+	case len(cfg.Workspace.DefaultRigIncludes) > 0:
+		w(fmt.Sprintf("  Include: %s (default)", strings.Join(cfg.Workspace.DefaultRigIncludes, ", ")))
 	}
 
 	// Initialize beads for the rig. Probes the backing service first;
@@ -238,8 +241,11 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include string, startSuspended bool
 			Path:      rigPath,
 			Suspended: startSuspended,
 		}
-		if include != "" {
+		switch {
+		case include != "":
 			rig.Includes = []string{include}
+		case len(cfg.Workspace.DefaultRigIncludes) > 0:
+			rig.Includes = append([]string{}, cfg.Workspace.DefaultRigIncludes...)
 		}
 		cfg.Rigs = append(cfg.Rigs, rig)
 		cityName := cfg.Workspace.Name

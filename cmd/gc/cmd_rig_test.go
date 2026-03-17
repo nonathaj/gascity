@@ -680,6 +680,95 @@ func TestDoRigAdd_WithoutPack(t *testing.T) {
 	}
 }
 
+func TestDoRigAdd_DefaultRigIncludes(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// City with default_rig_includes set.
+	cityToml := "[workspace]\nname = \"test-city\"\ndefault_rig_includes = [\"packs/gastown\"]\n\n[[agent]]\nname = \"mayor\"\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-project")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	var stdout, stderr bytes.Buffer
+	// No --include flag → should fall back to default_rig_includes.
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd returned %d, stderr: %s", code, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Include: packs/gastown (default)") {
+		t.Errorf("output missing default include: %s", output)
+	}
+
+	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Rigs) != 1 {
+		t.Fatalf("expected 1 rig, got %d", len(cfg.Rigs))
+	}
+	if len(cfg.Rigs[0].Includes) != 1 || cfg.Rigs[0].Includes[0] != "packs/gastown" {
+		t.Errorf("rig includes = %v, want [packs/gastown]", cfg.Rigs[0].Includes)
+	}
+}
+
+func TestDoRigAdd_ExplicitIncludeOverridesDefault(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// City with default_rig_includes set.
+	cityToml := "[workspace]\nname = \"test-city\"\ndefault_rig_includes = [\"packs/gastown\"]\n\n[[agent]]\nname = \"mayor\"\n"
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigPath := filepath.Join(t.TempDir(), "my-project")
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("GC_DOLT", "skip")
+	t.Setenv("GC_BEADS", "file")
+
+	var stdout, stderr bytes.Buffer
+	// Explicit --include should override default_rig_includes.
+	code := doRigAdd(fsys.OSFS{}, cityPath, rigPath, "packs/custom", false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigAdd returned %d, stderr: %s", code, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Include: packs/custom") {
+		t.Errorf("output missing explicit include: %s", output)
+	}
+	if strings.Contains(output, "(default)") {
+		t.Errorf("output should not show (default) for explicit include: %s", output)
+	}
+
+	cfg, err := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Rigs) != 1 {
+		t.Fatalf("expected 1 rig, got %d", len(cfg.Rigs))
+	}
+	if len(cfg.Rigs[0].Includes) != 1 || cfg.Rigs[0].Includes[0] != "packs/custom" {
+		t.Errorf("rig includes = %v, want [packs/custom]", cfg.Rigs[0].Includes)
+	}
+}
+
 // Regression: doRigAdd must reject rigs with colliding prefixes.
 func TestDoRigAdd_PrefixCollision(t *testing.T) {
 	cityPath := t.TempDir()

@@ -227,3 +227,83 @@ func TestReadPackName(t *testing.T) {
 		t.Errorf("readPackName(nonexistent) = %q, want empty", got)
 	}
 }
+
+func TestMaterializeGastownPacks(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := MaterializeGastownPacks(dir); err != nil {
+		t.Fatalf("MaterializeGastownPacks() error: %v", err)
+	}
+
+	// Verify gastown pack.toml exists.
+	gastownToml := filepath.Join(dir, "packs", "gastown", "pack.toml")
+	if _, err := os.Stat(gastownToml); err != nil {
+		t.Errorf("gastown pack.toml missing: %v", err)
+	}
+
+	// Verify maintenance pack.toml exists.
+	maintenanceToml := filepath.Join(dir, "packs", "maintenance", "pack.toml")
+	if _, err := os.Stat(maintenanceToml); err != nil {
+		t.Errorf("maintenance pack.toml missing: %v", err)
+	}
+
+	// Verify gastown scripts are executable.
+	scriptsDir := filepath.Join(dir, "packs", "gastown", "scripts")
+	entries, err := os.ReadDir(scriptsDir)
+	if err != nil {
+		t.Fatalf("reading gastown scripts dir: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("gastown scripts dir is empty")
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			t.Errorf("stat %s: %v", e.Name(), err)
+			continue
+		}
+		if info.Mode()&0o111 == 0 {
+			t.Errorf("gastown script %s not executable: mode %v", e.Name(), info.Mode())
+		}
+	}
+
+	// Verify gastown prompts exist.
+	promptsDir := filepath.Join(dir, "packs", "gastown", "prompts")
+	if _, err := os.Stat(promptsDir); err != nil {
+		t.Errorf("gastown prompts dir missing: %v", err)
+	}
+
+	// Verify TOML files are not executable.
+	info, err := os.Stat(gastownToml)
+	if err == nil && info.Mode()&0o111 != 0 {
+		t.Errorf("pack.toml should not be executable: mode %v", info.Mode())
+	}
+
+	// Verify pack name is correct.
+	if got := readPackName(filepath.Join(dir, "packs", "gastown")); got != "gastown" {
+		t.Errorf("readPackName(gastown) = %q, want %q", got, "gastown")
+	}
+	if got := readPackName(filepath.Join(dir, "packs", "maintenance")); got != "maintenance" {
+		t.Errorf("readPackName(maintenance) = %q, want %q", got, "maintenance")
+	}
+}
+
+func TestMaterializeGastownPacks_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := MaterializeGastownPacks(dir); err != nil {
+		t.Fatal(err)
+	}
+	// Second call should succeed without error.
+	if err := MaterializeGastownPacks(dir); err != nil {
+		t.Fatalf("second call failed: %v", err)
+	}
+
+	// Files should still exist.
+	if _, err := os.Stat(filepath.Join(dir, "packs", "gastown", "pack.toml")); err != nil {
+		t.Error("gastown pack.toml missing after second call")
+	}
+}

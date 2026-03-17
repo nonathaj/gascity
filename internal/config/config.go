@@ -418,6 +418,10 @@ type Workspace struct {
 	// workspace. Replaces the older pack/packs fields. Each entry
 	// is a local path, a git source//sub#ref URL, or a GitHub tree URL.
 	Includes []string `toml:"includes,omitempty"`
+	// DefaultRigIncludes lists pack directories applied to new rigs when
+	// "gc rig add" is called without --include. Allows cities to define
+	// a default pack for all rigs.
+	DefaultRigIncludes []string `toml:"default_rig_includes,omitempty"`
 }
 
 // BeadsConfig holds bead store settings.
@@ -1547,6 +1551,34 @@ func WizardCity(name, provider, startCommand string) City {
 		Workspace: ws,
 		Agents: []Agent{
 			{Name: "mayor", PromptTemplate: "prompts/mayor.md"},
+		},
+	}
+}
+
+// GastownCity returns a City configured for the gastown orchestration pack.
+// Agents come from the pack (packs/gastown); no inline agents are defined.
+// Sets workspace.includes, default_rig_includes, global_fragments, and daemon
+// config. If startCommand is set, it takes precedence over provider.
+func GastownCity(name, provider, startCommand string) City {
+	ws := Workspace{
+		Name:               name,
+		Includes:           []string{"packs/gastown"},
+		DefaultRigIncludes: []string{"packs/gastown"},
+		GlobalFragments:    []string{"command-glossary", "operational-awareness"},
+	}
+	if startCommand != "" {
+		ws.StartCommand = startCommand
+	} else if provider != "" {
+		ws.Provider = provider
+	}
+	maxRestarts := 5
+	return City{
+		Workspace: ws,
+		Daemon: DaemonConfig{
+			PatrolInterval:  "30s",
+			MaxRestarts:     &maxRestarts,
+			RestartWindow:   "1h",
+			ShutdownTimeout: "5s",
 		},
 	}
 }
