@@ -111,6 +111,19 @@ for merge review. Production default for multi-agent setups.
 gc sling <agent> <bead-id> --on mol-polecat-work
 ```
 
+**mol-idea-to-plan** — Planning workflow for a coordinator session. Turns a
+rough idea into a PRD, reviewed design doc, and beads DAG using Gas City's
+existing primitives: repo-local artifact files, review task beads, `gc sling`,
+and mail. Best run from a crew worker in the target rig.
+
+```
+gc sling <coordinator-agent> -f mol-idea-to-plan --var problem="..." --var review_target=<rig>/polecat
+```
+
+**mol-review-leg** — Helper formula used by `mol-idea-to-plan` review tasks.
+Persists the full report to bead notes, mails the coordinator, closes the bead,
+and drains the session. Usually not slung by hand.
+
 ### Gastown pack formulas (patrol loops)
 
 Patrol formulas are auto-poured by agent startup prompts — you typically

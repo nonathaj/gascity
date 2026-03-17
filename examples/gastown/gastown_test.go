@@ -100,6 +100,50 @@ func TestRefineryFormulaSupportsMergeStrategies(t *testing.T) {
 	}
 }
 
+func TestIdeaToPlanFormulaUsesSupportedPrimitives(t *testing.T) {
+	dir := exampleDir()
+	path := filepath.Join(dir, "packs", "gastown", "formulas", "mol-idea-to-plan.formula.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading idea-to-plan formula: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`formula = "mol-idea-to-plan"`,
+		`gc sling "$REVIEW_TARGET" "$LEG_BEAD" --on {{review_formula}}`,
+		`bd create`,
+		`gc mail send`,
+		`bd dep add`,
+		`Do NOT use unsupported upstream shortcuts`,
+		`This is the only required human gate.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("idea-to-plan formula missing %q", want)
+		}
+	}
+}
+
+func TestReviewLegFormulaPersistsReportAndNotifiesCoordinator(t *testing.T) {
+	dir := exampleDir()
+	path := filepath.Join(dir, "packs", "gastown", "formulas", "mol-review-leg.formula.toml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading review-leg formula: %v", err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`formula = "mol-review-leg"`,
+		`coordinator`,
+		`bd update {{issue}} --notes`,
+		`gc mail send "$COORD"`,
+		`bd update {{issue}} --status=closed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("review-leg formula missing %q", want)
+		}
+	}
+}
+
 func TestAllFormulasExist(t *testing.T) {
 	dir := exampleDir()
 	formulaDir := filepath.Join(dir, "packs", "gastown", "formulas")
@@ -117,8 +161,8 @@ func TestAllFormulasExist(t *testing.T) {
 		count++
 	}
 
-	if count != 5 {
-		t.Errorf("found %d formula files, want 5", count)
+	if count != 7 {
+		t.Errorf("found %d formula files, want 7", count)
 	}
 }
 
