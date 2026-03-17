@@ -61,6 +61,7 @@ func TestParsePruneDuration(t *testing.T) {
 
 func TestResolveWorkDir(t *testing.T) {
 	cityPath := t.TempDir()
+	rigRoot := filepath.Join(t.TempDir(), "my-rig")
 	tests := []struct {
 		name  string
 		cfg   *config.City
@@ -77,10 +78,19 @@ func TestResolveWorkDir(t *testing.T) {
 			name: "work-dir override",
 			cfg: &config.City{
 				Workspace: config.Workspace{Name: "city"},
-				Rigs:      []config.Rig{{Name: "my-rig", Path: "/repos/my-rig"}},
+				Rigs:      []config.Rig{{Name: "my-rig", Path: rigRoot}},
 			},
 			agent: &config.Agent{Dir: "my-rig", WorkDir: ".gc/worktrees/{{.Rig}}/refinery"},
 			want:  filepath.Join(cityPath, ".gc", "worktrees", "my-rig", "refinery"),
+		},
+		{
+			name: "rig-scoped defaults to configured rig root",
+			cfg: &config.City{
+				Workspace: config.Workspace{Name: "city"},
+				Rigs:      []config.Rig{{Name: "my-rig", Path: rigRoot}},
+			},
+			agent: &config.Agent{Dir: "my-rig"},
+			want:  rigRoot,
 		},
 	}
 	for _, tt := range tests {

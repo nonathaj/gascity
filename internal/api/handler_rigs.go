@@ -10,6 +10,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	gitpkg "github.com/gastownhall/gascity/internal/git"
 	"github.com/gastownhall/gascity/internal/runtime"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
 type rigResponse struct {
@@ -44,7 +45,7 @@ func (s *Server) handleRigList(w http.ResponseWriter, r *http.Request) {
 
 	rigs := make([]rigResponse, 0, len(cfg.Rigs))
 	for _, rig := range cfg.Rigs {
-		resp := buildRigResponse(cfg, rig, sp, cityName)
+		resp := buildRigResponse(cfg, rig, sp, cityName, s.state.CityPath())
 		if wantGit {
 			resp.Git = fetchGitStatus(rig.Path)
 		}
@@ -61,7 +62,7 @@ func (s *Server) handleRig(w http.ResponseWriter, r *http.Request) {
 
 	for _, rig := range cfg.Rigs {
 		if rig.Name == name {
-			resp := buildRigResponse(cfg, rig, sp, s.state.CityName())
+			resp := buildRigResponse(cfg, rig, sp, s.state.CityName(), s.state.CityPath())
 			if wantGit {
 				resp.Git = fetchGitStatus(rig.Path)
 			}
@@ -133,7 +134,7 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string) {
 	killed := make([]string, 0)
 	failed := make([]string, 0)
 	for _, a := range cfg.Agents {
-		if a.Dir != name {
+		if workdirutil.ConfiguredRigName(s.state.CityPath(), a, cfg.Rigs) != name {
 			continue
 		}
 		expanded := expandAgent(a, cityName, cfg.Workspace.SessionTemplate, sp)
@@ -170,13 +171,13 @@ func (s *Server) handleRigRestart(w http.ResponseWriter, name string) {
 }
 
 // buildRigResponse creates a rigResponse with agent counts and last activity.
-func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName string) rigResponse {
+func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName, cityPath string) rigResponse {
 	tmpl := cfg.Workspace.SessionTemplate
 	var agentCount, runningCount int
 	var maxActivity time.Time
 
 	for _, a := range cfg.Agents {
-		if a.Dir != rig.Name {
+		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
 		expanded := expandAgent(a, cityName, tmpl, sp)
@@ -195,7 +196,7 @@ func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cit
 	resp := rigResponse{
 		Name:         rig.Name,
 		Path:         rig.Path,
-		Suspended:    rigSuspended(cfg, rig, sp, cityName),
+		Suspended:    rigSuspended(cfg, rig, sp, cityName, cityPath),
 		Prefix:       rig.Prefix,
 		AgentCount:   agentCount,
 		RunningCount: runningCount,
@@ -209,14 +210,14 @@ func buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.Provider, cit
 // rigSuspended computes effective suspended state for a rig by merging config
 // and runtime session metadata. A rig is suspended if the config says so, or
 // if all its agents are runtime-suspended via session metadata.
-func rigSuspended(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName string) bool {
+func rigSuspended(cfg *config.City, rig config.Rig, sp runtime.Provider, cityName, cityPath string) bool {
 	if rig.Suspended {
 		return true
 	}
 	tmpl := cfg.Workspace.SessionTemplate
 	var agentCount, suspendedCount int
 	for _, a := range cfg.Agents {
-		if a.Dir != rig.Name {
+		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
 		expanded := expandAgent(a, cityName, tmpl, sp)

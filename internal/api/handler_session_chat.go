@@ -19,6 +19,7 @@ import (
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 	"github.com/gastownhall/gascity/internal/shellquote"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
 var errSessionTemplateNotFound = errors.New("session template not found")
@@ -111,7 +112,13 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	workDir := s.resolveAgentWorkDir(agentCfg, template)
+	workDir := workdirutil.ResolveWorkDirPath(
+		s.state.CityPath(),
+		workdirutil.CityName(s.state.CityPath(), cfg),
+		template,
+		agentCfg,
+		cfg.Rigs,
+	)
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}

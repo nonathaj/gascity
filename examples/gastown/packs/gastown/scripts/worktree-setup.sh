@@ -48,6 +48,7 @@ STAGE=""
 if [ -d "$WT" ] && [ "$(find "$WT" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
     STAGE=$(mktemp -d "$(dirname "$WT")/.gascity-worktree-stage.XXXXXX")
     find "$WT" -mindepth 1 -maxdepth 1 -exec mv {} "$STAGE"/ \;
+    trap 'restore_stage' EXIT HUP INT TERM
 fi
 
 restore_stage() {
@@ -55,6 +56,7 @@ restore_stage() {
     mkdir -p "$WT"
     find "$STAGE" -mindepth 1 -maxdepth 1 -exec mv {} "$WT"/ \;
     rmdir "$STAGE" 2>/dev/null || true
+    STAGE=""
 }
 
 merge_stage_entry() {
@@ -89,7 +91,9 @@ if [ -n "$STAGE" ]; then
         merge_stage_entry "$ENTRY" "$WT/$(basename "$ENTRY")"
     done
     rmdir "$STAGE" 2>/dev/null || true
+    STAGE=""
 fi
+trap - EXIT HUP INT TERM
 
 # Bead redirect for filesystem beads.
 mkdir -p "$WT/.beads"

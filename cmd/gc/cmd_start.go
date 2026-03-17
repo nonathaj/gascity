@@ -22,6 +22,7 @@ import (
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
 	"github.com/spf13/cobra"
 )
@@ -670,23 +671,13 @@ func resolveAgentDir(cityPath, dir string) (string, error) {
 	return dir, nil
 }
 
-// effectiveWorkDirSpec returns the configured working directory for an agent.
-// WorkDir overrides Dir without affecting the agent's qualified identity.
-func effectiveWorkDirSpec(a *config.Agent) string {
-	if a == nil {
-		return ""
-	}
-	return a.WorkDir
-}
-
 func sessionSetupContextForAgent(cityPath, cityName, qualifiedName string, a *config.Agent, rigs []config.Rig) SessionSetupContext {
-	rigName := configuredRigName(cityPath, a, rigs)
-	_, agentBase := config.ParseQualifiedName(qualifiedName)
+	ctx := workdirutil.PathContextForQualifiedName(cityPath, cityName, qualifiedName, *a, rigs)
 	return SessionSetupContext{
 		Agent:     qualifiedName,
-		AgentBase: agentBase,
-		Rig:       rigName,
-		RigRoot:   rigRootForName(rigName, rigs),
+		AgentBase: ctx.AgentBase,
+		Rig:       ctx.Rig,
+		RigRoot:   ctx.RigRoot,
 		CityRoot:  cityPath,
 		CityName:  cityName,
 	}
@@ -696,34 +687,14 @@ func resolveConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs [
 	if a == nil {
 		return resolveAgentDir(cityPath, "")
 	}
-	if a.WorkDir == "" {
-		if rigName := configuredRigName(cityPath, a, rigs); rigName != "" {
-			if rigRoot := rigRootForName(rigName, rigs); rigRoot != "" {
-				return resolveAgentDir(cityPath, rigRoot)
-			}
-		}
-		return resolveAgentDir(cityPath, a.Dir)
-	}
-	ctx := sessionSetupContextForAgent(cityPath, cityName, a.QualifiedName(), a, rigs)
-	expandedDir := expandDirTemplate(effectiveWorkDirSpec(a), ctx)
-	return resolveAgentDir(cityPath, expandedDir)
+	return resolveAgentDir(cityPath, workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), *a, rigs))
 }
 
 func lookupConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs []config.Rig) string {
 	if a == nil {
 		return resolveAgentDirPath(cityPath, "")
 	}
-	if a.WorkDir == "" {
-		if rigName := configuredRigName(cityPath, a, rigs); rigName != "" {
-			if rigRoot := rigRootForName(rigName, rigs); rigRoot != "" {
-				return resolveAgentDirPath(cityPath, rigRoot)
-			}
-		}
-		return resolveAgentDirPath(cityPath, a.Dir)
-	}
-	ctx := sessionSetupContextForAgent(cityPath, cityName, a.QualifiedName(), a, rigs)
-	expandedDir := expandDirTemplate(effectiveWorkDirSpec(a), ctx)
-	return resolveAgentDirPath(cityPath, expandedDir)
+	return resolveAgentDirPath(cityPath, workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), *a, rigs))
 }
 
 // configuredRigName returns the rig associated with an agent, preferring the
@@ -733,22 +704,12 @@ func configuredRigName(cityPath string, a *config.Agent, rigs []config.Rig) stri
 	if a == nil || a.Dir == "" {
 		return ""
 	}
-	for _, r := range rigs {
-		if a.Dir == r.Name {
-			return r.Name
-		}
-	}
-	return resolveRigForAgent(resolveAgentDirPath(cityPath, a.Dir), rigs)
+	return workdirutil.ConfiguredRigName(cityPath, *a, rigs)
 }
 
 // rigRootForName returns the configured rig root path.
 func rigRootForName(rigName string, rigs []config.Rig) string {
-	for _, r := range rigs {
-		if r.Name == rigName {
-			return r.Path
-		}
-	}
-	return ""
+	return workdirutil.RigRootForName(rigName, rigs)
 }
 
 // agentCommandDir returns the directory used for controller-side shell

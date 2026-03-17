@@ -72,11 +72,6 @@ func buildDesiredState(
 		if pool.Max == 1 && !cfg.Agents[i].IsPool() {
 			// Fixed agent.
 			rigName := configuredRigName(cityPath, &cfg.Agents[i], cfg.Rigs)
-			_, err := resolveConfiguredWorkDir(cityPath, cityName, &cfg.Agents[i], cfg.Rigs)
-			if err != nil {
-				fmt.Fprintf(stderr, "buildDesiredState: agent %q: %v (skipping)\n", cfg.Agents[i].QualifiedName(), err) //nolint:errcheck
-				continue
-			}
 			if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
 				continue
 			}

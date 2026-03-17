@@ -10,6 +10,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/sessionlog"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
 const lookPathCacheTTL = 30 * time.Second
@@ -553,7 +554,13 @@ func computeAgentState(suspended, quarantined, running bool, activeBead string, 
 // enrichSessionMeta populates model and context usage fields on the agent
 // response by reading the tail of the agent's session JSONL file.
 func (s *Server) enrichSessionMeta(resp *agentResponse, agentCfg config.Agent, qualifiedName string, cfg *config.City) {
-	workDir := resolveAgentWorkDirForName(s.state.CityPath(), cfg, agentCfg, qualifiedName)
+	workDir := workdirutil.ResolveWorkDirPath(
+		s.state.CityPath(),
+		workdirutil.CityName(s.state.CityPath(), cfg),
+		qualifiedName,
+		agentCfg,
+		cfg.Rigs,
+	)
 	if workDir == "" {
 		return
 	}
@@ -592,7 +599,8 @@ func canAttributeSession(agentCfg config.Agent, qualifiedName string, cfg *confi
 	if agentCfg.IsPool() {
 		return false
 	}
-	target := resolveAgentWorkDirForName(cityPath, cfg, agentCfg, qualifiedName)
+	cityName := workdirutil.CityName(cityPath, cfg)
+	target := workdirutil.ResolveWorkDirPath(cityPath, cityName, qualifiedName, agentCfg, cfg.Rigs)
 	if target == "" {
 		return false
 	}
@@ -604,12 +612,28 @@ func canAttributeSession(agentCfg config.Agent, qualifiedName string, cfg *confi
 		}
 		if provider == "claude" {
 			if a.IsPool() {
+				if poolSharesWorkDir(cityPath, cityName, target, a, cfg.Rigs) {
+					return false
+				}
 				continue
 			}
-			if resolveAgentWorkDirForName(cityPath, cfg, a, a.QualifiedName()) == target {
+			if workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), a, cfg.Rigs) == target {
 				count++
 			}
 		}
 	}
 	return count <= 1
+}
+
+func poolSharesWorkDir(cityPath, cityName, target string, a config.Agent, rigs []config.Rig) bool {
+	if !a.IsPool() {
+		return false
+	}
+	if a.WorkDir == "" {
+		return workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), a, rigs) == target
+	}
+	if workdirutil.TemplateUsesAgentIdentity(a.WorkDir) {
+		return false
+	}
+	return workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), a, rigs) == target
 }

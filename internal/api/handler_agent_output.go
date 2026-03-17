@@ -13,6 +13,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/sessionlog"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
 // outputTurn is a single conversation turn in the unified output response.
@@ -146,7 +147,14 @@ func (s *Server) peekFallbackOutput(w http.ResponseWriter, name string, cfg *con
 // resolveAgentWorkDir returns the absolute working directory for an agent,
 // honoring work_dir template expansion.
 func (s *Server) resolveAgentWorkDir(a config.Agent, qualifiedName string) string {
-	return resolveAgentWorkDirForName(s.state.CityPath(), s.state.Config(), a, qualifiedName)
+	cfg := s.state.Config()
+	return workdirutil.ResolveWorkDirPath(
+		s.state.CityPath(),
+		workdirutil.CityName(s.state.CityPath(), cfg),
+		qualifiedName,
+		a,
+		cfg.Rigs,
+	)
 }
 
 // entryToTurn converts a sessionlog Entry to a human-readable outputTurn.

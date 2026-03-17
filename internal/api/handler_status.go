@@ -86,7 +86,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// Count rigs by state.
 	rc := rigCounts{Total: len(cfg.Rigs)}
 	for _, rig := range cfg.Rigs {
-		if rigSuspended(cfg, rig, sp, cityName) {
+		if rigSuspended(cfg, rig, sp, cityName, s.state.CityPath()) {
 			rc.Suspended++
 		}
 	}
