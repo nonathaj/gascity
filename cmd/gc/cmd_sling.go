@@ -212,13 +212,14 @@ func cmdSling(args []string, isFormula, doNudge, force bool, title string, vars 
 	}
 
 	var target, beadOrFormula string
-	if fromStdin {
+	switch {
+	case fromStdin:
 		target = args[0]
 		beadOrFormula = stdinTitle
-	} else if len(args) == 2 {
+	case len(args) == 2:
 		target = args[0]
 		beadOrFormula = args[1]
-	} else {
+	default:
 		// 1-arg: bead ID only, resolve target from rig's default_sling_target.
 		beadOrFormula = args[0]
 		if isFormula {

@@ -1,3 +1,4 @@
+// Package shellquote provides POSIX shell quoting utilities.
 package shellquote
 
 import "strings"

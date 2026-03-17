@@ -63,7 +63,7 @@ func TestAcceptStartupDialogsAcceptsCodexTrustDialog(t *testing.T) {
 	var sent []string
 	err := AcceptStartupDialogs(
 		context.Background(),
-		func(lines int) (string, error) {
+		func(_ int) (string, error) {
 			return "Do you trust the contents of this directory?", nil
 		},
 		func(keys ...string) error {
@@ -96,7 +96,7 @@ func TestAcceptStartupDialogsAcceptsBypassPermissionsWarning(t *testing.T) {
 	call := 0
 	err := AcceptStartupDialogs(
 		context.Background(),
-		func(lines int) (string, error) {
+		func(_ int) (string, error) {
 			call++
 			if call == 1 {
 				return "normal startup output", nil
