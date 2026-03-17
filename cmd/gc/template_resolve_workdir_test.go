@@ -57,6 +57,9 @@ func TestResolveTemplateUsesWorkDirWithoutChangingRigIdentity(t *testing.T) {
 	if tp.Env["GC_RIG_ROOT"] != rigRoot {
 		t.Fatalf("GC_RIG_ROOT = %q, want %q", tp.Env["GC_RIG_ROOT"], rigRoot)
 	}
+	if tp.Env["GT_ROOT"] != rigRoot {
+		t.Fatalf("GT_ROOT = %q, want %q", tp.Env["GT_ROOT"], rigRoot)
+	}
 }
 
 func TestResolveTemplateUsesWorkDirForCityScopedAgents(t *testing.T) {
@@ -92,6 +95,9 @@ func TestResolveTemplateUsesWorkDirForCityScopedAgents(t *testing.T) {
 	}
 	if tp.Env["GC_RIG"] != "" {
 		t.Fatalf("GC_RIG = %q, want empty", tp.Env["GC_RIG"])
+	}
+	if tp.Env["GT_ROOT"] != cityPath {
+		t.Fatalf("GT_ROOT = %q, want %q", tp.Env["GT_ROOT"], cityPath)
 	}
 }
 
@@ -129,5 +135,8 @@ func TestResolveTemplateDefaultsRigScopedAgentsToRigRootWithoutWorkDir(t *testin
 	}
 	if tp.RigRoot != rigRoot {
 		t.Fatalf("RigRoot = %q, want %q", tp.RigRoot, rigRoot)
+	}
+	if tp.Env["GT_ROOT"] != rigRoot {
+		t.Fatalf("GT_ROOT = %q, want %q", tp.Env["GT_ROOT"], rigRoot)
 	}
 }
