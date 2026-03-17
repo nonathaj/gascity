@@ -111,7 +111,7 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	workDir := s.resolveAgentWorkDir(agentCfg)
+	workDir := s.resolveAgentWorkDir(agentCfg, template)
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}

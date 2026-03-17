@@ -150,8 +150,8 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 			// Model + context usage (best-effort, Claude only).
 			// Skip when session file attribution is ambiguous (pools,
 			// multiple Claude agents in same rig).
-			if running && provider == "claude" && canAttributeSession(a, ea.rig, cfg) {
-				s.enrichSessionMeta(&resp, ea.rig, cfg)
+			if running && provider == "claude" && canAttributeSession(a, ea.qualifiedName, cfg, s.state.CityPath()) {
+				s.enrichSessionMeta(&resp, a, ea.qualifiedName, cfg)
 			}
 
 			agents = append(agents, resp)
@@ -252,8 +252,8 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	resp.State = computeAgentState(suspended, quarantined, running, resp.ActiveBead, lastActivity)
 
 	// Model + context usage (best-effort, Claude only).
-	if running && provider == "claude" && canAttributeSession(agentCfg, agentCfg.Dir, cfg) {
-		s.enrichSessionMeta(&resp, agentCfg.Dir, cfg)
+	if running && provider == "claude" && canAttributeSession(agentCfg, name, cfg, s.state.CityPath()) {
+		s.enrichSessionMeta(&resp, agentCfg, name, cfg)
 	}
 
 	writeIndexJSON(w, s.latestIndex(), resp)
@@ -552,8 +552,8 @@ func computeAgentState(suspended, quarantined, running bool, activeBead string, 
 
 // enrichSessionMeta populates model and context usage fields on the agent
 // response by reading the tail of the agent's session JSONL file.
-func (s *Server) enrichSessionMeta(resp *agentResponse, rig string, cfg *config.City) {
-	workDir := resolveAgentWorkDir(rig, cfg)
+func (s *Server) enrichSessionMeta(resp *agentResponse, agentCfg config.Agent, qualifiedName string, cfg *config.City) {
+	workDir := resolveAgentWorkDirForName(s.state.CityPath(), cfg, agentCfg, qualifiedName)
 	if workDir == "" {
 		return
 	}
@@ -585,40 +585,31 @@ func (s *Server) enrichSessionMeta(resp *agentResponse, rig string, cfg *config.
 // for the given agent in its rig. Returns false when multiple Claude agents
 // or pool instances share the same rig directory, since we can't reliably
 // determine which session file belongs to which agent.
-func canAttributeSession(agentCfg config.Agent, rig string, cfg *config.City) bool {
-	// Pool agents always share their rig's working directory — attribution
-	// is ambiguous even with a single pool config entry (it expands to N).
+func canAttributeSession(agentCfg config.Agent, qualifiedName string, cfg *config.City, cityPath string) bool {
+	// Pool members derive per-instance workdirs from the qualified name, but
+	// the API only has the base config when attributing list rows. Keep them
+	// on the safe side and require the session bead/session logs path instead.
 	if agentCfg.IsPool() {
 		return false
 	}
-	// Count non-pool Claude agents. If any Claude pool exists in this rig,
-	// attribution is ambiguous for ALL agents (pool members create session
-	// files in the same directory as singletons).
+	target := resolveAgentWorkDirForName(cityPath, cfg, agentCfg, qualifiedName)
+	if target == "" {
+		return false
+	}
 	count := 0
 	for _, a := range cfg.Agents {
-		if a.Dir != rig {
-			continue
-		}
 		provider := a.Provider
 		if provider == "" {
 			provider = cfg.Workspace.Provider
 		}
 		if provider == "claude" {
 			if a.IsPool() {
-				return false // pool presence → ambiguous for everyone
+				continue
 			}
-			count++
+			if resolveAgentWorkDirForName(cityPath, cfg, a, a.QualifiedName()) == target {
+				count++
+			}
 		}
 	}
 	return count <= 1
-}
-
-// resolveAgentWorkDir returns the filesystem path for an agent's rig.
-func resolveAgentWorkDir(rig string, cfg *config.City) string {
-	for _, r := range cfg.Rigs {
-		if r.Name == rig {
-			return r.Path
-		}
-	}
-	return ""
 }

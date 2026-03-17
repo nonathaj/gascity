@@ -56,7 +56,11 @@
         },
         "dir": {
           "type": "string",
-          "description": "Dir is the working directory for the agent session."
+          "description": "Dir is the identity prefix for rig-scoped agents and the default\nworking directory when WorkDir is not set."
+        },
+        "work_dir": {
+          "type": "string",
+          "description": "WorkDir overrides the session working directory without changing the\nagent's qualified identity. Relative paths resolve against city root\nand may use the same template placeholders as session_setup."
         },
         "scope": {
           "type": "string",
@@ -180,7 +184,7 @@
             "type": "string"
           },
           "type": "array",
-          "description": "SessionSetup is a list of shell commands run after session creation.\nEach command is a template string supporting placeholders:\n{{.Session}}, {{.Agent}}, {{.Rig}}, {{.CityRoot}}, {{.CityName}}, {{.WorkDir}}.\nCommands run in gc's process (not inside the agent session) via sh -c."
+          "description": "SessionSetup is a list of shell commands run after session creation.\nEach command is a template string supporting placeholders:\n{{.Session}}, {{.Agent}}, {{.AgentBase}}, {{.Rig}}, {{.RigRoot}},\n{{.CityRoot}}, {{.CityName}}, {{.WorkDir}}.\nCommands run in gc's process (not inside the agent session) via sh -c."
         },
         "session_setup_script": {
           "type": "string",
@@ -285,6 +289,10 @@
         "dir": {
           "type": "string",
           "description": "Dir overrides the stamped dir (default: rig name)."
+        },
+        "work_dir": {
+          "type": "string",
+          "description": "WorkDir overrides the agent's working directory without changing\nits qualified identity or rig association."
         },
         "scope": {
           "type": "string",
@@ -462,6 +470,10 @@
         "name": {
           "type": "string",
           "description": "Name is the targeting key (required). Must match an existing agent's name."
+        },
+        "work_dir": {
+          "type": "string",
+          "description": "WorkDir overrides the agent's session working directory."
         },
         "scope": {
           "type": "string",

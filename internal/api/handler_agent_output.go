@@ -65,7 +65,7 @@ func (s *Server) handleAgentOutput(w http.ResponseWriter, r *http.Request, name 
 // found (expected — triggers fallback). Returns (nil, err) if the file
 // exists but cannot be read (unexpected — surface to caller).
 func (s *Server) trySessionLogOutput(r *http.Request, name string, agentCfg config.Agent) (*agentOutputResponse, error) {
-	workDir := s.resolveAgentWorkDir(agentCfg)
+	workDir := s.resolveAgentWorkDir(agentCfg, name)
 	if workDir == "" {
 		return nil, nil
 	}
@@ -143,20 +143,10 @@ func (s *Server) peekFallbackOutput(w http.ResponseWriter, name string, cfg *con
 	})
 }
 
-// resolveAgentWorkDir returns the absolute working directory for an agent.
-// For rig-scoped agents, this is the rig's Path. For city-scoped agents,
-// this is the city root.
-func (s *Server) resolveAgentWorkDir(a config.Agent) string {
-	if a.Dir == "" {
-		return s.state.CityPath()
-	}
-	cfg := s.state.Config()
-	for _, rig := range cfg.Rigs {
-		if rig.Name == a.Dir {
-			return rig.Path
-		}
-	}
-	return ""
+// resolveAgentWorkDir returns the absolute working directory for an agent,
+// honoring work_dir template expansion.
+func (s *Server) resolveAgentWorkDir(a config.Agent, qualifiedName string) string {
+	return resolveAgentWorkDirForName(s.state.CityPath(), s.state.Config(), a, qualifiedName)
 }
 
 // entryToTurn converts a sessionlog Entry to a human-readable outputTurn.
@@ -256,7 +246,7 @@ func (s *Server) handleAgentOutputStream(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Try session log streaming first, fall back to peek polling.
-	workDir := s.resolveAgentWorkDir(agentCfg)
+	workDir := s.resolveAgentWorkDir(agentCfg, name)
 	searchPaths := s.sessionLogSearchPaths
 	if searchPaths == nil {
 		searchPaths = sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths)

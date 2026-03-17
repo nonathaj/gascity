@@ -1658,6 +1658,7 @@ Examples:
   gc sling my-rig/claude BL-42              # route existing bead
   gc sling my-rig/claude "write a README"   # create bead from text, then route
   gc sling mayor code-review --formula      # instantiate formula, route wisp
+  echo "fix login" | gc sling mayor --stdin # read bead text from stdin
 
 ```
 gc sling [target] <bead-or-formula-or-text> [flags]
@@ -1674,6 +1675,7 @@ gc sling [target] <bead-or-formula-or-text> [flags]
 | `--nudge` | bool |  | nudge target after routing |
 | `--on` | string |  | attach wisp from formula to bead before routing |
 | `--owned` | bool |  | mark auto-convoy as owned (skip auto-close) |
+| `--stdin` | bool |  | read bead text from stdin (first line = title, rest = description) |
 | `-t`, `--title` | string |  | wisp root bead title (with --formula or --on) |
 | `--var` | stringArray |  | variable substitution for formula (key=value, repeatable) |
 

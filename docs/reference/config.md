@@ -59,7 +59,8 @@ Agent defines a configured agent in the city.
 |-------|------|----------|---------|-------------|
 | `name` | string | **yes** |  | Name is the unique identifier for this agent. |
 | `description` | string |  |  | Description is a human-readable description shown in MC's session creation UI. |
-| `dir` | string |  |  | Dir is the working directory for the agent session. |
+| `dir` | string |  |  | Dir is the identity prefix for rig-scoped agents and the default working directory when WorkDir is not set. |
+| `work_dir` | string |  |  | WorkDir overrides the session working directory without changing the agent's qualified identity. Relative paths resolve against city root and may use the same template placeholders as session_setup. |
 | `scope` | string |  |  | Scope defines where this agent is instantiated: "city" (one per city) or "rig" (one per rig, the default). Only meaningful for pack-defined agents; inline agents in city.toml use Dir directly. Enum: `city`, `rig` |
 | `suspended` | boolean |  |  | Suspended prevents the reconciler from spawning this agent. Toggle with gc agent suspend/resume. |
 | `pre_start` | []string |  |  | PreStart is a list of shell commands run before session creation. Commands run on the target filesystem: locally for tmux, inside the pod/container for exec providers. Template variables same as session_setup. |
@@ -82,7 +83,7 @@ Agent defines a configured agent in the city.
 | `idle_timeout` | string |  |  | IdleTimeout is the maximum time an agent session can be inactive before the controller kills and restarts it. Duration string (e.g., "15m", "1h"). Empty (default) disables idle checking. |
 | `install_agent_hooks` | []string |  |  | InstallAgentHooks overrides workspace-level install_agent_hooks for this agent. When set, replaces (not adds to) the workspace default. |
 | `hooks_installed` | boolean |  |  | HooksInstalled overrides automatic hook detection. Set to true when hooks are manually installed (e.g., merged into the project's own hook config) and auto-installation via install_agent_hooks is not desired. When true, the agent is treated as hook-enabled for startup behavior: no prime instruction in beacon and no delayed nudge. Interacts with install_agent_hooks — set this instead when hooks are pre-installed. |
-| `session_setup` | []string |  |  | SessionSetup is a list of shell commands run after session creation. Each command is a template string supporting placeholders: &#123;&#123;.Session&#125;&#125;, &#123;&#123;.Agent&#125;&#125;, &#123;&#123;.Rig&#125;&#125;, &#123;&#123;.CityRoot&#125;&#125;, &#123;&#123;.CityName&#125;&#125;, &#123;&#123;.WorkDir&#125;&#125;. Commands run in gc's process (not inside the agent session) via sh -c. |
+| `session_setup` | []string |  |  | SessionSetup is a list of shell commands run after session creation. Each command is a template string supporting placeholders: &#123;&#123;.Session&#125;&#125;, &#123;&#123;.Agent&#125;&#125;, &#123;&#123;.AgentBase&#125;&#125;, &#123;&#123;.Rig&#125;&#125;, &#123;&#123;.RigRoot&#125;&#125;, &#123;&#123;.CityRoot&#125;&#125;, &#123;&#123;.CityName&#125;&#125;, &#123;&#123;.WorkDir&#125;&#125;. Commands run in gc's process (not inside the agent session) via sh -c. |
 | `session_setup_script` | string |  |  | SessionSetupScript is the path to a script run after session_setup commands. Relative paths resolve against the city directory. The script receives context via environment variables (GC_SESSION plus existing GC_* vars). |
 | `session_live` | []string |  |  | SessionLive is a list of shell commands that are safe to re-apply without restarting the agent. Run at startup (after session_setup) and re-applied on config change without triggering a restart. Must be idempotent. Typical use: tmux theming, keybindings, status bars. Same template placeholders as session_setup. |
 | `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (pack-safe). |
@@ -113,6 +114,7 @@ AgentOverride modifies a pack-stamped agent for a specific rig.
 |-------|------|----------|---------|-------------|
 | `agent` | string | **yes** |  | Agent is the name of the pack agent to override (required). |
 | `dir` | string |  |  | Dir overrides the stamped dir (default: rig name). |
+| `work_dir` | string |  |  | WorkDir overrides the agent's working directory without changing its qualified identity or rig association. |
 | `scope` | string |  |  | Scope overrides the agent's scope ("city" or "rig"). |
 | `suspended` | boolean |  |  | Suspended sets the agent's suspended state. |
 | `pool` | PoolOverride |  |  | Pool overrides pool configuration fields. |
@@ -151,6 +153,7 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 |-------|------|----------|---------|-------------|
 | `dir` | string | **yes** |  | Dir is the targeting key (required with Name). Identifies the agent's working directory scope. Empty for city-scoped agents. |
 | `name` | string | **yes** |  | Name is the targeting key (required). Must match an existing agent's name. |
+| `work_dir` | string |  |  | WorkDir overrides the agent's session working directory. |
 | `scope` | string |  |  | Scope overrides the agent's scope ("city" or "rig"). |
 | `suspended` | boolean |  |  | Suspended overrides the agent's suspended state. |
 | `pool` | PoolOverride |  |  | Pool overrides pool configuration fields. |

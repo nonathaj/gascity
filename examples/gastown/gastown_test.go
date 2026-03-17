@@ -244,6 +244,53 @@ func TestWorktreeSetupBootstrapsPrepopulatedTargetDir(t *testing.T) {
 	}
 }
 
+func TestWorktreeSetupPreservesTrackedFilesInPrepopulatedTargetDir(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	city := filepath.Join(tmp, "city")
+	script := filepath.Join(exampleDir(), "packs", "gastown", "scripts", "worktree-setup.sh")
+
+	runCmd(t, tmp, "git", "init", repo)
+	runCmd(t, repo, "git", "config", "user.email", "test@example.com")
+	runCmd(t, repo, "git", "config", "user.name", "Gastown Test")
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("tracked/\n"), 0o644); err != nil {
+		t.Fatalf("writing repo .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("writing repo README: %v", err)
+	}
+	runCmd(t, repo, "git", "add", ".")
+	runCmd(t, repo, "git", "commit", "-m", "init")
+
+	worktree := filepath.Join(city, ".gc", "worktrees", filepath.Base(repo), "refinery")
+	stagedRuntime := filepath.Join(worktree, ".codex", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(stagedRuntime), 0o755); err != nil {
+		t.Fatalf("creating staged runtime dir: %v", err)
+	}
+	if err := os.WriteFile(stagedRuntime, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("writing staged runtime file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".gitignore"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatalf("writing staged tracked file: %v", err)
+	}
+
+	runCmd(t, tmp, "sh", script, repo, worktree, "refinery")
+
+	gitignoreData, err := os.ReadFile(filepath.Join(worktree, ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading worktree .gitignore: %v", err)
+	}
+	if got := string(gitignoreData); got != "tracked/\n" {
+		t.Fatalf("worktree .gitignore = %q, want tracked repo content", got)
+	}
+	if _, err := os.Stat(stagedRuntime); err != nil {
+		t.Fatalf("staged runtime file missing after bootstrap: %v", err)
+	}
+	if status := runCmd(t, tmp, "git", "-C", worktree, "status", "--porcelain"); status != "" {
+		t.Fatalf("expected clean worktree after preserving tracked files, got:\n%s", status)
+	}
+}
+
 func TestWorktreeSetupSupportsLegacySignature(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "repo")
@@ -259,9 +306,9 @@ func TestWorktreeSetupSupportsLegacySignature(t *testing.T) {
 	runCmd(t, repo, "git", "add", ".")
 	runCmd(t, repo, "git", "commit", "-m", "init")
 
-	runCmd(t, tmp, "sh", script, repo, "legacy-worker", city)
+	runCmd(t, tmp, "sh", script, repo, "demo/refinery", city)
 
-	worktree := filepath.Join(city, ".gc", "worktrees", filepath.Base(repo), "legacy-worker")
+	worktree := filepath.Join(city, ".gc", "worktrees", filepath.Base(repo), "demo", "refinery")
 	if got := runCmd(t, tmp, "git", "-C", worktree, "rev-parse", "--is-inside-work-tree"); got != "true" {
 		t.Fatalf("legacy signature did not produce a git worktree, got %q", got)
 	}

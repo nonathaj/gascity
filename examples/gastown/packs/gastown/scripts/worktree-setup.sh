@@ -17,20 +17,24 @@ RIG_ROOT="${1:?usage: worktree-setup.sh <rig-root> <target-dir> <agent-name> [--
 ARG2="${2:?missing target-dir}"
 ARG3="${3:?missing agent-name}"
 
-case "$ARG2" in
-    */*|.*)
-        WT="$ARG2"
-        AGENT="$ARG3"
-        SYNC="${4:-}"
-        ;;
-    *)
-        AGENT="$ARG2"
-        CITY="$ARG3"
-        RIG=$(basename "$RIG_ROOT")
-        WT="$CITY/.gc/worktrees/$RIG/$AGENT"
-        SYNC="${4:-}"
-        ;;
-esac
+is_path_like() {
+    case "$1" in
+        */*|.*|*:*|*\\*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if is_path_like "$ARG3"; then
+    AGENT="$ARG2"
+    CITY="$ARG3"
+    RIG=$(basename "$RIG_ROOT")
+    WT="$CITY/.gc/worktrees/$RIG/$AGENT"
+    SYNC="${4:-}"
+else
+    WT="$ARG2"
+    AGENT="$ARG3"
+    SYNC="${4:-}"
+fi
 
 # Idempotent: skip if worktree already exists.
 if [ -d "$WT/.git" ] || [ -f "$WT/.git" ]; then
@@ -53,6 +57,26 @@ restore_stage() {
     rmdir "$STAGE" 2>/dev/null || true
 }
 
+merge_stage_entry() {
+    SRC="$1"
+    DST="$2"
+
+    if [ -d "$SRC" ]; then
+        mkdir -p "$DST"
+        for ENTRY in "$SRC"/.[!.]* "$SRC"/..?* "$SRC"/*; do
+            [ -e "$ENTRY" ] || continue
+            merge_stage_entry "$ENTRY" "$DST/$(basename "$ENTRY")"
+        done
+        rmdir "$SRC" 2>/dev/null || true
+        return 0
+    fi
+
+    if [ -e "$DST" ]; then
+        return 0
+    fi
+    mv "$SRC" "$DST"
+}
+
 rmdir "$WT" 2>/dev/null || true
 if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" -b "gc-$AGENT"; then
     restore_stage
@@ -60,7 +84,10 @@ if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" -b "gc-$AGENT";
 fi
 
 if [ -n "$STAGE" ]; then
-    find "$STAGE" -mindepth 1 -maxdepth 1 -exec mv {} "$WT"/ \;
+    for ENTRY in "$STAGE"/.[!.]* "$STAGE"/..?* "$STAGE"/*; do
+        [ -e "$ENTRY" ] || continue
+        merge_stage_entry "$ENTRY" "$WT/$(basename "$ENTRY")"
+    done
     rmdir "$STAGE" 2>/dev/null || true
 fi
 

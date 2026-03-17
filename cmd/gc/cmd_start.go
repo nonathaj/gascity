@@ -676,10 +676,7 @@ func effectiveWorkDirSpec(a *config.Agent) string {
 	if a == nil {
 		return ""
 	}
-	if a.WorkDir != "" {
-		return a.WorkDir
-	}
-	return a.Dir
+	return a.WorkDir
 }
 
 func sessionSetupContextForAgent(cityPath, cityName, qualifiedName string, a *config.Agent, rigs []config.Rig) SessionSetupContext {
@@ -699,6 +696,14 @@ func resolveConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs [
 	if a == nil {
 		return resolveAgentDir(cityPath, "")
 	}
+	if a.WorkDir == "" {
+		if rigName := configuredRigName(cityPath, a, rigs); rigName != "" {
+			if rigRoot := rigRootForName(rigName, rigs); rigRoot != "" {
+				return resolveAgentDir(cityPath, rigRoot)
+			}
+		}
+		return resolveAgentDir(cityPath, a.Dir)
+	}
 	ctx := sessionSetupContextForAgent(cityPath, cityName, a.QualifiedName(), a, rigs)
 	expandedDir := expandDirTemplate(effectiveWorkDirSpec(a), ctx)
 	return resolveAgentDir(cityPath, expandedDir)
@@ -707,6 +712,14 @@ func resolveConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs [
 func lookupConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs []config.Rig) string {
 	if a == nil {
 		return resolveAgentDirPath(cityPath, "")
+	}
+	if a.WorkDir == "" {
+		if rigName := configuredRigName(cityPath, a, rigs); rigName != "" {
+			if rigRoot := rigRootForName(rigName, rigs); rigRoot != "" {
+				return resolveAgentDirPath(cityPath, rigRoot)
+			}
+		}
+		return resolveAgentDirPath(cityPath, a.Dir)
 	}
 	ctx := sessionSetupContextForAgent(cityPath, cityName, a.QualifiedName(), a, rigs)
 	expandedDir := expandDirTemplate(effectiveWorkDirSpec(a), ctx)

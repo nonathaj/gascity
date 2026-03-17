@@ -79,6 +79,40 @@ func TestAgentOutputConversation(t *testing.T) {
 	}
 }
 
+func TestAgentOutputConversationUsesConfiguredWorkDir(t *testing.T) {
+	state := newFakeState(t)
+	rigDir := t.TempDir()
+	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: rigDir}}
+	state.cfg.Agents[0].WorkDir = ".gc/worktrees/{{.Rig}}/{{.AgentBase}}"
+
+	searchBase := t.TempDir()
+	workDir := filepath.Join(state.cityPath, ".gc", "worktrees", "myrig", "worker")
+	writeSessionJSONL(t, searchBase, workDir,
+		`{"uuid":"1","parentUuid":"","type":"user","message":"{\"role\":\"user\",\"content\":\"hello\"}","timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"from workdir\"}","timestamp":"2025-01-01T00:00:01Z"}`,
+	)
+
+	srv := newServerWithSearchPaths(state, searchBase)
+	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output?tail=0", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp agentOutputResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Format != "conversation" {
+		t.Fatalf("Format = %q, want conversation", resp.Format)
+	}
+	if len(resp.Turns) != 2 || resp.Turns[1].Text != "from workdir" {
+		t.Fatalf("Turns = %+v, want configured work_dir session log", resp.Turns)
+	}
+}
+
 func TestAgentOutputNotFound(t *testing.T) {
 	state := newFakeState(t)
 	srv := New(state)
