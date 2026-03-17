@@ -347,6 +347,34 @@ func TestCopyDirWithSkip_MergesSettingsJSON(t *testing.T) {
 	}
 }
 
+func TestCopyDir_MergePreservesPermissions(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	// Pre-populate dst with restricted permissions.
+	dstPath := filepath.Join(dst, ".claude", "settings.json")
+	writeFile(t, dstPath, `{"hooks": {"Stop": [{"matcher": "", "hooks": []}]}}`)
+	if err := os.Chmod(dstPath, 0o600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	writeFile(t, filepath.Join(src, ".claude", "settings.json"),
+		`{"hooks": {"PreToolUse": [{"matcher": "Bash(*x*)", "hooks": []}]}}`)
+
+	var stderr bytes.Buffer
+	if err := CopyDir(src, dst, &stderr); err != nil {
+		t.Fatalf("CopyDir: %v", err)
+	}
+
+	info, err := os.Stat(dstPath)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("permissions = %o, want 600", info.Mode().Perm())
+	}
+}
+
 // helpers
 
 func writeFile(t *testing.T, path, content string) {

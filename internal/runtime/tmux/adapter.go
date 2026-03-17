@@ -65,7 +65,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 			}
 		}
 	}
-	// Agent-level overlay (highest priority, overwrites on conflict).
+	// Agent-level overlay (highest priority; merges known settings files, overwrites others).
 	if cfg.OverlayDir != "" && cfg.WorkDir != "" {
 		if err := overlay.CopyDir(cfg.OverlayDir, cfg.WorkDir, io.Discard); err != nil {
 			return fmt.Errorf("copying overlay %s: %w", cfg.OverlayDir, err)

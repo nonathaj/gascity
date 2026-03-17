@@ -156,9 +156,13 @@ func copyOrMergeFile(src, dst string, merge bool) error {
 		return copyFile(src, dst)
 	}
 	// Only merge if destination already exists.
+	dstInfo, dstErr := os.Stat(dst)
+	if dstErr != nil {
+		// Destination doesn't exist or can't be stat'd — plain copy.
+		return copyFile(src, dst)
+	}
 	dstData, err := os.ReadFile(dst)
 	if err != nil {
-		// Destination doesn't exist or can't be read — plain copy.
 		return copyFile(src, dst)
 	}
 	srcData, err := os.ReadFile(src)
@@ -174,7 +178,8 @@ func copyOrMergeFile(src, dst string, merge bool) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("creating parent for %q: %w", dst, err)
 	}
-	return os.WriteFile(dst, merged, 0o644)
+	// Preserve the destination file's permissions.
+	return os.WriteFile(dst, merged, dstInfo.Mode().Perm())
 }
 
 // copyFile copies a single file preserving permissions.

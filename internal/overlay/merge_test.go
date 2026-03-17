@@ -435,3 +435,32 @@ func TestMergeSettingsJSON_NoIdentityAlwaysAppends(t *testing.T) {
 		t.Errorf("Stop entries = %d, want 2 (both appended since no identity)", len(arr))
 	}
 }
+
+func TestMergeSettingsJSON_EmptyArrayPreservesBase(t *testing.T) {
+	// Union-only semantics: an empty overlay array does NOT remove base entries.
+	base := `{
+		"hooks": {
+			"SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "gc prime"}]}]
+		}
+	}`
+	over := `{
+		"hooks": {
+			"SessionStart": []
+		}
+	}`
+
+	result, err := MergeSettingsJSON([]byte(base), []byte(over))
+	if err != nil {
+		t.Fatalf("MergeSettingsJSON: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(result, &doc); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+
+	arr := doc["hooks"].(map[string]any)["SessionStart"].([]any)
+	if len(arr) != 1 {
+		t.Errorf("SessionStart entries = %d, want 1 (base preserved with empty overlay)", len(arr))
+	}
+}
