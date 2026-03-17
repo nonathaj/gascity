@@ -108,8 +108,7 @@ func resolvePoolInstance(cfg *config.City, input string) (config.Agent, bool) {
 		if !a.Pool.IsUnlimited() && n > a.Pool.Max {
 			continue
 		}
-		instance := a
-		instance.Name = a.Name + "-" + suffix
+		instance := deepCopyAgent(&a, a.Name+"-"+suffix, a.Dir)
 		return instance, true
 	}
 	return config.Agent{}, false
@@ -133,31 +132,17 @@ func matchPoolInstance(a config.Agent, input string) (config.Agent, bool) {
 	if !a.Pool.IsUnlimited() && n > a.Pool.Max {
 		return config.Agent{}, false
 	}
-	instance := a
-	instance.Name = input
+	instance := deepCopyAgent(&a, input, a.Dir)
 	return instance, true
 }
 
-// findAgentByQualified looks up an agent by its qualified identity (dir+name).
-// For pool agents with Max > 1, matches {name}-{N} patterns within the same dir.
+// findAgentByQualified looks up an agent by its exact qualified identity
+// (dir+name) from config.
 func findAgentByQualified(cfg *config.City, identity string) (config.Agent, bool) {
 	dir, name := config.ParseQualifiedName(identity)
 	for _, a := range cfg.Agents {
 		if a.Dir == dir && a.Name == name {
 			return a, true
-		}
-		// Pool: match {name}-{N} within same dir.
-		if a.Dir == dir && a.Pool != nil && a.Pool.IsMultiInstance() {
-			prefix := a.Name + "-"
-			if strings.HasPrefix(name, prefix) {
-				suffix := name[len(prefix):]
-				if n, err := strconv.Atoi(suffix); err == nil && n >= 1 && (a.Pool.IsUnlimited() || n <= a.Pool.Max) {
-					instance := a
-					instance.Name = name
-					instance.Pool = nil // instances are not pools
-					return instance, true
-				}
-			}
 		}
 	}
 	return config.Agent{}, false

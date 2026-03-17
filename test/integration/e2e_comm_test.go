@@ -245,12 +245,7 @@ func gcWithEnv(dir string, env map[string]string, args ...string) (string, error
 // gcCommand creates an exec.Cmd for the gc binary with standard env setup.
 func gcCommand(args ...string) *exec.Cmd {
 	cmd := exec.Command(gcBinary, args...)
-	env := filterEnv(os.Environ(), "GC_BEADS")
-	env = filterEnv(env, "GC_DOLT")
-	env = filterEnv(env, "PATH")
-	env = append(env, "GC_DOLT=skip")
-	env = append(env, "PATH="+filepath.Dir(gcBinary)+":"+filepath.Dir(bdBinary)+":"+os.Getenv("PATH"))
-	cmd.Env = env
+	cmd.Env = integrationEnv()
 	return cmd
 }
 

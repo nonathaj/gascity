@@ -565,35 +565,36 @@ func TestResolveAgentIdentity(t *testing.T) {
 		lookup    string
 		wantFound bool
 		wantName  string
-		wantPool  bool // whether returned agent should have Pool set
+		wantPool  bool
+		wantLabel string
 	}{
 		// Exact match on non-pool agent.
-		{"exact match", "mayor", true, "mayor", false},
+		{"exact match", "mayor", true, "mayor", false, ""},
 
 		// Exact match on pool agent (base name).
-		{"pool base name", "worker", true, "worker", true},
+		{"pool base name", "worker", true, "worker", true, ""},
 
 		// Pool instance matches.
-		{"pool instance worker-1", "worker-1", true, "worker-1", false},
-		{"pool instance worker-5", "worker-5", true, "worker-5", false},
+		{"pool instance worker-1", "worker-1", true, "worker-1", true, "worker"},
+		{"pool instance worker-5", "worker-5", true, "worker-5", true, "worker"},
 
 		// Pool instance out of range (too high).
-		{"pool instance worker-6", "worker-6", false, "", false},
+		{"pool instance worker-6", "worker-6", false, "", false, ""},
 
 		// Pool instance out of range (zero).
-		{"pool instance worker-0", "worker-0", false, "", false},
+		{"pool instance worker-0", "worker-0", false, "", false, ""},
 
 		// Pool instance non-numeric suffix.
-		{"pool instance worker-abc", "worker-abc", false, "", false},
+		{"pool instance worker-abc", "worker-abc", false, "", false, ""},
 
 		// Pool instance negative (parsed as non-numeric due to dash).
-		{"pool instance worker--1", "worker--1", false, "", false},
+		{"pool instance worker--1", "worker--1", false, "", false, ""},
 
 		// Max=1 pool: the guard requires Max > 1, so {name}-1 does NOT match.
-		{"singleton-1 no match", "singleton-1", false, "", false},
+		{"singleton-1 no match", "singleton-1", false, "", false, ""},
 
 		// Nonexistent agent.
-		{"nonexistent", "nobody", false, "", false},
+		{"nonexistent", "nobody", false, "", false, ""},
 	}
 
 	for _, tt := range tests {
@@ -610,6 +611,9 @@ func TestResolveAgentIdentity(t *testing.T) {
 			}
 			if (got.Pool != nil) != tt.wantPool {
 				t.Errorf("agent.Pool != nil = %v, want %v", got.Pool != nil, tt.wantPool)
+			}
+			if got.PoolName != tt.wantLabel {
+				t.Errorf("agent.PoolName = %q, want %q", got.PoolName, tt.wantLabel)
 			}
 		})
 	}
@@ -673,6 +677,9 @@ func TestResolveAgentIdentityQualified(t *testing.T) {
 			if got.Name != tt.wantName {
 				t.Errorf("Name = %q, want %q", got.Name, tt.wantName)
 			}
+			if strings.Contains(tt.wantName, "-") && got.PoolName == "" {
+				t.Errorf("PoolName = %q, want template label for pool instance", got.PoolName)
+			}
 		})
 	}
 }
@@ -730,6 +737,9 @@ func TestResolveAgentIdentityUnambiguous(t *testing.T) {
 			}
 			if got.Name != tt.wantName {
 				t.Errorf("Name = %q, want %q", got.Name, tt.wantName)
+			}
+			if strings.Contains(tt.wantName, "-") && got.PoolName == "" {
+				t.Errorf("PoolName = %q, want template label for pool instance", got.PoolName)
 			}
 		})
 	}

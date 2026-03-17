@@ -205,3 +205,72 @@ max = 5
 		t.Fatalf("stdout = %q, want pool work_query args", out)
 	}
 }
+
+func TestCmdHookPoolInstanceUsesTemplatePoolLabel(t *testing.T) {
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(cityDir, "myrig-repo")
+	workDir := filepath.Join(cityDir, ".gc", "worktrees", "myrig", "polecat-1")
+	fakeBin := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cityToml := fmt.Sprintf(`[workspace]
+name = "test-city"
+
+[[rigs]]
+name = "myrig"
+path = %q
+
+[[agent]]
+name = "polecat"
+dir = "myrig"
+
+[agent.pool]
+min = 0
+max = 5
+`, rigDir)
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeBD := filepath.Join(fakeBin, "bd")
+	script := "#!/bin/sh\nprintf 'pwd=%s\\nargs=%s\\n' \"$PWD\" \"$*\"\n"
+	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
+	t.Setenv("GC_CITY", cityDir)
+	t.Setenv("GC_AGENT", "myrig/polecat-1")
+	t.Setenv("GC_SESSION_NAME", "myrig--polecat-1")
+
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := cmdHook(nil, false, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("cmdHook() = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "pwd="+rigDir) {
+		t.Fatalf("stdout = %q, want command to run from rig root %q", out, rigDir)
+	}
+	if !strings.Contains(out, "args=ready --label=pool:myrig/polecat --limit=1") {
+		t.Fatalf("stdout = %q, want pool template work_query args", out)
+	}
+}

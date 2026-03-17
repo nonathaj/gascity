@@ -13,6 +13,8 @@
 package integration
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +28,14 @@ var gcBinary string
 
 // bdBinary is the path to the bd binary, discovered by TestMain.
 var bdBinary string
+
+// testGCHome isolates integration-test supervisor state from the developer's
+// real ~/.gc registry, config, and logs.
+var testGCHome string
+
+// testRuntimeDir isolates the supervisor lock/socket from the developer's
+// real XDG runtime directory.
+var testRuntimeDir string
 
 // TestMain builds the gc binary and runs pre/post sweeps of orphan sessions.
 func TestMain(m *testing.M) {
@@ -47,6 +57,23 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	testGCHome = filepath.Join(tmpDir, "gc-home")
+	if err := os.MkdirAll(testGCHome, 0o755); err != nil {
+		panic("integration: creating GC_HOME: " + err.Error())
+	}
+	testRuntimeDir = filepath.Join(tmpDir, "runtime")
+	if err := os.MkdirAll(testRuntimeDir, 0o755); err != nil {
+		panic("integration: creating XDG_RUNTIME_DIR: " + err.Error())
+	}
+	port, err := reserveLoopbackPort()
+	if err != nil {
+		panic("integration: reserving supervisor port: " + err.Error())
+	}
+	supervisorConfig := fmt.Sprintf("[supervisor]\nport = %d\nbind = \"127.0.0.1\"\n", port)
+	if err := os.WriteFile(filepath.Join(testGCHome, "supervisor.toml"), []byte(supervisorConfig), 0o644); err != nil {
+		panic("integration: writing supervisor config: " + err.Error())
+	}
+
 	gcBinary = filepath.Join(tmpDir, "gc")
 	buildCmd := exec.Command("go", "build", "-o", gcBinary, "./cmd/gc")
 	buildCmd.Dir = findModuleRoot()
@@ -65,6 +92,13 @@ func TestMain(m *testing.M) {
 	// Run tests.
 	code := m.Run()
 
+	// Best-effort: stop any isolated supervisor that survived test cleanup.
+	if gcBinary != "" {
+		stopCmd := exec.Command(gcBinary, "supervisor", "stop")
+		stopCmd.Env = integrationEnv()
+		_ = stopCmd.Run()
+	}
+
 	// Post-sweep: clean up any sessions that survived individual test cleanup.
 	if !subprocess {
 		tmuxtest.KillAllTestSessions(&mainTB{})
@@ -80,16 +114,7 @@ func gc(dir string, args ...string) (string, error) {
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	// Skip dolt server lifecycle so tests don't require dolt.
-	// Prepend gc binary dir to PATH so agent sessions can find gc and bd.
-	// GC_SESSION passes through if set (e.g., "subprocess"), otherwise
-	// defaults to real tmux.
-	env := filterEnv(os.Environ(), "GC_BEADS")
-	env = filterEnv(env, "GC_DOLT")
-	env = filterEnv(env, "PATH")
-	env = append(env, "GC_DOLT=skip")
-	env = append(env, "PATH="+filepath.Dir(gcBinary)+":"+filepath.Dir(bdBinary)+":"+os.Getenv("PATH"))
-	cmd.Env = env
+	cmd.Env = integrationEnv()
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -135,6 +160,34 @@ func filterEnv(env []string, name string) []string {
 		result = append(result, e)
 	}
 	return result
+}
+
+func integrationEnv() []string {
+	// Skip dolt server lifecycle so tests don't require dolt.
+	// Prepend gc/bd binary dirs so agent sessions can find test binaries.
+	env := filterEnv(os.Environ(), "GC_BEADS")
+	env = filterEnv(env, "GC_DOLT")
+	env = filterEnv(env, "PATH")
+	env = filterEnv(env, "GC_HOME")
+	env = filterEnv(env, "XDG_RUNTIME_DIR")
+	env = append(env, "GC_DOLT=skip")
+	env = append(env, "GC_HOME="+testGCHome)
+	env = append(env, "XDG_RUNTIME_DIR="+testRuntimeDir)
+	env = append(env, "PATH="+filepath.Dir(gcBinary)+":"+filepath.Dir(bdBinary)+":"+os.Getenv("PATH"))
+	return env
+}
+
+func reserveLoopbackPort() (int, error) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer lis.Close() //nolint:errcheck
+	addr, ok := lis.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("unexpected addr type %T", lis.Addr())
+	}
+	return addr.Port, nil
 }
 
 // mainTB is a minimal testing.TB implementation for use in TestMain where
