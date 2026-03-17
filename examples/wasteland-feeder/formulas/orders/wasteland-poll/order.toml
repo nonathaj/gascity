@@ -1,5 +1,0 @@
-[order]
-description = "Poll Wasteland wanted board for open items and dispatch to workers"
-exec = "$ORDER_DIR/scripts/wasteland-poll.sh"
-gate = "cooldown"
-interval = "2m"

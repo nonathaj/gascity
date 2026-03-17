@@ -108,11 +108,11 @@ These decisions are final. Do not revisit them.
 
 ## Decision frameworks
 
-- **`docs/primitive-test.md`** — The Primitive Test: three necessary
+- **`docs/contributors/primitive-test.md`** — The Primitive Test: three necessary
   conditions (Atomicity + Bitter Lesson + ZFC) for whether a capability
   belongs in the SDK vs the consumer layer. Apply this before adding any
   new primitive.
-- **`docs/worktree-roadmap.md`** — Worktree isolation roadmap, polecat
+- **`docs/archive/backlogs/worktree-roadmap.md`** — Worktree isolation roadmap, polecat
   lifecycle analysis, and Gas Town cleanup bug lessons.
 
 ## Key design principles

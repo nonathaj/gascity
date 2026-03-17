@@ -3,7 +3,10 @@ coverage.txt
 /bin/
 /gc
 /genschema
+/bd
+/br
 *.test
+.beads/
 .claude/
 .gc/
 

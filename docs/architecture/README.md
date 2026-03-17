@@ -77,15 +77,6 @@ RFC distinction):
 | Reference doc | `docs/reference/` | Exhaustive lookup (CLI, config, API) | Must stay in sync; partially generated |
 | Tutorial | `docs/tutorials/` | Learning path with exercises | Ordered progression |
 
-## Writing New Docs
-
-- **Architecture template:** [`TEMPLATE.md`](TEMPLATE) — use for
-  all new architecture docs (current-state subsystem documentation)
-- **Design template:** [`../design/TEMPLATE.md`](../design/TEMPLATE)
-  — use for design proposals (forward-looking RFCs)
-- **LLM prompt:** [`WRITING-PROMPT.md`](WRITING-PROMPT) — give to
-  an LLM agent when asking it to write a subsystem doc
-
 ## Conventions
 
 - **Code references** use repo-relative paths: `internal/beads/store.go`

@@ -41,8 +41,7 @@
         "group": "Guides",
         "pages": [
           "guides/README",
-          "guides/shareable-packs",
-          "guides/kubernetes"
+          "guides/shareable-packs"
         ]
       },
       {
@@ -82,18 +81,8 @@
         "pages": [
           "design/README",
           "design/machine-wide-supervisor-v0",
-          "design/unified-sessions",
-          "design/session-identity-and-dispatch",
-          "design/session-waits",
-          "design/async-nudge-delivery",
-          "design/workspace-service-publication",
-          "design/workspace-publication-edge-security",
-          "design/gc-apiserver-v0",
           "design/api-ops-design",
-          "design/agent-pools",
-          "design/city-layout-audit",
-          "design/chat-sessions",
-          "design/TEMPLATE"
+          "design/agent-pools"
         ]
       },
       {

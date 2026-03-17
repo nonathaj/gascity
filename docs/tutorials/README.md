@@ -17,14 +17,3 @@ published tutorial path instead of being left as broken or half-written pages.
 That older planning material now lives in the [Archive](../archive/README)
 when it is still useful as historical context.
 
-## Example Configs
-
-Additional runnable configs still live in [`examples/configs`](../../examples/configs/):
-
-- `01-hello.toml`
-- `03-named-crew-loop.toml`
-- `06-formulas.toml`
-- `07-attached-mol.toml`
-- `08-agent-pools.toml`
-- `09-scoped-dirs.toml`
-- `10-rigs.toml`

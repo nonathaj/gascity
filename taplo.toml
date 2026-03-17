@@ -2,7 +2,7 @@
 # Provides schema-based autocomplete in editors with Even Better TOML.
 
 [[rule]]
-include = ["city.toml", "examples/configs/*.toml"]
+include = ["city.toml", "examples/**/*.toml"]
 keys = []
 
 [rule.options]
