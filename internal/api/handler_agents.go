@@ -458,6 +458,10 @@ func findAgent(cfg *config.City, name string) (config.Agent, bool) {
 // findActiveBead returns the ID of the first in_progress bead assigned to the
 // given agent. If rig is non-empty, only that rig's store is searched;
 // otherwise all stores are searched. Returns "" if no match.
+//
+// Uses ListByAssignee with limit=1 instead of List() to avoid fetching all
+// beads from every store — a critical performance fix when bead counts are
+// large (e.g., 2200+ beads × 102 agents = ~186 full-list subprocess spawns).
 func (s *Server) findActiveBead(agentName, rig string) string {
 	stores := s.state.BeadStores()
 	var rigNames []string
@@ -470,14 +474,12 @@ func (s *Server) findActiveBead(agentName, rig string) string {
 		rigNames = sortedRigNames(stores)
 	}
 	for _, rn := range rigNames {
-		list, err := stores[rn].List()
+		matches, err := stores[rn].ListByAssignee(agentName, "in_progress", 1)
 		if err != nil {
 			continue
 		}
-		for _, b := range list {
-			if b.Status == "in_progress" && b.Assignee == agentName {
-				return b.ID
-			}
+		if len(matches) > 0 {
+			return matches[0].ID
 		}
 	}
 	return ""
