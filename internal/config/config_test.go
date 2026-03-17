@@ -702,6 +702,91 @@ func TestWizardCityStartCommand(t *testing.T) {
 	}
 }
 
+func TestGastownCity(t *testing.T) {
+	c := GastownCity("bright-lights", "claude", "")
+	if c.Workspace.Name != "bright-lights" {
+		t.Errorf("Workspace.Name = %q, want %q", c.Workspace.Name, "bright-lights")
+	}
+	if c.Workspace.Provider != "claude" {
+		t.Errorf("Workspace.Provider = %q, want %q", c.Workspace.Provider, "claude")
+	}
+	if len(c.Workspace.Includes) != 1 || c.Workspace.Includes[0] != "packs/gastown" {
+		t.Errorf("Workspace.Includes = %v, want [packs/gastown]", c.Workspace.Includes)
+	}
+	if len(c.Workspace.DefaultRigIncludes) != 1 || c.Workspace.DefaultRigIncludes[0] != "packs/gastown" {
+		t.Errorf("Workspace.DefaultRigIncludes = %v, want [packs/gastown]", c.Workspace.DefaultRigIncludes)
+	}
+	if len(c.Workspace.GlobalFragments) != 2 {
+		t.Errorf("Workspace.GlobalFragments = %v, want 2 entries", c.Workspace.GlobalFragments)
+	}
+	// No inline agents — they come from the pack.
+	if len(c.Agents) != 0 {
+		t.Errorf("len(Agents) = %d, want 0 (agents come from pack)", len(c.Agents))
+	}
+	// Daemon config should be set.
+	if c.Daemon.PatrolInterval != "30s" {
+		t.Errorf("Daemon.PatrolInterval = %q, want %q", c.Daemon.PatrolInterval, "30s")
+	}
+	if c.Daemon.MaxRestartsOrDefault() != 5 {
+		t.Errorf("Daemon.MaxRestarts = %d, want 5", c.Daemon.MaxRestartsOrDefault())
+	}
+}
+
+func TestGastownCityStartCommand(t *testing.T) {
+	c := GastownCity("test", "", "my-agent --auto")
+	if c.Workspace.StartCommand != "my-agent --auto" {
+		t.Errorf("Workspace.StartCommand = %q, want %q", c.Workspace.StartCommand, "my-agent --auto")
+	}
+	if c.Workspace.Provider != "" {
+		t.Errorf("Workspace.Provider = %q, want empty", c.Workspace.Provider)
+	}
+}
+
+func TestGastownCityNoProvider(t *testing.T) {
+	c := GastownCity("test", "", "")
+	if c.Workspace.Provider != "" {
+		t.Errorf("Workspace.Provider = %q, want empty", c.Workspace.Provider)
+	}
+	if c.Workspace.StartCommand != "" {
+		t.Errorf("Workspace.StartCommand = %q, want empty", c.Workspace.StartCommand)
+	}
+}
+
+func TestGastownCityRoundTrip(t *testing.T) {
+	c := GastownCity("bright-lights", "claude", "")
+	data, err := c.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	got, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse(Marshal output): %v", err)
+	}
+	if len(got.Workspace.Includes) != 1 || got.Workspace.Includes[0] != "packs/gastown" {
+		t.Errorf("round-trip Includes = %v, want [packs/gastown]", got.Workspace.Includes)
+	}
+	if len(got.Workspace.DefaultRigIncludes) != 1 || got.Workspace.DefaultRigIncludes[0] != "packs/gastown" {
+		t.Errorf("round-trip DefaultRigIncludes = %v, want [packs/gastown]", got.Workspace.DefaultRigIncludes)
+	}
+	if got.Workspace.Provider != "claude" {
+		t.Errorf("round-trip Provider = %q, want %q", got.Workspace.Provider, "claude")
+	}
+	if got.Daemon.PatrolInterval != "30s" {
+		t.Errorf("round-trip Daemon.PatrolInterval = %q, want %q", got.Daemon.PatrolInterval, "30s")
+	}
+}
+
+func TestDefaultRigIncludesOmitEmpty(t *testing.T) {
+	c := DefaultCity("test")
+	data, err := c.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(data), "default_rig_includes") {
+		t.Errorf("Marshal output should not contain 'default_rig_includes' when empty:\n%s", data)
+	}
+}
+
 func TestMarshalOmitsEmptyWorkspaceFields(t *testing.T) {
 	c := DefaultCity("test")
 	data, err := c.Marshal()

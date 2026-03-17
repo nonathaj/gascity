@@ -1222,7 +1222,7 @@ func TestRunWizardSelectCodex(t *testing.T) {
 
 func TestRunWizardCustomTemplate(t *testing.T) {
 	// Select custom template → skips agent question, returns minimal config.
-	stdin := strings.NewReader("2\n")
+	stdin := strings.NewReader("3\n")
 	var stdout bytes.Buffer
 	wiz := runWizard(stdin, &stdout)
 
@@ -1239,6 +1239,30 @@ func TestRunWizardCustomTemplate(t *testing.T) {
 	out := stdout.String()
 	if strings.Contains(out, "Choose your coding agent:") {
 		t.Errorf("stdout should not contain agent prompt for custom template: %q", out)
+	}
+}
+
+func TestRunWizardGastownTemplate(t *testing.T) {
+	// Select gastown template + default agent.
+	stdin := strings.NewReader("2\n\n")
+	var stdout bytes.Buffer
+	wiz := runWizard(stdin, &stdout)
+
+	if wiz.configName != "gastown" {
+		t.Errorf("configName = %q, want %q", wiz.configName, "gastown")
+	}
+	if wiz.provider == "" {
+		t.Error("provider should be set to default for gastown")
+	}
+}
+
+func TestRunWizardGastownByName(t *testing.T) {
+	stdin := strings.NewReader("gastown\n\n")
+	var stdout bytes.Buffer
+	wiz := runWizard(stdin, &stdout)
+
+	if wiz.configName != "gastown" {
+		t.Errorf("configName = %q, want %q", wiz.configName, "gastown")
 	}
 }
 
@@ -1374,6 +1398,51 @@ func TestDoInitWithCustomCommand(t *testing.T) {
 	}
 	if len(cfg.Agents) != 1 {
 		t.Fatalf("len(Agents) = %d, want 1", len(cfg.Agents))
+	}
+}
+
+func TestDoInitWithGastownTemplate(t *testing.T) {
+	f := fsys.NewFake()
+	wiz := wizardConfig{
+		interactive: true,
+		configName:  "gastown",
+		provider:    "claude",
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/bright-lights", wiz, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	// Verify output message.
+	out := stdout.String()
+	if !strings.Contains(out, "Created gastown config") {
+		t.Errorf("stdout missing gastown message: %q", out)
+	}
+
+	// Verify written config has gastown shape.
+	data := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	cfg, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("parsing written config: %v", err)
+	}
+	if cfg.Workspace.Provider != "claude" {
+		t.Errorf("Workspace.Provider = %q, want %q", cfg.Workspace.Provider, "claude")
+	}
+	if len(cfg.Workspace.Includes) != 1 || cfg.Workspace.Includes[0] != "packs/gastown" {
+		t.Errorf("Workspace.Includes = %v, want [packs/gastown]", cfg.Workspace.Includes)
+	}
+	if len(cfg.Workspace.DefaultRigIncludes) != 1 || cfg.Workspace.DefaultRigIncludes[0] != "packs/gastown" {
+		t.Errorf("Workspace.DefaultRigIncludes = %v, want [packs/gastown]", cfg.Workspace.DefaultRigIncludes)
+	}
+	// No inline agents.
+	if len(cfg.Agents) != 0 {
+		t.Errorf("len(Agents) = %d, want 0 (agents come from pack)", len(cfg.Agents))
+	}
+	// Daemon config.
+	if cfg.Daemon.PatrolInterval != "30s" {
+		t.Errorf("Daemon.PatrolInterval = %q, want %q", cfg.Daemon.PatrolInterval, "30s")
 	}
 }
 

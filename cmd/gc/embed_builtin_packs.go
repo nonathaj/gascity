@@ -10,6 +10,8 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/examples/bd"
 	"github.com/gastownhall/gascity/examples/dolt"
+	"github.com/gastownhall/gascity/examples/gastown/packs/gastown"
+	"github.com/gastownhall/gascity/examples/gastown/packs/maintenance"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 )
@@ -37,6 +39,32 @@ func MaterializeBuiltinPacks(cityPath string) error {
 		dst := filepath.Join(cityPath, citylayout.SystemPacksRoot, bp.name)
 		if err := materializeFS(bp.fs, ".", dst); err != nil {
 			return fmt.Errorf("materializing %s pack: %w", bp.name, err)
+		}
+	}
+	return nil
+}
+
+// gastownPack pairs an embedded FS with its destination name under packs/.
+type gastownPack struct {
+	fs   fs.FS
+	name string // e.g. "gastown", "maintenance"
+}
+
+// gastownPacks lists the packs materialized for a gastown city init.
+var gastownPacks = []gastownPack{
+	{fs: gastown.PackFS, name: "gastown"},
+	{fs: maintenance.PackFS, name: "maintenance"},
+}
+
+// MaterializeGastownPacks writes the embedded gastown and maintenance pack
+// files to packs/gastown/ and packs/maintenance/ in the city directory.
+// Called during "gc init" when the gastown template is selected.
+// Files are always overwritten. Shell scripts get 0755; everything else 0644.
+func MaterializeGastownPacks(cityPath string) error {
+	for _, gp := range gastownPacks {
+		dst := filepath.Join(cityPath, "packs", gp.name)
+		if err := materializeFS(gp.fs, ".", dst); err != nil {
+			return fmt.Errorf("materializing %s pack: %w", gp.name, err)
 		}
 	}
 	return nil

@@ -21,7 +21,7 @@ import (
 // for non-interactive paths). doInit uses it to decide which config to write.
 type wizardConfig struct {
 	interactive      bool   // true if the wizard ran with user interaction
-	configName       string // "tutorial" or "custom"
+	configName       string // "tutorial", "gastown", or "custom"
 	provider         string // built-in provider key, or "" if startCommand set
 	startCommand     string // custom start command (workspace-level)
 	bootstrapProfile string // hosted bootstrap profile, or "" for local defaults
@@ -75,7 +75,8 @@ func runWizard(stdin io.Reader, stdout io.Writer) wizardConfig {
 	fmt.Fprintln(stdout, "")                                                        //nolint:errcheck // best-effort stdout
 	fmt.Fprintln(stdout, "Choose a config template:")                               //nolint:errcheck // best-effort stdout
 	fmt.Fprintln(stdout, "  1. tutorial  — default coding agent (default)")         //nolint:errcheck // best-effort stdout
-	fmt.Fprintln(stdout, "  2. custom    — empty workspace, configure it yourself") //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "  2. gastown   — multi-agent orchestration pack")         //nolint:errcheck // best-effort stdout
+	fmt.Fprintln(stdout, "  3. custom    — empty workspace, configure it yourself") //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Template [1]: ")                                           //nolint:errcheck // best-effort stdout
 
 	configChoice := readLine(br)
@@ -84,7 +85,9 @@ func runWizard(stdin io.Reader, stdout io.Writer) wizardConfig {
 	switch configChoice {
 	case "", "1", "tutorial":
 		configName = "tutorial"
-	case "2", "custom":
+	case "2", "gastown":
+		configName = "gastown"
+	case "3", "custom":
 		configName = "custom"
 	default:
 		fmt.Fprintf(stdout, "Unknown template %q, using tutorial.\n", configChoice) //nolint:errcheck // best-effort stdout
@@ -136,7 +139,7 @@ func runWizard(stdin io.Reader, stdout io.Writer) wizardConfig {
 
 	return wizardConfig{
 		interactive:  true,
-		configName:   "tutorial",
+		configName:   configName,
 		provider:     provider,
 		startCommand: startCommand,
 	}
@@ -257,6 +260,12 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 	// Materialize gc-beads-bd before initDirIfReady (may need probe).
 	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
 	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
+	if wiz.configName == "gastown" {
+		if err := MaterializeGastownPacks(cityPath); err != nil {
+			fmt.Fprintf(stderr, "gc init: materializing gastown packs: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+	}
 	prefix := config.DeriveBeadsPrefix(cityName)
 	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -479,6 +488,8 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 	switch {
 	case wiz.configName == "custom":
 		cfg = config.DefaultCity(cityName)
+	case wiz.configName == "gastown":
+		cfg = config.GastownCity(cityName, wiz.provider, wiz.startCommand)
 	case wiz.provider != "" || wiz.startCommand != "":
 		cfg = config.WizardCity(cityName, wiz.provider, wiz.startCommand)
 	default:

@@ -487,12 +487,13 @@ func TestFormulasDir(t *testing.T) {
 	cfg := loadExpanded(t)
 	// Formulas come from packs, not from city.toml directly.
 	// FormulaLayers.City should have formula dirs from both packs.
+	// Note: bd/dolt formulas are auto-injected at runtime by injectBuiltinPacks,
+	// not via pack.toml includes, so they won't appear in static expansion.
 	if len(cfg.FormulaLayers.City) == 0 {
 		t.Fatal("FormulaLayers.City is empty, want pack formulas layers")
 	}
 	wantSuffixes := []string{
 		filepath.Join("packs", "maintenance", "formulas"),
-		filepath.Join("dolt", "formulas"),
 		filepath.Join("packs", "gastown", "formulas"),
 	}
 	for _, suffix := range wantSuffixes {
@@ -514,14 +515,13 @@ func TestPackDirsPopulated(t *testing.T) {
 	if len(cfg.PackDirs) == 0 {
 		t.Fatal("PackDirs is empty after expansion")
 	}
-	// Should have pack dirs from maintenance, dolt, and gastown packs.
-	var hasMaintenance, hasDolt, hasGastown bool
+	// Should have pack dirs from maintenance and gastown packs.
+	// Note: bd/dolt packs are auto-injected at runtime by injectBuiltinPacks,
+	// not via pack.toml includes, so they won't appear in static expansion.
+	var hasMaintenance, hasGastown bool
 	for _, d := range cfg.PackDirs {
 		if strings.HasSuffix(d, filepath.Join("packs", "maintenance")) {
 			hasMaintenance = true
-		}
-		if strings.HasSuffix(d, "dolt") && !strings.HasSuffix(d, "dolt-health") {
-			hasDolt = true
 		}
 		if strings.HasSuffix(d, filepath.Join("packs", "gastown")) {
 			hasGastown = true
@@ -529,9 +529,6 @@ func TestPackDirsPopulated(t *testing.T) {
 	}
 	if !hasMaintenance {
 		t.Errorf("PackDirs missing maintenance: %v", cfg.PackDirs)
-	}
-	if !hasDolt {
-		t.Errorf("PackDirs missing dolt: %v", cfg.PackDirs)
 	}
 	if !hasGastown {
 		t.Errorf("PackDirs missing gastown: %v", cfg.PackDirs)

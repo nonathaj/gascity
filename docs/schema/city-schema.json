@@ -1644,6 +1644,13 @@
           },
           "type": "array",
           "description": "Includes lists pack directories or URLs to compose into this\nworkspace. Replaces the older pack/packs fields. Each entry\nis a local path, a git source//sub#ref URL, or a GitHub tree URL."
+        },
+        "default_rig_includes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "DefaultRigIncludes lists pack directories applied to new rigs when\n\"gc rig add\" is called without --include. Allows cities to define\na default pack for all rigs."
         }
       },
       "additionalProperties": false,

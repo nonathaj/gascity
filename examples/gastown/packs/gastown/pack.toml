@@ -14,7 +14,7 @@
 [pack]
 name = "gastown"
 schema = 1
-includes = ["../maintenance", "../../../bd"]
+includes = ["../maintenance"]
 
 [[doctor]]
 name = "check-scripts"
