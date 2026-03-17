@@ -106,7 +106,7 @@ if [ -n "$STAGE" ]; then
         [ -e "$ENTRY" ] || continue
         merge_stage_entry "$ENTRY" "$WT/$(basename "$ENTRY")"
     done
-    rmdir "$STAGE" 2>/dev/null || true
+    rm -rf "$STAGE"
     STAGE=""
 fi
 trap - EXIT HUP INT TERM

@@ -59,7 +59,6 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 	cfg := s.state.Config()
 	sp := s.state.SessionProvider()
 	cityName := s.state.CityName()
-	cityPath := s.state.CityPath()
 	sessTmpl := cfg.Workspace.SessionTemplate
 	wantPeek := r.URL.Query().Get("peek") == "true"
 
@@ -70,7 +69,7 @@ func (s *Server) handleAgentList(w http.ResponseWriter, r *http.Request) {
 
 	var agents []agentResponse
 	for _, a := range cfg.Agents {
-		expanded := expandAgent(a, cityPath, cityName, sessTmpl, cfg.Rigs, sp)
+		expanded := expandAgent(a, cityName, sessTmpl, sp)
 		for _, ea := range expanded {
 			// Apply filters.
 			if qRig != "" && ea.rig != qRig {
@@ -226,7 +225,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		Description:       agentCfg.Description,
 		Running:           running,
 		Suspended:         suspended,
-		Rig:               workdirutil.ConfiguredRigName(s.state.CityPath(), agentCfg, cfg.Rigs),
+		Rig:               agentCfg.Dir,
 		Provider:          provider,
 		DisplayName:       displayName,
 		Available:         available,
@@ -248,7 +247,7 @@ func (s *Server) handleAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find active bead by querying bead stores.
-	resp.ActiveBead = s.findActiveBead(name, workdirutil.ConfiguredRigName(s.state.CityPath(), agentCfg, cfg.Rigs))
+	resp.ActiveBead = s.findActiveBead(name, agentCfg.Dir)
 
 	// Compute state enum.
 	quarantined := s.state.IsQuarantined(sessionName)
@@ -326,12 +325,11 @@ type expandedAgent struct {
 // For bounded pool agents, this generates pool-1..pool-max members.
 // For unlimited pools (max < 0), it discovers running instances via session
 // provider prefix matching — the same approach as discoverPoolInstances.
-func expandAgent(a config.Agent, cityPath, cityName, sessTmpl string, rigs []config.Rig, sp sessionLister) []expandedAgent {
-	rigName := workdirutil.ConfiguredRigName(cityPath, a, rigs)
+func expandAgent(a config.Agent, cityName, sessTmpl string, sp sessionLister) []expandedAgent {
 	if !a.IsPool() {
 		return []expandedAgent{{
 			qualifiedName: a.QualifiedName(),
-			rig:           rigName,
+			rig:           a.Dir,
 			suspended:     a.Suspended,
 			provider:      a.Provider,
 			description:   a.Description,
@@ -361,7 +359,7 @@ func expandAgent(a config.Agent, cityPath, cityName, sessTmpl string, rigs []con
 		}
 		result = append(result, expandedAgent{
 			qualifiedName: qn,
-			rig:           rigName,
+			rig:           a.Dir,
 			pool:          poolName,
 			suspended:     a.Suspended,
 			provider:      a.Provider,
