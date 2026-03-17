@@ -74,8 +74,10 @@ func copyDirRecursive(srcBase, dstBase, rel string, stderr io.Writer) error {
 			continue
 		}
 
-		// Copy file.
-		if err := copyFile(filepath.Join(srcBase, entryRel), filepath.Join(dstBase, entryRel)); err != nil {
+		// Copy file (merge if applicable).
+		src := filepath.Join(srcBase, entryRel)
+		dst := filepath.Join(dstBase, entryRel)
+		if err := copyOrMergeFile(src, dst, IsMergeablePath(entryRel)); err != nil {
 			fmt.Fprintf(stderr, "overlay: %v\n", err) //nolint:errcheck
 		}
 	}
@@ -138,11 +140,41 @@ func copyDirWithSkipRecursive(srcBase, dstBase, rel string, skip SkipFunc) error
 			continue
 		}
 
-		if err := copyFile(filepath.Join(srcBase, entryRel), filepath.Join(dstBase, entryRel)); err != nil {
+		src := filepath.Join(srcBase, entryRel)
+		dst := filepath.Join(dstBase, entryRel)
+		if err := copyOrMergeFile(src, dst, IsMergeablePath(entryRel)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// copyOrMergeFile copies src to dst, optionally merging JSON if merge is true
+// and dst already exists. Falls back to plain copy on any merge error.
+func copyOrMergeFile(src, dst string, merge bool) error {
+	if !merge {
+		return copyFile(src, dst)
+	}
+	// Only merge if destination already exists.
+	dstData, err := os.ReadFile(dst)
+	if err != nil {
+		// Destination doesn't exist or can't be read — plain copy.
+		return copyFile(src, dst)
+	}
+	srcData, err := os.ReadFile(src)
+	if err != nil {
+		return copyFile(src, dst)
+	}
+	merged, err := MergeSettingsJSON(dstData, srcData)
+	if err != nil {
+		// Merge failed — fall back to overwrite.
+		return copyFile(src, dst)
+	}
+	// Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("creating parent for %q: %w", dst, err)
+	}
+	return os.WriteFile(dst, merged, 0o644)
 }
 
 // copyFile copies a single file preserving permissions.

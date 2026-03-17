@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -215,6 +216,134 @@ func TestCopyDirWithSkip_PreservesPermissions(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o755 {
 		t.Errorf("permissions = %o, want 755", info.Mode().Perm())
+	}
+}
+
+// --- Merge integration tests ---
+
+func TestCopyDir_MergesSettingsJSON(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	// Pre-populate dst with base hooks.
+	baseJSON := `{
+  "hooks": {
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "gc prime"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "gc hook --inject"}]}]
+  }
+}`
+	writeFile(t, filepath.Join(dst, ".claude", "settings.json"), baseJSON)
+
+	// Src overlay adds PreToolUse only.
+	overJSON := `{
+  "hooks": {
+    "PreToolUse": [{"matcher": "Bash(*foo*)", "hooks": [{"type": "command", "command": "guard"}]}]
+  }
+}`
+	writeFile(t, filepath.Join(src, ".claude", "settings.json"), overJSON)
+
+	var stderr bytes.Buffer
+	if err := CopyDir(src, dst, &stderr); err != nil {
+		t.Fatalf("CopyDir: %v", err)
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
+	}
+
+	// Verify merged result has all three categories.
+	data, err := os.ReadFile(filepath.Join(dst, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hooks := doc["hooks"].(map[string]any)
+	for _, cat := range []string{"SessionStart", "Stop", "PreToolUse"} {
+		if _, ok := hooks[cat]; !ok {
+			t.Errorf("missing category %q after merge", cat)
+		}
+	}
+}
+
+func TestCopyDir_NonMergeableOverwrite(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	writeFile(t, filepath.Join(dst, ".opencode", "config.js"), "old content")
+	writeFile(t, filepath.Join(src, ".opencode", "config.js"), "new content")
+
+	var stderr bytes.Buffer
+	if err := CopyDir(src, dst, &stderr); err != nil {
+		t.Fatalf("CopyDir: %v", err)
+	}
+
+	// Non-mergeable file should be overwritten.
+	assertFileContent(t, filepath.Join(dst, ".opencode", "config.js"), "new content")
+}
+
+func TestCopyDir_MergeableNewFile(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	overJSON := `{"hooks": {"Stop": [{"matcher": "", "hooks": []}]}}`
+	writeFile(t, filepath.Join(src, ".claude", "settings.json"), overJSON)
+
+	// No pre-existing dst file — should create normally.
+	var stderr bytes.Buffer
+	if err := CopyDir(src, dst, &stderr); err != nil {
+		t.Fatalf("CopyDir: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dst, ".claude", "settings.json"), overJSON)
+}
+
+func TestCopyDir_MergeInvalidJSON(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	// Pre-populate dst with invalid JSON.
+	writeFile(t, filepath.Join(dst, ".claude", "settings.json"), "not json")
+	writeFile(t, filepath.Join(src, ".claude", "settings.json"), `{"hooks": {}}`)
+
+	// Should fall back to overwrite (no error).
+	var stderr bytes.Buffer
+	if err := CopyDir(src, dst, &stderr); err != nil {
+		t.Fatalf("CopyDir: %v", err)
+	}
+
+	assertFileContent(t, filepath.Join(dst, ".claude", "settings.json"), `{"hooks": {}}`)
+}
+
+func TestCopyDirWithSkip_MergesSettingsJSON(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	baseJSON := `{"hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "stop"}]}]}}`
+	writeFile(t, filepath.Join(dst, ".claude", "settings.json"), baseJSON)
+
+	overJSON := `{"hooks": {"PreToolUse": [{"matcher": "Bash(*x*)", "hooks": []}]}}`
+	writeFile(t, filepath.Join(src, ".claude", "settings.json"), overJSON)
+
+	var stderr bytes.Buffer
+	if err := CopyDirWithSkip(src, dst, nil, &stderr); err != nil {
+		t.Fatalf("CopyDirWithSkip: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dst, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("reading result: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hooks := doc["hooks"].(map[string]any)
+	for _, cat := range []string{"Stop", "PreToolUse"} {
+		if _, ok := hooks[cat]; !ok {
+			t.Errorf("missing category %q", cat)
+		}
 	}
 }
 

@@ -119,7 +119,7 @@ func doConvoyCreate(store beads.Store, rec events.Recorder, args []string, stdou
 // The convoy bead is created in the city root store. Child beads may live
 // in different rig stores — each child is resolved to its rig store by
 // bead prefix.
-func doConvoyCreateWith(store beads.Store, cfg *config.City, cityPath string, rec events.Recorder, args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
+func doConvoyCreateWith(store beads.Store, cfg *config.City, _ string, rec events.Recorder, args []string, fields ConvoyFields, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
 		fmt.Fprintln(stderr, "gc convoy create: missing convoy name") //nolint:errcheck // best-effort stderr
 		return 1

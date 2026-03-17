@@ -135,7 +135,7 @@ func TestServiceProxyPublishedReadOnlyStillBlocksExternalMutation(t *testing.T) 
 		items: []workspacesvc.Status{{
 			ServiceName:      "review-intake",
 			Visibility:       "public",
-			URL:        "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
+			URL:              "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
 			PublicationState: "published",
 		}},
 		serve: func(http.ResponseWriter, *http.Request) bool {
@@ -161,7 +161,7 @@ func TestServiceProxyPublishedRejectsExternalRequestsOnRawListener(t *testing.T)
 		items: []workspacesvc.Status{{
 			ServiceName:      "review-intake",
 			Visibility:       "public",
-			URL:        "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
+			URL:              "https://review-intake--demo-app--acme--abcd1234.apps.example.com",
 			PublicationState: "published",
 		}},
 		serve: func(http.ResponseWriter, *http.Request) bool {
