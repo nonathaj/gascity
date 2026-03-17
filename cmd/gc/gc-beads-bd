@@ -158,6 +158,12 @@ server_sql_retry() {
 ensure_database_registered() {
     local db="$1"
 
+    # Validate database name before SQL interpolation (upstream 38f7b380).
+    if ! valid_sql_name "$db"; then
+        echo "error: invalid database name: $db" >&2
+        return 1
+    fi
+
     # Check if already visible.
     if server_sql "USE \`$db\`" >/dev/null 2>&1; then
         return 0
@@ -481,10 +487,60 @@ allocate_port() {
 # write_port_file writes the dolt server port to .beads/dolt-server.port.
 # This is the primary port discovery mechanism in beads v0.60.0+, replacing
 # the deprecated dolt_server_port field in metadata.json.
+# Idempotent: skips the write if the file already contains the correct port.
 write_port_file() {
     local beads_dir="$1"
     mkdir -p "$beads_dir"
-    printf '%s\n' "$DOLT_PORT" > "$beads_dir/dolt-server.port"
+    local port_file="$beads_dir/dolt-server.port"
+    # Read-before-write: skip if already correct (upstream f379e3b3).
+    if [ -f "$port_file" ]; then
+        local existing
+        existing=$(cat "$port_file" 2>/dev/null)
+        [ "$existing" = "$DOLT_PORT" ] && return 0
+    fi
+    printf '%s\n' "$DOLT_PORT" > "$port_file"
+}
+
+# sync_port_files writes the dolt server port to all .beads/ directories
+# under GC_CITY_PATH. This prevents bd from spawning orphan embedded servers
+# when a rig's port file is missing or stale (upstream 4eaca225, b97a04ea).
+sync_port_files() {
+    # City root .beads/.
+    write_port_file "$GC_CITY_PATH/.beads"
+
+    # All rig .beads/ directories.
+    if [ -d "$GC_CITY_PATH/rigs" ]; then
+        local rig_dir
+        for rig_dir in "$GC_CITY_PATH/rigs"/*/; do
+            [ -d "$rig_dir/.beads" ] && write_port_file "$rig_dir/.beads"
+        done
+    fi
+}
+
+# valid_sql_name checks that a name is safe for backtick-quoted SQL identifiers.
+# Allows alphanumeric, hyphens, underscores. Rejects empty names and names
+# containing backticks, quotes, or other special characters (upstream 38f7b380).
+valid_sql_name() {
+    case "$1" in
+        "") return 1 ;;
+        *[!a-zA-Z0-9_-]*) return 1 ;;
+    esac
+    return 0
+}
+
+# clean_stale_sockets removes stale Unix domain sockets left by a crashed
+# dolt server. Without cleanup, "unix socket set up failed: file already in
+# use" prevents clean restarts (upstream 2e058fa1).
+clean_stale_sockets() {
+    local sock
+    for sock in /tmp/mysql.sock /tmp/dolt*.sock; do
+        [ -S "$sock" ] || continue
+        # Check if any process holds the socket open.
+        if ! lsof "$sock" >/dev/null 2>&1; then
+            echo "removing stale socket: $sock" >&2
+            rm -f "$sock"
+        fi
+    done
 }
 
 # ensure_metadata repairs missing/wrong metadata fields in an existing metadata.json.
@@ -598,7 +654,7 @@ op_start() {
         existing_port=$(load_state_field port)
         if [ -n "$existing_port" ] && tcp_check_port "$existing_port"; then
             DOLT_PORT="$existing_port"
-            write_port_file "$GC_CITY_PATH/.beads"
+            sync_port_files
             echo "$existing_pid" > "$PID_FILE"
             save_state "$existing_pid" true
             exit 0
@@ -625,6 +681,7 @@ op_start() {
     fi
 
     # Pre-launch cleanup.
+    clean_stale_sockets
     quarantine_phantom_dbs
     cleanup_stale_locks
 
@@ -671,8 +728,9 @@ op_start() {
         die "dolt server started (PID $server_pid) but not accepting connections after 30s (check $LOG_FILE)"
     fi
 
-    # Write port file so the Go side and agents can discover the port.
-    write_port_file "$GC_CITY_PATH/.beads"
+    # Sync port files to city and all rig .beads/ directories so agents
+    # and bd processes discover the correct port (upstream 4eaca225).
+    sync_port_files
 }
 
 # op_ensure_ready is a legacy alias for start.
@@ -730,6 +788,11 @@ op_init() {
 
     if [ -z "$dir" ] || [ -z "$prefix" ]; then
         die "usage: gc-beads-bd init <dir> <prefix>"
+    fi
+
+    # Validate prefix before SQL interpolation (upstream 38f7b380).
+    if ! valid_sql_name "$prefix"; then
+        die "invalid beads prefix: $prefix (must be alphanumeric, hyphens, underscores)"
     fi
 
     # Filter BEADS_DIR from inherited environment to prevent bd from
@@ -875,6 +938,9 @@ op_recover() {
 
     # Stop.
     op_stop_impl || true
+
+    # Clean stale sockets before restart (upstream 2e058fa1).
+    clean_stale_sockets
 
     # Wait a moment for cleanup.
     sleep 1
