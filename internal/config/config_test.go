@@ -3293,21 +3293,160 @@ func TestValidateDependsOn(t *testing.T) {
 	}
 }
 
-func TestInjectImplicitAgents_EmptyCity(t *testing.T) {
+func TestInjectImplicitAgents_NoProviders(t *testing.T) {
+	// No configured providers → no implicit agents.
 	cfg := &City{}
 	InjectImplicitAgents(cfg)
 
-	providers := BuiltinProviderOrder()
-	if len(cfg.Agents) != len(providers) {
-		t.Fatalf("got %d agents, want %d", len(cfg.Agents), len(providers))
+	if len(cfg.Agents) != 0 {
+		t.Fatalf("got %d agents, want 0 (no providers configured)", len(cfg.Agents))
 	}
-	for i, name := range providers {
-		a := cfg.Agents[i]
-		if a.Name != name {
-			t.Errorf("agent[%d].Name = %q, want %q", i, a.Name, name)
+}
+
+func TestInjectImplicitAgents_WorkspaceProvider(t *testing.T) {
+	// workspace.provider alone is enough — no [providers.claude] section needed.
+	cfg := &City{
+		Workspace: Workspace{Provider: "claude"},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+	a := cfg.Agents[0]
+	if a.Name != "claude" {
+		t.Errorf("Name = %q, want %q", a.Name, "claude")
+	}
+	if !a.Implicit {
+		t.Error("Implicit = false, want true")
+	}
+}
+
+func TestInjectImplicitAgents_WorkspaceProviderPlusExplicit(t *testing.T) {
+	// workspace.provider = "claude" + [providers.codex] → both get implicit agents.
+	cfg := &City{
+		Workspace: Workspace{Provider: "claude"},
+		Providers: map[string]ProviderSpec{
+			"codex": {},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
+	}
+	// Canonical order: claude before codex.
+	if cfg.Agents[0].Name != "claude" {
+		t.Errorf("agent[0].Name = %q, want %q", cfg.Agents[0].Name, "claude")
+	}
+	if cfg.Agents[1].Name != "codex" {
+		t.Errorf("agent[1].Name = %q, want %q", cfg.Agents[1].Name, "codex")
+	}
+}
+
+func TestInjectImplicitAgents_WorkspaceProviderNoDuplicate(t *testing.T) {
+	// workspace.provider = "claude" + [providers.claude] → no duplicate.
+	cfg := &City{
+		Workspace: Workspace{Provider: "claude"},
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+}
+
+func TestInjectImplicitAgents_WorkspaceProviderNonBuiltin(t *testing.T) {
+	// A non-builtin workspace.provider without a matching [providers.X]
+	// section must NOT create an implicit agent (it would fail at resolution).
+	cfg := &City{
+		Workspace: Workspace{Provider: "my-custom-llm"},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 0 {
+		t.Fatalf("got %d agents, want 0 (non-builtin workspace.provider without [providers] entry)", len(cfg.Agents))
+	}
+}
+
+func TestInjectImplicitAgents_WorkspaceProviderNonBuiltinWithEntry(t *testing.T) {
+	// A non-builtin workspace.provider WITH a matching [providers.X]
+	// section should still work.
+	cfg := &City{
+		Workspace: Workspace{Provider: "my-custom-llm"},
+		Providers: map[string]ProviderSpec{
+			"my-custom-llm": {Command: "ollama"},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(cfg.Agents))
+	}
+	if cfg.Agents[0].Name != "my-custom-llm" {
+		t.Errorf("Name = %q, want %q", cfg.Agents[0].Name, "my-custom-llm")
+	}
+}
+
+func TestInjectImplicitAgents_ExplicitAgentUnconfiguredProvider(t *testing.T) {
+	// An explicit agent referencing a provider NOT in cfg.Providers or
+	// workspace.provider is preserved, but no implicit agent is created
+	// for that provider.
+	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+		},
+		Agents: []Agent{
+			{Name: "my-gemini-worker", Provider: "gemini"},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	// 1 explicit (gemini) + 1 implicit (claude) = 2
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
+	}
+
+	// Explicit agent preserved.
+	if cfg.Agents[0].Name != "my-gemini-worker" {
+		t.Errorf("agent[0].Name = %q, want %q", cfg.Agents[0].Name, "my-gemini-worker")
+	}
+	if cfg.Agents[0].Implicit {
+		t.Error("explicit agent should not be marked implicit")
+	}
+
+	// No implicit gemini agent.
+	for _, a := range cfg.Agents {
+		if a.Name == "gemini" && a.Implicit {
+			t.Error("should not create implicit agent for unconfigured provider 'gemini'")
 		}
-		if a.Provider != name {
-			t.Errorf("agent[%d].Provider = %q, want %q", i, a.Provider, name)
+	}
+}
+
+func TestInjectImplicitAgents_ConfiguredOnly(t *testing.T) {
+	// Only providers in cfg.Providers get implicit agents.
+	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+			"codex":  {},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
+	}
+	// Canonical order: claude before codex.
+	for i, wantName := range []string{"claude", "codex"} {
+		a := cfg.Agents[i]
+		if a.Name != wantName {
+			t.Errorf("agent[%d].Name = %q, want %q", i, a.Name, wantName)
+		}
+		if a.Provider != wantName {
+			t.Errorf("agent[%d].Provider = %q, want %q", i, a.Provider, wantName)
 		}
 		if !a.Implicit {
 			t.Errorf("agent[%d].Implicit = false, want true", i)
@@ -3324,18 +3463,46 @@ func TestInjectImplicitAgents_EmptyCity(t *testing.T) {
 	}
 }
 
+func TestInjectImplicitAgents_CustomProvider(t *testing.T) {
+	// Multiple builtins + multiple custom providers: builtins come first
+	// in canonical order, then customs in alphabetical order.
+	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"codex":    {},
+			"claude":   {},
+			"zebra":    {Command: "zebra-llm"},
+			"my-local": {Command: "ollama"},
+		},
+	}
+	InjectImplicitAgents(cfg)
+
+	if len(cfg.Agents) != 4 {
+		t.Fatalf("got %d agents, want 4", len(cfg.Agents))
+	}
+	// Builtins in canonical order (claude before codex), then customs alphabetical.
+	wantOrder := []string{"claude", "codex", "my-local", "zebra"}
+	for i, want := range wantOrder {
+		if cfg.Agents[i].Name != want {
+			t.Errorf("agent[%d].Name = %q, want %q", i, cfg.Agents[i].Name, want)
+		}
+	}
+}
+
 func TestInjectImplicitAgents_ExplicitWins(t *testing.T) {
 	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+			"codex":  {},
+		},
 		Agents: []Agent{
 			{Name: "claude", Provider: "claude", Pool: &PoolConfig{Min: 1, Max: 3}},
 		},
 	}
 	InjectImplicitAgents(cfg)
 
-	// Should have 1 explicit claude + (N-1) implicit for other providers.
-	providers := BuiltinProviderOrder()
-	if len(cfg.Agents) != len(providers) {
-		t.Fatalf("got %d agents, want %d", len(cfg.Agents), len(providers))
+	// 1 explicit claude + 1 implicit codex.
+	if len(cfg.Agents) != 2 {
+		t.Fatalf("got %d agents, want 2", len(cfg.Agents))
 	}
 
 	// First agent is the explicit one — not overwritten.
@@ -3362,6 +3529,10 @@ func TestInjectImplicitAgents_ExplicitWins(t *testing.T) {
 func TestInjectImplicitAgents_RigScopedExplicitDoesNotBlockCity(t *testing.T) {
 	// An explicit rig-scoped "claude" should NOT prevent the implicit city-scoped one.
 	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+			"codex":  {},
+		},
 		Rigs: []Rig{{Name: "my-rig", Path: "/tmp/my-rig"}},
 		Agents: []Agent{
 			{Name: "claude", Dir: "my-rig", Provider: "claude"},
@@ -3369,10 +3540,9 @@ func TestInjectImplicitAgents_RigScopedExplicitDoesNotBlockCity(t *testing.T) {
 	}
 	InjectImplicitAgents(cfg)
 
-	providers := BuiltinProviderOrder()
-	// 1 explicit rig-scoped claude + N implicit city-scoped + (N-1) implicit rig-scoped
+	// 1 explicit rig-scoped claude + 2 implicit city-scoped + 1 implicit rig-scoped codex
 	// (the explicit rig-scoped claude blocks the implicit rig-scoped claude).
-	want := 1 + len(providers) + (len(providers) - 1)
+	want := 1 + 2 + 1
 	if len(cfg.Agents) != want {
 		t.Fatalf("got %d agents, want %d", len(cfg.Agents), want)
 	}
@@ -3404,6 +3574,10 @@ func TestInjectImplicitAgents_RigScopedExplicitDoesNotBlockCity(t *testing.T) {
 func TestInjectImplicitAgents_RigInjection(t *testing.T) {
 	// With rigs defined, implicit agents are injected for each rig too.
 	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"claude": {},
+			"codex":  {},
+		},
 		Rigs: []Rig{
 			{Name: "frontend", Path: "/tmp/frontend"},
 			{Name: "backend", Path: "/tmp/backend"},
@@ -3411,14 +3585,13 @@ func TestInjectImplicitAgents_RigInjection(t *testing.T) {
 	}
 	InjectImplicitAgents(cfg)
 
-	providers := BuiltinProviderOrder()
-	// N city-scoped + N×2 rig-scoped = N×3
-	want := len(providers) * 3
+	// 2 city-scoped + 2×2 rig-scoped = 6
+	want := 6
 	if len(cfg.Agents) != want {
 		t.Fatalf("got %d agents, want %d", len(cfg.Agents), want)
 	}
 
-	// Verify each rig has all providers.
+	// Verify each rig has all configured providers.
 	for _, rigName := range []string{"frontend", "backend"} {
 		rigAgents := 0
 		for _, a := range cfg.Agents {
@@ -3426,8 +3599,8 @@ func TestInjectImplicitAgents_RigInjection(t *testing.T) {
 				rigAgents++
 			}
 		}
-		if rigAgents != len(providers) {
-			t.Errorf("rig %q: got %d implicit agents, want %d", rigName, rigAgents, len(providers))
+		if rigAgents != 2 {
+			t.Errorf("rig %q: got %d implicit agents, want 2", rigName, rigAgents)
 		}
 	}
 
