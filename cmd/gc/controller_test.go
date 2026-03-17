@@ -138,24 +138,43 @@ func TestControllerShutdown(t *testing.T) {
 		Daemon:    config.DaemonConfig{ShutdownTimeout: "0s"},
 	}
 
+	// Write a city.toml so the controller uses the temp dir for bead store
+	// operations rather than falling back to cwd (which may contain a slow
+	// Dolt-backed .beads/ database).
+	tomlPath := writeCityTOML(t, dir, "test", "mayor")
+
 	var stdout, stderr bytes.Buffer
 
 	// Run controller in a goroutine; it will block until canceled.
-	done := make(chan int, 1)
+	// Use a close-able channel so cleanup can detect whether the
+	// controller exited without double-draining.
+	done := make(chan struct{})
+	var exitCode int
 	go func() {
-		done <- runController(dir, "", cfg, buildFn, sp, nil, nil, nil, nil, events.Discard, nil, &stdout, &stderr)
+		exitCode = runController(dir, tomlPath, cfg, buildFn, sp, nil, nil, nil, nil, events.Discard, nil, &stdout, &stderr)
+		close(done)
 	}()
 
-	// Wait for controller to start, then send stop via socket.
-	time.Sleep(100 * time.Millisecond)
+	// Ensure cleanup: if the test fails, send stop so the goroutine exits.
+	t.Cleanup(func() {
+		tryStopController(dir, &bytes.Buffer{})
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
+
+	// Poll for controller socket to become available instead of fixed sleep.
+	waitForController(t, dir, 5*time.Second)
+
 	if !tryStopController(dir, &bytes.Buffer{}) {
 		t.Fatal("tryStopController returned false, expected true")
 	}
 
 	select {
-	case code := <-done:
-		if code != 0 {
-			t.Errorf("runController exit code = %d, want 0; stderr: %s", code, stderr.String())
+	case <-done:
+		if exitCode != 0 {
+			t.Errorf("runController exit code = %d, want 0; stderr: %s", exitCode, stderr.String())
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("runController did not exit after stop")
@@ -222,11 +241,23 @@ func TestControllerReloadsConfig(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	var stdout, stderr bytes.Buffer
 
-	go controllerLoop(ctx, 20*time.Millisecond, cfg, "test", tomlPath, nil,
-		buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, nil, nil, &stdout, &stderr)
+	loopDone := make(chan struct{})
+	go func() {
+		controllerLoop(ctx, 20*time.Millisecond, cfg, "test", tomlPath, nil,
+			buildFn, sp, nil, nil, nil, nil, nil, nil, events.Discard, nil, nil, nil, nil, &stdout, &stderr)
+		close(loopDone)
+	}()
+
+	// Ensure cleanup: cancel and wait for the goroutine to exit.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-loopDone:
+		case <-time.After(5 * time.Second):
+		}
+	})
 
 	// Wait for initial reconcile.
 	for reconcileCount.Load() < 1 {
@@ -236,23 +267,22 @@ func TestControllerReloadsConfig(t *testing.T) {
 	// Overwrite city.toml with a new agent.
 	writeCityTOML(t, dir, "test", "mayor", "worker")
 
-	// Wait for at least one more reconcile after the file change.
-	target := reconcileCount.Load() + 2 // +2 to be safe (need tick after dirty flag)
-	deadline := time.After(3 * time.Second)
-	for reconcileCount.Load() < target {
+	// Wait for the reload to appear in stdout. The fsnotify watcher fires on
+	// the directory write, debounce (5ms) sets dirty, and the next tick reloads
+	// config and writes "Config reloaded" to stdout. Polling stdout directly
+	// avoids depending on reconcile count which varies with tick timing.
+	deadline := time.After(5 * time.Second)
+	for !strings.Contains(stdout.String(), "Config reloaded") {
 		select {
 		case <-deadline:
-			t.Fatal("timed out waiting for config reload")
+			t.Fatalf("timed out waiting for config reload; reconciles=%d stdout=%q stderr=%q",
+				reconcileCount.Load(), stdout.String(), stderr.String())
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
 	cancel()
-
-	if !strings.Contains(stdout.String(), "Config reloaded") {
-		t.Errorf("expected 'Config reloaded' in stdout, got: %s", stdout.String())
-	}
 
 	names, _ := lastAgentNames.Load().([]string)
 	if len(names) != 2 || names[0] != "mayor" || names[1] != "worker" {
@@ -438,12 +468,30 @@ func TestControllerPokeTriggersImmediate(t *testing.T) {
 		Workspace: config.Workspace{Name: "test"},
 		Beads:     config.BeadsConfig{Provider: "file"},
 	}
+
+	// Write a city.toml so the controller uses the temp dir for bead store
+	// operations rather than falling back to cwd.
+	tomlPath := writeCityTOML(t, dir, "test")
+
 	var stdout, stderr bytes.Buffer
 
-	done := make(chan int, 1)
+	done := make(chan struct{})
 	go func() {
-		done <- runController(dir, "", cfg, buildFn, sp, nil, nil, nil, nil, events.Discard, nil, &stdout, &stderr)
+		runController(dir, tomlPath, cfg, buildFn, sp, nil, nil, nil, nil, events.Discard, nil, &stdout, &stderr)
+		close(done)
 	}()
+
+	// Ensure cleanup: if the test fails, send stop so the goroutine exits.
+	t.Cleanup(func() {
+		tryStopController(dir, &bytes.Buffer{})
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+	})
+
+	// Poll for controller socket to become available.
+	waitForController(t, dir, 5*time.Second)
 
 	// Wait for initial tick.
 	deadline := time.After(5 * time.Second)
@@ -483,6 +531,25 @@ func TestControllerPokeTriggersImmediate(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("controller did not exit")
+	}
+}
+
+// waitForController polls until the controller socket at dir is responsive,
+// or fails the test after the given timeout. This replaces fixed sleeps that
+// are unreliable under load.
+func waitForController(t *testing.T, dir string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		if controllerAlive(dir) != 0 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for controller socket to become available")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 }
 

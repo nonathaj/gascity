@@ -29,6 +29,18 @@ bd show <id>
 
 If nothing is available, run `gc runtime drain-ack` to end your session.
 
+## Following Your Formula
+
+Your formula defines your work as a sequence of steps. Steps are NOT
+materialized as individual beads — they exist in the formula definition.
+Read the step descriptions and work through them in order.
+
+**THE RULE**: Execute one step at a time. Verify completion. Move to next.
+Do NOT skip ahead. Do NOT claim steps done without actually doing them.
+
+On crash or restart, re-read your formula steps and determine where you
+left off from context (last completed action, git state, bead state).
+
 ## Molecules — STOP, check BEFORE you start working
 
 **CRITICAL:** When you run `bd show` in step 4, look at the METADATA

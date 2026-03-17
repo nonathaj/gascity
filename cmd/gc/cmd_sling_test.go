@@ -1182,6 +1182,8 @@ func TestDoSlingBatchForceSkipsPerChildWarnings(t *testing.T) {
 
 func TestOnAndFormulaMutuallyExclusive(t *testing.T) {
 	cmd := newSlingCmd(&bytes.Buffer{}, &bytes.Buffer{})
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"mayor", "BL-1", "--formula", "--on=code-review"})
 	err := cmd.Execute()
 	if err == nil {
@@ -3120,6 +3122,8 @@ func TestOneArgSlingFormulaRequiresTarget(t *testing.T) {
 	// --formula with 1 arg is checked in newSlingCmd via cobra.RangeArgs.
 	// Verify the flag exists and the error path message.
 	cmd := newSlingCmd(&bytes.Buffer{}, &bytes.Buffer{})
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"--formula", "code-review"})
 	err := cmd.Execute()
 	if err == nil {
