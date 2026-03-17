@@ -254,7 +254,7 @@ The dashboard uses `session.last_activity` for stale/stuck detection,
 running?), and `GET /v0/agent/{name}/output` for agent output — no
 direct tmux access needed.
 
-Data source: `session.Provider.ListRunning()` + `config.City.Agents`
+Data source: `runtime.Provider.ListRunning()` + `config.City.Agents`
 (with pool expansion via `poolAgents()`). The controller's reconciliation
 loop already expands pool definitions into individual agents — the API
 returns the same expanded view.
@@ -577,7 +577,7 @@ type Server struct {
     beads     beads.Store       // bead queries across rigs
     mail      mail.Provider     // mail with threading, read/unread, reply
     events    events.Provider   // event list, watch, latest seq
-    sessions  session.Provider  // agent session state
+    sessions  runtime.Provider  // agent session state
     http      *http.Server
 }
 ```
@@ -633,8 +633,8 @@ What moves from subprocess to in-memory:
 
 | Dashboard data | Current (subprocess) | API (in-memory) |
 |---|---|---|
-| City status | `gc status --json` | `config.City` + `session.Provider` |
-| Agent list | `gc session list --json` | `session.Provider.ListRunning()` + config (pool expansion via `poolAgents()`) |
+| City status | `gc status --json` | `config.City` + `runtime.Provider` |
+| Agent list | `gc session list --json` | `runtime.Provider.ListRunning()` + config (pool expansion via `poolAgents()`) |
 | Convoy list | `bd list --type=convoy --json` | `beads.Store.List(type=convoy)` |
 | Convoy tracking | `bd dep list <id> -t tracks --json` | `beads.Store.Deps(id, "tracks")` |
 | Issues | `bd list --status=open --json` | `beads.Store.List(status=open)` |
@@ -853,7 +853,7 @@ v1 (later): API server owns state → controller is a client of the API
 ```
 
 **v0:** The controller creates `beads.Store`, `events.Provider`,
-`session.Provider` and passes them to `api.New(...)`. The API handlers are
+`runtime.Provider` and passes them to `api.New(...)`. The API handlers are
 consumers of these interfaces.
 
 **v1:** The API server becomes the state authority. It owns the store

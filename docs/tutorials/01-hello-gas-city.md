@@ -1,3 +1,8 @@
+---
+title: Tutorial 01 - Hello, Gas City
+description: Boot a city, add a rig, create a bead, and attach to the mayor.
+---
+
 # Tutorial 01 — Hello, Gas City
 
 Let's say that you're using Claude Code on a significant feature implementation.
@@ -21,10 +26,12 @@ the beads system that ties it all together.
 
 ## Starting your city
 
-First, start by installing Gas City. We do that on macOS with Home Brew:
+Before starting, follow the source-based
+[installation guide](../getting-started/installation). Once `gc` is
+available, initialize a city:
 
 ```shell
-$ brew install gascity
+$ make install
 ```
 
 A city is a particular set of rules for how your orchestration works and a set
@@ -67,7 +74,7 @@ a simple one:
 $ mkdir hello-world
 $ cd hello-world
 $ git init
-Initialized empty Git repository in /Users/csells/bright-lights/hello-world/.git/
+Initialized empty Git repository in /home/user/bright-lights/hello-world/.git/
 ```
 
 Now register it with the city. Because hello-world is inside the city
@@ -76,20 +83,20 @@ directory, `gc` discovers the city automatically:
 ```shell
 $ gc rig add .
 Adding rig 'hello-world'...
-  Detected git repo at /Users/csells/bright-lights/hello-world
+  Detected git repo at /home/user/bright-lights/hello-world
   Initialized beads database
 Rig added.
 
 $ gc rig list
 
-Rigs in /Users/csells/bright-lights:
+Rigs in /home/user/bright-lights:
 
   bright-lights (HQ):
     Prefix: brightlights
     Beads:  initialized
 
   hello-world:
-    Path:   /Users/csells/bright-lights/hello-world
+    Path:   /home/user/bright-lights/hello-world
     Prefix: helloworld
     Beads:  initialized
 ```
@@ -258,9 +265,9 @@ This tutorial used four of Gas City's five primitives:
 | **Task Store (Beads)** | `bd create` / `bd list` — tracked the work                     |
 | **Prompt Templates**   | `gc prime` — gave agents their behavioral prompts at startup   |
 
-The remaining primitive (Event Bus) isn't needed yet. It shows up when you have
-multiple agents that need to observe each other. That's
-[Tutorial 04](04-agent-team.md).
+The remaining primitive (Event Bus) is not needed yet. For the current published
+tutorial set, use the [Tutorials index](/tutorials) instead of the older
+numbered progression plan.
 
 ---
 
@@ -273,9 +280,10 @@ But right now you're doing the routing manually — you told the agent to check
 beads yourself. Ideally we'd like the agent to know it has outstanding work and
 to get to it without any nudging from us.
 
-In [Tutorial 02 — Named Crew](02-named-crew.md), you'll register named agents
-on your rigs so the mayor can route work to them and they'll get to work as soon
-as they're started.
+The old intermediate numbered tutorials were removed instead of being left
+stale. For the next maintained walkthrough, jump to
+[Tutorial 06 — Formulas](/tutorials/06-formulas), or browse the published list in the
+[Tutorials index](/tutorials).
 
 ---
 

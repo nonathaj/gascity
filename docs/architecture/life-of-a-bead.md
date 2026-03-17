@@ -50,14 +50,15 @@ timestamps, and status from its embedded Dolt database.
 `gc sling` does not create beads -- they already exist. But with
 `--formula`, sling instantiates a wisp first. `cmdSling()` in
 `cmd/gc/cmd_sling.go` calls `instantiateWisp()`, which delegates to
-`Store.MolCook()`. For BdStore: `bd mol cook --formula=code-review`. For
-exec.Store with a formula resolver, `formula.ComposeMolCook()` in
-`internal/formula/compose.go` creates the molecule in Go:
+`Store.MolCook()`.
 
-1. Resolve the formula by name via `formula.Resolver`
-2. Apply variable substitution via `formula.SubstituteVars()`
-3. Create root bead: `store.Create(Bead{Type: "molecule", Ref: formulaName})`
-4. Create one child per step: `store.Create(Bead{Type: "task", ParentID: root.ID, Ref: stepID})`
+- For `BdStore`, that becomes `bd mol wisp <formula> --json`
+- For attached molecules, `Store.MolCookOn()` becomes
+  `bd mol bond <formula> <bead> --json`
+- For `exec.Store`, the configured script handles `mol-cook` and
+  `mol-cook-on`
+- For `MemStore` and `FileStore`, tests and tutorials get a simplified
+  molecule root bead
 
 The root bead ID is returned to sling for routing.
 
@@ -211,19 +212,10 @@ The agent may update metadata via `Store.SetMetadata()`. For BdStore,
 ### Molecule step progression
 
 For molecule beads (wisps), the agent works through steps sequentially.
-`formula.CurrentStep()` in `internal/formula/formula.go` (line 47)
-computes the next runnable step:
-
-1. Build a set of closed step refs (dependency checking)
-2. Find the first open step whose Needs are all in the closed set
-3. Return it (or nil if all done / none ready)
-
-The agent closes each step bead as it completes the work, then queries
-`CurrentStep()` again to find the next one. Step ordering respects the
-Needs dependency graph defined in the formula.
-
-`formula.CompletedCount()` (line 75) and `formula.StepIndex()` (line 87)
-provide progress tracking for molecule status display.
+step ordering is handled by the configured bead backend, primarily `bd`
+in production. Gas City routes and labels the molecule root; agents then
+work through the resulting step beads and close them through normal bead
+operations.
 
 ### Health patrol during execution
 
@@ -286,8 +278,7 @@ with the `"owned"` label -- their lifecycle is managed manually.
 ### Molecule completion
 
 For molecules, completion means all step beads are closed.
-`formula.CurrentStep()` returns nil when no more steps are runnable. The
-root molecule bead is then closed, marking the entire formula run as
+The root molecule bead is then closed, marking the entire formula run as
 complete. For wisps (ephemeral molecules), this triggers eventual garbage
 collection (Phase 6).
 
@@ -363,7 +354,7 @@ maps to closed, in_progress maps to in_progress, everything else to open.
 |---|---|---|
 | Create | `BdStore.Create()` | `internal/beads/bdstore.go` |
 | Create | `exec.Store.Create()` | `internal/beads/exec/exec.go` |
-| Create (molecule) | `formula.ComposeMolCook()` | `internal/formula/compose.go` |
+| Create (molecule) | `Store.MolCook()` / `Store.MolCookOn()` | `internal/beads/beads.go` |
 | Create (mail) | `beadmail.Provider.Send()` | `internal/mail/beadmail/beadmail.go` |
 | Create (convoy) | `doConvoyCreate()` | `cmd/gc/cmd_convoy.go` |
 | Discovery | `cmdHook()` / `doHook()` | `cmd/gc/cmd_hook.go` |
@@ -374,7 +365,7 @@ maps to closed, in_progress maps to in_progress, everything else to open.
 | Routing | `instantiateWisp()` | `cmd/gc/cmd_sling.go` |
 | Execution | `BdStore.Update()` | `internal/beads/bdstore.go` |
 | Execution | `BdStore.SetMetadata()` | `internal/beads/bdstore.go` |
-| Execution | `formula.CurrentStep()` | `internal/formula/formula.go` |
+| Execution | provider-managed molecule step beads | `bd` or the configured beads backend |
 | Completion | `BdStore.Close()` | `internal/beads/bdstore.go` |
 | Completion | `doConvoyAutocloseWith()` | `cmd/gc/cmd_convoy.go` |
 | Completion | `doConvoyCheck()` | `cmd/gc/cmd_convoy.go` |
@@ -384,15 +375,15 @@ maps to closed, in_progress maps to in_progress, everything else to open.
 
 ## See Also
 
-- [Bead Store architecture](beads.md) -- Store interface, invariants, and
+- [Bead Store architecture](/architecture/beads) -- Store interface, invariants, and
   implementation details for all four store backends
-- [Dispatch architecture](dispatch.md) -- how sling routes beads to agents
+- [Dispatch architecture](/architecture/dispatch) -- how sling routes beads to agents
   and pools, including container expansion
-- [Formulas architecture](formulas.md) -- formula parsing, molecule
+- [Formulas architecture](/architecture/formulas) -- formula parsing, molecule
   instantiation, and step dependency resolution
-- [Orders architecture](orders.md) -- gate conditions, cooldown
+- [Orders architecture](/architecture/orders) -- gate conditions, cooldown
   tracking via order-run labels, and wisp dispatch
-- [Messaging architecture](messaging.md) -- how mail composes on top of
+- [Messaging architecture](/architecture/messaging) -- how mail composes on top of
   beads (messages are beads with type "message")
-- [Glossary](glossary.md) -- authoritative definitions of bead, molecule,
+- [Glossary](/architecture/glossary) -- authoritative definitions of bead, molecule,
   convoy, wisp, GUPP, NDI, and other terms used in this document

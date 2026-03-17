@@ -1,12 +1,12 @@
 # Event Bus
 
-<!--
+{/*
 Current-state architecture document. Describes how the Event Bus works
 TODAY. For proposed changes, write a design doc in docs/design/ instead.
 
 Audience: Gas City contributors (human and LLM agent).
 Update this document when the implementation changes.
--->
+*/}
 
 > Last verified against code: 2026-03-01
 
@@ -343,7 +343,7 @@ lifetime via `sync.Once`.
 ## Testing
 
 The event bus has a layered testing strategy aligned with
-[TESTING.md](../../TESTING.md):
+[TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md):
 
 **Conformance suite** (`internal/events/eventstest/conformance.go`):
 `RunProviderTests` runs 20+ subtests against any Provider
@@ -419,15 +419,15 @@ suite against a stateful jq-based mock script.
 
 ## See Also
 
-- [Architecture glossary](glossary.md) -- authoritative definitions of
+- [Architecture glossary](/architecture/glossary) -- authoritative definitions of
   event bus, order, gate, and other terms used in this document
-- [Health Patrol architecture](health-patrol.md) -- how the controller
+- [Health Patrol architecture](/architecture/health-patrol) -- how the controller
   reconciliation loop records agent lifecycle events on every tick
-- [Bead Store architecture](beads.md) -- the other Layer 0-1 primitive;
+- [Bead Store architecture](/architecture/beads) -- the other Layer 0-1 primitive;
   events and beads together provide persistence + observation
-- [Config architecture](config.md) -- how `[events].provider` is
+- [Config architecture](/architecture/config) -- how `[events].provider` is
   resolved and how progressive activation works
-- [TESTING.md](../../TESTING.md) -- testing philosophy and tier
+- [TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md) -- testing philosophy and tier
   boundaries for the conformance suite approach
-- [CLAUDE.md](../../CLAUDE.md) -- design principles including "Event
+- [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) -- design principles including "Event
   Bus is the universal observation substrate" (layering invariant 3)

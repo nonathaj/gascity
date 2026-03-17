@@ -8,7 +8,7 @@
 | Issue | — |
 | Supersedes | — |
 
-**Companion to:** [Unified Session Model](unified-sessions.md). This doc
+**Companion to:** [Unified Session Model](/design/unified-sessions). This doc
 refines session naming, work dispatch, and clone semantics left unspecified
 in the parent design.
 

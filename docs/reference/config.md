@@ -28,7 +28,7 @@ City is the top-level configuration for a Gas City instance.
 | `api` | APIConfig |  |  | API configures the optional HTTP API server. |
 | `chat_sessions` | ChatSessionsConfig |  |  | ChatSessions configures chat session behavior (auto-suspend). |
 | `convergence` | ConvergenceConfig |  |  | Convergence configures convergence loop limits. |
-| `service` | []Service |  |  | Services declares workspace-owned HTTP services mounted on the controller edge under /svc/{name}. |
+| `service` | []Service |  |  | Services declares workspace-owned HTTP services mounted on the controller edge under /svc/&#123;name&#125;. |
 | `agent_defaults` | AgentDefaults |  |  | AgentDefaults provides default values applied to all agents that don't override them. Useful for setting city-wide model, wake_mode, and overlay allowlists. |
 
 ## ACPSessionConfig
@@ -77,21 +77,21 @@ Agent defines a configured agent in the city.
 | `emits_permission_warning` | boolean |  |  | EmitsPermissionWarning indicates whether the agent emits permission prompts that should be suppressed. |
 | `env` | map[string]string |  |  | Env sets additional environment variables for the agent process. |
 | `pool` | PoolConfig |  |  | Pool configures elastic pool behavior. When set, the agent becomes a pool. |
-| `work_query` | string |  |  | WorkQuery is the shell command to find available work for this agent. Used by gc hook and available in prompt templates as {{.WorkQuery}}. Also used by the controller's reconciler to detect pending work (WakeWork reason): non-empty output means work exists, which wakes sleeping sessions even without WakeConfig. Default for fixed agents: "bd ready --assignee=<qualified-name>". Default for pool agents: "bd ready --label=pool:<qualified-name> --limit=1". Override to integrate with external task systems. |
-| `sling_query` | string |  |  | SlingQuery is the command template to route a bead to this agent/pool. Used by gc sling to make a bead visible to the target's work_query. The placeholder {} is replaced with the bead ID at runtime. Default for fixed agents: "bd update {} --assignee=<qualified-name>". Default for pool agents: "bd update {} --add-label=pool:<qualified-name>". Pool agents must set both sling_query and work_query, or neither. |
+| `work_query` | string |  |  | WorkQuery is the shell command to find available work for this agent. Used by gc hook and available in prompt templates as &#123;&#123;.WorkQuery&#125;&#125;. Also used by the controller's reconciler to detect pending work (WakeWork reason): non-empty output means work exists, which wakes sleeping sessions even without WakeConfig. Default for fixed agents: "bd ready --assignee=&lt;qualified-name&gt;". Default for pool agents: "bd ready --label=pool:&lt;qualified-name&gt; --limit=1". Override to integrate with external task systems. |
+| `sling_query` | string |  |  | SlingQuery is the command template to route a bead to this agent/pool. Used by gc sling to make a bead visible to the target's work_query. The placeholder &#123;&#125; is replaced with the bead ID at runtime. Default for fixed agents: "bd update &#123;&#125; --assignee=&lt;qualified-name&gt;". Default for pool agents: "bd update &#123;&#125; --add-label=pool:&lt;qualified-name&gt;". Pool agents must set both sling_query and work_query, or neither. |
 | `idle_timeout` | string |  |  | IdleTimeout is the maximum time an agent session can be inactive before the controller kills and restarts it. Duration string (e.g., "15m", "1h"). Empty (default) disables idle checking. |
 | `install_agent_hooks` | []string |  |  | InstallAgentHooks overrides workspace-level install_agent_hooks for this agent. When set, replaces (not adds to) the workspace default. |
 | `hooks_installed` | boolean |  |  | HooksInstalled overrides automatic hook detection. Set to true when hooks are manually installed (e.g., merged into the project's own hook config) and auto-installation via install_agent_hooks is not desired. When true, the agent is treated as hook-enabled for startup behavior: no prime instruction in beacon and no delayed nudge. Interacts with install_agent_hooks — set this instead when hooks are pre-installed. |
-| `session_setup` | []string |  |  | SessionSetup is a list of shell commands run after session creation. Each command is a template string supporting placeholders: {{.Session}}, {{.Agent}}, {{.Rig}}, {{.CityRoot}}, {{.CityName}}, {{.WorkDir}}. Commands run in gc's process (not inside the agent session) via sh -c. |
+| `session_setup` | []string |  |  | SessionSetup is a list of shell commands run after session creation. Each command is a template string supporting placeholders: &#123;&#123;.Session&#125;&#125;, &#123;&#123;.Agent&#125;&#125;, &#123;&#123;.Rig&#125;&#125;, &#123;&#123;.CityRoot&#125;&#125;, &#123;&#123;.CityName&#125;&#125;, &#123;&#123;.WorkDir&#125;&#125;. Commands run in gc's process (not inside the agent session) via sh -c. |
 | `session_setup_script` | string |  |  | SessionSetupScript is the path to a script run after session_setup commands. Relative paths resolve against the city directory. The script receives context via environment variables (GC_SESSION plus existing GC_* vars). |
 | `session_live` | []string |  |  | SessionLive is a list of shell commands that are safe to re-apply without restarting the agent. Run at startup (after session_setup) and re-applied on config change without triggering a restart. Must be idempotent. Typical use: tmux theming, keybindings, status bars. Same template placeholders as session_setup. |
 | `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (pack-safe). |
 | `default_sling_formula` | string |  |  | DefaultSlingFormula is the formula name automatically applied via --on when beads are slung to this agent, unless --no-formula is set. Example: "mol-polecat-work" |
-| `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded packs. Each name must match a {{ define "name" }} block. |
+| `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded packs. Each name must match a &#123;&#123; define "name" &#125;&#125; block. |
 | `attach` | boolean |  |  | Attach controls whether the agent's session supports interactive attachment (e.g., tmux attach). When false, the agent can use a lighter runtime (subprocess instead of tmux). Defaults to true. |
 | `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 | `depends_on` | []string |  |  | DependsOn lists agent names that must be awake before this agent wakes. Used for dependency-ordered startup and shutdown. Validated for cycles at config load time. |
-| `resume_command` | string |  |  | ResumeCommand is the full shell command to run when resuming this agent. Supports {{.SessionKey}} template variable. When set, takes precedence over the provider's ResumeFlag/ResumeStyle. Example:   "claude --resume {{.SessionKey}} --dangerously-skip-permissions" |
+| `resume_command` | string |  |  | ResumeCommand is the full shell command to run when resuming this agent. Supports &#123;&#123;.SessionKey&#125;&#125; template variable. When set, takes precedence over the provider's ResumeFlag/ResumeStyle. Example:   "claude --resume &#123;&#123;.SessionKey&#125;&#125; --dangerously-skip-permissions" |
 | `wake_mode` | string |  |  | WakeMode controls context freshness across sleep/wake cycles. "resume" (default): reuse provider session key for conversation continuity. "fresh": start a new provider session on every wake (polecat pattern). Enum: `resume`, `fresh` |
 
 ## AgentDefaults
@@ -103,7 +103,7 @@ AgentDefaults provides default values applied to all agents that don't explicitl
 | `model` | string |  |  | Model is the default model name for agents (e.g., "claude-sonnet-4-6"). Agents with their own model override take precedence. |
 | `wake_mode` | string |  |  | WakeMode is the default wake mode ("resume" or "fresh"). Enum: `resume`, `fresh` |
 | `allow_overlay` | []string |  |  | AllowOverlay lists template fields that sessions may override at creation time (e.g., ["model", "prompt", "title"]). |
-| `allow_env_override` | []string |  |  | AllowEnvOverride lists environment variable names that sessions may override at creation time. Names must match ^[A-Z][A-Z0-9_]{0,127}$. |
+| `allow_env_override` | []string |  |  | AllowEnvOverride lists environment variable names that sessions may override at creation time. Names must match ^[A-Z][A-Z0-9_]&#123;0,127&#125;$. |
 
 ## AgentOverride
 
@@ -187,7 +187,7 @@ BeadsConfig holds bead store settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `provider` | string |  | `bd` | Provider selects the bead store backend: "bd" (default), "file", or "exec:<script>" for a user-supplied script. |
+| `provider` | string |  | `bd` | Provider selects the bead store backend: "bd" (default), "file", or "exec:&lt;script&gt;" for a user-supplied script. |
 
 ## ChatSessionsConfig
 
@@ -237,7 +237,7 @@ EventsConfig holds events provider settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `provider` | string |  |  | Provider selects the events backend: "fake", "fail", "exec:<script>", or "" (default: file-backed JSONL). |
+| `provider` | string |  |  | Provider selects the events backend: "fake", "fail", "exec:&lt;script&gt;", or "" (default: file-backed JSONL). |
 
 ## FormulasConfig
 
@@ -268,7 +268,7 @@ MailConfig holds mail provider settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `provider` | string |  |  | Provider selects the mail backend: "fake", "fail", "exec:<script>", or "" (default: beadmail). |
+| `provider` | string |  |  | Provider selects the mail backend: "fake", "fail", "exec:&lt;script&gt;", or "" (default: beadmail). |
 
 ## OptionChoice
 
@@ -402,10 +402,10 @@ ProviderSpec defines a named provider's startup parameters.
 | `supports_hooks` | boolean |  |  | SupportsHooks indicates the provider has an executable hook mechanism (settings.json, plugins, etc.) for lifecycle events. |
 | `instructions_file` | string |  |  | InstructionsFile is the filename the provider reads for project instructions (e.g., "CLAUDE.md", "AGENTS.md"). Empty defaults to "AGENTS.md". |
 | `resume_flag` | string |  |  | ResumeFlag is the CLI flag for resuming a session by ID. Empty means the provider does not support resume. Examples: "--resume" (claude), "resume" (codex) |
-| `resume_style` | string |  |  | ResumeStyle controls how ResumeFlag is applied:   "flag"       → command --resume <key>              (default)   "subcommand" → command resume <key> |
-| `resume_command` | string |  |  | ResumeCommand is the full shell command to run when resuming a session. Supports {{.SessionKey}} template variable. When set, takes precedence over ResumeFlag/ResumeStyle. Example:   "claude --resume {{.SessionKey}} --dangerously-skip-permissions" |
+| `resume_style` | string |  |  | ResumeStyle controls how ResumeFlag is applied:   "flag"       → command --resume &lt;key&gt;              (default)   "subcommand" → command resume &lt;key&gt; |
+| `resume_command` | string |  |  | ResumeCommand is the full shell command to run when resuming a session. Supports &#123;&#123;.SessionKey&#125;&#125; template variable. When set, takes precedence over ResumeFlag/ResumeStyle. Example:   "claude --resume &#123;&#123;.SessionKey&#125;&#125; --dangerously-skip-permissions" |
 | `session_id_flag` | string |  |  | SessionIDFlag is the CLI flag for creating a session with a specific ID. Enables the Generate & Pass strategy for session key management. Example: "--session-id" (claude) |
-| `permission_modes` | map[string]string |  |  | PermissionModes maps permission mode names to CLI flags. Example: {"unrestricted": "--dangerously-skip-permissions", "plan": "--permission-mode plan"} This is a config-only lookup table consumed by external clients (e.g., Mission Control) to populate permission mode dropdowns. Launch-time flag substitution is planned for a follow-up PR — currently no runtime code reads this field. |
+| `permission_modes` | map[string]string |  |  | PermissionModes maps permission mode names to CLI flags. Example: &#123;"unrestricted": "--dangerously-skip-permissions", "plan": "--permission-mode plan"&#125; This is a config-only lookup table consumed by external clients (e.g., Mission Control) to populate permission mode dropdowns. Launch-time flag substitution is planned for a follow-up PR — currently no runtime code reads this field. |
 | `options_schema` | []ProviderOption |  |  | OptionsSchema declares the configurable options this provider supports. Each option maps to CLI args via its Choices[].FlagArgs field. Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side. |
 
 ## Rig
@@ -443,7 +443,7 @@ Service declares a workspace-owned HTTP service mounted under /svc/{name}.
 | `name` | string | **yes** |  | Name is the unique service identifier within a workspace. |
 | `kind` | string |  |  | Kind selects how the service is implemented. Enum: `workflow`, `proxy_process` |
 | `publish_mode` | string |  |  | PublishMode declares how the service is intended to be published. v0 supports private services and direct reuse of the API listener. Enum: `private`, `direct` |
-| `state_root` | string |  |  | StateRoot overrides the managed service state root. Defaults to .gc/services/{name}. The path must stay within .gc/services/. |
+| `state_root` | string |  |  | StateRoot overrides the managed service state root. Defaults to .gc/services/&#123;name&#125;. The path must stay within .gc/services/. |
 | `publication` | ServicePublicationConfig |  |  | Publication declares generic publication intent. The platform decides whether and how that intent becomes a public route. |
 | `workflow` | ServiceWorkflowConfig |  |  | Workflow configures controller-owned workflow services. |
 | `process` | ServiceProcessConfig |  |  | Process configures controller-supervised proxy services. |
@@ -481,7 +481,7 @@ SessionConfig holds session provider settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `provider` | string |  |  | Provider selects the session backend: "fake", "fail", "subprocess", "acp", "exec:<script>", "k8s", or "" (default: tmux). |
+| `provider` | string |  |  | Provider selects the session backend: "fake", "fail", "subprocess", "acp", "exec:&lt;script&gt;", "k8s", or "" (default: tmux). |
 | `k8s` | K8sConfig |  |  | K8s holds Kubernetes-specific settings for the native K8s provider. |
 | `acp` | ACPSessionConfig |  |  | ACP holds settings for the ACP (Agent Client Protocol) session provider. |
 | `setup_timeout` | string |  | `10s` | SetupTimeout is the per-command/script timeout for session setup and pre_start commands. Duration string (e.g., "10s", "30s"). Defaults to "10s". |
@@ -491,7 +491,7 @@ SessionConfig holds session provider settings.
 | `debounce_ms` | integer |  | `500` | DebounceMs is the default debounce interval in milliseconds for send-keys. Defaults to 500. |
 | `display_ms` | integer |  | `5000` | DisplayMs is the default display duration in milliseconds for status messages. Defaults to 5000. |
 | `startup_timeout` | string |  | `60s` | StartupTimeout is how long to wait for each agent's Start() call before treating it as failed. Duration string (e.g., "60s", "2m"). Defaults to "60s". |
-| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L <socket>" to connect to a dedicated server. When empty, defaults to the city name (workspace.name) — giving every city its own tmux server automatically. Set explicitly to override. |
+| `socket` | string |  |  | Socket specifies the tmux socket name for per-city isolation. When set, all tmux commands use "tmux -L &lt;socket&gt;" to connect to a dedicated server. When empty, defaults to the city name (workspace.name) — giving every city its own tmux server automatically. Set explicitly to override. |
 | `remote_match` | string |  |  | RemoteMatch is a substring pattern for the hybrid provider to route sessions to the remote (K8s) backend. Sessions whose names contain this pattern go to K8s; all others stay local (tmux). Overridden by the GC_HYBRID_REMOTE_MATCH env var if set. |
 
 ## Workspace
@@ -504,8 +504,8 @@ Workspace holds city-level metadata and optional defaults that apply to all agen
 | `provider` | string |  |  | Provider is the default provider name used by agents that don't specify one. |
 | `start_command` | string |  |  | StartCommand overrides the provider's command for all agents. |
 | `suspended` | boolean |  |  | Suspended controls whether the city is suspended. When true, all agents are effectively suspended: the reconciler won't spawn them, and gc hook/prime return empty. Inherits downward — individual agent/rig suspended fields are checked independently. |
-| `session_template` | string |  |  | SessionTemplate is a template string supporting placeholders: {{.City}}, {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming. Default (empty): "{{.Agent}}" — just the sanitized agent name. Per-city tmux socket isolation makes a city prefix unnecessary. |
+| `session_template` | string |  |  | SessionTemplate is a template string supporting placeholders: &#123;&#123;.City&#125;&#125;, &#123;&#123;.Agent&#125;&#125; (sanitized), &#123;&#123;.Dir&#125;&#125;, &#123;&#123;.Name&#125;&#125;. Controls tmux session naming. Default (empty): "&#123;&#123;.Agent&#125;&#125;" — just the sanitized agent name. Per-city tmux socket isolation makes a city prefix unnecessary. |
 | `install_agent_hooks` | []string |  |  | InstallAgentHooks lists provider names whose hooks should be installed into agent working directories. Agent-level overrides workspace-level (replace, not additive). Supported: "claude", "codex", "gemini", "opencode", "copilot", "cursor", "pi", "omp". |
-| `global_fragments` | []string |  |  | GlobalFragments lists named template fragments injected into every agent's rendered prompt. Applied before per-agent InjectFragments. Each name must match a {{ define "name" }} block from a pack's prompts/shared/ directory. |
+| `global_fragments` | []string |  |  | GlobalFragments lists named template fragments injected into every agent's rendered prompt. Applied before per-agent InjectFragments. Each name must match a &#123;&#123; define "name" &#125;&#125; block from a pack's prompts/shared/ directory. |
 | `includes` | []string |  |  | Includes lists pack directories or URLs to compose into this workspace. Replaces the older pack/packs fields. Each entry is a local path, a git source//sub#ref URL, or a GitHub tree URL. |
 

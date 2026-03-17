@@ -8,7 +8,7 @@ Messaging is a Layer 2-4 derived mechanism that provides inter-agent
 communication without introducing new primitives. Mail is composed
 from the Bead Store (`TaskStore.Create(bead{type:"message"})`), and
 nudge is composed from the Agent Protocol
-(`session.Provider.Nudge()`). No new infrastructure is needed — messaging
+(`runtime.Provider.Nudge()`). No new infrastructure is needed — messaging
 is a thin composition layer proving the primitives are sufficient.
 
 ## Key Concepts
@@ -36,7 +36,7 @@ is a thin composition layer proving the primitives are sufficient.
   `ErrAlreadyArchived`.
 
 - **Nudge**: Text sent directly to an agent's session to wake or
-  redirect it. Delivered via `session.Provider.Nudge()`. Configured
+  redirect it. Delivered via `runtime.Provider.Nudge()`. Configured
   per-agent in `Agent.Nudge`. Not persisted — fire-and-forget.
 
 - **Provider**: The pluggable mail backend interface. Two
@@ -132,7 +132,7 @@ is a thin composition layer proving the primitives are sufficient.
 | Depends on | How |
 |---|---|
 | `internal/beads` | beadmail stores messages as beads |
-| `internal/session` | Nudge delivered via Provider.Nudge() |
+| `internal/runtime` | Nudge delivered via Provider.Nudge() |
 
 | Depended on by | How |
 |---|---|
@@ -188,8 +188,8 @@ Send → [unread, open]
 
 ## See Also
 
-- [Bead Store](beads.md) — messages are stored as beads; understanding
+- [Bead Store](/architecture/beads) — messages are stored as beads; understanding
   bead lifecycle explains mail lifecycle
-- [Agent Protocol](agent-protocol.md) — Nudge() delivery mechanism
-- [Glossary](glossary.md) — authoritative definitions of mail, nudge,
+- [Agent Protocol](/architecture/agent-protocol) — Nudge() delivery mechanism
+- [Glossary](/architecture/glossary) — authoritative definitions of mail, nudge,
   and related terms

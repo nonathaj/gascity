@@ -2,18 +2,21 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft |
+| Status | Obsolete |
 | Date | 2026-03-07 |
 | Author(s) | Claude, Steve |
 | Issue | — |
 | Supersedes | — |
+
+**Status note:** superseded in practice by
+[Unified Session Model](/design/unified-sessions).
 
 ## Summary
 
 Gas City gains a **chat session** resource: a persistent, resumable
 conversation between a human and an agent configuration. Sessions are
 backed by beads (type `"session"`) for persistence and use existing
-`session.Provider` infrastructure for runtime. The key optimization:
+`runtime.Provider` infrastructure for runtime. The key optimization:
 suspended sessions consume zero runtime resources (no tmux session, no
 provider process) while preserving the ability to resume the exact
 conversation via provider-native resume facilities (`claude --resume`,
@@ -237,18 +240,18 @@ This avoids collisions with agent sessions (`{city}--{agent-name}`).
 1. Create the session bead
 2. Generate a UUID for the session key (`session_key` in bead metadata)
 3. Look up the template agent config
-4. Build a `session.Config` from the template (same as `agent.SessionConfig()`)
+4. Build a `runtime.Config` from the resolved template data
 5. If provider supports `SessionIDFlag`: inject `--session-id <uuid>` into command
-6. Call `session.Provider.Start(ctx, tmuxName, cfg)`
+6. Call `runtime.Provider.Start(ctx, tmuxName, cfg)`
 7. Store tmux session name in bead metadata
-8. Call `session.Provider.Attach(tmuxName)`
+8. Call `runtime.Provider.Attach(tmuxName)`
 
 The session key is known from step 2 — no capture needed on suspend.
 
 **Suspending:**
 
 1. Update bead metadata: `state = "suspended"`
-2. Call `session.Provider.Stop(tmuxName)`
+2. Call `runtime.Provider.Stop(tmuxName)`
 
 The session key is already in the bead (stored at creation). The
 provider saves its conversation state on SIGTERM. Nothing to capture.
@@ -258,13 +261,13 @@ provider saves its conversation state on SIGTERM. Nothing to capture.
 1. Read bead metadata → get template, session key, work dir
 2. Build resume command: `claude --resume <session_key>`
    (or `codex resume <key>`, etc., per provider's `ResumeFlag`/`ResumeStyle`)
-3. Call `session.Provider.Start(ctx, tmuxName, resumeCfg)`
+3. Call `runtime.Provider.Start(ctx, tmuxName, resumeCfg)`
 4. Update bead metadata: `state = "active"`
-5. Call `session.Provider.Attach(tmuxName)`
+5. Call `runtime.Provider.Attach(tmuxName)`
 
 **Closing:**
 
-1. If active → `session.Provider.Stop(tmuxName)`
+1. If active → `runtime.Provider.Stop(tmuxName)`
 2. Close bead
 
 ### 5) Provider Session Key Management
@@ -431,9 +434,9 @@ the controller watches active chat sessions:
 
 ```
 for each active chat session bead:
-    if session.Provider.IsAttached(tmuxName):
+    if runtime.Provider.IsAttached(tmuxName):
         continue   // human is active
-    activity, _ := session.Provider.GetLastActivity(tmuxName)
+    activity, _ := runtime.Provider.GetLastActivity(tmuxName)
     if time.Since(activity) > idleTimeout:
         suspend(bead)
 ```
@@ -730,7 +733,7 @@ existing primitives:
 
 - **Task Store (Beads)** — session persistence, metadata, lifecycle
 - **Agent Protocol** — runtime session start/stop/attach via
-  `session.Provider`
+  `runtime.Provider`
 - **Event Bus** — session lifecycle events
 - **Config** — agent templates, `[sessions]` section, provider resume fields
 
@@ -743,12 +746,12 @@ existing primitive calls:
 
 | Operation | Primitives used |
 |---|---|
-| Create | `beads.Store.Create()` + `session.Provider.Start()` + `session.Provider.Attach()` |
-| Suspend | `beads.Store.SetMetadata()` + `session.Provider.Stop()` |
-| Resume | `beads.Store.Get()` + `session.Provider.Start()` + `session.Provider.Attach()` |
-| Close | `beads.Store.Close()` + `session.Provider.Stop()` |
+| Create | `beads.Store.Create()` + `runtime.Provider.Start()` + `runtime.Provider.Attach()` |
+| Suspend | `beads.Store.SetMetadata()` + `runtime.Provider.Stop()` |
+| Resume | `beads.Store.Get()` + `runtime.Provider.Start()` + `runtime.Provider.Attach()` |
+| Close | `beads.Store.Close()` + `runtime.Provider.Stop()` |
 | List | `beads.Store.ListByLabel("gc:session")` |
-| Auto-suspend | `session.Provider.IsAttached()` + `session.Provider.GetLastActivity()` + Suspend |
+| Auto-suspend | `runtime.Provider.IsAttached()` + `runtime.Provider.GetLastActivity()` + Suspend |
 
 ## Drawbacks
 

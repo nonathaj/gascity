@@ -209,6 +209,14 @@ func formatDescription(prop *jsonschema.Schema) string {
 	}
 	// Collapse newlines for markdown table cells.
 	desc = strings.ReplaceAll(desc, "\n", " ")
+	// Escape raw angle brackets so Mint/MDX does not treat placeholder text
+	// like <qualified-name> as JSX.
+	desc = strings.ReplaceAll(desc, "<", "&lt;")
+	desc = strings.ReplaceAll(desc, ">", "&gt;")
+	// Escape braces so placeholders like {{.WorkQuery}} and {} are rendered as
+	// text instead of MDX expressions.
+	desc = strings.ReplaceAll(desc, "{", "&#123;")
+	desc = strings.ReplaceAll(desc, "}", "&#125;")
 	// Escape pipe characters for markdown tables.
 	desc = strings.ReplaceAll(desc, "|", "\\|")
 	return desc

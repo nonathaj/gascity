@@ -193,13 +193,13 @@ enforced by the conformance suite in `internal/beads/beadstest/conformance.go`.
 |---|---|
 | `internal/fsys` | FileStore uses `fsys.FS` for all file I/O (testable via `fsys.Fake`) |
 | `internal/telemetry` | BdStore's `ExecCommandRunner` calls `telemetry.RecordBDCall` for every bd subprocess invocation |
-| `internal/formula` | exec.Store's MolCook uses `formula.Resolver` and `formula.ComposeMolCook` to instantiate molecules in Go |
+| Formula-aware backends | `BdStore.MolCook` delegates to `bd mol wisp`; `exec.Store` delegates to script operations; in-memory stores provide simplified molecule roots for tests and tutorials |
 
 | Depended on by | How |
 |---|---|
 | `cmd/gc/` (CLI commands) | `openCityStore` creates the appropriate Store; used by convoy, sling, order, handoff, and hook commands |
 | `internal/mail/beadmail` | Implements mail.Provider backed by beads.Store -- mail messages are beads with type `"message"` |
-| `internal/formula` | `formula.CurrentStep` and `formula.ComposeMolCook` operate on bead slices and Store respectively |
+| Formula-aware backends | Molecule creation and step materialization are delegated to the configured store backend |
 | `internal/orders` | Order dispatch uses Store for cooldown tracking (`ListByLabel` with `order-run:` labels) and cursor-based event gates |
 | `internal/doctor` | Health checks verify Store accessibility for both city-level and per-rig bead databases |
 | `cmd/gc/cmd_convoy.go` | Convoy operations (create, list, status, add, close, check, stranded) all operate through Store |
@@ -222,7 +222,6 @@ enforced by the conformance suite in `internal/beads/beadstest/conformance.go`.
 | `internal/beads/filestore_test.go` | FileStore tests including persistence, corruption, and fsys.Fake failure paths |
 | `internal/beads/exec/exec_test.go` | exec.Store tests including conformance suite, composed MolCook with resolver, timeout, and error handling |
 | `internal/beads/exec/br_test.go` | Integration test for beads_rust (br) provider via exec.Store |
-| `internal/formula/compose.go` | ComposeMolCook: creates molecules from Store.Create calls; SubstituteVars for template variable replacement |
 | `cmd/gc/main.go` | openCityStore: factory that selects and creates the appropriate Store |
 | `cmd/gc/providers.go` | beadsProvider: resolves provider name from GC_BEADS env var or city.toml |
 
@@ -255,7 +254,7 @@ BdStore-specific admin operations (not on the Store interface):
 ## Testing
 
 The bead store has a layered testing strategy aligned with
-[TESTING.md](../../TESTING.md):
+[TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md):
 
 **Conformance suite** (`internal/beads/beadstest/conformance.go`):
 `RunStoreTests` runs 25+ subtests against any Store implementation,
@@ -312,15 +311,14 @@ beads_rust (br) binary as a real external provider (build tag:
 
 ## See Also
 
-- [Architecture glossary](glossary.md) -- authoritative definitions of
+- [Architecture glossary](/architecture/glossary) -- authoritative definitions of
   bead, molecule, convoy, label, and other terms used in this document
-- [Formula package](../../internal/formula/) -- formula parsing,
-  step dependency resolution (`CurrentStep`), and molecule composition
-  (`ComposeMolCook`) that builds on the Store interface
-- [Beadmail provider](../../internal/mail/beadmail/) -- how inter-agent
+- [Formula file reference](../reference/formula) -- formula file layout,
+  layer resolution, and how stores instantiate molecules from formulas
+- [Beadmail provider](https://github.com/gastownhall/gascity/tree/main/internal/mail/beadmail/) -- how inter-agent
   messaging composes on top of bead store (mail = beads with type
   `"message"`)
-- [TESTING.md](../../TESTING.md) -- testing philosophy and tier
+- [TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md) -- testing philosophy and tier
   boundaries for the conformance suite approach
-- [CLAUDE.md](../../CLAUDE.md) -- design principles including "Beads is
+- [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) -- design principles including "Beads is
   the universal persistence substrate" (layering invariant 2)

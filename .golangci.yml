@@ -22,25 +22,6 @@ linters:
 
   exclusions:
     rules:
-      # Copied verbatim from gastown upstream — lint upstream, not the copy.
-      - path: internal/dolt/doltserver\.go
-        linters:
-          - errcheck
-          - errorlint
-          - staticcheck
-          - gocritic
-          - revive
-          - unused
-          - unparam
-      - path: internal/dolt/rollback\.go
-        linters:
-          - errcheck
-          - errorlint
-          - staticcheck
-          - gocritic
-          - revive
-          - unused
-          - unparam
       # runtime shadows stdlib but is isolated to internal/.
       - path: internal/runtime/
         linters:

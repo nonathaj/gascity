@@ -28,9 +28,9 @@ The dream: a mathematical proof that a specific neural network produced a specif
 
 ### 2. Trusted Execution Environments (TEEs) -- Fast but Breakable
 
-NVIDIA H100 confidential computing runs LLMs with **<7% overhead** (approaches 0% for 70B+ models). Hardware attestation proves firmware integrity via a fuse-burned ECC-384 key.
+NVIDIA H100 confidential computing runs LLMs with **&lt;7% overhead** (approaches 0% for 70B+ models). Hardware attestation proves firmware integrity via a fuse-burned ECC-384 key.
 
-**But**: The **TEE.Fail attack** (October 2025) broke Intel TDX, AMD SEV-SNP, and NVIDIA CC attestation with a **<$1,000 DDR5 bus interposer**. Researchers forged attestation quotes indistinguishable from legitimate ones. Intel and AMD consider physical interposer attacks "out of scope" and have no planned fixes.
+**But**: The **TEE.Fail attack** (October 2025) broke Intel TDX, AMD SEV-SNP, and NVIDIA CC attestation with a **&lt;$1,000 DDR5 bus interposer**. Researchers forged attestation quotes indistinguishable from legitimate ones. Intel and AMD consider physical interposer attacks "out of scope" and have no planned fixes.
 
 Worse: GPU attestation measures *firmware*, not *model weights*. Application-layer extensions can hash weights into measurement registers, but this requires trusting the inference framework code -- turtles all the way down.
 
@@ -46,7 +46,7 @@ The breakthrough insight: **don't prove every computation. Make fraud unprofitab
 
 - **EigenAI** (Jan 2026): Workers stake capital. Results are tentative for a challenge window. Challengers re-execute deterministically inside TEEs. Disagreement = slashing. 100% bit-identical across 10,000 runs on same hardware.
 
-- **Hyperbolic PoSP**: Game-theoretic Nash equilibrium. If challenge probability > (fraud gain / slash amount), honest computation is the dominant strategy. <1% overhead. Adaptive sampling per node reputation.
+- **Hyperbolic PoSP**: Game-theoretic Nash equilibrium. If challenge probability > (fraud gain / slash amount), honest computation is the dominant strategy. &lt;1% overhead. Adaptive sampling per node reputation.
 
 - **VeriLLM**: Workers commit Merkle root of hidden-state tensors. VRF-based random sampling of intermediate states. Statistical tests distinguish hardware rounding from model substitution. ~1% verification cost.
 
@@ -140,7 +140,7 @@ For **closed-weight API models** (Claude, GPT-4):
 
 4. **Deterministic inference is production-ready.** SGLang ships it. Thinking Machines proved it at 235B scale. The "outputs are non-deterministic" objection is no longer valid.
 
-5. **Works for any model size.** The default path (Layer 1-2) has <1% overhead regardless of model size. You only pay the zkML cost if someone actually disputes AND you can't do byte-equality re-execution.
+5. **Works for any model size.** The default path (Layer 1-2) has &lt;1% overhead regardless of model size. You only pay the zkML cost if someone actually disputes AND you can't do byte-equality re-execution.
 
 ### What Exists Today vs. What Needs Building
 

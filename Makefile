@@ -20,7 +20,7 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
            -X main.date=$(BUILD_TIME)
 
-.PHONY: build check check-all check-bd check-dolt check-docker lint fmt-check fmt vet test test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller
+.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
 
 ## build: compile gc binary with version metadata
 build:
@@ -61,7 +61,7 @@ check: fmt-check lint vet test
 ## check-bd: verify bd (beads CLI) is installed
 check-bd:
 	@command -v bd >/dev/null 2>&1 || \
-		(echo "Error: bd not found. Install beads: cd /data/projects/beads && make install" && exit 1)
+		(echo "Error: bd not found. See docs/getting-started/installation.md" && exit 1)
 
 ## check-docker: verify docker and buildx are available
 check-docker:
@@ -73,10 +73,10 @@ check-docker:
 ## check-dolt: verify dolt is installed
 check-dolt:
 	@command -v dolt >/dev/null 2>&1 || \
-		(echo "Error: dolt not found. Install: https://docs.dolthub.com/introduction/installation" && exit 1)
+		(echo "Error: dolt not found. See docs/getting-started/installation.md" && exit 1)
 
 ## check-all: run all quality gates including integration tests (CI)
-check-all: fmt-check lint vet check-bd check-dolt check-docker test-integration
+check-all: fmt-check lint vet check-bd check-dolt check-docker test-integration check-docs
 
 ## lint: run golangci-lint
 lint: $(GOLANGCI_LINT)
@@ -102,11 +102,15 @@ test:
 test-integration:
 	go test -tags integration ./...
 
+## check-docs: verify docs sync tests and Mintlify link checks
+check-docs:
+	go test ./test/docsync
+	cd docs && npx --yes mint@latest broken-links
+
 # Packages for coverage — exclude noise:
 #   session/tmux: integration-test-only, not meaningful for unit coverage
 #   beadstest: conformance helper, runs under internal/beads coverage
-#   internal/dolt: copied gastown code, tested upstream (build tag: doltserver_upstream)
-COVER_PKGS := $(shell go list ./... | grep -v -e /session/tmux -e /beadstest -e /internal/dolt)
+COVER_PKGS := $(shell go list ./... | grep -v -e /session/tmux -e /beadstest)
 
 ## test-cover: run all tests with coverage output (excludes tmux)
 test-cover:
@@ -148,6 +152,10 @@ test-k8s:
 setup: install-tools
 	ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 	@echo "Done. Tools installed, pre-commit hook active."
+
+## docs-dev: run the Mintlify docs locally
+docs-dev:
+	cd docs && npx --yes mint@latest dev
 
 ## docker-base: build base image with system dependencies (~2.5 min, rebuild rarely)
 docker-base: check-docker

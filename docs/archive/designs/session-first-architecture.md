@@ -473,7 +473,7 @@ purposes via the bead mutation feed (if available) or periodic scan
 (every 10 ticks). The authoritative pre-archive query is the safety
 gate — approximate counts only affect scheduling priority, not
 correctness.
-Target: reconciliation tick completes in <1s for 50 templates × 100
+Target: reconciliation tick completes in &lt;1s for 50 templates × 100
 sessions with warm index.
 
 ### Controller Reconciliation

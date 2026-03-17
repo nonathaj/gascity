@@ -11,6 +11,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
+func escapeMDXText(s string) string {
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "{", "&#123;")
+	s = strings.ReplaceAll(s, "}", "&#125;")
+	return s
+}
+
 // RenderCLIMarkdown writes a CLI reference by walking a cobra command tree.
 // Hidden commands are skipped. The output format matches config.md style:
 // H2 headings per command, synopsis, examples, flags table, subcommands table.
@@ -87,7 +95,7 @@ func renderCommand(w io.Writer, cmd *cobra.Command) error {
 		desc = cmd.Short
 	}
 	if desc != "" {
-		if _, err := fmt.Fprintf(w, "%s\n\n", strings.TrimSpace(desc)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\n\n", escapeMDXText(strings.TrimSpace(desc))); err != nil {
 			return err
 		}
 	}
@@ -160,7 +168,7 @@ func newFlagInfo(f *pflag.Flag) flagInfo {
 		Name:    name,
 		Type:    f.Value.Type(),
 		Default: defVal,
-		Desc:    strings.ReplaceAll(f.Usage, "|", "\\|"),
+		Desc:    escapeMDXText(strings.ReplaceAll(f.Usage, "|", "\\|")),
 	}
 }
 
@@ -237,7 +245,7 @@ func renderSubcommandsTable(w io.Writer, cmd *cobra.Command) error {
 		anchor := strings.ReplaceAll(c.CommandPath(), " ", "-")
 		anchor = strings.ToLower(anchor)
 		if _, err := fmt.Fprintf(w, "| [%s](#%s) | %s |\n",
-			c.CommandPath(), anchor, c.Short); err != nil {
+			c.CommandPath(), anchor, escapeMDXText(c.Short)); err != nil {
 			return err
 		}
 	}

@@ -11,25 +11,25 @@ other source should be updated.
 - **Agent Protocol**: Start/stop/prompt/observe agents regardless of
   session provider. Covers identity, pools, sandboxes, resume, and
   crash adoption. Layer 0-1 primitive. See
-  [`internal/agent/`](../../internal/agent/) and
-  [`internal/session/`](../../internal/session/).
+  [`internal/agent/`](https://github.com/gastownhall/gascity/tree/main/internal/agent/) and
+  [`internal/runtime/`](https://github.com/gastownhall/gascity/tree/main/internal/runtime/).
 
 - **Bead**: A single unit of work. Everything is a bead: tasks, mail,
   molecules, convoys, epics. Defined in the `Bead` struct with ID,
   Title, Status (`open` / `in_progress` / `closed`), Type, Assignee,
   ParentID, Ref, Needs, Description, and Labels. The universal
-  persistence substrate. See [`internal/beads/`](../../internal/beads/).
+  persistence substrate. See [`internal/beads/`](https://github.com/gastownhall/gascity/tree/main/internal/beads/).
 
 - **Config**: TOML parsing with progressive activation (Levels 0-8
   based on section presence) and multi-layer override resolution.
   `city.toml` is the single config file. See
-  [`internal/config/`](../../internal/config/).
+  [`internal/config/`](https://github.com/gastownhall/gascity/tree/main/internal/config/).
 
 - **Event Bus**: Append-only pub/sub log of all system activity. Two
   tiers: critical (bounded queue for infrastructure) and optional
   (fire-and-forget for audit). Events are immutable with monotonically
   increasing sequence numbers. See
-  [`internal/events/`](../../internal/events/).
+  [`internal/events/`](https://github.com/gastownhall/gascity/tree/main/internal/events/).
 
 - **Prompt Template**: Go `text/template` in Markdown defining what
   each role does. The behavioral specification. All role behavior is
@@ -42,7 +42,7 @@ other source should be updated.
   `orders/<name>/order.toml`. Exec orders run shell
   scripts directly (no LLM, no agent, no wisp). Formula orders
   create wisps dispatched to agents. See
-  [`internal/orders/`](../../internal/orders/).
+  [`internal/orders/`](https://github.com/gastownhall/gascity/tree/main/internal/orders/).
 
 - **Convoy**: A container bead that groups related issues as a batch
   work tracking unit. Child beads link to a convoy via ParentID.
@@ -51,22 +51,21 @@ other source should be updated.
 - **Dispatch (Sling)**: The routing mechanism that composes: find/spawn
   agent -> select formula -> create molecule -> hook to agent -> nudge
   -> create convoy -> log event. See
-  [`cmd/gc/cmd_sling.go`](../../cmd/gc/cmd_sling.go).
+  [`cmd/gc/cmd_sling.go`](https://github.com/gastownhall/gascity/blob/main/cmd/gc/cmd_sling.go).
 
 - **Epic**: A container bead type that groups child beads for batch
   expansion during dispatch. Like convoy, children link via ParentID.
 
-- **Formula**: A parsed definition from a `*.formula.toml` file with a
-  Name, Description, Version, Vars, and Steps array. Each step has an
-  ID, Title, Description, and Needs list (dependencies on other steps).
-  Formulas define sequences of named work items with dependency
-  ordering. See [`internal/formula/`](../../internal/formula/).
+- **Formula**: A `*.formula.toml` workflow definition discovered through
+  formula layers and materialized by the configured beads backend. Gas City
+  resolves active files with `cmd/gc/formula_resolve.go`; convergence-specific
+  validation lives in [`internal/convergence/formula.go`](https://github.com/gastownhall/gascity/blob/main/internal/convergence/formula.go).
 
 - **Gate**: The trigger condition for an order. Types: `cooldown`
   (interval since last run), `cron` (schedule), `condition` (shell
   exits 0), `event` (specific event type occurs), `manual` (explicit
   invocation only). See
-  [`internal/orders/gates.go`](../../internal/orders/gates.go).
+  [`internal/orders/gates.go`](https://github.com/gastownhall/gascity/blob/main/internal/orders/gates.go).
 
 - **Health Patrol**: Ping agents (Agent Protocol), compare thresholds
   (Config), publish stalls (Event Bus), restart with backoff. The
@@ -77,7 +76,7 @@ other source should be updated.
   Copilot) has its own format. Hook-enabled agents integrate with Gas
   City automatically: `gc hook` checks for work, `gc prime` outputs
   the behavioral prompt. See
-  [`internal/hooks/`](../../internal/hooks/).
+  [`internal/hooks/`](https://github.com/gastownhall/gascity/tree/main/internal/hooks/).
 
 - **Label**: A string tag on a bead (`Labels []string`). Labels enable
   pool dispatch (e.g., `pool:dog`), rig scoping (e.g.,
@@ -89,13 +88,12 @@ other source should be updated.
   `AgentProtocol.SendPrompt()`. No new primitive needed.
 
 - **Molecule**: A formula instantiated at runtime: one root bead plus
-  one step bead per formula step. Progress is tracked by closing step
-  beads. `CurrentStep()` computes the next runnable step from
-  dependency state.
+  zero or more provider-managed step beads. Progress is tracked by closing
+  the resulting beads.
 
 - **Nudge**: Text sent to an agent's session to wake or redirect it.
   Used for CLI agents that don't accept command-line prompts. Defined
-  in `Agent.Nudge` config and delivered via `session.Provider.Nudge()`.
+  in `Agent.Nudge` config and delivered via `runtime.Provider.Nudge()`.
 
 - **Wisp**: An ephemeral molecule. Created by `gc sling --formula` or
   order dispatch. Wisps auto-close and are garbage-collected after
@@ -112,28 +110,28 @@ other source should be updated.
   infrastructure: config watch (fsnotify), reconciliation tick
   (start/stop agents to match config), order dispatch (evaluate
   gates, fire due orders). See
-  [`cmd/gc/controller.go`](../../cmd/gc/controller.go).
+  [`cmd/gc/controller.go`](https://github.com/gastownhall/gascity/blob/main/cmd/gc/controller.go).
 
 - **Overlay**: A directory tree copied into an agent's working
   directory before startup. Used for pre-staging sandbox configuration.
-  See [`internal/overlay/`](../../internal/overlay/).
+  See [`internal/overlay/`](https://github.com/gastownhall/gascity/tree/main/internal/overlay/).
 
 - **Pool**: Elastic scaling for an agent. The `PoolConfig` struct
   defines Min, Max, Check (shell command returning desired count), and
   DrainTimeout. Pool instances use label-based work dispatch
-  (`pool:<name>`). See [`cmd/gc/pool.go`](../../cmd/gc/pool.go).
+  (`pool:<name>`). See [`cmd/gc/pool.go`](https://github.com/gastownhall/gascity/blob/main/cmd/gc/pool.go).
 
 - **Provider** (Session): Manages agent sessions. The `Provider`
   interface defines lifecycle (Start, Stop, Interrupt), querying
   (IsRunning, ProcessAlive), communication (Attach, Nudge, SendKeys),
   and metadata (SetMeta, GetMeta). Implementations: tmux (production),
   subprocess (remote), k8s (Kubernetes), Fake (test). See
-  [`internal/session/session.go`](../../internal/session/session.go).
+  [`internal/runtime/runtime.go`](https://github.com/gastownhall/gascity/blob/main/internal/runtime/runtime.go).
 
 - **Rig**: An external project directory registered in the city. Each
   rig gets its own beads database, agent hooks, and pack expansion.
   Agents are scoped to rigs via their `dir` field. See
-  [`internal/config/config.go`](../../internal/config/config.go).
+  [`internal/config/config.go`](https://github.com/gastownhall/gascity/blob/main/internal/config/config.go).
 
 - **Pack**: A reusable agent configuration directory loaded from
   `pack.toml`. Contains agent definitions, formulas, prompts, and
@@ -141,7 +139,7 @@ other source should be updated.
   rig-level packs stamp rig-scoped agents. `city_agents` in the
   pack metadata partitions which agents are city-scoped vs
   rig-scoped. See
-  [`internal/config/pack.go`](../../internal/config/pack.go).
+  [`internal/config/pack.go`](https://github.com/gastownhall/gascity/blob/main/internal/config/pack.go).
 
 ## Design Principles
 

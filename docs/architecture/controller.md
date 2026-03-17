@@ -1,12 +1,12 @@
 # Controller
 
-<!--
+{/*
 Current-state architecture document. Describes how the Controller works
 TODAY. For proposed changes, write a design doc in docs/design/ instead.
 
 Audience: Gas City contributors (human and LLM agent).
 Update this document when the implementation changes.
--->
+*/}
 
 > Last verified against code: 2026-03-01
 
@@ -117,7 +117,7 @@ Each tick of `controllerLoop()` (`cmd/gc/controller.go:268-320`) performs:
 
 3. **Reconciliation** (`doReconcileAgents()`): Declarative convergence --
    make running sessions match the desired list. See
-   [Health Patrol](health-patrol.md) for the reconciliation state machine,
+   [Health Patrol](/architecture/health-patrol) for the reconciliation state machine,
    crash loop quarantine, and idle tracking details.
 
 4. **Wisp GC** (`wg.runGC()`): If enabled (`wisp_gc_interval` and
@@ -126,7 +126,7 @@ Each tick of `controllerLoop()` (`cmd/gc/controller.go:268-320`) performs:
 
 5. **Order dispatch** (`ad.dispatch()`): Evaluates gate conditions
    for all non-manual orders. See
-   [Health Patrol](health-patrol.md) for gate evaluation and dispatch
+   [Health Patrol](/architecture/health-patrol) for gate evaluation and dispatch
    details.
 
 ### Key Types
@@ -197,9 +197,9 @@ indicate bugs.
   shutdown. Crash-orphaned sockets are cleaned up by the next controller
   start.
 
-- **No role names in Go code**: The controller operates on `agent.Agent`
-  values constructed from config. No line of Go references a specific
-  role name.
+- **No role names in Go code**: The controller operates on resolved config,
+  runtime session names, and provider state. No line of Go references a
+  specific role name.
 
 - **SDK self-sufficiency**: All controller operations (config watch,
   reconciliation, pool scaling, order dispatch, wisp GC, graceful
@@ -211,13 +211,13 @@ indicate bugs.
 | Depends on | How |
 |---|---|
 | `internal/config` | `LoadWithIncludes()` for config parsing, `DaemonConfig` for loop timing, `Revision()` for reload detection, `WatchDirs()` for fsnotify targets, `ValidateAgents()`/`ValidateRigs()` for validation, `ResolveProvider()` for agent commands. |
-| `internal/session` | `Provider` interface for Start/Stop/IsRunning/ListRunning/Interrupt/Peek/SetMeta/GetMeta/ClearScrollback. `ConfigFingerprint()` for drift detection. Provider implementations: tmux, exec, subprocess, k8s, fake. |
-| `internal/agent` | `Agent` interface wrapping config + session provider. `New()` constructs instances. `SessionNameFor()` computes session names. |
+| `internal/runtime` | `Provider` interface for Start/Stop/IsRunning/ListRunning/Interrupt/Peek/SetMeta/GetMeta/ClearScrollback. `ConfigFingerprint()` drives drift detection. |
+| `internal/agent` | `SessionNameFor()` computes session names and `StartupHints` feeds runtime config assembly. |
 | `internal/events` | `Recorder` for emitting lifecycle events. `Provider` for event gate queries in order dispatch. `NewFileRecorder()` for JSONL persistence. |
 | `internal/beads` | `Store` for order tracking beads. `CommandRunner` for bd CLI invocation. `NewBdStore()` for rig-scoped stores. |
 | `internal/orders` | `Scan()` for order discovery. `CheckGate()` for gate evaluation. |
 | `internal/hooks` | `Install()` for provider-specific agent hooks. `Validate()` for hook name validation. |
-| `internal/dolt` | `EnsureRunning()` / `StopCity()` / `InitRigBeads()` for dolt server lifecycle. |
+| `cmd/gc/beads_provider_lifecycle.go` | Starts, initializes, health-checks, and shuts down the configured beads backend. |
 | `internal/fsys` | `OSFS{}` filesystem abstraction for testability. |
 | `github.com/fsnotify/fsnotify` | File system watcher for config directory change detection. |
 
@@ -257,7 +257,7 @@ Supporting packages:
 | `internal/config/config.go` | `DaemonConfig` struct and duration accessors |
 | `internal/config/revision.go` | `Revision()` SHA-256 bundle hash, `WatchDirs()` |
 | `internal/config/pack.go` | Pack expansion during `LoadWithIncludes()` |
-| `internal/session/fingerprint.go` | `ConfigFingerprint()` for drift detection |
+| `internal/runtime/fingerprint.go` | `ConfigFingerprint()` for drift detection |
 
 ## Configuration
 
@@ -313,15 +313,9 @@ Controller tests use in-memory fakes and require no external infrastructure:
 | `cmd/gc/pool_test.go` | `evaluatePool()` (clamping, error handling), `poolAgents()` (naming, deep-copy), `expandSessionSetup()`, `expandDirTemplate()` |
 | `cmd/gc/formula_resolve_test.go` | Layer priority, symlink creation/update/cleanup, idempotence, real file preservation |
 | `cmd/gc/wisp_gc_test.go` | TTL-based purging, `shouldRun()` interval, empty list handling |
-<<<<<<< HEAD
 | `cmd/gc/order_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped orders |
-| `cmd/gc/cmd_daemon_test.go` | Daemon run/start/stop/status, PID file lifecycle, service file generation |
-| `cmd/gc/cmd_start_test.go` | One-shot start, foreground mode, existing-city validation, provider resolution |
-=======
-| `cmd/gc/automation_dispatch_test.go` | Gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle, timeout capping, rig-scoped automations |
 | `cmd/gc/cmd_start_test.go` | Supervisor registration path, hidden foreground compatibility mode, existing-city validation, provider resolution |
 | `cmd/gc/cmd_supervisor_test.go` | Supervisor lifecycle, status reporting, service file generation |
->>>>>>> 6eec926e (fix: wait for supervisor lifecycle results)
 | `cmd/gc/cmd_suspend_test.go` | Suspend/resume TOML mutation, inheritance hierarchy |
 | `cmd/gc/beads_provider_lifecycle_test.go` | Provider ensure/shutdown/init lifecycle |
 
@@ -348,7 +342,7 @@ testing philosophy and tier boundaries.
 - **Socket probes are for discovery, not liveness**: Per-city controller
   status uses `controller.sock` ping responses, and supervisor status uses
   `supervisor.sock`. Liveness still comes from `flock` for singleton
-  control loops and `session.Provider.IsRunning()` for agents.
+  control loops and `runtime.Provider.IsRunning()` for agents.
 
 - **Unix socket has no authentication**: Any local process with filesystem
   access to `.gc/controller.sock` can send "stop" to shut down the
@@ -363,17 +357,17 @@ testing philosophy and tier boundaries.
 
 ## See Also
 
-- [Health Patrol](health-patrol.md) -- reconciliation state machine,
+- [Health Patrol](/architecture/health-patrol) -- reconciliation state machine,
   crash loop quarantine, idle tracking, and order dispatch details
-- [Architecture glossary](glossary.md) -- authoritative definitions
+- [Architecture glossary](/architecture/glossary) -- authoritative definitions
   of controller, pool, provider, rig, and other terms used in this doc
-- [Config struct definitions](../../internal/config/config.go) --
+- [Config struct definitions](https://github.com/gastownhall/gascity/blob/main/internal/config/config.go) --
   `DaemonConfig`, `City`, `Agent`, `PoolConfig` struct fields and defaults
-- [Session Provider interface](../../internal/session/session.go) --
+- [Runtime Provider interface](https://github.com/gastownhall/gascity/blob/main/internal/runtime/runtime.go) --
   the provider interface that the controller uses for all session operations
-- [Orders architecture](orders.md) -- gate types, dispatch
+- [Orders architecture](/architecture/orders) -- gate types, dispatch
   model, and order configuration
-- [Formulas architecture](formulas.md) -- formula resolution, layering,
+- [Formulas architecture](/architecture/formulas) -- formula resolution, layering,
   and symlink materialization
-- [Nine Concepts overview](nine-concepts.md) -- how the controller relates
+- [Nine Concepts overview](/architecture/nine-concepts) -- how the controller relates
   to the five primitives and four derived mechanisms

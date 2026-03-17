@@ -1,6 +1,6 @@
-# {Title}
+# [Title]
 
-<!--
+{/*
 TEMPLATE GUIDANCE: This is a design doc template for Gas City proposals.
 It describes a FUTURE change -- how we WANT things to work.
 
@@ -23,17 +23,17 @@ When to skip the design doc and just code it:
 
 Modeled after CockroachDB's RFC process, adapted for Gas City's
 design principles (ZFC, Bitter Lesson, Primitive Test, GUPP, NDI).
--->
+*/}
 
 | Field | Value |
 |---|---|
 | Status | Draft |
-| Date | {YYYY-MM-DD} |
-| Author(s) | {names} |
-| Issue | {link to GitHub issue or epic, if any} |
-| Supersedes | {link to earlier design doc, if replacing one} |
+| Date | [YYYY-MM-DD] |
+| Author(s) | [names] |
+| Issue | [link to GitHub issue or epic, if any] |
+| Supersedes | [link to earlier design doc, if replacing one] |
 
-<!--
+{/*
 STATUS VALUES:
 - Draft     -- open for discussion, not yet accepted
 - Accepted  -- approved for implementation
@@ -43,11 +43,11 @@ STATUS VALUES:
 Update the status as the proposal moves through its lifecycle.
 When moving to Implemented, link the relevant commits or PRs.
 When moving to Obsolete, link the replacement design doc.
--->
+*/}
 
 ## Summary
 
-<!--
+{/*
 One paragraph. Must answer: WHAT is being proposed, WHY it matters,
 HOW it works at the highest level, and WHAT the IMPACT is on existing
 users/config/code.
@@ -59,11 +59,11 @@ replacing polling with event-driven wakeup" is useful.
 
 Common mistake: writing a summary that assumes the reader already
 understands the problem. State the problem AND the solution.
--->
+*/}
 
 ## Motivation
 
-<!--
+{/*
 Why is this change needed? What concrete problem does it solve?
 What is broken, missing, or painful TODAY?
 
@@ -83,11 +83,11 @@ Bad examples:
 
 If the motivation references a Gas City design principle (ZFC, Bitter
 Lesson, GUPP, NDI, SDK self-sufficiency), call it out explicitly.
--->
+*/}
 
 ## Guide-Level Explanation
 
-<!--
+{/*
 AUDIENCE: A Gas City user who has completed the tutorials.
 
 Explain the proposal as if you were teaching it. Show the user
@@ -117,11 +117,11 @@ like "scanner", "worker", "overseer", or "builder".
 Common mistake: jumping straight to implementation details. This
 section answers "what does it look like from the outside?" The next
 section answers "how does it work on the inside?"
--->
+*/}
 
 ## Reference-Level Explanation
 
-<!--
+{/*
 AUDIENCE: A Gas City contributor implementing or reviewing this change.
 
 Technical detail. Cover ALL of the following that apply:
@@ -173,16 +173,16 @@ Technical detail. Cover ALL of the following that apply:
 
 Common mistake: describing the happy path only. Cover corner cases,
 error paths, and what happens when agents crash mid-operation (NDI).
--->
+*/}
 
 ## Primitive Test
 
-<!--
+{/*
 GAS CITY SPECIFIC. Apply this section if your proposal adds or modifies
 a primitive (Layer 0-1) or could be mistaken for one.
 
 If ADDING a new primitive, you must pass all three conditions from
-docs/primitive-test.md:
+docs/contributors/primitive-test.md:
 
 ### Atomicity
 Can agents do this safely without races using existing tools (bd, git,
@@ -215,11 +215,11 @@ derived mechanism" and briefly explain why.
 
 Common mistake: skipping this section. Every design doc must explicitly
 address the Primitive Test, even if only to say it doesn't apply.
--->
+*/}
 
 ## Drawbacks
 
-<!--
+{/*
 Why should we NOT do this? Be honest. Every proposal has costs.
 
 Consider:
@@ -236,11 +236,11 @@ Common mistake: writing "none" or listing only trivial drawbacks.
 If you can't find real drawbacks, you haven't thought hard enough.
 The best design docs have drawbacks that genuinely gave the author
 pause.
--->
+*/}
 
 ## Alternatives
 
-<!--
+{/*
 What other approaches were considered? Why were they rejected?
 
 Include at least one concrete alternative with enough detail that
@@ -259,11 +259,11 @@ solution differs (scale, constraints, ZFC compliance, etc.).
 
 Common mistake: strawman alternatives that nobody would seriously
 consider. The alternatives should be genuinely plausible.
--->
+*/}
 
 ## Unresolved Questions
 
-<!--
+{/*
 What needs to be figured out during implementation? What is
 intentionally left open for now?
 
@@ -280,11 +280,11 @@ deferred -- the design is good enough to start without resolving them.
 Common mistake: listing questions that the design doc should have
 answered. If you can answer it now, answer it in the relevant section
 above instead of deferring it here.
--->
+*/}
 
 ## Implementation Plan
 
-<!--
+{/*
 OPTIONAL but recommended for larger proposals.
 
 Break the work into phases, ordered by value delivered. Each phase
@@ -301,4 +301,4 @@ For each phase:
 
 Common mistake: a single monolithic phase. If your proposal can't be
 broken into incremental steps, it might be too large for one design doc.
--->
+*/}

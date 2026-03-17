@@ -1,145 +1,110 @@
 # Contributing to Gas City
 
-Thanks for your interest in contributing! Gas City is experimental software, and we welcome contributions that help explore these ideas.
+Gas City is experimental software, but the repo is now structured for external
+contributors. Before making changes, read:
+
+- [docs/index.md](docs/index.md)
+- [docs/contributors/README.md](docs/contributors/README.md)
+- [docs/contributors/codebase-map.md](docs/contributors/codebase-map.md)
+- [docs/architecture/README.md](docs/architecture/README.md)
+- [TESTING.md](TESTING.md)
 
 ## Getting Started
 
-1. Fork the repository
-2. Clone your fork
-3. Install prerequisites (see README.md)
-4. Set up tooling and git hooks: `make setup`
-5. Build and test: `make build && make check`
+1. Fork the repository.
+2. Clone your fork.
+3. Install prerequisites from
+   [docs/getting-started/installation.md](docs/getting-started/installation.md).
+4. Set up tooling and hooks: `make setup`
+5. Build and run the fast quality gates: `make build && make check`
 
 ## Development Workflow
 
-We use a direct-to-main workflow for trusted contributors. For external contributors:
+We use a direct-to-main workflow for trusted contributors. External
+contributors should:
 
 1. Create a feature branch from `main`
-2. Make your changes
-3. Ensure quality gates pass: `make check`
-4. Submit a pull request
+2. Make the change
+3. Run `make check`
+4. Run `make check-docs` if you touched docs, navigation, or cross-links
+5. Open a pull request
 
-### PR Branch Naming
+### Branch Naming
 
-**Never create PRs from your fork's `main` branch.** Always create a dedicated branch for each PR:
+Never open a PR from your fork's `main` branch. Use a dedicated branch per PR:
 
 ```bash
-# Good - dedicated branch per PR
 git checkout -b fix/session-startup upstream/main
-git checkout -b feat/formula-parser upstream/main
-
-# Bad - PR from main accumulates unrelated commits
-git checkout main  # Don't PR from here!
+git checkout -b docs/mintlify-nav upstream/main
 ```
 
-Why this matters:
-- PRs from `main` accumulate ALL commits pushed to your fork
-- Multiple contributors pushing to the same fork's `main` creates chaos
-- Reviewers can't tell which commits belong to which PR
-- You can't have multiple PRs open simultaneously
+Suggested prefixes:
 
-Branch naming conventions:
-- `fix/*` - Bug fixes
-- `feat/*` - New features
-- `refactor/*` - Code restructuring
-- `docs/*` - Documentation only
+- `fix/*`
+- `feat/*`
+- `refactor/*`
+- `docs/*`
 
 ## Code Style
 
-- Follow standard Go conventions (`gofmt`, `go vet`)
+- Follow standard Go conventions
 - Keep functions focused and small
-- Add comments for non-obvious logic
-- Include tests for new functionality
+- Add tests for behavior changes
+- Add comments only when the logic is not self-evident
 
 ## Design Philosophy
 
-Gas City follows two core principles that shape every contribution. Understanding
-these will save you (and reviewers) time.
+Gas City follows two project-level principles that should shape changes:
 
-### Zero Framework Cognition (ZFC)
+### Zero Framework Cognition
 
-**Go provides transport. Agents provide cognition.**
-
-Gas City's Go code handles plumbing: tmux sessions, message delivery, hooks,
-nudges, file transport, and observability primitives.
-All reasoning, judgment calls, and decision-making happen in the AI agents via
-molecule formulas and role templates.
-
-This means:
-- **No hardcoded thresholds in Go.** Don't write `if age > 5*time.Minute`
-  to decide if an agent is stuck. Expose the age as data and let the agent decide.
-- **No heuristics in Go.** Don't write detection logic that pattern-matches
-  agent behavior. Give agents the tools to observe, and let them reason.
-- **Formulas over subcommands.** If the feature is "detect X and do Y," it's
-  probably a molecule step, not a new `gc` subcommand.
-
-**The test:** Before adding Go code, ask yourself — *"Am I adding transport or
-cognition?"* If the answer is cognition, it should be a molecule step or
-formula instruction instead.
-
-For the full rationale, see
-[Zero Framework Cognition](https://steve-yegge.medium.com/zero-framework-cognition-a-way-to-build-resilient-ai-applications-56b090ed3e69).
+Go handles transport, not reasoning. If the behavior belongs in the model or
+prompt, do not encode it as framework intelligence in Go.
 
 ### Bitter Lesson Alignment
 
-Gas City bets on models getting smarter, not on hand-crafted heuristics getting
-more elaborate. If an AI agent can observe data and reason about it, we expose
-the data (transport) rather than encoding the reasoning (cognition). Today's
-clumsy heuristic is tomorrow's technical debt — but a clean observability
-primitive ages well.
+Prefer durable infrastructure, observability, and composition over brittle
+heuristics that a stronger model should eventually handle better.
 
-**Examples:**
+For the capability boundary, use the
+[Primitive Test](docs/contributors/primitive-test.md).
 
-| Good (transport) | Bad (cognition in Go) |
-|---|---|
-| `gc session attach <name>` | Go code deciding *when* to nudge |
-| `bd show <id>` exposing bead status | Go code deciding *what* bead status means |
-| `tmux has-session` checking liveness | Go code with hardcoded "stuck after N minutes" |
+## Docs Workflow
 
-## What to Contribute
+The docs tree is now Mintlify-based.
 
-Good first contributions:
-- Bug fixes with clear reproduction steps
-- Documentation improvements
-- Test coverage for untested code paths
-- Small, focused features
+- Config lives in `docs/docs.json`
+- Preview locally with `cd docs && npx --yes mint@latest dev`
+- Run docs checks with `make check-docs`
 
-For larger changes, please open an issue first to discuss the approach.
+When updating docs:
 
-## Commit Messages
+- Architecture docs describe current behavior
+- Design docs describe proposed behavior
+- Archive docs keep historical notes out of the main onboarding path
 
-- Use present tense ("Add feature" not "Added feature")
-- Keep the first line under 72 characters
-- Reference issues when applicable
+## Make Targets
 
-## Make Commands
-
-Run `make help` to see all targets. Key commands:
+Run `make help` for the full list. The most useful targets are:
 
 | Command | What it does |
 |---|---|
-| `make setup` | Install tools (golangci-lint) and git hooks |
-| `make build` | Compile `gc` binary with version metadata |
-| `make install` | Build and install `gc` to `~/.local/bin` |
-| `make check` | Fast quality gates: format check, lint, vet, unit tests |
-| `make check-all` | All quality gates including integration tests |
-| `make test` | Unit tests only |
-| `make test-integration` | All tests including integration (tmux, etc.) |
-| `make lint` | Run golangci-lint |
-| `make fmt` | Auto-fix formatting |
-| `make fmt-check` | Fail if formatting would change files |
-| `make vet` | Run `go vet` |
-| `make cover` | Run tests with coverage report |
-| `make clean` | Remove build artifacts |
+| `make setup` | Install local tools and git hooks |
+| `make build` | Build `gc` with version metadata |
+| `make install` | Install `gc` into `$(go env GOPATH)/bin` |
+| `make check` | Fast Go quality gates |
+| `make check-docs` | Docs sync tests plus Mintlify broken-link checks |
+| `make check-all` | Extended quality gates including integration tests |
+| `make test` | Unit and repo-level Go tests |
+| `make test-integration` | Integration tests |
+| `make cover` | Coverage run |
 
-Before submitting a PR, run:
+## Commit Messages
 
-```bash
-make check
-```
+- Use present tense
+- Keep the first line under 72 characters
+- Reference issues when relevant
 
-The pre-commit hook (installed by `make setup`) runs `make check` automatically on every commit.
+## Questions
 
-## Questions?
-
-Open an issue for questions about contributing. We're happy to help!
+Open an issue if you need clarification before a larger change.

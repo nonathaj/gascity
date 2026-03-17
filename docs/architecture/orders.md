@@ -1,12 +1,12 @@
 # Orders
 
-<!--
+{/*
 Current-state architecture document. Describes how Orders work
 TODAY. For proposed changes, write a design doc in docs/design/ instead.
 
 Audience: Gas City contributors (human and LLM agent).
 Update this document when the implementation changes.
--->
+*/}
 
 > Last verified against code: 2026-03-01
 
@@ -399,20 +399,20 @@ boundaries.
 
 ## See Also
 
-- [Architecture glossary](./glossary.md) -- authoritative definitions
+- [Architecture glossary](./glossary) -- authoritative definitions
   of order, gate, wisp, formula, and other terms used in this
   document
-- [Health Patrol architecture](./health-patrol.md) -- the controller
+- [Health Patrol architecture](./health-patrol) -- the controller
   loop that drives order dispatch on each tick
-- [Beads architecture](./beads.md) -- the bead store used for tracking
+- [Beads architecture](./beads) -- the bead store used for tracking
   beads, wisp instantiation via MolCook, and label-based queries
-- [Config architecture](./config.md) -- FormulaLayers resolution,
+- [Config architecture](./config) -- FormulaLayers resolution,
   pack expansion, and OrdersConfig
-- [Gate evaluation logic](../../internal/orders/gates.go) --
+- [Gate evaluation logic](https://github.com/gastownhall/gascity/blob/main/internal/orders/gates.go) --
   CheckGate implementation for all five gate types
-- [Order discovery](../../internal/orders/scanner.go) --
+- [Order discovery](https://github.com/gastownhall/gascity/blob/main/internal/orders/scanner.go) --
   Scan function for formula layer traversal
-- [Controller dispatch](../../cmd/gc/order_dispatch.go) --
+- [Controller dispatch](https://github.com/gastownhall/gascity/blob/main/cmd/gc/order_dispatch.go) --
   production dispatcher wiring exec and formula orders
-- [Event type constants](../../internal/events/events.go) --
+- [Event type constants](https://github.com/gastownhall/gascity/blob/main/internal/events/events.go) --
   order.fired, order.completed, order.failed event types

@@ -1,6 +1,6 @@
 # Exec Session Provider — Script Protocol
 
-Gas City's exec session provider delegates each `session.Provider` operation
+Gas City's exec session provider delegates each `runtime.Provider` operation
 to a user-supplied script. This allows any terminal multiplexer or process
 manager to be used as a session backend without writing Go code.
 

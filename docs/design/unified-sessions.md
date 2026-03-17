@@ -6,7 +6,7 @@
 | Date | 2026-03-07 |
 | Author(s) | Chris Sells, Claude |
 | Issue | — |
-| Supersedes | [docs/design/chat-sessions.md](chat-sessions.md) |
+| Supersedes | [docs/design/chat-sessions.md](/design/chat-sessions) |
 
 ## Summary
 
@@ -178,7 +178,7 @@ User holds are distinct from pool suppression — `gc session wake` only
 clears user holds and quarantine, not pool-computed desiredness. See
 [Pool integration](#pool-integration).
 
-<!-- REVIEW: added per Blocker 7 — gc session wake clears BOTH hold AND quarantine consistently -->
+{/* REVIEW: added per Blocker 7 — gc session wake clears BOTH hold AND quarantine consistently */}
 
 ### What the user sees
 
@@ -205,7 +205,7 @@ $ gc session attach gc-42
 # Releases user hold, wakes the session, resumes conversation.
 ```
 
-<!-- REVIEW: added per Blocker 7 — draining is a modifier/suffix, not a state -->
+{/* REVIEW: added per Blocker 7 — draining is a modifier/suffix, not a state */}
 
 ### Pool scaling
 
@@ -314,14 +314,14 @@ Bead {
 }
 ```
 
-<!-- REVIEW: added per Blocker 6 — session_key removed from bead metadata (moved to secrets file), instance_token added, identity fields marked immutable -->
+{/* REVIEW: added per Blocker 6 — session_key removed from bead metadata (moved to secrets file), instance_token added, identity fields marked immutable */}
 
 **Session key storage:** `session_key` is NOT stored in bead metadata.
 It is stored in `.gc/secrets/<session-id>.key` with `0600` permissions,
 read only by the controller at wake time. It is redacted from API
 responses and event payloads. See [Runtime targeting](#runtime-targeting-and-execution-guarantees).
 
-<!-- REVIEW: added per Blocker 6 — session_key in secrets file -->
+{/* REVIEW: added per Blocker 6 — session_key in secrets file */}
 
 **Field count comparison** (old system -> new):
 
@@ -345,11 +345,11 @@ generation (1), instance_token (1), sleep_reason (1), last_woke_at (1),
 wake_mode (1).
 The win is model unification, not field-count reduction.
 
-<!-- REVIEW: updated per Blocker 6 — field count adjusted for session_key move and instance_token addition -->
+{/* REVIEW: updated per Blocker 6 — field count adjusted for session_key move and instance_token addition */}
 
 ### State model
 
-<!-- REVIEW: added per Blocker 7 — stable public status schema -->
+{/* REVIEW: added per Blocker 7 — stable public status schema */}
 
 Sessions have two **public states** with orthogonal modifiers:
 
@@ -377,10 +377,10 @@ type SessionStatus struct {
     Draining       bool        `json:"draining"`        // true if drain in progress
     DrainReason    string      `json:"drain_reason"`    // "idle","pool-excess","config-drift","user-sleep" (empty if not draining)
 }
-// <!-- REVIEW: Round 2 fix — drain_reason added to public status -->
+// {/* REVIEW: Round 2 fix — drain_reason added to public status */}
 ```
 
-<!-- REVIEW: added per Blocker 7 — draining is a modifier, desired_awake/blocked_reasons exposed -->
+{/* REVIEW: added per Blocker 7 — draining is a modifier, desired_awake/blocked_reasons exposed */}
 
 ```
                 ┌──────────┐
@@ -479,7 +479,7 @@ func wakeReasons(session bead, cfg config.City, sp runtime.Provider, poolDesired
             reasons = append(reasons, WakeAttached)
         }
     }
-    // <!-- REVIEW: Round 4 fix — IsAttached uses context + tri-state -->
+    // {/* REVIEW: Round 4 fix — IsAttached uses context + tri-state */}
 
     // Phase 4: Hooked work — deferred until work-driven wake ships.
     // When enabled, sessions with open hooked beads stay awake even
@@ -501,7 +501,7 @@ The reconciler uses `ProcessAlive`, not `IsRunning`, to determine if a
 session has a live workload process. Provider probe calls return a
 tri-state result to distinguish timeout from negative:
 
-<!-- REVIEW: Round 3 fix — probe APIs use tri-state (alive/dead/unknown) with context deadlines -->
+{/* REVIEW: Round 3 fix — probe APIs use tri-state (alive/dead/unknown) with context deadlines */}
 
 ```go
 // ProbeResult represents a bounded probe outcome.
@@ -542,7 +542,7 @@ misinterpreted as process death.
 `IsAttached` and `GetLastActivity` follow the same pattern: context
 deadline, tri-state return, skip-on-unknown.
 
-<!-- REVIEW: added per Major 2 — dead pane handling specified -->
+{/* REVIEW: added per Major 2 — dead pane handling specified */}
 
 ### Provider capability tiers
 
@@ -567,11 +567,11 @@ stays awake until wake reasons change. This is a known behavioral
 difference: providers without activity reporting produce longer-lived
 sessions. Document this in operator guides.
 
-<!-- REVIEW: added per Major 2 — explicit behavioral difference documentation -->
+{/* REVIEW: added per Major 2 — explicit behavioral difference documentation */}
 
 ### Provider state table
 
-<!-- REVIEW: added per Major 2 — concrete provider behavior specification -->
+{/* REVIEW: added per Major 2 — concrete provider behavior specification */}
 
 Each provider operation has defined behavior per runtime:
 
@@ -596,7 +596,7 @@ The reconciler is a phased loop running in the controller. Intent
 computation is synchronous; provider I/O executes in a bounded worker
 pool. See [Concurrency architecture](#concurrency-architecture).
 
-<!-- REVIEW: updated per Blocker 3 — reconciler description now references concurrency architecture -->
+{/* REVIEW: updated per Blocker 3 — reconciler description now references concurrency architecture */}
 
 ```go
 func reconcile(sessions []bead, cfg config.City, sp runtime.Provider) {
@@ -673,7 +673,7 @@ func reconcile(sessions []bead, cfg config.City, sp runtime.Provider) {
             // poolDesired now contains the post-hysteresis value
         }
     }
-    // <!-- REVIEW: Round 4 fix — poolDesired stores post-hysteresis applied count -->
+    // {/* REVIEW: Round 4 fix — poolDesired stores post-hysteresis applied count */}
 
     // Phase 2a: Wake pass (forward dependency order — dependencies first).
     // Compute intent synchronously, dispatch provider I/O to worker pool.
@@ -697,7 +697,7 @@ func reconcile(sessions []bead, cfg config.City, sp runtime.Provider) {
             continue  // skip — cannot make decisions without liveness truth
         }
         alive := probeResult == ProbeAlive
-        // <!-- REVIEW: Round 4 fix — probe tri-state wired into reconciler loop -->
+        // {/* REVIEW: Round 4 fix — probe tri-state wired into reconciler loop */}
 
         // Stability check: detect rapid exits before making decisions.
         // If session was recently woken and is already dead, count as crash.
@@ -787,7 +787,7 @@ func reconcile(sessions []bead, cfg config.City, sp runtime.Provider) {
 
         healState(session, alive)
     }
-    // <!-- REVIEW: Round 5 fix — Phase 2b uses tri-state probes -->
+    // {/* REVIEW: Round 5 fix — Phase 2b uses tri-state probes */}
 
     // Phase 2c: Advance in-progress drains.
     advanceDrains(sp)
@@ -842,7 +842,7 @@ func healExpiredTimers(session bead) {
         }
     }
 }
-// <!-- REVIEW: Round 2 fix — healExpiredTimers now clears stale sleep_reason -->
+// {/* REVIEW: Round 2 fix — healExpiredTimers now clears stale sleep_reason */}
 
 // healState updates advisory metadata only when changed (dirty check).
 func healState(session bead, alive bool) {
@@ -856,11 +856,11 @@ func healState(session bead, alive bool) {
 }
 ```
 
-<!-- REVIEW: updated per Blocker 1 — config_hash advances at drain start, not wake -->
-<!-- REVIEW: updated per Blocker 2 — consecutive store failure tracking, RTO alert -->
-<!-- REVIEW: updated per Blocker 3 — wall-clock tick budget -->
-<!-- REVIEW: updated per Blocker 4 — adoption barrier gates orphan cleanup -->
-<!-- REVIEW: updated per Blocker 5 — allDependenciesAlive checks draining -->
+{/* REVIEW: updated per Blocker 1 — config_hash advances at drain start, not wake */}
+{/* REVIEW: updated per Blocker 2 — consecutive store failure tracking, RTO alert */}
+{/* REVIEW: updated per Blocker 3 — wall-clock tick budget */}
+{/* REVIEW: updated per Blocker 4 — adoption barrier gates orphan cleanup */}
+{/* REVIEW: updated per Blocker 5 — allDependenciesAlive checks draining */}
 
 What disappears:
 - Restart policy enum -> gone entirely
@@ -988,7 +988,7 @@ func allDependenciesAlive(ctx context.Context, session bead, cfg config.City, sp
     }
     return true
 }
-// <!-- REVIEW: Round 4 fix — allDependenciesAlive uses tri-state probes -->
+// {/* REVIEW: Round 4 fix — allDependenciesAlive uses tri-state probes */}
 
 // isPoolExcess returns true if this session is a pool instance whose slot
 // exceeds the current desired count (from the per-tick snapshot).
@@ -1004,7 +1004,7 @@ func isPoolExcess(session bead, cfg config.City, poolDesired map[string]int) boo
 }
 ```
 
-<!-- REVIEW: updated per Blocker 5 — allDependenciesAlive returns false for draining dependencies -->
+{/* REVIEW: updated per Blocker 5 — allDependenciesAlive returns false for draining dependencies */}
 
 The reconciler calls `checkStability()` during the wake/sleep decision
 phase for sessions that have `last_woke_at` set but are no longer alive.
@@ -1016,11 +1016,11 @@ Quarantined sessions show in `gc session list` as `asleep` with
 `sleep_reason: "quarantine"`. The quarantine expires automatically;
 `gc session wake` clears both quarantine AND user hold early.
 
-<!-- REVIEW: updated per Blocker 7 — gc session wake clears quarantine too -->
+{/* REVIEW: updated per Blocker 7 — gc session wake clears quarantine too */}
 
 ### Concurrency architecture
 
-<!-- REVIEW: added per Blocker 3 — full concurrency specification -->
+{/* REVIEW: added per Blocker 3 — full concurrency specification */}
 
 The reconciler computes intent synchronously, but provider I/O and pool
 evaluation execute in a bounded worker pool with context deadlines. This
@@ -1061,7 +1061,7 @@ Wall-clock budget per tick: 5s (configurable) — defer remaining to next tick
    `ProcessAlive` checks run with a 2s timeout. A timed-out probe
    treats the session as "unknown" — it is skipped for that tick (no
    wake, no sleep decision) and retried next tick.
-   <!-- REVIEW: Round 2 fix — hot-path probes bounded with deadlines -->
+   {/* REVIEW: Round 2 fix — hot-path probes bounded with deadlines */}
 
 3. **Read-only requests bypass the event loop.** `gc session list`,
    `gc session peek`, and `GET /v0/sessions` read the bead store snapshot
@@ -1082,7 +1082,7 @@ Wall-clock budget per tick: 5s (configurable) — defer remaining to next tick
    write. The reconciler continues with remaining sessions; the failed
    session retries on the next tick.
 
-<!-- REVIEW: added per Blocker 2 — SetMetadataBatch failure semantics -->
+{/* REVIEW: added per Blocker 2 — SetMetadataBatch failure semantics */}
 
 7. Each session bead has a `generation` counter, incremented on each
    wake. Drain operations verify the generation hasn't changed before
@@ -1142,11 +1142,11 @@ ordering:
   For strict exit ordering, use `depends_on` for wake ordering only and
   handle drain-time dependency loss in prompt templates.
 
-<!-- REVIEW: updated per Blocker 5 — allDependenciesAlive checks draining status -->
+{/* REVIEW: updated per Blocker 5 — allDependenciesAlive checks draining status */}
 
 **`depends_on` configuration example:**
 
-<!-- REVIEW: added per Major 1 — concrete depends_on TOML example -->
+{/* REVIEW: added per Major 1 — concrete depends_on TOML example */}
 
 ```toml
 [[agent]]
@@ -1238,7 +1238,7 @@ definition.
 4. Bead remains for history; auto-closed after grace period (default: 7d)
    if no wake reasons re-appear. `gc session close` for immediate cleanup.
 
-<!-- REVIEW: updated per Major 1 — session retention policy with configurable grace period -->
+{/* REVIEW: updated per Major 1 — session retention policy with configurable grace period */}
 
 **Config drift (hash advancement rules):**
 
@@ -1265,11 +1265,11 @@ Advancement timing:
    because it only affects wake behavior, not the running process.
    Changes take effect on the next wake — no drain needed.
 
-<!-- REVIEW: updated per Blocker 1 + Round 2 — config_hash and live_hash advancement rules fully specified -->
+{/* REVIEW: updated per Blocker 1 + Round 2 — config_hash and live_hash advancement rules fully specified */}
 
 ### Template identity
 
-<!-- REVIEW: added per Major 1 — qualified template identity -->
+{/* REVIEW: added per Major 1 — qualified template identity */}
 
 Template names are bare strings in single-rig cities (the common case).
 When multiple rigs exist with potentially colliding template names,
@@ -1304,8 +1304,8 @@ mutation.
 passed to process creation without validation against a defined format
 or allowlist.
 
-<!-- REVIEW: updated per Blocker 1 — two-phase wake with durable incarnation token -->
-<!-- REVIEW: updated per Blocker 6 — ExecSpec, instance_token, immutable fields -->
+{/* REVIEW: updated per Blocker 1 — two-phase wake with durable incarnation token */}
+{/* REVIEW: updated per Blocker 6 — ExecSpec, instance_token, immutable fields */}
 
 ```go
 // ExecSpec defines a validated command for process creation.
@@ -1401,7 +1401,7 @@ func wake(session bead, cfg config.City, sp runtime.Provider) error {
     }
     // ProbeUnknown is OK here — we just started it, can't confirm yet.
     // The next reconciler tick will check via normal liveness path.
-    // <!-- REVIEW: Round 5 fix — wake() post-start uses tri-state probe -->
+    // {/* REVIEW: Round 5 fix — wake() post-start uses tri-state probe */}
 
     // Fresh mode does NOT delete session key files. The key is simply
     // ignored by buildExecSpecFromConfig() when wakeMode is "fresh".
@@ -1491,8 +1491,8 @@ func buildExecSpecFromConfig(agent config.Agent, session bead, wakeMode string) 
 }
 ```
 
-<!-- REVIEW: added per Blocker 4 — buildEnv emits legacy env vars -->
-<!-- REVIEW: added per Blocker 6 — ExecSpec replaces string Command -->
+{/* REVIEW: added per Blocker 4 — buildEnv emits legacy env vars */}
+{/* REVIEW: added per Blocker 6 — ExecSpec replaces string Command */}
 
 **Two-phase wake protocol:** The generation and instance token are
 persisted BEFORE the process starts (Phase 1). If `sp.Start()` fails
@@ -1507,7 +1507,7 @@ vanished), the same self-healing applies. If the Phase 1 metadata
 commit itself fails, the process is never started — the next tick
 retries from scratch.
 
-<!-- REVIEW: added per Blocker 1 — repair/abort path documentation -->
+{/* REVIEW: added per Blocker 1 — repair/abort path documentation */}
 
 **Command construction invariant:** `BuildResumeExecSpec` and
 `BuildStartExecSpec` return `ExecSpec` with discrete `Path` and `Args`.
@@ -1517,7 +1517,7 @@ not `sh -c`.
 
 ### Runtime targeting and execution guarantees
 
-<!-- REVIEW: added per Blocker 6 — runtime targeting section -->
+{/* REVIEW: added per Blocker 6 — runtime targeting section */}
 
 **Authenticated runtime binding:** On wake, the controller generates a
 cryptographically random `instance_token` and writes it to both the bead
@@ -1550,7 +1550,7 @@ func verifiedInterrupt(session bead, sp runtime.Provider) error {
     }
     return sp.Interrupt(name)
 }
-// <!-- REVIEW: Round 2 fix — verifiedInterrupt added, token values redacted from errors -->
+// {/* REVIEW: Round 2 fix — verifiedInterrupt added, token values redacted from errors */}
 ```
 
 **Immutable controller-owned fields:** The following metadata fields are
@@ -1592,7 +1592,7 @@ remains awake. This prevents unnecessary restarts when transient
 conditions (e.g., brief pool scale-down) reverse before the drain
 completes.
 
-<!-- REVIEW: added per Blocker 5 — cancelable drains -->
+{/* REVIEW: added per Blocker 5 — cancelable drains */}
 
 ```go
 // In-memory drain tracking (not persisted in beads)
@@ -1721,11 +1721,11 @@ Agent prompt templates should include instructions to handle interrupt
 gracefully (finish current work, save state). This is a prompt-level
 concern (per ZFC), not a framework mechanism.
 
-<!-- REVIEW: updated per Major 2 — provider-specific interrupt details -->
+{/* REVIEW: updated per Major 2 — provider-specific interrupt details */}
 
 ### SIGINT handling contract
 
-<!-- REVIEW: added per Major 1 — SIGINT handling contract -->
+{/* REVIEW: added per Major 1 — SIGINT handling contract */}
 
 Agent prompt templates SHOULD include an interrupt handling stanza. The
 recommended pattern:
@@ -1794,7 +1794,7 @@ type poolDesiredEntry struct {
     updatedAt time.Time
 }
 const lastKnownPoolExpiry = 5 * time.Minute  // stale after 5 minutes
-// <!-- REVIEW: Round 2 fix — lastKnownPoolDesired has expiry policy -->
+// {/* REVIEW: Round 2 fix — lastKnownPoolDesired has expiry policy */}
 
 // poolScaleDownHysteresis tracks consecutive ticks at a new lower desired count.
 // Scale-down only executes after 2 consecutive ticks at the lower value.
@@ -1805,7 +1805,7 @@ var poolScaleDownHysteresis = map[string]int{}  // template -> consecutive ticks
 // lastKnownPoolDesired, which tracks the raw evaluation result.
 // Hysteresis compares against lastAppliedDesired to detect scale-down.
 var lastAppliedDesired = map[string]int{}  // template -> last applied count
-// <!-- REVIEW: Round 3 fix — separate lastAppliedDesired from lastKnownPoolDesired for hysteresis -->
+// {/* REVIEW: Round 3 fix — separate lastAppliedDesired from lastKnownPoolDesired for hysteresis */}
 
 // reconcilePool returns the post-hysteresis desired count (the applied value).
 // Callers write this back to poolDesired for use by wakeReasons/isPoolExcess.
@@ -1876,7 +1876,7 @@ func sessionBeadsForTemplate(template string) []bead {
 }
 ```
 
-<!-- REVIEW: updated per Blocker 5 — last-known-good fallback, hysteresis for scale-down -->
+{/* REVIEW: updated per Blocker 5 — last-known-good fallback, hysteresis for scale-down */}
 
 **Scale-down behavior:** When `desired` decreases, the pool evaluator
 applies hysteresis: 2 consecutive ticks at the lower desired count are
@@ -1905,7 +1905,7 @@ When work is slung to a session that cannot wake (held, quarantined, or
 pool-suppressed), the sling **rejects** the operation with a typed error.
 This prevents silent work stranding during Phase 2-3 (before WakeWork).
 
-<!-- REVIEW: updated per Blocker 5 — sling rejects (not just emits event) for blocked sessions -->
+{/* REVIEW: updated per Blocker 5 — sling rejects (not just emits event) for blocked sessions */}
 
 ```go
 func sling(sessionID string, workBead bead, cfg config.City) error {
@@ -1940,7 +1940,7 @@ func sling(sessionID string, workBead bead, cfg config.City) error {
             blockReason = "pool-suppressed"
         }
     }
-    // <!-- REVIEW: Round 5 fix — sling uses lastAppliedDesired (post-hysteresis) -->
+    // {/* REVIEW: Round 5 fix — sling uses lastAppliedDesired (post-hysteresis) */}
 
     if blockReason != "" {
         // Phase 2-3: reject. Phase 4+: WakeWork will handle this — remove gate.
@@ -1968,7 +1968,7 @@ Neither flow exists today.
 
 ### Bead store requirements
 
-<!-- REVIEW: added per Blocker 2 — bead store requirements section -->
+{/* REVIEW: added per Blocker 2 — bead store requirements section */}
 
 The bead store is the authoritative control plane for session lifecycle.
 The current `FileStore` implementation rewrites the entire database on
@@ -1992,7 +1992,7 @@ record; reads merge records by bead ID (last-writer-wins). Compaction
 rewrites the file periodically (e.g., every 100 appends or on startup).
 This is the simplest approach that meets all requirements and is
 consistent with the existing event log format.
-<!-- REVIEW: Round 2 fix — authoritative store backend chosen (append-only JSONL) -->
+{/* REVIEW: Round 2 fix — authoritative store backend chosen (append-only JSONL) */}
 
 **Degraded-mode policy:** When the bead store is unavailable:
 - Running processes continue undisturbed (no stop, no drain).
@@ -2014,7 +2014,7 @@ is untouched.
 Upgrading from the pre-unified reconciler to session beads requires a
 rerunnable adoption barrier.
 
-<!-- REVIEW: updated per Blocker 4 — rerunnable adoption barrier replaces sticky migration_complete -->
+{/* REVIEW: updated per Blocker 4 — rerunnable adoption barrier replaces sticky migration_complete */}
 
 **Adoption barrier (EVERY startup, not just first):**
 
@@ -2030,7 +2030,7 @@ loop, the adoption barrier runs. This replaces the previous sticky
    `session_name` does not prevent re-adoption. This handles the
    rollback/re-upgrade case where a session was adopted, closed, and
    then a new process starts with the same name.
-   <!-- REVIEW: Round 2 fix — adoption dedup excludes closed beads -->
+   {/* REVIEW: Round 2 fix — adoption dedup excludes closed beads */}
 3. If no **open** bead exists, **adopt permissively**: create a bead for it.
    - Set `session_name` to the legacy `SessionNameFor()` result.
    - Set `state = "awake"`, `generation = "1"`.
@@ -2086,7 +2086,7 @@ period, `buildEnv()` emits both new `GC_SESSION_*` variables and legacy
 with existing prompt templates and agent scripts that reference legacy
 env vars. Legacy vars are removed in Phase 5.
 
-<!-- REVIEW: added per Blocker 4 — legacy env var compat -->
+{/* REVIEW: added per Blocker 4 — legacy env var compat */}
 
 **Legacy session key migration:** Pre-existing interactive session beads
 may store resume tokens in bead metadata. On first wake after upgrade,
@@ -2127,7 +2127,7 @@ Orphan cleanup: would be enabled after adoption
 No changes made. Run `gc up` to execute.
 ```
 
-<!-- REVIEW: added per Blocker 4 — gc migration plan dry-run command -->
+{/* REVIEW: added per Blocker 4 — gc migration plan dry-run command */}
 
 ### Package changes
 
@@ -2160,11 +2160,11 @@ PATCH  /v0/session/{id}              # rename only (title field)
 GET    /v0/session/{id}/peek         # last N lines of output
 ```
 
-<!-- REVIEW: updated per Blocker 7 — wake clears hold AND quarantine -->
+{/* REVIEW: updated per Blocker 7 — wake clears hold AND quarantine */}
 
 **`POST /v0/session/{id}/wake` response:**
 
-<!-- REVIEW: added per Blocker 7 — typed wake outcomes -->
+{/* REVIEW: added per Blocker 7 — typed wake outcomes */}
 
 Returns a typed outcome:
 ```json
@@ -2188,7 +2188,7 @@ Possible outcomes:
 chars, no control characters). Rejects writes to `template`, `provider`,
 `pool_slot`, `session_name`, and all other fields with 403.
 
-<!-- REVIEW: updated per Blocker 6 — immutable fields listed -->
+{/* REVIEW: updated per Blocker 6 — immutable fields listed */}
 
 **`POST /v0/session/new`** accepted fields and validation:
 - `template` (required): must match an existing `[[agent]]` entry or a
@@ -2223,7 +2223,7 @@ gc session prune [--before 7d]
 gc migration plan                   # dry-run adoption preview
 ```
 
-<!-- REVIEW: updated per Blocker 7 — wake clears hold AND quarantine -->
+{/* REVIEW: updated per Blocker 7 — wake clears hold AND quarantine */}
 
 **Backward-compatible aliases** (Phase 3, deprecated in Phase 5):
 
@@ -2233,7 +2233,7 @@ gc session peek <name>         # session peek (replaces gc agent status)
 gc session kill <name>         # force-kill + reconciler restarts
 ```
 
-<!-- REVIEW: updated per Blocker 7 — gc agent restart preserves sync behavior -->
+{/* REVIEW: updated per Blocker 7 — gc agent restart preserves sync behavior */}
 
 ### CLI compatibility contract
 
@@ -2248,11 +2248,11 @@ Aliases must provide **exact fidelity** during the transition:
    exit with an error. `gc agent` retains only config-level operations
    (add, suspend, resume).
 
-<!-- REVIEW: updated per Blocker 7 — gc agent restart preserves sync semantics -->
+{/* REVIEW: updated per Blocker 7 — gc agent restart preserves sync semantics */}
 
 ### REASON column specification
 
-<!-- REVIEW: added per Blocker 7 — REASON column semantics -->
+{/* REVIEW: added per Blocker 7 — REASON column semantics */}
 
 The `REASON` column in `gc session list` has defined semantics:
 
@@ -2319,7 +2319,7 @@ programmatic consumers.
 - `MigrationSlotParseError {name, raw_suffix}` — legacy pool name unparseable
 - `TickBudgetExhausted {elapsed}` — tick exceeded wall-clock budget
 
-<!-- REVIEW: updated per various blockers — added new events -->
+{/* REVIEW: updated per various blockers — added new events */}
 
 ## Primitive Test
 
@@ -2346,7 +2346,7 @@ crash-safe (per-instance dedup key prevents duplicates). The `gc migration plan`
 dry-run command allows operators to preview adoption before upgrading.
 See [Migration protocol](#migration-protocol).
 
-<!-- REVIEW: updated — reflects rerunnable adoption barrier and dry-run command -->
+{/* REVIEW: updated — reflects rerunnable adoption barrier and dry-run command */}
 
 **2. Bead store becomes load-bearing for agent lifecycle.** Currently,
 config agents can run even if the bead store is broken — they're just
@@ -2360,7 +2360,7 @@ the tick — running processes are left undisturbed. After 3 consecutive
 failures, an operator alert is emitted. See
 [Bead store failure behavior](#bead-store-requirements).
 
-<!-- REVIEW: updated — references bead store requirements section -->
+{/* REVIEW: updated — references bead store requirements section */}
 
 **3. Session beads accumulate.** Config agents that are removed from
 city.toml leave behind session beads. Mitigation: config-managed sessions
@@ -2368,7 +2368,7 @@ whose template is removed from config are auto-closed after a
 configurable grace period (default: 7d). `gc session prune` provides
 manual cleanup. See [Config agent lifecycle](#config-agent-lifecycle).
 
-<!-- REVIEW: updated — reflects session retention policy -->
+{/* REVIEW: updated — reflects session retention policy */}
 
 **4. Wake-reason computation cost.** Every reconciler tick must compute
 wake reasons for every session bead, which involves querying bead stores
@@ -2376,7 +2376,7 @@ for hooked work. Mitigation: wake reasons can be cached within a tick;
 bead queries can be batched; hooked-work check can be event-driven.
 Provider I/O runs in a bounded worker pool to prevent computation stalls.
 
-<!-- REVIEW: updated — references bounded worker pool -->
+{/* REVIEW: updated — references bounded worker pool */}
 
 **5. Terminology change.** "Agent" is deeply embedded in the current
 CLI, API, config, and documentation. `gc agent restart` preserves
@@ -2384,7 +2384,7 @@ synchronous semantics during the alias period (blocks until re-wake or
 30s timeout). See [CLI compatibility contract](#cli-compatibility-contract)
 for the transition plan.
 
-<!-- REVIEW: updated — notes gc agent restart sync behavior -->
+{/* REVIEW: updated — notes gc agent restart sync behavior */}
 
 **6. Model unification, not simplification.** The unified system has
 ~50% more metadata fields than either individual system. The win is
@@ -2449,14 +2449,14 @@ persistent, resumable, work-receiving agent instances.
    (`"woken"`, `"hold_cleared"`, `"quarantine_cleared"`, `"blocked:pool"`,
    etc.). See [API surface](#api-surface-unified).
 
-<!-- REVIEW: added per Blocker 7 — resolved wake semantics -->
+{/* REVIEW: added per Blocker 7 — resolved wake semantics */}
 
 9. ~~**`gc agent restart` sync vs async.**~~ **Resolved.** Preserves
    synchronous behavior (blocks up to 30s) as the default during alias
    period. `--async` flag for non-blocking behavior. No `--wait` flag
    needed. See [CLI compatibility contract](#cli-compatibility-contract).
 
-<!-- REVIEW: added per Blocker 7 — resolved restart semantics -->
+{/* REVIEW: added per Blocker 7 — resolved restart semantics */}
 
 10. ~~**Config hash advancement timing.**~~ **Resolved.** `config_hash`
     advances at drain start (when drift is detected), not at wake. This
@@ -2464,7 +2464,7 @@ persistent, resumable, work-receiving agent instances.
     triggers another drift detection. See
     [Waking a session](#waking-a-session).
 
-<!-- REVIEW: added per Blocker 1 — resolved config hash timing -->
+{/* REVIEW: added per Blocker 1 — resolved config hash timing */}
 
 11. ~~**Pool check fallback.**~~ **Resolved.** Falls back to
     last-known-good desired count, not pool.min. Only uses pool.min if
@@ -2472,14 +2472,14 @@ persistent, resumable, work-receiving agent instances.
     at the lower value (hysteresis). See
     [Pool integration](#pool-integration).
 
-<!-- REVIEW: added per Blocker 5 — resolved pool fallback -->
+{/* REVIEW: added per Blocker 5 — resolved pool fallback */}
 
 12. ~~**Session key storage.**~~ **Resolved.** Stored in
     `.gc/secrets/<session-id>.key` with `0600` permissions, not in bead
     metadata. Redacted from API and events. See
     [Runtime targeting](#runtime-targeting-and-execution-guarantees).
 
-<!-- REVIEW: added per Blocker 6 — resolved session key storage -->
+{/* REVIEW: added per Blocker 6 — resolved session key storage */}
 
 ## Known Limitations and Future Work
 
@@ -2514,7 +2514,7 @@ persistent, resumable, work-receiving agent instances.
 
 ## Testing Strategy
 
-<!-- REVIEW: added per Major 3 — testing strategy section -->
+{/* REVIEW: added per Major 3 — testing strategy section */}
 
 ### Clock abstraction
 
@@ -2600,7 +2600,7 @@ func (p *fakeProvider) ListRunning(prefix string) []string
 func (p *fakeProvider) Kill(name string)                     // simulate crash
 func (p *fakeProvider) FailStart(name string, err error)     // inject start failure
 func (p *fakeProvider) SetProbeTimeout(name string)          // make probes return ProbeUnknown
-// <!-- REVIEW: Round 4 fix — fake provider uses tri-state probes and ExecSpec -->
+// {/* REVIEW: Round 4 fix — fake provider uses tri-state probes and ExecSpec */}
 ```
 
 ### Fake bead store
@@ -2681,14 +2681,14 @@ lifecycle management. Phase 2 switches to the new reconciler.
 - File permission enforcement: `.gc/` at `0700`, store at `0600`
 - Clock interface injection (preparation for testability)
 
-<!-- REVIEW: updated per Blockers 1, 4, 6, Major 3 -->
+{/* REVIEW: updated per Blockers 1, 4, 6, Major 3 */}
 
 ### Phase 2: Wake/sleep reconciler (large)
 
 **Prerequisite:** Bead store must meet [requirements](#bead-store-requirements)
 (record-level operations, corruption isolation, fsync-before-rename).
 
-<!-- REVIEW: added per Blocker 2 — bead store prerequisite -->
+{/* REVIEW: added per Blocker 2 — bead store prerequisite */}
 
 - Pure `wakeReasons()` with separate `healExpiredTimers()` pass
 - Two-phase wake protocol: persist generation BEFORE sp.Start()
@@ -2720,7 +2720,7 @@ lifecycle management. Phase 2 switches to the new reconciler.
 - `WorkSlungToBlockedSession` event + sling rejection for blocked targets
 - Full test coverage per [mandatory scenario matrix](#mandatory-scenario-matrix)
 
-<!-- REVIEW: updated per all blockers and majors -->
+{/* REVIEW: updated per all blockers and majors */}
 
 ### Phase 3: Unified CLI and API (medium)
 
@@ -2739,7 +2739,7 @@ lifecycle management. Phase 2 switches to the new reconciler.
 - Qualified template identity for multi-rig cities
 - `gc config validate` warns for templates missing interrupt guidance
 
-<!-- REVIEW: updated per Blockers 6, 7, Majors 1 -->
+{/* REVIEW: updated per Blockers 6, 7, Majors 1 */}
 
 ### Phase 4: Work-driven wake (medium)
 

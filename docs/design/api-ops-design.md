@@ -1,10 +1,12 @@
 # Design Doc: State-Mutating Operations API Surface
 
-**Status:** All phases (1-5) implemented
-**Date:** 2026-03-06
-**Authors:** Claude (industry analysis + endpoint catalog), Codex (semantic analysis + control-plane model)
-**Synthesized by:** Claude
-**Supersedes:** Earlier drafts in this file and `gc-api-state-mutations-v0.md`
+| Field | Value |
+|---|---|
+| Status | Implemented |
+| Date | 2026-03-06 |
+| Author(s) | Claude, Codex |
+| Issue | — |
+| Supersedes | Earlier drafts in this file and `gc-api-state-mutations-v0.md` |
 
 ---
 

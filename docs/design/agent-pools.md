@@ -1,5 +1,13 @@
 # Agent Pools & Autoscaling
 
+| Field | Value |
+|---|---|
+| Status | Implemented |
+| Date | 2026-03-01 |
+| Author(s) | Claude |
+| Issue | — |
+| Supersedes | — |
+
 Design document for elastic agent pools in Gas City. Covers the full
 picture: upscaling, downscaling, drain mode, and the ZFC-compliant
 scaling signal mechanism.
@@ -28,7 +36,7 @@ Both are: `desired_count = f(bead_store_state)`, bounded by min/max.
 | HPA / KEDA | `check` shell command | Computes desired from observables |
 | Metrics Server | Bead store (`bd` queries) | Observable state |
 | Controller loop | Reconciler | Already exists (`doReconcileAgents`) |
-| Scheduler | `session.Provider.Start` | No node selection needed |
+| Scheduler | `runtime.Provider.Start` | No node selection needed |
 | Graceful termination | Drain mode + prompt | Agent-aware, not just SIGTERM |
 | preStop hook | Drain signal in prompt | Agent decides how to wrap up |
 | terminationGracePeriodSeconds | `drain_timeout` | Hard deadline for draining |

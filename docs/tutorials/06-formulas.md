@@ -1,3 +1,8 @@
+---
+title: Tutorial 06 - Formulas
+description: Define multi-step workflows with formula files and molecule beads.
+---
+
 # Tutorial 06 — Formulas: Don't Restart from Scratch
 
 ## The problem

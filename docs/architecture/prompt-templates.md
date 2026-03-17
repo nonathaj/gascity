@@ -174,9 +174,9 @@ CUSTOM_VAR = "value"    # available as {{.CUSTOM_VAR}} in template
 
 ## See Also
 
-- [Agent Protocol](agent-protocol.md) — how rendered prompts are
-  delivered to agents via session.Provider
-- [Config System](config.md) — how Agent.PromptTemplate and Agent.Env
+- [Agent Protocol](/architecture/agent-protocol) — how rendered prompts are
+  delivered to agents via runtime.Provider
+- [Config System](/architecture/config) — how Agent.PromptTemplate and Agent.Env
   are resolved through override layers
-- [Glossary](glossary.md) — authoritative definitions of prompt
+- [Glossary](/architecture/glossary) — authoritative definitions of prompt
   template, nudge, and related terms

@@ -87,15 +87,20 @@ testing tmux session lifecycle with real processes.
 
 Run with: `go test -tags integration ./test/...`
 
-### 4. Upstream verification (`//go:build doltserver_upstream`)
+### 4. Documentation sync tests (`test/docsync`)
 
-The `internal/dolt/` package contains code copied verbatim from gastown.
-Its tests are gated behind the `doltserver_upstream` build tag so they
-don't run on pre-commit or in normal CI. Run them manually after
-re-copying upstream code to verify the copy is clean:
+These tests keep the public docs surface honest.
+
+They currently verify:
+
+- tutorial command coverage against the corresponding txtar tests
+- local Markdown link targets across the repo docs
+- Mintlify navigation page references in `docs/docs.json`
+
+Run them directly with:
 
 ```
-go test -tags doltserver_upstream ./internal/dolt/
+go test ./test/docsync
 ```
 
 Gas City's own tests for this code live in `gascity_test.go` (adapter
@@ -103,7 +108,7 @@ unit tests) and `test/integration/bdstore_test.go` (conformance).
 
 #### Two flavors of integration tests
 
-**Low-level** (`internal/session/tmux/tmux_test.go`): test raw tmux
+**Low-level** (`internal/runtime/tmux/tmux_test.go`): test raw tmux
 operations (NewSession, HasSession, KillSession) directly against the
 tmux library. Session names use the `gt-test-` prefix.
 
@@ -201,7 +206,7 @@ packages and are imported by each implementation's test file:
 | Interface | Conformance suite | Implementations tested |
 |---|---|---|
 | `beads.Store` | `internal/beads/beadstest/conformance.go` | MemStore, FileStore, BdStore |
-| `session.Provider` | `internal/session/sessiontest/conformance.go` | Fake, Subprocess (tmux), exec, k8s |
+| `runtime.Provider` | `internal/runtime/runtimetest/conformance.go` | Fake, tmux, subprocess, exec, k8s |
 | `mail.Provider` | `internal/mail/mailtest/conformance.go` | beadmail, exec |
 | `events.Recorder` | `internal/events/eventstest/conformance.go` | FileRecorder, exec |
 
@@ -216,7 +221,7 @@ test coverage. This table is the checklist for new provider implementations.
 
 | Seam | Implementations | Lifecycle deps | Coordination tested? |
 |---|---|---|---|
-| **Session** (`session.Provider`) | tmux, exec (Docker), k8s, fake | None (stateless start/stop) | Via lifecycle start order test |
+| **Runtime** (`runtime.Provider`) | tmux, exec, k8s, fake | None (stateless start/stop) | Via lifecycle start order test |
 | **Beads** (`beads.Store`) | MemStore, FileStore, BdStore | ensure-ready → init → hooks | `TestLifecycleCoordination_*` |
 | **Mail** (`mail.Provider`) | beadmail, exec | Depends on beads store | No — not a lifecycle seam; conformance sufficient |
 | **Events** (`events.Recorder`) | FileRecorder, exec | None (append-only) | No — stateless append, conformance sufficient |
@@ -259,9 +264,8 @@ interface it implements.
 
 | Double | Interface | Package | Strategy |
 |---|---|---|---|
-| `session.Fake` | `session.Provider` | `internal/session` | In-memory state + spy + broken mode |
+| `runtime.Fake` | `runtime.Provider` | `internal/runtime` | In-memory state + spy + broken mode |
 | `fsys.Fake` | `fsys.FS` | `internal/fsys` | In-memory maps + spy + per-path error injection |
-| `agent.Fake` | `agent.Agent` | `internal/agent` | Configurable returns + spy + per-method error injection |
 | `beads.MemStore` | `beads.Store` | `internal/beads` | Real logic, in-memory backing (also used by `FileStore` internally) |
 
 ### Spy pattern
@@ -270,12 +274,13 @@ Every fake records calls as `[]Call` structs. Tests verify both the
 result AND the call sequence:
 
 ```go
-f := agent.NewFake("mayor", "gc-city-mayor")
-doAgentAttach(f, &stdout, &stderr)
+sp := runtime.NewFake()
+_ = sp.Start(context.Background(), "mayor", runtime.Config{})
+_ = sp.Attach("mayor")
 
-// Verify call sequence: IsRunning → Start → Name → Attach.
-want := []string{"IsRunning", "Start", "Name", "Attach"}
-for i, c := range f.Calls {
+// Verify call sequence recorded by the fake runtime.
+want := []string{"Start", "Attach"}
+for i, c := range sp.Calls {
     if c.Method != want[i] { ... }
 }
 ```
@@ -290,15 +295,10 @@ f := fsys.NewFake()
 f.Errors["/city/rigs"] = fmt.Errorf("disk full")
 ```
 
-**Per-method errors** (`agent.Fake`) — one error field per method:
+**Modal errors** (`runtime.Fake`) — all-or-nothing broken mode:
 ```go
-f := agent.NewFake("mayor", "gc-city-mayor")
-f.StartErr = fmt.Errorf("boom")
-```
-
-**Modal errors** (`session.Fake`) — all-or-nothing broken mode:
-```go
-f := session.NewFailFake() // Start/Stop/Attach all return errors
+f := runtime.NewFake()
+f.Broken = true // Start/Stop/Attach and related operations return errors
 ```
 
 ### Compile-time interface checks
@@ -313,7 +313,7 @@ var _ Provider = (*Fake)(nil)
 
 Fakes are exported types in the same package as their interface. This
 makes them importable by cross-package unit tests (e.g., `cmd/gc`
-imports `session.NewFake()`).
+imports `runtime.NewFake()`).
 
 ## The do*() function pattern
 
@@ -326,8 +326,8 @@ Every CLI command splits into two functions:
 
 Unit tests call `doFoo()` directly with fakes:
 ```go
-f := agent.NewFake("mayor", "gc-city-mayor")
-code := doAgentAttach(f, &stdout, &stderr)
+sp := runtime.NewFake()
+code := doSessionAttach(sp, "mayor", &stdout, &stderr)
 ```
 
 Testscript tests call `gc foo` which routes through `cmdFoo()` →

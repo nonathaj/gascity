@@ -690,15 +690,15 @@ Convenience command for context handoff.
 Self-handoff (default): sends mail to self and blocks until controller
 restarts the session. Equivalent to:
 
-  gc mail send $GC_AGENT <subject> [message]
+  gc mail send $GC_AGENT &lt;subject&gt; [message]
   gc runtime request-restart
 
 Remote handoff (--target): sends mail to target agent and kills its
 session. The reconciler restarts it with the handoff mail waiting.
 Returns immediately. Equivalent to:
 
-  gc mail send <target> <subject> [message]
-  gc session kill <target>
+  gc mail send &lt;target&gt; &lt;subject&gt; [message]
+  gc session kill &lt;target&gt;
 
 Self-handoff requires agent context (GC_AGENT/GC_CITY env vars).
 Remote handoff can be run from any context with access to the city.
@@ -725,7 +725,7 @@ gc help [command]
 Checks for available work using the agent's work_query config.
 
 Without --inject: prints raw output, exits 0 if work exists, 1 if empty.
-With --inject: wraps output in <system-reminder> for hook injection, always exits 0.
+With --inject: wraps output in &lt;system-reminder&gt; for hook injection, always exits 0.
 
 The agent is determined from $GC_AGENT or a positional argument.
 
@@ -735,7 +735,7 @@ gc hook [agent] [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--inject` | bool |  | output <system-reminder> block for hook injection |
+| `--inject` | bool |  | output &lt;system-reminder&gt; block for hook injection |
 
 ## gc init
 
@@ -811,7 +811,7 @@ gc mail archive <id>
 Check for unread mail addressed to an agent.
 
 Without --inject: prints the count and exits 0 if mail exists, 1 if
-empty. With --inject: outputs a <system-reminder> block suitable for
+empty. With --inject: outputs a &lt;system-reminder&gt; block suitable for
 hook injection (always exits 0). The recipient defaults to $GC_AGENT
 or "human".
 
@@ -829,7 +829,7 @@ gc mail check
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--inject` | bool |  | output <system-reminder> block for hook injection |
+| `--inject` | bool |  | output &lt;system-reminder&gt; block for hook injection |
 
 ## gc mail count
 
@@ -921,7 +921,7 @@ Send a message to an agent or human.
 Creates a message bead addressed to the recipient. The sender defaults
 to $GC_AGENT (in agent sessions) or "human". Use --notify to nudge
 the recipient after sending. Use --from to override the sender identity.
-Use --to as an alternative to the positional <to> argument.
+Use --to as an alternative to the positional &lt;to&gt; argument.
 Use -s/--subject for the summary line and -m/--message for the body text.
 Use --all to broadcast to all agents (excluding sender and "human").
 

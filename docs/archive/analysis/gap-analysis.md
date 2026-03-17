@@ -9,7 +9,7 @@ or EXCLUDE — with rationale.
 
 **Ground rules:**
 - Gas City has ZERO hardcoded roles. Anything role-specific is config.
-- The Primitive Test (`docs/primitive-test.md`) applies: Atomicity +
+- The Primitive Test (`docs/contributors/primitive-test.md`) applies: Atomicity +
   Bitter Lesson + ZFC.
 - "Worth porting" means it's infrastructure that ANY pack needs.
 - "Gastown-specific" means it assumes Gas Town's particular role set.

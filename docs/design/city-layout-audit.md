@@ -1,5 +1,13 @@
 # City Layout Audit
 
+| Field | Value |
+|---|---|
+| Status | Draft |
+| Date | 2026-03-08 |
+| Author(s) | Codex, Claude |
+| Issue | — |
+| Supersedes | — |
+
 ## Goal
 
 Move city-authored content out of `.gc/` and into explicit top-level folders:

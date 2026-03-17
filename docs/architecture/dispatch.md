@@ -180,7 +180,7 @@ CLI layer (cmd/gc/cmd_sling.go)
 |---|---|
 | `internal/beads` (Store) | `MolCook` for wisp instantiation, `Create` for auto-convoy, `Get`/`Children` for container expansion, `Update` for ParentID linking, `SetMetadata` for merge strategy |
 | `internal/config` | Agent resolution, `EffectiveSlingQuery`, pool detection via `IsPool`, `PoolConfig` for sizing, `Suspended` flag |
-| `internal/session` | `Provider.IsRunning` and `Provider.Nudge` for agent nudging via `doSlingNudge` |
+| `internal/runtime` | `Provider.IsRunning` and `Provider.Nudge` for agent nudging via `doSlingNudge` |
 | `internal/agent` | `SessionNameFor` to compute session names, `agent.New` + `Nudge` to deliver nudge text |
 | `internal/telemetry` | `RecordSling` for metrics and log events on every dispatch |
 | `cmd/gc/cmd_agent.go` | `resolveAgentIdentity` for 2-step target resolution (literal then contextual) |
@@ -204,7 +204,7 @@ CLI layer (cmd/gc/cmd_sling.go)
 | `cmd/gc/pool.go` | `evaluatePool` (scale check), `poolAgents` (instance expansion), `expandSessionSetup` (template context) |
 | `internal/config/config.go` | `Agent.SlingQuery`, `Agent.EffectiveSlingQuery()`, `Agent.EffectiveWorkQuery()`, `Agent.IsPool()` |
 | `internal/beads/beads.go` | `IsContainerType`, `Store.MolCook`, `Store.Children`, `Store.SetMetadata` |
-| `internal/formula/compose.go` | `ComposeMolCook` -- creates molecules from Store.Create calls with variable substitution |
+| `internal/beads/bdstore.go` | `BdStore.MolCook` and `BdStore.MolCookOn` -- formula-backed wisp instantiation via `bd mol wisp` / `bd mol bond` |
 | `internal/telemetry/recorder.go` | `RecordSling` -- metrics counter + structured log event for each dispatch |
 | `cmd/gc/cmd_agent.go` | `resolveAgentIdentity` -- 2-step agent name resolution |
 
@@ -247,7 +247,7 @@ formulas override system formulas by name.
 ## Testing
 
 Dispatch testing follows the philosophy in
-[TESTING.md](../../TESTING.md), relying heavily on injected fakes:
+[TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md), relying heavily on injected fakes:
 
 **Unit tests** (`cmd/gc/cmd_sling_test.go`): All dispatch logic is tested
 through `doSling` and `doSlingBatch` with injected `fakeRunner` (records
@@ -305,19 +305,19 @@ both `sling_query` and `work_query` together or neither.
 
 ## See Also
 
-- [Architecture glossary](glossary.md) -- authoritative definitions of
+- [Architecture glossary](/architecture/glossary) -- authoritative definitions of
   sling, convoy, wisp, formula, and other terms used in this document
-- [Bead Store architecture](beads.md) -- the persistence substrate that
+- [Bead Store architecture](/architecture/beads) -- the persistence substrate that
   dispatch reads and writes through, including MolCook molecule
   instantiation
-- [Health Patrol architecture](health-patrol.md) -- the supervision
+- [Health Patrol architecture](/architecture/health-patrol) -- the supervision
   model that keeps pool agents alive to receive dispatched work
-- [Config architecture](config.md) -- how agent configuration
+- [Config architecture](/architecture/config) -- how agent configuration
   (sling_query, pool, suspended) drives dispatch behavior
-- [CLAUDE.md](../../CLAUDE.md) -- design principles including "the
+- [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) -- design principles including "the
   controller drives all SDK infrastructure operations" (layering
   invariant 6)
-- [Formula package](../../internal/formula/) -- formula parsing and
-  `ComposeMolCook` molecule composition used by wisp instantiation
-- [TESTING.md](../../TESTING.md) -- testing philosophy and tier
+- [Formula file reference](../reference/formula) -- formula structure,
+  layer resolution, and wisp instantiation inputs
+- [TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md) -- testing philosophy and tier
   boundaries for the fake-injection approach used in dispatch tests

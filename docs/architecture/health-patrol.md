@@ -1,12 +1,12 @@
 # Health Patrol
 
-<!--
+{/*
 Current-state architecture document. Describes how Health Patrol works
 TODAY. For proposed changes, write a design doc in docs/design/ instead.
 
 Audience: Gas City contributors (human and LLM agent).
 Update this document when the implementation changes.
--->
+*/}
 
 > Last verified against code: 2026-03-01
 
@@ -31,7 +31,7 @@ are child specs, and "let it crash" is realized through GUPP + beads
 
 - **Config Drift**: A state where a running agent's stored config
   fingerprint (SHA-256 of command + env + fingerprint extras) differs
-  from the current config. Detected via `session.ConfigFingerprint()` and
+  from the current config. Detected via `runtime.ConfigFingerprint()` and
   resolved by stop + start.
 
 - **Crash Loop Quarantine**: When an agent exceeds `max_restarts` within
@@ -41,7 +41,7 @@ are child specs, and "let it crash" is realized through GUPP + beads
 
 - **Idle Timeout**: An opt-in per-agent duration after which an agent
   with no session I/O activity is killed and restarted. Queries
-  `session.Provider.GetLastActivity()` on each tick.
+  `runtime.Provider.GetLastActivity()` on each tick.
 
 - **Order Dispatch**: The controller evaluates gate conditions
   (cooldown, cron, condition, event, manual) on every tick and fires
@@ -173,13 +173,13 @@ crash tracking, event recording, and config hash storage.
 
 - **`idleTracker`** (`cmd/gc/idle_tracker.go`): Interface for agent
   inactivity detection. Production impl `memoryIdleTracker` queries
-  `session.Provider.GetLastActivity()` and compares against per-agent
+  `runtime.Provider.GetLastActivity()` and compares against per-agent
   timeout durations.
 
 - **`reconcileOps`** (`cmd/gc/reconcile.go`): Interface for
   session-level operations needed by reconciliation: `listRunning()`,
   `storeConfigHash()`, `configHash()`. Backed by
-  `session.Provider.SetMeta()`/`GetMeta()` for hash persistence.
+  `runtime.Provider.SetMeta()`/`GetMeta()` for hash persistence.
 
 - **`orderDispatcher`** (`cmd/gc/order_dispatch.go`): Interface
   for order gate evaluation and dispatch. Production impl
@@ -219,7 +219,7 @@ indicate bugs.
   restart counts).
 
 - **Config drift uses content hashing, not timestamps**:
-  `session.ConfigFingerprint()` hashes command + env + fingerprint
+  `runtime.ConfigFingerprint()` hashes command + env + fingerprint
   extras. Two configs with identical content always produce the same hash
   regardless of when they were loaded.
 
@@ -228,14 +228,14 @@ indicate bugs.
   next tick while the dispatch is still running.
 
 - **No PID files for liveness**: Agent liveness is determined by querying
-  `session.Provider.IsRunning()` and `ProcessAlive()`, which inspect the
+  `runtime.Provider.IsRunning()` and `ProcessAlive()`, which inspect the
   live process tree. Controller discovery uses Unix socket ping probes,
   not PID files, and liveness decisions still come from the live process
   tree.
 
-- **No role names in Go code**: Health Patrol operates on `agent.Agent`
-  values constructed from config. No line of Go references a specific
-  role name.
+- **No role names in Go code**: Health Patrol operates on resolved config,
+  runtime session names, and provider state. No line of Go references a
+  specific role name.
 
 - **SDK self-sufficiency**: All Health Patrol operations (reconciliation,
   crash tracking, idle detection, order dispatch) function with only
@@ -265,7 +265,7 @@ Health Patrol follows Erlang/OTP patterns mapped to Gas City:
 | Depends on | How |
 |---|---|
 | `internal/config` | Parses `DaemonConfig` for patrol interval, max restarts, restart window, shutdown timeout. Provides `Revision()` for config reload detection. |
-| `internal/session` | `Provider` interface for Start/Stop/IsRunning/ListRunning/GetLastActivity/SetMeta/GetMeta. `ConfigFingerprint()` for drift detection. |
+| `internal/runtime` | `Provider` interface for Start/Stop/IsRunning/ListRunning/GetLastActivity/SetMeta/GetMeta. `ConfigFingerprint()` for drift detection. |
 | `internal/events` | `Recorder` interface for emitting lifecycle events (`agent.started`, `agent.stopped`, `agent.crashed`, `agent.quarantined`, `agent.idle_killed`, `agent.suspended`, `controller.started`, `controller.stopped`, `order.fired`, `order.completed`, `order.failed`). `Provider` interface for event gate queries. |
 | `internal/beads` | `Store` interface for order tracking beads (create, update, list by label). `CommandRunner` for bd CLI invocation. |
 | `internal/orders` | `Scan()` to discover orders from formula layers. `CheckGate()` to evaluate gate conditions. `Order` struct for dispatch metadata. |
@@ -290,7 +290,7 @@ All Health Patrol implementation lives in `cmd/gc/`:
 | `cmd/gc/order_dispatch.go` | `orderDispatcher` interface, `memoryOrderDispatcher` (gate evaluation, exec dispatch, wisp dispatch, tracking bead lifecycle) |
 | `internal/config/config.go` | `DaemonConfig` struct with `PatrolIntervalDuration()`, `MaxRestartsOrDefault()`, `RestartWindowDuration()`, `ShutdownTimeoutDuration()` |
 | `internal/config/revision.go` | `Revision()` (SHA-256 bundle hash of all config sources + pack dirs), `WatchDirs()` |
-| `internal/session/fingerprint.go` | `ConfigFingerprint()` (SHA-256 of command + env + extras for drift detection) |
+| `internal/runtime/fingerprint.go` | `ConfigFingerprint()` (SHA-256 of command + env + extras for drift detection) |
 | `internal/orders/gates.go` | `CheckGate()` with cooldown, cron, condition, event, and manual gate evaluators |
 | `internal/orders/order.go` | `Order` struct definition, `Scan()` for discovery |
 
@@ -333,7 +333,7 @@ Each Health Patrol component has dedicated unit tests:
 | `cmd/gc/idle_tracker_test.go` | Timeout detection, zero time handling, per-agent timeout configuration, nil-guard |
 | `cmd/gc/order_dispatch_test.go` | Gate evaluation (cooldown, cron, condition, event, manual), exec dispatch, wisp dispatch, tracking bead creation, timeout capping, rig-scoped orders |
 
-All tests use in-memory fakes (`session.Fake`, `events.Discard`,
+All tests use in-memory fakes (`runtime.Fake`, `events.Discard`,
 stubbed `ExecRunner`) with no external infrastructure dependencies. See
 `TESTING.md` for the overall testing philosophy and tier boundaries.
 
@@ -365,19 +365,19 @@ stubbed `ExecRunner`) with no external infrastructure dependencies. See
 
 ## See Also
 
-- [Architecture glossary](./glossary.md) -- authoritative definitions
+- [Architecture glossary](./glossary) -- authoritative definitions
   of all Gas City terms used in this document
-- [Config struct definitions](../../internal/config/config.go) --
+- [Config struct definitions](https://github.com/gastownhall/gascity/blob/main/internal/config/config.go) --
   `DaemonConfig`, `Agent`, and `PoolConfig` struct fields and defaults
-- [Session Provider interface](../../internal/session/session.go) --
+- [Runtime Provider interface](https://github.com/gastownhall/gascity/blob/main/internal/runtime/runtime.go) --
   the provider interface that Health Patrol queries for liveness, metadata,
   and activity
-- [Order gate evaluation](../../internal/orders/gates.go) --
+- [Order gate evaluation](https://github.com/gastownhall/gascity/blob/main/internal/orders/gates.go) --
   gate types (cooldown, cron, condition, event, manual) and their
   check logic
-- [Event type constants](../../internal/events/events.go) -- all event
+- [Event type constants](https://github.com/gastownhall/gascity/blob/main/internal/events/events.go) -- all event
   types emitted by Health Patrol
-- [Config revision hashing](../../internal/config/revision.go) --
+- [Config revision hashing](https://github.com/gastownhall/gascity/blob/main/internal/config/revision.go) --
   SHA-256 bundle hash for config reload detection
-- [Session config fingerprinting](../../internal/session/fingerprint.go)
+- [Session config fingerprinting](https://github.com/gastownhall/gascity/blob/main/internal/runtime/fingerprint.go)
   -- per-agent SHA-256 hash for drift detection

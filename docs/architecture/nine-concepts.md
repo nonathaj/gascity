@@ -13,7 +13,7 @@ implementations and links to their detailed architecture docs.
 ## The Primitive Test
 
 Before adding a new primitive, apply three necessary conditions (see
-[`docs/primitive-test.md`](../primitive-test.md)):
+[`docs/contributors/primitive-test.md`](../contributors/primitive-test)):
 
 1. **Atomicity** — can it be decomposed into existing primitives? If
    yes, it's derived, not primitive.
@@ -31,13 +31,14 @@ These are irreducible. Each has a dedicated architecture doc.
 Start/stop/prompt/observe agents regardless of session provider.
 Covers identity, pools, sandboxes, resume, and crash adoption.
 
-- **Interface**: `agent.Agent` wraps `session.Provider`
+- **Interface**: `runtime.Provider` with naming and startup hints from
+  `internal/agent/`
 - **Implementations**: tmux (production), subprocess (remote),
   k8s (Kubernetes), Fake (test)
 - **Key insight**: The SDK manages agent lifecycle. The prompt defines
   agent behavior. These concerns never cross.
 
-**Details**: [Agent Protocol](agent-protocol.md)
+**Details**: [Agent Protocol](/architecture/agent-protocol)
 
 ### 2. Task Store (Beads)
 
@@ -51,7 +52,7 @@ Everything is a bead: tasks, mail, molecules, convoys, epics.
 - **Key insight**: Beads is the universal persistence substrate.
   All domain state flows through a single interface.
 
-**Details**: [Bead Store](beads.md)
+**Details**: [Bead Store](/architecture/beads)
 
 ### 3. Event Bus
 
@@ -65,7 +66,7 @@ audit).
 - **Key insight**: Events are immutable. Seq is monotonically
   increasing. Watch() provides reactive notification without polling.
 
-**Details**: [Event Bus](event-bus.md)
+**Details**: [Event Bus](/architecture/event-bus)
 
 ### 4. Config
 
@@ -78,7 +79,7 @@ presence) and multi-layer override resolution.
   gives Level 0-1. Adding sections activates capabilities. No feature
   flags, no capability flags — the config presence is sufficient.
 
-**Details**: [Config System](config.md)
+**Details**: [Config System](/architecture/config)
 
 ### 5. Prompt Templates
 
@@ -90,7 +91,7 @@ behavioral specification.
 - **Key insight**: All role behavior is user-supplied configuration.
   The SDK contains zero hardcoded role names.
 
-**Details**: [Prompt Templates](prompt-templates.md)
+**Details**: [Prompt Templates](/architecture/prompt-templates)
 
 ## Layer 2-4: Derived Mechanisms
 
@@ -105,30 +106,31 @@ Mail + nudge. No new primitive needed.
 - **Mail derivation**: `beads.Store.Create(Bead{Type:"message"})` →
   message is a bead. Inbox = query open message beads by assignee.
   Archive = close the bead.
-- **Nudge derivation**: `session.Provider.Nudge(text)` → text typed
+- **Nudge derivation**: `runtime.Provider.Nudge(text)` → text typed
   into the agent's session. Fire-and-forget.
 - **Proof**: Mail uses only Bead Store (primitive 2). Nudge uses only
   Agent Protocol (primitive 1). No new infrastructure.
 
-**Details**: [Messaging](messaging.md)
+**Details**: [Messaging](/architecture/messaging)
 
 ### 7. Formulas & Molecules
 
-Formula = TOML parsed by Config. Molecule = root bead + child step
-beads in Task Store. Wisps = ephemeral molecules. Orders =
+Formula = TOML discovered through formula layers. Molecule = provider-backed
+runtime bead tree. Wisps = ephemeral molecules. Orders =
 formulas with gate conditions on Event Bus.
 
-- **Formula derivation**: Config (primitive 4) parses TOML.
-- **Molecule derivation**: Bead Store (primitive 2) holds root +
-  step beads. `CurrentStep()` computes next step from dependency state.
+- **Formula derivation**: Config (primitive 4) resolves formula layers and
+  active files.
+- **Molecule derivation**: Bead Store (primitive 2) holds the root bead and
+  any provider-created step beads.
 - **Wisp derivation**: Molecule + TTL + garbage collection.
 - **Order derivation**: Formula + Event Bus (primitive 3) gate
   evaluation + Config (primitive 4) scheduling.
 - **Proof**: Uses Config, Bead Store, and Event Bus. No new
   infrastructure.
 
-**Details**: [Formulas & Molecules](formulas.md) |
-[Orders](orders.md)
+**Details**: [Formulas & Molecules](/architecture/formulas) |
+[Orders](/architecture/orders)
 
 ### 8. Dispatch (Sling)
 
@@ -140,7 +142,7 @@ nudge → create convoy → log event.
   Event Bus (log event).
 - **Proof**: Pure composition of primitives 1-4. No new infrastructure.
 
-**Details**: [Dispatch](dispatch.md)
+**Details**: [Dispatch](/architecture/dispatch)
 
 ### 9. Health Patrol
 
@@ -154,7 +156,7 @@ stalls (Event Bus), restart with backoff.
   controller drives all operations — no user-configured agent role
   is required.
 
-**Details**: [Health Patrol](health-patrol.md)
+**Details**: [Health Patrol](/architecture/health-patrol)
 
 ## Layering Invariants
 
@@ -185,9 +187,9 @@ Capabilities activate based on config section presence:
 
 ## See Also
 
-- [Glossary](glossary.md) — authoritative definitions of all terms
+- [Glossary](/architecture/glossary) — authoritative definitions of all terms
   used across the nine concepts
-- [Primitive Test](../primitive-test.md) — the three necessary
+- [Primitive Test](../contributors/primitive-test) — the three necessary
   conditions for adding a new primitive
-- [CLAUDE.md](../../CLAUDE.md) — project-level design principles and
+- [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) — project-level design principles and
   code conventions

@@ -1,10 +1,10 @@
 # Config System
 
-<!--
+{/*
 Current-state architecture document for Gas City's config subsystem.
 Describes how config loading, composition, pack expansion, provider
 resolution, and revision tracking work TODAY.
--->
+*/}
 
 > Last verified against code: 2026-03-01
 
@@ -228,9 +228,9 @@ Provider resolution happens later, at agent startup time, via
 | `cmd/gc/reconciler.go` | Reads resolved agent list and rig list to start/stop agents |
 | `internal/city/` | Uses `Load` for basic config operations (init, add rig) |
 | `internal/hooks/` | Reads agent config for hook installation decisions via `ResolveInstallHooks` |
-| `internal/session/` | Receives `ResolvedProvider` to determine session startup parameters |
+| `internal/runtime/` | Receives `ResolvedProvider` output to determine runtime startup parameters |
 | `internal/orders/` | Reads `OrdersConfig` skip list and formula layers |
-| `internal/formula/` | Uses `FormulaLayers` to resolve formula directory symlinks |
+| `cmd/gc/formula_resolve.go` | Uses `FormulaLayers` to resolve formula directory symlinks |
 | `cmd/gc/cmd_sling.go` | Reads `Agent.EffectiveSlingQuery` for bead routing |
 
 ## Code Map
@@ -327,7 +327,7 @@ Each source file has a companion `_test.go`:
 | `internal/config/field_sync_test.go` | TestAgentFieldSync: reflection-based struct field parity between Agent, AgentPatch, AgentOverride |
 
 All tests are unit tests using `t.TempDir()` and `fsys.MemFS` (no
-integration tags needed). See [TESTING.md](../../TESTING.md) for
+integration tags needed). See [TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md) for
 overall testing philosophy.
 
 ## Known Limitations
@@ -359,10 +359,10 @@ overall testing philosophy.
 
 ## See Also
 
-- [Glossary](./glossary.md) -- authoritative definitions of all Gas City
+- [Glossary](./glossary) -- authoritative definitions of all Gas City
   terms, including Config, Pack, Rig, and Provider
-- [CLAUDE.md](../../CLAUDE.md) -- progressive capability model (Levels
+- [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) -- progressive capability model (Levels
   0-8), design principles (ZFC, Bitter Lesson), and the "Adding agent
   config fields" convention
-- [TESTING.md](../../TESTING.md) -- testing philosophy and tier
+- [TESTING.md](https://github.com/gastownhall/gascity/blob/main/TESTING.md) -- testing philosophy and tier
   boundaries for config tests

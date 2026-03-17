@@ -58,10 +58,10 @@ BdStore exposes methods that other subsystems use directly via `*BdStore`:
 
 | Method | Used By | Purpose |
 |--------|---------|---------|
-| `Init(prefix)` | `internal/dolt` | Initialize `.beads/` database |
-| `ConfigSet(key, value)` | `internal/dolt` | Set bd configuration |
+| `Init(prefix)` | `cmd/gc/beads_provider_lifecycle.go` | Initialize `.beads/` database |
+| `ConfigSet(key, value)` | `cmd/gc/beads_provider_lifecycle.go` | Set bd configuration |
 | `ListByLabel(label, limit)` | `cmd/gc/cmd_order.go` | Query beads by label (order history, cursors) |
-| `Purge(beadsDir, dryRun)` | `internal/dolt/sync.go` | Remove closed ephemeral beads |
+| `Purge(beadsDir, dryRun)` | `cmd/gc/wisp_gc.go` and admin flows | Remove closed ephemeral beads |
 | `SetPurgeRunner(fn)` | Tests only | Test injection |
 
 ### Provider Selection
@@ -124,7 +124,7 @@ operations (exit 2 = unsupported).
 
 ### 3. Add Exec Beads Provider
 
-New package: `internal/beads/exec/` (mirrors `internal/session/exec/`).
+New package: `internal/beads/exec/` (mirrors `internal/runtime/exec/`).
 
 ## Exec Beads Protocol
 
@@ -518,7 +518,7 @@ get their own Go implementation.
 
 | Aspect | Session Exec | Beads Exec |
 |--------|-------------|------------|
-| Interface | `session.Provider` (14 methods) | `beads.Store` (10 methods) |
+| Interface | `runtime.Provider` (14+ methods) | `beads.Store` (10 methods) |
 | Data format | Mixed (JSON for start, text for others) | JSON for all mutations and reads |
 | Selection | `GC_SESSION=exec:<script>` | `GC_BEADS=exec:<script>` |
 | Config | N/A (env var only) | `[beads] provider = "exec:..."` |
