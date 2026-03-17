@@ -164,9 +164,12 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 	if reloadSupervisorHook(stdout, stderr) != 0 {
 		// The supervisor may be a zombie from a recent "gc supervisor stop" —
 		// alive enough to accept connections but unable to process reload
-		// because its main loop has exited. Wait for it to finish dying,
+		// because its main loop has exited. Poll for it to finish dying,
 		// start a fresh supervisor, and retry.
-		time.Sleep(3 * time.Second)
+		deadline := time.Now().Add(10 * time.Second)
+		for supervisorAliveHook() != 0 && time.Now().Before(deadline) {
+			time.Sleep(250 * time.Millisecond)
+		}
 		if ensureSupervisorRunningHook(stdout, stderr) != 0 {
 			rollbackRegisteredCity(reg, entry, stderr, commandName, "supervisor did not start after retry", false)
 			return 1
