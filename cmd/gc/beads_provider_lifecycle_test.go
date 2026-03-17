@@ -75,6 +75,66 @@ func TestShutdownBeadsProvider_bd_skip(t *testing.T) {
 	}
 }
 
+func TestCurrentDoltPortPrefersRuntimeState(t *testing.T) {
+	cityDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityDir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt", "dolt-state.json"),
+		[]byte(`{"running":true,"pid":123,"port":43699}`),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityDir, ".beads", "dolt-server.port"), []byte("38427\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := currentDoltPort(cityDir)
+	if got != "43699" {
+		t.Fatalf("currentDoltPort() = %q, want %q", got, "43699")
+	}
+
+	data, err := os.ReadFile(filepath.Join(cityDir, ".beads", "dolt-server.port"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "43699" {
+		t.Fatalf("city port file = %q, want %q", strings.TrimSpace(string(data)), "43699")
+	}
+}
+
+func TestSyncConfiguredDoltPortFilesWritesArbitraryRigPaths(t *testing.T) {
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(t.TempDir(), "foobar")
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt", "dolt-state.json"),
+		[]byte(`{"running":true,"pid":123,"port":43699}`),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	syncConfiguredDoltPortFiles(cityDir, []config.Rig{{Name: "foobar", Path: rigDir}})
+
+	for _, dir := range []string{cityDir, rigDir} {
+		data, err := os.ReadFile(filepath.Join(dir, ".beads", "dolt-server.port"))
+		if err != nil {
+			t.Fatalf("read port file for %s: %v", dir, err)
+		}
+		if strings.TrimSpace(string(data)) != "43699" {
+			t.Fatalf("%s port file = %q, want %q", dir, strings.TrimSpace(string(data)), "43699")
+		}
+	}
+}
+
 // TestInitBeadsForDir_file verifies that file provider is a no-op.
 func TestInitBeadsForDir_file(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")

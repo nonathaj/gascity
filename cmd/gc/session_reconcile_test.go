@@ -490,6 +490,21 @@ func TestComputeWorkSet_CommandError(t *testing.T) {
 	}
 }
 
+func TestComputeWorkSet_IgnoresNoReadyMessage(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{{Name: "worker"}},
+	}
+
+	runner := func(_, _ string) (string, error) {
+		return "✨ No ready work found (all issues have blocking dependencies)\n", nil
+	}
+
+	work := computeWorkSet(cfg, runner, "/tmp")
+	if work["worker"] {
+		t.Error("no-ready message should not produce work")
+	}
+}
+
 func TestHealExpiredTimers_ClearsExpiredHold(t *testing.T) {
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
 	clk := &clock.Fake{Time: now}

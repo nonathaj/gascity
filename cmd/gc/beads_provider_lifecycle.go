@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,6 +57,7 @@ func startBeadsLifecycle(cityPath, cityName string, cfg *config.City, stderr io.
 			return fmt.Errorf("init rig %q beads: %w", cfg.Rigs[i].Name, err)
 		}
 	}
+	syncConfiguredDoltPortFiles(cityPath, cfg.Rigs)
 	// Install agent hooks (Claude, Gemini, etc.) for city and all rigs.
 	// Idempotent — safe to run on every start. Non-fatal but logged.
 	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
@@ -197,15 +199,63 @@ func readDoltPort(cityPath string) {
 	if os.Getenv("GC_DOLT_PORT") != "" {
 		return
 	}
+	if port := currentDoltPort(cityPath); port != "" {
+		_ = os.Setenv("GC_DOLT_PORT", port)
+	}
+}
 
-	// .beads/dolt-server.port (plain text, single integer).
+type doltRuntimeState struct {
+	Running bool `json:"running"`
+	Port    int  `json:"port"`
+}
+
+// currentDoltPort returns the controller-managed Dolt port for the city.
+// Prefer the runtime state file under .gc/runtime because .beads/dolt-server.port
+// may be stale or missing in rig directories after restarts. Falls back to the
+// legacy city root port file for compatibility.
+func currentDoltPort(cityPath string) string {
+	statePath := filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt", "dolt-state.json")
+	if data, err := os.ReadFile(statePath); err == nil {
+		var state doltRuntimeState
+		if json.Unmarshal(data, &state) == nil && state.Running && state.Port > 0 {
+			port := fmt.Sprintf("%d", state.Port)
+			writeDoltPortFile(cityPath, port)
+			return port
+		}
+	}
+
 	portFile := filepath.Join(cityPath, ".beads", "dolt-server.port")
 	if data, err := os.ReadFile(portFile); err == nil {
 		port := strings.TrimSpace(string(data))
 		if port != "" {
-			_ = os.Setenv("GC_DOLT_PORT", port)
-			return
+			return port
 		}
+	}
+	return ""
+}
+
+func writeDoltPortFile(dir, port string) {
+	if dir == "" || port == "" {
+		return
+	}
+	portFile := filepath.Join(dir, ".beads", "dolt-server.port")
+	if data, err := os.ReadFile(portFile); err == nil && strings.TrimSpace(string(data)) == port {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(portFile), 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(portFile, []byte(port+"\n"), 0o644)
+}
+
+func syncConfiguredDoltPortFiles(cityPath string, rigs []config.Rig) {
+	port := currentDoltPort(cityPath)
+	if port == "" {
+		return
+	}
+	writeDoltPortFile(cityPath, port)
+	for i := range rigs {
+		writeDoltPortFile(rigs[i].Path, port)
 	}
 }
 

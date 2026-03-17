@@ -134,7 +134,7 @@ func computeWorkSet(cfg *config.City, runner ScaleCheckRunner, cityDir string) m
 		if err != nil {
 			continue // command failed — treat as no work
 		}
-		if strings.TrimSpace(out) != "" {
+		if workQueryHasReadyWork(strings.TrimSpace(out)) {
 			work[qn] = true
 		}
 	}

@@ -133,18 +133,31 @@ func doHook(workQuery, dir string, inject bool, runner WorkQueryRunner, stdout, 
 	}
 
 	trimmed := strings.TrimSpace(output)
+	hasWork := workQueryHasReadyWork(trimmed)
 
 	if inject {
-		if trimmed != "" {
+		if hasWork {
 			fmt.Fprintf(stdout, "<system-reminder>\nYou have pending work. Pick up the next item:\n\n<work-items>\n%s\n</work-items>\n\nClaim it and start working. Run 'gc hook' to see the full queue.\n</system-reminder>\n", trimmed) //nolint:errcheck // best-effort stdout
 		}
 		return 0 // --inject always exits 0
 	}
 
-	// Non-inject mode: print raw output, return 0 if work, 1 if empty.
-	if trimmed == "" {
+	// Non-inject mode: print raw output. Return 0 only when work exists.
+	if !hasWork {
+		if trimmed != "" {
+			fmt.Fprint(stdout, output) //nolint:errcheck // best-effort stdout
+		}
 		return 1
 	}
 	fmt.Fprint(stdout, output) //nolint:errcheck // best-effort stdout
 	return 0
+}
+
+func workQueryHasReadyWork(output string) bool {
+	if output == "" {
+		return false
+	}
+	// Newer bd versions print a human-readable no-work line to stdout instead
+	// of staying silent. Treat that as "no work" for hooks and WakeWork.
+	return !strings.Contains(output, "No ready work found")
 }

@@ -57,6 +57,34 @@ func TestHookInjectNoWork(t *testing.T) {
 	}
 }
 
+func TestHookNoReadyMessagePrintsButExitsOne(t *testing.T) {
+	runner := func(string, string) (string, error) {
+		return "✨ No ready work found (all issues have blocking dependencies)\n", nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := doHook("bd ready", "", false, runner, &stdout, &stderr)
+	if code != 1 {
+		t.Errorf("doHook(no-ready-message) = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "No ready work found") {
+		t.Errorf("stdout = %q, want no-ready message", stdout.String())
+	}
+}
+
+func TestHookInjectSuppressesNoReadyMessage(t *testing.T) {
+	runner := func(string, string) (string, error) {
+		return "✨ No ready work found (all issues have blocking dependencies)\n", nil
+	}
+	var stdout, stderr bytes.Buffer
+	code := doHook("bd ready", "", true, runner, &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("doHook(inject, no-ready-message) = %d, want 0", code)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+}
+
 func TestHookInjectFormatsOutput(t *testing.T) {
 	runner := func(string, string) (string, error) { return "hw-1  open  Fix the bug\n", nil }
 	var stdout, stderr bytes.Buffer
