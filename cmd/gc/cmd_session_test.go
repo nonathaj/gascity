@@ -63,10 +63,11 @@ func TestResolveWorkDir(t *testing.T) {
 	cityPath := t.TempDir()
 	rigRoot := filepath.Join(t.TempDir(), "my-rig")
 	tests := []struct {
-		name  string
-		cfg   *config.City
-		agent *config.Agent
-		want  string
+		name    string
+		cfg     *config.City
+		agent   *config.Agent
+		want    string
+		wantErr bool
 	}{
 		{
 			name:  "city-scoped",
@@ -92,10 +93,25 @@ func TestResolveWorkDir(t *testing.T) {
 			agent: &config.Agent{Dir: "my-rig"},
 			want:  rigRoot,
 		},
+		{
+			name: "invalid work-dir template returns error",
+			cfg: &config.City{
+				Workspace: config.Workspace{Name: "city"},
+				Rigs:      []config.Rig{{Name: "my-rig", Path: rigRoot}},
+			},
+			agent:   &config.Agent{Dir: "my-rig", WorkDir: ".gc/worktrees/{{.RigName}}/refinery"},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := resolveWorkDir(cityPath, tt.cfg, tt.agent)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("resolveWorkDir error = nil, want error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("resolveWorkDir error = %v", err)
 			}

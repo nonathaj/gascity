@@ -60,3 +60,15 @@ func TestCityNameFallsBackToCityDirBase(t *testing.T) {
 		t.Fatalf("CityName() = %q, want %q", got, "city-root")
 	}
 }
+
+func TestResolveWorkDirPathStrictRejectsInvalidTemplate(t *testing.T) {
+	cityPath := t.TempDir()
+	_, err := ResolveWorkDirPathStrict(cityPath, "gastown", "demo/refinery", config.Agent{
+		Name:    "refinery",
+		Dir:     "demo",
+		WorkDir: ".gc/worktrees/{{.RigName}}/refinery",
+	}, []config.Rig{{Name: "demo", Path: filepath.Join(cityPath, "repos", "demo")}})
+	if err == nil {
+		t.Fatal("ResolveWorkDirPathStrict() error = nil, want invalid template error")
+	}
+}

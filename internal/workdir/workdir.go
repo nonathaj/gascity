@@ -2,6 +2,7 @@ package workdir
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -84,35 +85,60 @@ func PathContextForQualifiedName(cityPath, cityName, qualifiedName string, a con
 	}
 }
 
-// ExpandTemplate expands Go text/template placeholders in a work_dir string.
-// On parse or execute error, the raw string is returned.
-func ExpandTemplate(spec string, ctx PathContext) string {
+// ExpandTemplateStrict expands Go text/template placeholders in a work_dir
+// string and returns an error when parsing or execution fails.
+func ExpandTemplateStrict(spec string, ctx PathContext) (string, error) {
 	if spec == "" || !strings.Contains(spec, "{{") {
-		return spec
+		return spec, nil
 	}
-	tmpl, err := template.New("workdir").Parse(spec)
+	tmpl, err := template.New("workdir").Option("missingkey=error").Parse(spec)
 	if err != nil {
-		return spec
+		return "", err
 	}
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, ctx); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// ExpandTemplate expands Go text/template placeholders in a work_dir string.
+// On parse or execute error, the raw string is returned.
+func ExpandTemplate(spec string, ctx PathContext) string {
+	expanded, err := ExpandTemplateStrict(spec, ctx)
+	if err != nil {
 		return spec
 	}
-	return buf.String()
+	return expanded
+}
+
+// ResolveWorkDirPathStrict returns the effective session working directory and
+// surfaces work_dir template errors to callers that need to fail closed.
+func ResolveWorkDirPathStrict(cityPath, cityName, qualifiedName string, a config.Agent, rigs []config.Rig) (string, error) {
+	if a.WorkDir == "" {
+		if rigName := ConfiguredRigName(cityPath, a, rigs); rigName != "" {
+			if rigRoot := RigRootForName(rigName, rigs); rigRoot != "" {
+				return ResolveDirPath(cityPath, rigRoot), nil
+			}
+		}
+		return ResolveDirPath(cityPath, a.Dir), nil
+	}
+	ctx := PathContextForQualifiedName(cityPath, cityName, qualifiedName, a, rigs)
+	expanded, err := ExpandTemplateStrict(a.WorkDir, ctx)
+	if err != nil {
+		return "", fmt.Errorf("expand work_dir %q: %w", a.WorkDir, err)
+	}
+	return ResolveDirPath(cityPath, expanded), nil
 }
 
 // ResolveWorkDirPath returns the effective session working directory for an
 // agent. When work_dir is unset, rig-scoped agents continue to use their rig
 // root for backward compatibility.
 func ResolveWorkDirPath(cityPath, cityName, qualifiedName string, a config.Agent, rigs []config.Rig) string {
-	if a.WorkDir == "" {
-		if rigName := ConfiguredRigName(cityPath, a, rigs); rigName != "" {
-			if rigRoot := RigRootForName(rigName, rigs); rigRoot != "" {
-				return ResolveDirPath(cityPath, rigRoot)
-			}
-		}
-		return ResolveDirPath(cityPath, a.Dir)
+	path, err := ResolveWorkDirPathStrict(cityPath, cityName, qualifiedName, a, rigs)
+	if err != nil {
+		ctx := PathContextForQualifiedName(cityPath, cityName, qualifiedName, a, rigs)
+		return ResolveDirPath(cityPath, ExpandTemplate(a.WorkDir, ctx))
 	}
-	ctx := PathContextForQualifiedName(cityPath, cityName, qualifiedName, a, rigs)
-	return ResolveDirPath(cityPath, ExpandTemplate(a.WorkDir, ctx))
+	return path
 }

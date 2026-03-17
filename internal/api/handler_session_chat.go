@@ -112,13 +112,16 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	workDir := workdirutil.ResolveWorkDirPath(
+	workDir, err := workdirutil.ResolveWorkDirPathStrict(
 		s.state.CityPath(),
 		workdirutil.CityName(s.state.CityPath(), cfg),
 		agentCfg.QualifiedName(),
 		agentCfg,
 		cfg.Rigs,
 	)
+	if err != nil {
+		return nil, "", "", "", err
+	}
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}

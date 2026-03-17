@@ -687,14 +687,22 @@ func resolveConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs [
 	if a == nil {
 		return resolveAgentDir(cityPath, "")
 	}
-	return resolveAgentDir(cityPath, workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), *a, rigs))
+	workDir, err := workdirutil.ResolveWorkDirPathStrict(cityPath, cityName, a.QualifiedName(), *a, rigs)
+	if err != nil {
+		return "", err
+	}
+	return resolveAgentDir(cityPath, workDir)
 }
 
 func lookupConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs []config.Rig) string {
 	if a == nil {
 		return resolveAgentDirPath(cityPath, "")
 	}
-	return resolveAgentDirPath(cityPath, workdirutil.ResolveWorkDirPath(cityPath, cityName, a.QualifiedName(), *a, rigs))
+	workDir, err := workdirutil.ResolveWorkDirPathStrict(cityPath, cityName, a.QualifiedName(), *a, rigs)
+	if err != nil {
+		return ""
+	}
+	return resolveAgentDirPath(cityPath, workDir)
 }
 
 // configuredRigName returns the rig associated with an agent, preferring the
