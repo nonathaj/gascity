@@ -50,3 +50,33 @@ func TestJoin(t *testing.T) {
 		})
 	}
 }
+
+func TestSplit(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    []string
+	}{
+		{name: "empty", command: "", want: nil},
+		{name: "simple", command: "gc status --json", want: []string{"gc", "status", "--json"}},
+		{name: "single quoted", command: "gc mail send 'hello world'", want: []string{"gc", "mail", "send", "hello world"}},
+		{name: "double quoted", command: "gc mail send \"hello world\"", want: []string{"gc", "mail", "send", "hello world"}},
+		{name: "embedded single quote", command: "codex --message 'it'\\''s ready'", want: []string{"codex", "--message", "it's ready"}},
+		{name: "empty quoted arg", command: "gc provider run ''", want: []string{"gc", "provider", "run", ""}},
+		{name: "round trip join", command: "codex " + Join([]string{"--model", "sonnet[1m]", "--message", "it's ready"}), want: []string{"codex", "--model", "sonnet[1m]", "--message", "it's ready"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Split(tt.command)
+			if len(got) != len(tt.want) {
+				t.Fatalf("Split(%q) len = %d, want %d (%q)", tt.command, len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("Split(%q)[%d] = %q, want %q", tt.command, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

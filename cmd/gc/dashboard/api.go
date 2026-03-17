@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/shellquote"
 )
 
 // CommandRequest is the JSON request body for /api/run.
@@ -1746,39 +1748,7 @@ func (h *APIHandler) handleAgentOutputStream(w http.ResponseWriter, r *http.Requ
 
 // parseCommandArgs splits a command string into args, respecting quotes.
 func parseCommandArgs(command string) []string {
-	var args []string
-	var current strings.Builder
-	inQuote := false
-	quoteChar := rune(0)
-
-	for _, r := range command {
-		switch {
-		case r == '"' || r == '\'':
-			switch {
-			case inQuote && r == quoteChar:
-				inQuote = false
-				quoteChar = 0
-			case !inQuote:
-				inQuote = true
-				quoteChar = r
-			default:
-				current.WriteRune(r)
-			}
-		case r == ' ' && !inQuote:
-			if current.Len() > 0 {
-				args = append(args, current.String())
-				current.Reset()
-			}
-		default:
-			current.WriteRune(r)
-		}
-	}
-
-	if current.Len() > 0 {
-		args = append(args, current.String())
-	}
-
-	return args
+	return shellquote.Split(command)
 }
 
 // ---------- SSE handler ----------
