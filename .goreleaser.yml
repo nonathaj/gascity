@@ -15,10 +15,15 @@ builds:
 archives:
   - formats: [tar.gz]
 
+release:
+  prerelease: auto
+  replace_existing_artifacts: true
+
 homebrew_casks:
   - repository:
       owner: gastownhall
       name: homebrew-gascity
+      branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     binaries:
       - gc
