@@ -137,15 +137,24 @@ func mergeHookArray(base, over []any) []any {
 // Returns the key string and true if an identity was found.
 func hookEntryKey(entry map[string]any) (string, bool) {
 	if v, ok := entry["matcher"]; ok {
-		s, _ := v.(string)
+		s, sok := v.(string)
+		if !sok {
+			return "", false
+		}
 		return s, true
 	}
 	if v, ok := entry["command"]; ok {
-		s, _ := v.(string)
+		s, sok := v.(string)
+		if !sok {
+			return "", false
+		}
 		return "cmd:" + s, true
 	}
 	if v, ok := entry["bash"]; ok {
-		s, _ := v.(string)
+		s, sok := v.(string)
+		if !sok {
+			return "", false
+		}
 		return "bash:" + s, true
 	}
 	return "", false

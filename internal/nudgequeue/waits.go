@@ -97,7 +97,9 @@ func markTerminal(store beads.Store, nudgeID, now string) error {
 		}); err != nil {
 			return err
 		}
-		return store.Close(item.ID)
+		if err := store.Close(item.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

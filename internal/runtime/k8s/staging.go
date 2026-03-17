@@ -162,7 +162,8 @@ func tarDir(dir string, w io.Writer) error {
 			return nil
 		}
 
-		// Dereference symlinks.
+		// Dereference symlinks: use the resolved path for both stat and open
+		// to avoid TOCTOU issues if the symlink target changes.
 		if info.Mode()&os.ModeSymlink != 0 {
 			resolved, err := filepath.EvalSymlinks(path)
 			if err != nil {
@@ -172,6 +173,7 @@ func tarDir(dir string, w io.Writer) error {
 			if err != nil {
 				return nil
 			}
+			path = resolved
 		}
 
 		// Skip sockets and other special file types unsupported by tar.

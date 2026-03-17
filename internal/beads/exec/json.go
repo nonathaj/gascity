@@ -21,16 +21,20 @@ type createRequest struct {
 	Ref         string   `json:"ref,omitempty"`
 	Needs       []string `json:"needs,omitempty"`
 	Description string   `json:"description,omitempty"`
+	Assignee    string   `json:"assignee,omitempty"`
+	From        string   `json:"from,omitempty"`
 }
 
 // updateRequest is the JSON wire format sent on stdin for update operations.
 // Null/missing fields are not applied. Labels appends (does not replace).
 type updateRequest struct {
-	Title       *string  `json:"title,omitempty"`
-	Description *string  `json:"description,omitempty"`
-	ParentID    *string  `json:"parent_id,omitempty"`
-	Assignee    *string  `json:"assignee,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
+	Title        *string  `json:"title,omitempty"`
+	Status       *string  `json:"status,omitempty"`
+	Description  *string  `json:"description,omitempty"`
+	ParentID     *string  `json:"parent_id,omitempty"`
+	Assignee     *string  `json:"assignee,omitempty"`
+	Labels       []string `json:"labels,omitempty"`
+	RemoveLabels []string `json:"remove_labels,omitempty"`
 }
 
 // molCookRequest is the JSON wire format sent on stdin for mol-cook.
@@ -68,18 +72,22 @@ func marshalCreate(b beads.Bead) ([]byte, error) {
 		Ref:         b.Ref,
 		Needs:       b.Needs,
 		Description: b.Description,
+		Assignee:    b.Assignee,
+		From:        b.From,
 	}
 	return json.Marshal(r)
 }
 
 // marshalUpdate converts update options to JSON for the exec script.
-func marshalUpdate(title, description, parentID, assignee *string, labels []string) ([]byte, error) {
+func marshalUpdate(opts beads.UpdateOpts) ([]byte, error) {
 	r := updateRequest{
-		Title:       title,
-		Description: description,
-		ParentID:    parentID,
-		Assignee:    assignee,
-		Labels:      labels,
+		Title:        opts.Title,
+		Status:       opts.Status,
+		Description:  opts.Description,
+		ParentID:     opts.ParentID,
+		Assignee:     opts.Assignee,
+		Labels:       opts.Labels,
+		RemoveLabels: opts.RemoveLabels,
 	}
 	return json.Marshal(r)
 }

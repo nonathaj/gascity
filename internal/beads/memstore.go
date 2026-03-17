@@ -33,6 +33,16 @@ func NewMemStoreFrom(seq int, existing []Bead, deps []Dep) *MemStore {
 	return &MemStore{seq: seq, beads: b, deps: d}
 }
 
+// restoreFrom replaces the in-memory state with the given snapshot.
+// Used by FileStore to roll back mutations when a disk flush fails.
+func (m *MemStore) restoreFrom(seq int, beads []Bead, deps []Dep) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seq = seq
+	m.beads = beads
+	m.deps = deps
+}
+
 // snapshot returns the current sequence counter, a deep copy of all beads, and
 // a copy of all deps. Used by FileStore for serialization. Caller must hold m.mu.
 func (m *MemStore) snapshot() (int, []Bead, []Dep) {

@@ -114,6 +114,12 @@ func ResolveConditionPath(cityPath, conditionPath string) (string, error) {
 		return "", fmt.Errorf("resolving gate condition path: %w", err)
 	}
 
+	// Reject symlinks (checked first since Lstat reports ModeSymlink,
+	// which would otherwise fall through as "not a regular file").
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("resolving gate condition path: symlinks not allowed: %s", absPath)
+	}
+
 	// Reject non-regular files (directories, devices, etc.).
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("resolving gate condition path: not a regular file: %s", absPath)
@@ -122,11 +128,6 @@ func ResolveConditionPath(cityPath, conditionPath string) (string, error) {
 	// Reject non-executable files.
 	if info.Mode().Perm()&0o111 == 0 {
 		return "", fmt.Errorf("resolving gate condition path: file is not executable: %s", absPath)
-	}
-
-	// Reject symlinks.
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("resolving gate condition path: symlinks not allowed: %s", absPath)
 	}
 
 	// Double-check via EvalSymlinks to catch symlinks in parent directories.
