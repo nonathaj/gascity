@@ -348,6 +348,7 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 	}
 
 	cancel()
+	time.Sleep(50 * time.Millisecond) // let controllerLoop goroutine exit before TempDir cleanup
 
 	if !strings.Contains(stderr.String(), "config reload") {
 		t.Errorf("expected config reload error in stderr, got: %s", stderr.String())
@@ -413,6 +414,7 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 	}
 
 	cancel()
+	time.Sleep(50 * time.Millisecond) // let controllerLoop goroutine exit before TempDir cleanup
 
 	if !strings.Contains(stderr.String(), "workspace.name changed") {
 		t.Errorf("expected workspace.name change rejection in stderr, got: %s", stderr.String())
