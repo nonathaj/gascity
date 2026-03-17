@@ -99,7 +99,11 @@ func cmdConvoyCreateWithFields(args []string, fields ConvoyFields, stdout, stder
 			storeDir = rd
 		}
 	}
-	store := beads.NewBdStore(storeDir, beads.ExecCommandRunner())
+	store, err := openCityStoreAt(storeDir)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc convoy create: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	rec := openCityRecorder(stderr)
 	return doConvoyCreateWith(store, cfg, cityPath, rec, args, fields, stdout, stderr)
@@ -147,7 +151,9 @@ func doConvoyCreateWith(store beads.Store, cfg *config.City, cityPath string, re
 		childStore := store
 		if cfg != nil {
 			if rd := rigDirForBead(cfg, id); rd != "" {
-				childStore = beads.NewBdStore(rd, beads.ExecCommandRunner())
+				if rs, err := openCityStoreAt(rd); err == nil {
+					childStore = rs
+				}
 			}
 		}
 		if _, err := childStore.Get(id); err != nil {

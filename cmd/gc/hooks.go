@@ -26,17 +26,21 @@ gc event emit %s --subject "$1" --message "$title" --payload "$DATA" 2>/dev/null
 }
 
 // closeHookScript returns the on_close hook script. It forwards the
-// bead.closed event AND triggers convoy autoclose for the closed bead's
-// parent convoy (if any).
+// bead.closed event, triggers convoy autoclose for the closed bead's
+// parent convoy (if any), and auto-closes any open molecule/wisp
+// children attached to the closed bead.
 func closeHookScript() string {
 	return `#!/bin/sh
-# Installed by gc — forwards bd close events and auto-closes completed convoys.
+# Installed by gc — forwards bd close events, auto-closes completed convoys,
+# and auto-closes orphaned wisps.
 # Args: $1=issue_id  $2=event_type  stdin=issue JSON
 DATA=$(cat)
 title=$(echo "$DATA" | grep -o '"title":"[^"]*"' | head -1 | cut -d'"' -f4)
 gc event emit bead.closed --subject "$1" --message "$title" --payload "$DATA" 2>/dev/null || true
 # Auto-close parent convoy if all siblings are now closed.
 gc convoy autoclose "$1" 2>/dev/null || true
+# Auto-close open molecule/wisp children so they don't outlive the parent.
+gc wisp autoclose "$1" 2>/dev/null || true
 `
 }
 
