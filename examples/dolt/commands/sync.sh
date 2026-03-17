@@ -8,7 +8,6 @@
 # Environment: GC_CITY_PATH, GC_DOLT_PORT, GC_DOLT_USER, GC_DOLT_PASSWORD
 set -e
 
-: "${GC_DOLT_PORT:=3307}"
 : "${GC_DOLT_USER:=root}"
 PACK_DIR="${GC_PACK_DIR:-$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)}"
 . "$PACK_DIR/scripts/runtime.sh"
