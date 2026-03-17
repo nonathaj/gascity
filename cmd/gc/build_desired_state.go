@@ -71,21 +71,18 @@ func buildDesiredState(
 
 		if pool.Max == 1 && !cfg.Agents[i].IsPool() {
 			// Fixed agent.
-			rigName := configuredRigName(cityPath, &cfg.Agents[i], cfg.Rigs)
-			expandedDir := expandDirTemplate(effectiveWorkDirSpec(&cfg.Agents[i]), SessionSetupContext{
-				Agent:     cfg.Agents[i].QualifiedName(),
-				AgentBase: cfg.Agents[i].Name,
-				Rig:       rigName,
-				RigRoot:   rigRootForName(rigName, cfg.Rigs),
-				CityRoot:  cityPath,
-				CityName:  cityName,
+			expandedDir := expandDirTemplate(cfg.Agents[i].Dir, SessionSetupContext{
+				Agent:    cfg.Agents[i].QualifiedName(),
+				Rig:      cfg.Agents[i].Dir,
+				CityRoot: cityPath,
+				CityName: cityName,
 			})
-			_, err := resolveAgentDir(cityPath, expandedDir)
+			workDir, err := resolveAgentDir(cityPath, expandedDir)
 			if err != nil {
 				fmt.Fprintf(stderr, "buildDesiredState: agent %q: %v (skipping)\n", cfg.Agents[i].QualifiedName(), err) //nolint:errcheck
 				continue
 			}
-			if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
+			if suspendedRigPaths[filepath.Clean(workDir)] {
 				continue
 			}
 
