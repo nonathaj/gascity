@@ -618,12 +618,18 @@ func writePromptFile(workDir, agentName, shellQuotedPrompt string) (string, erro
 		return "", err
 	}
 	if _, err := f.WriteString(raw); err != nil {
-		f.Close()
-		os.Remove(f.Name())
+		if closeErr := f.Close(); closeErr != nil {
+			return "", errors.Join(err, closeErr)
+		}
+		if removeErr := os.Remove(f.Name()); removeErr != nil {
+			return "", errors.Join(err, removeErr)
+		}
 		return "", err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
+		if removeErr := os.Remove(f.Name()); removeErr != nil {
+			return "", errors.Join(err, removeErr)
+		}
 		return "", err
 	}
 	return f.Name(), nil

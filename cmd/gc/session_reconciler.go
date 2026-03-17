@@ -436,6 +436,7 @@ func reconcileSessionBeads(
 				continuationEpoch,
 				instanceToken,
 			))
+			agentCfg = runtime.SyncWorkDirEnv(agentCfg)
 			err := sp.Start(startCtx, name, agentCfg)
 			if startCancel != nil {
 				startCancel()

@@ -269,3 +269,22 @@ type Config struct {
 	// timestamps or other volatile data that should not trigger restarts.
 	PromptSuffix string
 }
+
+// SyncWorkDirEnv returns cfg with GC_DIR synchronized to WorkDir.
+// It copies the Env map before mutation so callers can safely derive
+// per-session configs from shared template state.
+func SyncWorkDirEnv(cfg Config) Config {
+	if cfg.WorkDir == "" {
+		return cfg
+	}
+	if cfg.Env != nil && cfg.Env["GC_DIR"] == cfg.WorkDir {
+		return cfg
+	}
+	env := make(map[string]string, len(cfg.Env)+1)
+	for k, v := range cfg.Env {
+		env[k] = v
+	}
+	env["GC_DIR"] = cfg.WorkDir
+	cfg.Env = env
+	return cfg
+}

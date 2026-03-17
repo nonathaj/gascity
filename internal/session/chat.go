@@ -147,6 +147,7 @@ func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, se
 		b.Metadata["instance_token"] = instanceToken
 	}
 	cfg.Env = mergeEnv(cfg.Env, RuntimeEnv(id, sessName, generation, continuationEpoch, instanceToken))
+	cfg = runtime.SyncWorkDirEnv(cfg)
 	started := false
 	if err := m.sp.Start(ctx, sessName, cfg); err != nil {
 		// Another caller may have resumed the same session after we loaded the

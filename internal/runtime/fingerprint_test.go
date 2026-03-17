@@ -104,6 +104,14 @@ func TestConfigFingerprintIgnoresWorkDir(t *testing.T) {
 	}
 }
 
+func TestConfigFingerprintIgnoresGCDir(t *testing.T) {
+	a := Config{Command: "claude", Env: map[string]string{"GC_DIR": "/tmp"}}
+	b := Config{Command: "claude", Env: map[string]string{"GC_DIR": "/home/user"}}
+	if ConfigFingerprint(a) != ConfigFingerprint(b) {
+		t.Error("GC_DIR should not affect hash")
+	}
+}
+
 func TestConfigFingerprintEmptyConfig(t *testing.T) {
 	h := ConfigFingerprint(Config{})
 	if h == "" {

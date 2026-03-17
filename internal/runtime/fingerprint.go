@@ -61,6 +61,7 @@ var envFingerprintIncludePrefix = []string{"GC_"}
 var envFingerprintExcludeExact = map[string]bool{
 	"GC_SESSION_NAME":     true, // changes per pool slot
 	"GC_AGENT":            true, // pool instance name varies (claude-1 vs claude-2)
+	"GC_DIR":              true, // derived mirror of WorkDir, which is already excluded
 	"GC_HOME":             true, // supervisor isolation, not agent config
 	"GC_DOLT_PORT":        true, // ephemeral port, changes on dolt restart
 	"GC_CITY_RUNTIME_DIR": true, // derived from city path

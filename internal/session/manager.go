@@ -252,6 +252,7 @@ func (m *Manager) CreateWithTransport(ctx context.Context, template, title, comm
 		DefaultContinuationEpoch,
 		meta["instance_token"],
 	))
+	cfg = runtime.SyncWorkDirEnv(cfg)
 
 	// Start the runtime session.
 	if err := m.sp.Start(ctx, sessName, cfg); err != nil {

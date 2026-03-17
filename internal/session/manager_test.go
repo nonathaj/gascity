@@ -126,6 +126,9 @@ func TestCreate(t *testing.T) {
 	if got := startCall.Config.Env["GC_INSTANCE_TOKEN"]; got == "" {
 		t.Error("GC_INSTANCE_TOKEN is empty")
 	}
+	if got := startCall.Config.Env["GC_DIR"]; got != "/tmp" {
+		t.Errorf("GC_DIR = %q, want %q", got, "/tmp")
+	}
 }
 
 func TestCreateBeadOnly(t *testing.T) {
@@ -1064,6 +1067,45 @@ func TestSendResumesSuspendedSession(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("calls = %#v, want Nudge hello", sp.Calls)
+	}
+}
+
+func TestSendResumesSuspendedSession_SyncsGCDirFromBeadWorkDir(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "helper", "", "claude", "/tmp/worktree", "claude", nil, ProviderResume{}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := mgr.Suspend(info.ID); err != nil {
+		t.Fatalf("Suspend: %v", err)
+	}
+
+	err = mgr.Send(context.Background(), info.ID, "hello", "claude --resume "+info.SessionKey, runtime.Config{
+		Env: map[string]string{"GC_DIR": "/stale/worktree"},
+	})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	starts := 0
+	var resumed runtime.Config
+	for _, call := range sp.Calls {
+		if call.Method == "Start" && call.Name == info.SessionName {
+			starts++
+			resumed = call.Config
+		}
+	}
+	if starts < 2 {
+		t.Fatalf("expected create + resume Start calls, got %d", starts)
+	}
+	if resumed.WorkDir != "/tmp/worktree" {
+		t.Fatalf("WorkDir = %q, want %q", resumed.WorkDir, "/tmp/worktree")
+	}
+	if got := resumed.Env["GC_DIR"]; got != "/tmp/worktree" {
+		t.Fatalf("GC_DIR = %q, want %q", got, "/tmp/worktree")
 	}
 }
 

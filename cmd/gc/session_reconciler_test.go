@@ -262,6 +262,47 @@ func TestReconcileSessionBeads_WakesDeadSession(t *testing.T) {
 	}
 }
 
+func TestReconcileSessionBeads_SyncsGCDirWithWorkDirOverride(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	env.desiredState["worker"] = TemplateParams{
+		Command:      "test-cmd",
+		SessionName:  "worker",
+		TemplateName: "worker",
+		WorkDir:      "/template/worktree",
+		Env:          map[string]string{"GC_DIR": "/template/worktree"},
+	}
+	session := env.createSessionBead("worker", "worker")
+	_ = env.store.SetMetadata(session.ID, "work_dir", "/instance/worktree")
+	session.Metadata["work_dir"] = "/instance/worktree"
+
+	woken := env.reconcile([]beads.Bead{session})
+
+	if woken != 1 {
+		t.Fatalf("expected 1 woken, got %d", woken)
+	}
+	var startCfg runtime.Config
+	found := false
+	for _, call := range env.sp.Calls {
+		if call.Method == "Start" && call.Name == "worker" {
+			startCfg = call.Config
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected Start call for worker")
+	}
+	if startCfg.WorkDir != "/instance/worktree" {
+		t.Fatalf("WorkDir = %q, want %q", startCfg.WorkDir, "/instance/worktree")
+	}
+	if got := startCfg.Env["GC_DIR"]; got != "/instance/worktree" {
+		t.Fatalf("GC_DIR = %q, want %q", got, "/instance/worktree")
+	}
+	if got := env.desiredState["worker"].Env["GC_DIR"]; got != "/template/worktree" {
+		t.Fatalf("desiredState GC_DIR mutated to %q", got)
+	}
+}
+
 func TestReconcileSessionBeads_SkipsAliveSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
