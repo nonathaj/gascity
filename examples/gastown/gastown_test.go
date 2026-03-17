@@ -7,6 +7,7 @@ package gastown_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -20,6 +21,17 @@ import (
 func exampleDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return filepath.Dir(filename)
+}
+
+func runCmd(t *testing.T, dir, name string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // loadExpanded loads city.toml with full pack expansion.
@@ -97,6 +109,103 @@ func TestRefineryFormulaSupportsMergeStrategies(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("refinery formula missing %q", want)
 		}
+	}
+}
+
+func TestWorktreeSetupKeepsIgnoresLocal(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	city := filepath.Join(tmp, "city")
+	script := filepath.Join(exampleDir(), "packs", "gastown", "scripts", "worktree-setup.sh")
+
+	runCmd(t, tmp, "git", "init", repo)
+	runCmd(t, repo, "git", "config", "user.email", "test@example.com")
+	runCmd(t, repo, "git", "config", "user.name", "Gastown Test")
+	if err := os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("node_modules/\n"), 0o644); err != nil {
+		t.Fatalf("writing repo .gitignore: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("writing repo README: %v", err)
+	}
+	runCmd(t, repo, "git", "add", ".")
+	runCmd(t, repo, "git", "commit", "-m", "init")
+
+	runCmd(t, tmp, "sh", script, repo, "polecat-a", city)
+
+	worktree := filepath.Join(city, ".gc", "worktrees", filepath.Base(repo), "polecat-a")
+	gitignorePath := filepath.Join(worktree, ".gitignore")
+	data, err := os.ReadFile(gitignorePath)
+	if err != nil {
+		t.Fatalf("reading worktree .gitignore: %v", err)
+	}
+	if got := string(data); got != "node_modules/\n" {
+		t.Fatalf("worktree .gitignore = %q, want original repo content only", got)
+	}
+
+	excludePath := runCmd(t, tmp, "git", "-C", worktree, "rev-parse", "--git-path", "info/exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(worktree, excludePath)
+	}
+	excludeData, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("reading local exclude: %v", err)
+	}
+	exclude := string(excludeData)
+	for _, want := range []string{
+		"# Gas City worktree infrastructure (local excludes)",
+		".beads/redirect",
+		".beads/hooks/",
+		".beads/formulas/",
+		".runtime/",
+		".logs/",
+		"__pycache__/",
+		".claude/",
+		".codex/",
+		".gemini/",
+		".opencode/",
+		".github/hooks/",
+		".github/copilot-instructions.md",
+		"state.json",
+	} {
+		if !strings.Contains(exclude, want) {
+			t.Fatalf("local exclude missing %q:\n%s", want, exclude)
+		}
+	}
+
+	runtimeFiles := map[string]string{
+		filepath.Join(worktree, ".claude", "commands", "review.md"):        "review\n",
+		filepath.Join(worktree, ".codex", "hooks.json"):                    "{}\n",
+		filepath.Join(worktree, ".gemini", "settings.json"):                "{}\n",
+		filepath.Join(worktree, ".opencode", "plugins", "gascity.js"):      "module.exports = {};\n",
+		filepath.Join(worktree, ".github", "hooks", "gascity.json"):        "{}\n",
+		filepath.Join(worktree, ".github", "copilot-instructions.md"):      "copilot\n",
+		filepath.Join(worktree, ".runtime", "state.json"):                  "{}\n",
+		filepath.Join(worktree, ".logs", "session.log"):                    "log\n",
+		filepath.Join(worktree, "__pycache__", "module.cpython-313.pyc"):   "pyc\n",
+		filepath.Join(worktree, "state.json"):                              "{}\n",
+		filepath.Join(worktree, ".beads", "hooks", "post-applypatch.sh"):   "#!/bin/sh\n",
+		filepath.Join(worktree, ".beads", "formulas", "sample.formula.sh"): "#!/bin/sh\n",
+	}
+	for path, contents := range runtimeFiles {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("creating runtime file dir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("writing runtime file %s: %v", path, err)
+		}
+	}
+	if status := runCmd(t, tmp, "git", "-C", worktree, "status", "--porcelain"); status != "" {
+		t.Fatalf("expected clean worktree after runtime files, got:\n%s", status)
+	}
+
+	before := exclude
+	runCmd(t, tmp, "sh", script, repo, "polecat-a", city)
+	afterData, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatalf("reading local exclude after rerun: %v", err)
+	}
+	if got := string(afterData); got != before {
+		t.Fatalf("local exclude changed on rerun:\nBEFORE:\n%s\nAFTER:\n%s", before, got)
 	}
 }
 
