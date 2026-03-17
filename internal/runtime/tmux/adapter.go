@@ -541,10 +541,29 @@ func runPreStart(ctx context.Context, ops startOps, _ string, cfg runtime.Config
 // If the session already exists, returns an error (duplicate detection).
 // Exception: if ProcessNames are configured and the agent is dead (zombie),
 // kills the zombie session and recreates it.
+// maxInlinePromptLen is the threshold above which prompts are written to a
+// temp file and read back via $(cat ...) inside the tmux session. tmux
+// new-session passes the command through a fixed-size protocol buffer
+// (~2KB) so large prompts cause "command too long" errors.
+const maxInlinePromptLen = 1024
+
 func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
 	fullCommand := cfg.Command
 	if cfg.PromptSuffix != "" {
-		fullCommand = fullCommand + " " + cfg.PromptSuffix
+		if len(cfg.PromptSuffix) > maxInlinePromptLen && cfg.WorkDir != "" {
+			// Large prompt — write to temp file and use $(cat ...) expansion
+			// inside the tmux session's shell to avoid the protocol limit.
+			promptFile, err := writePromptFile(cfg.WorkDir, name, cfg.PromptSuffix)
+			if err == nil {
+				fullCommand = fmt.Sprintf(`sh -c 'exec %s "$(cat %q)" && rm -f %q'`,
+					cfg.Command, promptFile, promptFile)
+			} else {
+				// Fall back to inline (will likely fail, but preserves old behavior).
+				fullCommand = fullCommand + " " + cfg.PromptSuffix
+			}
+		} else {
+			fullCommand = fullCommand + " " + cfg.PromptSuffix
+		}
 	}
 	err := ops.createSession(name, cfg.WorkDir, fullCommand, cfg.Env)
 	if err == nil {
@@ -577,4 +596,35 @@ func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
 		return fmt.Errorf("creating session after zombie cleanup: %w", err)
 	}
 	return nil
+}
+
+// writePromptFile writes a shell-quoted prompt string to a temp file in
+// the agent's working directory. The file contains the raw prompt text
+// (unquoted) so it can be read back via $(cat ...) inside the shell.
+// Returns the file path on success.
+func writePromptFile(workDir, agentName, shellQuotedPrompt string) (string, error) {
+	// Strip surrounding single quotes from shell-quoted string.
+	raw := shellQuotedPrompt
+	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+		raw = raw[1 : len(raw)-1]
+		raw = strings.ReplaceAll(raw, `'\''`, `'`)
+	}
+	dir := filepath.Join(workDir, ".gc", "tmp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "prompt-"+agentName+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(raw); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
