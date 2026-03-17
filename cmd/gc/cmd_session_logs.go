@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 	"github.com/spf13/cobra"
@@ -58,6 +59,17 @@ func cmdSessionLogs(args []string, follow bool, tail int, stdout, stderr io.Writ
 		return 1
 	}
 
+	if store, err := openCityStoreAt(cityPath); err == nil {
+		if workDir, ok := resolveSessionLogWorkDir(store, agentName); ok {
+			path := sessionlog.FindSessionFile(sessionlog.MergeSearchPaths(cfg.Daemon.ObservePaths), workDir)
+			if path == "" {
+				fmt.Fprintf(stderr, "gc session logs: no session file found for %q\n", agentName) //nolint:errcheck // best-effort stderr
+				return 1
+			}
+			return doSessionLogs(path, follow, tail, stdout, stderr)
+		}
+	}
+
 	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 	if !ok {
 		fmt.Fprintln(stderr, agentNotFoundMsg("gc session logs", agentName, cfg)) //nolint:errcheck // best-effort stderr
@@ -102,6 +114,25 @@ func cmdSessionLogs(args []string, follow bool, tail int, stdout, stderr io.Writ
 	}
 
 	return doSessionLogs(path, follow, tail, stdout, stderr)
+}
+
+func resolveSessionLogWorkDir(store beads.Store, identifier string) (string, bool) {
+	if store == nil {
+		return "", false
+	}
+	sessionID, err := resolveSessionID(store, identifier)
+	if err != nil {
+		return "", false
+	}
+	b, err := store.Get(sessionID)
+	if err != nil {
+		return "", false
+	}
+	workDir := strings.TrimSpace(b.Metadata["work_dir"])
+	if workDir == "" {
+		return "", false
+	}
+	return workDir, true
 }
 
 // resolveAgentWorkDir returns the absolute working directory for an agent.

@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 func TestDeliverSessionNudgeWithProviderWaitIdleQueuesForCodex(t *testing.T) {
@@ -623,5 +624,76 @@ func TestFindAnyQueuedNudgeBead_PrefersTerminalClosedBeadOverRollbackArtifact(t 
 	}
 	if found.ID != terminal.ID {
 		t.Fatalf("findAnyQueuedNudgeBead = %s, want %s", found.ID, terminal.ID)
+	}
+}
+
+func TestCmdSessionNudgeQueueResolvesSessionName(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(cityDir, "rigs", "myrig")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(rig): %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.gc): %v", err)
+	}
+	cityToml := `[workspace]
+name = "test-city"
+
+[[agent]]
+name = "worker"
+dir = "myrig"
+provider = "codex"
+start_command = "echo"
+`
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Chdir(cityDir)
+
+	store, err := openCityStoreAt(cityDir)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	sessionBead, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"session_name":       "sess-worker",
+			"agent_name":         "myrig/worker",
+			"template":           "myrig/worker",
+			"provider":           "codex",
+			"work_dir":           rigDir,
+			"continuation_epoch": "7",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := cmdSessionNudge([]string{"sess-worker", "check", "deploy"}, nudgeDeliveryQueue, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("cmdSessionNudge = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Queued nudge for myrig/worker") {
+		t.Fatalf("stdout = %q, want queue confirmation", stdout.String())
+	}
+
+	pending, inFlight, dead, err := listQueuedNudges(cityDir, "myrig/worker", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 || len(inFlight) != 0 || len(dead) != 0 {
+		t.Fatalf("pending/inFlight/dead = %d/%d/%d, want 1/0/0", len(pending), len(inFlight), len(dead))
+	}
+	if pending[0].SessionID != sessionBead.ID {
+		t.Fatalf("SessionID = %q, want %q", pending[0].SessionID, sessionBead.ID)
+	}
+	if pending[0].ContinuationEpoch != "7" {
+		t.Fatalf("ContinuationEpoch = %q, want 7", pending[0].ContinuationEpoch)
+	}
+	if pending[0].Agent != "myrig/worker" {
+		t.Fatalf("Agent = %q, want myrig/worker", pending[0].Agent)
 	}
 }

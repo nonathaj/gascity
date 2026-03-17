@@ -37,17 +37,58 @@ func ResolveSessionID(store beads.Store, identifier string) (string, error) {
 		return "", fmt.Errorf("listing sessions: %w", err)
 	}
 
-	var matches []beads.Bead
+	var exactMatches []beads.Bead
+	var suffixMatches []beads.Bead
+	allowSuffix := !strings.Contains(identifier, "/")
 	for _, b := range all {
 		if b.Type != BeadType || b.Status == "closed" {
 			continue
 		}
-		tmpl := b.Metadata["template"]
-		if tmpl == identifier || strings.HasSuffix(tmpl, "/"+identifier) {
-			matches = append(matches, b)
+		exact, suffix := matchSessionIdentifier(b, identifier, allowSuffix)
+		switch {
+		case exact:
+			exactMatches = append(exactMatches, b)
+		case suffix:
+			suffixMatches = append(suffixMatches, b)
 		}
 	}
 
+	if len(exactMatches) > 0 {
+		return chooseSessionMatch(identifier, exactMatches)
+	}
+	return chooseSessionMatch(identifier, suffixMatches)
+}
+
+func matchSessionIdentifier(b beads.Bead, identifier string, allowSuffix bool) (exact, suffix bool) {
+	for _, field := range []string{
+		b.Metadata["session_name"],
+		b.Metadata["agent_name"],
+		b.Metadata["template"],
+		b.Metadata["common_name"],
+	} {
+		if field == "" {
+			continue
+		}
+		if field == identifier {
+			return true, false
+		}
+	}
+	if !allowSuffix {
+		return false, false
+	}
+	for _, field := range []string{
+		b.Metadata["agent_name"],
+		b.Metadata["template"],
+		b.Metadata["common_name"],
+	} {
+		if field != "" && strings.HasSuffix(field, "/"+identifier) {
+			return false, true
+		}
+	}
+	return false, false
+}
+
+func chooseSessionMatch(identifier string, matches []beads.Bead) (string, error) {
 	switch len(matches) {
 	case 0:
 		return "", fmt.Errorf("%w: %q", ErrSessionNotFound, identifier)
@@ -56,8 +97,21 @@ func ResolveSessionID(store beads.Store, identifier string) (string, error) {
 	default:
 		var ids []string
 		for _, m := range matches {
-			ids = append(ids, fmt.Sprintf("%s (%s)", m.ID, m.Metadata["template"]))
+			ids = append(ids, fmt.Sprintf("%s (%s)", m.ID, sessionIdentifierLabel(m)))
 		}
 		return "", fmt.Errorf("%w: %q matches %d sessions: %s", ErrAmbiguous, identifier, len(matches), strings.Join(ids, ", "))
 	}
+}
+
+func sessionIdentifierLabel(b beads.Bead) string {
+	for _, field := range []string{
+		b.Metadata["agent_name"],
+		b.Metadata["template"],
+		b.Metadata["session_name"],
+	} {
+		if field != "" {
+			return field
+		}
+	}
+	return b.Title
 }

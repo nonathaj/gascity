@@ -63,6 +63,71 @@ func TestResolveSessionID_QualifiedName(t *testing.T) {
 	}
 }
 
+func TestResolveSessionID_AgentNameMatch(t *testing.T) {
+	store := beads.NewMemStore()
+	b, _ := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"agent_name": "myrig/worker",
+		},
+	})
+
+	id, err := session.ResolveSessionID(store, "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != b.ID {
+		t.Errorf("got %q, want %q", id, b.ID)
+	}
+}
+
+func TestResolveSessionID_SessionNameExactMatch(t *testing.T) {
+	store := beads.NewMemStore()
+	b, _ := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"session_name": "s-gc-123",
+			"agent_name":   "myrig/worker",
+		},
+	})
+
+	id, err := session.ResolveSessionID(store, "s-gc-123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != b.ID {
+		t.Errorf("got %q, want %q", id, b.ID)
+	}
+}
+
+func TestResolveSessionID_PrefersExactOverSuffix(t *testing.T) {
+	store := beads.NewMemStore()
+	exact, _ := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"agent_name": "worker",
+		},
+	})
+	_, _ = store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"agent_name": "myrig/worker",
+		},
+	})
+
+	id, err := session.ResolveSessionID(store, "worker")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != exact.ID {
+		t.Errorf("got %q, want exact match %q", id, exact.ID)
+	}
+}
+
 func TestResolveSessionID_NotFound(t *testing.T) {
 	store := beads.NewMemStore()
 	_, err := session.ResolveSessionID(store, "nonexistent")

@@ -21,6 +21,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/spf13/cobra"
 )
@@ -53,11 +54,30 @@ type nudgeTarget struct {
 	cityPath          string
 	cityName          string
 	cfg               *config.City
+	identity          string
+	transport         string
 	agent             config.Agent
 	resolved          *config.ResolvedProvider
 	sessionID         string
 	continuationEpoch string
 	sessionName       string
+}
+
+func (t nudgeTarget) agentKey() string {
+	if qn := t.agent.QualifiedName(); qn != "" {
+		return qn
+	}
+	if t.identity != "" {
+		return t.identity
+	}
+	return t.sessionName
+}
+
+func (t nudgeTarget) sessionTransport() string {
+	if t.transport != "" {
+		return t.transport
+	}
+	return t.agent.Session
 }
 
 type queuedNudgeOptions struct {
@@ -159,7 +179,7 @@ func cmdNudgeStatus(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	pending, inFlight, dead, err := listQueuedNudges(target.cityPath, target.agent.QualifiedName(), time.Now())
+	pending, inFlight, dead, err := listQueuedNudges(target.cityPath, target.agentKey(), time.Now())
 	if err != nil {
 		fmt.Fprintf(stderr, "gc nudge status: %v\n", err) //nolint:errcheck
 		return 1
@@ -168,7 +188,7 @@ func cmdNudgeStatus(args []string, stdout, stderr io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(tw, "AGENT\tPENDING\tIN_FLIGHT\tDEAD\tSESSION\n") //nolint:errcheck
 	_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%s\n",
-		target.agent.QualifiedName(), len(pending), len(inFlight), len(dead), target.sessionName)
+		target.agentKey(), len(pending), len(inFlight), len(dead), target.sessionName)
 	_ = tw.Flush()
 
 	if len(pending) > 0 {
@@ -353,47 +373,47 @@ func deliverSessionNudgeWithProvider(target nudgeTarget, sp runtime.Provider, me
 	switch mode {
 	case nudgeDeliveryImmediate:
 		if !sp.IsRunning(target.sessionName) {
-			fmt.Fprintf(stderr, "gc session nudge: session %q is not running\n", target.agent.QualifiedName()) //nolint:errcheck
+			fmt.Fprintf(stderr, "gc session nudge: session %q is not running\n", target.agentKey()) //nolint:errcheck
 			return 1
 		}
 		if err := deliverImmediateNudge(sp, target.sessionName, runtime.TextContent(message)); err != nil {
-			telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), err)
+			telemetry.RecordNudge(context.Background(), target.agentKey(), err)
 			fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 			return 1
 		}
-		telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
-		fmt.Fprintf(stdout, "Nudged %s\n", target.agent.QualifiedName()) //nolint:errcheck
+		telemetry.RecordNudge(context.Background(), target.agentKey(), nil)
+		fmt.Fprintf(stdout, "Nudged %s\n", target.agentKey()) //nolint:errcheck
 		return 0
 	case nudgeDeliveryQueue:
-		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agent.QualifiedName(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
+		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agentKey(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
 			fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 			return 1
 		}
 		if sp.IsRunning(target.sessionName) {
 			maybeStartCodexNudgePoller(target)
 		}
-		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck
+		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agentKey()) //nolint:errcheck
 		return 0
 	case nudgeDeliveryWaitIdle:
 		if !sp.IsRunning(target.sessionName) {
-			if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agent.QualifiedName(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
+			if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agentKey(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
 				fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 				return 1
 			}
-			fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck
+			fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agentKey()) //nolint:errcheck
 			return 0
 		}
 		if tryDeliverWaitIdleNudge(target, sp, message) {
-			telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
-			fmt.Fprintf(stdout, "Nudged %s\n", target.agent.QualifiedName()) //nolint:errcheck
+			telemetry.RecordNudge(context.Background(), target.agentKey(), nil)
+			fmt.Fprintf(stdout, "Nudged %s\n", target.agentKey()) //nolint:errcheck
 			return 0
 		}
-		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agent.QualifiedName(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
+		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agentKey(), message, "session", time.Now(), queuedNudgeOptionsFromTarget(target))); err != nil {
 			fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck
 			return 1
 		}
 		maybeStartCodexNudgePoller(target)
-		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agent.QualifiedName()) //nolint:errcheck
+		fmt.Fprintf(stdout, "Queued nudge for %s\n", target.agentKey()) //nolint:errcheck
 		return 0
 	default:
 		fmt.Fprintf(stderr, "gc session nudge: unknown delivery mode %q\n", mode) //nolint:errcheck
@@ -410,7 +430,7 @@ func sendMailNotifyWithProvider(target nudgeTarget, sp runtime.Provider, sender 
 	now := time.Now()
 	running := sp.IsRunning(target.sessionName)
 	if !running || !tryDeliverWaitIdleNudge(target, sp, msg) {
-		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agent.QualifiedName(), msg, "mail", now, queuedNudgeOptionsFromTarget(target))); err != nil {
+		if err := enqueueQueuedNudge(target.cityPath, newQueuedNudgeWithOptions(target.agentKey(), msg, "mail", now, queuedNudgeOptionsFromTarget(target))); err != nil {
 			return err
 		}
 		if running {
@@ -418,11 +438,11 @@ func sendMailNotifyWithProvider(target nudgeTarget, sp runtime.Provider, sender 
 		}
 		return nil
 	}
-	telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
+	telemetry.RecordNudge(context.Background(), target.agentKey(), nil)
 	return nil
 }
 
-func resolveNudgeTarget(agentName string) (nudgeTarget, error) {
+func resolveNudgeTarget(identifier string) (nudgeTarget, error) {
 	cityPath, err := resolveCity()
 	if err != nil {
 		return nudgeTarget{}, err
@@ -431,13 +451,34 @@ func resolveNudgeTarget(agentName string) (nudgeTarget, error) {
 	if err != nil {
 		return nudgeTarget{}, err
 	}
-	found, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
+	store := openNudgeBeadStore(cityPath)
+	if store != nil {
+		sessionID, err := resolveSessionID(store, identifier)
+		if err == nil {
+			b, getErr := store.Get(sessionID)
+			if getErr != nil {
+				return nudgeTarget{}, getErr
+			}
+			return resolveNudgeTargetFromSessionBead(cityPath, cfg, b), nil
+		}
+		if !errors.Is(err, session.ErrSessionNotFound) {
+			return nudgeTarget{}, err
+		}
+	}
+	return resolveNudgeTargetFromConfig(cityPath, cfg, identifier)
+}
+
+func resolveNudgeTargetFromConfig(cityPath string, cfg *config.City, identifier string) (nudgeTarget, error) {
+	found, ok := resolveAgentIdentity(cfg, identifier, currentRigContext(cfg))
 	if !ok {
-		return nudgeTarget{}, fmt.Errorf("agent %q not found in config", agentName)
+		return nudgeTarget{}, fmt.Errorf("agent %q not found in config", identifier)
 	}
 	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
 	if err != nil {
 		return nudgeTarget{}, err
+	}
+	if resolved.Name == "" {
+		resolved.Name = fallbackProviderName(found.Provider, cfg)
 	}
 	cityName := cfg.Workspace.Name
 	if cityName == "" {
@@ -448,14 +489,103 @@ func resolveNudgeTarget(agentName string) (nudgeTarget, error) {
 		cityPath:    cityPath,
 		cityName:    cityName,
 		cfg:         cfg,
+		identity:    found.QualifiedName(),
+		transport:   found.Session,
 		agent:       found,
 		resolved:    resolved,
 		sessionName: sn,
 	}), nil
 }
 
+func resolveNudgeTargetFromSessionBead(cityPath string, cfg *config.City, b beads.Bead) nudgeTarget {
+	cityName := cfg.Workspace.Name
+	if cityName == "" {
+		cityName = filepath.Base(cityPath)
+	}
+	sessionName := strings.TrimSpace(b.Metadata["session_name"])
+	if sessionName == "" {
+		sessionName = sessionNameFromBeadID(b.ID)
+	}
+	identity := firstNonEmpty(
+		strings.TrimSpace(b.Metadata["agent_name"]),
+		strings.TrimSpace(b.Metadata["template"]),
+		strings.TrimSpace(b.Metadata["common_name"]),
+	)
+	target := nudgeTarget{
+		cityPath:          cityPath,
+		cityName:          cityName,
+		cfg:               cfg,
+		identity:          identity,
+		transport:         strings.TrimSpace(b.Metadata["transport"]),
+		resolved:          &config.ResolvedProvider{Name: strings.TrimSpace(b.Metadata["provider"])},
+		sessionID:         b.ID,
+		continuationEpoch: strings.TrimSpace(b.Metadata["continuation_epoch"]),
+		sessionName:       sessionName,
+	}
+	target.agent = parseNudgeAgentIdentity(identity)
+	for _, candidate := range []string{
+		strings.TrimSpace(b.Metadata["agent_name"]),
+		strings.TrimSpace(b.Metadata["template"]),
+		strings.TrimSpace(b.Metadata["common_name"]),
+	} {
+		if candidate == "" {
+			continue
+		}
+		found, ok := resolveAgentIdentity(cfg, candidate, "")
+		if !ok {
+			continue
+		}
+		target.agent = found
+		target.identity = found.QualifiedName()
+		if target.transport == "" {
+			target.transport = found.Session
+		}
+		if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
+			if resolved.Name == "" {
+				resolved.Name = fallbackProviderName(found.Provider, cfg)
+				if resolved.Name == "" && target.resolved != nil {
+					resolved.Name = target.resolved.Name
+				}
+			}
+			target.resolved = resolved
+		}
+		break
+	}
+	if target.identity == "" {
+		target.identity = target.agent.QualifiedName()
+	}
+	if target.identity == "" {
+		target.identity = sessionName
+	}
+	return target
+}
+
+func parseNudgeAgentIdentity(identity string) config.Agent {
+	dir, name := config.ParseQualifiedName(identity)
+	return config.Agent{Dir: dir, Name: name}
+}
+
+func fallbackProviderName(agentProvider string, cfg *config.City) string {
+	if agentProvider != "" {
+		return agentProvider
+	}
+	if cfg != nil {
+		return cfg.Workspace.Provider
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func tryDeliverWaitIdleNudge(target nudgeTarget, sp runtime.Provider, message string) bool {
-	if target.agent.Session == "acp" {
+	if target.sessionTransport() == "acp" {
 		err := sp.Nudge(target.sessionName, runtime.TextContent(message))
 		return err == nil
 	}
@@ -520,13 +650,13 @@ func tryDeliverQueuedNudgesByPoller(target nudgeTarget, sp runtime.Provider, qui
 	}
 	msg := formatNudgeRuntimeMessage(items)
 	if err := deliverImmediateNudge(sp, target.sessionName, runtime.TextContent(msg)); err != nil {
-		telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), err)
+		telemetry.RecordNudge(context.Background(), target.agentKey(), err)
 		if recErr := recordQueuedNudgeFailure(target.cityPath, queuedNudgeIDs(items), err, time.Now()); recErr != nil {
 			return false, recErr
 		}
 		return false, nil
 	}
-	telemetry.RecordNudge(context.Background(), target.agent.QualifiedName(), nil)
+	telemetry.RecordNudge(context.Background(), target.agentKey(), nil)
 	return true, ackQueuedNudges(target.cityPath, queuedNudgeIDs(items))
 }
 
@@ -548,7 +678,7 @@ func maybeStartCodexNudgePoller(target nudgeTarget) {
 	if target.sessionName == "" {
 		return
 	}
-	if err := startNudgePoller(target.cityPath, target.agent.QualifiedName(), target.sessionName); err != nil {
+	if err := startNudgePoller(target.cityPath, target.agentKey(), target.sessionName); err != nil {
 		return
 	}
 }
@@ -787,7 +917,7 @@ func queuedNudgeMatchesTargetFence(target nudgeTarget, item queuedNudge) bool {
 }
 
 func queuedNudgeClaimableForTarget(target nudgeTarget, item queuedNudge) bool {
-	if item.Agent != target.agent.QualifiedName() {
+	if item.Agent != target.agentKey() {
 		return false
 	}
 	if item.SessionID != "" {

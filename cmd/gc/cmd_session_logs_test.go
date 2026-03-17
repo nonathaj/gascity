@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
@@ -285,5 +287,47 @@ func TestPrintLogEntryTimestamp(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, "14:30:45") {
 		t.Errorf("output should contain timestamp, got: %s", out)
+	}
+}
+
+func TestResolveSessionLogWorkDirByAgentName(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"agent_name": "myrig/worker",
+			"template":   "myrig/worker",
+			"work_dir":   "/tmp/myrig",
+		},
+	})
+
+	got, ok := resolveSessionLogWorkDir(store, "worker")
+	if !ok {
+		t.Fatal("resolveSessionLogWorkDir() = not found, want found")
+	}
+	if got != "/tmp/myrig" {
+		t.Fatalf("resolveSessionLogWorkDir() = %q, want %q", got, "/tmp/myrig")
+	}
+}
+
+func TestResolveSessionLogWorkDirBySessionName(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"session_name": "s-gc-77",
+			"agent_name":   "myrig/worker",
+			"work_dir":     "/tmp/myrig",
+		},
+	})
+
+	got, ok := resolveSessionLogWorkDir(store, "s-gc-77")
+	if !ok {
+		t.Fatal("resolveSessionLogWorkDir() = not found, want found")
+	}
+	if got != "/tmp/myrig" {
+		t.Fatalf("resolveSessionLogWorkDir() = %q, want %q", got, "/tmp/myrig")
 	}
 }

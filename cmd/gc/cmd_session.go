@@ -907,15 +907,15 @@ func cmdSessionKill(args []string, stdout, stderr io.Writer) int {
 func newSessionNudgeCmd(stdout, stderr io.Writer) *cobra.Command {
 	var delivery string
 	cmd := &cobra.Command{
-		Use:   "nudge <agent-name> <message...>",
+		Use:   "nudge <id-or-name> <message...>",
 		Short: "Send a text message to a running agent session",
 		Long: `Send text input to a running agent session via the runtime provider.
 
 The message is delivered as text content to the session's input. This is
 equivalent to typing the message into the session's terminal.
 
-Resolves the agent name from city.toml configuration to find the
-corresponding tmux session. Multi-word messages are joined automatically.`,
+Accepts a session ID, session name, or agent name. Multi-word messages are
+joined automatically.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			mode, err := parseNudgeDeliveryMode(delivery)
@@ -935,29 +935,10 @@ corresponding tmux session. Multi-word messages are joined automatically.`,
 
 // cmdSessionNudge is the CLI entry point for "gc session nudge".
 func cmdSessionNudge(args []string, delivery nudgeDeliveryMode, stdout, stderr io.Writer) int {
-	cityPath, err := resolveCity()
-	if err != nil {
-		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	cfg, err := loadCityConfig(cityPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
 	target := args[0]
 	message := strings.Join(args[1:], " ")
 
-	// Resolve target to an agent for session name construction.
-	found, ok := resolveAgentIdentity(cfg, target, currentRigContext(cfg))
-	if !ok {
-		fmt.Fprintln(stderr, agentNotFoundMsg("gc session nudge", target, cfg)) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-
-	targetInfo, err := resolveNudgeTarget(found.QualifiedName())
+	targetInfo, err := resolveNudgeTarget(target)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session nudge: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
