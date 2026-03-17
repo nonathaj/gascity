@@ -62,6 +62,7 @@ session_live = [
 [[agent]]
 name = "boot"
 scope = "city"
+wake_mode = "fresh"
 work_dir = ".gc/agents/boot"
 prompt_template = "prompts/boot.md.tmpl"
 overlay_dir = "overlays/default"

@@ -79,13 +79,13 @@ Use judgment — there are no hardcoded thresholds. Consider:
 | Stale wisp, no output, ambiguous | Possibly stuck | Nudge |
 | Very stale wisp, errors visible | Clearly stuck | File warrant |
 
-**Healthy or idle:** Do nothing. Exit.
+**Healthy or idle:** Do nothing. Drain-ack and exit.
 
 **Possibly stuck (stale wisp, no activity, but ambiguous):** Nudge:
 ```bash
 {{ cmd }} nudge deacon "Boot check: are you making progress?"
 ```
-Exit. Next Boot tick will re-evaluate.
+Drain-ack and exit. Next Boot tick will re-evaluate.
 
 **Clearly stuck (very stale wisp, no output, errors visible):** File a warrant:
 ```bash
@@ -96,13 +96,15 @@ bd create --type=warrant \
 ```
 The dog pool picks up the warrant and runs the shutdown dance.
 
-### Step 4: Exit
+### Step 4: Signal done and exit
 
 ```bash
+{{ cmd }} runtime drain-ack
 exit
 ```
 
-That's it. You are ephemeral. The controller spawns you again next tick.
+`drain-ack` tells the controller you're finished. The controller cleans
+up your session and spawns you again next tick.
 
 ---
 
