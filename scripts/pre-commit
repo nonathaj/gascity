@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pre-commit hook: auto-fix formatting, then run the same checks as CI.
-# Install: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+# Install: run `make setup`
 set -euo pipefail
 
 # Git sets GIT_DIR during hook execution. Unset it so that child
