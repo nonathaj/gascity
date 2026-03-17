@@ -7,9 +7,15 @@ import (
 	"time"
 )
 
-// AcceptStartupDialogs dismisses Claude Code startup dialogs that can block
-// automated sessions. Handles (in order):
-//  1. Workspace trust dialog ("Quick safety check" / "trust this folder")
+var (
+	startupDialogProbeDelay  = 1 * time.Second
+	startupDialogAcceptDelay = 500 * time.Millisecond
+	bypassDialogConfirmDelay = 200 * time.Millisecond
+)
+
+// AcceptStartupDialogs dismisses startup dialogs that can block automated
+// sessions. Handles (in order):
+//  1. Workspace trust dialog (Claude "Quick safety check", Codex "Do you trust the contents of this directory?")
 //  2. Bypass permissions warning ("Bypass Permissions mode") — requires Down+Enter
 //
 // The peek function should return the last N lines of the session's terminal output.
@@ -33,10 +39,10 @@ func AcceptStartupDialogs(
 	return nil
 }
 
-// acceptWorkspaceTrustDialog dismisses the Claude Code workspace trust dialog.
-// Starting with Claude Code v2.1.55, a "Quick safety check" dialog appears on
-// first launch in a workspace. Option 1 ("Yes, I trust this folder") is
-// pre-selected, so pressing Enter accepts.
+// acceptWorkspaceTrustDialog dismisses workspace trust dialogs for supported
+// agents. Claude shows "Quick safety check"; Codex shows
+// "Do you trust the contents of this directory?". In both cases the safe
+// continue option is pre-selected, so Enter accepts.
 func acceptWorkspaceTrustDialog(
 	ctx context.Context,
 	peek func(lines int) (string, error),
@@ -45,7 +51,7 @@ func acceptWorkspaceTrustDialog(
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(1 * time.Second):
+	case <-time.After(startupDialogProbeDelay):
 	}
 
 	content, err := peek(30)
@@ -53,7 +59,7 @@ func acceptWorkspaceTrustDialog(
 		return err
 	}
 
-	if !strings.Contains(content, "trust this folder") && !strings.Contains(content, "Quick safety check") {
+	if !containsWorkspaceTrustDialog(content) {
 		return nil
 	}
 
@@ -64,9 +70,15 @@ func acceptWorkspaceTrustDialog(
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(startupDialogAcceptDelay):
 	}
 	return nil
+}
+
+func containsWorkspaceTrustDialog(content string) bool {
+	return strings.Contains(content, "trust this folder") ||
+		strings.Contains(content, "Quick safety check") ||
+		strings.Contains(content, "Do you trust the contents of this directory?")
 }
 
 // acceptBypassPermissionsWarning dismisses the Claude Code bypass permissions
@@ -80,7 +92,7 @@ func acceptBypassPermissionsWarning(
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(1 * time.Second):
+	case <-time.After(startupDialogProbeDelay):
 	}
 
 	content, err := peek(30)
@@ -99,7 +111,7 @@ func acceptBypassPermissionsWarning(
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(bypassDialogConfirmDelay):
 	}
 
 	return sendKeys("Enter")
