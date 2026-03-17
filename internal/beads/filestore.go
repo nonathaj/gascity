@@ -63,7 +63,7 @@ func (fs *FileStore) Create(b Bead) (Bead, error) {
 		return Bead{}, err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return Bead{}, err
 	}
 	return result, nil
@@ -79,7 +79,7 @@ func (fs *FileStore) Update(id string, opts UpdateOpts) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil
@@ -95,7 +95,7 @@ func (fs *FileStore) Close(id string) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil
@@ -112,7 +112,7 @@ func (fs *FileStore) MolCook(formula, title string, vars []string) (string, erro
 		return "", err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return "", err
 	}
 	return id, nil
@@ -129,7 +129,7 @@ func (fs *FileStore) MolCookOn(formula, beadID, title string, vars []string) (st
 		return "", err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return "", err
 	}
 	return id, nil
@@ -145,7 +145,7 @@ func (fs *FileStore) SetMetadata(id, key, value string) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil
@@ -161,7 +161,7 @@ func (fs *FileStore) SetMetadataBatch(id string, kvs map[string]string) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil
@@ -182,7 +182,7 @@ func (fs *FileStore) DepAdd(issueID, dependsOnID, depType string) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil
@@ -198,7 +198,7 @@ func (fs *FileStore) DepRemove(issueID, dependsOnID string) error {
 		return err
 	}
 	if err := fs.save(); err != nil {
-		fs.MemStore.restoreFrom(snap.seq, snap.beads, snap.deps)
+		fs.restoreFrom(snap.seq, snap.beads, snap.deps)
 		return err
 	}
 	return nil

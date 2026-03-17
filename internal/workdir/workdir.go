@@ -1,3 +1,4 @@
+// Package workdir resolves agent working directories from config templates.
 package workdir
 
 import (

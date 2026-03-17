@@ -109,23 +109,6 @@ func expandSessionSetup(cmds []string, ctx SessionSetupContext) []string {
 	return result
 }
 
-// expandDirTemplate expands Go text/template strings in dir fields.
-// On parse or execute error, the raw dir is returned (graceful fallback).
-func expandDirTemplate(dir string, ctx SessionSetupContext) string {
-	if dir == "" || !strings.Contains(dir, "{{") {
-		return dir
-	}
-	tmpl, err := template.New("dir").Parse(dir)
-	if err != nil {
-		return dir
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, ctx); err != nil {
-		return dir
-	}
-	return buf.String()
-}
-
 // resolveSetupScript resolves a session_setup_script path relative to cityPath.
 // Returns the path unchanged if already absolute.
 func resolveSetupScript(script, cityPath string) string {
