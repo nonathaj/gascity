@@ -166,6 +166,15 @@ func resolveAgentChoice(input string, order []string, builtins map[string]config
 	return ""
 }
 
+const initProgressSteps = 7
+
+func logInitProgress(stdout io.Writer, step int, msg string) {
+	if stdout == nil {
+		return
+	}
+	fmt.Fprintf(stdout, "[%d/%d] %s\n", step, initProgressSteps, msg) //nolint:errcheck // best-effort stdout
+}
+
 func newInitCmd(stdout, stderr io.Writer) *cobra.Command {
 	var fileFlag string
 	var fromFlag string
@@ -271,6 +280,7 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	logInitProgress(stdout, 6, "Registering city with supervisor")
 	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
 	return code
 }
@@ -449,21 +459,25 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 	}
 
 	// Create directory structure.
+	logInitProgress(stdout, 1, "Creating runtime scaffold")
 	if err := ensureCityScaffoldFS(fs, cityPath); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 	// Install Claude Code hooks (settings.json).
+	logInitProgress(stdout, 2, "Installing hooks (Claude Code)")
 	if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 		return code
 	}
 
 	// Write default prompt files.
+	logInitProgress(stdout, 3, "Writing default prompts")
 	if code := writeDefaultPrompts(fs, cityPath, stderr); code != 0 {
 		return code
 	}
 
 	// Write default formula files.
+	logInitProgress(stdout, 4, "Writing default formulas")
 	if code := writeDefaultFormulas(fs, cityPath, stderr); code != 0 {
 		return code
 	}
@@ -501,6 +515,7 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	logInitProgress(stdout, 5, "Writing city configuration")
 	if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
