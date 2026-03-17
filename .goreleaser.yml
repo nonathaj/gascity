@@ -5,6 +5,8 @@ builds:
     binary: gc
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{ .Tag }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
     goos:
       - linux
       - darwin

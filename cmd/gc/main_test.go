@@ -121,16 +121,21 @@ func TestVersion(t *testing.T) {
 	if code != 0 {
 		t.Errorf("run([version]) = %d, want 0", code)
 	}
-	out := stdout.String()
-	// Default values when not built with ldflags.
-	if !strings.Contains(out, "gc dev") {
-		t.Errorf("stdout missing 'gc dev': %q", out)
+	if got := strings.TrimSpace(stdout.String()); got != "dev" {
+		t.Errorf("stdout = %q, want %q", got, "dev")
 	}
-	if !strings.Contains(out, "commit:") {
-		t.Errorf("stdout missing 'commit:': %q", out)
+
+	stdout.Reset()
+	code = run([]string{"version", "--long"}, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Errorf("run([version --long]) = %d, want 0", code)
 	}
-	if !strings.Contains(out, "built:") {
-		t.Errorf("stdout missing 'built:': %q", out)
+	longOut := stdout.String()
+	if !strings.Contains(longOut, "commit:") {
+		t.Errorf("stdout missing 'commit:': %q", longOut)
+	}
+	if !strings.Contains(longOut, "built:") {
+		t.Errorf("stdout missing 'built:': %q", longOut)
 	}
 }
 

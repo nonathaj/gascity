@@ -1862,10 +1862,9 @@ gc unregister [path]
 
 ## gc version
 
-Print gc version, git commit, and build date.
+Print the gc version string.
 
-Version information is injected via ldflags at build time.
-When built with go install, VCS metadata is read from the binary.
+Use `gc version --long` to include git commit and build date metadata.
 
 ```
 gc version
@@ -1922,4 +1921,3 @@ Manually mark a wait ready
 ```
 gc wait ready <wait-id>
 ```
-

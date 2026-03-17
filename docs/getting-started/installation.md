@@ -26,7 +26,8 @@ exactly, start there.
 Homebrew:
 
 ```bash
-brew install gastownhall/gascity/gascity
+brew tap gastownhall/gascity
+brew install --cask gascity
 gc version
 ```
 

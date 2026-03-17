@@ -21,8 +21,8 @@ body:
     id: version
     attributes:
       label: Gas City version
-      description: Include `gc version` output or the commit SHA if you built from `main`.
-      placeholder: v0.1.x or b5d5cfbf
+      description: Include `gc version` output. If you built from `main`, also include `gc version --long` or the commit SHA.
+      placeholder: 0.13.0 or main@b5d5cfbf
     validations:
       required: true
 

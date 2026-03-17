@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"regexp"
 	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -11,54 +13,94 @@ import (
 // Build metadata — injected via ldflags at build time.
 // Falls back to VCS info embedded by the Go toolchain (go install, go build).
 var (
-	version = "dev"
-	commit  = "unknown"
-	date    = "unknown"
+	version                  = "dev"
+	commit                   = "unknown"
+	date                     = "unknown"
+	goPseudoVersionSuffixRes = []*regexp.Regexp{
+		regexp.MustCompile(`^(.*)\.0\.\d{14}-[0-9a-f]{12,}$`),
+		regexp.MustCompile(`^(.*)-0\.\d{14}-[0-9a-f]{12,}$`),
+		regexp.MustCompile(`^(.*)-\d{14}-[0-9a-f]{12,}$`),
+	}
 )
 
 func init() {
-	if commit != "unknown" {
-		return // ldflags provided version info — don't override.
-	}
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return
+	version, commit, date = resolveBuildMetadata(version, commit, date, ok, info)
+}
+
+func resolveBuildMetadata(
+	currentVersion string,
+	currentCommit string,
+	currentDate string,
+	ok bool,
+	info *debug.BuildInfo,
+) (string, string, string) {
+	currentVersion = normalizeVersion(currentVersion)
+	if !ok || info == nil {
+		return currentVersion, currentCommit, currentDate
+	}
+	if currentVersion == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		currentVersion = normalizeVersion(info.Main.Version)
 	}
 	var dirty bool
 	for _, s := range info.Settings {
 		switch s.Key {
 		case "vcs.revision":
-			if s.Value != "" {
-				if len(s.Value) > 12 {
-					commit = s.Value[:12]
-				} else {
-					commit = s.Value
-				}
+			if currentCommit == "unknown" && s.Value != "" {
+				currentCommit = s.Value
 			}
 		case "vcs.time":
-			if date == "unknown" && s.Value != "" {
-				date = s.Value
+			if currentDate == "unknown" && s.Value != "" {
+				currentDate = s.Value
 			}
 		case "vcs.modified":
 			dirty = s.Value == "true"
 		}
 	}
-	if dirty && commit != "unknown" {
-		commit += "-dirty"
+	if dirty && currentCommit != "unknown" {
+		currentCommit += "-dirty"
 	}
+	return currentVersion, currentCommit, currentDate
+}
+
+func normalizeVersion(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "v")
+	if v == "" || v == "(devel)" {
+		return "dev"
+	}
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	for _, re := range goPseudoVersionSuffixRes {
+		if m := re.FindStringSubmatch(v); len(m) == 2 {
+			v = m[1]
+			break
+		}
+	}
+	if v == "" || v == "0.0.0" {
+		return "dev"
+	}
+	return v
 }
 
 func newVersionCmd(stdout io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var longOutput bool
+	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Print gc version information",
-		Long: `Print gc version, git commit, and build date.
+		Short: "Print gc version",
+		Long: `Print the gc version string.
 
-Version information is injected via ldflags at build time.
-When built with go install, VCS metadata is read from the binary.`,
+Use --long to include git commit and build date metadata.`,
 		Args: cobra.NoArgs,
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Fprintf(stdout, "gc %s (commit: %s, built: %s)\n", version, commit, date) //nolint:errcheck // best-effort stdout
+			if longOutput {
+				fmt.Fprintf(stdout, "%s (commit: %s, built: %s)\n", version, commit, date) //nolint:errcheck // best-effort stdout
+				return
+			}
+			fmt.Fprintf(stdout, "%s\n", version) //nolint:errcheck // best-effort stdout
 		},
 	}
+	cmd.Flags().BoolVarP(&longOutput, "long", "l", false, "Include git commit and build date metadata")
+	return cmd
 }

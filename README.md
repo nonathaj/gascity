@@ -27,7 +27,8 @@ See the full install guide at [docs/getting-started/installation.md](docs/gettin
 Install from Homebrew:
 
 ```bash
-brew install gastownhall/gascity/gascity
+brew tap gastownhall/gascity
+brew install --cask gascity
 gc version
 ```
 
