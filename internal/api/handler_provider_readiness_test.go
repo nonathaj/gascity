@@ -833,4 +833,8 @@ func unsetGitHubCLITokenEnv(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_ENTERPRISE_TOKEN", "")
 	t.Setenv("GITHUB_ENTERPRISE_TOKEN", "")
+	// Clear config-dir overrides so githubCLIHostsPath falls through
+	// to the HOME-based default path.
+	t.Setenv("GH_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 }
