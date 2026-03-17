@@ -275,7 +275,7 @@ func reloadSupervisor(stdout, stderr io.Writer) int {
 	sockPath := supervisorSocketPath()
 	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
 	if err != nil {
-		fmt.Fprintln(stderr, "gc supervisor reload: supervisor is not running") //nolint:errcheck
+		fmt.Fprintln(stderr, "gc supervisor reload: supervisor is not running; start it with 'gc supervisor start'") //nolint:errcheck
 		return 1
 	}
 	defer conn.Close()                                                                //nolint:errcheck
@@ -289,13 +289,13 @@ func reloadSupervisor(stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "Reconciliation triggered.") //nolint:errcheck
 		return 0
 	case "busy":
-		fmt.Fprintln(stderr, "gc supervisor reload: reconcile queue is busy") //nolint:errcheck
+		fmt.Fprintln(stderr, "gc supervisor reload: reconcile queue is busy; try again shortly") //nolint:errcheck
 		return 1
 	case "timeout":
 		fmt.Fprintln(stderr, "gc supervisor reload: reconcile did not finish before timeout") //nolint:errcheck
 		return 1
 	}
-	fmt.Fprintln(stderr, "gc supervisor reload: no acknowledgment from supervisor") //nolint:errcheck
+	fmt.Fprintln(stderr, "gc supervisor reload: supervisor not responding (may be shutting down); try 'gc supervisor start'") //nolint:errcheck
 	return 1
 }
 
