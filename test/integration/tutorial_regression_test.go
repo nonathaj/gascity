@@ -32,11 +32,6 @@ func TestTutorialRegression(t *testing.T) {
 		t.Skip("tutorial regression requires tmux")
 	}
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		t.Skip("ANTHROPIC_API_KEY not set — skipping inference test")
-	}
-
 	guard := tmuxtest.NewGuard(t)
 	cityName := guard.CityName()
 	cityDir := filepath.Join(t.TempDir(), cityName)
