@@ -1,6 +1,7 @@
 package workspacesvc
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -145,5 +146,27 @@ func TestDerivePublishedURLBlocksHostedFallbackWhenAuthoritativeStoreExists(t *t
 	}
 	if reason != "publication_platform_url_missing" {
 		t.Fatalf("reason = %q, want publication_platform_url_missing", reason)
+	}
+}
+
+func TestDerivePublishedURLReportsPublicationMetadataInvalid(t *testing.T) {
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{
+		Provider:         "hosted",
+		TenantSlug:       "Acme",
+		PublicBaseDomain: "apps.example.com",
+	}, publicationRefs{
+		exists: true,
+		err:    fmt.Errorf("decode publication store: boom"),
+	}, "Demo City", config.Service{
+		Name: "review_intake",
+		Publication: config.ServicePublicationConfig{
+			Visibility: "public",
+		},
+	})
+	if url != "" {
+		t.Fatalf("url = %q, want empty", url)
+	}
+	if reason != "publication_metadata_invalid" {
+		t.Fatalf("reason = %q, want publication_metadata_invalid", reason)
 	}
 }

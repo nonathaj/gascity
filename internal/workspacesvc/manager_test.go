@@ -78,7 +78,8 @@ func registerWorkflowContractForTest(t *testing.T, contract string, factory Work
 
 func writePublicationStoreForTest(t *testing.T, cityPath string, services string) {
 	t.Helper()
-	path := filepath.Join(cityPath, ".gc", "supervisor", "publications.json")
+	t.Setenv("GC_HOME", filepath.Join(cityPath, ".gc"))
+	path := supervisor.PublicationsPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -411,9 +412,12 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, refs publ
 
 func loadPublicationRefs(cityPath string) publicationRefs {
 	refs, exists, err := supervisor.LoadCityPublicationRefs(
-		filepath.Join(citylayout.RuntimePath(cityPath, "supervisor"), "publications.json"),
+		supervisor.PublicationsPath(),
 		cityPath,
 	)
+	if err != nil {
+		log.Printf("workspacesvc: load publication refs for %s: %v", cityPath, err)
+	}
 	return publicationRefs{
 		refs:   refs,
 		exists: exists,
