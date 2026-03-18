@@ -14,6 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -84,6 +85,14 @@ func configureSupervisorHooksForTests() {
 			return false, 0
 		}
 	}
+}
+
+func markFakeCityScaffold(f *fsys.Fake, cityPath string) {
+	f.Dirs[filepath.Join(cityPath, citylayout.RuntimeRoot)] = true
+	f.Dirs[filepath.Join(cityPath, citylayout.CacheRoot)] = true
+	f.Dirs[filepath.Join(cityPath, citylayout.SystemRoot)] = true
+	f.Dirs[filepath.Join(cityPath, citylayout.RuntimeRoot, "runtime")] = true
+	f.Files[filepath.Join(cityPath, citylayout.RuntimeRoot, "events.jsonl")] = nil
 }
 
 func TestMain(m *testing.M) {
@@ -1025,8 +1034,7 @@ prompt_template = "prompts/mayor.md"
 
 func TestDoInitAlreadyInitialized(t *testing.T) {
 	f := fsys.NewFake()
-	// .gc/ already exists.
-	f.Dirs[filepath.Join("/city", ".gc")] = true
+	markFakeCityScaffold(f, "/city")
 
 	var stderr bytes.Buffer
 	code := doInit(f, "/city", defaultWizardConfig(), &bytes.Buffer{}, &stderr)
@@ -1035,6 +1043,17 @@ func TestDoInitAlreadyInitialized(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "already initialized") {
 		t.Errorf("stderr = %q, want 'already initialized'", stderr.String())
+	}
+}
+
+func TestCityAlreadyInitializedFSIgnoresSupervisorHomeState(t *testing.T) {
+	f := fsys.NewFake()
+	f.Dirs[filepath.Join("/home", citylayout.RuntimeRoot)] = true
+	f.Files[filepath.Join("/home", citylayout.RuntimeRoot, "events.jsonl")] = nil
+	f.Files[filepath.Join("/home", citylayout.RuntimeRoot, "cities.toml")] = []byte("[[city]]\n")
+
+	if cityAlreadyInitializedFS(f, "/home") {
+		t.Fatal("cityAlreadyInitializedFS should ignore global supervisor state without a city scaffold")
 	}
 }
 
@@ -1703,7 +1722,7 @@ func TestCmdInitFromTOMLFileInvalidTOML(t *testing.T) {
 
 func TestCmdInitFromTOMLFileAlreadyInitialized(t *testing.T) {
 	f := fsys.NewFake()
-	f.Dirs[filepath.Join("/city", ".gc")] = true
+	markFakeCityScaffold(f, "/city")
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "config.toml")
@@ -1924,7 +1943,16 @@ func TestDoInitFromDirAlreadyInitialized(t *testing.T) {
 	}
 
 	cityPath := filepath.Join(dir, "dst")
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "system"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, ".gc", "events.jsonl"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 

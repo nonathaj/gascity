@@ -12,10 +12,10 @@ stdout 'Available Commands'
 ! exec gc blorp
 stderr 'unknown command "blorp"'
 
-# gc init already initialized.
+# gc init resumes an existing city.
 exec gc init $WORK/err-city
-! exec gc init $WORK/err-city
-stderr 'already initialized'
+exec gc init $WORK/err-city
+stdout 'resuming startup checks'
 
 # gc init --file with nonexistent file.
 ! exec gc init --file bogus $WORK/file-city

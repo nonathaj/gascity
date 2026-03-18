@@ -34,8 +34,30 @@ func cityAlreadyInitializedFS(fs fsys.FS, cityPath string) bool {
 	if fi, err := fs.Stat(filepath.Join(cityPath, citylayout.CityConfigFile)); err == nil && !fi.IsDir() {
 		return true
 	}
-	if fi, err := fs.Stat(filepath.Join(cityPath, citylayout.RuntimeRoot)); err == nil && fi.IsDir() {
-		return true
+	return cityHasScaffoldFS(fs, cityPath)
+}
+
+func cityHasScaffoldFS(fs fsys.FS, cityPath string) bool {
+	requiredDirs := []string{
+		filepath.Join(cityPath, citylayout.RuntimeRoot),
+		filepath.Join(cityPath, citylayout.RuntimeRoot, "cache"),
+		filepath.Join(cityPath, citylayout.RuntimeRoot, "runtime"),
+		filepath.Join(cityPath, citylayout.RuntimeRoot, "system"),
 	}
-	return false
+	for _, dir := range requiredDirs {
+		fi, err := fs.Stat(dir)
+		if err != nil || !fi.IsDir() {
+			return false
+		}
+	}
+	fi, err := fs.Stat(filepath.Join(cityPath, citylayout.RuntimeRoot, "events.jsonl"))
+	return err == nil && !fi.IsDir()
+}
+
+func cityCanResumeInitFS(fs fsys.FS, cityPath string) bool {
+	fi, err := fs.Stat(filepath.Join(cityPath, citylayout.CityConfigFile))
+	if err != nil || fi.IsDir() {
+		return false
+	}
+	return cityHasScaffoldFS(fs, cityPath)
 }

@@ -310,6 +310,67 @@ func TestFinalizeInitWithoutProgressSkipsStepCounter(t *testing.T) {
 	}
 }
 
+func TestCmdInitResumesFinalizeForExistingCity(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
+
+	cityPath := filepath.Join(t.TempDir(), "bright-lights")
+	var initStdout, initStderr bytes.Buffer
+	code := doInit(fsys.OSFS{}, cityPath, wizardConfig{
+		configName: "gastown",
+		provider:   "claude",
+	}, &initStdout, &initStderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0: %s", code, initStderr.String())
+	}
+
+	oldProbe := initProbeProvidersReadiness
+	initProbeProvidersReadiness = func(_ context.Context, providers []string, fresh bool) (map[string]api.ReadinessItem, error) {
+		if !fresh {
+			t.Fatal("cmdInit resume should force a fresh readiness probe")
+		}
+		if len(providers) != 1 || providers[0] != "claude" {
+			t.Fatalf("providers = %v, want [claude]", providers)
+		}
+		return map[string]api.ReadinessItem{
+			"claude": {
+				Name:        "claude",
+				Kind:        api.ProbeKindProvider,
+				DisplayName: "Claude Code",
+				Status:      api.ProbeStatusNeedsAuth,
+			},
+		}, nil
+	}
+	t.Cleanup(func() { initProbeProvidersReadiness = oldProbe })
+
+	calledRegister := false
+	oldRegister := registerCityWithSupervisorTestHook
+	registerCityWithSupervisorTestHook = func(_ string, _ string, _ io.Writer, _ io.Writer) (bool, int) {
+		calledRegister = true
+		return true, 0
+	}
+	t.Cleanup(func() { registerCityWithSupervisorTestHook = oldRegister })
+
+	var stdout, stderr bytes.Buffer
+	code = cmdInit([]string{cityPath}, "", "", &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("cmdInit = %d, want 1", code)
+	}
+	if calledRegister {
+		t.Fatal("registerCityWithSupervisor should not run when provider readiness blocks resumed init")
+	}
+	if strings.Contains(stderr.String(), "already initialized") {
+		t.Fatalf("stderr = %q, want resumed readiness guidance instead of already initialized", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "resuming startup checks") {
+		t.Fatalf("stdout = %q, want resume notice", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Referenced providers not ready:") {
+		t.Fatalf("stderr = %q, want provider readiness guidance", stderr.String())
+	}
+}
+
 func TestShellQuotePathQuotesMetacharacters(t *testing.T) {
 	got := shellQuotePathForOS("/tmp/test&dir", "linux")
 	want := "'/tmp/test&dir'"
