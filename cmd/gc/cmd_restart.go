@@ -120,27 +120,35 @@ func doRigRestart(
 	rigName, cityName, sessionTemplate string,
 	stdout, stderr io.Writer,
 ) int {
-	var names []string
+	var targets []stopTarget
 	for _, a := range agents {
 		pool := a.EffectivePool()
 		if !pool.IsMultiInstance() {
 			// Single agent.
 			sn := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), sessionTemplate)
 			if sp.IsRunning(sn) {
-				names = append(names, sn)
+				targets = append(targets, stopTarget{
+					name:     sn,
+					template: a.QualifiedName(),
+					order:    len(targets),
+				})
 			}
 		} else {
 			// Pool agent: discover instances (static for bounded, live for unlimited).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
 				sn := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, sessionTemplate)
 				if sp.IsRunning(sn) {
-					names = append(names, sn)
+					targets = append(targets, stopTarget{
+						name:     sn,
+						template: a.QualifiedName(),
+						order:    len(targets),
+					})
 				}
 			}
 		}
 	}
 	cfg := &config.City{Agents: agents}
-	killed := stopSessionsBounded(names, cfg, sp, rec, eventActor(), stdout, stderr)
+	killed := stopTargetsBounded(targets, cfg, sp, rec, eventActor(), stdout, stderr)
 
 	fmt.Fprintf(stdout, "Restarted %d agent(s) in rig '%s' (killed sessions; reconciler will restart)\n", killed, rigName) //nolint:errcheck // best-effort stdout
 	return 0

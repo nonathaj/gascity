@@ -481,27 +481,42 @@ func executeStopWave(targets []stopTarget, sp runtime.Provider, maxParallel int)
 	return results
 }
 
-func stopTargetsForNames(names []string, cfg *config.City) []stopTarget {
+func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []stopTarget {
+	sessionTemplates := make(map[string]string)
+	if store != nil {
+		if sessionBeads, err := loadSessionBeads(store); err == nil {
+			for _, bead := range sessionBeads {
+				name := bead.Metadata["session_name"]
+				template := bead.Metadata["template"]
+				if name != "" && template != "" {
+					sessionTemplates[name] = template
+				}
+			}
+		}
+	}
 	targets := make([]stopTarget, 0, len(names))
 	for idx, name := range names {
+		template := sessionTemplates[name]
+		if template == "" {
+			template = resolveAgentTemplate(name, cfg)
+		}
 		targets = append(targets, stopTarget{
 			name:     name,
-			template: resolveAgentTemplate(name, cfg),
+			template: template,
 			order:    idx,
 		})
 	}
 	return targets
 }
 
-func stopSessionsBounded(
-	names []string,
+func stopTargetsBounded(
+	targets []stopTarget,
 	cfg *config.City,
 	sp runtime.Provider,
 	rec events.Recorder,
 	actor string,
 	stdout, stderr io.Writer,
 ) int {
-	targets := stopTargetsForNames(names, cfg)
 	waveByTarget, ok := stopWaveOrder(targets, cfg)
 	if !ok {
 		fmt.Fprintln(stderr, "session lifecycle: dependency graph fallback to serial stop order") //nolint:errcheck
@@ -534,4 +549,16 @@ func stopSessionsBounded(
 		}
 	}
 	return stopped
+}
+
+func stopSessionsBounded(
+	names []string,
+	cfg *config.City,
+	store beads.Store,
+	sp runtime.Provider,
+	rec events.Recorder,
+	actor string,
+	stdout, stderr io.Writer,
+) int {
+	return stopTargetsBounded(stopTargetsForNames(names, cfg, store), cfg, sp, rec, actor, stdout, stderr)
 }

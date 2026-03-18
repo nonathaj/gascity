@@ -299,11 +299,12 @@ func gracefulStopAll(
 	timeout time.Duration,
 	rec events.Recorder,
 	cfg *config.City,
+	store beads.Store,
 	stdout, stderr io.Writer,
 ) {
 	if timeout <= 0 || len(names) == 0 {
 		// Immediate kill (no grace period).
-		stopSessionsBounded(names, cfg, sp, rec, "gc", stdout, stderr)
+		stopSessionsBounded(names, cfg, store, sp, rec, "gc", stdout, stderr)
 		return
 	}
 
@@ -348,7 +349,7 @@ func gracefulStopAll(
 		}
 		survivors = append(survivors, name)
 	}
-	stopSessionsBounded(survivors, cfg, sp, rec, "gc", stdout, stderr)
+	stopSessionsBounded(survivors, cfg, store, sp, rec, "gc", stdout, stderr)
 }
 
 // controllerLoop is a compatibility shim that wraps CityRuntime.run().

@@ -323,7 +323,7 @@ func TestStopSessionsBounded_StopsDependentsBeforeDependencies(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		done <- stopSessionsBounded([]string{"db", "api", "worker", "audit"}, cfg, sp, rec, "gc", &stdout, &stderr)
+		done <- stopSessionsBounded([]string{"db", "api", "worker", "audit"}, cfg, nil, sp, rec, "gc", &stdout, &stderr)
 	}()
 
 	firstWave := sp.waitForStops(t, 1)
@@ -350,6 +350,75 @@ func TestStopSessionsBounded_StopsDependentsBeforeDependencies(t *testing.T) {
 	case stopped := <-done:
 		if stopped != 4 {
 			t.Fatalf("stopped = %d, want 4", stopped)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stopSessionsBounded did not finish")
+	}
+}
+
+func TestStopSessionsBounded_UsesSessionBeadTemplateForCustomSessionNames(t *testing.T) {
+	sp := newGatedStopProvider()
+	store := beads.NewMemStore()
+	cfg := &config.City{
+		Workspace: config.Workspace{SessionTemplate: "{{.City}}-{{.Agent}}"},
+		Agents: []config.Agent{
+			{Name: "worker", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	for _, bead := range []beads.Bead{
+		{
+			Title:  "db",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel},
+			Metadata: map[string]string{
+				"template":     "db",
+				"session_name": "custom-db",
+			},
+		},
+		{
+			Title:  "worker",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel},
+			Metadata: map[string]string{
+				"template":     "worker",
+				"session_name": "custom-worker",
+			},
+		},
+	} {
+		if _, err := store.Create(bead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"custom-db", "custom-worker"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- stopSessionsBounded([]string{"custom-db", "custom-worker"}, cfg, store, sp, rec, "gc", &stdout, &stderr)
+	}()
+
+	firstWave := sp.waitForStops(t, 1)
+	if !containsAll(firstWave, "custom-worker") {
+		t.Fatalf("first stop wave = %v, want custom-worker", firstWave)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("custom-worker")
+
+	secondWave := sp.waitForStops(t, 1)
+	if !containsAll(secondWave, "custom-db") {
+		t.Fatalf("second stop wave = %v, want custom-db", secondWave)
+	}
+	sp.release("custom-db")
+
+	select {
+	case stopped := <-done:
+		if stopped != 2 {
+			t.Fatalf("stopped = %d, want 2", stopped)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("stopSessionsBounded did not finish")
