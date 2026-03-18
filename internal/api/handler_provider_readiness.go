@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -41,7 +42,8 @@ const (
 )
 
 var (
-	providerProbePathEnv        = "/usr/local/bin:/usr/bin:/bin"
+	providerProbePathEnv        = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+	providerProbeGOOS           = runtime.GOOS
 	providerProbeCommandContext = exec.CommandContext
 	providerProbeCache          = newCachedProviderProbeStore()
 
@@ -399,7 +401,7 @@ func (s *cachedProviderProbeStore) store(key string, result providerProbeResult)
 }
 
 func probeClaude(ctx context.Context, homeDir string) providerProbeResult {
-	path, ok := findProbeBinary("claude")
+	path, ok := findProbeBinary("claude", homeDir)
 	if !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
@@ -425,7 +427,7 @@ func probeClaude(ctx context.Context, homeDir string) providerProbeResult {
 }
 
 func probeCodex(homeDir string) providerProbeResult {
-	if _, ok := findProbeBinary("codex"); !ok {
+	if _, ok := findProbeBinary("codex", homeDir); !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
 
@@ -458,7 +460,7 @@ func probeCodex(homeDir string) providerProbeResult {
 }
 
 func probeGemini(homeDir string) providerProbeResult {
-	if _, ok := findProbeBinary("gemini"); !ok {
+	if _, ok := findProbeBinary("gemini", homeDir); !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
 
@@ -504,7 +506,7 @@ func probeGemini(homeDir string) providerProbeResult {
 }
 
 func probeGitHubCLI(ctx context.Context, homeDir string) providerProbeResult {
-	ghPath, ok := findProbeBinary("gh")
+	ghPath, ok := findProbeBinary("gh", homeDir)
 	if !ok {
 		return providerProbeResult{status: probeStatusNotInstalled}
 	}
@@ -570,10 +572,10 @@ func probeGitHubCLIAuthStatus(ctx context.Context, homeDir, ghPath string) provi
 	return providerProbeResult{status: probeStatusProbeError}
 }
 
-func findProbeBinary(name string) (string, bool) {
-	// Readiness probes only trust system install locations baked into the
-	// runtime image so browser polling cannot pick up arbitrary user PATH edits.
-	for _, dir := range strings.Split(providerProbePathEnv, ":") {
+func findProbeBinary(name, homeDir string) (string, bool) {
+	// Readiness probes use a curated, deterministic path rather than the
+	// ambient process PATH so API calls do not depend on shell-specific edits.
+	for _, dir := range providerProbeSearchDirs(homeDir, providerProbeGOOS, providerProbePathEnv) {
 		dir = strings.TrimSpace(dir)
 		if dir == "" {
 			continue
@@ -589,6 +591,50 @@ func findProbeBinary(name string) (string, bool) {
 		return candidate, true
 	}
 	return "", false
+}
+
+func providerProbeSearchDirs(homeDir, goos, basePath string) []string {
+	var dirs []string
+	if homeDir != "" {
+		dirs = append(dirs,
+			filepath.Join(homeDir, ".local", "bin"),
+			filepath.Join(homeDir, "bin"),
+		)
+	}
+	dirs = append(dirs, strings.Split(basePath, string(os.PathListSeparator))...)
+	switch goos {
+	case "darwin":
+		dirs = append(dirs,
+			"/opt/homebrew/bin",
+			"/opt/homebrew/sbin",
+			"/opt/local/bin",
+			"/opt/local/sbin",
+		)
+	case "linux":
+		dirs = append(dirs, "/snap/bin")
+	}
+	return dedupeProbeSearchDirs(dirs)
+}
+
+func dedupeProbeSearchDirs(dirs []string) []string {
+	seen := make(map[string]struct{}, len(dirs))
+	out := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if _, ok := seen[dir]; ok {
+			continue
+		}
+		seen[dir] = struct{}{}
+		out = append(out, dir)
+	}
+	return out
+}
+
+func providerProbeSearchPath(homeDir string) string {
+	return strings.Join(providerProbeSearchDirs(homeDir, providerProbeGOOS, providerProbePathEnv), string(os.PathListSeparator))
 }
 
 func runProbeCommand(
@@ -616,7 +662,7 @@ func runProbeCommand(
 func probeCommandEnv(homeDir string) []string {
 	env := []string{
 		"HOME=" + homeDir,
-		"PATH=" + providerProbePathEnv,
+		"PATH=" + providerProbeSearchPath(homeDir),
 		"TERM=dumb",
 		"NO_COLOR=1",
 		"LC_ALL=C.UTF-8",

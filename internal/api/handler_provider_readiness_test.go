@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,96 @@ func TestProbeCommandEnvPreservesXDGOverridesWhenGHConfigDirIsSet(t *testing.T) 
 	}
 	if !slices.Contains(env, "GH_CONFIG_DIR="+ghConfigDir) {
 		t.Fatalf("probeCommandEnv missing GH_CONFIG_DIR override: %v", env)
+	}
+}
+
+func TestProviderProbeSearchDirsIncludesUserLocalAndLinuxDefaults(t *testing.T) {
+	homeDir := t.TempDir()
+	got := providerProbeSearchDirs(homeDir, "linux", "/usr/local/bin:/usr/bin:/bin")
+	want := []string{
+		filepath.Join(homeDir, ".local", "bin"),
+		filepath.Join(homeDir, "bin"),
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/snap/bin",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("providerProbeSearchDirs(linux) = %v, want %v", got, want)
+	}
+}
+
+func TestProviderProbeSearchDirsIncludesMacUserLocalAndHomebrewPaths(t *testing.T) {
+	homeDir := t.TempDir()
+	got := providerProbeSearchDirs(homeDir, "darwin", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+	want := []string{
+		filepath.Join(homeDir, ".local", "bin"),
+		filepath.Join(homeDir, "bin"),
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/usr/sbin",
+		"/sbin",
+		"/opt/homebrew/bin",
+		"/opt/homebrew/sbin",
+		"/opt/local/bin",
+		"/opt/local/sbin",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("providerProbeSearchDirs(darwin) = %v, want %v", got, want)
+	}
+}
+
+func TestFindProbeBinaryUsesUserLocalInstallDir(t *testing.T) {
+	homeDir := t.TempDir()
+	userBin := filepath.Join(homeDir, ".local", "bin")
+	if err := os.MkdirAll(userBin, 0o755); err != nil {
+		t.Fatalf("mkdir user bin: %v", err)
+	}
+	writeExecutable(t, userBin, "claude", "#!/bin/sh\nexit 0\n")
+
+	originalPathEnv := providerProbePathEnv
+	originalGOOS := providerProbeGOOS
+	providerProbePathEnv = "/usr/local/bin:/usr/bin:/bin"
+	providerProbeGOOS = "linux"
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+		providerProbeGOOS = originalGOOS
+	}()
+
+	got, ok := findProbeBinary("claude", homeDir)
+	if !ok {
+		t.Fatal("findProbeBinary did not find ~/.local/bin/claude")
+	}
+	want := filepath.Join(userBin, "claude")
+	if got != want {
+		t.Fatalf("findProbeBinary = %q, want %q", got, want)
+	}
+}
+
+func TestProbeCommandEnvUsesCuratedProbePath(t *testing.T) {
+	homeDir := t.TempDir()
+
+	originalPathEnv := providerProbePathEnv
+	originalGOOS := providerProbeGOOS
+	providerProbePathEnv = "/usr/local/bin:/usr/bin:/bin"
+	providerProbeGOOS = "linux"
+	defer func() {
+		providerProbePathEnv = originalPathEnv
+		providerProbeGOOS = originalGOOS
+	}()
+
+	env := probeCommandEnv(homeDir)
+	wantPath := "PATH=" + strings.Join([]string{
+		filepath.Join(homeDir, ".local", "bin"),
+		filepath.Join(homeDir, "bin"),
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/snap/bin",
+	}, string(os.PathListSeparator))
+	if !slices.Contains(env, wantPath) {
+		t.Fatalf("probeCommandEnv missing curated PATH %q in %v", wantPath, env)
 	}
 }
 
