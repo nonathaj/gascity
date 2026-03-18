@@ -17,15 +17,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Provider readiness statuses reported by the built-in onboarding probes.
 const (
-	probeStatusConfigured           = "configured"
-	probeStatusNeedsAuth            = "needs_auth"
-	probeStatusNotInstalled         = "not_installed"
-	probeStatusInvalidConfiguration = "invalid_configuration"
-	probeStatusProbeError           = "probe_error"
+	ProbeStatusConfigured           = "configured"
+	ProbeStatusNeedsAuth            = "needs_auth"
+	ProbeStatusNotInstalled         = "not_installed"
+	ProbeStatusInvalidConfiguration = "invalid_configuration"
+	ProbeStatusProbeError           = "probe_error"
 
-	probeKindProvider = "provider"
-	probeKindTool     = "tool"
+	ProbeKindProvider = "provider"
+	ProbeKindTool     = "tool"
+)
+
+const (
+	probeStatusConfigured           = ProbeStatusConfigured
+	probeStatusNeedsAuth            = ProbeStatusNeedsAuth
+	probeStatusNotInstalled         = ProbeStatusNotInstalled
+	probeStatusInvalidConfiguration = ProbeStatusInvalidConfiguration
+	probeStatusProbeError           = ProbeStatusProbeError
+
+	probeKindProvider = ProbeKindProvider
+	probeKindTool     = ProbeKindTool
 )
 
 var (
@@ -81,7 +93,7 @@ type providerReadinessResponse struct {
 }
 
 type readinessResponse struct {
-	Items map[string]readinessItem `json:"items"`
+	Items map[string]ReadinessItem `json:"items"`
 }
 
 type providerReadiness struct {
@@ -89,7 +101,8 @@ type providerReadiness struct {
 	Status      string `json:"status"`
 }
 
-type readinessItem struct {
+// ReadinessItem is the normalized readiness result for one probed item.
+type ReadinessItem struct {
 	Name        string `json:"name"`
 	Kind        string `json:"kind"`
 	DisplayName string `json:"display_name"`
@@ -179,6 +192,31 @@ func handleProviderReadiness(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, providerResp)
 }
 
+// SupportsProviderReadiness reports whether the named provider has a built-in
+// readiness probe.
+func SupportsProviderReadiness(name string) bool {
+	_, ok := supportedProviderReadiness[strings.TrimSpace(name)]
+	return ok
+}
+
+// ProbeProviders returns readiness results for the requested provider names.
+// Provider names must be supported by the readiness registry.
+func ProbeProviders(ctx context.Context, providers []string, fresh bool) (map[string]ReadinessItem, error) {
+	items, err := validateRequestedReadinessItems(providers, supportedProviderReadiness, "provider")
+	if err != nil {
+		return nil, err
+	}
+	resp, err := buildReadinessResponse(ctx, items, fresh)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]ReadinessItem, len(items))
+	for _, provider := range items {
+		out[provider] = resp.Items[provider]
+	}
+	return out, nil
+}
+
 func handleReadiness(w http.ResponseWriter, r *http.Request) {
 	items, err := parseRequestedReadinessItems(
 		r.URL.Query().Get("items"),
@@ -234,6 +272,29 @@ func parseRequestedReadinessItems(
 	return items, nil
 }
 
+func validateRequestedReadinessItems(items []string, allowed readinessItemSet, label string) ([]string, error) {
+	var out []string
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		name := strings.TrimSpace(item)
+		if name == "" {
+			continue
+		}
+		if _, ok := allowed[name]; !ok {
+			return nil, fmt.Errorf("unsupported %s %q", label, name)
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s is required", label)
+	}
+	return out, nil
+}
+
 func parseFreshParam(r *http.Request) (bool, error) {
 	fresh := strings.TrimSpace(r.URL.Query().Get("fresh"))
 	if fresh == "" {
@@ -267,7 +328,7 @@ func buildReadinessResponse(
 	}
 
 	resp := readinessResponse{
-		Items: make(map[string]readinessItem, len(items)),
+		Items: make(map[string]ReadinessItem, len(items)),
 	}
 	for _, itemName := range items {
 		spec, ok := readinessProbeSpecs[itemName]
@@ -275,7 +336,7 @@ func buildReadinessResponse(
 			return readinessResponse{}, fmt.Errorf("unsupported readiness item %q", itemName)
 		}
 		result := probeReadinessItem(ctx, homeDir, itemName, fresh)
-		resp.Items[itemName] = readinessItem{
+		resp.Items[itemName] = ReadinessItem{
 			Name:        itemName,
 			Kind:        spec.kind,
 			DisplayName: spec.displayName,

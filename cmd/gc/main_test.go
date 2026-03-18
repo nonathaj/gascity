@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
@@ -57,6 +58,22 @@ func configureSupervisorHooksForTests() {
 	reloadSupervisorHook = func(_, _ io.Writer) int { return 0 }
 	supervisorAliveHook = func() int { return 0 }
 	startNudgePoller = func(string, string, string) error { return nil }
+	initProbeProvidersReadiness = func(_ context.Context, providers []string, _ bool) (map[string]api.ReadinessItem, error) {
+		out := make(map[string]api.ReadinessItem, len(providers))
+		for _, provider := range providers {
+			displayName := provider
+			if spec, ok := config.BuiltinProviders()[provider]; ok && spec.DisplayName != "" {
+				displayName = spec.DisplayName
+			}
+			out[provider] = api.ReadinessItem{
+				Name:        provider,
+				Kind:        api.ProbeKindProvider,
+				DisplayName: displayName,
+				Status:      api.ProbeStatusConfigured,
+			}
+		}
+		return out, nil
+	}
 	registerCityWithSupervisorTestHook = func(cityPath, commandName string, stdout, stderr io.Writer) (bool, int) {
 		switch commandName {
 		case "gc start":

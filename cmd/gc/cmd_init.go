@@ -166,7 +166,7 @@ func resolveAgentChoice(input string, order []string, builtins map[string]config
 	return ""
 }
 
-const initProgressSteps = 7
+const initProgressSteps = 8
 
 func logInitProgress(stdout io.Writer, step int, msg string) {
 	if stdout == nil {
@@ -259,31 +259,18 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 		}
 	case isTerminal(os.Stdin):
 		wiz = runWizard(os.Stdin, stdout)
+		maybePrintWizardProviderGuidance(wiz, stdout)
 	default:
 		wiz = defaultWizardConfig()
 	}
-	cityName := filepath.Base(cityPath)
 	if code := doInit(fsys.OSFS{}, cityPath, wiz, stdout, stderr); code != 0 {
 		return code
 	}
-	// Materialize gc-beads-bd before initDirIfReady (may need probe).
-	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
-	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
-	if wiz.configName == "gastown" {
-		if err := MaterializeGastownPacks(cityPath); err != nil {
-			fmt.Fprintf(stderr, "gc init: materializing gastown packs: %v\n", err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-	}
-	prefix := config.DeriveBeadsPrefix(cityName)
-	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
-		fmt.Fprintf(stderr, "gc init: %v\n", err)                       //nolint:errcheck // best-effort stderr
-		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	logInitProgress(stdout, 6, "Registering city with supervisor")
-	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
-	return code
+	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
+		materializeGastown: wiz.configName == "gastown",
+		showProgress:       true,
+		commandName:        "gc init",
+	})
 }
 
 func initWizardConfig(providerFlag, bootstrapProfileFlag string) (wizardConfig, error) {
@@ -414,16 +401,9 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 
 	fmt.Fprintf(stdout, "Welcome to Gas City!\n")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(tomlSrc)) //nolint:errcheck // best-effort stdout
-	MaterializeBeadsBdScript(cityPath)                                                      //nolint:errcheck // best-effort; only needed for bd provider
-	MaterializeBuiltinPacks(cityPath)                                                       //nolint:errcheck // best-effort; only needed for bd provider
-	prefix := config.DeriveBeadsPrefix(cityName)
-	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
-		fmt.Fprintf(stderr, "gc init: %v\n", err)                       //nolint:errcheck // best-effort stderr
-		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
-	return code
+	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
+		commandName: "gc init",
+	})
 }
 
 // doInit is the pure logic for "gc init". It creates the city directory
@@ -724,15 +704,7 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 
 	fmt.Fprintln(stdout, "Welcome to Gas City!")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(srcDir)) //nolint:errcheck // best-effort stdout
-
-	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
-	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
-	prefix := config.DeriveBeadsPrefix(cityName)
-	if _, err := initDirIfReady(cityPath, cityPath, prefix); err != nil {
-		fmt.Fprintf(stderr, "gc init: %v\n", err)                       //nolint:errcheck // best-effort stderr
-		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc init")
-	return code
+	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
+		commandName: "gc init",
+	})
 }
