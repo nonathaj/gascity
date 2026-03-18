@@ -498,7 +498,15 @@ func stopWaveOrder(targets []stopTarget, cfg *config.City) (map[int]int, bool) {
 		templateSeen[target.template] = true
 		templatesInOrder = append(templatesInOrder, target.template)
 	}
-	deps := buildDepsMap(cfg)
+	allDeps := buildDepsMap(cfg)
+	selected := make(map[string]bool, len(templatesInOrder))
+	for _, template := range templatesInOrder {
+		selected[template] = true
+	}
+	deps := make(map[string][]string, len(templatesInOrder))
+	for _, template := range templatesInOrder {
+		deps[template] = reachableSelectedDependencies(template, allDeps, selected)
+	}
 	templateWave, ok := dependencyTemplateWaveOrder(templatesInOrder, deps)
 	if !ok {
 		return strictSerialWaveOrder(targets), false
@@ -514,6 +522,32 @@ func stopWaveOrder(targets []stopTarget, cfg *config.City) (map[int]int, bool) {
 		targetWave[idx] = maxWave - templateWave[target.template]
 	}
 	return targetWave, true
+}
+
+func reachableSelectedDependencies(
+	template string,
+	deps map[string][]string,
+	selected map[string]bool,
+) []string {
+	var reachable []string
+	seen := make(map[string]bool)
+	added := make(map[string]bool)
+	var visit func(string)
+	visit = func(current string) {
+		for _, dep := range deps[current] {
+			if seen[dep] {
+				continue
+			}
+			seen[dep] = true
+			if selected[dep] && !added[dep] {
+				reachable = append(reachable, dep)
+				added[dep] = true
+			}
+			visit(dep)
+		}
+	}
+	visit(template)
+	return reachable
 }
 
 func executeTargetWave(
@@ -642,42 +676,25 @@ func interruptTargetsBounded(
 	sp runtime.Provider,
 	stderr io.Writer,
 ) int {
-	waveByTarget, ok := stopWaveOrder(targets, cfg)
-	if !ok {
-		fmt.Fprintln(stderr, "session lifecycle: dependency graph fallback to serial interrupt order") //nolint:errcheck
-	}
-	maxWave := -1
-	for _, wave := range waveByTarget {
-		if wave > maxWave {
-			maxWave = wave
-		}
-	}
+	_ = cfg
 	sent := 0
-	for wave := 0; wave <= maxWave; wave++ {
-		waveStarted := time.Now()
-		var waveTargets []stopTarget
-		for idx, target := range targets {
-			if waveByTarget[idx] == wave {
-				waveTargets = append(waveTargets, target)
-			}
+	waveStarted := time.Now()
+	results := executeTargetWave(targets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
+		return sp.Interrupt(target.name)
+	})
+	for _, result := range results {
+		outcome := "interrupted"
+		if result.err != nil {
+			outcome = "interrupt_failed"
 		}
-		results := executeTargetWave(waveTargets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
-			return sp.Interrupt(target.name)
-		})
-		for _, result := range results {
-			outcome := "interrupted"
-			if result.err != nil {
-				outcome = "interrupt_failed"
-			}
-			if result.err != nil {
-				logLifecycleOutcome(stderr, "interrupt", wave, result.target.name, result.target.template, outcome, result.started, result.finished, result.err)
-			}
-			if result.err == nil {
-				sent++
-			}
+		if result.err != nil {
+			logLifecycleOutcome(stderr, "interrupt", 0, result.target.name, result.target.template, outcome, result.started, result.finished, result.err)
 		}
-		logLifecycleWave(stderr, "interrupt", wave, waveStarted, len(waveTargets))
+		if result.err == nil {
+			sent++
+		}
 	}
+	logLifecycleWave(stderr, "interrupt", 0, waveStarted, len(targets))
 	return sent
 }
 

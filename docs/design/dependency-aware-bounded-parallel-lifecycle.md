@@ -187,9 +187,14 @@ provider swap, `gc rig restart`). A reverse dependency order reduces the
 chance of tearing down a critical dependency while a dependent is still
 trying to exit cleanly.
 
+Subset stops must still preserve transitive dependency order between the
+selected templates. If `api -> cache -> db` and only `api` plus `db`
+are being stopped, `api` still stops before `db` even though `cache`
+itself is not in the stop set.
+
 Soft interrupts do not need the same strict ordering, because they are
-best-effort nudges rather than destructive actions. They can still be
-sent in bounded parallel to minimize shutdown latency.
+best-effort nudges rather than destructive actions. They should be sent
+as one bounded parallel broadcast to minimize shutdown latency.
 
 For pool dependencies, stop ordering also stays template-scoped. All
 instances of a dependent template are eligible before instances of the

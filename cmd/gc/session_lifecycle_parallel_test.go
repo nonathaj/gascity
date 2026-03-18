@@ -615,7 +615,7 @@ func TestStopSessionsBounded_UsesSessionBeadTemplateForCustomSessionNames(t *tes
 	}
 }
 
-func TestInterruptSessionsBounded_InterruptsDependentsBeforeDependencies(t *testing.T) {
+func TestInterruptSessionsBounded_BoundsParallelBroadcast(t *testing.T) {
 	sp := newGatedStopProvider()
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -630,25 +630,20 @@ func TestInterruptSessionsBounded_InterruptsDependentsBeforeDependencies(t *test
 		done <- interruptSessionsBounded([]string{"db", "api", "worker", "audit"}, cfg, nil, sp, ioDiscard{})
 	}()
 
-	firstWave := sp.waitForInterrupts(t, 1)
-	if !containsAll(firstWave, "worker") {
-		t.Fatalf("first interrupt wave = %v, want worker", firstWave)
+	firstBatch := sp.waitForInterrupts(t, 3)
+	if !containsAll(firstBatch, "db", "api", "worker") {
+		t.Fatalf("first interrupt batch = %v, want db+api+worker", firstBatch)
 	}
 	sp.ensureNoFurtherInterrupt(t, 150*time.Millisecond)
+	sp.releaseInterrupt("db")
+	sp.releaseInterrupt("api")
 	sp.releaseInterrupt("worker")
 
-	secondWave := sp.waitForInterrupts(t, 2)
-	if !containsAll(secondWave, "api", "audit") {
-		t.Fatalf("second interrupt wave = %v, want api+audit", secondWave)
+	secondBatch := sp.waitForInterrupts(t, 1)
+	if !containsAll(secondBatch, "audit") {
+		t.Fatalf("second interrupt batch = %v, want audit", secondBatch)
 	}
-	sp.releaseInterrupt("api")
 	sp.releaseInterrupt("audit")
-
-	thirdWave := sp.waitForInterrupts(t, 1)
-	if !containsAll(thirdWave, "db") {
-		t.Fatalf("third interrupt wave = %v, want db", thirdWave)
-	}
-	sp.releaseInterrupt("db")
 
 	select {
 	case interrupted := <-done:
@@ -743,6 +738,49 @@ func TestStopWaveOrder_HandlesUnknownTemplateWithoutSerialFallback(t *testing.T)
 	}
 	if waves[0] != 1 || waves[1] != 0 || waves[2] != 1 {
 		t.Fatalf("waves = %#v, want worker in wave 0 and unknown+db in wave 1", waves)
+	}
+}
+
+func TestStopWaveOrder_PreservesTransitiveSubsetOrdering(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "api", DependsOn: []string{"cache"}},
+			{Name: "cache", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	targets := []stopTarget{
+		{name: "api", template: "api", order: 0},
+		{name: "db", template: "db", order: 1},
+	}
+
+	waves, ok := stopWaveOrder(targets, cfg)
+	if !ok {
+		t.Fatal("unexpected serial fallback for transitive subset")
+	}
+	if waves[0] != 0 || waves[1] != 1 {
+		t.Fatalf("waves = %#v, want api before db via transitive dependency", waves)
+	}
+}
+
+func TestStopWaveOrder_FallsBackToSerialOnCycle(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "api", DependsOn: []string{"db"}},
+			{Name: "db", DependsOn: []string{"api"}},
+		},
+	}
+	targets := []stopTarget{
+		{name: "api", template: "api", order: 0},
+		{name: "db", template: "db", order: 1},
+	}
+
+	waves, ok := stopWaveOrder(targets, cfg)
+	if ok {
+		t.Fatal("expected serial fallback for cycle")
+	}
+	if waves[0] != 0 || waves[1] != 1 {
+		t.Fatalf("waves = %#v, want strict serial fallback", waves)
 	}
 }
 
