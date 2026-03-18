@@ -102,6 +102,11 @@ test:
 test-integration:
 	go test -tags integration -timeout 8m ./...
 
+## test-acceptance: run manual acceptance tests (requires ANTHROPIC_API_KEY, tmux, dolt, bd)
+## These exercise the full tutorial flow with real inference — run before each release.
+test-acceptance:
+	go test -tags 'integration acceptance' -timeout 10m -v -run TestTutorialRegression ./test/integration/
+
 ## check-docs: verify docs sync tests and Mintlify link checks
 check-docs:
 	go test ./test/docsync
