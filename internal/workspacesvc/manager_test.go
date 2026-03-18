@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/supervisor"
@@ -31,7 +32,7 @@ type testRuntime struct {
 func (t *testRuntime) CityPath() string { return t.cityPath }
 func (t *testRuntime) CityName() string { return t.cityName }
 func (t *testRuntime) PublicationStorePath() string {
-	return filepath.Join(t.cityPath, ".gc", "supervisor", "publications.json")
+	return citylayout.RuntimePath(t.cityPath, "supervisor", "publications.json")
 }
 func (t *testRuntime) Config() *config.City { return t.cfg }
 func (t *testRuntime) PublicationConfig() supervisor.PublicationConfig {
@@ -81,7 +82,7 @@ func registerWorkflowContractForTest(t *testing.T, contract string, factory Work
 
 func writePublicationStoreForTest(t *testing.T, cityPath string, services string) {
 	t.Helper()
-	path := filepath.Join(cityPath, ".gc", "supervisor", "publications.json")
+	path := citylayout.RuntimePath(cityPath, "supervisor", "publications.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
 	}

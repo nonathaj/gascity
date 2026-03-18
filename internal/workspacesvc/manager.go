@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -87,6 +88,9 @@ func (m *Manager) Reload() error {
 	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
 	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
+	if refs.err != nil {
+		log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
+	}
 
 	for _, svc := range cfg.Services {
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, svc, now)
@@ -201,14 +205,40 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	m.mu.RUnlock()
 
 	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
+	if refs.err != nil {
+		log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
+	}
 	for _, e := range entries {
 		if e.inst == nil {
 			continue
 		}
 		e.inst.Tick(ctx, now)
-		status := mergeStatus(baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now), e.inst.Status())
+		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now)
+		status := mergeStatus(base, e.inst.Status())
+		inst := e.inst
+		if proxyProcessPublicationContextChanged(e.status, base) {
+			if err := inst.Close(); err != nil {
+				status.State = "degraded"
+				status.LocalState = "close_error"
+				status.Reason = err.Error()
+				status.UpdatedAt = now
+			} else {
+				restarted, err := newProxyProcessInstance(m.rt, e.spec)
+				if err != nil {
+					inst = nil
+					status.State = "degraded"
+					status.LocalState = "config_error"
+					status.Reason = err.Error()
+					status.UpdatedAt = now
+				} else {
+					inst = restarted
+					status = mergeStatus(base, restarted.Status())
+				}
+			}
+		}
 		m.mu.Lock()
 		if cur, ok := m.entries[e.spec.Name]; ok {
+			cur.inst = inst
 			cur.status = status
 		}
 		m.mu.Unlock()

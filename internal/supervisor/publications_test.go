@@ -75,7 +75,7 @@ func TestLoadCityPublicationRefsRejectsUnsupportedVersion(t *testing.T) {
 	}
 }
 
-func TestLoadCityPublicationRefsMissingCityDoesNotClaimAuthoritativeStore(t *testing.T) {
+func TestLoadCityPublicationRefsMissingCityKeepsAuthoritativeStore(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "publications.json")
 	if err := os.WriteFile(path, []byte(`{
@@ -91,11 +91,43 @@ func TestLoadCityPublicationRefsMissingCityDoesNotClaimAuthoritativeStore(t *tes
 	if err != nil {
 		t.Fatalf("LoadCityPublicationRefs: %v", err)
 	}
-	if exists {
-		t.Fatal("exists = true, want false")
+	if !exists {
+		t.Fatal("exists = false, want true")
 	}
 	if len(refs) != 0 {
 		t.Fatalf("refs = %#v, want empty", refs)
+	}
+}
+
+func TestLoadCityPublicationRefsNormalizesStoredCityKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "publications.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "cities": {
+    "/workspace/demo/": {
+      "services": [
+        {
+          "service_name": "github-webhook",
+          "visibility": "public",
+          "url": "https://github-webhook--acme--deadbeef.apps.example.com"
+        }
+      ]
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	refs, exists, err := LoadCityPublicationRefs(path, "/workspace/demo")
+	if err != nil {
+		t.Fatalf("LoadCityPublicationRefs: %v", err)
+	}
+	if !exists {
+		t.Fatal("exists = false, want true")
+	}
+	if refs["github-webhook"].URL != "https://github-webhook--acme--deadbeef.apps.example.com" {
+		t.Fatalf("URL = %q, want normalized-city lookup", refs["github-webhook"].URL)
 	}
 }
 

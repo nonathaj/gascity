@@ -1,6 +1,7 @@
 package workspacesvc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/citylayout"
@@ -18,6 +20,44 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
+
+const proxyProcessPythonHelper = `
+import json
+import os
+import socketserver
+from http.server import BaseHTTPRequestHandler
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(204)
+            self.end_headers()
+            return
+        if self.path == "/env":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "GC_SERVICE_PUBLIC_URL": os.environ.get("GC_SERVICE_PUBLIC_URL", ""),
+            }).encode("utf-8"))
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        return
+
+sock = os.environ["GC_SERVICE_SOCKET"]
+try:
+    os.unlink(sock)
+except FileNotFoundError:
+    pass
+
+class Server(socketserver.UnixStreamServer):
+    allow_reuse_address = True
+
+Server(sock, Handler).serve_forever()
+`
 
 func TestManagerReloadProxyProcessStartsAndProxies(t *testing.T) {
 	t.Setenv("GC_SERVICE_HELPER", "1")
@@ -228,19 +268,24 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 	defer mgr.Close() //nolint:errcheck // best-effort cleanup
 
 	loadEnv := func() map[string]string {
-		req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
-		rec := httptest.NewRecorder()
-		if ok := mgr.ServeHTTP(rec, req); !ok {
-			t.Fatal("ServeHTTP returned false, want true")
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
+			rec := httptest.NewRecorder()
+			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
+				var env map[string]string
+				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+					t.Fatalf("decode env: %v", err)
+				}
+				return env
+			}
+			if time.Now().After(deadline) {
+				status, _ := mgr.Get("bridge")
+				logData, _ := os.ReadFile(filepath.Join(rt.cityPath, ".gc", "services", "bridge", "logs", "service.log"))
+				t.Fatalf("timed out waiting for proxy process env endpoint: status=%+v log=%q", status, string(logData))
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-		}
-		var env map[string]string
-		if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
-			t.Fatalf("decode env: %v", err)
-		}
-		return env
 	}
 
 	first := loadEnv()
@@ -255,5 +300,94 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 	}
 	if !strings.Contains(second["GC_SERVICE_PUBLIC_URL"], "--beta--") {
 		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want beta route", second["GC_SERVICE_PUBLIC_URL"])
+	}
+}
+
+func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testing.T) {
+	cityPath := filepath.Join(os.TempDir(), fmt.Sprintf("gc-tick-%d", time.Now().UnixNano()))
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", cityPath, err)
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(cityPath)
+	})
+
+	rt := &testRuntime{
+		cityPath: cityPath,
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "bridge",
+				Kind: "proxy_process",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Process: config.ServiceProcessConfig{
+					Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+					HealthPath: "/healthz",
+				},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("first Reload: %v", err)
+	}
+	defer mgr.Close() //nolint:errcheck // best-effort cleanup
+
+	loadEnv := func() map[string]string {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
+			rec := httptest.NewRecorder()
+			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
+				var env map[string]string
+				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+					t.Fatalf("decode env: %v", err)
+				}
+				return env
+			}
+			if time.Now().After(deadline) {
+				status, _ := mgr.Get("bridge")
+				logData, _ := os.ReadFile(filepath.Join(rt.cityPath, ".gc", "services", "bridge", "logs", "service.log"))
+				t.Fatalf("timed out waiting for proxy process env endpoint: status=%+v log=%q", status, string(logData))
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	first := loadEnv()
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
+	refs := loadPublicationRefs(rt.PublicationStorePath(), rt.CityPath())
+	if refs.err != nil {
+		t.Fatalf("loadPublicationRefs: %v", refs.err)
+	}
+	if refs.refs["bridge"].URL != "https://bridge--acme--deadbeef.apps.example.com" {
+		t.Fatalf("authoritative ref URL = %q, want stored route", refs.refs["bridge"].URL)
+	}
+
+	mgr.Tick(context.Background(), time.Now().UTC())
+	second := loadEnv()
+
+	if first["GC_SERVICE_PUBLIC_URL"] == second["GC_SERVICE_PUBLIC_URL"] {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL did not change across tick: %q", first["GC_SERVICE_PUBLIC_URL"])
+	}
+	if second["GC_SERVICE_PUBLIC_URL"] != "https://bridge--acme--deadbeef.apps.example.com" {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want authoritative route", second["GC_SERVICE_PUBLIC_URL"])
 	}
 }

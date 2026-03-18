@@ -48,9 +48,17 @@ func LoadCityPublicationRefs(path, cityPath string) (map[string]PublishedService
 	}
 
 	cityKey := filepath.Clean(cityPath)
-	city, ok := store.Cities[cityKey]
-	if !ok {
-		return map[string]PublishedServiceRef{}, false, nil
+	var city PublicationCityRef
+	found := false
+	for rawKey, candidate := range store.Cities {
+		if filepath.Clean(rawKey) == cityKey {
+			city = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		return map[string]PublishedServiceRef{}, true, nil
 	}
 
 	refs := make(map[string]PublishedServiceRef, len(city.Services))
