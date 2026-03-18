@@ -18,13 +18,14 @@ on:
       - "go.sum"
       - "scripts/**"
       - "contrib/**"
+      - ".github/workflows/notify-image-build.yaml"
   workflow_dispatch:
 
 permissions: {}
 
 jobs:
   notify:
-    runs-on: [self-hosted, Linux, X64, gascity]
+    runs-on: ubuntu-latest
     steps:
       - uses: peter-evans/repository-dispatch@v3
         with:
