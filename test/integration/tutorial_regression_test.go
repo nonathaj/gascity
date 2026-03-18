@@ -4,6 +4,7 @@ package integration
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,7 +38,7 @@ func TestTutorialRegression(t *testing.T) {
 	cityDir := filepath.Join(t.TempDir(), cityName)
 
 	// ── Phase 1: gc init ────────────────────────────────────────────
-	out, err := gc("", "init", "--provider", "claude", "--skip-provider-readiness", cityDir)
+	out, err := gcReal("", "init", "--provider", "claude", "--skip-provider-readiness", cityDir)
 	if err != nil {
 		t.Fatalf("gc init failed: %v\n%s", err, out)
 	}
@@ -52,12 +53,12 @@ func TestTutorialRegression(t *testing.T) {
 	}
 
 	// ── Phase 2: gc start ───────────────────────────────────────────
-	out, err = gc("", "start", cityDir)
+	out, err = gcReal("", "start", cityDir)
 	if err != nil {
 		t.Fatalf("gc start failed: %v\n%s", err, out)
 	}
 	t.Logf("gc start:\n%s", out)
-	t.Cleanup(func() { gc("", "stop", cityDir) }) //nolint:errcheck
+	t.Cleanup(func() { gcReal("", "stop", cityDir) }) //nolint:errcheck
 
 	// Give supervisor a moment to reconcile.
 	time.Sleep(2 * time.Second)
@@ -68,7 +69,7 @@ func TestTutorialRegression(t *testing.T) {
 		t.Fatalf("creating rig dir: %v", err)
 	}
 
-	out, err = gc(cityDir, "rig", "add", "rigs/hello-world")
+	out, err = gcReal(cityDir, "rig", "add", "rigs/hello-world")
 	if err != nil {
 		t.Fatalf("gc rig add failed: %v\n%s", err, out)
 	}
@@ -85,7 +86,7 @@ func TestTutorialRegression(t *testing.T) {
 	assertContains(t, toml, "hello-world", "city.toml missing rig after gc rig add")
 
 	// ── Phase 4: bd create from inside rig ──────────────────────────
-	out, err = bd(rigDir, "create", "Write hello world in the language of your choice")
+	out, err = bdReal(rigDir, "create", "Write hello world in the language of your choice")
 	if err != nil {
 		t.Fatalf("bd create failed: %v\n%s", err, out)
 	}
@@ -101,11 +102,11 @@ func TestTutorialRegression(t *testing.T) {
 
 	// ── Phase 5: gc sling from inside rig ───────────────────────────
 	// Bare "claude" should resolve to hello-world/claude via CWD context.
-	out, err = gc(rigDir, "sling", "claude", beadID)
+	out, err = gcReal(rigDir, "sling", "claude", beadID)
 	if err != nil {
 		t.Logf("bare 'claude' sling failed: %v\n%s", err, out)
 		// Fallback to fully qualified — if this also fails, it's a real error.
-		out, err = gc(rigDir, "sling", "hello-world/claude", beadID)
+		out, err = gcReal(rigDir, "sling", "hello-world/claude", beadID)
 		if err != nil {
 			t.Fatalf("gc sling failed: %v\n%s", err, out)
 		}
@@ -118,7 +119,7 @@ func TestTutorialRegression(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Minute)
 	var lastStatus string
 	for time.Now().Before(deadline) {
-		out, err = bd(rigDir, "show", beadID)
+		out, err = bdReal(rigDir, "show", beadID)
 		if err != nil {
 			t.Logf("bd show error (retrying): %v", err)
 			time.Sleep(5 * time.Second)
@@ -159,6 +160,42 @@ closed:
 	} else {
 		t.Logf("agent produced: %v", produced)
 	}
+}
+
+// acceptanceEnv returns the integration env but WITHOUT GC_DOLT=skip,
+// so bd and gc can use the real dolt server started by the supervisor.
+func acceptanceEnv() []string {
+	env := integrationEnv()
+	filtered := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "GC_DOLT=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
+}
+
+// gcReal runs gc without GC_DOLT=skip.
+func gcReal(dir string, args ...string) (string, error) {
+	cmd := exec.Command(gcBinary, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = acceptanceEnv()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// bdReal runs bd without GC_DOLT=skip.
+func bdReal(dir string, args ...string) (string, error) {
+	cmd := exec.Command(bdBinary, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	cmd.Env = acceptanceEnv()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // readFile reads a file and returns its content as a string.
