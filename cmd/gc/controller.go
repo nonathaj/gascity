@@ -304,10 +304,10 @@ func gracefulStopAll(
 ) {
 	if timeout <= 0 || len(names) == 0 {
 		// Immediate kill (no grace period).
-		stopTargetsBounded(stopTargetsForNames(names, cfg, store), cfg, sp, rec, "gc", stdout, stderr)
+		stopTargetsBounded(stopTargetsForNames(names, cfg, store, stderr), cfg, sp, rec, "gc", stdout, stderr)
 		return
 	}
-	targets := stopTargetsForNames(names, cfg, store)
+	targets := stopTargetsForNames(names, cfg, store, stderr)
 	targetByName := make(map[string]stopTarget, len(targets))
 	for _, target := range targets {
 		targetByName[target.name] = target

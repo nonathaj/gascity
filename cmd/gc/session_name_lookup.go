@@ -155,14 +155,14 @@ func lookupSessionNameOrLegacy(store beads.Store, cityName, qualifiedName, sessi
 // under the given template-qualified agent. The result maps the logical
 // instance qualified name (for example "frontend/worker-1") to the actual
 // runtime session name.
-func lookupPoolSessionNames(store beads.Store, template string) map[string]string {
+func lookupPoolSessionNames(store beads.Store, template string) (map[string]string, error) {
 	result := make(map[string]string)
 	if store == nil {
-		return result
+		return result, nil
 	}
 	all, err := store.ListByLabel(sessionBeadLabel, 0)
 	if err != nil {
-		return result
+		return result, err
 	}
 	for _, b := range all {
 		if b.Status == "closed" || b.Metadata["pool_slot"] == "" {
@@ -183,5 +183,5 @@ func lookupPoolSessionNames(store beads.Store, template string) map[string]strin
 			result[agentName] = sessionName
 		}
 	}
-	return result
+	return result, nil
 }

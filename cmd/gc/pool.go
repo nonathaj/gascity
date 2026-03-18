@@ -302,6 +302,7 @@ func resolvePoolSessionRefs(
 	pool config.PoolConfig,
 	cityName, sessionTemplate string,
 	sp runtime.Provider,
+	stderr io.Writer,
 ) []poolSessionRef {
 	template := agentName
 	if agentDir != "" {
@@ -309,7 +310,10 @@ func resolvePoolSessionRefs(
 	}
 	seenSessions := make(map[string]bool)
 	var refs []poolSessionRef
-	poolSessions := lookupPoolSessionNames(store, template)
+	poolSessions, err := lookupPoolSessionNames(store, template)
+	if err != nil && stderr != nil {
+		fmt.Fprintf(stderr, "gc lifecycle: pool bead lookup degraded to legacy session discovery for %s: %v\n", template, err) //nolint:errcheck
+	}
 	poolInstances := make([]string, 0, len(poolSessions))
 	for qualifiedInstance := range poolSessions {
 		poolInstances = append(poolInstances, qualifiedInstance)

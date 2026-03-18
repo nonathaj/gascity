@@ -137,7 +137,7 @@ func doRigRestart(
 			}
 		} else {
 			// Pool agent: resolve live instances from beads first, then legacy discovery.
-			for _, ref := range resolvePoolSessionRefs(store, a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
+			for _, ref := range resolvePoolSessionRefs(store, a.Name, a.Dir, pool, cityName, sessionTemplate, sp, stderr) {
 				if !sp.IsRunning(ref.sessionName) {
 					continue
 				}

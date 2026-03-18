@@ -607,7 +607,7 @@ func executeTargetWave(
 	return results
 }
 
-func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []stopTarget {
+func stopTargetsForNames(names []string, cfg *config.City, store beads.Store, stderr io.Writer) []stopTarget {
 	sessionTemplates := make(map[string]string)
 	sessionSubjects := make(map[string]string)
 	if store != nil {
@@ -632,6 +632,8 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []
 					sessionSubjects[name] = subject
 				}
 			}
+		} else if stderr != nil {
+			fmt.Fprintf(stderr, "gc lifecycle: session bead lookup degraded to legacy session-name resolution: %v\n", err) //nolint:errcheck
 		}
 	}
 	targets := make([]stopTarget, 0, len(names))
@@ -694,7 +696,7 @@ func interruptTargetsBounded(targets []stopTarget, sp runtime.Provider, stderr i
 }
 
 func interruptSessionsBounded(names []string, cfg *config.City, store beads.Store, sp runtime.Provider, stderr io.Writer) int {
-	return interruptTargetsBounded(stopTargetsForNames(names, cfg, store), sp, stderr)
+	return interruptTargetsBounded(stopTargetsForNames(names, cfg, store, stderr), sp, stderr)
 }
 
 func stopTargetsBounded(
@@ -753,5 +755,5 @@ func stopSessionsBounded(
 	actor string,
 	stdout, stderr io.Writer,
 ) int {
-	return stopTargetsBounded(stopTargetsForNames(names, cfg, store), cfg, sp, rec, actor, stdout, stderr)
+	return stopTargetsBounded(stopTargetsForNames(names, cfg, store, stderr), cfg, sp, rec, actor, stdout, stderr)
 }
