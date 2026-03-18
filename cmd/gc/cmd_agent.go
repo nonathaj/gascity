@@ -52,19 +52,23 @@ func loadCityConfigForEditFS(fs fsys.FS, tomlPath string) (*config.City, error) 
 //     Succeeds only when exactly one configured agent matches. Pool
 //     members are synthesized when the input uses {name}-{N}.
 func resolveAgentIdentity(cfg *config.City, input, currentRigDir string) (config.Agent, bool) {
-	// Step 1: literal match.
-	if a, ok := findAgentByQualified(cfg, input); ok {
-		return a, true
-	}
-	// Step 1b: qualified pool instance — "rig/polecat-2" matches pool "rig/polecat".
-	if strings.Contains(input, "/") {
-		if a, ok := resolvePoolInstance(cfg, input); ok {
+	// Step 1: contextual rig match (bare name + rig context).
+	// When the user is inside a rig directory and types a bare name like
+	// "claude", prefer the rig-scoped agent (hello-world/claude) over the
+	// city-scoped one. This matches the tutorial UX: cd into rig, sling to
+	// the agent by bare name.
+	if !strings.Contains(input, "/") && currentRigDir != "" {
+		if a, ok := findAgentByQualified(cfg, currentRigDir+"/"+input); ok {
 			return a, true
 		}
 	}
-	// Step 2: contextual (bare name + rig context).
-	if !strings.Contains(input, "/") && currentRigDir != "" {
-		if a, ok := findAgentByQualified(cfg, currentRigDir+"/"+input); ok {
+	// Step 2: literal match (qualified or city-scoped).
+	if a, ok := findAgentByQualified(cfg, input); ok {
+		return a, true
+	}
+	// Step 2b: qualified pool instance — "rig/polecat-2" matches pool "rig/polecat".
+	if strings.Contains(input, "/") {
+		if a, ok := resolvePoolInstance(cfg, input); ok {
 			return a, true
 		}
 	}

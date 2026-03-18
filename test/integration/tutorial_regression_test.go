@@ -101,13 +101,11 @@ func TestTutorialRegression(t *testing.T) {
 	}
 
 	// ── Phase 5: gc sling from inside rig ───────────────────────────
-	// Use fully qualified rig/agent name to target the rig-scoped implicit agent.
-	// Bare "claude" currently resolves to the city-scoped implicit agent (step 1
-	// literal match wins over step 2 contextual match). TODO: consider preferring
-	// CWD context when both city and rig scoped agents exist with the same name.
-	out, err = gcReal(rigDir, "sling", "hello-world/claude", beadID)
+	// Bare "claude" from inside the rig dir should resolve to hello-world/claude
+	// (rig-scoped implicit agent), not the city-scoped claude.
+	out, err = gcReal(rigDir, "sling", "claude", beadID)
 	if err != nil {
-		t.Fatalf("gc sling failed: %v\n%s", err, out)
+		t.Fatalf("gc sling claude failed: %v\n%s", err, out)
 	}
 	t.Logf("gc sling:\n%s", out)
 	assertContains(t, out, "Slung", "gc sling output missing confirmation")
