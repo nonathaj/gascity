@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -128,6 +129,83 @@ func TestDoRigRestartWithPool(t *testing.T) {
 	// Correct count in output.
 	if got := stdout.String(); !strings.Contains(got, "Restarted 2 agent(s)") {
 		t.Errorf("stdout = %q, want to contain 'Restarted 2 agent(s)'", got)
+	}
+}
+
+func TestDoRigRestart_UsesLogicalAgentSubjectForCustomSessionNames(t *testing.T) {
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "frontend/worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "frontend/worker",
+			"session_name": "custom-worker",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	agents := []config.Agent{{Name: "worker", Dir: "frontend"}}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker")
+	}
+}
+
+func TestDoRigRestart_UsesPoolSessionBeadsForCustomSessionNames(t *testing.T) {
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "frontend/worker-1",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "frontend/worker",
+			"agent_name":   "frontend/worker-1",
+			"session_name": "custom-worker-1",
+			"pool_slot":    "1",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker-1", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	agents := []config.Agent{{
+		Name: "worker",
+		Dir:  "frontend",
+		Pool: &config.PoolConfig{Min: 1, Max: 2, Check: "echo 1"},
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if sp.IsRunning("custom-worker-1") {
+		t.Fatal("custom pool session still running after rig restart")
+	}
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker-1" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-1")
 	}
 }
 

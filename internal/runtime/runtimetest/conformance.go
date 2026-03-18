@@ -13,6 +13,7 @@ package runtimetest
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -73,6 +74,36 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 		}
 	})
 
+	t.Run("Start_ConcurrentDistinctSessions", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		names := []string{name1, name2}
+		cfgs := []runtime.Config{cfg1, cfg2}
+		for _, name := range names {
+			t.Cleanup(func(n string) func() {
+				return func() { _ = sp.Stop(n) }
+			}(name))
+		}
+		errs := make([]error, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				errs[i] = sp.Start(context.Background(), names[i], cfgs[i])
+			}(i)
+		}
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Fatalf("concurrent Start(%s): %v", names[i], err)
+			}
+			if !sp.IsRunning(names[i]) {
+				t.Fatalf("IsRunning(%s) = false after concurrent Start", names[i])
+			}
+		}
+	})
+
 	t.Run("Stop_MakesSessionNotRunning", func(t *testing.T) {
 		sp, cfg, name := newSession(t)
 		if err := sp.Start(context.Background(), name, cfg); err != nil {
@@ -104,6 +135,36 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 		}
 		if err := sp.Stop(name); err != nil {
 			t.Errorf("second Stop should be idempotent: %v", err)
+		}
+	})
+
+	t.Run("Stop_ConcurrentDistinctSessions", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		names := []string{name1, name2}
+		cfgs := []runtime.Config{cfg1, cfg2}
+		for i := range names {
+			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
+				t.Fatalf("Start(%s): %v", names[i], err)
+			}
+		}
+		errs := make([]error, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				errs[i] = sp.Stop(names[i])
+			}(i)
+		}
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Fatalf("concurrent Stop(%s): %v", names[i], err)
+			}
+			if sp.IsRunning(names[i]) {
+				t.Fatalf("IsRunning(%s) = true after concurrent Stop", names[i])
+			}
 		}
 	})
 

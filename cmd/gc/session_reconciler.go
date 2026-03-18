@@ -166,7 +166,6 @@ func reconcileSessionBeads(
 	}
 
 	// Phase 1: Forward pass (topo order) — wake sessions, handle alive state.
-	wakeCount := 0
 	var startCandidates []startCandidate
 	for i := range ordered {
 		session := &ordered[i]
@@ -374,15 +373,11 @@ func reconcileSessionBeads(
 			if sessionIsQuarantined(*session, clk) {
 				continue // crash-loop protection
 			}
-			if wakeCount >= defaultMaxWakesPerTick {
-				continue // budget exceeded, defer to next tick
-			}
 			startCandidates = append(startCandidates, startCandidate{
 				session: session,
 				tp:      tp,
 				order:   len(startCandidates),
 			})
-			wakeCount++
 		}
 
 		if shouldWake && alive {

@@ -107,14 +107,18 @@ type gatedStopProvider struct {
 	inFlight      int
 	maxInFlight   int
 	stopSignals   chan string
+	interrupts    chan string
 	releaseByName map[string]chan struct{}
+	releaseInt    map[string]chan struct{}
 }
 
 func newGatedStopProvider() *gatedStopProvider {
 	return &gatedStopProvider{
 		Fake:          runtime.NewFake(),
 		stopSignals:   make(chan string, 32),
+		interrupts:    make(chan string, 32),
 		releaseByName: make(map[string]chan struct{}),
+		releaseInt:    make(map[string]chan struct{}),
 	}
 }
 
@@ -141,9 +145,36 @@ func (p *gatedStopProvider) Stop(name string) error {
 	return err
 }
 
+func (p *gatedStopProvider) Interrupt(name string) error {
+	p.mu.Lock()
+	ch := p.releaseInt[name]
+	if ch == nil {
+		ch = make(chan struct{})
+		p.releaseInt[name] = ch
+	}
+	p.mu.Unlock()
+
+	p.interrupts <- name
+	<-ch
+	return p.Fake.Interrupt(name)
+}
+
 func (p *gatedStopProvider) release(name string) {
 	p.mu.Lock()
 	ch := p.releaseByName[name]
+	p.mu.Unlock()
+	if ch != nil {
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+	}
+}
+
+func (p *gatedStopProvider) releaseInterrupt(name string) {
+	p.mu.Lock()
+	ch := p.releaseInt[name]
 	p.mu.Unlock()
 	if ch != nil {
 		select {
@@ -174,6 +205,30 @@ func (p *gatedStopProvider) ensureNoFurtherStop(t *testing.T, wait time.Duration
 	select {
 	case name := <-p.stopSignals:
 		t.Fatalf("unexpected extra stop signal: %s", name)
+	case <-time.After(wait):
+	}
+}
+
+func (p *gatedStopProvider) waitForInterrupts(t *testing.T, n int) []string {
+	t.Helper()
+	var names []string
+	timeout := time.After(3 * time.Second)
+	for len(names) < n {
+		select {
+		case name := <-p.interrupts:
+			names = append(names, name)
+		case <-timeout:
+			t.Fatalf("timed out waiting for %d interrupts, got %v", n, names)
+		}
+	}
+	return names
+}
+
+func (p *gatedStopProvider) ensureNoFurtherInterrupt(t *testing.T, wait time.Duration) {
+	t.Helper()
+	select {
+	case name := <-p.interrupts:
+		t.Fatalf("unexpected extra interrupt signal: %s", name)
 	case <-time.After(wait):
 	}
 }
@@ -304,6 +359,45 @@ func TestReconcileSessionBeads_FailedDependencyBlocksDependentButNotSibling(t *t
 	}
 }
 
+func TestReconcileSessionBeads_BlockedCandidatesDoNotConsumeWakeBudget(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{
+		Agents: []config.Agent{
+			{Name: "blocked", DependsOn: []string{"missing-dep"}},
+			{Name: "missing-dep"},
+			{Name: "ready-1"},
+			{Name: "ready-2"},
+			{Name: "ready-3"},
+			{Name: "ready-4"},
+			{Name: "ready-5"},
+		},
+	}
+	for _, name := range []string{"blocked", "ready-1", "ready-2", "ready-3", "ready-4", "ready-5"} {
+		env.addDesired(name, name, false)
+	}
+
+	woken := env.reconcile([]beads.Bead{
+		env.createSessionBead("blocked", "blocked"),
+		env.createSessionBead("ready-1", "ready-1"),
+		env.createSessionBead("ready-2", "ready-2"),
+		env.createSessionBead("ready-3", "ready-3"),
+		env.createSessionBead("ready-4", "ready-4"),
+		env.createSessionBead("ready-5", "ready-5"),
+	})
+
+	if woken != defaultMaxWakesPerTick {
+		t.Fatalf("woken = %d, want %d", woken, defaultMaxWakesPerTick)
+	}
+	if env.sp.IsRunning("blocked") {
+		t.Fatal("blocked session should not have started")
+	}
+	for _, name := range []string{"ready-1", "ready-2", "ready-3", "ready-4", "ready-5"} {
+		if !env.sp.IsRunning(name) {
+			t.Fatalf("%s should have started despite blocked candidate ahead of it", name)
+		}
+	}
+}
+
 func TestStopSessionsBounded_StopsDependentsBeforeDependencies(t *testing.T) {
 	sp := newGatedStopProvider()
 	for _, name := range []string{"db", "api", "worker", "audit"} {
@@ -422,6 +516,72 @@ func TestStopSessionsBounded_UsesSessionBeadTemplateForCustomSessionNames(t *tes
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("stopSessionsBounded did not finish")
+	}
+}
+
+func TestInterruptSessionsBounded_InterruptsDependentsBeforeDependencies(t *testing.T) {
+	sp := newGatedStopProvider()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", DependsOn: []string{"api"}},
+			{Name: "audit", DependsOn: []string{"db"}},
+			{Name: "api", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	done := make(chan int, 1)
+	go func() {
+		done <- interruptSessionsBounded([]string{"db", "api", "worker", "audit"}, cfg, nil, sp, ioDiscard{})
+	}()
+
+	firstWave := sp.waitForInterrupts(t, 1)
+	if !containsAll(firstWave, "worker") {
+		t.Fatalf("first interrupt wave = %v, want worker", firstWave)
+	}
+	sp.ensureNoFurtherInterrupt(t, 150*time.Millisecond)
+	sp.releaseInterrupt("worker")
+
+	secondWave := sp.waitForInterrupts(t, 2)
+	if !containsAll(secondWave, "api", "audit") {
+		t.Fatalf("second interrupt wave = %v, want api+audit", secondWave)
+	}
+	sp.releaseInterrupt("api")
+	sp.releaseInterrupt("audit")
+
+	thirdWave := sp.waitForInterrupts(t, 1)
+	if !containsAll(thirdWave, "db") {
+		t.Fatalf("third interrupt wave = %v, want db", thirdWave)
+	}
+	sp.releaseInterrupt("db")
+
+	select {
+	case interrupted := <-done:
+		if interrupted != 4 {
+			t.Fatalf("interrupted = %d, want 4", interrupted)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("interruptSessionsBounded did not finish")
+	}
+}
+
+func TestStopWaveOrder_FallsBackToSerialForUnknownTemplate(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	targets := []stopTarget{
+		{name: "removed-worker", template: "removed-worker", order: 0},
+		{name: "db", template: "db", order: 1},
+	}
+
+	waves, ok := stopWaveOrder(targets, cfg)
+	if ok {
+		t.Fatal("expected serial fallback for unknown template")
+	}
+	if waves[0] != 0 || waves[1] != 1 {
+		t.Fatalf("waves = %#v, want strict serial order", waves)
 	}
 }
 

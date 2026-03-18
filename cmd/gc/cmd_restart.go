@@ -130,6 +130,7 @@ func doRigRestart(
 				targets = append(targets, stopTarget{
 					name:     sn,
 					template: a.QualifiedName(),
+					subject:  a.QualifiedName(),
 					order:    len(targets),
 				})
 			}
@@ -141,6 +142,7 @@ func doRigRestart(
 					targets = append(targets, stopTarget{
 						name:     sn,
 						template: a.QualifiedName(),
+						subject:  qualifiedInstance,
 						order:    len(targets),
 					})
 				}

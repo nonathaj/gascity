@@ -308,12 +308,10 @@ func gracefulStopAll(
 		return
 	}
 
-	// Pass 1: interrupt all.
-	for _, name := range names {
-		_ = sp.Interrupt(name) // best-effort
-	}
+	// Pass 1: interrupt all in reverse dependency waves.
+	sent := interruptSessionsBounded(names, cfg, store, sp, stderr)
 	fmt.Fprintf(stdout, "Sent interrupt to %d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
-		len(names), timeout)
+		sent, timeout)
 
 	// Poll until all agents exit or timeout expires (avoid sleeping full duration).
 	pollInterval := 500 * time.Millisecond

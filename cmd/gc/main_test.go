@@ -2117,6 +2117,56 @@ func TestDoStopMultipleAgents(t *testing.T) {
 	}
 }
 
+func TestDoStop_UsesDependencyAwareOrdering(t *testing.T) {
+	sp := newGatedStopProvider()
+	for _, name := range []string{"db", "api", "worker"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", DependsOn: []string{"api"}},
+			{Name: "api", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- doStop([]string{"db", "api", "worker"}, sp, cfg, nil, 0, events.Discard, &stdout, &stderr)
+	}()
+
+	firstWave := sp.waitForStops(t, 1)
+	if !containsAll(firstWave, "worker") {
+		t.Fatalf("first stop wave = %v, want worker", firstWave)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("worker")
+
+	secondWave := sp.waitForStops(t, 1)
+	if !containsAll(secondWave, "api") {
+		t.Fatalf("second stop wave = %v, want api", secondWave)
+	}
+	sp.release("api")
+
+	thirdWave := sp.waitForStops(t, 1)
+	if !containsAll(thirdWave, "db") {
+		t.Fatalf("third stop wave = %v, want db", thirdWave)
+	}
+	sp.release("db")
+
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("doStop = %d, want 0; stderr: %s", code, stderr.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("doStop did not finish")
+	}
+}
+
 func TestDoStopStopError(t *testing.T) {
 	sp := runtime.NewFailFake() // Stop will fail
 
