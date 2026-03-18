@@ -57,6 +57,7 @@ type stopTarget struct {
 	template string
 	subject  string
 	order    int
+	resolved bool
 }
 
 type stopResult struct {
@@ -95,13 +96,6 @@ func logLifecycleWave(w io.Writer, op string, wave int, started time.Time, count
 	duration := time.Since(started).Round(time.Millisecond)
 	fmt.Fprintf(w, "session lifecycle: op=%s wave=%d candidates=%d duration=%s\n", //nolint:errcheck // best-effort diagnostics
 		op, wave, count, duration)
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func dependencyTemplateWaveOrder(templatesInOrder []string, deps map[string][]string) (map[string]int, bool) {
@@ -402,6 +396,7 @@ func commitStartResult(
 	}); err != nil {
 		fmt.Fprintf(stderr, "session reconciler: storing hashes for %s: %v\n", name, err) //nolint:errcheck
 	}
+	logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, result.outcome, result.started, result.finished, nil)
 	return true
 }
 
@@ -464,8 +459,8 @@ func executePlannedStarts(
 				}
 				break
 			}
-			batchSize := minInt(defaultMaxParallelStartsPerWave, defaultMaxWakesPerTick-wakeCount)
-			end := minInt(offset+batchSize, len(ready))
+			batchSize := min(defaultMaxParallelStartsPerWave, defaultMaxWakesPerTick-wakeCount)
+			end := min(offset+batchSize, len(ready))
 			var prepared []preparedStart
 			for _, candidate := range ready[offset:end] {
 				if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
@@ -643,8 +638,15 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store, st
 	targets := make([]stopTarget, 0, len(names))
 	for idx, name := range names {
 		template := sessionTemplates[name]
+		resolved := false
 		if template == "" {
-			template = resolveAgentTemplate(name, cfg)
+			candidate := resolveAgentTemplate(name, cfg)
+			if candidate != "" && findAgentByTemplate(cfg, candidate) != nil {
+				template = candidate
+				resolved = true
+			}
+		} else if findAgentByTemplate(cfg, template) != nil {
+			resolved = true
 		}
 		subject := sessionSubjects[name]
 		if subject == "" {
@@ -659,9 +661,17 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store, st
 			template: template,
 			subject:  subject,
 			order:    idx,
+			resolved: resolved,
 		})
 	}
 	return targets
+}
+
+func shouldLogStopOutcome(target stopTarget, cfg *config.City) bool {
+	if cfg != nil {
+		return true
+	}
+	return target.template != "" || target.resolved
 }
 
 func filterStopTargets(targets []stopTarget, names []string) []stopTarget {
@@ -688,9 +698,7 @@ func interruptTargetsBounded(targets []stopTarget, sp runtime.Provider, stderr i
 		return sp.Interrupt(target.name)
 	})
 	for _, result := range results {
-		if result.err != nil {
-			logLifecycleOutcome(stderr, "interrupt", 0, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
-		}
+		logLifecycleOutcome(stderr, "interrupt", 0, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 		if result.err == nil {
 			sent++
 		}
@@ -711,6 +719,37 @@ func stopTargetsBounded(
 	actor string,
 	stdout, stderr io.Writer,
 ) int {
+	for _, target := range targets {
+		if !target.resolved {
+			if cfg != nil {
+				fmt.Fprintln(stderr, "session lifecycle: unresolved stop target template; falling back to serial stop order") //nolint:errcheck
+			}
+			stopped := 0
+			for wave, target := range targets {
+				waveStarted := time.Now()
+				results := executeTargetWave([]stopTarget{target}, 1, func(target stopTarget) error {
+					return sp.Stop(target.name)
+				})
+				for _, result := range results {
+					if shouldLogStopOutcome(result.target, cfg) {
+						logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
+					}
+					if result.err != nil {
+						fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
+						continue
+					}
+					fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck
+					stopped++
+					rec.Record(events.Event{
+						Type: events.SessionStopped, Actor: actor, Subject: result.target.subject,
+					})
+				}
+				logLifecycleWave(stderr, "stop", wave, waveStarted, 1)
+			}
+			return stopped
+		}
+	}
+
 	waveByTarget, ok := stopWaveOrder(targets, cfg)
 	if !ok {
 		fmt.Fprintln(stderr, "session lifecycle: dependency graph fallback to serial stop order") //nolint:errcheck
@@ -734,9 +773,11 @@ func stopTargetsBounded(
 			return sp.Stop(target.name)
 		})
 		for _, result := range results {
+			if shouldLogStopOutcome(result.target, cfg) {
+				logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
+			}
 			if result.err != nil {
 				fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
-				logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 				continue
 			}
 			fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck

@@ -314,6 +314,8 @@ func gracefulStopAll(
 	}
 
 	// Pass 1: interrupt all in a single bounded broadcast wave.
+	// This is intentionally flat: interrupts are a best-effort graceful hint,
+	// while pass 2 keeps reverse dependency ordering for any survivors.
 	sent := interruptTargetsBounded(targets, sp, stderr)
 	fmt.Fprintf(stdout, "Sent interrupt to %d/%d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
 		sent, len(names), timeout)

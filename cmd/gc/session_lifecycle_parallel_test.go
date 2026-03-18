@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -895,6 +896,113 @@ func TestStopWaveOrder_HandlesUnknownTemplateWithoutSerialFallback(t *testing.T)
 	}
 	if waves[0] != 1 || waves[1] != 0 || waves[2] != 1 {
 		t.Fatalf("waves = %#v, want worker in wave 0 and unknown+db in wave 1", waves)
+	}
+}
+
+func TestStopTargetsBounded_FallsBackToSerialWhenTemplateUnresolved(t *testing.T) {
+	sp := newGatedStopProvider()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	for _, name := range []string{"db", "worker", "custom"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- stopTargetsBounded([]stopTarget{
+			{name: "db", template: "db", subject: "db", order: 0, resolved: true},
+			{name: "worker", template: "worker", subject: "worker", order: 1, resolved: true},
+			{name: "custom", template: "custom-session", subject: "custom", order: 2, resolved: false},
+		}, cfg, sp, rec, "gc", &stdout, &stderr)
+	}()
+
+	first := sp.waitForStops(t, 1)
+	if !containsAll(first, "db") {
+		t.Fatalf("first serial stop = %v, want db", first)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("db")
+
+	second := sp.waitForStops(t, 1)
+	if !containsAll(second, "worker") {
+		t.Fatalf("second serial stop = %v, want worker", second)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("worker")
+
+	third := sp.waitForStops(t, 1)
+	if !containsAll(third, "custom") {
+		t.Fatalf("third serial stop = %v, want custom", third)
+	}
+	sp.release("custom")
+
+	select {
+	case stopped := <-done:
+		if stopped != 3 {
+			t.Fatalf("stopped = %d, want 3", stopped)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stopTargetsBounded did not finish")
+	}
+
+	if !strings.Contains(stderr.String(), "falling back to serial stop order") {
+		t.Fatalf("stderr = %q, want fallback diagnostic", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "op=stop") || !strings.Contains(stderr.String(), "outcome=success") {
+		t.Fatalf("stderr = %q, want successful stop lifecycle log", stderr.String())
+	}
+}
+
+func TestCommitStartResult_LogsSuccessOutcome(t *testing.T) {
+	store := newTestStore()
+	session := makeBead("b1", map[string]string{
+		"template":     "worker",
+		"session_name": "worker",
+	})
+	candidate := startCandidate{
+		session: &session,
+		tp:      TemplateParams{TemplateName: "worker", InstanceName: "worker"},
+	}
+	result := startResult{
+		prepared: preparedStart{
+			candidate: candidate,
+			coreHash:  "core-hash",
+			liveHash:  "live-hash",
+		},
+		outcome:  "success",
+		started:  time.Unix(1, 0),
+		finished: time.Unix(2, 0),
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	ok := commitStartResult(result, store, &clock.Fake{Time: time.Unix(3, 0)}, rec, 0, &stdout, &stderr)
+	if !ok {
+		t.Fatal("commitStartResult returned false for success")
+	}
+	if !strings.Contains(stderr.String(), "op=start") || !strings.Contains(stderr.String(), "outcome=success") {
+		t.Fatalf("stderr = %q, want successful start lifecycle log", stderr.String())
+	}
+}
+
+func TestInterruptTargetsBounded_LogsSuccessOutcome(t *testing.T) {
+	sp := runtime.NewFake()
+	if err := sp.Start(context.Background(), "worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	sent := interruptTargetsBounded([]stopTarget{{name: "worker", template: "worker", resolved: true}}, sp, &stderr)
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1", sent)
+	}
+	if !strings.Contains(stderr.String(), "op=interrupt") || !strings.Contains(stderr.String(), "outcome=success") {
+		t.Fatalf("stderr = %q, want successful interrupt lifecycle log", stderr.String())
 	}
 }
 

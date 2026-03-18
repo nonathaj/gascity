@@ -208,6 +208,37 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 		}
 	})
 
+	t.Run("IsRunning_ConcurrentDistinctSessions", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
+		for i := range names {
+			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
+				t.Fatalf("Start(%s): %v", names[i], err)
+			}
+			t.Cleanup(func(n string) func() {
+				return func() { _ = sp.Stop(n) }
+			}(names[i]))
+		}
+		got := make([]bool, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				got[i] = sp.IsRunning(names[i])
+			}(i)
+		}
+		wg.Wait()
+		for i := range got {
+			if !got[i] {
+				t.Fatalf("IsRunning(%s) = false after concurrent query", names[i])
+			}
+		}
+	})
+
 	// --- Group 3: Discovery ---
 
 	t.Run("ListRunning_FindsSessions", func(t *testing.T) {
@@ -295,6 +326,42 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 		}
 	})
 
+	t.Run("ListRunning_ConcurrentDistinctPrefixes", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
+		for i := range names {
+			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
+				t.Fatalf("Start(%s): %v", names[i], err)
+			}
+			t.Cleanup(func(n string) func() {
+				return func() { _ = sp.Stop(n) }
+			}(names[i]))
+		}
+		results := make([][]string, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				list, err := sp.ListRunning(names[i])
+				if err != nil {
+					t.Errorf("ListRunning(%s): %v", names[i], err)
+					return
+				}
+				results[i] = list
+			}(i)
+		}
+		wg.Wait()
+		for i := range names {
+			if !contains(results[i], names[i]) {
+				t.Fatalf("ListRunning(%s) missing session in %v", names[i], results[i])
+			}
+		}
+	})
+
 	// --- Group 6: ProcessAlive ---
 
 	t.Run("ProcessAlive_EmptyNamesReturnsTrue", func(t *testing.T) {
@@ -320,6 +387,37 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 
 		if sp.ProcessAlive(name, []string{"some-process"}) {
 			t.Error("ProcessAlive after Stop = true, want false")
+		}
+	})
+
+	t.Run("ProcessAlive_ConcurrentDistinctSessions", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
+		for i := range names {
+			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
+				t.Fatalf("Start(%s): %v", names[i], err)
+			}
+			t.Cleanup(func(n string) func() {
+				return func() { _ = sp.Stop(n) }
+			}(names[i]))
+		}
+		got := make([]bool, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				got[i] = sp.ProcessAlive(names[i], nil)
+			}(i)
+		}
+		wg.Wait()
+		for i := range got {
+			if !got[i] {
+				t.Fatalf("ProcessAlive(%s) = false after concurrent query", names[i])
+			}
 		}
 	})
 }

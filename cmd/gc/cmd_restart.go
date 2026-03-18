@@ -133,6 +133,7 @@ func doRigRestart(
 					template: a.QualifiedName(),
 					subject:  a.QualifiedName(),
 					order:    len(targets),
+					resolved: true,
 				})
 			}
 		} else {
@@ -146,6 +147,7 @@ func doRigRestart(
 					template: a.QualifiedName(),
 					subject:  ref.qualifiedInstance,
 					order:    len(targets),
+					resolved: true,
 				})
 			}
 		}

@@ -360,7 +360,6 @@ operator-visible outcome:
 - `blocked_on_dependencies`
 - `skipped_due_to_failed_dependency`
 - `deferred_by_wake_budget`
-- `deferred_by_parallelism_bound`
 - `already_satisfied`
 - `stop_failed`
 - `stop_slow_survivor`
