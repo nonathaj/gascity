@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -103,31 +102,10 @@ func cmdStop(args []string, stdout, stderr io.Writer) int {
 			sessionNames = append(sessionNames, sn)
 			desired[sn] = true
 		} else {
-			// Pool agent: discover instances (static for bounded, live for unlimited).
-			seenSessions := make(map[string]bool)
-			poolSessions := lookupPoolSessionNames(store, qn)
-			poolInstances := make([]string, 0, len(poolSessions))
-			for qualifiedInstance := range poolSessions {
-				poolInstances = append(poolInstances, qualifiedInstance)
-			}
-			sort.Strings(poolInstances)
-			for _, qualifiedInstance := range poolInstances {
-				sn := poolSessions[qualifiedInstance]
-				if seenSessions[sn] {
-					continue
-				}
-				seenSessions[sn] = true
-				sessionNames = append(sessionNames, sn)
-				desired[sn] = true
-			}
-			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, st)
-				if seenSessions[sn] {
-					continue
-				}
-				seenSessions[sn] = true
-				sessionNames = append(sessionNames, sn)
-				desired[sn] = true
+			// Pool agent: resolve runtime session names from beads first, then legacy discovery.
+			for _, ref := range resolvePoolSessionRefs(store, a.Name, a.Dir, pool, cityName, st, sp) {
+				sessionNames = append(sessionNames, ref.sessionName)
+				desired[ref.sessionName] = true
 			}
 		}
 	}

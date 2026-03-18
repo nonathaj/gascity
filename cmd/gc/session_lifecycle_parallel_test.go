@@ -233,6 +233,39 @@ func (p *gatedStopProvider) ensureNoFurtherInterrupt(t *testing.T, wait time.Dur
 	}
 }
 
+type interruptExitProvider struct {
+	*runtime.Fake
+}
+
+func (p *interruptExitProvider) Interrupt(name string) error {
+	if err := p.Fake.Interrupt(name); err != nil {
+		return err
+	}
+	return p.Fake.Stop(name)
+}
+
+type dropDependencyAfterNStartsProvider struct {
+	*runtime.Fake
+	mu        sync.Mutex
+	starts    int
+	dropAfter int
+	depName   string
+}
+
+func (p *dropDependencyAfterNStartsProvider) Start(ctx context.Context, name string, cfg runtime.Config) error {
+	if err := p.Fake.Start(ctx, name, cfg); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	p.starts++
+	shouldDrop := p.starts == p.dropAfter
+	p.mu.Unlock()
+	if shouldDrop {
+		_ = p.Fake.Stop(p.depName)
+	}
+	return nil
+}
+
 func containsAll(got []string, want ...string) bool {
 	if len(got) != len(want) {
 		return false
@@ -395,6 +428,69 @@ func TestReconcileSessionBeads_BlockedCandidatesDoNotConsumeWakeBudget(t *testin
 		if !env.sp.IsRunning(name) {
 			t.Fatalf("%s should have started despite blocked candidate ahead of it", name)
 		}
+	}
+}
+
+func TestExecutePlannedStarts_RevalidatesDependenciesBetweenWaveBatches(t *testing.T) {
+	sp := &dropDependencyAfterNStartsProvider{
+		Fake:      runtime.NewFake(),
+		dropAfter: defaultMaxParallelStartsPerWave,
+		depName:   "db",
+	}
+	if err := sp.Start(context.Background(), "db", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "app-1", DependsOn: []string{"db"}},
+			{Name: "app-2", DependsOn: []string{"db"}},
+			{Name: "app-3", DependsOn: []string{"db"}},
+			{Name: "app-4", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC)}
+	desired := map[string]TemplateParams{}
+	var sessions []beads.Bead
+	for _, name := range []string{"app-1", "app-2", "app-3", "app-4"} {
+		desired[name] = TemplateParams{Command: name, SessionName: name, TemplateName: name}
+		bead := makeBead(name+"-id", map[string]string{
+			"session_name":   name,
+			"template":       name,
+			"generation":     "1",
+			"instance_token": "tok-" + name,
+			"state":          "asleep",
+		})
+		created, err := store.Create(beads.Bead{
+			ID:       bead.ID,
+			Title:    name,
+			Type:     sessionBeadType,
+			Labels:   []string{sessionBeadLabel},
+			Metadata: bead.Metadata,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessions = append(sessions, created)
+	}
+
+	woken := reconcileSessionBeads(
+		context.Background(), sessions, desired, configuredSessionNames(cfg, "", store),
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		nil, clk, events.Discard, 5*time.Second, 0, ioDiscard{}, ioDiscard{},
+	)
+
+	if woken != defaultMaxParallelStartsPerWave {
+		t.Fatalf("woken = %d, want %d", woken, defaultMaxParallelStartsPerWave)
+	}
+	for _, name := range []string{"app-1", "app-2", "app-3"} {
+		if !sp.IsRunning(name) {
+			t.Fatalf("%s should have started before dependency loss", name)
+		}
+	}
+	if sp.IsRunning("app-4") {
+		t.Fatal("app-4 should be blocked after db dies between wave batches")
 	}
 }
 
@@ -561,6 +657,38 @@ func TestInterruptSessionsBounded_InterruptsDependentsBeforeDependencies(t *test
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("interruptSessionsBounded did not finish")
+	}
+}
+
+func TestGracefulStopAll_UsesLogicalSubjectForGracefulExit(t *testing.T) {
+	sp := &interruptExitProvider{Fake: runtime.NewFake()}
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "frontend/worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "frontend/worker",
+			"agent_name":   "frontend/worker",
+			"session_name": "custom-worker",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	rec := events.NewFake()
+	cfg := &config.City{Agents: []config.Agent{{Name: "worker", Dir: "frontend"}}}
+	var stdout, stderr bytes.Buffer
+
+	gracefulStopAll([]string{"custom-worker"}, sp, 50*time.Millisecond, rec, cfg, store, &stdout, &stderr)
+
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker")
 	}
 }
 

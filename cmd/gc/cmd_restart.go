@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -136,44 +135,22 @@ func doRigRestart(
 				})
 			}
 		} else {
-			// Pool agent: discover instances (static for bounded, live for unlimited).
-			seenSessions := make(map[string]bool)
-			poolSessions := lookupPoolSessionNames(store, a.QualifiedName())
-			poolInstances := make([]string, 0, len(poolSessions))
-			for qualifiedInstance := range poolSessions {
-				poolInstances = append(poolInstances, qualifiedInstance)
-			}
-			sort.Strings(poolInstances)
-			for _, qualifiedInstance := range poolInstances {
-				sn := poolSessions[qualifiedInstance]
-				if !sp.IsRunning(sn) || seenSessions[sn] {
+			// Pool agent: resolve live instances from beads first, then legacy discovery.
+			for _, ref := range resolvePoolSessionRefs(store, a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
+				if !sp.IsRunning(ref.sessionName) {
 					continue
 				}
-				seenSessions[sn] = true
 				targets = append(targets, stopTarget{
-					name:     sn,
+					name:     ref.sessionName,
 					template: a.QualifiedName(),
-					subject:  qualifiedInstance,
-					order:    len(targets),
-				})
-			}
-			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, sessionTemplate, sp) {
-				sn := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, sessionTemplate)
-				if !sp.IsRunning(sn) || seenSessions[sn] {
-					continue
-				}
-				seenSessions[sn] = true
-				targets = append(targets, stopTarget{
-					name:     sn,
-					template: a.QualifiedName(),
-					subject:  qualifiedInstance,
+					subject:  ref.qualifiedInstance,
 					order:    len(targets),
 				})
 			}
 		}
 	}
 	cfg := &config.City{Agents: agents}
-	killed := stopTargetsBounded(targets, cfg, sp, rec, eventActor(), stdout, stderr)
+	killed := stopTargetsBounded(targets, cfg, sp, rec, eventActor(), io.Discard, stderr)
 
 	fmt.Fprintf(stdout, "Restarted %d agent(s) in rig '%s' (killed sessions; reconciler will restart)\n", killed, rigName) //nolint:errcheck // best-effort stdout
 	return 0

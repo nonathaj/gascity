@@ -304,12 +304,17 @@ func gracefulStopAll(
 ) {
 	if timeout <= 0 || len(names) == 0 {
 		// Immediate kill (no grace period).
-		stopSessionsBounded(names, cfg, store, sp, rec, "gc", stdout, stderr)
+		stopTargetsBounded(stopTargetsForNames(names, cfg, store), cfg, sp, rec, "gc", stdout, stderr)
 		return
+	}
+	targets := stopTargetsForNames(names, cfg, store)
+	targetByName := make(map[string]stopTarget, len(targets))
+	for _, target := range targets {
+		targetByName[target.name] = target
 	}
 
 	// Pass 1: interrupt all in reverse dependency waves.
-	sent := interruptSessionsBounded(names, cfg, store, sp, stderr)
+	sent := interruptTargetsBounded(targets, cfg, sp, stderr)
 	fmt.Fprintf(stdout, "Sent interrupt to %d/%d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
 		sent, len(names), timeout)
 
@@ -340,14 +345,18 @@ func gracefulStopAll(
 	for _, name := range names {
 		if !sp.IsRunning(name) {
 			fmt.Fprintf(stdout, "Agent '%s' exited gracefully\n", name) //nolint:errcheck // best-effort stdout
+			subject := name
+			if target, ok := targetByName[name]; ok && target.subject != "" {
+				subject = target.subject
+			}
 			rec.Record(events.Event{
-				Type: events.SessionStopped, Actor: "gc", Subject: name,
+				Type: events.SessionStopped, Actor: "gc", Subject: subject,
 			})
 			continue
 		}
 		survivors = append(survivors, name)
 	}
-	stopSessionsBounded(survivors, cfg, store, sp, rec, "gc", stdout, stderr)
+	stopTargetsBounded(filterStopTargets(targets, survivors), cfg, sp, rec, "gc", stdout, stderr)
 }
 
 // controllerLoop is a compatibility shim that wraps CityRuntime.run().

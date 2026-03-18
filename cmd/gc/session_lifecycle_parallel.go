@@ -460,6 +460,10 @@ func executePlannedStarts(
 			end := minInt(offset+batchSize, len(ready))
 			var prepared []preparedStart
 			for _, candidate := range ready[offset:end] {
+				if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
+					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.template(), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
+					continue
+				}
 				item, err := prepareStartCandidate(candidate, store, clk)
 				if err != nil {
 					fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %v\n", candidate.name(), err) //nolint:errcheck
@@ -566,6 +570,7 @@ func executeTargetWave(
 
 func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []stopTarget {
 	sessionTemplates := make(map[string]string)
+	sessionSubjects := make(map[string]string)
 	if store != nil {
 		if sessionBeads, err := loadSessionBeads(store); err == nil {
 			for _, bead := range sessionBeads {
@@ -573,6 +578,16 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []
 				template := bead.Metadata["template"]
 				if name != "" && template != "" {
 					sessionTemplates[name] = template
+				}
+				if name != "" {
+					subject := bead.Metadata["agent_name"]
+					if subject == "" {
+						subject = template
+					}
+					if subject == "" {
+						subject = name
+					}
+					sessionSubjects[name] = subject
 				}
 			}
 		}
@@ -583,14 +598,39 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []
 		if template == "" {
 			template = resolveAgentTemplate(name, cfg)
 		}
+		subject := sessionSubjects[name]
+		if subject == "" {
+			if template != "" {
+				subject = template
+			} else {
+				subject = name
+			}
+		}
 		targets = append(targets, stopTarget{
 			name:     name,
 			template: template,
-			subject:  name,
+			subject:  subject,
 			order:    idx,
 		})
 	}
 	return targets
+}
+
+func filterStopTargets(targets []stopTarget, names []string) []stopTarget {
+	if len(names) == 0 {
+		return nil
+	}
+	keep := make(map[string]bool, len(names))
+	for _, name := range names {
+		keep[name] = true
+	}
+	filtered := make([]stopTarget, 0, len(names))
+	for _, target := range targets {
+		if keep[target.name] {
+			filtered = append(filtered, target)
+		}
+	}
+	return filtered
 }
 
 func interruptTargetsBounded(

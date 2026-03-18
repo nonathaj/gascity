@@ -7,16 +7,23 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
 )
+
+type poolSessionRef struct {
+	qualifiedInstance string
+	sessionName       string
+}
 
 // ScaleCheckRunner runs a scale_check command and returns stdout.
 // dir specifies the working directory for the command (e.g., rig path
@@ -287,4 +294,48 @@ func discoverPoolInstances(agentName, agentDir string, pool config.PoolConfig,
 		}
 	}
 	return names
+}
+
+func resolvePoolSessionRefs(
+	store beads.Store,
+	agentName, agentDir string,
+	pool config.PoolConfig,
+	cityName, sessionTemplate string,
+	sp runtime.Provider,
+) []poolSessionRef {
+	template := agentName
+	if agentDir != "" {
+		template = agentDir + "/" + agentName
+	}
+	seenSessions := make(map[string]bool)
+	var refs []poolSessionRef
+	poolSessions := lookupPoolSessionNames(store, template)
+	poolInstances := make([]string, 0, len(poolSessions))
+	for qualifiedInstance := range poolSessions {
+		poolInstances = append(poolInstances, qualifiedInstance)
+	}
+	sort.Strings(poolInstances)
+	for _, qualifiedInstance := range poolInstances {
+		sessionName := poolSessions[qualifiedInstance]
+		if sessionName == "" || seenSessions[sessionName] {
+			continue
+		}
+		seenSessions[sessionName] = true
+		refs = append(refs, poolSessionRef{
+			qualifiedInstance: qualifiedInstance,
+			sessionName:       sessionName,
+		})
+	}
+	for _, qualifiedInstance := range discoverPoolInstances(agentName, agentDir, pool, cityName, sessionTemplate, sp) {
+		sessionName := lookupSessionNameOrLegacy(store, cityName, qualifiedInstance, sessionTemplate)
+		if sessionName == "" || seenSessions[sessionName] {
+			continue
+		}
+		seenSessions[sessionName] = true
+		refs = append(refs, poolSessionRef{
+			qualifiedInstance: qualifiedInstance,
+			sessionName:       sessionName,
+		})
+	}
+	return refs
 }
