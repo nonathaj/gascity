@@ -25,6 +25,7 @@ const proxyProcessPythonHelper = `
 import json
 import os
 import socketserver
+import sys
 from http.server import BaseHTTPRequestHandler
 
 class Handler(BaseHTTPRequestHandler):
@@ -48,6 +49,13 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 sock = os.environ["GC_SERVICE_SOCKET"]
+fail_once = os.environ.get("GC_SERVICE_FAIL_ONCE_FILE", "")
+if fail_once and os.path.exists(fail_once):
+    try:
+        os.unlink(fail_once)
+    except FileNotFoundError:
+        pass
+    sys.exit(1)
 try:
     os.unlink(sock)
 except FileNotFoundError:
@@ -389,5 +397,106 @@ func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testin
 	}
 	if second["GC_SERVICE_PUBLIC_URL"] != "https://bridge--acme--deadbeef.apps.example.com" {
 		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want authoritative route", second["GC_SERVICE_PUBLIC_URL"])
+	}
+}
+
+func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *testing.T) {
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "bridge",
+				Kind: "proxy_process",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Process: config.ServiceProcessConfig{
+					Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+					HealthPath: "/healthz",
+				},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("first Reload: %v", err)
+	}
+	defer mgr.Close() //nolint:errcheck // best-effort cleanup
+
+	loadEnv := func() map[string]string {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
+			rec := httptest.NewRecorder()
+			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
+				var env map[string]string
+				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+					t.Fatalf("decode env: %v", err)
+				}
+				return env
+			}
+			if time.Now().After(deadline) {
+				status, _ := mgr.Get("bridge")
+				logData, _ := os.ReadFile(filepath.Join(rt.cityPath, ".gc", "services", "bridge", "logs", "service.log"))
+				t.Fatalf("timed out waiting for proxy process env endpoint: status=%+v log=%q", status, string(logData))
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	first := loadEnv()
+	failOnce := filepath.Join(rt.cityPath, ".gc", "services", "bridge", "fail-once")
+	t.Setenv("GC_SERVICE_FAIL_ONCE_FILE", failOnce)
+	if err := os.MkdirAll(filepath.Dir(failOnce), 0o750); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(failOnce), err)
+	}
+	if err := os.WriteFile(failOnce, []byte("1"), 0o640); err != nil {
+		t.Fatalf("WriteFile(%q): %v", failOnce, err)
+	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
+
+	mgr.Tick(context.Background(), time.Now().UTC())
+	status, ok := mgr.Get("bridge")
+	if !ok {
+		t.Fatal("service status missing after failed tick")
+	}
+	if status.URL != first["GC_SERVICE_PUBLIC_URL"] {
+		t.Fatalf("URL = %q, want current URL %q after failed restart", status.URL, first["GC_SERVICE_PUBLIC_URL"])
+	}
+	if status.PublicationState != "published" {
+		t.Fatalf("PublicationState = %q, want published after failed restart", status.PublicationState)
+	}
+
+	mgr.Tick(context.Background(), time.Now().UTC())
+	second := loadEnv()
+	if second["GC_SERVICE_PUBLIC_URL"] == first["GC_SERVICE_PUBLIC_URL"] {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL did not change after retry: %q", second["GC_SERVICE_PUBLIC_URL"])
+	}
+	if second["GC_SERVICE_PUBLIC_URL"] != "https://bridge--acme--deadbeef.apps.example.com" {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want authoritative route", second["GC_SERVICE_PUBLIC_URL"])
+	}
+
+	status, ok = mgr.Get("bridge")
+	if !ok {
+		t.Fatal("service status missing after retry")
+	}
+	if status.URL != second["GC_SERVICE_PUBLIC_URL"] {
+		t.Fatalf("status URL = %q, want %q after retry", status.URL, second["GC_SERVICE_PUBLIC_URL"])
 	}
 }

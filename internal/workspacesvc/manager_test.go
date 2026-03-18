@@ -1,10 +1,12 @@
 package workspacesvc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -97,6 +99,49 @@ func writePublicationStoreForTest(t *testing.T, cityPath string, services string
 `, cityPath, services)
 	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
+func TestManagerReloadDeduplicatesPublicationStoreErrors(t *testing.T) {
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg:      &config.City{},
+		sp:       runtime.NewFake(),
+		store:    beads.NewMemStore(),
+	}
+	path := rt.PublicationStorePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+
+	var buf bytes.Buffer
+	oldFlags := log.Flags()
+	oldPrefix := log.Prefix()
+	oldOutput := log.Writer()
+	log.SetFlags(0)
+	log.SetPrefix("")
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(oldOutput)
+		log.SetFlags(oldFlags)
+		log.SetPrefix(oldPrefix)
+	})
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("first Reload: %v", err)
+	}
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("second Reload: %v", err)
+	}
+
+	got := strings.Count(buf.String(), "load publication refs")
+	if got != 1 {
+		t.Fatalf("log count = %d, want 1; logs=%q", got, buf.String())
 	}
 }
 

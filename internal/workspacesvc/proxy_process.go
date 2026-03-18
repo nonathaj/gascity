@@ -30,6 +30,7 @@ var errProxyProcessExitedEarly = errors.New("process exited before listener beca
 type proxyProcessInstance struct {
 	rt           RuntimeContext
 	svc          config.Service
+	publication  Status
 	absStateRoot string
 	socketPath   string
 	healthPath   string
@@ -43,18 +44,29 @@ type proxyProcessInstance struct {
 	status      Status
 }
 
-func newProxyProcessInstance(rt RuntimeContext, svc config.Service) (Instance, error) {
+func newProxyProcessInstance(rt RuntimeContext, svc config.Service, publication Status) (Instance, error) {
+	return newProxyProcessInstanceAt(rt, svc, publication, "")
+}
+
+func newProxyProcessInstanceAt(rt RuntimeContext, svc config.Service, publication Status, socketPath string) (Instance, error) {
 	absRoot := svc.StateRootOrDefault()
 	if !filepath.IsAbs(absRoot) {
 		absRoot = filepath.Join(rt.CityPath(), absRoot)
 	}
-	socketPath := filepath.Join(rt.CityPath(), ".gc", "run", "services", svc.Name+".sock")
+	if socketPath == "" {
+		var err error
+		socketPath, err = allocateProxyProcessSocketPath(svc.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
 	inst := &proxyProcessInstance{
 		rt:           rt,
 		svc:          svc,
+		publication:  publication,
 		absStateRoot: absRoot,
 		socketPath:   socketPath,
 		healthPath:   svc.Process.HealthPath,
@@ -170,13 +182,6 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		return fmt.Errorf("open service log: %w", err)
 	}
 	_ = os.Remove(p.socketPath)
-	status := baseStatus(
-		p.rt.Config(),
-		p.rt.PublicationConfig(),
-		loadPublicationRefs(p.rt.PublicationStorePath(), p.rt.CityPath()),
-		p.svc,
-		now,
-	)
 
 	cmd := exec.Command(p.svc.Process.Command[0], p.svc.Process.Command[1:]...)
 	cmd.Dir = p.commandDir()
@@ -187,8 +192,8 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		"GC_SERVICE_RUN_ROOT="+filepath.Join(p.absStateRoot, "run"),
 		"GC_SERVICE_SOCKET="+p.socketPath,
 		"GC_SERVICE_URL_PREFIX="+p.svc.MountPathOrDefault(),
-		"GC_SERVICE_PUBLIC_URL="+status.URL,
-		"GC_SERVICE_VISIBILITY="+status.Visibility,
+		"GC_SERVICE_PUBLIC_URL="+p.publication.URL,
+		"GC_SERVICE_VISIBILITY="+p.publication.Visibility,
 		"GC_PUBLISHED_SERVICES_DIR="+citylayout.PublishedServicesDir(p.rt.CityPath()),
 	)
 	cmd.Stdout = logFile
@@ -323,6 +328,26 @@ func (p *proxyProcessInstance) commandDir() string {
 		return p.svc.SourceDir
 	}
 	return p.rt.CityPath()
+}
+
+func allocateProxyProcessSocketPath(serviceName string) (string, error) {
+	dir := filepath.Join(os.TempDir(), "gascity-workspacesvc-sockets")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("create socket dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, serviceName+".sock.*")
+	if err != nil {
+		return "", fmt.Errorf("allocate socket path: %w", err)
+	}
+	path := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close socket path placeholder: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("remove socket path placeholder: %w", err)
+	}
+	return path, nil
 }
 
 func processExitReason(err error) string {

@@ -25,10 +25,11 @@ import (
 type Manager struct {
 	rt RuntimeContext
 
-	opMu    sync.Mutex
-	mu      sync.RWMutex
-	entries map[string]*entry
-	closed  bool
+	opMu                 sync.Mutex
+	mu                   sync.RWMutex
+	entries              map[string]*entry
+	closed               bool
+	lastPublicationError string
 }
 
 type entry struct {
@@ -84,13 +85,10 @@ func (m *Manager) Reload() error {
 	m.mu.RUnlock()
 	next := make(map[string]*entry, len(cfg.Services))
 	plans := make([]servicePlan, 0, len(cfg.Services))
-	baseStatuses := make(map[string]Status, len(cfg.Services))
 	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
 	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
-	if refs.err != nil {
-		log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
-	}
+	m.logPublicationRefsError(refs)
 
 	for _, svc := range cfg.Services {
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, svc, now)
@@ -101,11 +99,7 @@ func (m *Manager) Reload() error {
 			base.LocalState = "config_error"
 			base.Reason = err.Error()
 		}
-		baseStatuses[svc.Name] = base
 		plans = append(plans, servicePlan{spec: svc, base: base})
-	}
-	if err := writePublishedServiceMetadata(m.rt.CityPath(), baseStatuses); err != nil {
-		return err
 	}
 	for _, plan := range plans {
 		svc := plan.spec
@@ -124,6 +118,15 @@ func (m *Manager) Reload() error {
 			}
 			// Recreate proxy processes when publication context changes so the
 			// child process sees updated GC_SERVICE_PUBLIC_URL metadata.
+			restarted, err := newProxyProcessInstance(m.rt, svc, base)
+			if err != nil {
+				next[svc.Name] = existing
+				reused[svc.Name] = true
+				continue
+			}
+			base = mergeStatus(base, restarted.Status())
+			next[svc.Name] = &entry{spec: svc, status: base, inst: restarted}
+			continue
 		}
 
 		switch svc.KindOrDefault() {
@@ -147,7 +150,7 @@ func (m *Manager) Reload() error {
 			base = mergeStatus(base, inst.Status())
 			next[svc.Name] = &entry{spec: svc, status: base, inst: inst}
 		case "proxy_process":
-			inst, err := newProxyProcessInstance(m.rt, svc)
+			inst, err := newProxyProcessInstance(m.rt, svc, base)
 			if err != nil {
 				base.State = "degraded"
 				base.LocalState = "config_error"
@@ -205,37 +208,31 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	m.mu.RUnlock()
 
 	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
-	if refs.err != nil {
-		log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
-	}
+	m.logPublicationRefsError(refs)
 	for _, e := range entries {
 		if e.inst == nil {
 			continue
 		}
 		e.inst.Tick(ctx, now)
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now)
-		status := mergeStatus(base, e.inst.Status())
-		inst := e.inst
 		if proxyProcessPublicationContextChanged(e.status, base) {
-			if err := inst.Close(); err != nil {
-				status.State = "degraded"
-				status.LocalState = "close_error"
-				status.Reason = err.Error()
-				status.UpdatedAt = now
-			} else {
-				restarted, err := newProxyProcessInstance(m.rt, e.spec)
-				if err != nil {
-					inst = nil
-					status.State = "degraded"
-					status.LocalState = "config_error"
-					status.Reason = err.Error()
-					status.UpdatedAt = now
-				} else {
-					inst = restarted
-					status = mergeStatus(base, restarted.Status())
+			restarted, err := newProxyProcessInstance(m.rt, e.spec, base)
+			if err == nil {
+				old := e.inst
+				m.mu.Lock()
+				if cur, ok := m.entries[e.spec.Name]; ok && cur.inst == old {
+					cur.inst = restarted
+					cur.status = mergeStatus(base, restarted.Status())
+				}
+				m.mu.Unlock()
+				if err := old.Close(); err != nil {
+					log.Printf("workspacesvc: close proxy process %s after restart: %v", e.spec.Name, err)
 				}
 			}
+			continue
 		}
+		status := mergeStatus(base, e.inst.Status())
+		inst := e.inst
 		m.mu.Lock()
 		if cur, ok := m.entries[e.spec.Name]; ok {
 			cur.inst = inst
@@ -547,6 +544,19 @@ func (m *Manager) syncPublishedServiceMetadata() error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return writePublishedServiceMetadata(m.rt.CityPath(), statusMapFromEntries(m.entries))
+}
+
+func (m *Manager) logPublicationRefsError(refs publicationRefs) {
+	if refs.err == nil {
+		m.lastPublicationError = ""
+		return
+	}
+	msg := refs.err.Error()
+	if msg == m.lastPublicationError {
+		return
+	}
+	m.lastPublicationError = msg
+	log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
 }
 
 func statusMapFromEntries(entries map[string]*entry) map[string]Status {
