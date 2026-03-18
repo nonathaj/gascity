@@ -87,9 +87,16 @@ func logLifecycleOutcome(
 		msg += fmt.Sprintf(" duration=%s", finished.Sub(started).Round(time.Millisecond))
 	}
 	if err != nil {
-		msg += fmt.Sprintf(" err=%s", strings.ReplaceAll(err.Error(), "\n", "\\n"))
+		msg += fmt.Sprintf(" err=%s", formatLifecycleError(err))
 	}
 	fmt.Fprintln(w, msg) //nolint:errcheck // best-effort diagnostics
+}
+
+func formatLifecycleError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return strings.ReplaceAll(err.Error(), "\n", "\\n")
 }
 
 func logLifecycleWave(w io.Writer, op string, wave int, started time.Time, count int) {
@@ -379,7 +386,7 @@ func commitStartResult(
 	name := result.prepared.candidate.name()
 	tp := result.prepared.candidate.tp
 	if result.err != nil {
-		fmt.Fprintf(stderr, "session reconciler: starting %s: %v\n", name, result.err) //nolint:errcheck
+		fmt.Fprintf(stderr, "session reconciler: starting %s: %s\n", name, formatLifecycleError(result.err)) //nolint:errcheck
 		_ = store.SetMetadata(session.ID, "last_woke_at", "")
 		session.Metadata["last_woke_at"] = ""
 		recordWakeFailure(session, store, clk)
@@ -473,7 +480,7 @@ func executePlannedStarts(
 				}
 				item, err := prepareStartCandidate(candidate, cfg, store, clk)
 				if err != nil {
-					fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %v\n", candidate.name(), err) //nolint:errcheck
+					fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %s\n", candidate.name(), formatLifecycleError(err)) //nolint:errcheck
 					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.logicalTemplate(cfg), "failed", time.Time{}, time.Time{}, err)
 					continue
 				}
@@ -740,7 +747,7 @@ func stopTargetsBounded(
 						logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 					}
 					if result.err != nil {
-						fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
+						fmt.Fprintf(stderr, "gc stop: stopping %s: %s\n", result.target.name, formatLifecycleError(result.err)) //nolint:errcheck
 						continue
 					}
 					fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck
@@ -782,7 +789,7 @@ func stopTargetsBounded(
 				logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 			}
 			if result.err != nil {
-				fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
+				fmt.Fprintf(stderr, "gc stop: stopping %s: %s\n", result.target.name, formatLifecycleError(result.err)) //nolint:errcheck
 				continue
 			}
 			fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck

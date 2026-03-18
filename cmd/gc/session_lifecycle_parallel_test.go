@@ -277,6 +277,14 @@ func (p *panicStartProvider) Start(context.Context, string, runtime.Config) erro
 	panic("boom")
 }
 
+type multilineStopProvider struct {
+	*runtime.Fake
+}
+
+func (p *multilineStopProvider) Stop(string) error {
+	return fmt.Errorf("boom\nstack line")
+}
+
 func containsAll(got []string, want ...string) bool {
 	if len(got) != len(want) {
 		return false
@@ -1130,6 +1138,35 @@ func TestCommitStartResult_LogsSuccessOutcome(t *testing.T) {
 	}
 }
 
+func TestCommitStartResult_SanitizesMultilineError(t *testing.T) {
+	store := newTestStore()
+	session := makeBead("b1", map[string]string{
+		"template":     "worker",
+		"session_name": "worker",
+	})
+	candidate := startCandidate{
+		session: &session,
+		tp:      TemplateParams{TemplateName: "worker", InstanceName: "worker"},
+	}
+	result := startResult{
+		prepared: preparedStart{candidate: candidate},
+		err:      fmt.Errorf("boom\nstack line"),
+		outcome:  "panic_recovered",
+	}
+	var stderr bytes.Buffer
+	ok := commitStartResult(result, store, &clock.Fake{Time: time.Unix(3, 0)}, events.NewFake(), 0, ioDiscard{}, &stderr)
+	if ok {
+		t.Fatal("commitStartResult returned true for error result")
+	}
+	got := stderr.String()
+	if strings.Contains(got, "boom\nstack line") {
+		t.Fatalf("stderr = %q, want escaped multiline error", got)
+	}
+	if !strings.Contains(got, "boom\\nstack line") {
+		t.Fatalf("stderr = %q, want escaped multiline error", got)
+	}
+}
+
 func TestInterruptTargetsBounded_LogsSuccessOutcome(t *testing.T) {
 	sp := runtime.NewFake()
 	if err := sp.Start(context.Background(), "worker", runtime.Config{}); err != nil {
@@ -1249,6 +1286,28 @@ func TestExecuteTargetWave_PanicIncludesStackTrace(t *testing.T) {
 	}
 	if results[0].err == nil || !strings.Contains(results[0].err.Error(), "goroutine") {
 		t.Fatalf("err = %v, want stack trace", results[0].err)
+	}
+}
+
+func TestStopTargetsBounded_SanitizesMultilineStopError(t *testing.T) {
+	sp := &multilineStopProvider{Fake: runtime.NewFake()}
+	if err := sp.Start(context.Background(), "worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	stopped := stopTargetsBounded([]stopTarget{{name: "worker", template: "worker", subject: "worker", resolved: true}}, &config.City{
+		Agents: []config.Agent{{Name: "worker"}},
+	}, sp, rec, "gc", &stdout, &stderr)
+	if stopped != 0 {
+		t.Fatalf("stopped = %d, want 0", stopped)
+	}
+	got := stderr.String()
+	if strings.Contains(got, "boom\nstack line") {
+		t.Fatalf("stderr = %q, want escaped multiline error", got)
+	}
+	if !strings.Contains(got, "boom\\nstack line") {
+		t.Fatalf("stderr = %q, want escaped multiline error", got)
 	}
 }
 

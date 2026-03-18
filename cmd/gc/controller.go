@@ -316,6 +316,9 @@ func gracefulStopAll(
 	// Pass 1: interrupt all in a single bounded broadcast wave.
 	// This is intentionally flat: interrupts are a best-effort graceful hint,
 	// while pass 2 keeps reverse dependency ordering for any survivors.
+	// The configured timeout is the post-dispatch grace window; dispatch
+	// latency is intentionally outside that budget so every interrupted
+	// session still gets the full graceful-exit wait once nudged.
 	sent := interruptTargetsBounded(targets, sp, stderr)
 	fmt.Fprintf(stdout, "Sent interrupt to %d/%d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
 		sent, len(names), timeout)
