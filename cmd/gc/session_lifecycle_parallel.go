@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -202,7 +203,7 @@ func candidateWaveOrder(
 	candidateTemplates := make(map[string]bool)
 	resolvedTemplates := make([]string, len(candidates))
 	for idx, candidate := range candidates {
-		template := normalizedSessionTemplate(*candidate.session, cfg)
+		template := candidate.logicalTemplate(cfg)
 		resolvedTemplates[idx] = template
 		candidateTemplates[template] = true
 		if !templateSeen[template] {
@@ -318,9 +319,10 @@ func executePreparedStartWave(
 			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
+					stack := debug.Stack()
 					results[i] = startResult{
 						prepared: item,
-						err:      fmt.Errorf("panic during start: %v", recovered),
+						err:      fmt.Errorf("panic during start: %v\n%s", recovered, stack),
 						outcome:  "panic_recovered",
 						started:  started,
 						finished: time.Now(),
@@ -464,13 +466,13 @@ func executePlannedStarts(
 			var prepared []preparedStart
 			for _, candidate := range ready[offset:end] {
 				if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
-					logLifecycleOutcome(stderr, "start", wave, candidate.name(), normalizedSessionTemplate(*candidate.session, cfg), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
+					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.logicalTemplate(cfg), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
 					continue
 				}
 				item, err := prepareStartCandidate(candidate, cfg, store, clk)
 				if err != nil {
 					fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %v\n", candidate.name(), err) //nolint:errcheck
-					logLifecycleOutcome(stderr, "start", wave, candidate.name(), normalizedSessionTemplate(*candidate.session, cfg), "failed", time.Time{}, time.Time{}, err)
+					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.logicalTemplate(cfg), "failed", time.Time{}, time.Time{}, err)
 					continue
 				}
 				prepared = append(prepared, *item)
@@ -574,9 +576,10 @@ func executeTargetWave(
 			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
+					stack := debug.Stack()
 					results[i] = stopResult{
 						target:   target,
-						err:      fmt.Errorf("panic during lifecycle op: %v", recovered),
+						err:      fmt.Errorf("panic during lifecycle op: %v\n%s", recovered, stack),
 						outcome:  "panic_recovered",
 						started:  started,
 						finished: time.Now(),
@@ -694,7 +697,7 @@ func filterStopTargets(targets []stopTarget, names []string) []stopTarget {
 func interruptTargetsBounded(targets []stopTarget, sp runtime.Provider, stderr io.Writer) int {
 	sent := 0
 	waveStarted := time.Now()
-	results := executeTargetWave(targets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
+	results := executeTargetWave(targets, len(targets), func(target stopTarget) error {
 		return sp.Interrupt(target.name)
 	})
 	for _, result := range results {
@@ -719,8 +722,43 @@ func stopTargetsBounded(
 	actor string,
 	stdout, stderr io.Writer,
 ) int {
+	resolvedCount := 0
 	for _, target := range targets {
-		if !target.resolved {
+		if target.resolved {
+			resolvedCount++
+		}
+	}
+	if resolvedCount == 0 {
+		if cfg != nil {
+			fmt.Fprintln(stderr, "session lifecycle: all stop targets unresolved; using flat bounded stop order") //nolint:errcheck
+		}
+		waveStarted := time.Now()
+		results := executeTargetWave(targets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
+			return sp.Stop(target.name)
+		})
+		stopped := 0
+		for _, result := range results {
+			if shouldLogStopOutcome(result.target, cfg) {
+				logLifecycleOutcome(stderr, "stop", 0, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
+			}
+			if result.err != nil {
+				fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
+				continue
+			}
+			fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck
+			stopped++
+			rec.Record(events.Event{
+				Type: events.SessionStopped, Actor: actor, Subject: result.target.subject,
+			})
+		}
+		logLifecycleWave(stderr, "stop", 0, waveStarted, len(targets))
+		return stopped
+	}
+	if resolvedCount != len(targets) {
+		for _, target := range targets {
+			if target.resolved {
+				continue
+			}
 			if cfg != nil {
 				fmt.Fprintln(stderr, "session lifecycle: unresolved stop target template; falling back to serial stop order") //nolint:errcheck
 			}

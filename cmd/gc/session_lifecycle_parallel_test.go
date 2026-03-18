@@ -268,6 +268,14 @@ func (p *dropDependencyAfterNStartsProvider) Start(ctx context.Context, name str
 	return nil
 }
 
+type panicStartProvider struct {
+	*runtime.Fake
+}
+
+func (p *panicStartProvider) Start(context.Context, string, runtime.Config) error {
+	panic("boom")
+}
+
 func containsAll(got []string, want ...string) bool {
 	if len(got) != len(want) {
 		return false
@@ -741,7 +749,7 @@ func TestStopSessionsBounded_UsesLegacyAgentLabelTemplateForOrdering(t *testing.
 	}
 }
 
-func TestInterruptSessionsBounded_BoundsParallelBroadcast(t *testing.T) {
+func TestInterruptSessionsBounded_BroadcastsAllTargets(t *testing.T) {
 	sp := newGatedStopProvider()
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -756,20 +764,14 @@ func TestInterruptSessionsBounded_BoundsParallelBroadcast(t *testing.T) {
 		done <- interruptSessionsBounded([]string{"db", "api", "worker", "audit"}, cfg, nil, sp, ioDiscard{})
 	}()
 
-	firstBatch := sp.waitForInterrupts(t, 3)
-	if !containsAll(firstBatch, "db", "api", "worker") {
-		t.Fatalf("first interrupt batch = %v, want db+api+worker", firstBatch)
+	firstBatch := sp.waitForInterrupts(t, 4)
+	if !containsAll(firstBatch, "db", "api", "worker", "audit") {
+		t.Fatalf("interrupt batch = %v, want all targets", firstBatch)
 	}
 	sp.ensureNoFurtherInterrupt(t, 150*time.Millisecond)
-	sp.releaseInterrupt("db")
-	sp.releaseInterrupt("api")
-	sp.releaseInterrupt("worker")
-
-	secondBatch := sp.waitForInterrupts(t, 1)
-	if !containsAll(secondBatch, "audit") {
-		t.Fatalf("second interrupt batch = %v, want audit", secondBatch)
+	for _, name := range firstBatch {
+		sp.releaseInterrupt(name)
 	}
-	sp.releaseInterrupt("audit")
 
 	select {
 	case interrupted := <-done:
@@ -960,6 +962,60 @@ func TestStopTargetsBounded_FallsBackToSerialWhenTemplateUnresolved(t *testing.T
 	}
 }
 
+func TestStopTargetsBounded_AllUnresolvedUsesFlatBoundedParallelism(t *testing.T) {
+	sp := newGatedStopProvider()
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "worker"},
+		},
+	}
+	for _, name := range []string{"orphan-a", "orphan-b", "orphan-c", "orphan-d"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- stopTargetsBounded([]stopTarget{
+			{name: "orphan-a", subject: "orphan-a", order: 0},
+			{name: "orphan-b", subject: "orphan-b", order: 1},
+			{name: "orphan-c", subject: "orphan-c", order: 2},
+			{name: "orphan-d", subject: "orphan-d", order: 3},
+		}, cfg, sp, rec, "gc", &stdout, &stderr)
+	}()
+
+	first := sp.waitForStops(t, defaultMaxParallelStopsPerWave)
+	if !containsAll(first, "orphan-a", "orphan-b", "orphan-c") && !containsAll(first, "orphan-a", "orphan-b", "orphan-d") &&
+		!containsAll(first, "orphan-a", "orphan-c", "orphan-d") && !containsAll(first, "orphan-b", "orphan-c", "orphan-d") {
+		t.Fatalf("first flat wave = %v, want any %d orphans", first, defaultMaxParallelStopsPerWave)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	for _, name := range first {
+		sp.release(name)
+	}
+
+	second := sp.waitForStops(t, 1)
+	sp.release(second[0])
+
+	select {
+	case stopped := <-done:
+		if stopped != 4 {
+			t.Fatalf("stopped = %d, want 4", stopped)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stopTargetsBounded did not finish")
+	}
+
+	if sp.maxInFlight != defaultMaxParallelStopsPerWave {
+		t.Fatalf("max in-flight stops = %d, want %d", sp.maxInFlight, defaultMaxParallelStopsPerWave)
+	}
+	if !strings.Contains(stderr.String(), "all stop targets unresolved") {
+		t.Fatalf("stderr = %q, want flat unresolved diagnostic", stderr.String())
+	}
+}
+
 func TestCommitStartResult_LogsSuccessOutcome(t *testing.T) {
 	store := newTestStore()
 	session := makeBead("b1", map[string]string{
@@ -1003,6 +1059,78 @@ func TestInterruptTargetsBounded_LogsSuccessOutcome(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "op=interrupt") || !strings.Contains(stderr.String(), "outcome=success") {
 		t.Fatalf("stderr = %q, want successful interrupt lifecycle log", stderr.String())
+	}
+}
+
+func TestInterruptTargetsBounded_BroadcastsAllTargetsConcurrently(t *testing.T) {
+	sp := newGatedStopProvider()
+	targets := []stopTarget{
+		{name: "db", template: "db", resolved: true},
+		{name: "api", template: "api", resolved: true},
+		{name: "worker", template: "worker", resolved: true},
+		{name: "audit", template: "audit", resolved: true},
+	}
+	for _, target := range targets {
+		if err := sp.Start(context.Background(), target.name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	done := make(chan int, 1)
+	go func() {
+		done <- interruptTargetsBounded(targets, sp, ioDiscard{})
+	}()
+
+	first := sp.waitForInterrupts(t, len(targets))
+	if !containsAll(first, "db", "api", "worker", "audit") {
+		t.Fatalf("interrupt wave = %v, want all targets", first)
+	}
+	sp.ensureNoFurtherInterrupt(t, 150*time.Millisecond)
+	for _, name := range first {
+		sp.releaseInterrupt(name)
+	}
+
+	select {
+	case sent := <-done:
+		if sent != len(targets) {
+			t.Fatalf("sent = %d, want %d", sent, len(targets))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("interruptTargetsBounded did not finish")
+	}
+}
+
+func TestExecutePreparedStartWave_PanicIncludesStackTrace(t *testing.T) {
+	results := executePreparedStartWave(
+		context.Background(),
+		[]preparedStart{{candidate: startCandidate{session: &beads.Bead{Metadata: map[string]string{"session_name": "worker"}}}}},
+		&panicStartProvider{Fake: runtime.NewFake()},
+		time.Second,
+		1,
+	)
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].outcome != "panic_recovered" {
+		t.Fatalf("outcome = %q, want panic_recovered", results[0].outcome)
+	}
+	if results[0].err == nil || !strings.Contains(results[0].err.Error(), "goroutine") {
+		t.Fatalf("err = %v, want stack trace", results[0].err)
+	}
+}
+
+func TestExecuteTargetWave_PanicIncludesStackTrace(t *testing.T) {
+	results := executeTargetWave([]stopTarget{{name: "worker"}}, 1, func(stopTarget) error {
+		panic("boom")
+	})
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if results[0].outcome != "panic_recovered" {
+		t.Fatalf("outcome = %q, want panic_recovered", results[0].outcome)
+	}
+	if results[0].err == nil || !strings.Contains(results[0].err.Error(), "goroutine") {
+		t.Fatalf("err = %v, want stack trace", results[0].err)
 	}
 }
 

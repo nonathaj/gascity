@@ -72,35 +72,13 @@ func allDependenciesAlive(
 	if cfgAgent == nil || len(cfgAgent.DependsOn) == 0 {
 		return true
 	}
-	st := cfg.Workspace.SessionTemplate
 	for _, dep := range cfgAgent.DependsOn {
 		depCfg := findAgentByTemplate(cfg, dep)
 		if depCfg == nil {
 			continue // dependency not in config — skip
 		}
-		if depCfg.Pool != nil {
-			// Pool: check if any instance is alive via Provider (includes zombie detection).
-			anyAlive := false
-			for sn, tp := range desiredState {
-				if tp.TemplateName == dep && sp.IsRunning(sn) && sp.ProcessAlive(sn, tp.Hints.ProcessNames) {
-					anyAlive = true
-					break
-				}
-			}
-			if !anyAlive {
-				return false
-			}
-		} else {
-			// Fixed agent: check single instance via Provider.
-			sn := lookupSessionNameOrLegacy(store, cityName, dep, st)
-			depTP, hasDep := desiredState[sn]
-			var depProcessNames []string
-			if hasDep {
-				depProcessNames = depTP.Hints.ProcessNames
-			}
-			if !sp.IsRunning(sn) || !sp.ProcessAlive(sn, depProcessNames) {
-				return false
-			}
+		if !dependencyTemplateAlive(dep, cfg, desiredState, sp, cityName, store) {
+			return false
 		}
 	}
 	return true
