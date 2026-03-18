@@ -110,6 +110,12 @@ func wizardProviderGuidanceMessage(item api.ReadinessItem) string {
 }
 
 func runInitProviderPreflight(cityPath string, stdout, stderr io.Writer, commandName string) error {
+	// Materialize gastown packs before loading config — config.LoadWithIncludes
+	// resolves includes = ["packs/gastown"] which requires pack.toml on disk.
+	if err := MaterializeGastownPacks(cityPath); err != nil {
+		fmt.Fprintf(stderr, "%s: materializing gastown packs: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
+		return errInitProviderPreflight
+	}
 	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: city created, but startup is blocked by configuration loading\n", commandName) //nolint:errcheck // best-effort stderr
