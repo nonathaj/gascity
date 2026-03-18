@@ -252,6 +252,90 @@ func TestDoRigRestart_UsesUnlimitedPoolSessionBeadsForCustomSessionNames(t *test
 	}
 }
 
+func TestDoRigRestart_UsesLegacyPoolAgentLabelForCustomSessionNames(t *testing.T) {
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:frontend/worker-1"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"session_name": "custom-worker-1",
+			"pool_slot":    "1",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker-1", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	agents := []config.Agent{{
+		Name: "worker",
+		Dir:  "frontend",
+		Pool: &config.PoolConfig{Min: 1, Max: 2, Check: "echo 1"},
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if sp.IsRunning("custom-worker-1") {
+		t.Fatal("legacy custom pool session still running after rig restart")
+	}
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker-1" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-1")
+	}
+}
+
+func TestDoRigRestart_UsesLegacyUnlimitedPoolAgentLabelForCustomSessionNames(t *testing.T) {
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:frontend/worker-7"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"session_name": "custom-worker-7",
+			"pool_slot":    "7",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker-7", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	agents := []config.Agent{{
+		Name: "worker",
+		Dir:  "frontend",
+		Pool: &config.PoolConfig{Min: 1, Max: -1, Check: "echo 1"},
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if sp.IsRunning("custom-worker-7") {
+		t.Fatal("legacy custom unlimited-pool session still running after rig restart")
+	}
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker-7" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-7")
+	}
+}
+
 func TestDoRigRestartStopError(t *testing.T) {
 	// When Stop fails, the agent is skipped but the command still succeeds.
 	sp := runtime.NewFake()

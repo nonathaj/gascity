@@ -313,8 +313,8 @@ func gracefulStopAll(
 		targetByName[target.name] = target
 	}
 
-	// Pass 1: interrupt all in reverse dependency waves.
-	sent := interruptTargetsBounded(targets, cfg, sp, stderr)
+	// Pass 1: interrupt all in a single bounded broadcast wave.
+	sent := interruptTargetsBounded(targets, sp, stderr)
 	fmt.Fprintf(stdout, "Sent interrupt to %d/%d agent(s), waiting %s...\n", //nolint:errcheck // best-effort stdout
 		sent, len(names), timeout)
 

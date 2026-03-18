@@ -315,12 +315,15 @@ func executePreparedStartWave(
 		i, item := i, item
 		sem <- struct{}{}
 		go func() {
+			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					results[i] = startResult{
 						prepared: item,
 						err:      fmt.Errorf("panic during start: %v", recovered),
 						outcome:  "panic_recovered",
+						started:  started,
+						finished: time.Now(),
 					}
 				}
 				<-sem
@@ -328,7 +331,6 @@ func executePreparedStartWave(
 			}()
 			startCtx := ctx
 			cancel := func() {}
-			started := time.Now()
 			if startupTimeout > 0 {
 				startCtx, cancel = context.WithTimeout(ctx, startupTimeout)
 			}
@@ -568,19 +570,20 @@ func executeTargetWave(
 		i, target := i, target
 		sem <- struct{}{}
 		go func() {
+			started := time.Now()
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					results[i] = stopResult{
 						target:   target,
 						err:      fmt.Errorf("panic during lifecycle op: %v", recovered),
 						outcome:  "panic_recovered",
+						started:  started,
 						finished: time.Now(),
 					}
 				}
 				<-sem
 				done <- i
 			}()
-			started := time.Now()
 			err := run(target)
 			finished := time.Now()
 			outcome := "success"
@@ -614,7 +617,7 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []
 					sessionTemplates[name] = template
 				}
 				if name != "" {
-					subject := bead.Metadata["agent_name"]
+					subject := sessionBeadAgentName(bead)
 					if subject == "" && template != "" && bead.Metadata["pool_slot"] != "" {
 						subject = template + "-" + bead.Metadata["pool_slot"]
 					}
@@ -670,25 +673,15 @@ func filterStopTargets(targets []stopTarget, names []string) []stopTarget {
 	return filtered
 }
 
-func interruptTargetsBounded(
-	targets []stopTarget,
-	cfg *config.City,
-	sp runtime.Provider,
-	stderr io.Writer,
-) int {
-	_ = cfg
+func interruptTargetsBounded(targets []stopTarget, sp runtime.Provider, stderr io.Writer) int {
 	sent := 0
 	waveStarted := time.Now()
 	results := executeTargetWave(targets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
 		return sp.Interrupt(target.name)
 	})
 	for _, result := range results {
-		outcome := "interrupted"
 		if result.err != nil {
-			outcome = "interrupt_failed"
-		}
-		if result.err != nil {
-			logLifecycleOutcome(stderr, "interrupt", 0, result.target.name, result.target.template, outcome, result.started, result.finished, result.err)
+			logLifecycleOutcome(stderr, "interrupt", 0, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 		}
 		if result.err == nil {
 			sent++
@@ -699,7 +692,7 @@ func interruptTargetsBounded(
 }
 
 func interruptSessionsBounded(names []string, cfg *config.City, store beads.Store, sp runtime.Provider, stderr io.Writer) int {
-	return interruptTargetsBounded(stopTargetsForNames(names, cfg, store), cfg, sp, stderr)
+	return interruptTargetsBounded(stopTargetsForNames(names, cfg, store), sp, stderr)
 }
 
 func stopTargetsBounded(
@@ -735,7 +728,7 @@ func stopTargetsBounded(
 		for _, result := range results {
 			if result.err != nil {
 				fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
-				logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, "stop_failed", result.started, result.finished, result.err)
+				logLifecycleOutcome(stderr, "stop", wave, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
 				continue
 			}
 			fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck

@@ -49,6 +49,18 @@ func sessionNameFromBeadID(beadID string) string {
 	return "s-" + strings.ReplaceAll(beadID, "/", "--")
 }
 
+func sessionBeadAgentName(bead beads.Bead) string {
+	if bead.Metadata["agent_name"] != "" {
+		return bead.Metadata["agent_name"]
+	}
+	for _, label := range bead.Labels {
+		if strings.HasPrefix(label, "agent:") {
+			return strings.TrimPrefix(label, "agent:")
+		}
+	}
+	return ""
+}
+
 // findSessionNameByTemplate searches for an open session bead with the given
 // template and returns its session_name metadata. Returns "" if not found.
 // Pool instance beads (those with pool_slot metadata) are skipped to prevent
@@ -71,7 +83,7 @@ func findSessionNameByTemplate(store beads.Store, template string) string {
 		}
 		// Exact agent_name matches are authoritative, including pool
 		// instances such as "worker-1" that carry pool_slot metadata.
-		if b.Metadata["agent_name"] == template {
+		if sessionBeadAgentName(b) == template {
 			if sn := b.Metadata["session_name"]; sn != "" {
 				return sn
 			}
@@ -138,14 +150,14 @@ func lookupPoolSessionNames(store beads.Store, template string) map[string]strin
 		if b.Status == "closed" || b.Metadata["pool_slot"] == "" {
 			continue
 		}
-		if b.Metadata["template"] != template {
+		agentName := sessionBeadAgentName(b)
+		if b.Metadata["template"] != template && !strings.HasPrefix(agentName, template+"-") {
 			continue
 		}
 		sessionName := b.Metadata["session_name"]
 		if sessionName == "" {
 			continue
 		}
-		agentName := b.Metadata["agent_name"]
 		if agentName == "" {
 			agentName = template + "-" + b.Metadata["pool_slot"]
 		}

@@ -77,8 +77,9 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 	t.Run("Start_ConcurrentDistinctSessions", func(t *testing.T) {
 		sp, cfg1, name1 := newSession(t)
 		_, cfg2, name2 := newSession(t)
-		names := []string{name1, name2}
-		cfgs := []runtime.Config{cfg1, cfg2}
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
 		for _, name := range names {
 			t.Cleanup(func(n string) func() {
 				return func() { _ = sp.Stop(n) }
@@ -141,8 +142,9 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 	t.Run("Stop_ConcurrentDistinctSessions", func(t *testing.T) {
 		sp, cfg1, name1 := newSession(t)
 		_, cfg2, name2 := newSession(t)
-		names := []string{name1, name2}
-		cfgs := []runtime.Config{cfg1, cfg2}
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
 		for i := range names {
 			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
 				t.Fatalf("Start(%s): %v", names[i], err)
@@ -171,8 +173,9 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 	t.Run("Interrupt_ConcurrentDistinctSessions", func(t *testing.T) {
 		sp, cfg1, name1 := newSession(t)
 		_, cfg2, name2 := newSession(t)
-		names := []string{name1, name2}
-		cfgs := []runtime.Config{cfg1, cfg2}
+		_, cfg3, name3 := newSession(t)
+		names := []string{name1, name2, name3}
+		cfgs := []runtime.Config{cfg1, cfg2, cfg3}
 		for i := range names {
 			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
 				t.Fatalf("Start(%s): %v", names[i], err)

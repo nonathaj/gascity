@@ -719,6 +719,38 @@ func TestGracefulStopAll_ReconstructsPoolSubjectFromLegacyBead(t *testing.T) {
 	}
 }
 
+func TestGracefulStopAll_UsesLegacyAgentLabelForPoolSubject(t *testing.T) {
+	sp := &interruptExitProvider{Fake: runtime.NewFake()}
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:frontend/worker-4"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"pool_slot":    "4",
+			"session_name": "custom-worker-4",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker-4", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	rec := events.NewFake()
+	cfg := &config.City{Agents: []config.Agent{{Name: "worker", Dir: "frontend", Pool: &config.PoolConfig{Min: 1, Max: 5}}}}
+	var stdout, stderr bytes.Buffer
+
+	gracefulStopAll([]string{"custom-worker-4"}, sp, 50*time.Millisecond, rec, cfg, store, &stdout, &stderr)
+
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker-4" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-4")
+	}
+}
+
 func TestStopWaveOrder_HandlesUnknownTemplateWithoutSerialFallback(t *testing.T) {
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -776,6 +808,35 @@ func TestStopWaveOrder_FallsBackToSerialOnCycle(t *testing.T) {
 	}
 
 	waves, ok := stopWaveOrder(targets, cfg)
+	if ok {
+		t.Fatal("expected serial fallback for cycle")
+	}
+	if waves[0] != 0 || waves[1] != 1 {
+		t.Fatalf("waves = %#v, want strict serial fallback", waves)
+	}
+}
+
+func TestCandidateWaveOrder_FallsBackToSerialOnCycle(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "api", DependsOn: []string{"db"}},
+			{Name: "db", DependsOn: []string{"api"}},
+		},
+	}
+	candidates := []startCandidate{
+		{
+			session: &beads.Bead{Metadata: map[string]string{"session_name": "api", "template": "api"}},
+			tp:      TemplateParams{TemplateName: "api"},
+			order:   0,
+		},
+		{
+			session: &beads.Bead{Metadata: map[string]string{"session_name": "db", "template": "db"}},
+			tp:      TemplateParams{TemplateName: "db"},
+			order:   1,
+		},
+	}
+
+	waves, ok := candidateWaveOrder(candidates, cfg, map[string]TemplateParams{}, runtime.NewFake(), "city", nil)
 	if ok {
 		t.Fatal("expected serial fallback for cycle")
 	}

@@ -829,6 +829,29 @@ func TestFindSessionNameByTemplate_TemplateMismatchNotFound(t *testing.T) {
 	}
 }
 
+func TestFindSessionNameByTemplate_UsesLegacyAgentLabelForPoolInstance(t *testing.T) {
+	store := beads.NewMemStore()
+
+	_, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   "session",
+		Labels: []string{sessionBeadLabel, "agent:myrig/worker-1"},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"pool_slot":    "1",
+			"session_name": "s-legacy-worker-1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := findSessionNameByTemplate(store, "myrig/worker-1")
+	if got != "s-legacy-worker-1" {
+		t.Errorf("findSessionNameByTemplate(myrig/worker-1) = %q, want s-legacy-worker-1", got)
+	}
+}
+
 func TestDiscoverSessionBeads_RigQualifiedTemplate(t *testing.T) {
 	store := beads.NewMemStore()
 
