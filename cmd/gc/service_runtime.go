@@ -1,10 +1,7 @@
 package main
 
 import (
-	"path/filepath"
-
 	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/supervisor"
@@ -26,7 +23,7 @@ func (rt *serviceRuntime) CityName() string {
 }
 
 func (rt *serviceRuntime) PublicationStorePath() string {
-	return filepath.Join(citylayout.RuntimePath(rt.cr.cityPath, "supervisor"), "publications.json")
+	return supervisor.PublicationsPath(rt.cr.cityPath)
 }
 
 func (rt *serviceRuntime) Config() *config.City {

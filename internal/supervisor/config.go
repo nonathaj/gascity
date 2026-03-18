@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/gastownhall/gascity/internal/citylayout"
 )
 
 // Config holds machine-wide supervisor configuration loaded from
@@ -152,7 +153,12 @@ func ConfigPath() string {
 	return filepath.Join(DefaultHome(), "supervisor.toml")
 }
 
-// PublicationsPath returns the authoritative publication store path.
-func PublicationsPath() string {
+// PublicationsPath returns the authoritative publication store path for a city
+// runtime when cityPath is set. When cityPath is empty, it falls back to the
+// legacy GC_HOME-scoped location.
+func PublicationsPath(cityPath string) string {
+	if cityPath != "" {
+		return citylayout.RuntimePath(cityPath, "supervisor", "publications.json")
+	}
 	return filepath.Join(DefaultHome(), "supervisor", "publications.json")
 }

@@ -96,7 +96,10 @@ func TestRuntimeDirFallback(t *testing.T) {
 
 func TestPublicationsPath(t *testing.T) {
 	t.Setenv("GC_HOME", "/custom/gc")
-	if got := PublicationsPath(); got != "/custom/gc/supervisor/publications.json" {
-		t.Errorf("PublicationsPath() = %q, want /custom/gc/supervisor/publications.json", got)
+	if got := PublicationsPath("/tmp/demo-city"); got != "/tmp/demo-city/.gc/supervisor/publications.json" {
+		t.Errorf("PublicationsPath(city) = %q, want /tmp/demo-city/.gc/supervisor/publications.json", got)
+	}
+	if got := PublicationsPath(""); got != "/custom/gc/supervisor/publications.json" {
+		t.Errorf("PublicationsPath(\"\") = %q, want /custom/gc/supervisor/publications.json", got)
 	}
 }

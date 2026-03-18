@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,7 +103,12 @@ func writePublicationStoreForTest(t *testing.T, cityPath string, services string
 	}
 }
 
+var managerTestLogMu sync.Mutex
+
 func TestManagerReloadDeduplicatesPublicationStoreErrors(t *testing.T) {
+	managerTestLogMu.Lock()
+	defer managerTestLogMu.Unlock()
+
 	rt := &testRuntime{
 		cityPath: t.TempDir(),
 		cityName: "test-city",
@@ -142,6 +148,77 @@ func TestManagerReloadDeduplicatesPublicationStoreErrors(t *testing.T) {
 	got := strings.Count(buf.String(), "load publication refs")
 	if got != 1 {
 		t.Fatalf("log count = %d, want 1; logs=%q", got, buf.String())
+	}
+}
+
+func TestManagerUsesCachedPublicationRefsAfterStoreDisappears(t *testing.T) {
+	contract := uniqueContract(t)
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		return &testInstance{
+			status: Status{
+				ServiceName:      svc.Name,
+				WorkflowContract: contract,
+				State:            "ready",
+				LocalState:       "ready",
+			},
+		}, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "review-intake",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--acme--deadbeef.apps.example.com"
+  }
+]`)
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	first, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing")
+	}
+	if first.URL != "https://review-intake--acme--deadbeef.apps.example.com" {
+		t.Fatalf("first URL = %q, want authoritative route", first.URL)
+	}
+	if err := os.Remove(rt.PublicationStorePath()); err != nil {
+		t.Fatalf("Remove(%q): %v", rt.PublicationStorePath(), err)
+	}
+
+	mgr.Tick(context.Background(), time.Now().UTC())
+
+	second, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing after tick")
+	}
+	if second.URL != first.URL {
+		t.Fatalf("URL = %q, want cached %q after store removal", second.URL, first.URL)
+	}
+	if second.PublicationState != "published" {
+		t.Fatalf("PublicationState = %q, want published", second.PublicationState)
 	}
 }
 

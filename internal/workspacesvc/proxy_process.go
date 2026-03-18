@@ -47,20 +47,13 @@ type proxyProcessInstance struct {
 }
 
 func newProxyProcessInstance(rt RuntimeContext, svc config.Service, publication Status) (Instance, error) {
-	return newProxyProcessInstanceAt(rt, svc, publication, "")
-}
-
-func newProxyProcessInstanceAt(rt RuntimeContext, svc config.Service, publication Status, socketPath string) (Instance, error) {
 	absRoot := svc.StateRootOrDefault()
 	if !filepath.IsAbs(absRoot) {
 		absRoot = filepath.Join(rt.CityPath(), absRoot)
 	}
-	if socketPath == "" {
-		var err error
-		socketPath, err = allocateProxyProcessSocketPath(rt.CityPath(), svc.Name)
-		if err != nil {
-			return nil, err
-		}
+	socketPath, err := allocateProxyProcessSocketPath(rt.CityPath(), svc.Name)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create socket dir: %w", err)
@@ -172,13 +165,16 @@ func (p *proxyProcessInstance) Close() error {
 	p.status.UpdatedAt = time.Now().UTC()
 	p.mu.Unlock()
 
+	removeErr := cleanupProxyProcessSocketPath(p.socketPath)
 	if cmd != nil {
 		if err := stopProcessGroup(cmd); err != nil {
+			if removeErr != nil {
+				return fmt.Errorf("%w; %v", err, removeErr)
+			}
 			return err
 		}
 	}
-	_ = os.Remove(p.socketPath)
-	return nil
+	return removeErr
 }
 
 func (p *proxyProcessInstance) start(now time.Time) error {
@@ -361,6 +357,24 @@ func allocateProxyProcessSocketPath(cityPath, serviceName string) (string, error
 		return "", fmt.Errorf("remove socket path placeholder: %w", err)
 	}
 	return path, nil
+}
+
+func cleanupProxyProcessSocketPath(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove socket path: %w", err)
+	}
+	dir := filepath.Dir(path)
+	root := filepath.Join(os.TempDir(), fmt.Sprintf("gcsvc-%d", os.Getuid()))
+	if filepath.Dir(dir) != root {
+		return nil
+	}
+	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) {
+		return fmt.Errorf("remove socket dir: %w", err)
+	}
+	if err := os.Remove(root); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) {
+		return fmt.Errorf("remove socket root dir: %w", err)
+	}
+	return nil
 }
 
 func processExitReason(err error) string {

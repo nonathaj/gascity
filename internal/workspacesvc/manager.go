@@ -102,6 +102,9 @@ func (m *Manager) Reload() error {
 		}
 		plans = append(plans, servicePlan{spec: svc, base: base})
 	}
+	if err := writePublishedServiceMetadata(m.rt.CityPath(), statusMapFromPlans(plans)); err != nil {
+		return err
+	}
 	for _, plan := range plans {
 		svc := plan.spec
 		base := plan.base
@@ -169,11 +172,6 @@ func (m *Manager) Reload() error {
 			next[svc.Name] = &entry{spec: svc, status: base}
 		}
 	}
-	if err := writePublishedServiceMetadata(m.rt.CityPath(), statusMapFromEntries(next)); err != nil {
-		_ = closeUnreusedInstances(next, reused)
-		return err
-	}
-
 	m.mu.Lock()
 	m.entries = next
 	m.mu.Unlock()
@@ -214,7 +212,6 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 		if e.inst == nil {
 			continue
 		}
-		e.inst.Tick(ctx, now)
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now)
 		if proxyProcessPublicationContextChanged(e.status, base) {
 			restarted, err := newProxyProcessInstance(m.rt, e.spec, base)
@@ -223,22 +220,29 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 				continue
 			}
 			old := e.inst
+			swapped := false
 			m.mu.Lock()
 			if cur, ok := m.entries[e.spec.Name]; ok && cur.inst == old {
 				cur.inst = restarted
 				cur.status = mergeStatus(base, restarted.Status())
+				swapped = true
 			}
 			m.mu.Unlock()
+			if !swapped {
+				if err := restarted.Close(); err != nil {
+					log.Printf("workspacesvc: close unreused proxy process %s on tick: %v", e.spec.Name, err)
+				}
+				continue
+			}
 			if err := old.Close(); err != nil {
 				log.Printf("workspacesvc: close proxy process %s after restart: %v", e.spec.Name, err)
 			}
 			continue
 		}
+		e.inst.Tick(ctx, now)
 		status := mergeStatus(base, e.inst.Status())
-		inst := e.inst
 		m.mu.Lock()
 		if cur, ok := m.entries[e.spec.Name]; ok {
-			cur.inst = inst
 			cur.status = status
 		}
 		m.mu.Unlock()
@@ -565,7 +569,7 @@ func (m *Manager) logPublicationRefsError(refs publicationRefs) {
 func (m *Manager) currentPublicationRefs() publicationRefs {
 	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
 	m.logPublicationRefsError(refs)
-	if refs.err == nil {
+	if refs.err == nil && refs.exists {
 		m.lastPublicationRefs = refs
 		m.havePublicationCache = true
 		return refs
@@ -580,6 +584,14 @@ func statusMapFromEntries(entries map[string]*entry) map[string]Status {
 	statuses := make(map[string]Status, len(entries))
 	for name, e := range entries {
 		statuses[name] = e.status
+	}
+	return statuses
+}
+
+func statusMapFromPlans(plans []servicePlan) map[string]Status {
+	statuses := make(map[string]Status, len(plans))
+	for _, plan := range plans {
+		statuses[plan.spec.Name] = plan.base
 	}
 	return statuses
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,6 +67,13 @@ class Server(socketserver.UnixStreamServer):
 
 Server(sock, Handler).serve_forever()
 `
+
+func requirePython3(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not in PATH")
+	}
+}
 
 func TestManagerReloadProxyProcessStartsAndProxies(t *testing.T) {
 	t.Setenv("GC_SERVICE_HELPER", "1")
@@ -312,13 +320,8 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 }
 
 func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testing.T) {
-	cityPath := filepath.Join(os.TempDir(), fmt.Sprintf("gc-tick-%d", time.Now().UnixNano()))
-	if err := os.MkdirAll(cityPath, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q): %v", cityPath, err)
-	}
-	t.Cleanup(func() {
-		_ = os.RemoveAll(cityPath)
-	})
+	requirePython3(t)
+	cityPath := t.TempDir()
 
 	rt := &testRuntime{
 		cityPath: cityPath,
@@ -401,6 +404,7 @@ func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testin
 }
 
 func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *testing.T) {
+	requirePython3(t)
 	rt := &testRuntime{
 		cityPath: t.TempDir(),
 		cityName: "test-city",
