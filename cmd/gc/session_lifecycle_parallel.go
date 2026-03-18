@@ -6,6 +6,7 @@ import (
 	"io"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -19,6 +20,7 @@ import (
 const (
 	defaultMaxParallelStartsPerWave = 3
 	defaultMaxParallelStopsPerWave  = 3
+	defaultMaxParallelInterrupts    = 16
 )
 
 type startCandidate struct {
@@ -85,7 +87,7 @@ func logLifecycleOutcome(
 		msg += fmt.Sprintf(" duration=%s", finished.Sub(started).Round(time.Millisecond))
 	}
 	if err != nil {
-		msg += fmt.Sprintf(" err=%v", err)
+		msg += fmt.Sprintf(" err=%s", strings.ReplaceAll(err.Error(), "\n", "\\n"))
 	}
 	fmt.Fprintln(w, msg) //nolint:errcheck // best-effort diagnostics
 }
@@ -448,7 +450,7 @@ func executePlannedStarts(
 		}
 		var ready []startCandidate
 		for _, candidate := range waveCandidates {
-			if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
+			if !allDependenciesAliveForTemplate(candidate.logicalTemplate(cfg), cfg, desiredState, sp, cityName, store) {
 				logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.logicalTemplate(cfg), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
 				continue
 			}
@@ -465,7 +467,7 @@ func executePlannedStarts(
 			end := min(offset+batchSize, len(ready))
 			var prepared []preparedStart
 			for _, candidate := range ready[offset:end] {
-				if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
+				if !allDependenciesAliveForTemplate(candidate.logicalTemplate(cfg), cfg, desiredState, sp, cityName, store) {
 					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.logicalTemplate(cfg), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
 					continue
 				}
@@ -697,7 +699,7 @@ func filterStopTargets(targets []stopTarget, names []string) []stopTarget {
 func interruptTargetsBounded(targets []stopTarget, sp runtime.Provider, stderr io.Writer) int {
 	sent := 0
 	waveStarted := time.Now()
-	results := executeTargetWave(targets, len(targets), func(target stopTarget) error {
+	results := executeTargetWave(targets, min(len(targets), defaultMaxParallelInterrupts), func(target stopTarget) error {
 		return sp.Interrupt(target.name)
 	})
 	for _, result := range results {
@@ -722,43 +724,8 @@ func stopTargetsBounded(
 	actor string,
 	stdout, stderr io.Writer,
 ) int {
-	resolvedCount := 0
 	for _, target := range targets {
-		if target.resolved {
-			resolvedCount++
-		}
-	}
-	if resolvedCount == 0 {
-		if cfg != nil {
-			fmt.Fprintln(stderr, "session lifecycle: all stop targets unresolved; using flat bounded stop order") //nolint:errcheck
-		}
-		waveStarted := time.Now()
-		results := executeTargetWave(targets, defaultMaxParallelStopsPerWave, func(target stopTarget) error {
-			return sp.Stop(target.name)
-		})
-		stopped := 0
-		for _, result := range results {
-			if shouldLogStopOutcome(result.target, cfg) {
-				logLifecycleOutcome(stderr, "stop", 0, result.target.name, result.target.template, result.outcome, result.started, result.finished, result.err)
-			}
-			if result.err != nil {
-				fmt.Fprintf(stderr, "gc stop: stopping %s: %v\n", result.target.name, result.err) //nolint:errcheck
-				continue
-			}
-			fmt.Fprintf(stdout, "Stopped agent '%s'\n", result.target.name) //nolint:errcheck
-			stopped++
-			rec.Record(events.Event{
-				Type: events.SessionStopped, Actor: actor, Subject: result.target.subject,
-			})
-		}
-		logLifecycleWave(stderr, "stop", 0, waveStarted, len(targets))
-		return stopped
-	}
-	if resolvedCount != len(targets) {
-		for _, target := range targets {
-			if target.resolved {
-				continue
-			}
+		if !target.resolved {
 			if cfg != nil {
 				fmt.Fprintln(stderr, "session lifecycle: unresolved stop target template; falling back to serial stop order") //nolint:errcheck
 			}

@@ -56,18 +56,17 @@ func derivePoolDesired(desiredState map[string]TemplateParams, cfg *config.City)
 	return counts
 }
 
-// allDependenciesAlive checks that all template dependencies of a session
-// have at least one alive instance. Uses the runtime.Provider directly
-// instead of agent types for liveness checks.
-func allDependenciesAlive(
-	session beads.Bead,
+// allDependenciesAliveForTemplate checks that all template dependencies of a
+// resolved logical template have at least one alive instance. Uses the
+// runtime.Provider directly instead of agent types for liveness checks.
+func allDependenciesAliveForTemplate(
+	template string,
 	cfg *config.City,
 	desiredState map[string]TemplateParams,
 	sp runtime.Provider,
 	cityName string,
 	store beads.Store,
 ) bool {
-	template := normalizedSessionTemplate(session, cfg)
 	cfgAgent := findAgentByTemplate(cfg, template)
 	if cfgAgent == nil || len(cfgAgent.DependsOn) == 0 {
 		return true
@@ -82,6 +81,20 @@ func allDependenciesAlive(
 		}
 	}
 	return true
+}
+
+// allDependenciesAlive checks that all template dependencies of a session
+// have at least one alive instance. Uses the runtime.Provider directly
+// instead of agent types for liveness checks.
+func allDependenciesAlive(
+	session beads.Bead,
+	cfg *config.City,
+	desiredState map[string]TemplateParams,
+	sp runtime.Provider,
+	cityName string,
+	store beads.Store,
+) bool {
+	return allDependenciesAliveForTemplate(normalizedSessionTemplate(session, cfg), cfg, desiredState, sp, cityName, store)
 }
 
 // reconcileSessionBeads performs bead-driven reconciliation using wake/sleep

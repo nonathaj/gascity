@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -558,6 +559,74 @@ func TestExecutePlannedStarts_RevalidatesDependenciesBetweenWaveBatches(t *testi
 	}
 }
 
+func TestExecutePlannedStarts_UsesLogicalTemplateForDependencyRechecks(t *testing.T) {
+	sp := &dropDependencyAfterNStartsProvider{
+		Fake:      runtime.NewFake(),
+		dropAfter: defaultMaxParallelStartsPerWave,
+		depName:   "db",
+	}
+	if err := sp.Start(context.Background(), "db", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "app-1", DependsOn: []string{"db"}},
+			{Name: "app-2", DependsOn: []string{"db"}},
+			{Name: "app-3", DependsOn: []string{"db"}},
+			{Name: "app-4", DependsOn: []string{"db"}},
+			{Name: "db"},
+		},
+	}
+	store := beads.NewMemStore()
+	clk := &clock.Fake{Time: time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC)}
+	desired := map[string]TemplateParams{}
+	candidates := make([]startCandidate, 0, 4)
+	for idx, name := range []string{"app-1", "app-2", "app-3", "app-4"} {
+		tp := TemplateParams{Command: name, SessionName: name, TemplateName: name}
+		desired[name] = tp
+		bead := makeBead(name+"-id", map[string]string{
+			"session_name":   name,
+			"template":       "stale-" + name,
+			"generation":     "1",
+			"instance_token": "tok-" + name,
+			"state":          "asleep",
+		})
+		created, err := store.Create(beads.Bead{
+			ID:       bead.ID,
+			Title:    name,
+			Type:     sessionBeadType,
+			Labels:   []string{sessionBeadLabel},
+			Metadata: bead.Metadata,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate := created
+		candidates = append(candidates, startCandidate{
+			session: &candidate,
+			tp:      tp,
+			order:   idx,
+		})
+	}
+
+	woken := executePlannedStarts(
+		context.Background(), candidates, cfg, desired, sp, store, "",
+		clk, events.Discard, 5*time.Second, ioDiscard{}, ioDiscard{},
+	)
+
+	if woken != defaultMaxParallelStartsPerWave {
+		t.Fatalf("woken = %d, want %d", woken, defaultMaxParallelStartsPerWave)
+	}
+	for _, name := range []string{"app-1", "app-2", "app-3"} {
+		if !sp.IsRunning(name) {
+			t.Fatalf("%s should have started before dependency loss", name)
+		}
+	}
+	if sp.IsRunning("app-4") {
+		t.Fatal("app-4 should be blocked after db dies between batches even when bead template is stale")
+	}
+}
+
 func TestStopSessionsBounded_StopsDependentsBeforeDependencies(t *testing.T) {
 	sp := newGatedStopProvider()
 	for _, name := range []string{"db", "api", "worker", "audit"} {
@@ -962,7 +1031,7 @@ func TestStopTargetsBounded_FallsBackToSerialWhenTemplateUnresolved(t *testing.T
 	}
 }
 
-func TestStopTargetsBounded_AllUnresolvedUsesFlatBoundedParallelism(t *testing.T) {
+func TestStopTargetsBounded_AllUnresolvedFallsBackToSerial(t *testing.T) {
 	sp := newGatedStopProvider()
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -986,18 +1055,32 @@ func TestStopTargetsBounded_AllUnresolvedUsesFlatBoundedParallelism(t *testing.T
 		}, cfg, sp, rec, "gc", &stdout, &stderr)
 	}()
 
-	first := sp.waitForStops(t, defaultMaxParallelStopsPerWave)
-	if !containsAll(first, "orphan-a", "orphan-b", "orphan-c") && !containsAll(first, "orphan-a", "orphan-b", "orphan-d") &&
-		!containsAll(first, "orphan-a", "orphan-c", "orphan-d") && !containsAll(first, "orphan-b", "orphan-c", "orphan-d") {
-		t.Fatalf("first flat wave = %v, want any %d orphans", first, defaultMaxParallelStopsPerWave)
+	first := sp.waitForStops(t, 1)
+	if !containsAll(first, "orphan-a") {
+		t.Fatalf("first serial stop = %v, want orphan-a", first)
 	}
 	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
-	for _, name := range first {
-		sp.release(name)
-	}
+	sp.release("orphan-a")
 
 	second := sp.waitForStops(t, 1)
-	sp.release(second[0])
+	if !containsAll(second, "orphan-b") {
+		t.Fatalf("second serial stop = %v, want orphan-b", second)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("orphan-b")
+
+	third := sp.waitForStops(t, 1)
+	if !containsAll(third, "orphan-c") {
+		t.Fatalf("third serial stop = %v, want orphan-c", third)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("orphan-c")
+
+	fourth := sp.waitForStops(t, 1)
+	if !containsAll(fourth, "orphan-d") {
+		t.Fatalf("fourth serial stop = %v, want orphan-d", fourth)
+	}
+	sp.release("orphan-d")
 
 	select {
 	case stopped := <-done:
@@ -1008,11 +1091,11 @@ func TestStopTargetsBounded_AllUnresolvedUsesFlatBoundedParallelism(t *testing.T
 		t.Fatal("stopTargetsBounded did not finish")
 	}
 
-	if sp.maxInFlight != defaultMaxParallelStopsPerWave {
-		t.Fatalf("max in-flight stops = %d, want %d", sp.maxInFlight, defaultMaxParallelStopsPerWave)
+	if sp.maxInFlight != 1 {
+		t.Fatalf("max in-flight stops = %d, want 1", sp.maxInFlight)
 	}
-	if !strings.Contains(stderr.String(), "all stop targets unresolved") {
-		t.Fatalf("stderr = %q, want flat unresolved diagnostic", stderr.String())
+	if !strings.Contains(stderr.String(), "falling back to serial stop order") {
+		t.Fatalf("stderr = %q, want serial fallback diagnostic", stderr.String())
 	}
 }
 
@@ -1100,6 +1183,41 @@ func TestInterruptTargetsBounded_BroadcastsAllTargetsConcurrently(t *testing.T) 
 	}
 }
 
+func TestInterruptTargetsBounded_RespectsInterruptCap(t *testing.T) {
+	sp := newGatedStopProvider()
+	targets := make([]stopTarget, 0, defaultMaxParallelInterrupts+1)
+	for i := 0; i < defaultMaxParallelInterrupts+1; i++ {
+		name := fmt.Sprintf("worker-%d", i+1)
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, stopTarget{name: name, template: name, resolved: true})
+	}
+
+	done := make(chan int, 1)
+	go func() {
+		done <- interruptTargetsBounded(targets, sp, ioDiscard{})
+	}()
+
+	first := sp.waitForInterrupts(t, defaultMaxParallelInterrupts)
+	sp.ensureNoFurtherInterrupt(t, 150*time.Millisecond)
+	for _, name := range first {
+		sp.releaseInterrupt(name)
+	}
+
+	second := sp.waitForInterrupts(t, 1)
+	sp.releaseInterrupt(second[0])
+
+	select {
+	case sent := <-done:
+		if sent != len(targets) {
+			t.Fatalf("sent = %d, want %d", sent, len(targets))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("interruptTargetsBounded did not finish")
+	}
+}
+
 func TestExecutePreparedStartWave_PanicIncludesStackTrace(t *testing.T) {
 	results := executePreparedStartWave(
 		context.Background(),
@@ -1131,6 +1249,19 @@ func TestExecuteTargetWave_PanicIncludesStackTrace(t *testing.T) {
 	}
 	if results[0].err == nil || !strings.Contains(results[0].err.Error(), "goroutine") {
 		t.Fatalf("err = %v, want stack trace", results[0].err)
+	}
+}
+
+func TestLogLifecycleOutcome_SanitizesMultilineErrors(t *testing.T) {
+	var stderr bytes.Buffer
+	logLifecycleOutcome(&stderr, "stop", 0, "worker", "worker", "panic_recovered",
+		time.Unix(1, 0), time.Unix(2, 0), fmt.Errorf("boom\nstack line"))
+	got := stderr.String()
+	if strings.Contains(got, "boom\nstack line") {
+		t.Fatalf("stderr = %q, want escaped newline in error text", got)
+	}
+	if !strings.Contains(got, "err=boom\\nstack line") {
+		t.Fatalf("stderr = %q, want escaped multiline error", got)
 	}
 }
 
