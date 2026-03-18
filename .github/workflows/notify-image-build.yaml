@@ -31,5 +31,5 @@ jobs:
         with:
           token: ${{ secrets.GASCITY_HOSTED_TOKEN }}
           repository: gastownhall/gascity-hosted
-          event-type: gc-binary-dep-updated
+          event-type: runtime-dep-updated
           client-payload: '{"repo": ${{ toJSON(github.repository) }}, "sha": ${{ toJSON(github.sha) }}}'
