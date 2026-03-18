@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
@@ -41,7 +42,7 @@ func TestDoRigRestart(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -78,7 +79,7 @@ func TestDoRigRestartNoneRunning(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}
@@ -108,7 +109,7 @@ func TestDoRigRestartWithPool(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(sp, rec, nil, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -154,7 +155,7 @@ func TestDoRigRestart_UsesLogicalAgentSubjectForCustomSessionNames(t *testing.T)
 	agents := []config.Agent{{Name: "worker", Dir: "frontend"}}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	code := doRigRestart(sp, rec, store, nil, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -194,7 +195,7 @@ func TestDoRigRestart_UsesPoolSessionBeadsForCustomSessionNames(t *testing.T) {
 	}}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	code := doRigRestart(sp, rec, store, nil, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -237,7 +238,7 @@ func TestDoRigRestart_UsesUnlimitedPoolSessionBeadsForCustomSessionNames(t *test
 	}}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	code := doRigRestart(sp, rec, store, nil, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -279,7 +280,7 @@ func TestDoRigRestart_UsesLegacyPoolAgentLabelForCustomSessionNames(t *testing.T
 	}}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	code := doRigRestart(sp, rec, store, nil, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -321,7 +322,7 @@ func TestDoRigRestart_UsesLegacyUnlimitedPoolAgentLabelForCustomSessionNames(t *
 	}}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	code := doRigRestart(sp, rec, store, nil, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -333,6 +334,56 @@ func TestDoRigRestart_UsesLegacyUnlimitedPoolAgentLabelForCustomSessionNames(t *
 	}
 	if rec.Events[0].Subject != "frontend/worker-7" {
 		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-7")
+	}
+}
+
+func TestDoRigRestart_UsesFullCityGraphForStopOrdering(t *testing.T) {
+	sp := newGatedStopProvider()
+	for _, name := range []string{"frontend--api", "frontend--cache"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{Command: "echo"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fullCfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "api", Dir: "frontend", DependsOn: []string{"backend/db"}},
+			{Name: "cache", Dir: "frontend"},
+			{Name: "db", Dir: "backend", DependsOn: []string{"frontend/cache"}},
+		},
+	}
+	rigAgents := []config.Agent{
+		{Name: "api", Dir: "frontend", DependsOn: []string{"backend/db"}},
+		{Name: "cache", Dir: "frontend"},
+	}
+
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- doRigRestart(sp, rec, nil, fullCfg, rigAgents, "frontend", "city", "", &stdout, &stderr)
+	}()
+
+	firstWave := sp.waitForStops(t, 1)
+	if !containsAll(firstWave, "frontend--api") {
+		t.Fatalf("first stop wave = %v, want frontend--api", firstWave)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("frontend--api")
+
+	secondWave := sp.waitForStops(t, 1)
+	if !containsAll(secondWave, "frontend--cache") {
+		t.Fatalf("second stop wave = %v, want frontend--cache", secondWave)
+	}
+	sp.release("frontend--cache")
+
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Fatalf("code = %d, want 0", code)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("doRigRestart did not finish")
 	}
 }
 
@@ -350,7 +401,7 @@ func TestDoRigRestartStopError(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doRigRestart(wrapper, rec, nil, agents, "frontend", "city", "", &stdout, &stderr)
+	code := doRigRestart(wrapper, rec, nil, nil, agents, "frontend", "city", "", &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0", code)
 	}

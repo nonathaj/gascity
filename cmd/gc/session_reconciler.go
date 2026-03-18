@@ -67,7 +67,7 @@ func allDependenciesAlive(
 	cityName string,
 	store beads.Store,
 ) bool {
-	template := session.Metadata["template"]
+	template := normalizedSessionTemplate(session, cfg)
 	cfgAgent := findAgentByTemplate(cfg, template)
 	if cfgAgent == nil || len(cfgAgent.DependsOn) == 0 {
 		return true

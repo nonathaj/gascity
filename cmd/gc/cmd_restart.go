@@ -107,7 +107,7 @@ func cmdRigRestart(args []string, stdout, stderr io.Writer) int {
 	sp := newSessionProvider()
 	rec := openCityRecorder(stderr)
 	store, _ := openCityStoreAt(cityPath)
-	return doRigRestart(sp, rec, store, rigAgents, rigName, cityName, cfg.Workspace.SessionTemplate, stdout, stderr)
+	return doRigRestart(sp, rec, store, cfg, rigAgents, rigName, cityName, cfg.Workspace.SessionTemplate, stdout, stderr)
 }
 
 // doRigRestart kills sessions for all agents in a rig. The reconciler will
@@ -116,6 +116,7 @@ func doRigRestart(
 	sp runtime.Provider,
 	rec events.Recorder,
 	store beads.Store,
+	cfg *config.City,
 	agents []config.Agent,
 	rigName, cityName, sessionTemplate string,
 	stdout, stderr io.Writer,
@@ -149,8 +150,11 @@ func doRigRestart(
 			}
 		}
 	}
-	cfg := &config.City{Agents: agents}
-	killed := stopTargetsBounded(targets, cfg, sp, rec, eventActor(), io.Discard, stderr)
+	dependencyCfg := cfg
+	if dependencyCfg == nil {
+		dependencyCfg = &config.City{Agents: agents}
+	}
+	killed := stopTargetsBounded(targets, dependencyCfg, sp, rec, eventActor(), io.Discard, stderr)
 
 	fmt.Fprintf(stdout, "Restarted %d agent(s) in rig '%s' (killed sessions; reconciler will restart)\n", killed, rigName) //nolint:errcheck // best-effort stdout
 	return 0

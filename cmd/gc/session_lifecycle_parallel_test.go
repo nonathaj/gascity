@@ -615,6 +615,76 @@ func TestStopSessionsBounded_UsesSessionBeadTemplateForCustomSessionNames(t *tes
 	}
 }
 
+func TestStopSessionsBounded_UsesLegacyAgentLabelTemplateForOrdering(t *testing.T) {
+	sp := newGatedStopProvider()
+	store := beads.NewMemStore()
+	cfg := &config.City{
+		Workspace: config.Workspace{SessionTemplate: "{{.Agent}}"},
+		Agents: []config.Agent{
+			{Name: "worker", Dir: "frontend", DependsOn: []string{"frontend/db"}, Pool: &config.PoolConfig{Min: 1, Max: 2}},
+			{Name: "db", Dir: "frontend"},
+		},
+	}
+	for _, bead := range []beads.Bead{
+		{
+			Title:  "db",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel, "agent:frontend/db"},
+			Metadata: map[string]string{
+				"template":     "frontend/db",
+				"session_name": "custom-db",
+			},
+		},
+		{
+			Title:  "worker",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel, "agent:frontend/worker-1"},
+			Metadata: map[string]string{
+				"template":     "worker",
+				"session_name": "custom-worker-1",
+				"pool_slot":    "1",
+			},
+		},
+	} {
+		if _, err := store.Create(bead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"custom-db", "custom-worker-1"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- stopSessionsBounded([]string{"custom-db", "custom-worker-1"}, cfg, store, sp, rec, "gc", &stdout, &stderr)
+	}()
+
+	firstWave := sp.waitForStops(t, 1)
+	if !containsAll(firstWave, "custom-worker-1") {
+		t.Fatalf("first stop wave = %v, want custom-worker-1", firstWave)
+	}
+	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.release("custom-worker-1")
+
+	secondWave := sp.waitForStops(t, 1)
+	if !containsAll(secondWave, "custom-db") {
+		t.Fatalf("second stop wave = %v, want custom-db", secondWave)
+	}
+	sp.release("custom-db")
+
+	select {
+	case stopped := <-done:
+		if stopped != 2 {
+			t.Fatalf("stopped = %d, want 2", stopped)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stopSessionsBounded did not finish")
+	}
+}
+
 func TestInterruptSessionsBounded_BoundsParallelBroadcast(t *testing.T) {
 	sp := newGatedStopProvider()
 	cfg := &config.City{
@@ -842,6 +912,72 @@ func TestCandidateWaveOrder_FallsBackToSerialOnCycle(t *testing.T) {
 	}
 	if waves[0] != 0 || waves[1] != 1 {
 		t.Fatalf("waves = %#v, want strict serial fallback", waves)
+	}
+}
+
+func TestCandidateWaveOrder_UsesLegacyAgentLabelTemplate(t *testing.T) {
+	store := beads.NewMemStore()
+	for _, bead := range []beads.Bead{
+		{
+			Title:  "db",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel, "agent:frontend/db"},
+			Metadata: map[string]string{
+				"template":     "frontend/db",
+				"session_name": "custom-db",
+			},
+		},
+		{
+			Title:  "worker",
+			Type:   sessionBeadType,
+			Labels: []string{sessionBeadLabel, "agent:frontend/worker-1"},
+			Metadata: map[string]string{
+				"template":     "worker",
+				"session_name": "custom-worker-1",
+				"pool_slot":    "1",
+			},
+		},
+	} {
+		if _, err := store.Create(bead); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{SessionTemplate: "{{.Agent}}"},
+		Agents: []config.Agent{
+			{Name: "worker", Dir: "frontend", DependsOn: []string{"frontend/db"}, Pool: &config.PoolConfig{Min: 1, Max: 2}},
+			{Name: "db", Dir: "frontend"},
+		},
+	}
+	candidates := []startCandidate{
+		{
+			session: &beads.Bead{
+				Labels: []string{sessionBeadLabel, "agent:frontend/worker-1"},
+				Metadata: map[string]string{
+					"template":     "worker",
+					"session_name": "custom-worker-1",
+					"pool_slot":    "1",
+				},
+			},
+			tp:    TemplateParams{TemplateName: "frontend/worker"},
+			order: 0,
+		},
+		{
+			session: &beads.Bead{Metadata: map[string]string{
+				"template":     "frontend/db",
+				"session_name": "custom-db",
+			}},
+			tp:    TemplateParams{TemplateName: "frontend/db"},
+			order: 1,
+		},
+	}
+
+	waves, ok := candidateWaveOrder(candidates, cfg, map[string]TemplateParams{}, runtime.NewFake(), "city", store)
+	if !ok {
+		t.Fatal("unexpected serial fallback")
+	}
+	if waves[0] != 1 || waves[1] != 0 {
+		t.Fatalf("waves = %#v, want legacy worker after db", waves)
 	}
 }
 

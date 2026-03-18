@@ -5,6 +5,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 // resolveSessionName returns the session name for a qualified agent name.
@@ -59,6 +60,23 @@ func sessionBeadAgentName(bead beads.Bead) string {
 		}
 	}
 	return ""
+}
+
+func normalizedSessionTemplate(bead beads.Bead, cfg *config.City) string {
+	template := bead.Metadata["template"]
+	if cfg == nil {
+		return template
+	}
+	if template != "" && findAgentByTemplate(cfg, template) != nil {
+		return template
+	}
+	agentName := sessionBeadAgentName(bead)
+	if agentName != "" {
+		if resolved := resolveAgentTemplate(agentName, cfg); resolved != "" && findAgentByTemplate(cfg, resolved) != nil {
+			return resolved
+		}
+	}
+	return template
 }
 
 // findSessionNameByTemplate searches for an open session bead with the given

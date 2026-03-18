@@ -203,8 +203,10 @@ func candidateWaveOrder(
 	var templatesInOrder []string
 	templateSeen := make(map[string]bool)
 	candidateTemplates := make(map[string]bool)
-	for _, candidate := range candidates {
-		template := candidate.template()
+	resolvedTemplates := make([]string, len(candidates))
+	for idx, candidate := range candidates {
+		template := normalizedSessionTemplate(*candidate.session, cfg)
+		resolvedTemplates[idx] = template
 		candidateTemplates[template] = true
 		if !templateSeen[template] {
 			templateSeen[template] = true
@@ -231,8 +233,8 @@ func candidateWaveOrder(
 		return strictSerialWaveOrder(candidates), false
 	}
 	candidateWave := make(map[int]int, len(candidates))
-	for idx, candidate := range candidates {
-		wave, ok := templateWave[candidate.template()]
+	for idx := range candidates {
+		wave, ok := templateWave[resolvedTemplates[idx]]
 		if !ok {
 			continue
 		}
@@ -463,13 +465,13 @@ func executePlannedStarts(
 			var prepared []preparedStart
 			for _, candidate := range ready[offset:end] {
 				if !allDependenciesAlive(*candidate.session, cfg, desiredState, sp, cityName, store) {
-					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.template(), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
+					logLifecycleOutcome(stderr, "start", wave, candidate.name(), normalizedSessionTemplate(*candidate.session, cfg), "blocked_on_dependencies", time.Time{}, time.Time{}, nil)
 					continue
 				}
 				item, err := prepareStartCandidate(candidate, store, clk)
 				if err != nil {
 					fmt.Fprintf(stderr, "session reconciler: pre-wake %s: %v\n", candidate.name(), err) //nolint:errcheck
-					logLifecycleOutcome(stderr, "start", wave, candidate.name(), candidate.template(), "failed", time.Time{}, time.Time{}, err)
+					logLifecycleOutcome(stderr, "start", wave, candidate.name(), normalizedSessionTemplate(*candidate.session, cfg), "failed", time.Time{}, time.Time{}, err)
 					continue
 				}
 				prepared = append(prepared, *item)
@@ -612,7 +614,7 @@ func stopTargetsForNames(names []string, cfg *config.City, store beads.Store) []
 		if sessionBeads, err := loadSessionBeads(store); err == nil {
 			for _, bead := range sessionBeads {
 				name := bead.Metadata["session_name"]
-				template := bead.Metadata["template"]
+				template := normalizedSessionTemplate(bead, cfg)
 				if name != "" && template != "" {
 					sessionTemplates[name] = template
 				}
