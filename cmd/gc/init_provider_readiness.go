@@ -50,7 +50,7 @@ func finalizeInit(cityPath string, stdout, stderr io.Writer, opts initFinalizeOp
 			}
 			fmt.Fprintln(stderr) //nolint:errcheck // best-effort stderr
 		}
-		fmt.Fprintln(stderr) //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr)                                                                                 //nolint:errcheck // best-effort stderr
 		fmt.Fprintf(stderr, "%s: install the missing dependencies, then run 'gc start'\n", opts.commandName) //nolint:errcheck // best-effort stderr
 		return 1
 	}
@@ -438,8 +438,8 @@ func checkHardDependencies(cityPath string) []missingDep {
 	type dep struct {
 		name        string
 		installHint string
-		minVersion  string           // empty = no version check
-		condition   func() bool      // if non-nil, only checked when true
+		minVersion  string      // empty = no version check
+		condition   func() bool // if non-nil, only checked when true
 	}
 
 	beadsProvider := rawBeadsProvider(cityPath)

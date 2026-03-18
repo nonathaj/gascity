@@ -165,6 +165,10 @@ Lesson test — it becomes LESS useful as models improve.
 - Error messages include context: `fmt.Errorf("adding rig %q: %w", name, err)`
 - Role names never appear in Go code. If you're writing `if role == "mayor"`,
   it's a design error.
+- **Tmux safety:** Never run bare `tmux kill-server` as cleanup. Never kill the
+  default tmux server. If tmux cleanup is required, target only the known
+  city/test socket explicitly with `tmux -L <socket> ...`, or prefer `gc stop`
+  for city shutdown. Treat personal tmux servers as out of bounds.
 - **Adding agent config fields:** When adding a field to `config.Agent`,
   also add it to `AgentPatch`, `AgentOverride`, their apply functions
   (`applyAgentPatch`, `applyAgentOverride`), and the `poolAgents` deep-copy

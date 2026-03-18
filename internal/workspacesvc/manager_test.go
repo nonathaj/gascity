@@ -76,6 +76,26 @@ func registerWorkflowContractForTest(t *testing.T, contract string, factory Work
 	})
 }
 
+func writePublicationStoreForTest(t *testing.T, cityPath string, services string) {
+	t.Helper()
+	path := filepath.Join(cityPath, ".gc", "supervisor", "publications.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+	}
+	payload := fmt.Sprintf(`{
+  "version": 1,
+  "cities": {
+    %q: {
+      "services": %s
+    }
+  }
+}
+`, cityPath, services)
+	if err := os.WriteFile(path, []byte(payload), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
 func TestManagerReloadWorkflowServiceCreatesStateRoot(t *testing.T) {
 	contract := uniqueContract(t)
 	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
@@ -200,6 +220,65 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 	}
 	if snapshot["url_version"] != float64(1) {
 		t.Fatalf("url_version = %#v, want 1", snapshot["url_version"])
+	}
+}
+
+func TestManagerReloadWorkflowServiceUsesAuthoritativePublicationStore(t *testing.T) {
+	contract := uniqueContract(t)
+	registerWorkflowContractForTest(t, contract, func(_ RuntimeContext, svc config.Service) (Instance, error) {
+		return &testInstance{
+			status: Status{
+				ServiceName:      svc.Name,
+				WorkflowContract: contract,
+				State:            "ready",
+				LocalState:       "ready",
+			},
+		}, nil
+	})
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "review-intake",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Workflow: config.ServiceWorkflowConfig{Contract: contract},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--acme--deadbeef.apps.example.com"
+  }
+]`)
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	status, ok := mgr.Get("review-intake")
+	if !ok {
+		t.Fatal("service status missing")
+	}
+	if status.URL != "https://review-intake--acme--deadbeef.apps.example.com" {
+		t.Fatalf("URL = %q, want authoritative hosted route", status.URL)
+	}
+	if status.PublicationState != "published" {
+		t.Errorf("PublicationState = %q, want published", status.PublicationState)
 	}
 }
 

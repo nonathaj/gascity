@@ -13,7 +13,7 @@ func TestDerivePublishedURL(t *testing.T) {
 		Provider:         "hosted",
 		TenantSlug:       "Acme",
 		PublicBaseDomain: "apps.example.com",
-	}, "Demo City", config.Service{
+	}, publicationRefs{}, "Demo City", config.Service{
 		Name: "review_intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -30,8 +30,36 @@ func TestDerivePublishedURL(t *testing.T) {
 	}
 }
 
+func TestDerivePublishedURLUsesAuthoritativeMetadataWhenAvailable(t *testing.T) {
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{
+		Provider:         "hosted",
+		TenantSlug:       "Acme",
+		PublicBaseDomain: "apps.example.com",
+	}, publicationRefs{
+		refs: map[string]supervisor.PublishedServiceRef{
+			"review_intake": {
+				ServiceName: "review_intake",
+				Visibility:  "public",
+				URL:         "https://review-intake--acme--deadbeef.apps.example.com",
+			},
+		},
+		exists: true,
+	}, "Demo City", config.Service{
+		Name: "review_intake",
+		Publication: config.ServicePublicationConfig{
+			Visibility: "public",
+		},
+	})
+	if reason != "route_active" {
+		t.Fatalf("reason = %q, want route_active", reason)
+	}
+	if url != "https://review-intake--acme--deadbeef.apps.example.com" {
+		t.Fatalf("url = %q, want authoritative hosted route", url)
+	}
+}
+
 func TestDerivePublishedURLRequiresSupervisor(t *testing.T) {
-	url, reason := derivePublishedURL(supervisor.PublicationConfig{}, "Demo", config.Service{
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{}, publicationRefs{}, "Demo", config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -49,7 +77,7 @@ func TestDerivePublishedURLRequiresTenantSlug(t *testing.T) {
 	url, reason := derivePublishedURL(supervisor.PublicationConfig{
 		Provider:         "hosted",
 		PublicBaseDomain: "apps.example.com",
-	}, "Demo", config.Service{
+	}, publicationRefs{}, "Demo", config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -68,7 +96,7 @@ func TestDerivePublishedURLRequiresTenantAuthForTenantVisibility(t *testing.T) {
 		Provider:         "hosted",
 		TenantSlug:       "acme",
 		TenantBaseDomain: "tenant.apps.example.com",
-	}, "Demo", config.Service{
+	}, publicationRefs{}, "Demo", config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "tenant",
@@ -87,7 +115,7 @@ func TestDerivePublishedURLRejectsOverlongHostname(t *testing.T) {
 		Provider:         "hosted",
 		TenantSlug:       strings.Repeat("tenant", 8),
 		PublicBaseDomain: strings.Repeat("example", 20) + ".com",
-	}, strings.Repeat("workspace", 8), config.Service{
+	}, publicationRefs{}, strings.Repeat("workspace", 8), config.Service{
 		Name: strings.Repeat("service", 8),
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -98,5 +126,24 @@ func TestDerivePublishedURLRejectsOverlongHostname(t *testing.T) {
 	}
 	if reason != "publication_hostname_too_long" {
 		t.Fatalf("reason = %q, want publication_hostname_too_long", reason)
+	}
+}
+
+func TestDerivePublishedURLBlocksHostedFallbackWhenAuthoritativeStoreExists(t *testing.T) {
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{
+		Provider:         "hosted",
+		TenantSlug:       "Acme",
+		PublicBaseDomain: "apps.example.com",
+	}, publicationRefs{exists: true}, "Demo City", config.Service{
+		Name: "review_intake",
+		Publication: config.ServicePublicationConfig{
+			Visibility: "public",
+		},
+	})
+	if url != "" {
+		t.Fatalf("url = %q, want empty", url)
+	}
+	if reason != "publication_platform_url_missing" {
+		t.Fatalf("reason = %q, want publication_platform_url_missing", reason)
 	}
 }

@@ -10,10 +10,27 @@ import (
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
-func derivePublishedURL(pubCfg supervisor.PublicationConfig, workspaceName string, svc config.Service) (string, string) {
+type publicationRefs struct {
+	refs   map[string]supervisor.PublishedServiceRef
+	exists bool
+	err    error
+}
+
+func derivePublishedURL(pubCfg supervisor.PublicationConfig, refs publicationRefs, workspaceName string, svc config.Service) (string, string) {
 	visibility := svc.PublicationVisibilityOrDefault()
 	if visibility == "private" {
 		return "", ""
+	}
+	if refs.err != nil {
+		return "", "publication_metadata_invalid"
+	}
+	if ref, ok := refs.refs[svc.Name]; ok {
+		if ref.URL != "" && (ref.Visibility == "" || ref.Visibility == visibility) {
+			return ref.URL, "route_active"
+		}
+	}
+	if refs.exists && pubCfg.ProviderOrDefault() == "hosted" {
+		return "", "publication_platform_url_missing"
 	}
 	if pubCfg.ProviderOrDefault() == "" {
 		return "", "publication_requires_supervisor"

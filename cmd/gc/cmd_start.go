@@ -250,7 +250,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 			}
 			fmt.Fprintln(stderr) //nolint:errcheck // best-effort stderr
 		}
-		fmt.Fprintln(stderr)                                                                             //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr)                                                               //nolint:errcheck // best-effort stderr
 		fmt.Fprintln(stderr, "gc start: install the missing dependencies, then try again") //nolint:errcheck // best-effort stderr
 		return 1
 	}

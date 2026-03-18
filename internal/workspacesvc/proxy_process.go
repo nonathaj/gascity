@@ -170,7 +170,13 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 		return fmt.Errorf("open service log: %w", err)
 	}
 	_ = os.Remove(p.socketPath)
-	status := baseStatus(p.rt.Config(), p.rt.PublicationConfig(), p.svc, now)
+	status := baseStatus(
+		p.rt.Config(),
+		p.rt.PublicationConfig(),
+		loadPublicationRefs(p.rt.CityPath()),
+		p.svc,
+		now,
+	)
 
 	cmd := exec.Command(p.svc.Process.Command[0], p.svc.Process.Command[1:]...)
 	cmd.Dir = p.commandDir()

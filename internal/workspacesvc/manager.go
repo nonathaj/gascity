@@ -86,9 +86,10 @@ func (m *Manager) Reload() error {
 	baseStatuses := make(map[string]Status, len(cfg.Services))
 	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
+	refs := loadPublicationRefs(m.rt.CityPath())
 
 	for _, svc := range cfg.Services {
-		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), svc, now)
+		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, svc, now)
 		stateRoot, err := ensureStateRoot(m.rt.CityPath(), svc)
 		base.StateRoot = stateRoot
 		if err != nil {
@@ -199,12 +200,13 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	}
 	m.mu.RUnlock()
 
+	refs := loadPublicationRefs(m.rt.CityPath())
 	for _, e := range entries {
 		if e.inst == nil {
 			continue
 		}
 		e.inst.Tick(ctx, now)
-		status := mergeStatus(baseStatus(m.rt.Config(), m.rt.PublicationConfig(), e.spec, now), e.inst.Status())
+		status := mergeStatus(baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now), e.inst.Status())
 		m.mu.Lock()
 		if cur, ok := m.entries[e.spec.Name]; ok {
 			cur.status = status
@@ -356,7 +358,7 @@ func serviceSubpath(path, name string) (string, bool) {
 	}
 }
 
-func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc config.Service, now time.Time) Status {
+func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, refs publicationRefs, svc config.Service, now time.Time) Status {
 	visibility := svc.PublicationVisibilityOrDefault()
 	status := Status{
 		ServiceName:      svc.Name,
@@ -378,7 +380,7 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 	case "private":
 		status.PublicationState = "private"
 	default:
-		publishedURL, publicationReason := derivePublishedURL(pubCfg, workspaceName(cfg), svc)
+		publishedURL, publicationReason := derivePublishedURL(pubCfg, refs, workspaceName(cfg), svc)
 		if publishedURL != "" {
 			status.URL = publishedURL
 			status.PublicationState = "published"
@@ -405,6 +407,18 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, svc confi
 	}
 
 	return status
+}
+
+func loadPublicationRefs(cityPath string) publicationRefs {
+	refs, exists, err := supervisor.LoadCityPublicationRefs(
+		filepath.Join(citylayout.RuntimePath(cityPath, "supervisor"), "publications.json"),
+		cityPath,
+	)
+	return publicationRefs{
+		refs:   refs,
+		exists: exists,
+		err:    err,
+	}
 }
 
 func mergeStatus(base, override Status) Status {
