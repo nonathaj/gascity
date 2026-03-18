@@ -208,39 +208,31 @@ func setupTutorialCity(t *testing.T) (cityDir, rigDir string) {
 func TestTutorialConvoy(t *testing.T) {
 	_, rigDir := setupTutorialCity(t)
 
-	// Create a convoy (container bead) with child tasks.
-	out, err := bdReal(rigDir, "create", "--type", "convoy", "Build a multi-file project")
-	if err != nil {
-		t.Fatalf("bd create convoy failed: %v\n%s", err, out)
+	// Create multiple beads and sling them individually.
+	// The tutorial shows slinging each task to an agent — each sling
+	// auto-creates a convoy wrapping the bead + its formula wisp.
+	tasks := []struct {
+		prompt string
+		ext    string
+	}{
+		{"Write hello-world.rs", ".rs"},
+		{"Write hello-world.go", ".go"},
 	}
-	convoyID := extractBeadID(t, out)
-	t.Logf("convoy: %s", convoyID)
 
-	// Create child tasks under the convoy.
-	tasks := []string{
-		"Write hello-world.rs",
-		"Write hello-world.go",
-	}
-	var childIDs []string
+	var beadIDs []string
 	for _, task := range tasks {
-		out, err = bdReal(rigDir, "create", "--parent", convoyID, task)
+		out, err := gcReal(rigDir, "sling", "claude", task.prompt)
 		if err != nil {
-			t.Fatalf("bd create child failed: %v\n%s", err, out)
+			t.Fatalf("gc sling %q failed: %v\n%s", task.prompt, err, out)
 		}
-		id := extractBeadID(t, out)
-		childIDs = append(childIDs, id)
-		t.Logf("child: %s — %s", id, task)
+		t.Logf("gc sling:\n%s", out)
+		id := extractSlingBeadID(t, out)
+		beadIDs = append(beadIDs, id)
+		t.Logf("slung: %s", id)
 	}
 
-	// Sling the convoy to claude — should expand and route all children.
-	out, err = gcReal(rigDir, "sling", "claude", convoyID)
-	if err != nil {
-		t.Fatalf("gc sling convoy failed: %v\n%s", err, out)
-	}
-	t.Logf("gc sling convoy:\n%s", out)
-
-	// Wait for all child beads to close.
-	for _, id := range childIDs {
+	// Wait for all beads to close.
+	for _, id := range beadIDs {
 		waitForBeadClose(t, rigDir, id, 5*time.Minute)
 	}
 
@@ -248,20 +240,17 @@ func TestTutorialConvoy(t *testing.T) {
 	allFiles := listUserFiles(t, rigDir)
 	t.Logf("files after convoy: %v", allFiles)
 
-	var rsFound, goFound bool
-	for _, f := range allFiles {
-		if strings.HasSuffix(f, ".rs") {
-			rsFound = true
+	for _, task := range tasks {
+		found := false
+		for _, f := range allFiles {
+			if strings.HasSuffix(f, task.ext) {
+				found = true
+				break
+			}
 		}
-		if strings.HasSuffix(f, ".go") {
-			goFound = true
+		if !found {
+			t.Errorf("no %s file produced; files: %v", task.ext, allFiles)
 		}
-	}
-	if !rsFound {
-		t.Errorf("no .rs file produced")
-	}
-	if !goFound {
-		t.Errorf("no .go file produced")
 	}
 }
 
