@@ -2,6 +2,8 @@ package workspacesvc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -55,7 +57,7 @@ func newProxyProcessInstanceAt(rt RuntimeContext, svc config.Service, publicatio
 	}
 	if socketPath == "" {
 		var err error
-		socketPath, err = allocateProxyProcessSocketPath(svc.Name)
+		socketPath, err = allocateProxyProcessSocketPath(rt.CityPath(), svc.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -171,8 +173,11 @@ func (p *proxyProcessInstance) Close() error {
 	p.mu.Unlock()
 
 	if cmd != nil {
-		return stopProcessGroup(cmd)
+		if err := stopProcessGroup(cmd); err != nil {
+			return err
+		}
 	}
+	_ = os.Remove(p.socketPath)
 	return nil
 }
 
@@ -330,12 +335,20 @@ func (p *proxyProcessInstance) commandDir() string {
 	return p.rt.CityPath()
 }
 
-func allocateProxyProcessSocketPath(serviceName string) (string, error) {
-	dir := filepath.Join(os.TempDir(), "gascity-workspacesvc-sockets")
+func allocateProxyProcessSocketPath(cityPath, serviceName string) (string, error) {
+	sum := sha256.Sum256([]byte(cityPath))
+	dir := filepath.Join(os.TempDir(), fmt.Sprintf("gcsvc-%d", os.Getuid()), hex.EncodeToString(sum[:4]))
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("create socket dir: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, serviceName+".sock.*")
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", fmt.Errorf("chmod socket dir: %w", err)
+	}
+	prefix := config.NormalizePublicationLabel(serviceName, "svc")
+	if len(prefix) > 16 {
+		prefix = prefix[:16]
+	}
+	tmp, err := os.CreateTemp(dir, prefix+"-*.sock")
 	if err != nil {
 		return "", fmt.Errorf("allocate socket path: %w", err)
 	}

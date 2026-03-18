@@ -500,3 +500,203 @@ func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *tes
 		t.Fatalf("status URL = %q, want %q after retry", status.URL, second["GC_SERVICE_PUBLIC_URL"])
 	}
 }
+
+func TestProxyProcessTickUsesCachedPublicationRefsOnReadError(t *testing.T) {
+	t.Setenv("GC_SERVICE_HELPER", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "bridge",
+				Kind: "proxy_process",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Process: config.ServiceProcessConfig{
+					Command:    []string{exe, "-test.run=^TestProxyProcessHelper$", "--"},
+					HealthPath: "/healthz",
+				},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	defer mgr.Close() //nolint:errcheck // best-effort cleanup
+
+	loadEnv := func() map[string]string {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
+			rec := httptest.NewRecorder()
+			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
+				var env map[string]string
+				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+					t.Fatalf("decode env: %v", err)
+				}
+				return env
+			}
+			if time.Now().After(deadline) {
+				status, _ := mgr.Get("bridge")
+				t.Fatalf("timed out waiting for proxy process env endpoint: status=%+v", status)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	currentSocketPath := func() string {
+		t.Helper()
+		mgr.mu.RLock()
+		defer mgr.mu.RUnlock()
+		inst, ok := mgr.entries["bridge"].inst.(*proxyProcessInstance)
+		if !ok {
+			t.Fatal("bridge instance missing or wrong type")
+		}
+		return inst.socketPath
+	}
+
+	first := loadEnv()
+	firstSocket := currentSocketPath()
+	if first["GC_SERVICE_PUBLIC_URL"] != "https://bridge--acme--deadbeef.apps.example.com" {
+		t.Fatalf("first public URL = %q, want authoritative route", first["GC_SERVICE_PUBLIC_URL"])
+	}
+	if err := os.WriteFile(rt.PublicationStorePath(), []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", rt.PublicationStorePath(), err)
+	}
+
+	mgr.Tick(context.Background(), time.Now().UTC())
+
+	second := loadEnv()
+	secondSocket := currentSocketPath()
+	if second["GC_SERVICE_PUBLIC_URL"] != first["GC_SERVICE_PUBLIC_URL"] {
+		t.Fatalf("public URL = %q, want cached %q", second["GC_SERVICE_PUBLIC_URL"], first["GC_SERVICE_PUBLIC_URL"])
+	}
+	if secondSocket != firstSocket {
+		t.Fatalf("socket path changed on publication store read error: %q -> %q", firstSocket, secondSocket)
+	}
+}
+
+func TestProxyProcessSwapAndCloseCleanUpSocketFiles(t *testing.T) {
+	t.Setenv("GC_SERVICE_HELPER", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
+
+	rt := &testRuntime{
+		cityPath: t.TempDir(),
+		cityName: "test-city",
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "demo-app"},
+			Services: []config.Service{{
+				Name: "bridge",
+				Kind: "proxy_process",
+				Publication: config.ServicePublicationConfig{
+					Visibility: "public",
+				},
+				Process: config.ServiceProcessConfig{
+					Command:    []string{exe, "-test.run=^TestProxyProcessHelper$", "--"},
+					HealthPath: "/healthz",
+				},
+			}},
+		},
+		pubCfg: supervisor.PublicationConfig{
+			Provider:         "hosted",
+			TenantSlug:       "acme",
+			PublicBaseDomain: "apps.example.com",
+		},
+		sp:    runtime.NewFake(),
+		store: beads.NewMemStore(),
+	}
+
+	mgr := NewManager(rt)
+	if err := mgr.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	loadEnv := func() map[string]string {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
+			rec := httptest.NewRecorder()
+			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
+				var env map[string]string
+				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
+					t.Fatalf("decode env: %v", err)
+				}
+				return env
+			}
+			if time.Now().After(deadline) {
+				status, _ := mgr.Get("bridge")
+				t.Fatalf("timed out waiting for proxy process env endpoint: status=%+v", status)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	currentSocketPath := func() string {
+		t.Helper()
+		mgr.mu.RLock()
+		defer mgr.mu.RUnlock()
+		inst, ok := mgr.entries["bridge"].inst.(*proxyProcessInstance)
+		if !ok {
+			t.Fatal("bridge instance missing or wrong type")
+		}
+		return inst.socketPath
+	}
+
+	loadEnv()
+	firstSocket := currentSocketPath()
+	if _, err := os.Stat(firstSocket); err != nil {
+		t.Fatalf("first socket missing: %v", err)
+	}
+
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
+	mgr.Tick(context.Background(), time.Now().UTC())
+	loadEnv()
+
+	secondSocket := currentSocketPath()
+	if secondSocket == firstSocket {
+		t.Fatalf("socket path did not change across swap: %q", firstSocket)
+	}
+	if _, err := os.Stat(firstSocket); !os.IsNotExist(err) {
+		t.Fatalf("old socket still exists after swap: %v", err)
+	}
+	if _, err := os.Stat(secondSocket); err != nil {
+		t.Fatalf("new socket missing: %v", err)
+	}
+
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := os.Stat(secondSocket); !os.IsNotExist(err) {
+		t.Fatalf("socket still exists after close: %v", err)
+	}
+}

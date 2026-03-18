@@ -29,6 +29,8 @@ type Manager struct {
 	mu                   sync.RWMutex
 	entries              map[string]*entry
 	closed               bool
+	havePublicationCache bool
+	lastPublicationRefs  publicationRefs
 	lastPublicationError string
 }
 
@@ -87,8 +89,7 @@ func (m *Manager) Reload() error {
 	plans := make([]servicePlan, 0, len(cfg.Services))
 	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
-	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
-	m.logPublicationRefsError(refs)
+	refs := m.currentPublicationRefs()
 
 	for _, svc := range cfg.Services {
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, svc, now)
@@ -120,6 +121,7 @@ func (m *Manager) Reload() error {
 			// child process sees updated GC_SERVICE_PUBLIC_URL metadata.
 			restarted, err := newProxyProcessInstance(m.rt, svc, base)
 			if err != nil {
+				log.Printf("workspacesvc: refresh proxy process %s on reload: %v", svc.Name, err)
 				next[svc.Name] = existing
 				reused[svc.Name] = true
 				continue
@@ -207,8 +209,7 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	}
 	m.mu.RUnlock()
 
-	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
-	m.logPublicationRefsError(refs)
+	refs := m.currentPublicationRefs()
 	for _, e := range entries {
 		if e.inst == nil {
 			continue
@@ -217,17 +218,19 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, e.spec, now)
 		if proxyProcessPublicationContextChanged(e.status, base) {
 			restarted, err := newProxyProcessInstance(m.rt, e.spec, base)
-			if err == nil {
-				old := e.inst
-				m.mu.Lock()
-				if cur, ok := m.entries[e.spec.Name]; ok && cur.inst == old {
-					cur.inst = restarted
-					cur.status = mergeStatus(base, restarted.Status())
-				}
-				m.mu.Unlock()
-				if err := old.Close(); err != nil {
-					log.Printf("workspacesvc: close proxy process %s after restart: %v", e.spec.Name, err)
-				}
+			if err != nil {
+				log.Printf("workspacesvc: refresh proxy process %s on tick: %v", e.spec.Name, err)
+				continue
+			}
+			old := e.inst
+			m.mu.Lock()
+			if cur, ok := m.entries[e.spec.Name]; ok && cur.inst == old {
+				cur.inst = restarted
+				cur.status = mergeStatus(base, restarted.Status())
+			}
+			m.mu.Unlock()
+			if err := old.Close(); err != nil {
+				log.Printf("workspacesvc: close proxy process %s after restart: %v", e.spec.Name, err)
 			}
 			continue
 		}
@@ -557,6 +560,20 @@ func (m *Manager) logPublicationRefsError(refs publicationRefs) {
 	}
 	m.lastPublicationError = msg
 	log.Printf("workspacesvc: load publication refs for %s from %s: %v", m.rt.CityPath(), m.rt.PublicationStorePath(), refs.err)
+}
+
+func (m *Manager) currentPublicationRefs() publicationRefs {
+	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
+	m.logPublicationRefsError(refs)
+	if refs.err == nil {
+		m.lastPublicationRefs = refs
+		m.havePublicationCache = true
+		return refs
+	}
+	if m.havePublicationCache {
+		return m.lastPublicationRefs
+	}
+	return refs
 }
 
 func statusMapFromEntries(entries map[string]*entry) map[string]Status {
