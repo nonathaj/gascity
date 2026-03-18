@@ -56,6 +56,9 @@ func newProxyProcessInstance(rt RuntimeContext, svc config.Service, publication 
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o750); err != nil {
+		if cleanupErr := cleanupProxyProcessSocketPath(socketPath); cleanupErr != nil {
+			return nil, fmt.Errorf("create socket dir: %w; %v", err, cleanupErr)
+		}
 		return nil, fmt.Errorf("create socket dir: %w", err)
 	}
 	inst := &proxyProcessInstance{
@@ -80,6 +83,9 @@ func newProxyProcessInstance(rt RuntimeContext, svc config.Service, publication 
 		},
 	}
 	if err := inst.start(time.Now().UTC()); err != nil {
+		if cleanupErr := cleanupProxyProcessSocketPath(socketPath); cleanupErr != nil {
+			return nil, fmt.Errorf("%w; %v", err, cleanupErr)
+		}
 		return nil, err
 	}
 	return inst, nil

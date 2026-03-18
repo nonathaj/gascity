@@ -2,6 +2,8 @@ package workspacesvc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -502,6 +504,59 @@ func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *tes
 	}
 	if status.URL != second["GC_SERVICE_PUBLIC_URL"] {
 		t.Fatalf("status URL = %q, want %q after retry", status.URL, second["GC_SERVICE_PUBLIC_URL"])
+	}
+}
+
+func TestNewProxyProcessInstanceCleansUpSocketDirOnStartFailure(t *testing.T) {
+	requirePython3(t)
+	cityPath := t.TempDir()
+	failOnce := filepath.Join(cityPath, ".gc", "services", "bridge", "fail-once")
+	if err := os.MkdirAll(filepath.Dir(failOnce), 0o750); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(failOnce), err)
+	}
+	if err := os.WriteFile(failOnce, []byte("1"), 0o640); err != nil {
+		t.Fatalf("WriteFile(%q): %v", failOnce, err)
+	}
+	t.Setenv("GC_SERVICE_FAIL_ONCE_FILE", failOnce)
+
+	sum := sha256.Sum256([]byte(cityPath))
+	socketDir := filepath.Join(
+		os.TempDir(),
+		fmt.Sprintf("gcsvc-%d", os.Getuid()),
+		hex.EncodeToString(sum[:4]),
+	)
+
+	rt := &testRuntime{
+		cityPath: cityPath,
+		cityName: "test-city",
+		cfg:      &config.City{},
+		sp:       runtime.NewFake(),
+		store:    beads.NewMemStore(),
+	}
+	svc := config.Service{
+		Name: "bridge",
+		Kind: "proxy_process",
+		Process: config.ServiceProcessConfig{
+			Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+			HealthPath: "/healthz",
+		},
+	}
+	if _, err := ensureStateRoot(cityPath, svc); err != nil {
+		t.Fatalf("ensureStateRoot: %v", err)
+	}
+
+	inst, err := newProxyProcessInstance(rt, svc, Status{ServiceName: svc.Name, Kind: svc.Kind})
+	if err == nil {
+		if inst != nil {
+			_ = inst.Close()
+		}
+		t.Fatal("expected start failure")
+	}
+	if !errors.Is(err, errProxyProcessExitedEarly) {
+		t.Fatalf("err = %v, want %v", err, errProxyProcessExitedEarly)
+	}
+	if _, statErr := os.Stat(socketDir); !os.IsNotExist(statErr) {
+		t.Fatalf("socket dir still exists after failed start: %v", statErr)
 	}
 }
 
