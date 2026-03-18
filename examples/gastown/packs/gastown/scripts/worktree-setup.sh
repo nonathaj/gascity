@@ -47,6 +47,14 @@ sync_worktree() {
     git -C "$WT" pull --rebase 2>/dev/null || true
 }
 
+branch_name() {
+    # Namescape worktree branches by target path so multiple cities or rigs
+    # can share one underlying repo without colliding on global refs like
+    # gc-refinery or gc-polecat-1.
+    HASH=$(printf '%s' "$WT" | git -C "$RIG_ROOT" hash-object --stdin | cut -c1-12)
+    printf 'gc-%s-%s' "$AGENT" "$HASH"
+}
+
 # Idempotent: skip if worktree already exists.
 if [ -d "$WT/.git" ] || [ -f "$WT/.git" ]; then
     sync_worktree
@@ -95,16 +103,19 @@ if [ -d "$WT" ] && [ "$(find "$WT" -mindepth 1 -maxdepth 1 | head -n 1)" ]; then
 fi
 
 rmdir "$WT" 2>/dev/null || true
-BRANCH="gc-$AGENT"
+# Clear stale metadata from removed worktrees before branch/worktree lookup.
+git -C "$RIG_ROOT" worktree prune >/dev/null 2>&1 || true
+
+BRANCH=$(branch_name)
 if git -C "$RIG_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
     if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" "$BRANCH"; then
-        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch gc-$AGENT)" >&2
+        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch $BRANCH)" >&2
         restore_stage
         exit 1
     fi
 else
     if ! GIT_LFS_SKIP_SMUDGE=1 git -C "$RIG_ROOT" worktree add "$WT" -b "$BRANCH"; then
-        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch gc-$AGENT)" >&2
+        echo "worktree-setup: failed to create worktree at $WT from $RIG_ROOT (branch $BRANCH)" >&2
         restore_stage
         exit 1
     fi

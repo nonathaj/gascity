@@ -34,6 +34,11 @@ func runCmd(t *testing.T, dir, name string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
+func currentBranch(t *testing.T, dir string) string {
+	t.Helper()
+	return runCmd(t, dir, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
 // loadExpanded loads city.toml with full pack expansion.
 func loadExpanded(t *testing.T) *config.City {
 	t.Helper()
@@ -335,8 +340,43 @@ func TestWorktreeSetupReusesExistingAgentBranch(t *testing.T) {
 	runCmd(t, tmp, "git", "-C", repo, "worktree", "remove", worktree, "--force")
 	runCmd(t, tmp, "sh", script, repo, worktree, "refinery")
 
-	if got := runCmd(t, tmp, "git", "-C", worktree, "rev-parse", "--abbrev-ref", "HEAD"); got != "gc-refinery" {
-		t.Fatalf("worktree reboot attached %q, want %q", got, "gc-refinery")
+	if got := currentBranch(t, worktree); !strings.HasPrefix(got, "gc-refinery-") {
+		t.Fatalf("worktree reboot attached %q, want gc-refinery-*", got)
+	}
+}
+
+func TestWorktreeSetupNamespacesAgentBranchesByWorktreePath(t *testing.T) {
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "repo")
+	cityA := filepath.Join(tmp, "city-a")
+	cityB := filepath.Join(tmp, "city-b")
+	script := filepath.Join(exampleDir(), "packs", "gastown", "scripts", "worktree-setup.sh")
+
+	runCmd(t, tmp, "git", "init", repo)
+	runCmd(t, repo, "git", "config", "user.email", "test@example.com")
+	runCmd(t, repo, "git", "config", "user.name", "Gastown Test")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("writing repo README: %v", err)
+	}
+	runCmd(t, repo, "git", "add", ".")
+	runCmd(t, repo, "git", "commit", "-m", "init")
+
+	worktreeA := filepath.Join(cityA, ".gc", "worktrees", filepath.Base(repo), "refinery")
+	worktreeB := filepath.Join(cityB, ".gc", "worktrees", filepath.Base(repo), "refinery")
+
+	runCmd(t, tmp, "sh", script, repo, worktreeA, "refinery")
+	runCmd(t, tmp, "sh", script, repo, worktreeB, "refinery")
+
+	branchA := currentBranch(t, worktreeA)
+	branchB := currentBranch(t, worktreeB)
+	if !strings.HasPrefix(branchA, "gc-refinery-") {
+		t.Fatalf("branchA = %q, want gc-refinery-*", branchA)
+	}
+	if !strings.HasPrefix(branchB, "gc-refinery-") {
+		t.Fatalf("branchB = %q, want gc-refinery-*", branchB)
+	}
+	if branchA == branchB {
+		t.Fatalf("branch names should differ across worktree paths, got %q", branchA)
 	}
 }
 
