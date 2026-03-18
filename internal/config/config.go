@@ -1650,9 +1650,7 @@ func Load(fs fsys.FS, path string) (*City, error) {
 
 // Parse decodes TOML data into a City config.
 func Parse(data []byte) (*City, error) {
-	cfg := City{
-		API: APIConfig{Port: DefaultAPIPort},
-	}
+	cfg := City{}
 	if _, err := toml.Decode(string(data), &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
