@@ -445,6 +445,11 @@ func checkHardDependencies(cityPath string) []missingDep {
 			installHint: "https://github.com/gastownhall/beads/releases",
 			condition:   func() bool { return needsBd },
 		},
+		{
+			name:        "flock",
+			installHint: "brew install flock (macOS) or apt install util-linux (Linux)",
+			condition:   func() bool { return needsBd },
+		},
 	}
 
 	var missing []missingDep
