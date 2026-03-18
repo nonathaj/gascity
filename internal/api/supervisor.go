@@ -19,6 +19,7 @@ type CityInfo struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
 	Running bool   `json:"running"`
+	Status  string `json:"status,omitempty"`
 }
 
 // CityResolver provides city lookup for the supervisor API router.

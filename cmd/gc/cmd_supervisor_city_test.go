@@ -20,7 +20,7 @@ import (
 )
 
 //nolint:unparam // tests override hook behavior but keep fixed timeout/poll values for determinism
-func withSupervisorTestHooks(t *testing.T, ensure func(stdout, stderr io.Writer) int, reload func(stdout, stderr io.Writer) int, alive func() int, running func(string) (bool, bool), timeout, poll time.Duration) {
+func withSupervisorTestHooks(t *testing.T, ensure func(stdout, stderr io.Writer) int, reload func(stdout, stderr io.Writer) int, alive func() int, running func(string) (bool, string, bool), timeout, poll time.Duration) {
 	t.Helper()
 
 	oldEnsure := ensureSupervisorRunningHook
@@ -71,7 +71,7 @@ func TestRegisterCityWithSupervisorRollsBackWhenCityNeverBecomesReady(t *testing
 			return 0
 		},
 		func() int { return 4242 },
-		func(string) (bool, bool) { return false, true },
+		func(string) (bool, string, bool) { return false, "", true },
 		20*time.Millisecond,
 		time.Millisecond,
 	)
@@ -116,8 +116,8 @@ func TestRegisterCityWithSupervisorWaitsForConfiguredStartupTimeout(t *testing.T
 		func(_, _ io.Writer) int { return 0 },
 		func(_, _ io.Writer) int { return 0 },
 		func() int { return 4242 },
-		func(string) (bool, bool) {
-			return time.Now().After(startedAt), true
+		func(string) (bool, string, bool) {
+			return time.Now().After(startedAt), "", true
 		},
 		20*time.Millisecond,
 		5*time.Millisecond,
@@ -170,7 +170,7 @@ func TestRegisterCityWithSupervisorFetchesRemotePacksBeforeLoadingIncludes(t *te
 		func(_, _ io.Writer) int { return 0 },
 		func(_, _ io.Writer) int { return 0 },
 		func() int { return 0 },
-		func(string) (bool, bool) { return false, false },
+		func(string) (bool, string, bool) { return false, "", false },
 		20*time.Millisecond,
 		time.Millisecond,
 	)
@@ -269,7 +269,7 @@ func TestUnregisterCityFromSupervisorRestoresRegistrationOnReloadFailure(t *test
 		func(_, _ io.Writer) int { return 0 },
 		func(_, _ io.Writer) int { return 1 },
 		func() int { return 4242 },
-		func(string) (bool, bool) { return false, false },
+		func(string) (bool, string, bool) { return false, "", false },
 		20*time.Millisecond,
 		time.Millisecond,
 	)
@@ -308,7 +308,7 @@ func TestControllerStatusForSupervisorManagedCityStopped(t *testing.T) {
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
 	supervisorAliveHook = func() int { return 4242 }
-	supervisorCityRunningHook = func(string) (bool, bool) { return false, true }
+	supervisorCityRunningHook = func(string) (bool, string, bool) { return false, "", true }
 	t.Cleanup(func() {
 		supervisorAliveHook = oldAlive
 		supervisorCityRunningHook = oldRunning
@@ -357,7 +357,7 @@ func TestCmdStopSupervisorManagedCityReliesOnSupervisorCleanup(t *testing.T) {
 			return 0
 		},
 		func() int { return 4242 },
-		func(string) (bool, bool) { return false, false },
+		func(string) (bool, string, bool) { return false, "", false },
 		20*time.Millisecond,
 		time.Millisecond,
 	)
@@ -468,7 +468,8 @@ func TestReconcileCitiesNameDriftStopsBeadsProvider(t *testing.T) {
 	var mu sync.RWMutex
 	var stdout, stderr bytes.Buffer
 
-	reconcileCities(reg, cities, &mu, panicHistory, initFailures, supervisor.PublicationConfig{}, &stdout, &stderr)
+	initStatusMap := make(map[string]cityInitProgress)
+	reconcileCities(reg, cities, &mu, panicHistory, initFailures, initStatusMap, supervisor.PublicationConfig{}, &stdout, &stderr)
 
 	ops := readOpLog(t, logFile)
 	if len(ops) != 1 {
@@ -540,5 +541,94 @@ func mustGit(t *testing.T, dir string, args ...string) {
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), string(out), err)
+	}
+}
+
+func TestWaitForSupervisorCityPrintsStatusChanges(t *testing.T) {
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	statuses := []string{"loading_config", "starting_bead_store", "resolving_formulas", "starting_agents"}
+	callIdx := 0
+	withSupervisorTestHooks(
+		t,
+		func(_, _ io.Writer) int { return 0 },
+		func(_, _ io.Writer) int { return 0 },
+		func() int { return 4242 },
+		func(string) (bool, string, bool) {
+			if callIdx >= len(statuses) {
+				return true, "", true
+			}
+			s := statuses[callIdx]
+			callIdx++
+			return false, s, true
+		},
+		2*time.Second,
+		time.Millisecond,
+	)
+
+	var stdout bytes.Buffer
+	err := waitForSupervisorCity("/fake/city", true, 2*time.Second, &stdout)
+	if err != nil {
+		t.Fatalf("waitForSupervisorCity error = %v", err)
+	}
+	out := stdout.String()
+	for _, expected := range []string{
+		"Loading configuration...",
+		"Starting bead store...",
+		"Resolving formulas...",
+		"Starting agents...",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Errorf("stdout = %q, want %q", out, expected)
+		}
+	}
+}
+
+func TestListCitiesIncludesInitStatus(t *testing.T) {
+	mu := &sync.RWMutex{}
+	cities := map[string]*managedCity{
+		"/running": {
+			name:    "running-city",
+			started: true,
+			cr:      &CityRuntime{cityName: "running-city"},
+		},
+	}
+	initStatus := map[string]cityInitProgress{
+		"/loading": {name: "loading-city", status: "starting_bead_store"},
+	}
+	state := &multiCityState{
+		cities:     cities,
+		initStatus: initStatus,
+		mu:         mu,
+	}
+
+	list := state.ListCities()
+	if len(list) != 2 {
+		t.Fatalf("ListCities() returned %d cities, want 2", len(list))
+	}
+
+	found := map[string]bool{}
+	for _, ci := range list {
+		found[ci.Name] = true
+		switch ci.Name {
+		case "running-city":
+			if !ci.Running {
+				t.Error("running-city should be Running=true")
+			}
+			if ci.Status != "" {
+				t.Errorf("running-city Status = %q, want empty", ci.Status)
+			}
+		case "loading-city":
+			if ci.Running {
+				t.Error("loading-city should be Running=false")
+			}
+			if ci.Status != "starting_bead_store" {
+				t.Errorf("loading-city Status = %q, want starting_bead_store", ci.Status)
+			}
+		}
+	}
+	if !found["running-city"] || !found["loading-city"] {
+		t.Fatalf("missing expected cities in %v", list)
 	}
 }

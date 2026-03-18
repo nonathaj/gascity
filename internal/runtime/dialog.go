@@ -8,7 +8,8 @@ import (
 )
 
 var (
-	startupDialogProbeDelay  = 1 * time.Second
+	dialogPollInterval       = 500 * time.Millisecond
+	dialogPollTimeout        = 8 * time.Second
 	startupDialogAcceptDelay = 500 * time.Millisecond
 	bypassDialogConfirmDelay = 200 * time.Millisecond
 )
@@ -48,29 +49,35 @@ func acceptWorkspaceTrustDialog(
 	peek func(lines int) (string, error),
 	sendKeys func(keys ...string) error,
 ) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(startupDialogProbeDelay):
-	}
+	deadline := time.Now().Add(dialogPollTimeout)
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 
-	content, err := peek(30)
-	if err != nil {
-		return err
-	}
+		content, err := peek(30)
+		if err != nil {
+			return err
+		}
 
-	if !containsWorkspaceTrustDialog(content) {
-		return nil
-	}
+		if containsWorkspaceTrustDialog(content) {
+			if err := sendKeys("Enter"); err != nil {
+				return err
+			}
+			sleep(ctx, startupDialogAcceptDelay)
+			return nil
+		}
 
-	if err := sendKeys("Enter"); err != nil {
-		return err
-	}
+		if containsPromptIndicator(content) {
+			return nil
+		}
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(startupDialogAcceptDelay):
+		// Check if a bypass dialog appeared instead — let the next phase handle it.
+		if strings.Contains(content, "Bypass Permissions mode") {
+			return nil
+		}
+
+		sleep(ctx, dialogPollInterval)
 	}
 	return nil
 }
@@ -89,30 +96,59 @@ func acceptBypassPermissionsWarning(
 	peek func(lines int) (string, error),
 	sendKeys func(keys ...string) error,
 ) error {
+	deadline := time.Now().Add(dialogPollTimeout)
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		content, err := peek(30)
+		if err != nil {
+			return err
+		}
+
+		if strings.Contains(content, "Bypass Permissions mode") {
+			if err := sendKeys("Down"); err != nil {
+				return err
+			}
+			sleep(ctx, bypassDialogConfirmDelay)
+			return sendKeys("Enter")
+		}
+
+		if containsPromptIndicator(content) {
+			return nil
+		}
+
+		sleep(ctx, dialogPollInterval)
+	}
+	return nil
+}
+
+// containsPromptIndicator checks whether any line in the content ends with
+// a common shell or REPL prompt suffix, indicating the session is ready
+// and no dialog is present.
+func containsPromptIndicator(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimRight(line, " \t")
+		if trimmed == "" {
+			continue
+		}
+		for _, suffix := range []string{">", "$", "%", "#", "\u276f"} {
+			if strings.HasSuffix(trimmed, suffix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sleep waits for the given duration or until ctx is canceled.
+func sleep(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(startupDialogProbeDelay):
+	case <-time.After(d):
 	}
-
-	content, err := peek(30)
-	if err != nil {
-		return err
-	}
-
-	if !strings.Contains(content, "Bypass Permissions mode") {
-		return nil
-	}
-
-	if err := sendKeys("Down"); err != nil {
-		return err
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(bypassDialogConfirmDelay):
-	}
-
-	return sendKeys("Enter")
 }

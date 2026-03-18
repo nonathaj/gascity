@@ -185,7 +185,7 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 		} else if stdout != nil {
 			fmt.Fprintln(stdout, "Waiting for supervisor to start city...") //nolint:errcheck // best-effort stdout
 		}
-		if err := waitForSupervisorCity(cityPath, true, supervisorCityStartTimeout(cityPath)); err != nil {
+		if err := waitForSupervisorCity(cityPath, true, supervisorCityStartTimeout(cityPath), stdout); err != nil {
 			rollbackRegisteredCity(reg, entry, stderr, commandName, err.Error(), true)
 			fmt.Fprintf(stderr, "%s: check 'gc supervisor logs' for details\n", commandName) //nolint:errcheck // best-effort stderr
 			return 1
@@ -207,15 +207,16 @@ func rollbackRegisteredCity(reg *supervisor.Registry, entry supervisor.CityEntry
 		fmt.Fprintf(stderr, "%s: registration rolled back for '%s', but stopping the launched city may require 'gc supervisor reload'\n", commandName, entry.EffectiveName()) //nolint:errcheck // best-effort stderr
 		return
 	}
-	if err := waitForSupervisorCity(entry.Path, false, supervisorCityReadyTimeout); err != nil {
+	if err := waitForSupervisorCity(entry.Path, false, supervisorCityReadyTimeout, nil); err != nil {
 		fmt.Fprintf(stderr, "%s: registration rolled back for '%s', but the launched city may still be stopping: %v\n", commandName, entry.EffectiveName(), err) //nolint:errcheck // best-effort stderr
 	}
 }
 
-func waitForSupervisorCity(cityPath string, wantRunning bool, timeout time.Duration) error {
+func waitForSupervisorCity(cityPath string, wantRunning bool, timeout time.Duration, stdout io.Writer) error {
 	deadline := time.Now().Add(timeout)
+	var lastStatus string
 	for {
-		running, known := supervisorCityRunningHook(cityPath)
+		running, status, known := supervisorCityRunningHook(cityPath)
 		if known {
 			if running == wantRunning {
 				return nil
@@ -226,6 +227,10 @@ func waitForSupervisorCity(cityPath string, wantRunning bool, timeout time.Durat
 		} else if !wantRunning {
 			return nil
 		}
+		if stdout != nil && status != "" && status != lastStatus {
+			fmt.Fprintf(stdout, "  %s\n", statusDisplayText(status)) //nolint:errcheck // best-effort stdout
+			lastStatus = status
+		}
 		if time.Now().After(deadline) {
 			if wantRunning {
 				return fmt.Errorf("city did not become ready under supervisor")
@@ -233,6 +238,24 @@ func waitForSupervisorCity(cityPath string, wantRunning bool, timeout time.Durat
 			return fmt.Errorf("city did not stop under supervisor")
 		}
 		time.Sleep(supervisorCityPollInterval)
+	}
+}
+
+// statusDisplayText maps an init status string to a human-readable display line.
+func statusDisplayText(status string) string {
+	switch status {
+	case "loading_config":
+		return "Loading configuration..."
+	case "starting_bead_store":
+		return "Starting bead store..."
+	case "resolving_formulas":
+		return "Resolving formulas..."
+	case "adopting_sessions":
+		return "Adopting sessions..."
+	case "starting_agents":
+		return "Starting agents..."
+	default:
+		return status + "..."
 	}
 }
 
@@ -263,7 +286,7 @@ func unregisterCityFromSupervisor(cityPath string, stdout, stderr io.Writer, com
 			}
 			return true, 1
 		}
-		if err := waitForSupervisorCity(cityPath, false, supervisorCityReadyTimeout); err != nil {
+		if err := waitForSupervisorCity(cityPath, false, supervisorCityReadyTimeout, nil); err != nil {
 			if reErr := reg.Register(entry.Path, entry.EffectiveName()); reErr != nil {
 				fmt.Fprintf(stderr, "%s: %v; restore failed for '%s': %v\n", commandName, err, entry.EffectiveName(), reErr) //nolint:errcheck
 			} else {
@@ -297,7 +320,7 @@ func supervisorCityAPIClient(cityPath string) *api.Client {
 	if err != nil || !registered || supervisorAliveHook() == 0 {
 		return nil
 	}
-	if running, known := supervisorCityRunningHook(cityPath); !known || !running {
+	if running, _, known := supervisorCityRunningHook(cityPath); !known || !running {
 		return nil
 	}
 	baseURL, err := supervisorAPIBaseURL()
@@ -307,28 +330,28 @@ func supervisorCityAPIClient(cityPath string) *api.Client {
 	return api.NewCityScopedClient(baseURL, entry.EffectiveName())
 }
 
-func supervisorCityRunning(cityPath string) (bool, bool) {
+func supervisorCityRunning(cityPath string) (running bool, status string, known bool) {
 	if supervisorAliveHook() == 0 {
-		return false, false
+		return false, "", false
 	}
 	baseURL, err := supervisorAPIBaseURL()
 	if err != nil {
-		return false, false
+		return false, "", false
 	}
 	client := api.NewClient(baseURL)
 	cities, err := client.ListCities()
 	if err != nil {
-		return false, false
+		return false, "", false
 	}
 	normalized, err := normalizeRegisteredCityPath(cityPath)
 	if err != nil {
-		return false, false
+		return false, "", false
 	}
 	for _, city := range cities {
 		path, pathErr := normalizeRegisteredCityPath(city.Path)
 		if pathErr == nil && path == normalized {
-			return city.Running, true
+			return city.Running, city.Status, true
 		}
 	}
-	return false, false
+	return false, "", false
 }

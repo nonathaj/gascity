@@ -304,6 +304,7 @@ type managedCity struct {
 	cr      *CityRuntime
 	name    string // city name at launch — used for name-drift detection
 	started bool
+	status  string
 	cancel  context.CancelFunc
 	done    chan struct{} // closed when the city goroutine exits
 	closer  io.Closer     // FileRecorder (or nil); closed on city stop
@@ -413,7 +414,8 @@ func runSupervisor(stdout, stderr io.Writer) int {
 
 	// Start API server with city-namespaced routing (Phase 2).
 	startedAt := time.Now()
-	mcs := &multiCityState{cities: cities, mu: &mu, startedAt: startedAt}
+	initStatusMap := make(map[string]cityInitProgress)
+	mcs := &multiCityState{cities: cities, initStatus: initStatusMap, mu: &mu, startedAt: startedAt}
 	bind := supCfg.Supervisor.BindOrDefault()
 	port := supCfg.Supervisor.PortOrDefault()
 	nonLocal := bind != "127.0.0.1" && bind != "localhost" && bind != "::1"
@@ -475,7 +477,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 				fmt.Fprintf(stderr, "gc supervisor: reconcile panicked: %v\n", r) //nolint:errcheck
 			}
 		}()
-		reconcileCities(reg, cities, &mu, panicHistory, initFailures, supCfg.Publication, stdout, stderr)
+		reconcileCities(reg, cities, &mu, panicHistory, initFailures, initStatusMap, supCfg.Publication, stdout, stderr)
 	}
 
 	// Initial reconcile.
@@ -548,6 +550,7 @@ func reconcileCities(
 	mu *sync.RWMutex,
 	panicHistory map[string]*panicRecord,
 	initFailures map[string]*initFailRecord,
+	initStatus map[string]cityInitProgress,
 	publication supervisor.PublicationConfig,
 	stdout, stderr io.Writer,
 ) {
@@ -740,8 +743,24 @@ func reconcileCities(
 				cityName, liveName)
 		}
 
+		// Track initialization progress for the API.
+		func() {
+			mu.Lock()
+			defer mu.Unlock()
+			initStatus[path] = cityInitProgress{name: cityName, status: "loading_config"}
+		}()
+
 		// Run critical city initialization (same steps as cmd_start.go).
-		if err := prepareCityForSupervisor(path, cityName, cfg, stderr); err != nil {
+		if err := prepareCityForSupervisor(path, cityName, cfg, stderr, func(status string) {
+			mu.Lock()
+			defer mu.Unlock()
+			initStatus[path] = cityInitProgress{name: cityName, status: status}
+		}); err != nil {
+			func() {
+				mu.Lock()
+				defer mu.Unlock()
+				delete(initStatus, path)
+			}()
 			recordInitFailure(cityName, fmt.Sprintf("init: %v", err))
 			continue
 		}
@@ -755,12 +774,22 @@ func reconcileCities(
 		sp, spErr := newSessionProviderByName(
 			effectiveProviderName(cfg.Session.Provider), cfg.Session, cityName)
 		if spErr != nil {
+			func() {
+				mu.Lock()
+				defer mu.Unlock()
+				delete(initStatus, path)
+			}()
 			recordInitFailure(cityName, fmt.Sprintf("session provider: %v", spErr))
 			continue
 		}
 
 		// Fail-fast image pre-check for container providers (same as doStart).
 		if err := checkAgentImages(sp, cfg.Agents, stderr); err != nil {
+			func() {
+				mu.Lock()
+				defer mu.Unlock()
+				delete(initStatus, path)
+			}()
 			recordInitFailure(cityName, err.Error())
 			continue
 		}
@@ -804,6 +833,11 @@ func reconcileCities(
 				mc.started = true
 				mu.Unlock()
 			},
+			OnStatus: func(status string) {
+				mu.Lock()
+				mc.status = status
+				mu.Unlock()
+			},
 			LogPrefix: "gc supervisor",
 			Stdout:    stdout,
 			Stderr:    stderr,
@@ -830,11 +864,18 @@ func reconcileCities(
 			if _, running := cities[path]; running {
 				return true
 			}
+			mc.status = "adopting_sessions"
 			cities[path] = mc
+			delete(initStatus, path)
 			delete(initFailures, path) // clear backoff on successful init
 			return false
 		}()
 		if alreadyRunning {
+			func() {
+				mu.Lock()
+				defer mu.Unlock()
+				delete(initStatus, path)
+			}()
 			cityCancel()
 			cr.shutdown()
 			if fr != nil {
@@ -906,7 +947,7 @@ func reconcileCities(
 // prepareCityForSupervisor runs the critical city initialization steps
 // that cmd_start.go performs before runController. Without these, cities
 // would have no formulas, no bead stores, and no resolved rig paths.
-func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stderr io.Writer) error {
+func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stderr io.Writer, progress func(string)) error {
 	// Validate rigs.
 	if err := config.ValidateRigs(cfg.Rigs, cityName); err != nil {
 		return fmt.Errorf("validate rigs: %w", err)
@@ -941,6 +982,9 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 
 	// Resolve rig paths and start bead store lifecycle.
 	resolveRigPaths(cityPath, cfg.Rigs)
+	if progress != nil {
+		progress("starting_bead_store")
+	}
 	if err := startBeadsLifecycle(cityPath, cityName, cfg, stderr); err != nil {
 		return fmt.Errorf("beads lifecycle: %w", err)
 	}
@@ -957,6 +1001,9 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 	}
 
 	// Resolve formula symlinks.
+	if progress != nil {
+		progress("resolving_formulas")
+	}
 	if len(cfg.FormulaLayers.City) > 0 {
 		if err := ResolveFormulas(cityPath, cfg.FormulaLayers.City); err != nil {
 			fmt.Fprintf(stderr, "gc supervisor: city '%s': city formulas: %v\n", cityName, err) //nolint:errcheck
@@ -1028,25 +1075,50 @@ func supervisorBuildAgentsFn(cityPath, cityName string, stderr io.Writer) func(*
 	}
 }
 
+// cityInitProgress tracks the initialization status of a city that is
+// being prepared but has not yet been inserted into the cities map.
+type cityInitProgress struct {
+	name   string
+	status string
+}
+
 // multiCityState implements api.CityResolver for the supervisor API.
 // It provides city lookup by name and city listing for the
 // SupervisorMux routing layer.
 type multiCityState struct {
-	cities    map[string]*managedCity
-	mu        *sync.RWMutex
-	startedAt time.Time
+	cities     map[string]*managedCity
+	initStatus map[string]cityInitProgress
+	mu         *sync.RWMutex
+	startedAt  time.Time
 }
 
 // ListCities returns info about all managed cities.
 func (m *multiCityState) ListCities() []api.CityInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]api.CityInfo, 0, len(m.cities))
+	out := make([]api.CityInfo, 0, len(m.cities)+len(m.initStatus))
+	seen := make(map[string]bool, len(m.cities))
 	for path, mc := range m.cities {
+		seen[path] = true
+		status := mc.status
+		if mc.started {
+			status = ""
+		}
 		out = append(out, api.CityInfo{
 			Name:    mc.name,
 			Path:    path,
 			Running: mc.started,
+			Status:  status,
+		})
+	}
+	for path, ip := range m.initStatus {
+		if seen[path] {
+			continue
+		}
+		out = append(out, api.CityInfo{
+			Name:   ip.name,
+			Path:   path,
+			Status: ip.status,
 		})
 	}
 	return out

@@ -62,6 +62,7 @@ type CityRuntime struct {
 	convergenceReqCh chan convergenceRequest  // receives CLI commands from controller.sock
 	pokeCh           chan struct{}            // non-blocking signal to trigger immediate reconciler tick
 	onStarted        func()
+	onStatus         func(string)
 
 	shutdownOnce   sync.Once
 	logPrefix      string // "gc start" or "gc supervisor"
@@ -92,6 +93,7 @@ type CityRuntimeParams struct {
 	ConvergenceReqCh chan convergenceRequest // may be nil
 	PokeCh           chan struct{}           // may be nil; triggers immediate tick
 	OnStarted        func()                  // called after initial reconciliation succeeds
+	OnStatus         func(string)            // called when init status changes
 
 	LogPrefix      string // "gc start" or "gc supervisor"; defaults to "gc start"
 	Stdout, Stderr io.Writer
@@ -150,6 +152,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 			return make(chan struct{}, 1)
 		}(),
 		onStarted: p.OnStarted,
+		onStatus:  p.OnStatus,
 		logPrefix: logPrefix,
 		stdout:    p.Stdout,
 		stderr:    p.Stderr,
@@ -218,6 +221,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 
 	// Adoption barrier: ensure every running session has a bead.
 	// Runs on every startup (rerunnable, crash-safe).
+	if cr.onStatus != nil {
+		cr.onStatus("adopting_sessions")
+	}
 	if cr.cityBeadStore() != nil {
 		result, passed := runAdoptionBarrier(cr.cityBeadStore(), cr.sp, cr.cfg, cr.cityName, clock.Real{}, cr.stderr, false)
 		if result.Adopted > 0 {
@@ -249,6 +255,9 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	cr.convergenceStartupReconcile(ctx)
 
 	// Initial reconciliation.
+	if cr.onStatus != nil {
+		cr.onStatus("starting_agents")
+	}
 	if cr.sessionDrains != nil {
 		cr.beadReconcileTick(ctx, desiredState)
 	}

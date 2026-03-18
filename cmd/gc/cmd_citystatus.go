@@ -360,7 +360,7 @@ func controllerStatusForCity(cityPath string) ControllerJSON {
 		ctrl := ControllerJSON{Mode: "supervisor"}
 		if pid := supervisorAliveHook(); pid != 0 {
 			ctrl.PID = pid
-			if running, known := supervisorCityRunningHook(cityPath); known {
+			if running, _, known := supervisorCityRunningHook(cityPath); known {
 				ctrl.Running = running
 			}
 		}

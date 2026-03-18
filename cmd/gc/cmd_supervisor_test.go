@@ -167,7 +167,7 @@ func TestControllerStatusForSupervisorManagedCity(t *testing.T) {
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
 	supervisorAliveHook = func() int { return 4242 }
-	supervisorCityRunningHook = func(string) (bool, bool) { return true, true }
+	supervisorCityRunningHook = func(string) (bool, string, bool) { return true, "", true }
 	defer func() {
 		supervisorAliveHook = oldAlive
 		supervisorCityRunningHook = oldRunning
@@ -198,7 +198,7 @@ func TestSupervisorCityAPIClientRequiresRunning(t *testing.T) {
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
 	supervisorAliveHook = func() int { return 4242 }
-	supervisorCityRunningHook = func(string) (bool, bool) { return false, true }
+	supervisorCityRunningHook = func(string) (bool, string, bool) { return false, "", true }
 	t.Cleanup(func() {
 		supervisorAliveHook = oldAlive
 		supervisorCityRunningHook = oldRunning
@@ -212,17 +212,22 @@ func TestSupervisorCityAPIClientRequiresRunning(t *testing.T) {
 func TestMultiCityStateReportsRunningOnlyAfterStartup(t *testing.T) {
 	cs := &controllerState{}
 	mc := &managedCity{
-		cr:   &CityRuntime{cityName: "bright-lights", cs: cs},
-		name: "bright-lights",
+		cr:     &CityRuntime{cityName: "bright-lights", cs: cs},
+		name:   "bright-lights",
+		status: "adopting_sessions",
 	}
 	state := &multiCityState{
-		cities: map[string]*managedCity{"/city": mc},
-		mu:     &sync.RWMutex{},
+		cities:     map[string]*managedCity{"/city": mc},
+		initStatus: make(map[string]cityInitProgress),
+		mu:         &sync.RWMutex{},
 	}
 
 	cities := state.ListCities()
 	if len(cities) != 1 || cities[0].Running {
 		t.Fatalf("ListCities before startup = %+v, want one stopped city", cities)
+	}
+	if cities[0].Status != "adopting_sessions" {
+		t.Fatalf("ListCities before startup Status = %q, want adopting_sessions", cities[0].Status)
 	}
 	if got := state.CityState("bright-lights"); got != nil {
 		t.Fatalf("CityState before startup = %#v, want nil", got)
@@ -232,6 +237,9 @@ func TestMultiCityStateReportsRunningOnlyAfterStartup(t *testing.T) {
 	cities = state.ListCities()
 	if len(cities) != 1 || !cities[0].Running {
 		t.Fatalf("ListCities after startup = %+v, want one running city", cities)
+	}
+	if cities[0].Status != "" {
+		t.Fatalf("ListCities after startup Status = %q, want empty", cities[0].Status)
 	}
 	if got := state.CityState("bright-lights"); got != cs {
 		t.Fatalf("CityState after startup = %#v, want controller state", got)
