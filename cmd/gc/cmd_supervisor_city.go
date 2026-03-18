@@ -182,6 +182,8 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 	if supervisorAliveHook() != 0 {
 		if showProgress {
 			logInitProgress(stdout, 8, "Waiting for supervisor to start city")
+		} else if stdout != nil {
+			fmt.Fprintln(stdout, "Waiting for supervisor to start city...") //nolint:errcheck // best-effort stdout
 		}
 		if err := waitForSupervisorCity(cityPath, true, supervisorCityStartTimeout(cityPath)); err != nil {
 			rollbackRegisteredCity(reg, entry, stderr, commandName, err.Error(), true)

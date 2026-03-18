@@ -305,6 +305,17 @@ func TestFinalizeInitWithoutProgressSkipsStepCounter(t *testing.T) {
 	if strings.Contains(stdout.String(), "[8/8]") {
 		t.Fatalf("stdout = %q, want no progress counter", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Waiting for supervisor to start city...") {
+		t.Fatalf("stdout = %q, want plain wait message", stdout.String())
+	}
+}
+
+func TestShellQuotePathQuotesMetacharacters(t *testing.T) {
+	got := shellQuotePath("/tmp/test&dir")
+	want := "'/tmp/test&dir'"
+	if got != want {
+		t.Fatalf("shellQuotePath = %q, want %q", got, want)
+	}
 }
 
 func initBareProviderPackRepo(t *testing.T, name, provider string) string {

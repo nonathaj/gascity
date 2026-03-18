@@ -327,7 +327,13 @@ func uniqueProbeNames(targets []initProviderTarget) []string {
 
 func shellQuotePath(path string) string {
 	if strings.IndexFunc(path, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '\n' || r == '\'' || r == '"'
+		return !(r >= 'a' && r <= 'z' ||
+			r >= 'A' && r <= 'Z' ||
+			r >= '0' && r <= '9' ||
+			r == '/' ||
+			r == '.' ||
+			r == '_' ||
+			r == '-')
 	}) == -1 {
 		return path
 	}
