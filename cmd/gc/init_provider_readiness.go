@@ -22,9 +22,10 @@ var (
 )
 
 type initFinalizeOptions struct {
-	materializeGastown bool
-	showProgress       bool
-	commandName        string
+	materializeGastown    bool
+	skipProviderReadiness bool
+	showProgress          bool
+	commandName           string
 }
 
 type initProviderTarget struct {
@@ -45,14 +46,22 @@ func finalizeInit(cityPath string, stdout, stderr io.Writer, opts initFinalizeOp
 	}
 
 	if opts.showProgress {
-		logInitProgress(stdout, 6, "Checking provider readiness")
+		if opts.skipProviderReadiness {
+			logInitProgress(stdout, 6, "Skipping provider readiness checks")
+		} else {
+			logInitProgress(stdout, 6, "Checking provider readiness")
+		}
 	}
 	if err := fetchCityPacksIfNeeded(cityPath); err != nil {
 		fmt.Fprintf(stderr, "%s: fetching packs: %v\n", opts.commandName, err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	if err := runInitProviderPreflight(cityPath, stdout, stderr, opts.commandName); err != nil {
-		return 1
+	if !opts.skipProviderReadiness {
+		if err := runInitProviderPreflight(cityPath, stdout, stderr, opts.commandName); err != nil {
+			return 1
+		}
+	} else if !opts.showProgress && stdout != nil {
+		fmt.Fprintln(stdout, "Skipping provider readiness checks.") //nolint:errcheck // best-effort stdout
 	}
 
 	prefix := config.DeriveBeadsPrefix(cityName)
@@ -160,8 +169,9 @@ func runInitProviderPreflight(cityPath string, stdout, stderr io.Writer, command
 			fmt.Fprintf(stderr, "  Fix: %s\n", fix) //nolint:errcheck // best-effort stderr
 		}
 	}
-	fmt.Fprintln(stderr, "")                                                   //nolint:errcheck // best-effort stderr
-	fmt.Fprintf(stderr, "Next: cd %s && gc start\n", shellQuotePath(cityPath)) //nolint:errcheck // best-effort stderr
+	fmt.Fprintln(stderr, "")                                                                          //nolint:errcheck // best-effort stderr
+	fmt.Fprintf(stderr, "Next: cd %s && gc start\n", shellQuotePath(cityPath))                        //nolint:errcheck // best-effort stderr
+	fmt.Fprintf(stderr, "Override: gc init --skip-provider-readiness %s\n", shellQuotePath(cityPath)) //nolint:errcheck // best-effort stderr
 	return errInitProviderPreflight
 }
 

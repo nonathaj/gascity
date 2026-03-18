@@ -180,6 +180,7 @@ func newInitCmd(stdout, stderr io.Writer) *cobra.Command {
 	var fromFlag string
 	var providerFlag string
 	var bootstrapProfileFlag string
+	var skipProviderReadiness bool
 	cmd := &cobra.Command{
 		Use:   "init [path]",
 		Short: "Initialize a new city",
@@ -198,18 +199,18 @@ existing TOML config file.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if fromFlag != "" {
-				if cmdInitFromDir(fromFlag, args, stdout, stderr) != 0 {
+				if cmdInitFromDirWithOptions(fromFlag, args, stdout, stderr, skipProviderReadiness) != 0 {
 					return errExit
 				}
 				return nil
 			}
 			if fileFlag != "" {
-				if cmdInitFromFile(fileFlag, args, stdout, stderr) != 0 {
+				if cmdInitFromFileWithOptions(fileFlag, args, stdout, stderr, skipProviderReadiness) != 0 {
 					return errExit
 				}
 				return nil
 			}
-			if cmdInit(args, providerFlag, bootstrapProfileFlag, stdout, stderr) != 0 {
+			if cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, stdout, stderr, skipProviderReadiness) != 0 {
 				return errExit
 			}
 			return nil
@@ -219,6 +220,7 @@ existing TOML config file.`,
 	cmd.Flags().StringVar(&fromFlag, "from", "", "path to an example city directory to copy")
 	cmd.Flags().StringVar(&providerFlag, "provider", "", "built-in workspace provider to use for the default mayor config")
 	cmd.Flags().StringVar(&bootstrapProfileFlag, "bootstrap-profile", "", "bootstrap profile to apply for hosted/container defaults")
+	cmd.Flags().BoolVar(&skipProviderReadiness, "skip-provider-readiness", false, "skip provider login/readiness checks during init and continue startup")
 	cmd.MarkFlagsMutuallyExclusive("file", "from")
 	cmd.MarkFlagsMutuallyExclusive("provider", "file")
 	cmd.MarkFlagsMutuallyExclusive("provider", "from")
@@ -232,6 +234,10 @@ existing TOML config file.`,
 // Creates the runtime scaffold and city.toml. If the bead provider is "bd", also
 // runs bd init.
 func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, stderr io.Writer) int {
+	return cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, stdout, stderr, false)
+}
+
+func cmdInitWithOptions(args []string, providerFlag, bootstrapProfileFlag string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	var cityPath string
 	if len(args) > 0 {
 		var err error
@@ -248,7 +254,7 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 			return 1
 		}
 	}
-	if handled, code := resumeExistingInitIfPossible(fsys.OSFS{}, cityPath, stdout, stderr, "gc init", true); handled {
+	if handled, code := resumeExistingInitIfPossible(fsys.OSFS{}, cityPath, stdout, stderr, "gc init", true, skipProviderReadiness); handled {
 		return code
 	}
 	var wiz wizardConfig
@@ -270,13 +276,14 @@ func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, s
 		return code
 	}
 	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
-		materializeGastown: wiz.configName == "gastown",
-		showProgress:       true,
-		commandName:        "gc init",
+		materializeGastown:    wiz.configName == "gastown",
+		skipProviderReadiness: skipProviderReadiness,
+		showProgress:          true,
+		commandName:           "gc init",
 	})
 }
 
-func resumeExistingInitIfPossible(fs fsys.FS, cityPath string, stdout, stderr io.Writer, commandName string, showProgress bool) (bool, int) {
+func resumeExistingInitIfPossible(fs fsys.FS, cityPath string, stdout, stderr io.Writer, commandName string, showProgress bool, skipProviderReadiness bool) (bool, int) {
 	if !cityCanResumeInitFS(fs, cityPath) {
 		return false, 0
 	}
@@ -284,9 +291,10 @@ func resumeExistingInitIfPossible(fs fsys.FS, cityPath string, stdout, stderr io
 		fmt.Fprintf(stdout, "City %q already exists; reusing existing configuration and resuming startup checks.\n", filepath.Base(cityPath)) //nolint:errcheck // best-effort stdout
 	}
 	return true, finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
-		materializeGastown: cityUsesBuiltInGastownPackFS(fs, cityPath),
-		showProgress:       showProgress,
-		commandName:        commandName,
+		materializeGastown:    cityUsesBuiltInGastownPackFS(fs, cityPath),
+		skipProviderReadiness: skipProviderReadiness,
+		showProgress:          showProgress,
+		commandName:           commandName,
 	})
 }
 
@@ -350,6 +358,10 @@ func normalizeBootstrapProfile(profile string) (string, error) {
 // cmdInitFromFile initializes a city using the --file flag (non-interactive).
 // The flag value is a path to a TOML file that is copied as the city's city.toml.
 func cmdInitFromFile(fileArg string, args []string, stdout, stderr io.Writer) int {
+	return cmdInitFromFileWithOptions(fileArg, args, stdout, stderr, false)
+}
+
+func cmdInitFromFileWithOptions(fileArg string, args []string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	var cityPath string
 	if len(args) > 0 {
 		var err error
@@ -367,12 +379,16 @@ func cmdInitFromFile(fileArg string, args []string, stdout, stderr io.Writer) in
 		}
 	}
 
-	return cmdInitFromTOMLFile(fsys.OSFS{}, fileArg, cityPath, stdout, stderr)
+	return cmdInitFromTOMLFileWithOptions(fsys.OSFS{}, fileArg, cityPath, stdout, stderr, skipProviderReadiness)
 }
 
 // cmdInitFromTOMLFile initializes a city by copying a user-provided TOML
 // file as city.toml. Creates the runtime scaffold, visible roots, and runs bead init.
 func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io.Writer) int {
+	return cmdInitFromTOMLFileWithOptions(fs, tomlSrc, cityPath, stdout, stderr, false)
+}
+
+func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	// Validate the source file parses as a valid city config.
 	data, err := os.ReadFile(tomlSrc)
 	if err != nil {
@@ -436,7 +452,8 @@ func cmdInitFromTOMLFile(fs fsys.FS, tomlSrc, cityPath string, stdout, stderr io
 	fmt.Fprintf(stdout, "Welcome to Gas City!\n")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(tomlSrc)) //nolint:errcheck // best-effort stdout
 	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
-		commandName: "gc init",
+		skipProviderReadiness: skipProviderReadiness,
+		commandName:           "gc init",
 	})
 }
 
@@ -637,6 +654,10 @@ func initFromSkip(relPath string, isDir bool) bool {
 // cmdInitFromDir initializes a city by copying an example directory.
 // Resolves source and target paths, validates, then delegates to doInitFromDir.
 func cmdInitFromDir(fromDir string, args []string, stdout, stderr io.Writer) int {
+	return cmdInitFromDirWithOptions(fromDir, args, stdout, stderr, false)
+}
+
+func cmdInitFromDirWithOptions(fromDir string, args []string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	var cityPath string
 	if len(args) > 0 {
 		var err error
@@ -660,12 +681,16 @@ func cmdInitFromDir(fromDir string, args []string, stdout, stderr io.Writer) int
 		return 1
 	}
 
-	return doInitFromDir(srcDir, cityPath, stdout, stderr)
+	return doInitFromDirWithOptions(srcDir, cityPath, stdout, stderr, skipProviderReadiness)
 }
 
 // doInitFromDir copies an example city directory to a new city path,
 // updates workspace.name, creates .gc/, and installs hooks.
 func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
+	return doInitFromDirWithOptions(srcDir, cityPath, stdout, stderr, false)
+}
+
+func doInitFromDirWithOptions(srcDir, cityPath string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	fs := fsys.OSFS{}
 	// Validate source has city.toml.
 	srcToml := filepath.Join(srcDir, "city.toml")
@@ -738,6 +763,7 @@ func doInitFromDir(srcDir, cityPath string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Welcome to Gas City!")                                           //nolint:errcheck // best-effort stdout
 	fmt.Fprintf(stdout, "Initialized city %q from %s.\n", cityName, filepath.Base(srcDir)) //nolint:errcheck // best-effort stdout
 	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
-		commandName: "gc init",
+		skipProviderReadiness: skipProviderReadiness,
+		commandName:           "gc init",
 	})
 }

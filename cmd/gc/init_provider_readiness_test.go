@@ -99,6 +99,9 @@ func TestFinalizeInitBlocksProviderReadinessBeforeSupervisorRegistration(t *test
 	if !strings.Contains(stderr.String(), "run `claude auth login`") {
 		t.Fatalf("stderr = %q, want Claude fix hint", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "Override: gc init --skip-provider-readiness") {
+		t.Fatalf("stderr = %q, want init override hint", stderr.String())
+	}
 }
 
 func TestFinalizeInitWarnsForUnprobeableCustomProviderAndContinues(t *testing.T) {
@@ -368,6 +371,60 @@ func TestCmdInitResumesFinalizeForExistingCity(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Referenced providers not ready:") {
 		t.Fatalf("stderr = %q, want provider readiness guidance", stderr.String())
+	}
+}
+
+func TestCmdInitSkipProviderReadinessBypassesBlockedProvider(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
+
+	cityPath := filepath.Join(t.TempDir(), "bright-lights")
+	var initStdout, initStderr bytes.Buffer
+	code := doInit(fsys.OSFS{}, cityPath, wizardConfig{
+		configName: "tutorial",
+		provider:   "claude",
+	}, &initStdout, &initStderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0: %s", code, initStderr.String())
+	}
+
+	probeCalled := false
+	oldProbe := initProbeProvidersReadiness
+	initProbeProvidersReadiness = func(_ context.Context, _ []string, _ bool) (map[string]api.ReadinessItem, error) {
+		probeCalled = true
+		return map[string]api.ReadinessItem{
+			"claude": {
+				Name:        "claude",
+				Kind:        api.ProbeKindProvider,
+				DisplayName: "Claude Code",
+				Status:      api.ProbeStatusNeedsAuth,
+			},
+		}, nil
+	}
+	t.Cleanup(func() { initProbeProvidersReadiness = oldProbe })
+
+	calledRegister := false
+	oldRegister := registerCityWithSupervisorTestHook
+	registerCityWithSupervisorTestHook = func(_ string, _ string, _ io.Writer, _ io.Writer) (bool, int) {
+		calledRegister = true
+		return true, 0
+	}
+	t.Cleanup(func() { registerCityWithSupervisorTestHook = oldRegister })
+
+	var stdout, stderr bytes.Buffer
+	code = cmdInitWithOptions([]string{cityPath}, "", "", &stdout, &stderr, true)
+	if code != 0 {
+		t.Fatalf("cmdInitWithOptions = %d, want 0: %s", code, stderr.String())
+	}
+	if probeCalled {
+		t.Fatal("provider readiness probe should be skipped")
+	}
+	if !calledRegister {
+		t.Fatal("registerCityWithSupervisor should run when readiness is skipped")
+	}
+	if !strings.Contains(stdout.String(), "Skipping provider readiness checks") {
+		t.Fatalf("stdout = %q, want skip readiness progress", stdout.String())
 	}
 }
 
