@@ -667,6 +667,14 @@ func probeCommandEnv(homeDir string) []string {
 		"NO_COLOR=1",
 		"LC_ALL=C.UTF-8",
 	}
+	// USER/LOGNAME are required on macOS for Keychain access — without them
+	// Claude Code cannot read its stored OAuth credentials and reports
+	// loggedIn: false even when the user is authenticated.
+	for _, key := range []string{"USER", "LOGNAME"} {
+		if value := os.Getenv(key); value != "" {
+			env = append(env, key+"="+value)
+		}
+	}
 	if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
 		env = append(env, "XDG_CONFIG_HOME="+xdgConfigHome)
 	} else {
