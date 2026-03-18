@@ -120,3 +120,38 @@ func lookupSessionNameOrLegacy(store beads.Store, cityName, qualifiedName, sessi
 	}
 	return agent.SessionNameFor(cityName, qualifiedName, sessionTemplate)
 }
+
+// lookupPoolSessionNames returns bead-backed session names for pool instances
+// under the given template-qualified agent. The result maps the logical
+// instance qualified name (for example "frontend/worker-1") to the actual
+// runtime session name.
+func lookupPoolSessionNames(store beads.Store, template string) map[string]string {
+	result := make(map[string]string)
+	if store == nil {
+		return result
+	}
+	all, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		return result
+	}
+	for _, b := range all {
+		if b.Status == "closed" || b.Metadata["pool_slot"] == "" {
+			continue
+		}
+		if b.Metadata["template"] != template {
+			continue
+		}
+		sessionName := b.Metadata["session_name"]
+		if sessionName == "" {
+			continue
+		}
+		agentName := b.Metadata["agent_name"]
+		if agentName == "" {
+			agentName = template + "-" + b.Metadata["pool_slot"]
+		}
+		if agentName != "" {
+			result[agentName] = sessionName
+		}
+	}
+	return result
+}

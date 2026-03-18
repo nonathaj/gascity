@@ -168,6 +168,36 @@ func RunLifecycleTests(t *testing.T, newSession Factory) {
 		}
 	})
 
+	t.Run("Interrupt_ConcurrentDistinctSessions", func(t *testing.T) {
+		sp, cfg1, name1 := newSession(t)
+		_, cfg2, name2 := newSession(t)
+		names := []string{name1, name2}
+		cfgs := []runtime.Config{cfg1, cfg2}
+		for i := range names {
+			if err := sp.Start(context.Background(), names[i], cfgs[i]); err != nil {
+				t.Fatalf("Start(%s): %v", names[i], err)
+			}
+			t.Cleanup(func(n string) func() {
+				return func() { _ = sp.Stop(n) }
+			}(names[i]))
+		}
+		errs := make([]error, len(names))
+		var wg sync.WaitGroup
+		for i := range names {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				errs[i] = sp.Interrupt(names[i])
+			}(i)
+		}
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Fatalf("concurrent Interrupt(%s): %v", names[i], err)
+			}
+		}
+	})
+
 	t.Run("IsRunning_UnknownSession", func(t *testing.T) {
 		sp, _, _ := newSession(t)
 		if sp.IsRunning("unknown-conformance-session-never-existed") {

@@ -564,7 +564,7 @@ func TestInterruptSessionsBounded_InterruptsDependentsBeforeDependencies(t *test
 	}
 }
 
-func TestStopWaveOrder_FallsBackToSerialForUnknownTemplate(t *testing.T) {
+func TestStopWaveOrder_HandlesUnknownTemplateWithoutSerialFallback(t *testing.T) {
 	cfg := &config.City{
 		Agents: []config.Agent{
 			{Name: "worker", DependsOn: []string{"db"}},
@@ -573,15 +573,16 @@ func TestStopWaveOrder_FallsBackToSerialForUnknownTemplate(t *testing.T) {
 	}
 	targets := []stopTarget{
 		{name: "removed-worker", template: "removed-worker", order: 0},
-		{name: "db", template: "db", order: 1},
+		{name: "worker", template: "worker", order: 1},
+		{name: "db", template: "db", order: 2},
 	}
 
 	waves, ok := stopWaveOrder(targets, cfg)
-	if ok {
-		t.Fatal("expected serial fallback for unknown template")
+	if !ok {
+		t.Fatal("unexpected serial fallback for unknown template")
 	}
-	if waves[0] != 0 || waves[1] != 1 {
-		t.Fatalf("waves = %#v, want strict serial order", waves)
+	if waves[0] != 1 || waves[1] != 0 || waves[2] != 1 {
+		t.Fatalf("waves = %#v, want worker in wave 0 and unknown+db in wave 1", waves)
 	}
 }
 

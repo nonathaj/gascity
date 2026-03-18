@@ -209,6 +209,49 @@ func TestDoRigRestart_UsesPoolSessionBeadsForCustomSessionNames(t *testing.T) {
 	}
 }
 
+func TestDoRigRestart_UsesUnlimitedPoolSessionBeadsForCustomSessionNames(t *testing.T) {
+	sp := runtime.NewFake()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "frontend/worker-7",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "frontend/worker",
+			"agent_name":   "frontend/worker-7",
+			"session_name": "custom-worker-7",
+			"pool_slot":    "7",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sp.Start(context.Background(), "custom-worker-7", runtime.Config{Command: "echo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	agents := []config.Agent{{
+		Name: "worker",
+		Dir:  "frontend",
+		Pool: &config.PoolConfig{Min: 1, Max: -1, Check: "echo 1"},
+	}}
+
+	var stdout, stderr bytes.Buffer
+	code := doRigRestart(sp, rec, store, agents, "frontend", "city", "{{.Agent}}", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if sp.IsRunning("custom-worker-7") {
+		t.Fatal("custom unlimited-pool session still running after rig restart")
+	}
+	if len(rec.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(rec.Events))
+	}
+	if rec.Events[0].Subject != "frontend/worker-7" {
+		t.Fatalf("event subject = %q, want %q", rec.Events[0].Subject, "frontend/worker-7")
+	}
+}
+
 func TestDoRigRestartStopError(t *testing.T) {
 	// When Stop fails, the agent is skipped but the command still succeeds.
 	sp := runtime.NewFake()

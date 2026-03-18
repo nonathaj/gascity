@@ -212,35 +212,21 @@ func candidateWaveOrder(
 		}
 	}
 	filteredDeps := make(map[string][]string)
-	eligibleTemplates := make(map[string]bool, len(candidateTemplates))
 	for _, template := range templatesInOrder {
 		cfgAgent := findAgentByTemplate(cfg, template)
 		if cfgAgent == nil {
-			eligibleTemplates[template] = true
 			continue
 		}
-		blocked := false
 		for _, dep := range cfgAgent.DependsOn {
 			if dependencyTemplateAlive(dep, cfg, desiredState, sp, cityName, store) {
 				continue
 			}
-			if !candidateTemplates[dep] {
-				blocked = true
-				break
+			if candidateTemplates[dep] {
+				filteredDeps[template] = append(filteredDeps[template], dep)
 			}
-			filteredDeps[template] = append(filteredDeps[template], dep)
-		}
-		if !blocked {
-			eligibleTemplates[template] = true
 		}
 	}
-	var eligibleTemplatesInOrder []string
-	for _, template := range templatesInOrder {
-		if eligibleTemplates[template] {
-			eligibleTemplatesInOrder = append(eligibleTemplatesInOrder, template)
-		}
-	}
-	templateWave, ok := dependencyTemplateWaveOrder(eligibleTemplatesInOrder, filteredDeps)
+	templateWave, ok := dependencyTemplateWaveOrder(templatesInOrder, filteredDeps)
 	if !ok {
 		return strictSerialWaveOrder(candidates), false
 	}
@@ -391,7 +377,7 @@ func commitStartResult(
 		_ = store.SetMetadata(session.ID, "last_woke_at", "")
 		session.Metadata["last_woke_at"] = ""
 		recordWakeFailure(session, store, clk)
-		logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, "failed", result.started, result.finished, result.err)
+		logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, result.outcome, result.started, result.finished, result.err)
 		return false
 	}
 	fmt.Fprintf(stdout, "Woke session '%s'\n", tp.DisplayName()) //nolint:errcheck
@@ -502,9 +488,6 @@ func stopWaveOrder(targets []stopTarget, cfg *config.City) (map[int]int, bool) {
 	var templatesInOrder []string
 	templateSeen := make(map[string]bool)
 	for _, target := range targets {
-		if cfg != nil && target.template != "" && findAgentByTemplate(cfg, target.template) == nil {
-			return strictSerialWaveOrder(targets), false
-		}
 		if templateSeen[target.template] {
 			continue
 		}
