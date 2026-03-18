@@ -311,10 +311,25 @@ func TestFinalizeInitWithoutProgressSkipsStepCounter(t *testing.T) {
 }
 
 func TestShellQuotePathQuotesMetacharacters(t *testing.T) {
-	got := shellQuotePath("/tmp/test&dir")
+	got := shellQuotePathForOS("/tmp/test&dir", "linux")
 	want := "'/tmp/test&dir'"
 	if got != want {
-		t.Fatalf("shellQuotePath = %q, want %q", got, want)
+		t.Fatalf("shellQuotePathForOS = %q, want %q", got, want)
+	}
+}
+
+func TestShellQuotePathForOSEmptyString(t *testing.T) {
+	got := shellQuotePathForOS("", "linux")
+	if got != "''" {
+		t.Fatalf("shellQuotePathForOS empty = %q, want %q", got, "''")
+	}
+}
+
+func TestShellQuotePathForOSWindows(t *testing.T) {
+	got := shellQuotePathForOS(`C:\my city`, "windows")
+	want := `"C:\my city"`
+	if got != want {
+		t.Fatalf("shellQuotePathForOS windows = %q, want %q", got, want)
 	}
 }
 

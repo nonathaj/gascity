@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -326,6 +327,20 @@ func uniqueProbeNames(targets []initProviderTarget) []string {
 }
 
 func shellQuotePath(path string) string {
+	return shellQuotePathForOS(path, runtime.GOOS)
+}
+
+func shellQuotePathForOS(path, goos string) string {
+	if goos == "windows" {
+		return shellQuoteWindowsPath(path)
+	}
+	return shellQuotePOSIXPath(path)
+}
+
+func shellQuotePOSIXPath(path string) string {
+	if path == "" {
+		return "''"
+	}
 	if strings.IndexFunc(path, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' ||
 			r >= 'A' && r <= 'Z' ||
@@ -338,4 +353,24 @@ func shellQuotePath(path string) string {
 		return path
 	}
 	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+}
+
+func shellQuoteWindowsPath(path string) string {
+	if path == "" {
+		return `""`
+	}
+	if strings.IndexFunc(path, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' ||
+			r >= 'A' && r <= 'Z' ||
+			r >= '0' && r <= '9' ||
+			r == '/' ||
+			r == '\\' ||
+			r == ':' ||
+			r == '.' ||
+			r == '_' ||
+			r == '-')
+	}) == -1 {
+		return path
+	}
+	return `"` + strings.ReplaceAll(path, `"`, `""`) + `"`
 }
