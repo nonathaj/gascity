@@ -286,6 +286,7 @@ Your work state is in beads. Send handoff mail and exit:
 ```bash
 # Simple handoff (molecule persists, fresh context)
 gc mail send $GC_AGENT -s "HANDOFF: continuing work" -m "Resuming current task"
+gc runtime drain-ack
 exit
 
 # Handoff with context notes
@@ -293,6 +294,7 @@ gc mail send $GC_AGENT -s "HANDOFF: Working on auth bug" -m "
 Found the issue is in token refresh.
 Check line 145 in auth.go first.
 "
+gc runtime drain-ack
 exit
 ```
 
@@ -354,6 +356,7 @@ you are!" - that is a FAILURE. YOU must push, not the user.
    ```bash
    # If cycling to fresh context:
    gc mail send $GC_AGENT -s "HANDOFF: Brief summary" -m "Details for next session"
+   gc runtime drain-ack
    exit
 
    # If done for now, verify clean state:

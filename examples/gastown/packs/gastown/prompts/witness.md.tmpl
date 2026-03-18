@@ -55,7 +55,7 @@ Pool (open, unassigned) -> Polecat (in_progress) -> Refinery (open, assigned) ->
 
 **Polecat done sequence:** verify clean state -> push branch -> set
 `metadata.branch` and `metadata.target` on work bead -> reassign to
-refinery -> exit.
+refinery -> drain-ack -> exit.
 
 **Refinery:** rebase -> test -> merge -> close bead -> delete branch.
 

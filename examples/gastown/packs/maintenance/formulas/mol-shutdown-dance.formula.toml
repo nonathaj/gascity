@@ -263,6 +263,7 @@ bd close <work-bead> --reason "Shutdown dance complete: {{target}} executed"
 
 **3. Exit:**
 ```bash
+gc runtime drain-ack
 exit
 ```
 

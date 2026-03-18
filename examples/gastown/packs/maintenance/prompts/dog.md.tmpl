@@ -63,6 +63,7 @@ ample opportunity to respond even if they're in long-running operations.
 
 ```bash
 bd close <work-bead>    # Close your assigned work
+gc runtime drain-ack    # Signal reconciler you're done
 exit                     # Return to pool (controller recycles you)
 ```
 
@@ -115,7 +116,7 @@ gc nudge {{"{{requester}}"}}/ "DOG_DONE: <target> — <outcome>"
 | Request target restart | `gc session kill <target>` |
 | List orphan databases | `gc dolt cleanup` |
 | Remove orphan databases | `gc dolt cleanup --force` |
-| Exit (return to pool) | `exit` |
+| Exit (return to pool) | `gc runtime drain-ack && exit` |
 
 Working directory: {{ .WorkDir }}
 Mail identity: dog/{{ basename .AgentName }}
