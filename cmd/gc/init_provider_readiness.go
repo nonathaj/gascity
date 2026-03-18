@@ -22,9 +22,8 @@ var (
 )
 
 type initFinalizeOptions struct {
-	materializeGastown bool
-	showProgress       bool
-	commandName        string
+	showProgress bool
+	commandName  string
 }
 
 type initProviderTarget struct {
@@ -37,12 +36,6 @@ func finalizeInit(cityPath string, stdout, stderr io.Writer, opts initFinalizeOp
 	cityName := filepath.Base(cityPath)
 	MaterializeBeadsBdScript(cityPath) //nolint:errcheck // best-effort; only needed for bd provider
 	MaterializeBuiltinPacks(cityPath)  //nolint:errcheck // best-effort; only needed for bd provider
-	if opts.materializeGastown {
-		if err := MaterializeGastownPacks(cityPath); err != nil {
-			fmt.Fprintf(stderr, "%s: materializing gastown packs: %v\n", opts.commandName, err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-	}
 
 	if opts.showProgress {
 		logInitProgress(stdout, 6, "Checking provider readiness")
@@ -108,6 +101,9 @@ func wizardProviderGuidanceMessage(item api.ReadinessItem) string {
 }
 
 func runInitProviderPreflight(cityPath string, stdout, stderr io.Writer, commandName string) error {
+	if err := MaterializeGastownPacks(cityPath); err != nil {
+		fmt.Fprintf(stderr, "%s: materializing gastown packs: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
+	}
 	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: city created, but startup is blocked by configuration loading\n", commandName) //nolint:errcheck // best-effort stderr
@@ -115,6 +111,7 @@ func runInitProviderPreflight(cityPath string, stdout, stderr io.Writer, command
 		fmt.Fprintf(stderr, "%s: fix the config issue, then run 'gc start'\n", commandName)                     //nolint:errcheck // best-effort stderr
 		return errInitProviderPreflight
 	}
+	ensureInitArtifacts(cityPath, cfg, stderr, commandName)
 	targets, warnings, err := collectInitProviderTargets(cfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: city created, but startup is blocked by provider resolution\n", commandName) //nolint:errcheck // best-effort stderr
