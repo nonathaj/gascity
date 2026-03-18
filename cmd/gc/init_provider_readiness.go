@@ -402,7 +402,7 @@ func shellQuoteWindowsPath(path string) string {
 	return `"` + strings.ReplaceAll(path, `"`, `""`) + `"`
 }
 
-// missingDep describes a hard dependency that was not found on the system.
+// missingDep describes a hard dependency that is missing or too old.
 type missingDep struct {
 	name        string
 	installHint string
@@ -412,15 +412,34 @@ type missingDep struct {
 // Tests can override this to simulate missing binaries.
 var initLookPath = exec.LookPath
 
+// initRunVersion runs "<binary> version" and returns the first line.
+// Tests can override this.
+var initRunVersion = func(binary string) (string, error) {
+	out, err := exec.Command(binary, "version").Output()
+	if err != nil {
+		return "", err
+	}
+	line := strings.SplitN(strings.TrimSpace(string(out)), "\n", 2)[0]
+	return line, nil
+}
+
+// Minimum versions for beads-provider binaries.
+const (
+	doltMinVersion = "1.35.0" // sql-server features used by gc-beads-bd
+	bdMinVersion   = "0.61.0" // BdStore shell-out interface
+)
+
 // checkHardDependencies verifies that all required binaries are available
-// before handing off to the supervisor. Returns a list of missing deps.
-// Without this check, missing binaries cause the supervisor to fail-loop
-// silently and the user never sees the actual error.
+// (and meet minimum version requirements) before handing off to the supervisor.
+// Returns a list of missing or outdated deps. Without this check, missing
+// binaries cause the supervisor to fail-loop silently and the user never
+// sees the actual error.
 func checkHardDependencies(cityPath string) []missingDep {
 	type dep struct {
 		name        string
 		installHint string
-		condition   func() bool // if non-nil, only checked when true
+		minVersion  string           // empty = no version check
+		condition   func() bool      // if non-nil, only checked when true
 	}
 
 	beadsProvider := rawBeadsProvider(cityPath)
@@ -438,11 +457,13 @@ func checkHardDependencies(cityPath string) []missingDep {
 		{
 			name:        "dolt",
 			installHint: "https://github.com/dolthub/dolt/releases",
+			minVersion:  doltMinVersion,
 			condition:   func() bool { return needsBd },
 		},
 		{
 			name:        "bd",
 			installHint: "https://github.com/gastownhall/beads/releases",
+			minVersion:  bdMinVersion,
 			condition:   func() bool { return needsBd },
 		},
 		{
@@ -462,7 +483,57 @@ func checkHardDependencies(cityPath string) []missingDep {
 				name:        d.name,
 				installHint: d.installHint,
 			})
+			continue
+		}
+		if d.minVersion != "" {
+			if ver := parseDepVersion(d.name); ver != "" {
+				if compareVersions(ver, d.minVersion) < 0 {
+					missing = append(missing, missingDep{
+						name:        fmt.Sprintf("%s (found v%s, need v%s+)", d.name, ver, d.minVersion),
+						installHint: d.installHint,
+					})
+				}
+			}
 		}
 	}
 	return missing
+}
+
+// parseDepVersion runs "<binary> version" and extracts a semver-like version string.
+// Returns "" if the version cannot be determined (non-fatal).
+func parseDepVersion(binary string) string {
+	line, err := initRunVersion(binary)
+	if err != nil {
+		return ""
+	}
+	// Patterns: "dolt version 1.83.1", "bd version 0.61.0 (3ac028bf: ...)"
+	for _, field := range strings.Fields(line) {
+		if len(field) > 0 && field[0] >= '0' && field[0] <= '9' && strings.Contains(field, ".") {
+			return field
+		}
+	}
+	return ""
+}
+
+// compareVersions compares two dot-separated version strings.
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+func compareVersions(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < len(aParts) || i < len(bParts); i++ {
+		var ai, bi int
+		if i < len(aParts) {
+			fmt.Sscanf(aParts[i], "%d", &ai)
+		}
+		if i < len(bParts) {
+			fmt.Sscanf(bParts[i], "%d", &bi)
+		}
+		if ai < bi {
+			return -1
+		}
+		if ai > bi {
+			return 1
+		}
+	}
+	return 0
 }

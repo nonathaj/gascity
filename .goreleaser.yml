@@ -21,24 +21,26 @@ release:
   prerelease: auto
   replace_existing_artifacts: true
 
-homebrew_casks:
+brews:
   - repository:
       owner: gastownhall
       name: homebrew-gascity
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    binaries:
-      - gc
+    directory: Formula
     homepage: https://github.com/gastownhall/gascity
     description: "Gas City CLI — an orchestration-builder SDK for multi-agent coding workflows"
-    url:
-      verified: github.com/gastownhall/gascity/
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gc"]
-          end
+    license: "MIT"
+    install: |
+      bin.install "gc"
+    service: |
+      run [opt_bin/"gc", "supervisor", "run"]
+      keep_alive true
+      log_path var/"log/gascity/supervisor.log"
+      error_log_path var/"log/gascity/supervisor.err.log"
+      working_dir var/"lib/gascity"
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/gc version")
 
 changelog:
   sort: asc
