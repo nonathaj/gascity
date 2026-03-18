@@ -28,6 +28,9 @@ type PublishedServiceRef struct {
 }
 
 func LoadCityPublicationRefs(path, cityPath string) (map[string]PublishedServiceRef, bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, false, nil
+	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, false, nil
@@ -40,9 +43,6 @@ func LoadCityPublicationRefs(path, cityPath string) (map[string]PublishedService
 	if err := json.Unmarshal(data, &store); err != nil {
 		return nil, true, fmt.Errorf("decode publication store: %w", err)
 	}
-	if store.Version == 0 {
-		store.Version = PublicationStoreVersion
-	}
 	if store.Version != PublicationStoreVersion {
 		return nil, true, fmt.Errorf("unsupported publication store version %d", store.Version)
 	}
@@ -50,7 +50,7 @@ func LoadCityPublicationRefs(path, cityPath string) (map[string]PublishedService
 	cityKey := filepath.Clean(cityPath)
 	city, ok := store.Cities[cityKey]
 	if !ok {
-		return map[string]PublishedServiceRef{}, true, nil
+		return map[string]PublishedServiceRef{}, false, nil
 	}
 
 	refs := make(map[string]PublishedServiceRef, len(city.Services))

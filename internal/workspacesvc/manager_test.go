@@ -28,8 +28,11 @@ type testRuntime struct {
 	pubCfg   supervisor.PublicationConfig
 }
 
-func (t *testRuntime) CityPath() string     { return t.cityPath }
-func (t *testRuntime) CityName() string     { return t.cityName }
+func (t *testRuntime) CityPath() string { return t.cityPath }
+func (t *testRuntime) CityName() string { return t.cityName }
+func (t *testRuntime) PublicationStorePath() string {
+	return filepath.Join(t.cityPath, ".gc", "supervisor", "publications.json")
+}
 func (t *testRuntime) Config() *config.City { return t.cfg }
 func (t *testRuntime) PublicationConfig() supervisor.PublicationConfig {
 	return t.pubCfg
@@ -78,8 +81,7 @@ func registerWorkflowContractForTest(t *testing.T, contract string, factory Work
 
 func writePublicationStoreForTest(t *testing.T, cityPath string, services string) {
 	t.Helper()
-	t.Setenv("GC_HOME", filepath.Join(cityPath, ".gc"))
-	path := supervisor.PublicationsPath()
+	path := filepath.Join(cityPath, ".gc", "supervisor", "publications.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
 	}

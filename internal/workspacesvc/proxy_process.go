@@ -173,7 +173,7 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 	status := baseStatus(
 		p.rt.Config(),
 		p.rt.PublicationConfig(),
-		loadPublicationRefs(p.rt.CityPath()),
+		loadPublicationRefs(p.rt.PublicationStorePath(), p.rt.CityPath()),
 		p.svc,
 		now,
 	)

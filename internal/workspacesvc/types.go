@@ -38,6 +38,7 @@ type Status struct {
 type RuntimeContext interface {
 	CityPath() string
 	CityName() string
+	PublicationStorePath() string
 	Config() *config.City
 	PublicationConfig() supervisor.PublicationConfig
 	SessionProvider() runtime.Provider

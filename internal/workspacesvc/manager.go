@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -87,7 +86,7 @@ func (m *Manager) Reload() error {
 	baseStatuses := make(map[string]Status, len(cfg.Services))
 	reused := make(map[string]bool, len(oldEntries))
 	now := time.Now().UTC()
-	refs := loadPublicationRefs(m.rt.CityPath())
+	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
 
 	for _, svc := range cfg.Services {
 		base := baseStatus(m.rt.Config(), m.rt.PublicationConfig(), refs, svc, now)
@@ -201,7 +200,7 @@ func (m *Manager) Tick(ctx context.Context, now time.Time) {
 	}
 	m.mu.RUnlock()
 
-	refs := loadPublicationRefs(m.rt.CityPath())
+	refs := loadPublicationRefs(m.rt.PublicationStorePath(), m.rt.CityPath())
 	for _, e := range entries {
 		if e.inst == nil {
 			continue
@@ -410,14 +409,8 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, refs publ
 	return status
 }
 
-func loadPublicationRefs(cityPath string) publicationRefs {
-	refs, exists, err := supervisor.LoadCityPublicationRefs(
-		supervisor.PublicationsPath(),
-		cityPath,
-	)
-	if err != nil {
-		log.Printf("workspacesvc: load publication refs for %s: %v", cityPath, err)
-	}
+func loadPublicationRefs(path, cityPath string) publicationRefs {
+	refs, exists, err := supervisor.LoadCityPublicationRefs(path, cityPath)
 	return publicationRefs{
 		refs:   refs,
 		exists: exists,

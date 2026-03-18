@@ -74,3 +74,43 @@ func TestLoadCityPublicationRefsRejectsUnsupportedVersion(t *testing.T) {
 		t.Fatal("exists = false, want true")
 	}
 }
+
+func TestLoadCityPublicationRefsMissingCityDoesNotClaimAuthoritativeStore(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "publications.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "cities": {
+    "/workspace/other": { "services": [] }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	refs, exists, err := LoadCityPublicationRefs(path, "/workspace/demo")
+	if err != nil {
+		t.Fatalf("LoadCityPublicationRefs: %v", err)
+	}
+	if exists {
+		t.Fatal("exists = true, want false")
+	}
+	if len(refs) != 0 {
+		t.Fatalf("refs = %#v, want empty", refs)
+	}
+}
+
+func TestLoadCityPublicationRefsRejectsMissingVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "publications.json")
+	if err := os.WriteFile(path, []byte(`{"cities":{}}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, exists, err := LoadCityPublicationRefs(path, "/workspace/demo")
+	if err == nil {
+		t.Fatal("LoadCityPublicationRefs error = nil, want unsupported version")
+	}
+	if !exists {
+		t.Fatal("exists = false, want true")
+	}
+}
