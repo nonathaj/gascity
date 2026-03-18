@@ -199,57 +199,84 @@ func setupTutorialCity(t *testing.T) (cityDir, rigDir string) {
 	return cityDir, rigDir
 }
 
-// TestTutorialConvoy exercises the convoy sling flow:
+// TestTutorialConvoy exercises the convoy sling flow from tutorial Part 3:
 //
-//	bd create (multiple tasks) → gc sling convoy → all children close
-//
-// This tests batch dispatch: slinging a convoy expands to its children
-// and routes each one individually to the agent.
+//	Step 1: bd create (3 tasks)
+//	Step 2: gc convoy create (group them)
+//	Step 3: gc sling convoy (fan-out to all children)
+//	Step 4: wait for all children to close
+//	Result: one file per language in the rig directory
 func TestTutorialConvoy(t *testing.T) {
 	_, rigDir := setupTutorialCity(t)
 
-	// Create multiple beads and sling them individually.
-	// The tutorial shows slinging each task to an agent — each sling
-	// auto-creates a convoy wrapping the bead + its formula wisp.
-	tasks := []struct {
-		prompt string
-		ext    string
+	// ── Step 1: Create Three Beads ──────────────────────────────────
+	prompts := []struct {
+		text string
+		ext  string // expected file extension
 	}{
-		{"Write hello-world.rs", ".rs"},
-		{"Write hello-world.go", ".go"},
+		{"Hello world in Python", ".py"},
+		{"Hello world in Rust", ".rs"},
+		{"Hello world in Haskell", ".hs"},
 	}
 
-	var beadIDs []string
-	for _, task := range tasks {
-		out, err := gcReal(rigDir, "sling", "claude", task.prompt)
+	var childIDs []string
+	for _, p := range prompts {
+		out, err := bdReal(rigDir, "create", p.text)
 		if err != nil {
-			t.Fatalf("gc sling %q failed: %v\n%s", task.prompt, err, out)
+			t.Fatalf("bd create %q failed: %v\n%s", p.text, err, out)
 		}
-		t.Logf("gc sling:\n%s", out)
-		id := extractSlingBeadID(t, out)
-		beadIDs = append(beadIDs, id)
-		t.Logf("slung: %s", id)
+		id := extractBeadID(t, out)
+		childIDs = append(childIDs, id)
+		t.Logf("created: %s — %s", id, p.text)
 	}
 
-	// Wait for all beads to close.
-	for _, id := range beadIDs {
+	// All beads should have rig prefix.
+	for _, id := range childIDs {
+		if !strings.HasPrefix(id, "hw-") {
+			t.Fatalf("bead %q has wrong prefix — expected hw-", id)
+		}
+	}
+
+	// ── Step 2: Group Them in a Convoy ──────────────────────────────
+	convoyArgs := append([]string{"convoy", "create", "Hello World Variants"}, childIDs...)
+	out, err := gcReal(rigDir, convoyArgs...)
+	if err != nil {
+		t.Fatalf("gc convoy create failed: %v\n%s", err, out)
+	}
+	t.Logf("gc convoy create:\n%s", out)
+	assertContains(t, out, "convoy", "convoy create output missing confirmation")
+
+	// Extract convoy ID.
+	convoyID := extractConvoyID(t, out)
+	t.Logf("convoy: %s tracking %d children", convoyID, len(childIDs))
+
+	// ── Step 3: Sling the Convoy ────────────────────────────────────
+	out, err = gcReal(rigDir, "sling", "claude", convoyID)
+	if err != nil {
+		t.Fatalf("gc sling convoy failed: %v\n%s", err, out)
+	}
+	t.Logf("gc sling convoy:\n%s", out)
+	assertContains(t, out, "Slung", "convoy sling missing confirmation")
+
+	// ── Step 4: Wait for All Children to Close ──────────────────────
+	for _, id := range childIDs {
 		waitForBeadClose(t, rigDir, id, 5*time.Minute)
 	}
 
-	// Verify output files exist.
+	// ── Result: Three Files ─────────────────────────────────────────
 	allFiles := listUserFiles(t, rigDir)
 	t.Logf("files after convoy: %v", allFiles)
 
-	for _, task := range tasks {
+	for _, p := range prompts {
 		found := false
 		for _, f := range allFiles {
-			if strings.HasSuffix(f, task.ext) {
+			if strings.HasSuffix(f, p.ext) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("no %s file produced; files: %v", task.ext, allFiles)
+			t.Errorf("no %s file produced for %q; files: %v", p.ext, p.text, allFiles)
 		}
 	}
 }
@@ -322,6 +349,28 @@ func extractSlingBeadID(t *testing.T, output string) string {
 		}
 	}
 	t.Fatalf("could not extract bead ID from sling output:\n%s", output)
+	return ""
+}
+
+// extractConvoyID extracts the convoy bead ID from gc convoy create output.
+// Looks for "Created convoy <id>" or "convoy <id>".
+func extractConvoyID(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "convoy") {
+			fields := strings.Fields(line)
+			for i, f := range fields {
+				if strings.ToLower(f) == "convoy" && i+1 < len(fields) {
+					candidate := strings.TrimRight(fields[i+1], " —\"")
+					if strings.Contains(candidate, "-") {
+						return candidate
+					}
+				}
+			}
+		}
+	}
+	t.Fatalf("could not extract convoy ID from output:\n%s", output)
 	return ""
 }
 
