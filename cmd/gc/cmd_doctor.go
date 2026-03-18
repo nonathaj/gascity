@@ -101,6 +101,15 @@ func doDoctor(fix, verbose bool, stdout, stderr io.Writer) int {
 	d.Register(doctor.NewBinaryCheck("tmux", "", exec.LookPath))
 	d.Register(doctor.NewBinaryCheck("git", "", exec.LookPath))
 
+	// Beads provider dependencies — dolt, bd, flock are required when using
+	// the default "bd" provider (which backs beads on a Dolt database).
+	beadsProvider := rawBeadsProvider(cityPath)
+	if beadsProvider == "bd" || beadsProvider == "" {
+		d.Register(doctor.NewBinaryCheck("dolt", "beads provider is not bd", exec.LookPath))
+		d.Register(doctor.NewBinaryCheck("bd", "beads provider is not bd", exec.LookPath))
+		d.Register(doctor.NewBinaryCheck("flock", "beads provider is not bd", exec.LookPath))
+	}
+
 	// Binary-specific version checks are handled by pack doctor scripts
 	// (check-bd.sh, check-dolt.sh) registered via the pack doctor mechanism below.
 

@@ -241,6 +241,19 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "gc start: runtime scaffold: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	if missing := checkHardDependencies(cityPath); len(missing) > 0 {
+		fmt.Fprintf(stderr, "gc start: missing required dependencies:\n\n") //nolint:errcheck // best-effort stderr
+		for _, dep := range missing {
+			fmt.Fprintf(stderr, "  - %s", dep.name) //nolint:errcheck // best-effort stderr
+			if dep.installHint != "" {
+				fmt.Fprintf(stderr, "\n    Install: %s", dep.installHint) //nolint:errcheck // best-effort stderr
+			}
+			fmt.Fprintln(stderr) //nolint:errcheck // best-effort stderr
+		}
+		fmt.Fprintln(stderr)                                                                             //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "gc start: install the missing dependencies, then try again") //nolint:errcheck // best-effort stderr
+		return 1
+	}
 	if code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc start", true); code != 0 {
 		return code
 	}
