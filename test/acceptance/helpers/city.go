@@ -15,7 +15,7 @@ import (
 // isolated environment, providing high-level methods that shell out to
 // the real gc binary.
 type City struct {
-	t       testing.TB
+	t       *testing.T
 	Dir     string
 	Env     *Env
 	started bool
@@ -23,9 +23,9 @@ type City struct {
 
 // NewCity creates a temp directory for a city and returns the DSL handle.
 // The city is NOT initialized — call Init() or InitFrom() next.
-func NewCity(t testing.TB, env *Env) *City {
+func NewCity(t *testing.T, env *Env) *City {
 	t.Helper()
-	dir := t.(*testing.T).TempDir()
+	dir := t.TempDir()
 	cityDir := filepath.Join(dir, uniqueName())
 	if err := os.MkdirAll(cityDir, 0o755); err != nil {
 		t.Fatalf("acceptance: creating city dir: %v", err)

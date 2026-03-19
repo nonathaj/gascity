@@ -198,10 +198,19 @@ func writeCityFiles(t rapid.TB, cityPath, toml string) {
 	}
 }
 
-// resolveAgentEnvFromConfig replicates the env construction logic from
-// template_resolve.go without importing cmd/gc (which is package main).
-// This is intentionally a parallel implementation — if the real code
-// diverges from these rules, the test catches it.
+// resolveAgentEnvFromConfig encodes the env construction RULES that must
+// hold for any agent configuration. This is a parallel implementation of
+// the logic in template_resolve.go (which lives in package main and cannot
+// be imported). The invariant tests verify these rules hold across hundreds
+// of random configs.
+//
+// LIMITATION: This tests the rules, not the real code path. If the real
+// code diverges from these rules in a way that happens to satisfy the same
+// invariants, the test won't catch it. The lifecycle tests in
+// init_lifecycle_test.go complement this by exercising the real binary.
+//
+// TODO: Extract env resolution rules from cmd/gc into an internal package
+// so invariant tests can call the production code directly.
 func resolveAgentEnvFromConfig(cityPath, rigName, rigRoot string, agent *config.Agent) map[string]string {
 	env := map[string]string{
 		"GC_AGENT":            agent.QualifiedName(),

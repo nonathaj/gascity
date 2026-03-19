@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -22,9 +23,11 @@ type Env struct {
 func NewEnv(gcBinary, gcHome, runtimeDir string) *Env {
 	e := &Env{vars: make(map[string]string)}
 
-	// Inherit minimum from host.
+	// Inherit minimum from host. HOME is NOT inherited — it's set to
+	// a test-specific directory to prevent gc from reading ~/.gc/,
+	// ~/.gitconfig, or other real user state.
 	for _, key := range []string{
-		"PATH", "TMPDIR", "LANG", "LC_ALL", "USER", "HOME",
+		"PATH", "TMPDIR", "LANG", "LC_ALL", "USER",
 		"SHELL", "SSH_AUTH_SOCK", "TERM",
 	} {
 		if v := os.Getenv(key); v != "" {
@@ -37,7 +40,8 @@ func NewEnv(gcBinary, gcHome, runtimeDir string) *Env {
 		e.vars["PATH"] = filepath.Dir(gcBinary) + ":" + e.vars["PATH"]
 	}
 
-	// Test isolation.
+	// Test isolation: HOME points to gcHome so gc never reads real user state.
+	e.vars["HOME"] = gcHome
 	e.vars["GC_HOME"] = gcHome
 	e.vars["XDG_RUNTIME_DIR"] = runtimeDir
 	e.vars["GC_DOLT"] = "skip"
@@ -59,11 +63,17 @@ func (e *Env) Without(key string) *Env {
 	return e
 }
 
-// List returns the environment as a []string for exec.Cmd.Env.
+// List returns the environment as a sorted []string for exec.Cmd.Env.
+// Sorted for deterministic output in logs and debugging.
 func (e *Env) List() []string {
-	out := make([]string, 0, len(e.vars))
-	for k, v := range e.vars {
-		out = append(out, k+"="+v)
+	keys := make([]string, 0, len(e.vars))
+	for k := range e.vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+e.vars[k])
 	}
 	return out
 }
@@ -83,6 +93,10 @@ func WriteSupervisorConfig(gcHome string) error {
 	return os.WriteFile(filepath.Join(gcHome, "supervisor.toml"), []byte(cfg), 0o644)
 }
 
+// reservePort finds a free port using the listen-then-close pattern.
+// Known TOCTOU race: between Close() and the supervisor binding, another
+// process can claim the port. This matches the existing integration test
+// pattern (reserveLoopbackPort) and is an accepted risk.
 func reservePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
