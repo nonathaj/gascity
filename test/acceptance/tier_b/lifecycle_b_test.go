@@ -173,14 +173,22 @@ func TestLifecycle_DrainAckStopsSession(t *testing.T) {
 
 	// The agent called drain-ack and exited. Verify the session is
 	// eventually stopped by checking gc status.
-	// Give the reconciler time to process the drain-ack.
 	deadline := helpers.ReportTimeout()
 	stopped := c.WaitForCondition(func() bool {
-		out, _ := c.GC("status", "--city", c.Dir)
-		// If the agent is no longer listed as running, it was stopped.
-		return !strings.Contains(out, "draintest") ||
-			strings.Contains(out, "asleep") ||
-			strings.Contains(out, "stopped")
+		out, err := c.GC("status", "--city", c.Dir)
+		if err != nil {
+			return false // status command failed, keep polling
+		}
+		// Agent must be explicitly in a stopped/asleep state, or absent
+		// from the output entirely. Don't match generic substrings.
+		lines := strings.Split(out, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "draintest") {
+				return strings.Contains(line, "asleep") || strings.Contains(line, "stopped")
+			}
+		}
+		// Agent not mentioned at all — it was stopped and cleaned up.
+		return true
 	}, deadline)
 
 	if !stopped {
@@ -207,8 +215,11 @@ func TestLifecycle_PackMaterializationOnStart(t *testing.T) {
 	}
 
 	// gc start registers with the supervisor, which materializes packs
-	// during reconciliation. We may need to wait for the reconcile tick.
-	c.GC("start", c.Dir) //nolint:errcheck // may fail, that's OK
+	// during registration (before config load).
+	out, err := c.GC("start", c.Dir)
+	if err != nil {
+		t.Logf("gc start returned error (may be expected): %v\n%s", err, out)
+	}
 
 	// Wait for the supervisor to materialize packs (reconcile tick).
 	found := c.WaitForCondition(func() bool {

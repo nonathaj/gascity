@@ -128,9 +128,12 @@ func registerCityWithSupervisor(cityPath string, stdout, stderr io.Writer, comma
 		return 1
 	}
 	// Materialize gastown packs before config load if the city references them.
+	// This must succeed — without packs, config.LoadWithIncludes will fail
+	// with a confusing "pack.toml: no such file" error downstream.
 	if quickCfg, qErr := config.Load(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); qErr == nil && usesGastownPack(quickCfg) {
 		if err := MaterializeGastownPacks(cityPath); err != nil {
 			fmt.Fprintf(stderr, "%s: materializing gastown packs: %v\n", commandName, err) //nolint:errcheck // best-effort stderr
+			return 1
 		}
 	}
 	if err := fetchCityPacksIfNeeded(cityPath); err != nil {

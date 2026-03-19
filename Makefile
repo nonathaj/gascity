@@ -109,6 +109,10 @@ test-acceptance-b:
 ## test-acceptance-all: run all acceptance tiers
 test-acceptance-all: test-acceptance test-acceptance-b
 
+## test-tutorial-regression: run manual tutorial regression tests (requires tmux, bd)
+test-tutorial-regression:
+	go test -tags 'integration acceptance' -timeout 10m -v -run TestTutorialRegression ./test/integration/
+
 ## test-integration: run all tests including integration (tmux, etc.)
 test-integration:
 	go test -tags integration -timeout 8m ./...

@@ -44,11 +44,12 @@ func (c *City) WriteReportScript(name string, drain bool) string {
 	script := fmt.Sprintf(`#!/bin/sh
 # Acceptance test report script for agent %q.
 # Dumps GC_* and other relevant env vars to a report file.
-set -e
+# No set -e: grep returns 1 on no match, which would abort before
+# writing REPORT_DONE and cause a 60s timeout instead of a clear failure.
 
 REPORT=%q
 
-env | grep -E '^(GC_|GT_|BEADS_)' | sort > "$REPORT"
+env | grep -E '^(GC_|GT_|BEADS_)' | sort > "$REPORT" || true
 echo "CWD=$(pwd)" >> "$REPORT"
 echo "REPORT_DONE=true" >> "$REPORT"
 %s
