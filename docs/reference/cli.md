@@ -655,23 +655,24 @@ gc events
 
 ## gc graph
 
-Show the dependency graph for a set of beads, a convoy, or an epic.
+Show the dependency graph for a set of beads or a convoy.
 
 Resolves dependencies via the bead store and prints each bead with its
-status and what blocks it. Convoys and epics are expanded to their
-children automatically. Readiness is computed within the displayed set.
+status and what blocks it. Convoys are expanded to their children
+automatically. Epics are treated as ordinary beads. Readiness is
+computed within the displayed set.
 
 By default prints a table. Use --tree for a Unicode tree view or
 --mermaid for a Mermaid.js flowchart you can paste into Markdown.
 
 ```
-gc graph <bead-ids|convoy-id|epic-id...> [flags]
+gc graph <bead-ids|convoy-id...> [flags]
 ```
 
 **Example:**
 
 ```
-gc graph gc-42               # expand convoy or epic children
+gc graph gc-42               # expand convoy children
   gc graph gc-1 gc-2 gc-3     # arbitrary beads
   gc graph gc-42 --tree        # dependency tree
   gc graph gc-42 --mermaid     # Mermaid.js diagram

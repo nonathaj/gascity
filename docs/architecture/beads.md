@@ -26,7 +26,7 @@ storage backend.
   in `internal/beads/beads.go`.
 
 - **Container Type**: A bead type that groups child beads for batch
-  expansion during dispatch. Currently `convoy` and `epic`. Queried via
+  expansion during dispatch. Currently only `convoy`. Queried via
   `IsContainerType()`. Children link to their container via ParentID.
 
 - **Molecule**: A formula instantiated at runtime as one root bead
@@ -170,8 +170,8 @@ enforced by the conformance suite in `internal/beads/beadstest/conformance.go`.
 11. **ListByLabel matches exact strings.** Partial or prefix matches do
     not count. Limit 0 means unlimited.
 
-12. **Container types are case-sensitive.** `"convoy"` and `"epic"` are
-    containers; `"CONVOY"` is not.
+12. **Container types are case-sensitive.** `"convoy"` is a container;
+    `"epic"` is an ordinary bead type, and `"CONVOY"` is not a container.
 
 13. **All bd subprocess calls live in `internal/beads/`.** The boundary
     test `TestNoBdExecOutsideBeads` enforces that no Go code outside

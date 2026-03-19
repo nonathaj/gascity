@@ -43,7 +43,7 @@ Covers identity, pools, sandboxes, resume, and crash adoption.
 ### 2. Task Store (Beads)
 
 CRUD + parent-child + dependencies + labels + query over work units.
-Everything is a bead: tasks, mail, molecules, convoys, epics.
+Everything is a bead: tasks, mail, molecules, convoys, and epics.
 
 - **Interface**: `beads.Store` with Create, Get, Update, Close, List,
   Ready, Children, ListByLabel, SetMetadata, MolCook

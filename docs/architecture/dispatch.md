@@ -9,8 +9,8 @@ mechanism that composes primitives (Agent Protocol, Bead Store, Event Bus,
 Config) to route work to agents. The `gc sling` command resolves a target
 agent or pool, optionally instantiates a formula as a wisp, executes the
 agent's sling query to route each bead, optionally wraps single beads in
-a tracking convoy, records telemetry, and nudges the target. Container
-beads (convoy, epic) are expanded to their open children before routing.
+a tracking convoy, records telemetry, and nudges the target. Convoys are
+expanded to their open children before routing.
 
 ## Key Concepts
 
@@ -26,10 +26,10 @@ beads (convoy, epic) are expanded to their open children before routing.
   placeholder is replaced with the actual bead ID at dispatch time.
   Defined in `internal/config/config.go:EffectiveSlingQuery`.
 
-- **Container Expansion**: When a container bead (convoy or epic) is
-  slung, dispatch expands it to its open children and routes each child
-  individually. Non-open children are skipped. The container itself
-  becomes the convoy -- no auto-convoy is created.
+- **Container Expansion**: When a convoy is slung, dispatch expands it
+  to its open children and routes each child individually. Non-open
+  children are skipped. Epics are ordinary beads and are not expanded.
+  The container itself becomes the convoy -- no auto-convoy is created.
 
 - **Auto-Convoy**: When slinging a single bead (not a formula, not a
   container), dispatch automatically wraps it in a new convoy bead for
@@ -62,7 +62,7 @@ CLI layer (cmd/gc/cmd_sling.go)
   +-- cmdSling()          resolve city, config, agent, store
   |     |
   |     v
-  +-- doSlingBatch()      container expansion (convoy/epic -> children)
+  +-- doSlingBatch()      container expansion (convoy -> children)
         |
         +-- doSling()     single-bead dispatch pipeline:
               |
@@ -257,7 +257,7 @@ shell commands), `session.NewFake()` (fake session provider), and
 - `buildSlingCommand` placeholder substitution including multiple `{}`
 - Single-bead dispatch to fixed agents and pools
 - Formula dispatch with `--formula` flag (wisp instantiation)
-- Container expansion: convoy and epic beads expand to open children
+- Container expansion: convoy beads expand to open children; epics are rejected
 - Merge strategy metadata (`--merge=direct`, `--merge=mr`, `--merge=local`)
 - Auto-convoy creation and suppression (`--no-convoy`)
 - Owned convoy labeling (`--owned`)
@@ -284,7 +284,7 @@ both `sling_query` and `work_query` together or neither.
   flexible (any CLI tool can be a routing backend) but adds per-bead
   fork overhead during batch expansion of large containers.
 
-- **Container expansion is serial.** When expanding a convoy or epic,
+- **Container expansion is serial.** When expanding a convoy,
   each child is slung sequentially. A single slow or failing sling
   command blocks subsequent children. Partial success is reported but
   not retried.

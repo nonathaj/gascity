@@ -15,7 +15,7 @@ other source should be updated.
   [`internal/runtime/`](https://github.com/gastownhall/gascity/tree/main/internal/runtime/).
 
 - **Bead**: A single unit of work. Everything is a bead: tasks, mail,
-  molecules, convoys, epics. Defined in the `Bead` struct with ID,
+  molecules, convoys, and epics. Defined in the `Bead` struct with ID,
   Title, Status (`open` / `in_progress` / `closed`), Type, Assignee,
   ParentID, Ref, Needs, Description, and Labels. The universal
   persistence substrate. See [`internal/beads/`](https://github.com/gastownhall/gascity/tree/main/internal/beads/).
@@ -53,8 +53,9 @@ other source should be updated.
   -> create convoy -> log event. See
   [`cmd/gc/cmd_sling.go`](https://github.com/gastownhall/gascity/blob/main/cmd/gc/cmd_sling.go).
 
-- **Epic**: A container bead type that groups child beads for batch
-  expansion during dispatch. Like convoy, children link via ParentID.
+- **Epic**: An ordinary bead type used for tracking. Unlike convoy,
+  epics are not first-class containers and are not expanded during
+  dispatch. Children may still link via ParentID.
 
 - **Formula**: A `*.formula.toml` workflow definition discovered through
   formula layers and materialized by the configured beads backend. Gas City

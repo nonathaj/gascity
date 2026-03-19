@@ -190,10 +190,11 @@ store specification.
 
 ### Container expansion
 
-When `gc sling` receives a convoy or epic ID, `doSlingBatch()` (line 232
-of `cmd/gc/cmd_sling.go`) expands it. It calls `querier.Children(b.ID)` to
-get child beads, filters to open ones, and routes each child individually.
-The container itself is the convoy -- no auto-convoy is created.
+When `gc sling` receives a convoy ID, `doSlingBatch()` expands it. It
+calls `querier.Children(b.ID)` to get child beads, filters to open ones,
+and routes each child individually. Epics are no longer first-class
+containers and are rejected by `gc sling`. The container itself is the
+convoy -- no auto-convoy is created.
 
 ## Phase 4: Execution
 

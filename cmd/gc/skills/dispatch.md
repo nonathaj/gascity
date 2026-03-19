@@ -153,6 +153,9 @@ gc convoy stranded                                    # Find convoys with no pro
 gc convoy autoclose                                   # Close convoys where all beads done
 ```
 
+Migration note:
+- Existing epic beads are no longer first-class containers. Migrate open epics to convoys before relying on convoy-only tooling such as `gc convoy target`, `gc sling <convoy>`, or the Gastown refinery convoy flow.
+
 ## Orders
 
 ```

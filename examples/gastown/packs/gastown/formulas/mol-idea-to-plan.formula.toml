@@ -432,6 +432,8 @@ container, then set its integration target with:
 ```bash
 gc convoy target <convoy-id> integration/<convoy-id>
 ```
+If you still have older initiative epics, migrate them to convoys before
+using the convoy-only planning and refinery flow.
 Record references to:
 - `.prd-reviews/$REVIEW_ID/prd-draft.md`
 - `.prd-reviews/$REVIEW_ID/prd-review.md`

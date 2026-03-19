@@ -84,19 +84,8 @@ func doGraph(store beads.Store, args []string, opts graphOpts, stdout, stderr io
 		return 1
 	}
 
-	for _, arg := range args {
-		b, err := store.Get(arg)
-		if err != nil {
-			fmt.Fprintf(stderr, "gc graph: %v\n", err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-		if b.Type == "epic" {
-			fmt.Fprintf(stderr, "gc graph: epic %s is treated as an ordinary bead; convoy expansion is first-class\n", b.ID) //nolint:errcheck // best-effort stderr
-		}
-	}
-
 	// Resolve input — expand containers, returning beads directly.
-	resolved, err := resolveGraphInput(store, args)
+	resolved, err := resolveGraphInput(store, args, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc graph: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -159,7 +148,7 @@ func doGraph(store beads.Store, args []string, opts graphOpts, stdout, stderr io
 // resolveGraphInput expands convoy inputs to their children.
 // Non-containers are passed through. Multiple args are resolved individually.
 // Duplicate IDs are removed. Returns the full Bead objects to avoid re-fetching.
-func resolveGraphInput(store beads.Store, args []string) ([]beads.Bead, error) {
+func resolveGraphInput(store beads.Store, args []string, stderr io.Writer) ([]beads.Bead, error) {
 	seen := make(map[string]bool)
 	var result []beads.Bead
 	add := func(b beads.Bead) {
@@ -172,6 +161,9 @@ func resolveGraphInput(store beads.Store, args []string) ([]beads.Bead, error) {
 		b, err := store.Get(arg)
 		if err != nil {
 			return nil, err
+		}
+		if b.Type == "epic" {
+			fmt.Fprintf(stderr, "gc graph: epic %s is treated as an ordinary bead; convoy expansion is first-class\n", b.ID) //nolint:errcheck // best-effort stderr
 		}
 		if beads.IsContainerType(b.Type) {
 			children, err := store.Children(b.ID)
