@@ -20,7 +20,7 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
            -X main.date=$(BUILD_TIME)
 
-.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-acceptance-b test-acceptance-all test-tutorial-regression test-tutorial test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
+.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-acceptance-b test-acceptance-c test-acceptance-all test-tutorial-regression test-tutorial test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
 
 ## build: compile gc binary with version metadata
 build:
@@ -106,8 +106,12 @@ test-acceptance:
 test-acceptance-b:
 	go test -tags acceptance_b -timeout 10m -v ./test/acceptance/tier_b/...
 
+## test-acceptance-c: run Tier C acceptance tests (real inference, ~10 min, manual/nightly)
+test-acceptance-c:
+	go test -tags acceptance_c -timeout 15m -v ./test/acceptance/tier_c/...
+
 ## test-acceptance-all: run all acceptance tiers
-test-acceptance-all: test-acceptance test-acceptance-b
+test-acceptance-all: test-acceptance test-acceptance-b test-acceptance-c
 
 ## test-tutorial-regression: run manual tutorial regression tests (requires tmux, bd)
 test-tutorial-regression:
