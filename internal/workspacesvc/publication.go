@@ -1,9 +1,6 @@
 package workspacesvc
 
 import (
-	"crypto/sha256"
-	"encoding/base32"
-	"fmt"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
@@ -16,7 +13,7 @@ type publicationRefs struct {
 	err    error
 }
 
-func derivePublishedURL(pubCfg supervisor.PublicationConfig, refs publicationRefs, workspaceName string, svc config.Service) (string, string) {
+func derivePublishedURL(pubCfg supervisor.PublicationConfig, refs publicationRefs, svc config.Service) (string, string) {
 	visibility := svc.PublicationVisibilityOrDefault()
 	if visibility == "private" {
 		return "", ""
@@ -56,32 +53,9 @@ func derivePublishedURL(pubCfg supervisor.PublicationConfig, refs publicationRef
 	if visibility == "tenant" && strings.TrimSpace(pubCfg.TenantAuth.PolicyRef) == "" {
 		return "", "publication_tenant_auth_policy_missing"
 	}
-	serviceLabel := normalizeRouteLabel(svc.PublicationHostnameOrDefault(), "service")
-	workspaceLabel := normalizeRouteLabel(workspaceName, "workspace")
-	hash := publicationHash(serviceLabel, workspaceLabel, tenantSlug, visibility)
-	host := fmt.Sprintf("%s--%s--%s--%s.%s", serviceLabel, workspaceLabel, tenantSlug, hash, baseDomain)
-	if len(host) > 253 {
-		return "", "publication_hostname_too_long"
-	}
-	return "https://" + host, "route_active"
+	return "", "publication_platform_url_missing"
 }
 
 func normalizeRouteLabel(value, fallback string) string {
 	return config.NormalizePublicationLabel(value, fallback)
-}
-
-func publicationHash(serviceLabel, workspaceLabel, tenantLabel, visibility string) string {
-	// Keep the hash input explicit and unambiguous; labels are normalized to
-	// ASCII route components before hashing, so the separators are structural.
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		serviceLabel,
-		workspaceLabel,
-		tenantLabel,
-		visibility,
-	}, "\x00")))
-	encoded := base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:])
-	if len(encoded) < 8 {
-		return strings.ToLower(encoded)
-	}
-	return strings.ToLower(encoded[:8])
 }

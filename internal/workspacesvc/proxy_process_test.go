@@ -100,7 +100,6 @@ func TestManagerReloadProxyProcessStartsAndProxies(t *testing.T) {
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
-
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("Reload: %v", err)
@@ -203,6 +202,13 @@ func TestProxyProcessPublishesServiceEnv(t *testing.T) {
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
 
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
@@ -235,8 +241,8 @@ func TestProxyProcessPublishesServiceEnv(t *testing.T) {
 	if env["GC_SERVICE_STATE_ROOT"] != filepath.Join(rt.cityPath, ".gc", "services", "bridge") {
 		t.Fatalf("GC_SERVICE_STATE_ROOT = %q, want %q", env["GC_SERVICE_STATE_ROOT"], filepath.Join(rt.cityPath, ".gc", "services", "bridge"))
 	}
-	if !strings.HasPrefix(env["GC_SERVICE_PUBLIC_URL"], "https://bridge--demo-app--acme--") {
-		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want bridge--demo-app--acme prefix", env["GC_SERVICE_PUBLIC_URL"])
+	if env["GC_SERVICE_PUBLIC_URL"] != "https://bridge--acme--deadbeef.apps.example.com" {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want authoritative route", env["GC_SERVICE_PUBLIC_URL"])
 	}
 	if env["GC_SERVICE_VISIBILITY"] != "public" {
 		t.Fatalf("GC_SERVICE_VISIBILITY = %q, want public", env["GC_SERVICE_VISIBILITY"])
@@ -278,6 +284,13 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--deadbeef.apps.example.com"
+  }
+]`)
 
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
@@ -307,7 +320,13 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 	}
 
 	first := loadEnv()
-	rt.pubCfg.TenantSlug = "beta"
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--beta--feedface.apps.example.com"
+  }
+]`)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("second Reload: %v", err)
 	}
@@ -316,8 +335,8 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 	if first["GC_SERVICE_PUBLIC_URL"] == second["GC_SERVICE_PUBLIC_URL"] {
 		t.Fatalf("GC_SERVICE_PUBLIC_URL did not change across reload: %q", first["GC_SERVICE_PUBLIC_URL"])
 	}
-	if !strings.Contains(second["GC_SERVICE_PUBLIC_URL"], "--beta--") {
-		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want beta route", second["GC_SERVICE_PUBLIC_URL"])
+	if second["GC_SERVICE_PUBLIC_URL"] != "https://bridge--beta--feedface.apps.example.com" {
+		t.Fatalf("GC_SERVICE_PUBLIC_URL = %q, want updated authoritative route", second["GC_SERVICE_PUBLIC_URL"])
 	}
 }
 
@@ -350,8 +369,14 @@ func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testin
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
-
 	mgr := NewManager(rt)
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--11111111.apps.example.com"
+  }
+]`)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("first Reload: %v", err)
 	}
@@ -432,6 +457,13 @@ func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *tes
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "bridge",
+    "visibility": "public",
+    "url": "https://bridge--acme--11111111.apps.example.com"
+  }
+]`)
 
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {

@@ -9,25 +9,22 @@ import (
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
-func TestDerivePublishedURL(t *testing.T) {
+func TestDerivePublishedURLRequiresAuthoritativeHostedMetadata(t *testing.T) {
 	url, reason := derivePublishedURL(supervisor.PublicationConfig{
 		Provider:         "hosted",
 		TenantSlug:       "Acme",
 		PublicBaseDomain: "apps.example.com",
-	}, publicationRefs{}, "Demo City", config.Service{
+	}, publicationRefs{}, config.Service{
 		Name: "review_intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
 		},
 	})
-	if reason != "route_active" {
-		t.Fatalf("reason = %q, want route_active", reason)
+	if url != "" {
+		t.Fatalf("url = %q, want empty", url)
 	}
-	if !strings.HasPrefix(url, "https://review-intake--demo-city--acme--") {
-		t.Fatalf("url = %q, want review-intake--demo-city--acme prefix", url)
-	}
-	if !strings.HasSuffix(url, ".apps.example.com") {
-		t.Fatalf("url = %q, want apps.example.com suffix", url)
+	if reason != "publication_platform_url_missing" {
+		t.Fatalf("reason = %q, want publication_platform_url_missing", reason)
 	}
 }
 
@@ -45,7 +42,7 @@ func TestDerivePublishedURLUsesAuthoritativeMetadataWhenAvailable(t *testing.T) 
 			},
 		},
 		exists: true,
-	}, "Demo City", config.Service{
+	}, config.Service{
 		Name: "review_intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -60,7 +57,7 @@ func TestDerivePublishedURLUsesAuthoritativeMetadataWhenAvailable(t *testing.T) 
 }
 
 func TestDerivePublishedURLRequiresSupervisor(t *testing.T) {
-	url, reason := derivePublishedURL(supervisor.PublicationConfig{}, publicationRefs{}, "Demo", config.Service{
+	url, reason := derivePublishedURL(supervisor.PublicationConfig{}, publicationRefs{}, config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -78,7 +75,7 @@ func TestDerivePublishedURLRequiresTenantSlug(t *testing.T) {
 	url, reason := derivePublishedURL(supervisor.PublicationConfig{
 		Provider:         "hosted",
 		PublicBaseDomain: "apps.example.com",
-	}, publicationRefs{}, "Demo", config.Service{
+	}, publicationRefs{}, config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -97,7 +94,7 @@ func TestDerivePublishedURLRequiresTenantAuthForTenantVisibility(t *testing.T) {
 		Provider:         "hosted",
 		TenantSlug:       "acme",
 		TenantBaseDomain: "tenant.apps.example.com",
-	}, publicationRefs{}, "Demo", config.Service{
+	}, publicationRefs{}, config.Service{
 		Name: "review-intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "tenant",
@@ -111,12 +108,12 @@ func TestDerivePublishedURLRequiresTenantAuthForTenantVisibility(t *testing.T) {
 	}
 }
 
-func TestDerivePublishedURLRejectsOverlongHostname(t *testing.T) {
+func TestDerivePublishedURLRequiresConfiguredBaseDomain(t *testing.T) {
 	url, reason := derivePublishedURL(supervisor.PublicationConfig{
 		Provider:         "hosted",
 		TenantSlug:       strings.Repeat("tenant", 8),
 		PublicBaseDomain: strings.Repeat("example", 20) + ".com",
-	}, publicationRefs{}, strings.Repeat("workspace", 8), config.Service{
+	}, publicationRefs{}, config.Service{
 		Name: strings.Repeat("service", 8),
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -125,8 +122,8 @@ func TestDerivePublishedURLRejectsOverlongHostname(t *testing.T) {
 	if url != "" {
 		t.Fatalf("url = %q, want empty", url)
 	}
-	if reason != "publication_hostname_too_long" {
-		t.Fatalf("reason = %q, want publication_hostname_too_long", reason)
+	if reason != "publication_platform_url_missing" {
+		t.Fatalf("reason = %q, want publication_platform_url_missing", reason)
 	}
 }
 
@@ -135,7 +132,7 @@ func TestDerivePublishedURLBlocksHostedFallbackWhenAuthoritativeStoreExists(t *t
 		Provider:         "hosted",
 		TenantSlug:       "Acme",
 		PublicBaseDomain: "apps.example.com",
-	}, publicationRefs{exists: true}, "Demo City", config.Service{
+	}, publicationRefs{exists: true}, config.Service{
 		Name: "review_intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",
@@ -157,7 +154,7 @@ func TestDerivePublishedURLReportsPublicationMetadataInvalid(t *testing.T) {
 	}, publicationRefs{
 		exists: true,
 		err:    fmt.Errorf("decode publication store: boom"),
-	}, "Demo City", config.Service{
+	}, config.Service{
 		Name: "review_intake",
 		Publication: config.ServicePublicationConfig{
 			Visibility: "public",

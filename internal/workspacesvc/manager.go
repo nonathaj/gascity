@@ -414,7 +414,7 @@ func baseStatus(cfg *config.City, pubCfg supervisor.PublicationConfig, refs publ
 	case "private":
 		status.PublicationState = "private"
 	default:
-		publishedURL, publicationReason := derivePublishedURL(pubCfg, refs, workspaceName(cfg), svc)
+		publishedURL, publicationReason := derivePublishedURL(pubCfg, refs, svc)
 		if publishedURL != "" {
 			status.URL = publishedURL
 			status.PublicationState = "published"

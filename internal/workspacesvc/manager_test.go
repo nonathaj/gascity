@@ -192,7 +192,6 @@ func TestManagerUsesCachedPublicationRefsAfterStoreDisappears(t *testing.T) {
     "url": "https://review-intake--acme--deadbeef.apps.example.com"
   }
 ]`)
-
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("Reload: %v", err)
@@ -318,6 +317,13 @@ func TestManagerReloadWorkflowServiceCreatesStateRoot(t *testing.T) {
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--acme--deadbeef.apps.example.com"
+  }
+]`)
 
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
@@ -380,6 +386,13 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 		sp:    runtime.NewFake(),
 		store: beads.NewMemStore(),
 	}
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--acme--deadbeef.apps.example.com"
+  }
+]`)
 
 	mgr := NewManager(rt)
 	if err := mgr.Reload(); err != nil {
@@ -390,8 +403,8 @@ func TestManagerReloadWorkflowServicePublishesWithSupervisorConfig(t *testing.T)
 	if !ok {
 		t.Fatal("service status missing")
 	}
-	if !strings.HasPrefix(status.URL, "https://review-intake--demo-app--acme--") {
-		t.Fatalf("URL = %q, want review-intake--demo-app--acme prefix", status.URL)
+	if status.URL != "https://review-intake--acme--deadbeef.apps.example.com" {
+		t.Fatalf("URL = %q, want authoritative hosted route", status.URL)
 	}
 	if status.PublicationState != "published" {
 		t.Errorf("PublicationState = %q, want published", status.PublicationState)
@@ -599,10 +612,23 @@ func TestManagerReloadPublishedMetadataBumpsURLVersionOnRouteChange(t *testing.T
 	}
 
 	mgr := NewManager(rt)
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--acme--deadbeef.apps.example.com"
+  }
+]`)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("first Reload: %v", err)
 	}
-	rt.pubCfg.TenantSlug = "beta"
+	writePublicationStoreForTest(t, rt.cityPath, `[
+  {
+    "service_name": "review-intake",
+    "visibility": "public",
+    "url": "https://review-intake--beta--feedface.apps.example.com"
+  }
+]`)
 	if err := mgr.Reload(); err != nil {
 		t.Fatalf("second Reload: %v", err)
 	}
@@ -619,7 +645,7 @@ func TestManagerReloadPublishedMetadataBumpsURLVersionOnRouteChange(t *testing.T
 	if snapshot["url_version"] != float64(2) {
 		t.Fatalf("url_version = %#v, want 2", snapshot["url_version"])
 	}
-	if got, _ := snapshot["current_url"].(string); !strings.Contains(got, "--beta--") {
+	if got, _ := snapshot["current_url"].(string); got != "https://review-intake--beta--feedface.apps.example.com" {
 		t.Fatalf("current_url = %#v, want beta route", snapshot["current_url"])
 	}
 }
