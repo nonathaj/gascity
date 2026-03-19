@@ -1,12 +1,13 @@
 //go:build acceptance_a
 
-// Order exec environment propagation tests.
+// City runtime env construction invariants.
 //
-// Regression test for Bug 1 (2026-03-18): mergeRuntimeEnv double-call
-// stripped GC_CITY_PATH when adding GC_DOLT_PORT.
-//
-// These test the invariant that orderExecEnv always includes the full
-// set of city runtime vars, regardless of whether dolt port is set.
+// These verify that the citylayout env construction functions always
+// produce complete env maps. The actual mergeRuntimeEnv double-call
+// bug (Bug 1, 2026-03-18) was in cityRuntimeProcessEnv in cmd/gc,
+// which cannot be tested from outside package main. These tests guard
+// the foundation layer; the composition layer is covered by the
+// env_invariant_test.go property tests and will be extended in Tier B.
 package acceptance_test
 
 import (

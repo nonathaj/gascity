@@ -20,21 +20,28 @@ func TestGastownPackScriptsExecutable(t *testing.T) {
 	c := helpers.NewCity(t, testEnv)
 	c.InitFrom(filepath.Join(helpers.ExamplesDir(), "gastown"))
 
-	scripts := []string{
-		"packs/gastown/scripts/worktree-setup.sh",
-		"packs/gastown/scripts/tmux-theme.sh",
-		"packs/gastown/scripts/tmux-keybindings.sh",
+	scriptsDir := filepath.Join(c.Dir, "packs", "gastown", "scripts")
+	entries, err := os.ReadDir(scriptsDir)
+	if err != nil {
+		t.Fatalf("reading gastown scripts dir: %v", err)
 	}
-	for _, s := range scripts {
-		path := filepath.Join(c.Dir, s)
-		info, err := os.Stat(path)
+	count := 0
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) != ".sh" {
+			continue
+		}
+		count++
+		info, err := e.Info()
 		if err != nil {
-			t.Errorf("%s not found: %v", s, err)
+			t.Errorf("stat %s: %v", e.Name(), err)
 			continue
 		}
 		if info.Mode()&0o111 == 0 {
-			t.Errorf("%s is not executable (mode %o)", s, info.Mode())
+			t.Errorf("packs/gastown/scripts/%s is not executable (mode %o)", e.Name(), info.Mode())
 		}
+	}
+	if count == 0 {
+		t.Fatal("no .sh scripts found in packs/gastown/scripts/")
 	}
 }
 

@@ -12,15 +12,19 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // TestDrainAckBeforeExit scans all .md.tmpl and .formula.toml files
-// in examples/ for bare `exit` lines inside code blocks, and verifies
-// each has `gc runtime drain-ack` on the preceding line.
+// in examples/ for exit lines inside code blocks, and verifies each
+// has `gc runtime drain-ack` on the preceding line.
+//
+// Matches: exit, exit 0, exit 1, exit $? — any line starting with
+// "exit" followed by whitespace or end-of-line.
 func TestDrainAckBeforeExit(t *testing.T) {
-	root := filepath.Join(findModuleRoot(t), "examples")
+	root := filepath.Join(helpers_FindModuleRoot(t), "examples")
 
 	var violations []string
 
@@ -31,18 +35,14 @@ func TestDrainAckBeforeExit(t *testing.T) {
 		if info.IsDir() {
 			return nil
 		}
-		ext := filepath.Ext(path)
 		name := info.Name()
-		// Check prompt templates and formula TOML files.
-		if !strings.HasSuffix(name, ".md.tmpl") && ext != ".toml" {
-			return nil
-		}
-		// Skip non-formula TOML (pack.toml, order.toml, etc.)
-		if ext == ".toml" && !strings.Contains(name, "formula") {
+		isPrompt := strings.HasSuffix(name, ".md.tmpl")
+		isFormula := strings.HasSuffix(name, ".formula.toml")
+		if !isPrompt && !isFormula {
 			return nil
 		}
 
-		v := checkFileForBareExit(t, path, root)
+		v := checkFileForBareExit(t, path, root, isFormula)
 		violations = append(violations, v...)
 		return nil
 	})
@@ -51,12 +51,12 @@ func TestDrainAckBeforeExit(t *testing.T) {
 	}
 
 	if len(violations) > 0 {
-		t.Errorf("found %d bare exit calls without drain-ack:\n%s",
+		t.Errorf("found %d exit calls without drain-ack:\n%s",
 			len(violations), strings.Join(violations, "\n"))
 	}
 }
 
-func checkFileForBareExit(t *testing.T, path, root string) []string {
+func checkFileForBareExit(t *testing.T, path, root string, isToml bool) []string {
 	t.Helper()
 
 	f, err := os.Open(path)
@@ -77,43 +77,85 @@ func checkFileForBareExit(t *testing.T, path, root string) []string {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 
-		// Track code block boundaries.
-		if strings.HasPrefix(trimmed, "```") {
-			inCodeBlock = !inCodeBlock
-			prevLine = trimmed
-			continue
+		if !isToml {
+			// Markdown: track code block boundaries.
+			if strings.HasPrefix(trimmed, "```") {
+				inCodeBlock = !inCodeBlock
+				prevLine = trimmed
+				continue
+			}
+			if !inCodeBlock {
+				prevLine = trimmed
+				continue
+			}
 		}
+		// For TOML formula files, scan all lines (exit commands appear
+		// inside triple-quoted description strings, not markdown fences).
 
-		// Only check inside code blocks.
-		if !inCodeBlock {
-			prevLine = trimmed
-			continue
-		}
-
-		// Check for bare `exit` (exit alone on a line, not exit 0/1/2, not
-		// "exit status", not in a comment, not in an if/then).
-		if trimmed == "exit" {
+		// Match exit commands: "exit", "exit 0", "exit 1", "exit $?", etc.
+		// Exclude: "exit_code", "exit_status", "Exit criteria:", comments.
+		if isExitCommand(trimmed) {
 			prevTrimmed := strings.TrimSpace(prevLine)
 			if !strings.Contains(prevTrimmed, "drain-ack") {
 				violations = append(violations,
-					"  "+rel+":"+itoa(lineNum)+": bare exit without drain-ack (prev: "+prevTrimmed+")")
+					"  "+rel+":"+strconv.Itoa(lineNum)+": exit without drain-ack (prev: "+prevTrimmed+")")
 			}
 		}
 
 		prevLine = trimmed
 	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanning %s: %v", path, err)
+	}
 
 	return violations
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
+// isExitCommand returns true for shell exit commands but not for
+// variable names, prose, or comments containing "exit".
+func isExitCommand(line string) bool {
+	// Must start with "exit" (not a substring like "exit_code").
+	if !strings.HasPrefix(line, "exit") {
+		return false
 	}
-	s := ""
-	for n > 0 {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
+	// "exit" alone.
+	if line == "exit" {
+		return true
 	}
-	return s
+	// "exit" followed by whitespace or end (exit 0, exit 1, exit $?).
+	if len(line) > 4 && (line[4] == ' ' || line[4] == '\t') {
+		// Exclude prose like "Exit criteria:" or "exit status".
+		rest := strings.TrimSpace(line[4:])
+		if rest == "" {
+			return true
+		}
+		// Numeric exit codes or shell vars are commands.
+		if rest[0] >= '0' && rest[0] <= '9' {
+			return true
+		}
+		if rest[0] == '$' {
+			return true
+		}
+	}
+	return false
+}
+
+// helpers_FindModuleRoot finds go.mod walking up from cwd.
+// Named with prefix to avoid collision with worktree_test.go's version.
+func helpers_FindModuleRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found")
+		}
+		dir = parent
+	}
 }
