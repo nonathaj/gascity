@@ -100,7 +100,73 @@ func ensureSupervisorRunning(stdout, stderr io.Writer) int {
 	if supervisorAlive() != 0 {
 		return 0
 	}
-	return doSupervisorStart(stdout, stderr)
+	// Auto-install platform service if not yet registered.
+	if !isSupervisorServiceInstalled() {
+		if doSupervisorInstall(stdout, stderr) != 0 {
+			// Fall back to bare start if install fails (e.g., unsupported OS).
+			return doSupervisorStart(stdout, stderr)
+		}
+		// doSupervisorInstall already loads/starts the service.
+		return waitForSupervisorReady(stderr)
+	}
+	// Service is installed but not running — kick it.
+	startInstalledService(stderr)
+	return waitForSupervisorReady(stderr)
+}
+
+// isSupervisorServiceInstalled checks whether the platform service unit
+// file exists on disk (plist on macOS, systemd unit on Linux).
+func isSupervisorServiceInstalled() bool {
+	var path string
+	switch goruntime.GOOS {
+	case "darwin":
+		path = supervisorLaunchdPlistPath()
+	case "linux":
+		path = supervisorSystemdServicePath()
+	default:
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// startInstalledService loads/starts the already-installed platform service.
+func startInstalledService(stderr io.Writer) {
+	switch goruntime.GOOS {
+	case "darwin":
+		path := supervisorLaunchdPlistPath()
+		if err := exec.Command("launchctl", "load", path).Run(); err != nil {
+			fmt.Fprintf(stderr, "gc: launchctl load: %v\n", err) //nolint:errcheck // best-effort stderr
+		}
+	case "linux":
+		if err := exec.Command("systemctl", "--user", "start", "gascity-supervisor.service").Run(); err != nil {
+			fmt.Fprintf(stderr, "gc: systemctl start: %v\n", err) //nolint:errcheck // best-effort stderr
+		}
+	}
+}
+
+// waitForSupervisorReady polls supervisorAlive with a 5s timeout.
+func waitForSupervisorReady(stderr io.Writer) int {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if supervisorAlive() != 0 {
+			return 0
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	fmt.Fprintf(stderr, "gc: supervisor did not become ready; see %s\n", supervisorLogPath()) //nolint:errcheck // best-effort stderr
+	return 1
+}
+
+// unloadSupervisorService stops the platform service without removing
+// the unit file, so gc start can reload it later.
+func unloadSupervisorService() {
+	switch goruntime.GOOS {
+	case "darwin":
+		exec.Command("launchctl", "unload", supervisorLaunchdPlistPath()).Run() //nolint:errcheck // best-effort
+	case "linux":
+		exec.Command("systemctl", "--user", "stop", "gascity-supervisor.service").Run() //nolint:errcheck // best-effort
+	}
 }
 
 func newSupervisorLogsCmd(stdout, stderr io.Writer) *cobra.Command {

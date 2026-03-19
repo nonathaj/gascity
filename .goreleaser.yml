@@ -31,20 +31,19 @@ brews:
     homepage: https://github.com/gastownhall/gascity
     description: "Gas City CLI — an orchestration-builder SDK for multi-agent coding workflows"
     license: "MIT"
+    dependencies:
+      - name: tmux
+      - name: jq
+      - name: git
+      - name: dolt
+      - name: flock
     install: |
       bin.install "gc"
     caveats: |
-      To start the Gas City supervisor now and auto-restart on login:
-        brew services start gascity
-    post_install: |
-      # Kill any standalone supervisor so launchd takes over cleanly.
-      quiet_system bin/"gc", "supervisor", "stop"
-    service: |
-      run [opt_bin/"gc", "supervisor", "run"]
-      keep_alive true
-      log_path var/"log/gascity/supervisor.log"
-      error_log_path var/"log/gascity/supervisor.err.log"
-      working_dir var/"lib/gascity"
+      Dependencies (tmux, jq, git, dolt, flock) are installed automatically.
+
+      To start the Gas City supervisor (auto-registers as a login service):
+        gc start <city-path>
     test: |
       assert_match version.to_s, shell_output("#{bin}/gc version")
 

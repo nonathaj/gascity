@@ -220,7 +220,13 @@ func supervisorAlive() int {
 }
 
 // stopSupervisor sends a stop command to the running supervisor.
+// It also unloads the platform service (without removing the unit file)
+// so launchd/systemd doesn't immediately restart the supervisor.
 func stopSupervisor(stdout, stderr io.Writer) int {
+	// Unload the platform service first so the service manager doesn't
+	// restart the supervisor after we send the stop command.
+	unloadSupervisorService()
+
 	sockPath := supervisorSocketPath()
 	conn, err := net.DialTimeout("unix", sockPath, 2*time.Second)
 	if err != nil {
