@@ -43,8 +43,7 @@ func setupConvergenceRuntime(t *testing.T) (*CityRuntime, *beads.MemStore) {
 	}
 
 	// Initialize convergence handler (mimics initConvergenceHandler).
-	adapter := newConvergenceStoreAdapter(store)
-	adapter.formulaSearchPaths = []string{sharedTestFormulaDir}
+	adapter := newConvergenceStoreAdapter(store, []string{sharedTestFormulaDir})
 	emitter := &convergenceEventEmitter{rec: cr.rec}
 	cr.convStoreAdapter = adapter
 	cr.convHandler = &convergence.Handler{
@@ -288,7 +287,7 @@ func TestConvergence_EnqueueTimeout(t *testing.T) {
 
 func TestConvergenceIndex_PopulateAndQuery(t *testing.T) {
 	store := beads.NewMemStore()
-	adapter := newConvergenceStoreAdapter(store)
+	adapter := newConvergenceStoreAdapter(store, nil)
 
 	// Create some convergence beads in various states.
 	active, _ := store.Create(beads.Bead{Title: "active", Type: "convergence", Status: "in_progress"})
@@ -328,7 +327,7 @@ func TestConvergenceIndex_PopulateAndQuery(t *testing.T) {
 
 func TestConvergenceIndex_MaintainedOnStateTransitions(t *testing.T) {
 	store := beads.NewMemStore()
-	adapter := newConvergenceStoreAdapter(store)
+	adapter := newConvergenceStoreAdapter(store, nil)
 
 	// Start with an empty index.
 	adapter.activeIndex = make(map[string]string)

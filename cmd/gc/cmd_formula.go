@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/formula"
@@ -32,7 +31,7 @@ func newFormulaListCmd(stdout io.Writer) *cobra.Command {
 Formulas are discovered from city-level and rig-level formula directories
 configured via packs and formulas_dir settings.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			paths := cityFormulaSearchPaths()
+			paths := allFormulaSearchPaths()
 			if len(paths) == 0 {
 				fmt.Fprintln(stdout, "No formula search paths configured.")
 				return nil
@@ -40,7 +39,7 @@ configured via packs and formulas_dir settings.`,
 
 			// Scan search paths for .formula.toml files, deduplicating by name
 			// (last path wins, matching formula layer resolution order).
-			winners := make(map[string]string)
+			winners := make(map[string]bool)
 			for _, dir := range paths {
 				entries, err := os.ReadDir(dir)
 				if err != nil {
@@ -51,7 +50,7 @@ configured via packs and formulas_dir settings.`,
 						continue
 					}
 					name := strings.TrimSuffix(e.Name(), ".formula.toml")
-					winners[name] = filepath.Join(dir, e.Name())
+					winners[name] = true
 				}
 			}
 
@@ -64,7 +63,7 @@ configured via packs and formulas_dir settings.`,
 			for name := range winners {
 				names = append(names, name)
 			}
-			sortStrings(names)
+			slices.Sort(names)
 
 			for _, name := range names {
 				fmt.Fprintln(stdout, name)
@@ -104,16 +103,20 @@ Examples:
 				compileVars = vars
 			}
 
-			recipe, err := formula.Compile(context.Background(), name, cityFormulaSearchPaths(), compileVars)
+			recipe, err := formula.Compile(cmd.Context(), name, cityFormulaSearchPaths(), compileVars)
 			if err != nil {
 				return err
 			}
 
-			// Apply var substitution for display if vars provided.
-			displayVars := formula.ApplyDefaults(
-				&formula.Formula{Vars: recipe.Vars},
-				vars,
-			)
+			// Apply var substitution for display only when --var flags were provided.
+			// Without explicit vars, placeholders stay intact per documented behavior.
+			var displayVars map[string]string
+			if len(vars) > 0 {
+				displayVars = formula.ApplyDefaults(
+					&formula.Formula{Vars: recipe.Vars},
+					vars,
+				)
+			}
 
 			fmt.Fprintf(stdout, "Formula: %s\n", recipe.Name)
 			if recipe.Description != "" {
@@ -204,11 +207,31 @@ func cityFormulaSearchPaths() []string {
 	return cfg.FormulaLayers.City
 }
 
-// sortStrings sorts a string slice in place (insertion sort).
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
+// allFormulaSearchPaths returns the deduplicated union of formula search
+// paths across city and all rigs. Used by gc formula list to discover
+// every available formula regardless of scope.
+func allFormulaSearchPaths() []string {
+	cityPath, err := resolveCity()
+	if err != nil {
+		return nil
+	}
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var all []string
+	add := func(paths []string) {
+		for _, p := range paths {
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				all = append(all, p)
+			}
 		}
 	}
+	add(cfg.FormulaLayers.City)
+	for _, layers := range cfg.FormulaLayers.Rigs {
+		add(layers)
+	}
+	return all
 }

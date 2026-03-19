@@ -420,7 +420,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 	if opts.IsFormula {
 		method = "formula"
 		formulaVars := buildSlingFormulaVars(opts.BeadOrFormula, "", opts.Vars, a, deps)
-		result, err := molecule.Cook(context.Background(), deps.Store, opts.BeadOrFormula, slingFormulaSearchPaths(deps), molecule.Options{
+		result, err := molecule.Cook(context.Background(), deps.Store, opts.BeadOrFormula, slingFormulaSearchPaths(deps, a), molecule.Options{
 			Title: opts.Title,
 			Vars:  formulaVars,
 		})
@@ -439,7 +439,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			return 1
 		}
 		formulaVars := buildSlingFormulaVars(opts.OnFormula, beadID, opts.Vars, a, deps)
-		result, err := molecule.Cook(context.Background(), deps.Store, opts.OnFormula, slingFormulaSearchPaths(deps), molecule.Options{
+		result, err := molecule.Cook(context.Background(), deps.Store, opts.OnFormula, slingFormulaSearchPaths(deps, a), molecule.Options{
 			Title:    opts.Title,
 			Vars:     formulaVars,
 			ParentID: beadID,
@@ -467,7 +467,7 @@ func doSling(opts slingOpts, deps slingDeps, querier BeadQuerier) int {
 			return 1
 		}
 		defaultVars := buildSlingFormulaVars(a.DefaultSlingFormula, beadID, opts.Vars, a, deps)
-		result, err := molecule.Cook(context.Background(), deps.Store, a.DefaultSlingFormula, slingFormulaSearchPaths(deps), molecule.Options{
+		result, err := molecule.Cook(context.Background(), deps.Store, a.DefaultSlingFormula, slingFormulaSearchPaths(deps, a), molecule.Options{
 			Title:    opts.Title,
 			Vars:     defaultVars,
 			ParentID: beadID,
@@ -668,7 +668,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 		// Attach wisp if --on.
 		if opts.OnFormula != "" {
 			childVars := buildSlingFormulaVars(opts.OnFormula, child.ID, opts.Vars, a, deps)
-			cookResult, err := molecule.Cook(context.Background(), deps.Store, opts.OnFormula, slingFormulaSearchPaths(deps), molecule.Options{
+			cookResult, err := molecule.Cook(context.Background(), deps.Store, opts.OnFormula, slingFormulaSearchPaths(deps, a), molecule.Options{
 				Title:    opts.Title,
 				Vars:     childVars,
 				ParentID: child.ID,
@@ -684,7 +684,7 @@ func doSlingBatch(opts slingOpts, deps slingDeps, querier BeadChildQuerier) int 
 		} else if !opts.NoFormula && a.DefaultSlingFormula != "" {
 			// Apply default formula per-child.
 			childVars := buildSlingFormulaVars(a.DefaultSlingFormula, child.ID, opts.Vars, a, deps)
-			cookResult, err := molecule.Cook(context.Background(), deps.Store, a.DefaultSlingFormula, slingFormulaSearchPaths(deps), molecule.Options{
+			cookResult, err := molecule.Cook(context.Background(), deps.Store, a.DefaultSlingFormula, slingFormulaSearchPaths(deps, a), molecule.Options{
 				Title:    opts.Title,
 				Vars:     childVars,
 				ParentID: child.ID,
@@ -774,14 +774,13 @@ func buildSlingFormulaVars(formulaName, beadID string, userVars []string, a conf
 }
 
 // slingFormulaSearchPaths returns the formula search paths for the current
-// sling context. Uses the city's resolved FormulaLayers.
-func slingFormulaSearchPaths(deps slingDeps) []string {
+// sling context. Uses the target agent's rig to select rig-specific layers,
+// falling back to city-level layers via FormulaLayers.SearchPaths.
+func slingFormulaSearchPaths(deps slingDeps, a config.Agent) []string {
 	if deps.Cfg == nil {
 		return nil
 	}
-	// Use city-level layers — formulas are already resolved per-rig during
-	// city startup via ResolveFormulas() symlink staging.
-	return deps.Cfg.FormulaLayers.City
+	return deps.Cfg.FormulaLayers.SearchPaths(a.Dir)
 }
 
 func slingFormulaTargetBranch(beadID string, deps slingDeps, a config.Agent) string {

@@ -70,7 +70,7 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 	// exists unassigned. Acceptable for v0 single-process server; true atomicity
 	// requires transactional store operations (future work).
 	if body.Formula != "" {
-		cookResult, err := molecule.Cook(r.Context(), store, body.Formula, nil, molecule.Options{
+		cookResult, err := molecule.Cook(r.Context(), store, body.Formula, cfg.FormulaLayers.SearchPaths(rig), molecule.Options{
 			Title: body.Formula,
 		})
 		if err != nil {

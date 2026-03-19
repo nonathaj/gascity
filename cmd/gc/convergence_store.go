@@ -26,8 +26,8 @@ type convergenceStoreAdapter struct {
 
 var _ convergence.Store = (*convergenceStoreAdapter)(nil)
 
-func newConvergenceStoreAdapter(store beads.Store) *convergenceStoreAdapter {
-	return &convergenceStoreAdapter{store: store}
+func newConvergenceStoreAdapter(store beads.Store, formulaSearchPaths []string) *convergenceStoreAdapter {
+	return &convergenceStoreAdapter{store: store, formulaSearchPaths: formulaSearchPaths}
 }
 
 // populateIndex performs a one-time scan of all beads to build the

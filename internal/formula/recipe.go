@@ -1,5 +1,7 @@
 package formula
 
+import "sort"
+
 // Recipe is the output of formula compilation. It contains a flattened,
 // ordered list of steps with namespaced IDs and all dependency edges.
 // Variable placeholders ({{var}}) are preserved — substitution happens
@@ -122,5 +124,6 @@ func (r *Recipe) VariableNames() []string {
 	for name := range r.Vars {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }

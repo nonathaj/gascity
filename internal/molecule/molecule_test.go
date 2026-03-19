@@ -3,6 +3,8 @@ package molecule
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -296,5 +298,77 @@ func TestCookOnRequiresParentID(t *testing.T) {
 	_, err := CookOn(context.Background(), store, "x", nil, Options{})
 	if err == nil {
 		t.Fatal("expected error when ParentID is empty")
+	}
+}
+
+func TestCookEndToEnd(t *testing.T) {
+	// Write a minimal formula TOML to a temp directory.
+	dir := t.TempDir()
+	toml := `
+formula = "e2e-test"
+description = "End-to-end Cook test"
+
+[vars.title]
+description = "Title"
+
+[[steps]]
+id = "implement"
+title = "Implement {{title}}"
+
+[[steps]]
+id = "verify"
+title = "Verify {{title}}"
+depends_on = ["implement"]
+`
+	if err := os.WriteFile(filepath.Join(dir, "e2e-test.formula.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatalf("writing formula: %v", err)
+	}
+
+	store := beads.NewMemStore()
+	result, err := Cook(context.Background(), store, "e2e-test", []string{dir}, Options{
+		Title: "Auth Flow",
+		Vars:  map[string]string{"title": "Auth Flow"},
+	})
+	if err != nil {
+		t.Fatalf("Cook: %v", err)
+	}
+
+	if result.RootID == "" {
+		t.Fatal("RootID is empty")
+	}
+	if result.Created != 3 {
+		t.Errorf("Created = %d, want 3 (root + 2 steps)", result.Created)
+	}
+
+	// Verify root bead.
+	root, err := store.Get(result.RootID)
+	if err != nil {
+		t.Fatalf("Get root: %v", err)
+	}
+	if root.Title != "Auth Flow" {
+		t.Errorf("root.Title = %q, want %q", root.Title, "Auth Flow")
+	}
+	if root.Type != "molecule" {
+		t.Errorf("root.Type = %q, want %q", root.Type, "molecule")
+	}
+
+	// Verify step substitution.
+	implID := result.IDMapping["e2e-test.implement"]
+	impl, err := store.Get(implID)
+	if err != nil {
+		t.Fatalf("Get implement: %v", err)
+	}
+	if impl.Title != "Implement Auth Flow" {
+		t.Errorf("implement.Title = %q, want %q", impl.Title, "Implement Auth Flow")
+	}
+
+	// Verify dependency wiring.
+	verifyID := result.IDMapping["e2e-test.verify"]
+	verify, err := store.Get(verifyID)
+	if err != nil {
+		t.Fatalf("Get verify: %v", err)
+	}
+	if verify.ParentID != result.RootID {
+		t.Errorf("verify.ParentID = %q, want %q", verify.ParentID, result.RootID)
 	}
 }
