@@ -71,7 +71,7 @@ func TestConfigLoad_GastownWithRig(t *testing.T) {
 	}
 
 	toml := c.ReadFile("city.toml")
-	toml += "\n[[rig]]\nname = \"myrig\"\npath = \"" + rigDir + "\"\nincludes = [\"packs/gastown\"]\n"
+	toml += "\n[[rigs]]\nname = \"myrig\"\npath = \"" + rigDir + "\"\nincludes = [\"packs/gastown\"]\n"
 	c.WriteConfig(toml)
 
 	out, err := c.GC("config", "explain", "--city", c.Dir)

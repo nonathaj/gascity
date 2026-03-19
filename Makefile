@@ -20,7 +20,7 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
            -X main.date=$(BUILD_TIME)
 
-.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-tutorial test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
+.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-acceptance-b test-acceptance-all test-tutorial-regression test-tutorial test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
 
 ## build: compile gc binary with version metadata
 build:
@@ -98,9 +98,16 @@ vet:
 test:
 	go test ./...
 
-## test-acceptance: run acceptance tests (Tier A — subprocess, no tmux, <5 min)
+## test-acceptance: run acceptance tests (Tier A — fast, <5 min, every PR)
 test-acceptance:
 	go test -tags acceptance_a -timeout 5m ./test/acceptance/...
+
+## test-acceptance-b: run Tier B acceptance tests (lifecycle, ~5 min, nightly)
+test-acceptance-b:
+	go test -tags acceptance_b -timeout 10m -v ./test/acceptance/tier_b/...
+
+## test-acceptance-all: run all acceptance tiers
+test-acceptance-all: test-acceptance test-acceptance-b
 
 ## test-integration: run all tests including integration (tmux, etc.)
 test-integration:
@@ -110,6 +117,9 @@ test-integration:
 ## These exercise the full tutorial flow with real inference — run before each release.
 test-tutorial:
 	go test -tags 'integration acceptance' -timeout 10m -v ./test/integration/ -run 'TestTutorial'
+
+## test-tutorial-regression: alias for test-tutorial
+test-tutorial-regression: test-tutorial
 
 ## check-docs: verify docs sync tests and Mintlify link checks
 check-docs:

@@ -171,7 +171,7 @@ func buildTestToml(cityPath, rigName, rigRoot, agentName string, isRig bool) str
 	b.WriteString("[workspace]\nname = \"test\"\n")
 
 	if isRig && rigName != "" {
-		b.WriteString("\n[[rig]]\n")
+		b.WriteString("\n[[rigs]]\n")
 		b.WriteString("name = \"" + rigName + "\"\n")
 		b.WriteString("path = \"" + rigRoot + "\"\n")
 	}

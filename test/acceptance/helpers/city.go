@@ -64,30 +64,6 @@ func (c *City) WriteConfig(toml string) {
 	}
 }
 
-// Start runs gc start in foreground/standalone mode.
-func (c *City) Start() {
-	c.t.Helper()
-	out, err := RunGC(c.Env, c.Dir, "start", "--foreground", c.Dir)
-	if err != nil {
-		// Start in foreground blocks, so we need to run it differently.
-		// For acceptance tests, we register with the supervisor instead.
-		c.t.Fatalf("gc start failed: %v\n%s", err, out)
-	}
-	c.started = true
-	c.t.Cleanup(func() { c.Stop() })
-}
-
-// StartWithSupervisor registers the city and lets the supervisor manage it.
-func (c *City) StartWithSupervisor() {
-	c.t.Helper()
-	out, err := RunGC(c.Env, c.Dir, "start", c.Dir)
-	if err != nil {
-		c.t.Fatalf("gc start failed: %v\n%s", err, out)
-	}
-	c.started = true
-	c.t.Cleanup(func() { c.Stop() })
-}
-
 // Stop runs gc stop.
 func (c *City) Stop() {
 	if !c.started {
@@ -175,7 +151,7 @@ func FormatConfig(name, provider string, agents []AgentConfig, rigs []RigConfig)
 		fmt.Fprintf(&b, "provider = %q\n", provider)
 	}
 	for _, r := range rigs {
-		fmt.Fprintf(&b, "\n[[rig]]\nname = %q\npath = %q\n", r.Name, r.Path)
+		fmt.Fprintf(&b, "\n[[rigs]]\nname = %q\npath = %q\n", r.Name, r.Path)
 	}
 	for _, a := range agents {
 		fmt.Fprintf(&b, "\n[[agent]]\nname = %q\n", a.Name)
