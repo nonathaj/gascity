@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -239,16 +240,68 @@ func cmdConvoyList(stdout, stderr io.Writer) int {
 	return doConvoyList(store, stdout, stderr)
 }
 
-func convoyStoreDir(cfg *config.City, cityPath, beadID string) string {
+func convoyStoreCandidates(cfg *config.City, cityPath, beadID string) []string {
 	if rawBeadsProvider(cityPath) == "file" {
-		return cityPath
+		return []string{cityPath}
+	}
+	candidates := make([]string, 0, len(cfg.Rigs)+2)
+	add := func(dir string) {
+		if dir == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == dir {
+				return
+			}
+		}
+		candidates = append(candidates, dir)
 	}
 	if cfg != nil {
 		if rd := rigDirForBead(cfg, beadID); rd != "" {
-			return rd
+			add(rd)
+		}
+		for _, rig := range cfg.Rigs {
+			add(rig.Path)
 		}
 	}
-	return cityPath
+	add(cityPath)
+	return candidates
+}
+
+func resolveConvoyStore(convoyID string, cfg *config.City, cityPath string, openStore func(string) (beads.Store, error)) (beads.Store, error) {
+	var firstErr error
+	var foundStore beads.Store
+	foundDir := ""
+	for _, dir := range convoyStoreCandidates(cfg, cityPath, convoyID) {
+		store, err := openStore(dir)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if _, err := store.Get(convoyID); err != nil {
+			if errors.Is(err, beads.ErrNotFound) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if foundStore != nil {
+			return nil, fmt.Errorf("convoy %s exists in multiple stores (%s and %s); use a rig-prefixed convoy id", convoyID, foundDir, dir)
+		}
+		foundStore = store
+		foundDir = dir
+	}
+	if foundStore != nil {
+		return foundStore, nil
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return nil, beads.ErrNotFound
 }
 
 func openConvoyStoreByID(convoyID string, stderr io.Writer, cmdName string) (beads.Store, int) {
@@ -263,7 +316,9 @@ func openConvoyStoreByID(convoyID string, stderr io.Writer, cmdName string) (bea
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
 		return nil, 1
 	}
-	store, err := openStoreAtForCity(convoyStoreDir(cfg, cityPath, convoyID), cityPath)
+	store, err := resolveConvoyStore(convoyID, cfg, cityPath, func(storeDir string) (beads.Store, error) {
+		return openStoreAtForCity(storeDir, cityPath)
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err)                   //nolint:errcheck // best-effort stderr
 		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
@@ -332,6 +387,9 @@ table of all child issues with their status and assignee.`,
 
 // cmdConvoyStatus is the CLI entry point for convoy status.
 func cmdConvoyStatus(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		return doConvoyStatus(nil, args, stdout, stderr)
+	}
 	convoyID := ""
 	if len(args) > 0 {
 		convoyID = args[0]
@@ -431,6 +489,9 @@ feature-branch formulas such as mol-polecat-work.`,
 }
 
 func cmdConvoyTarget(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 2 {
+		return doConvoyTarget(nil, args, stdout, stderr)
+	}
 	convoyID := ""
 	if len(args) > 0 {
 		convoyID = args[0]
@@ -492,6 +553,9 @@ convoy's progress tracking.`,
 
 // cmdConvoyAdd is the CLI entry point for adding an issue to a convoy.
 func cmdConvoyAdd(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 2 {
+		return doConvoyAdd(nil, args, stdout, stderr)
+	}
 	convoyID := ""
 	if len(args) > 0 {
 		convoyID = args[0]
@@ -556,6 +620,9 @@ Marks the convoy as closed regardless of child issue status. Use
 
 // cmdConvoyClose is the CLI entry point for closing a convoy.
 func cmdConvoyClose(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		return doConvoyClose(nil, events.Discard, args, stdout, stderr)
+	}
 	convoyID := ""
 	if len(args) > 0 {
 		convoyID = args[0]
@@ -802,6 +869,9 @@ type landOpts struct {
 
 // cmdConvoyLand is the CLI entry point for landing a convoy.
 func cmdConvoyLand(args []string, opts landOpts, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		return doConvoyLand(nil, events.Discard, args, opts, stdout, stderr)
+	}
 	convoyID := ""
 	if len(args) > 0 {
 		convoyID = args[0]

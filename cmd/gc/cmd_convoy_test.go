@@ -303,7 +303,7 @@ func TestConvoyTarget(t *testing.T) {
 	}
 }
 
-func TestConvoyStoreDirUsesRigPathForPrefixedIDsOnBd(t *testing.T) {
+func TestConvoyStoreCandidatesPreferRigPrefixOnBd(t *testing.T) {
 	t.Setenv("GC_BEADS", "bd")
 	cfg := &config.City{
 		Rigs: []config.Rig{{
@@ -313,12 +313,19 @@ func TestConvoyStoreDirUsesRigPathForPrefixedIDsOnBd(t *testing.T) {
 		}},
 	}
 
-	if got := convoyStoreDir(cfg, "/city", "HW-42"); got != "/rigs/hello-world" {
-		t.Fatalf("convoyStoreDir = %q, want %q", got, "/rigs/hello-world")
+	got := convoyStoreCandidates(cfg, "/city", "HW-42")
+	want := []string{"/rigs/hello-world", "/city"}
+	if len(got) != len(want) {
+		t.Fatalf("convoyStoreCandidates len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("convoyStoreCandidates[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
 	}
 }
 
-func TestConvoyStoreDirKeepsFileProviderCityScoped(t *testing.T) {
+func TestConvoyStoreCandidatesKeepFileProviderCityScoped(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	cfg := &config.City{
 		Rigs: []config.Rig{{
@@ -328,8 +335,42 @@ func TestConvoyStoreDirKeepsFileProviderCityScoped(t *testing.T) {
 		}},
 	}
 
-	if got := convoyStoreDir(cfg, "/city", "HW-42"); got != "/city" {
-		t.Fatalf("convoyStoreDir = %q, want %q", got, "/city")
+	got := convoyStoreCandidates(cfg, "/city", "HW-42")
+	if len(got) != 1 || got[0] != "/city" {
+		t.Fatalf("convoyStoreCandidates = %v, want [/city]", got)
+	}
+}
+
+func TestResolveConvoyStoreFindsUnprefixedRigConvoy(t *testing.T) {
+	t.Setenv("GC_BEADS", "bd")
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	convoy, _ := rigStore.Create(beads.Bead{Title: "deploy", Type: "convoy"})
+	cfg := &config.City{
+		Rigs: []config.Rig{{
+			Name:   "hello-world",
+			Path:   "/rigs/hello-world",
+			Prefix: "HW",
+		}},
+	}
+	openStore := func(dir string) (beads.Store, error) {
+		switch dir {
+		case "/city":
+			return cityStore, nil
+		case "/rigs/hello-world":
+			return rigStore, nil
+		default:
+			t.Fatalf("unexpected store dir %q", dir)
+			return nil, nil
+		}
+	}
+
+	store, err := resolveConvoyStore(convoy.ID, cfg, "/city", openStore)
+	if err != nil {
+		t.Fatalf("resolveConvoyStore: %v", err)
+	}
+	if store != rigStore {
+		t.Fatalf("resolveConvoyStore returned wrong store")
 	}
 }
 

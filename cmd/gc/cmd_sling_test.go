@@ -3187,6 +3187,67 @@ func TestBuildSlingFormulaVarsUsesAncestorTargetForPolecatFormula(t *testing.T) 
 	}
 }
 
+func TestBuildSlingFormulaVarsIgnoresNonConvoyAncestorTarget(t *testing.T) {
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	store := &recordingStore{
+		Store: beads.NewMemStore(),
+		beadsByID: map[string]beads.Bead{
+			"HW-42": {
+				ID:       "HW-42",
+				ParentID: "EP-7",
+			},
+			"EP-7": {
+				ID:       "EP-7",
+				Type:     "epic",
+				Metadata: map[string]string{"target": "integration/legacy-epic"},
+			},
+		},
+	}
+	deps, _, _ := testDeps(cfg, runtime.NewFake(), newFakeRunner().run)
+	deps.Store = store
+
+	vars := buildSlingFormulaVars("mol-polecat-work", "HW-42", nil, config.Agent{Name: "polecat", Dir: "hw"}, deps)
+
+	if _, ok := findVarValue(vars, "base_branch"); !ok {
+		t.Fatal("base_branch var missing")
+	}
+	if got, _ := findVarValue(vars, "base_branch"); got == "integration/legacy-epic" {
+		t.Fatalf("base_branch inherited from non-convoy ancestor: %q", got)
+	}
+}
+
+func TestBuildSlingFormulaVarsSkipsNonConvoyAncestorTargetAndUsesConvoyAncestor(t *testing.T) {
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	store := &recordingStore{
+		Store: beads.NewMemStore(),
+		beadsByID: map[string]beads.Bead{
+			"HW-42": {
+				ID:       "HW-42",
+				ParentID: "EP-7",
+			},
+			"EP-7": {
+				ID:       "EP-7",
+				Type:     "epic",
+				ParentID: "CVY-9",
+				Metadata: map[string]string{"target": "integration/legacy-epic"},
+			},
+			"CVY-9": {
+				ID:       "CVY-9",
+				Type:     "convoy",
+				Metadata: map[string]string{"target": "integration/convoy-9"},
+			},
+		},
+	}
+	deps, _, _ := testDeps(cfg, runtime.NewFake(), newFakeRunner().run)
+	deps.Store = store
+
+	vars := buildSlingFormulaVars("mol-polecat-work", "HW-42", nil, config.Agent{Name: "polecat", Dir: "hw"}, deps)
+
+	if got, ok := findVarValue(vars, "base_branch"); !ok || got != "integration/convoy-9" {
+		t.Fatalf("base_branch var = %q, %v; want integration/convoy-9, true", got, ok)
+	}
+}
+
 func TestBuildSlingFormulaVarsUsesRigDefaultBranchWhenTargetMissing(t *testing.T) {
 	repoDir := newRepoWithOriginHead(t, "develop")
 	cfg := &config.City{

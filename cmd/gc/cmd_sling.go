@@ -763,6 +763,7 @@ func beadMetadataTarget(store beads.Store, beadID string) string {
 	}
 
 	seen := make(map[string]struct{}, 8)
+	rootID := beadID
 	for beadID != "" {
 		if _, ok := seen[beadID]; ok {
 			return ""
@@ -774,7 +775,9 @@ func beadMetadataTarget(store beads.Store, beadID string) string {
 			return ""
 		}
 		if target := strings.TrimSpace(b.Metadata["target"]); target != "" {
-			return target
+			if beadID == rootID || b.Type == "convoy" {
+				return target
+			}
 		}
 		beadID = strings.TrimSpace(b.ParentID)
 	}
