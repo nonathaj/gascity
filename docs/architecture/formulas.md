@@ -189,6 +189,6 @@ See [Formula Files](../reference/formula.md) for the file format itself.
 ## See Also
 
 - [Formula Files](../reference/formula.md) for the file layout
-- [Dispatch](/architecture/dispatch) for sling-based formula routing
-- [Orders](/architecture/orders) for formula-backed scheduled work
-- [Bead Store](/architecture/beads) for the `MolCook` interface boundary
+- [Dispatch](./dispatch.md) for sling-based formula routing
+- [Orders](./orders.md) for formula-backed scheduled work
+- [Bead Store](./beads.md) for the `MolCook` interface boundary

@@ -311,7 +311,7 @@ beads_rust (br) binary as a real external provider (build tag:
 
 ## See Also
 
-- [Architecture glossary](/architecture/glossary) -- authoritative definitions of
+- [Architecture glossary](./glossary.md) -- authoritative definitions of
   bead, molecule, convoy, label, and other terms used in this document
 - [Formula file reference](../reference/formula.md) -- formula file layout,
   layer resolution, and how stores instantiate molecules from formulas

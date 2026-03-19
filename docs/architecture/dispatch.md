@@ -305,14 +305,14 @@ both `sling_query` and `work_query` together or neither.
 
 ## See Also
 
-- [Architecture glossary](/architecture/glossary) -- authoritative definitions of
+- [Architecture glossary](./glossary.md) -- authoritative definitions of
   sling, convoy, wisp, formula, and other terms used in this document
-- [Bead Store architecture](/architecture/beads) -- the persistence substrate that
+- [Bead Store architecture](./beads.md) -- the persistence substrate that
   dispatch reads and writes through, including MolCook molecule
   instantiation
-- [Health Patrol architecture](/architecture/health-patrol) -- the supervision
+- [Health Patrol architecture](./health-patrol.md) -- the supervision
   model that keeps pool agents alive to receive dispatched work
-- [Config architecture](/architecture/config) -- how agent configuration
+- [Config architecture](./config.md) -- how agent configuration
   (sling_query, pool, suspended) drives dispatch behavior
 - [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) -- design principles including "the
   controller drives all SDK infrastructure operations" (layering

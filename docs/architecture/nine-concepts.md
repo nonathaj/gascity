@@ -38,7 +38,7 @@ Covers identity, pools, sandboxes, resume, and crash adoption.
 - **Key insight**: The SDK manages agent lifecycle. The prompt defines
   agent behavior. These concerns never cross.
 
-**Details**: [Agent Protocol](/architecture/agent-protocol)
+**Details**: [Agent Protocol](./agent-protocol.md)
 
 ### 2. Task Store (Beads)
 
@@ -52,7 +52,7 @@ Everything is a bead: tasks, mail, molecules, convoys, and epics.
 - **Key insight**: Beads is the universal persistence substrate.
   All domain state flows through a single interface.
 
-**Details**: [Bead Store](/architecture/beads)
+**Details**: [Bead Store](./beads.md)
 
 ### 3. Event Bus
 
@@ -66,7 +66,7 @@ audit).
 - **Key insight**: Events are immutable. Seq is monotonically
   increasing. Watch() provides reactive notification without polling.
 
-**Details**: [Event Bus](/architecture/event-bus)
+**Details**: [Event Bus](./event-bus.md)
 
 ### 4. Config
 
@@ -79,7 +79,7 @@ presence) and multi-layer override resolution.
   gives Level 0-1. Adding sections activates capabilities. No feature
   flags, no capability flags — the config presence is sufficient.
 
-**Details**: [Config System](/architecture/config)
+**Details**: [Config System](./config.md)
 
 ### 5. Prompt Templates
 
@@ -91,7 +91,7 @@ behavioral specification.
 - **Key insight**: All role behavior is user-supplied configuration.
   The SDK contains zero hardcoded role names.
 
-**Details**: [Prompt Templates](/architecture/prompt-templates)
+**Details**: [Prompt Templates](./prompt-templates.md)
 
 ## Layer 2-4: Derived Mechanisms
 
@@ -111,7 +111,7 @@ Mail + nudge. No new primitive needed.
 - **Proof**: Mail uses only Bead Store (primitive 2). Nudge uses only
   Agent Protocol (primitive 1). No new infrastructure.
 
-**Details**: [Messaging](/architecture/messaging)
+**Details**: [Messaging](./messaging.md)
 
 ### 7. Formulas & Molecules
 
@@ -129,8 +129,8 @@ formulas with gate conditions on Event Bus.
 - **Proof**: Uses Config, Bead Store, and Event Bus. No new
   infrastructure.
 
-**Details**: [Formulas & Molecules](/architecture/formulas) |
-[Orders](/architecture/orders)
+**Details**: [Formulas & Molecules](./formulas.md) |
+[Orders](./orders.md)
 
 ### 8. Dispatch (Sling)
 
@@ -142,7 +142,7 @@ nudge → create convoy → log event.
   Event Bus (log event).
 - **Proof**: Pure composition of primitives 1-4. No new infrastructure.
 
-**Details**: [Dispatch](/architecture/dispatch)
+**Details**: [Dispatch](./dispatch.md)
 
 ### 9. Health Patrol
 
@@ -156,7 +156,7 @@ stalls (Event Bus), restart with backoff.
   controller drives all operations — no user-configured agent role
   is required.
 
-**Details**: [Health Patrol](/architecture/health-patrol)
+**Details**: [Health Patrol](./health-patrol.md)
 
 ## Layering Invariants
 
@@ -187,7 +187,7 @@ Capabilities activate based on config section presence:
 
 ## See Also
 
-- [Glossary](/architecture/glossary) — authoritative definitions of all terms
+- [Glossary](./glossary.md) — authoritative definitions of all terms
   used across the nine concepts
 - [Primitive Test](../contributors/primitive-test.md) — the three necessary
   conditions for adding a new primitive

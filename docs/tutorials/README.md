@@ -7,8 +7,8 @@ Only published, maintained tutorials live in this section.
 
 ## Available Tutorials
 
-- [Tutorial 01: Hello, Gas City](01-hello-gas-city)
-- [Tutorial 06: Formulas](06-formulas)
+- [Tutorial 01: Hello, Gas City](01-hello-gas-city.md)
+- [Tutorial 06: Formulas](06-formulas.md)
 
 ## What Changed
 

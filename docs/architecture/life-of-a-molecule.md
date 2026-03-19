@@ -134,7 +134,7 @@ This cleanup is intentionally conservative:
 
 ## See Also
 
-- [Formulas & Molecules](./formulas) for the subsystem overview
-- [Dispatch](./dispatch) for sling routing
-- [Orders](./orders) for formula-backed automation
-- [Bead Store](./beads) for the store boundary that owns instantiation
+- [Formulas & Molecules](./formulas.md) for the subsystem overview
+- [Dispatch](./dispatch.md) for sling routing
+- [Orders](./orders.md) for formula-backed automation
+- [Bead Store](./beads.md) for the store boundary that owns instantiation
