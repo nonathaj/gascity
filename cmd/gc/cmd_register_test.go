@@ -11,6 +11,10 @@ import (
 )
 
 func TestDoRegister(t *testing.T) {
+	oldRegister := registerCityWithSupervisorTestHook
+	registerCityWithSupervisorTestHook = nil
+	t.Cleanup(func() { registerCityWithSupervisorTestHook = oldRegister })
+
 	dir := t.TempDir()
 	cityPath := filepath.Join(dir, "my-city")
 	if err := os.MkdirAll(cityPath, 0o755); err != nil {
