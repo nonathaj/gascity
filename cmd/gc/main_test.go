@@ -2234,7 +2234,7 @@ func TestDoStop_UsesDependencyAwareOrdering(t *testing.T) {
 	if !containsAll(firstWave, "worker") {
 		t.Fatalf("first stop wave = %v, want worker", firstWave)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("worker")
 
 	secondWave := sp.waitForStops(t, 1)

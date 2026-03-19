@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// PublicationStoreVersion is the current schema version of the publication store file.
 const PublicationStoreVersion = 1
 
 // PublicationStore is the machine-managed authoritative mapping from workspace
@@ -17,16 +18,20 @@ type PublicationStore struct {
 	Cities  map[string]PublicationCityRef `json:"cities,omitempty"`
 }
 
+// PublicationCityRef holds the published service references for a single city.
 type PublicationCityRef struct {
 	Services []PublishedServiceRef `json:"services,omitempty"`
 }
 
+// PublishedServiceRef describes a single published service within a city.
 type PublishedServiceRef struct {
 	ServiceName string `json:"service_name"`
 	Visibility  string `json:"visibility,omitempty"`
 	URL         string `json:"url,omitempty"`
 }
 
+// LoadCityPublicationRefs reads the publication store at path and returns the service
+// references for the given cityPath. The bool indicates whether the store file was found.
 func LoadCityPublicationRefs(path, cityPath string) (map[string]PublishedServiceRef, bool, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, false, nil

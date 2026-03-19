@@ -203,12 +203,12 @@ func (p *gatedStopProvider) waitForStops(t *testing.T, n int) []string {
 	return names
 }
 
-func (p *gatedStopProvider) ensureNoFurtherStop(t *testing.T, wait time.Duration) {
+func (p *gatedStopProvider) ensureNoFurtherStop(t *testing.T) {
 	t.Helper()
 	select {
 	case name := <-p.stopSignals:
 		t.Fatalf("unexpected extra stop signal: %s", name)
-	case <-time.After(wait):
+	case <-time.After(150 * time.Millisecond):
 	}
 }
 
@@ -244,7 +244,7 @@ func (p *interruptExitProvider) Interrupt(name string) error {
 	if err := p.Fake.Interrupt(name); err != nil {
 		return err
 	}
-	return p.Fake.Stop(name)
+	return p.Stop(name)
 }
 
 type dropDependencyAfterNStartsProvider struct {
@@ -264,7 +264,7 @@ func (p *dropDependencyAfterNStartsProvider) Start(ctx context.Context, name str
 	shouldDrop := p.starts == p.dropAfter
 	p.mu.Unlock()
 	if shouldDrop {
-		_ = p.Fake.Stop(p.depName)
+		_ = p.Stop(p.depName)
 	}
 	return nil
 }
@@ -661,7 +661,7 @@ func TestStopSessionsBounded_StopsDependentsBeforeDependencies(t *testing.T) {
 	if !containsAll(firstWave, "worker") {
 		t.Fatalf("first stop wave = %v, want worker", firstWave)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("worker")
 
 	secondWave := sp.waitForStops(t, 2)
@@ -737,7 +737,7 @@ func TestStopSessionsBounded_UsesSessionBeadTemplateForCustomSessionNames(t *tes
 	if !containsAll(firstWave, "custom-worker") {
 		t.Fatalf("first stop wave = %v, want custom-worker", firstWave)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("custom-worker")
 
 	secondWave := sp.waitForStops(t, 1)
@@ -807,7 +807,7 @@ func TestStopSessionsBounded_UsesLegacyAgentLabelTemplateForOrdering(t *testing.
 	if !containsAll(firstWave, "custom-worker-1") {
 		t.Fatalf("first stop wave = %v, want custom-worker-1", firstWave)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("custom-worker-1")
 
 	secondWave := sp.waitForStops(t, 1)
@@ -1006,14 +1006,14 @@ func TestStopTargetsBounded_FallsBackToSerialWhenTemplateUnresolved(t *testing.T
 	if !containsAll(first, "db") {
 		t.Fatalf("first serial stop = %v, want db", first)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("db")
 
 	second := sp.waitForStops(t, 1)
 	if !containsAll(second, "worker") {
 		t.Fatalf("second serial stop = %v, want worker", second)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("worker")
 
 	third := sp.waitForStops(t, 1)
@@ -1067,21 +1067,21 @@ func TestStopTargetsBounded_AllUnresolvedFallsBackToSerial(t *testing.T) {
 	if !containsAll(first, "orphan-a") {
 		t.Fatalf("first serial stop = %v, want orphan-a", first)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("orphan-a")
 
 	second := sp.waitForStops(t, 1)
 	if !containsAll(second, "orphan-b") {
 		t.Fatalf("second serial stop = %v, want orphan-b", second)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("orphan-b")
 
 	third := sp.waitForStops(t, 1)
 	if !containsAll(third, "orphan-c") {
 		t.Fatalf("third serial stop = %v, want orphan-c", third)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("orphan-c")
 
 	fourth := sp.waitForStops(t, 1)

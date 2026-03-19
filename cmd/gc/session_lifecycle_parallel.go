@@ -348,7 +348,7 @@ func executePreparedStartWave(
 			defer cancel()
 			err := sp.Start(startCtx, item.candidate.name(), item.cfg)
 			finished := time.Now()
-			outcome := "success"
+			var outcome string
 			switch {
 			case err == nil:
 				outcome = "success"

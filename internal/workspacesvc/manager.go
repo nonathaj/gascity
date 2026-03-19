@@ -596,19 +596,6 @@ func statusMapFromPlans(plans []servicePlan) map[string]Status {
 	return statuses
 }
 
-func closeUnreusedInstances(entries map[string]*entry, reused map[string]bool) error {
-	var firstErr error
-	for name, e := range entries {
-		if reused[name] || e.inst == nil {
-			continue
-		}
-		if err := e.inst.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
 func proxyProcessPublicationContextChanged(current, next Status) bool {
 	return current.Kind == "proxy_process" &&
 		(current.URL != next.URL ||

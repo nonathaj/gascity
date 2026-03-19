@@ -270,7 +270,7 @@ func TestFinalizeInitWithoutProgressSkipsStepCounter(t *testing.T) {
 	}
 
 	oldProbe := initProbeProvidersReadiness
-	initProbeProvidersReadiness = func(_ context.Context, providers []string, fresh bool) (map[string]api.ReadinessItem, error) {
+	initProbeProvidersReadiness = func(_ context.Context, _ []string, fresh bool) (map[string]api.ReadinessItem, error) {
 		if !fresh {
 			t.Fatal("finalizeInit should force a fresh readiness probe")
 		}

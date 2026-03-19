@@ -369,13 +369,13 @@ func shellQuotePOSIXPath(path string) string {
 		return "''"
 	}
 	if strings.IndexFunc(path, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' ||
-			r >= 'A' && r <= 'Z' ||
-			r >= '0' && r <= '9' ||
-			r == '/' ||
-			r == '.' ||
-			r == '_' ||
-			r == '-')
+		return (r < 'a' || r > 'z') &&
+			(r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') &&
+			r != '/' &&
+			r != '.' &&
+			r != '_' &&
+			r != '-'
 	}) == -1 {
 		return path
 	}
@@ -387,15 +387,15 @@ func shellQuoteWindowsPath(path string) string {
 		return `""`
 	}
 	if strings.IndexFunc(path, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' ||
-			r >= 'A' && r <= 'Z' ||
-			r >= '0' && r <= '9' ||
-			r == '/' ||
-			r == '\\' ||
-			r == ':' ||
-			r == '.' ||
-			r == '_' ||
-			r == '-')
+		return (r < 'a' || r > 'z') &&
+			(r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') &&
+			r != '/' &&
+			r != '\\' &&
+			r != ':' &&
+			r != '.' &&
+			r != '_' &&
+			r != '-'
 	}) == -1 {
 		return path
 	}
@@ -535,10 +535,10 @@ func compareVersions(a, b string) int {
 	for i := 0; i < len(aParts) || i < len(bParts); i++ {
 		var ai, bi int
 		if i < len(aParts) {
-			fmt.Sscanf(aParts[i], "%d", &ai)
+			_, _ = fmt.Sscanf(aParts[i], "%d", &ai)
 		}
 		if i < len(bParts) {
-			fmt.Sscanf(bParts[i], "%d", &bi)
+			_, _ = fmt.Sscanf(bParts[i], "%d", &bi)
 		}
 		if ai < bi {
 			return -1

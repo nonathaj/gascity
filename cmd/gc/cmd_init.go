@@ -336,12 +336,6 @@ func normalizeBootstrapProfile(profile string) (string, error) {
 	}
 }
 
-// cmdInitFromFile initializes a city using the --file flag (non-interactive).
-// The flag value is a path to a TOML file that is copied as the city's city.toml.
-func cmdInitFromFile(fileArg string, args []string, stdout, stderr io.Writer) int {
-	return cmdInitFromFileWithOptions(fileArg, args, stdout, stderr, false)
-}
-
 func cmdInitFromFileWithOptions(fileArg string, args []string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	var cityPath string
 	if len(args) > 0 {
@@ -598,12 +592,6 @@ func initFromSkip(relPath string, isDir bool) bool {
 		return true
 	}
 	return false
-}
-
-// cmdInitFromDir initializes a city by copying an example directory.
-// Resolves source and target paths, validates, then delegates to doInitFromDir.
-func cmdInitFromDir(fromDir string, args []string, stdout, stderr io.Writer) int {
-	return cmdInitFromDirWithOptions(fromDir, args, stdout, stderr, false)
 }
 
 func cmdInitFromDirWithOptions(fromDir string, args []string, stdout, stderr io.Writer, skipProviderReadiness bool) int {

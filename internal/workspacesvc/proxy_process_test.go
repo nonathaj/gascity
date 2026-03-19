@@ -695,17 +695,13 @@ func TestProxyProcessSwapAndCloseCleanUpSocketFiles(t *testing.T) {
 		t.Fatalf("Reload: %v", err)
 	}
 
-	loadEnv := func() map[string]string {
+	loadEnv := func() {
 		deadline := time.Now().Add(2 * time.Second)
 		for {
 			req := httptest.NewRequest(http.MethodGet, "/svc/bridge/env", nil)
 			rec := httptest.NewRecorder()
 			if ok := mgr.ServeHTTP(rec, req); ok && rec.Code == http.StatusOK {
-				var env map[string]string
-				if err := json.NewDecoder(rec.Body).Decode(&env); err != nil {
-					t.Fatalf("decode env: %v", err)
-				}
-				return env
+				return
 			}
 			if time.Now().After(deadline) {
 				status, _ := mgr.Get("bridge")

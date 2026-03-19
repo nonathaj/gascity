@@ -368,7 +368,7 @@ func TestDoRigRestart_UsesFullCityGraphForStopOrdering(t *testing.T) {
 	if !containsAll(firstWave, "frontend--api") {
 		t.Fatalf("first stop wave = %v, want frontend--api", firstWave)
 	}
-	sp.ensureNoFurtherStop(t, 150*time.Millisecond)
+	sp.ensureNoFurtherStop(t)
 	sp.release("frontend--api")
 
 	secondWave := sp.waitForStops(t, 1)
