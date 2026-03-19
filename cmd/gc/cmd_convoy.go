@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -233,11 +234,11 @@ child issues.`,
 
 // cmdConvoyList is the CLI entry point for listing convoys.
 func cmdConvoyList(stdout, stderr io.Writer) int {
-	store, code := openCityStore(stderr, "gc convoy list")
-	if store == nil {
+	stores, code := openAllConvoyStores(stderr, "gc convoy list")
+	if stores == nil {
 		return code
 	}
-	return doConvoyList(store, stdout, stderr)
+	return doConvoyListAcrossStores(stores, stdout, stderr)
 }
 
 func convoyStoreCandidates(cfg *config.City, cityPath, beadID string) []string {
@@ -260,19 +261,27 @@ func convoyStoreCandidates(cfg *config.City, cityPath, beadID string) []string {
 		if rd := rigDirForBead(cfg, beadID); rd != "" {
 			add(rd)
 		}
+	}
+	add(cityPath)
+	if cfg != nil {
 		for _, rig := range cfg.Rigs {
 			add(rig.Path)
 		}
 	}
-	add(cityPath)
 	return candidates
 }
 
-func resolveConvoyStore(convoyID string, cfg *config.City, cityPath string, openStore func(string) (beads.Store, error)) (beads.Store, error) {
-	var firstErr error
-	var foundStore beads.Store
-	foundDir := ""
-	for _, dir := range convoyStoreCandidates(cfg, cityPath, convoyID) {
+type convoyStoreView struct {
+	path  string
+	store beads.Store
+}
+
+func openConvoyStores(cfg *config.City, cityPath, beadID string, openStore func(string) (beads.Store, error)) ([]convoyStoreView, error) {
+	var (
+		stores   []convoyStoreView
+		firstErr error
+	)
+	for _, dir := range convoyStoreCandidates(cfg, cityPath, beadID) {
 		store, err := openStore(dir)
 		if err != nil {
 			if firstErr == nil {
@@ -280,28 +289,92 @@ func resolveConvoyStore(convoyID string, cfg *config.City, cityPath string, open
 			}
 			continue
 		}
-		if _, err := store.Get(convoyID); err != nil {
-			if errors.Is(err, beads.ErrNotFound) {
-				continue
-			}
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		if foundStore != nil {
-			return nil, fmt.Errorf("convoy %s exists in multiple stores (%s and %s); use a rig-prefixed convoy id", convoyID, foundDir, dir)
-		}
-		foundStore = store
-		foundDir = dir
+		stores = append(stores, convoyStoreView{path: dir, store: store})
 	}
-	if foundStore != nil {
-		return foundStore, nil
+	if len(stores) > 0 {
+		return stores, nil
 	}
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	return nil, fmt.Errorf("no convoy stores available")
+}
+
+func resolveConvoyStore(convoyID string, cfg *config.City, cityPath string, openStore func(string) (beads.Store, error)) (beads.Store, error) {
+	stores, err := openConvoyStores(cfg, cityPath, convoyID, openStore)
+	if err != nil {
+		return nil, err
+	}
+	var foundStore beads.Store
+	foundDir := ""
+	for _, candidate := range stores {
+		store := candidate.store
+		if _, err := store.Get(convoyID); err != nil {
+			if errors.Is(err, beads.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if foundStore != nil {
+			return nil, fmt.Errorf("convoy %s exists in multiple stores (%s and %s); direct convoy commands require a uniquely resolvable convoy id", convoyID, foundDir, candidate.path)
+		}
+		foundStore = store
+		foundDir = candidate.path
+	}
+	if foundStore != nil {
+		return foundStore, nil
+	}
 	return nil, beads.ErrNotFound
+}
+
+func openAllConvoyStores(stderr io.Writer, cmdName string) ([]convoyStoreView, int) {
+	cityPath, err := resolveCity()
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
+		return nil, 1
+	}
+	readDoltPort(cityPath)
+	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
+		return nil, 1
+	}
+	stores, err := openConvoyStores(cfg, cityPath, "", func(storeDir string) (beads.Store, error) {
+		return openStoreAtForCity(storeDir, cityPath)
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err)                   //nolint:errcheck // best-effort stderr
+		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
+		return nil, 1
+	}
+	return stores, 0
+}
+
+type convoyWithStore struct {
+	store beads.Store
+	bead  beads.Bead
+}
+
+func collectOpenConvoys(stores []convoyStoreView) ([]convoyWithStore, error) {
+	convoys := make([]convoyWithStore, 0)
+	for _, candidate := range stores {
+		all, err := candidate.store.List()
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range all {
+			if b.Type == "convoy" && b.Status != "closed" {
+				convoys = append(convoys, convoyWithStore{store: candidate.store, bead: b})
+			}
+		}
+	}
+	sort.SliceStable(convoys, func(i, j int) bool {
+		if convoys[i].bead.ID == convoys[j].bead.ID {
+			return convoys[i].bead.Title < convoys[j].bead.Title
+		}
+		return convoys[i].bead.ID < convoys[j].bead.ID
+	})
+	return convoys, nil
 }
 
 func openConvoyStoreByID(convoyID string, stderr io.Writer, cmdName string) (beads.Store, int) {
@@ -329,17 +402,14 @@ func openConvoyStoreByID(convoyID string, stderr io.Writer, cmdName string) (bea
 
 // doConvoyList lists open convoys with progress counts.
 func doConvoyList(store beads.Store, stdout, stderr io.Writer) int {
-	all, err := store.List()
+	return doConvoyListAcrossStores([]convoyStoreView{{store: store}}, stdout, stderr)
+}
+
+func doConvoyListAcrossStores(stores []convoyStoreView, stdout, stderr io.Writer) int {
+	convoys, err := collectOpenConvoys(stores)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc convoy list: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
-	}
-
-	var convoys []beads.Bead
-	for _, b := range all {
-		if b.Type == "convoy" && b.Status != "closed" {
-			convoys = append(convoys, b)
-		}
 	}
 
 	if len(convoys) == 0 {
@@ -350,9 +420,9 @@ func doConvoyList(store beads.Store, stdout, stderr io.Writer) int {
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTITLE\tPROGRESS") //nolint:errcheck // best-effort stdout
 	for _, c := range convoys {
-		children, err := store.Children(c.ID)
+		children, err := c.store.Children(c.bead.ID)
 		if err != nil {
-			fmt.Fprintf(stderr, "gc convoy list: children of %s: %v\n", c.ID, err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc convoy list: children of %s: %v\n", c.bead.ID, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		closed := 0
@@ -361,7 +431,7 @@ func doConvoyList(store beads.Store, stdout, stderr io.Writer) int {
 				closed++
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d/%d closed\n", c.ID, c.Title, closed, len(children)) //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(tw, "%s\t%s\t%d/%d closed\n", c.bead.ID, c.bead.Title, closed, len(children)) //nolint:errcheck // best-effort stdout
 	}
 	tw.Flush() //nolint:errcheck // best-effort stdout
 	return 0
@@ -688,12 +758,12 @@ Evaluates each open convoy's children. If all children have status
 
 // cmdConvoyCheck is the CLI entry point for auto-closing completed convoys.
 func cmdConvoyCheck(stdout, stderr io.Writer) int {
-	store, code := openCityStore(stderr, "gc convoy check")
-	if store == nil {
+	stores, code := openAllConvoyStores(stderr, "gc convoy check")
+	if stores == nil {
 		return code
 	}
 	rec := openCityRecorder(stderr)
-	return doConvoyCheck(store, rec, stdout, stderr)
+	return doConvoyCheckAcrossStores(stores, rec, stdout, stderr)
 }
 
 // hasLabel reports whether the labels slice contains the target label.
@@ -710,23 +780,24 @@ func hasLabel(labels []string, target string) bool { //nolint:unparam // general
 // Convoys with the "owned" label are skipped — their lifecycle is
 // managed manually.
 func doConvoyCheck(store beads.Store, rec events.Recorder, stdout, stderr io.Writer) int {
-	all, err := store.List()
+	return doConvoyCheckAcrossStores([]convoyStoreView{{store: store}}, rec, stdout, stderr)
+}
+
+func doConvoyCheckAcrossStores(stores []convoyStoreView, rec events.Recorder, stdout, stderr io.Writer) int {
+	convoys, err := collectOpenConvoys(stores)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc convoy check: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	closed := 0
-	for _, b := range all {
-		if b.Type != "convoy" || b.Status == "closed" {
+	for _, item := range convoys {
+		if hasLabel(item.bead.Labels, "owned") {
 			continue
 		}
-		if hasLabel(b.Labels, "owned") {
-			continue
-		}
-		children, err := store.Children(b.ID)
+		children, err := item.store.Children(item.bead.ID)
 		if err != nil {
-			fmt.Fprintf(stderr, "gc convoy check: children of %s: %v\n", b.ID, err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc convoy check: children of %s: %v\n", item.bead.ID, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		if len(children) == 0 {
@@ -740,16 +811,16 @@ func doConvoyCheck(store beads.Store, rec events.Recorder, stdout, stderr io.Wri
 			}
 		}
 		if allClosed {
-			if err := store.Close(b.ID); err != nil {
-				fmt.Fprintf(stderr, "gc convoy check: closing %s: %v\n", b.ID, err) //nolint:errcheck // best-effort stderr
+			if err := item.store.Close(item.bead.ID); err != nil {
+				fmt.Fprintf(stderr, "gc convoy check: closing %s: %v\n", item.bead.ID, err) //nolint:errcheck // best-effort stderr
 				return 1
 			}
 			rec.Record(events.Event{
 				Type:    events.ConvoyClosed,
 				Actor:   eventActor(),
-				Subject: b.ID,
+				Subject: item.bead.ID,
 			})
-			fmt.Fprintf(stdout, "Auto-closed convoy %s %q\n", b.ID, b.Title) //nolint:errcheck // best-effort stdout
+			fmt.Fprintf(stdout, "Auto-closed convoy %s %q\n", item.bead.ID, item.bead.Title) //nolint:errcheck // best-effort stdout
 			closed++
 		}
 	}
@@ -778,16 +849,20 @@ Useful for identifying bottlenecks in convoy processing.`,
 
 // cmdConvoyStranded is the CLI entry point for finding stranded convoys.
 func cmdConvoyStranded(stdout, stderr io.Writer) int {
-	store, code := openCityStore(stderr, "gc convoy stranded")
-	if store == nil {
+	stores, code := openAllConvoyStores(stderr, "gc convoy stranded")
+	if stores == nil {
 		return code
 	}
-	return doConvoyStranded(store, stdout, stderr)
+	return doConvoyStrandedAcrossStores(stores, stdout, stderr)
 }
 
 // doConvoyStranded finds open convoys with open children that have no assignee.
 func doConvoyStranded(store beads.Store, stdout, stderr io.Writer) int {
-	all, err := store.List()
+	return doConvoyStrandedAcrossStores([]convoyStoreView{{store: store}}, stdout, stderr)
+}
+
+func doConvoyStrandedAcrossStores(stores []convoyStoreView, stdout, stderr io.Writer) int {
+	convoys, err := collectOpenConvoys(stores)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc convoy stranded: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -799,18 +874,15 @@ func doConvoyStranded(store beads.Store, stdout, stderr io.Writer) int {
 	}
 	var items []strandedItem
 
-	for _, b := range all {
-		if b.Type != "convoy" || b.Status == "closed" {
-			continue
-		}
-		children, err := store.Children(b.ID)
+	for _, item := range convoys {
+		children, err := item.store.Children(item.bead.ID)
 		if err != nil {
-			fmt.Fprintf(stderr, "gc convoy stranded: children of %s: %v\n", b.ID, err) //nolint:errcheck // best-effort stderr
+			fmt.Fprintf(stderr, "gc convoy stranded: children of %s: %v\n", item.bead.ID, err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		for _, ch := range children {
 			if ch.Status != "closed" && ch.Assignee == "" {
-				items = append(items, strandedItem{convoyID: b.ID, issue: ch})
+				items = append(items, strandedItem{convoyID: item.bead.ID, issue: ch})
 			}
 		}
 	}

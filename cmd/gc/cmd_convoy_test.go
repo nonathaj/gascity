@@ -244,6 +244,28 @@ func TestConvoyListExcludesClosed(t *testing.T) {
 	}
 }
 
+func TestConvoyListAcrossStores(t *testing.T) {
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	_, _ = cityStore.Create(beads.Bead{Title: "city batch", Type: "convoy"}) // gc-1
+	_, _ = cityStore.Create(beads.Bead{Title: "city task", ParentID: "gc-1"})
+	_, _ = rigStore.Create(beads.Bead{Title: "rig batch", Type: "convoy"}) // gc-1
+	_, _ = rigStore.Create(beads.Bead{Title: "rig task", ParentID: "gc-1"})
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyListAcrossStores([]convoyStoreView{{store: cityStore}, {store: rigStore}}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyListAcrossStores = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"city batch", "rig batch"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // --- gc convoy status ---
 
 func TestConvoyStatus(t *testing.T) {
@@ -583,6 +605,34 @@ func TestConvoyCheckEmpty(t *testing.T) {
 	}
 }
 
+func TestConvoyCheckAcrossStores(t *testing.T) {
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	_, _ = cityStore.Create(beads.Bead{Title: "city batch", Type: "convoy"}) // gc-1
+	_, _ = cityStore.Create(beads.Bead{Title: "city task", ParentID: "gc-1"})
+	_ = cityStore.Close("gc-2")
+
+	_, _ = rigStore.Create(beads.Bead{Title: "rig batch", Type: "convoy"}) // gc-1
+	_, _ = rigStore.Create(beads.Bead{Title: "rig task", ParentID: "gc-1"})
+	_ = rigStore.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCheckAcrossStores([]convoyStoreView{{store: cityStore}, {store: rigStore}}, events.Discard, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCheckAcrossStores = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "2 convoy(s) auto-closed") {
+		t.Fatalf("stdout = %q, want two auto-closed convoys", stdout.String())
+	}
+	if got, _ := cityStore.Get("gc-1"); got.Status != "closed" {
+		t.Fatalf("city convoy status = %q, want closed", got.Status)
+	}
+	if got, _ := rigStore.Get("gc-1"); got.Status != "closed" {
+		t.Fatalf("rig convoy status = %q, want closed", got.Status)
+	}
+}
+
 // --- gc convoy stranded ---
 
 func TestConvoyStranded(t *testing.T) {
@@ -638,6 +688,28 @@ func TestConvoyStrandedClosedExcluded(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "No stranded work") {
 		t.Errorf("stdout = %q, want no stranded (closed issues excluded)", stdout.String())
+	}
+}
+
+func TestConvoyStrandedAcrossStores(t *testing.T) {
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	_, _ = cityStore.Create(beads.Bead{Title: "city batch", Type: "convoy"}) // gc-1
+	_, _ = cityStore.Create(beads.Bead{Title: "city unassigned", ParentID: "gc-1"})
+	_, _ = rigStore.Create(beads.Bead{Title: "rig batch", Type: "convoy"}) // gc-1
+	_, _ = rigStore.Create(beads.Bead{Title: "rig unassigned", ParentID: "gc-1"})
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyStrandedAcrossStores([]convoyStoreView{{store: cityStore}, {store: rigStore}}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyStrandedAcrossStores = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out := stdout.String()
+	for _, want := range []string{"city unassigned", "rig unassigned"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %q:\n%s", want, out)
+		}
 	}
 }
 
