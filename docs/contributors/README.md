@@ -6,7 +6,7 @@ description: The shortest path for new contributors to get productive in Gas Cit
 ## Read These First
 
 - [Codebase Map](codebase-map)
-- [Architecture Overview](../architecture/README)
+- [Architecture Overview](../architecture/README.md)
 - [Primitive Test](primitive-test)
 - [`CONTRIBUTING.md`](https://github.com/gastownhall/gascity/blob/main/CONTRIBUTING.md)
 - [`TESTING.md`](https://github.com/gastownhall/gascity/blob/main/TESTING.md)

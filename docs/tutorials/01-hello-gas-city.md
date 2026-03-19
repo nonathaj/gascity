@@ -27,7 +27,7 @@ the beads system that ties it all together.
 ## Starting your city
 
 Before starting, follow the source-based
-[installation guide](../getting-started/installation). Once `gc` is
+[installation guide](../getting-started/installation.md). Once `gc` is
 available, initialize a city:
 
 ```shell

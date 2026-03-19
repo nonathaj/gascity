@@ -13,7 +13,7 @@ implementations and links to their detailed architecture docs.
 ## The Primitive Test
 
 Before adding a new primitive, apply three necessary conditions (see
-[`docs/contributors/primitive-test.md`](../contributors/primitive-test)):
+[`docs/contributors/primitive-test.md`](../contributors/primitive-test.md)):
 
 1. **Atomicity** — can it be decomposed into existing primitives? If
    yes, it's derived, not primitive.
@@ -189,7 +189,7 @@ Capabilities activate based on config section presence:
 
 - [Glossary](/architecture/glossary) — authoritative definitions of all terms
   used across the nine concepts
-- [Primitive Test](../contributors/primitive-test) — the three necessary
+- [Primitive Test](../contributors/primitive-test.md) — the three necessary
   conditions for adding a new primitive
 - [CLAUDE.md](https://github.com/gastownhall/gascity/blob/main/CLAUDE.md) — project-level design principles and
   code conventions
