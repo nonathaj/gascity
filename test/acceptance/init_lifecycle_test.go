@@ -17,9 +17,7 @@ import (
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"
 )
 
-var (
-	testEnv *helpers.Env
-)
+var testEnv *helpers.Env
 
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "gc-acceptance-*")

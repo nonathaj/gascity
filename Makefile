@@ -20,7 +20,7 @@ LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
            -X main.date=$(BUILD_TIME)
 
-.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
+.PHONY: build check check-all check-bd check-docker check-docs check-dolt lint fmt-check fmt vet test test-acceptance test-tutorial test-integration test-mcp-mail test-docker test-k8s test-cover cover install install-tools install-buildx setup clean generate check-schema docker-base docker-agent docker-controller docs-dev
 
 ## build: compile gc binary with version metadata
 build:
@@ -106,10 +106,10 @@ test-acceptance:
 test-integration:
 	go test -tags integration -timeout 8m ./...
 
-## test-acceptance: run manual acceptance tests (requires ANTHROPIC_API_KEY, tmux, dolt, bd)
+## test-tutorial: run tutorial acceptance tests (requires tmux, dolt, bd, claude authed)
 ## These exercise the full tutorial flow with real inference — run before each release.
-test-acceptance:
-	go test -tags 'integration acceptance' -timeout 10m -v -run TestTutorialRegression ./test/integration/
+test-tutorial:
+	go test -tags 'integration acceptance' -timeout 10m -v ./test/integration/ -run 'TestTutorial'
 
 ## check-docs: verify docs sync tests and Mintlify link checks
 check-docs:
