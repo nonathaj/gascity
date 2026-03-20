@@ -122,12 +122,12 @@ func TestApplyLoops_Validation(t *testing.T) {
 		{
 			name:    "both count and until",
 			loop:    &LoopSpec{Count: 3, Until: "cond", Max: 5, Body: []*Step{{ID: "a", Title: "A"}}},
-			wantErr: "cannot have both count and until",
+			wantErr: "only one of count, until, or range can be specified",
 		},
 		{
 			name:    "neither count nor until",
 			loop:    &LoopSpec{Body: []*Step{{ID: "a", Title: "A"}}},
-			wantErr: "either count or until is required",
+			wantErr: "one of count, until, or range is required",
 		},
 		{
 			name:    "until without max",
@@ -142,9 +142,8 @@ func TestApplyLoops_Validation(t *testing.T) {
 			_, err := ApplyLoops(steps)
 			if err == nil {
 				t.Error("Expected error, got nil")
-			} else if tt.wantErr != "" && err.Error() != "" {
-				// Just check that an error was returned
-				// The exact message format may vary
+			} else if tt.wantErr != "" && !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
 			}
 		})
 	}
