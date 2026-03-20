@@ -33,6 +33,7 @@ type fakeStartOps struct {
 	createErrs []error
 	createIdx  int
 
+	isSessionRunningResult  *bool
 	isRuntimeRunningResult  bool
 	killErr                 error
 	waitCommandErr          error
@@ -58,6 +59,17 @@ func (f *fakeStartOps) createSession(name, workDir, command string, env map[stri
 		return err
 	}
 	return nil
+}
+
+func (f *fakeStartOps) isSessionRunning(name string) bool {
+	f.calls = append(f.calls, startCall{
+		method: "isSessionRunning",
+		name:   name,
+	})
+	if f.isSessionRunningResult == nil {
+		return true
+	}
+	return *f.isSessionRunningResult
 }
 
 func (f *fakeStartOps) isRuntimeRunning(name string, processNames []string) bool {
@@ -768,7 +780,9 @@ func TestEnsureFreshSession_Success(t *testing.T) {
 }
 
 func TestEnsureFreshSession_ZombieDetection(t *testing.T) {
+	running := true
 	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
 		createErrs:             []error{ErrSessionExists},
 		isRuntimeRunningResult: false, // zombie
 	}
@@ -785,20 +799,21 @@ func TestEnsureFreshSession_ZombieDetection(t *testing.T) {
 
 	assertCallSequence(t, ops, []string{
 		"createSession",
+		"isSessionRunning",
 		"isRuntimeRunning",
 		"killSession",
 		"createSession",
 	})
 
 	// Verify isRuntimeRunning received the ProcessNames from config.
-	irt := ops.calls[1]
+	irt := ops.calls[2]
 	if len(irt.processNames) != 2 || irt.processNames[0] != "claude" || irt.processNames[1] != "node" {
 		t.Errorf("isRuntimeRunning processNames = %v, want [claude node]", irt.processNames)
 	}
 
 	// Verify recreate (second createSession) passes same config as initial.
 	first := ops.calls[0]
-	second := ops.calls[3]
+	second := ops.calls[4]
 	if first.workDir != second.workDir {
 		t.Errorf("recreate workDir = %q, initial = %q", second.workDir, first.workDir)
 	}
@@ -808,7 +823,9 @@ func TestEnsureFreshSession_ZombieDetection(t *testing.T) {
 }
 
 func TestEnsureFreshSession_HealthyExisting(t *testing.T) {
+	running := true
 	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
 		createErrs:             []error{ErrSessionExists},
 		isRuntimeRunningResult: true, // alive
 	}
@@ -825,15 +842,17 @@ func TestEnsureFreshSession_HealthyExisting(t *testing.T) {
 	}
 
 	// Should not kill or recreate.
-	assertCallSequence(t, ops, []string{"createSession", "isRuntimeRunning"})
+	assertCallSequence(t, ops, []string{"createSession", "isSessionRunning", "isRuntimeRunning"})
 }
 
 func TestEnsureFreshSession_DuplicateNoProcessNames(t *testing.T) {
+	running := true
 	ops := &fakeStartOps{
-		createErrs: []error{ErrSessionExists},
+		isSessionRunningResult: &running,
+		createErrs:             []error{ErrSessionExists},
 	}
 
-	// Without ProcessNames, can't do zombie detection — always treat as duplicate.
+	// Without ProcessNames, a live session is still treated as a duplicate.
 	err := ensureFreshSession(ops, "test", runtime.Config{
 		Command: "sleep 300",
 	})
@@ -845,11 +864,35 @@ func TestEnsureFreshSession_DuplicateNoProcessNames(t *testing.T) {
 	}
 
 	// Should not call isRuntimeRunning or kill.
-	assertCallSequence(t, ops, []string{"createSession"})
+	assertCallSequence(t, ops, []string{"createSession", "isSessionRunning"})
+}
+
+func TestEnsureFreshSession_DeadPaneWithoutProcessNames(t *testing.T) {
+	running := false
+	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
+		createErrs:             []error{ErrSessionExists},
+	}
+
+	err := ensureFreshSession(ops, "test", runtime.Config{
+		Command: "sleep 300",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertCallSequence(t, ops, []string{
+		"createSession",
+		"isSessionRunning",
+		"killSession",
+		"createSession",
+	})
 }
 
 func TestEnsureFreshSession_ZombieKillFails(t *testing.T) {
+	running := true
 	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
 		createErrs:             []error{ErrSessionExists},
 		isRuntimeRunningResult: false, // zombie
 		killErr:                errors.New("permission denied"),
@@ -869,7 +912,9 @@ func TestEnsureFreshSession_ZombieKillFails(t *testing.T) {
 
 func TestEnsureFreshSession_RecreateRace(t *testing.T) {
 	// After zombie kill, recreate gets ErrSessionExists from a concurrent process.
+	running := true
 	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
 		createErrs:             []error{ErrSessionExists, ErrSessionExists},
 		isRuntimeRunningResult: false, // zombie
 	}
@@ -884,7 +929,9 @@ func TestEnsureFreshSession_RecreateRace(t *testing.T) {
 }
 
 func TestEnsureFreshSession_RecreateFails(t *testing.T) {
+	running := true
 	ops := &fakeStartOps{
+		isSessionRunningResult: &running,
 		createErrs:             []error{ErrSessionExists, errors.New("out of memory")},
 		isRuntimeRunningResult: false, // zombie
 	}

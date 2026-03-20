@@ -115,10 +115,10 @@ func (p *Provider) Interrupt(name string) error {
 	return err
 }
 
-// IsRunning reports whether the named session exists.
+// IsRunning reports whether the named session exists and still has a live
+// process in its primary pane.
 func (p *Provider) IsRunning(name string) bool {
-	has, err := p.tm.HasSession(name)
-	return err == nil && has
+	return p.tm.IsSessionRunning(name)
 }
 
 // IsAttached reports whether a user terminal is connected to the named session.
@@ -330,6 +330,7 @@ func (p *Provider) Tmux() *Tmux {
 // This enables unit testing without a real tmux server.
 type startOps interface {
 	createSession(name, workDir, command string, env map[string]string) error
+	isSessionRunning(name string) bool
 	isRuntimeRunning(name string, processNames []string) bool
 	killSession(name string) error
 	waitForCommand(ctx context.Context, name string, timeout time.Duration) error
@@ -349,6 +350,10 @@ func (o *tmuxStartOps) createSession(name, workDir, command string, env map[stri
 		return o.tm.NewSessionWithCommandAndEnv(name, workDir, command, env)
 	}
 	return o.tm.NewSession(name, workDir)
+}
+
+func (o *tmuxStartOps) isSessionRunning(name string) bool {
+	return o.tm.IsSessionRunning(name)
 }
 
 func (o *tmuxStartOps) isRuntimeRunning(name string, processNames []string) bool {
@@ -537,10 +542,13 @@ func runPreStart(ctx context.Context, ops startOps, _ string, cfg runtime.Config
 	}
 }
 
-// ensureFreshSession creates a session, handling zombies.
+// ensureFreshSession creates a session, handling stale tmux state.
 // If the session already exists, returns an error (duplicate detection).
-// Exception: if ProcessNames are configured and the agent is dead (zombie),
-// kills the zombie session and recreates it.
+// Exceptions:
+//   - dead panes (remain-on-exit corpses) are recycled even without ProcessNames
+//   - if ProcessNames are configured and the agent is dead (zombie), the
+//     zombie session is killed and recreated
+//
 // maxInlinePromptLen is the threshold above which prompts are written to a
 // temp file and read back via $(cat ...) inside the tmux session. tmux
 // new-session passes the command through a fixed-size protocol buffer
@@ -571,6 +579,22 @@ func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
 	}
 	if !errors.Is(err, ErrSessionExists) {
 		return fmt.Errorf("creating session: %w", err)
+	}
+
+	// Session exists but the pane is already dead (e.g. remain-on-exit corpse).
+	// Safe to recycle even when ProcessNames are unavailable.
+	if !ops.isSessionRunning(name) {
+		if err := ops.killSession(name); err != nil {
+			return fmt.Errorf("killing dead session: %w", err)
+		}
+		err = ops.createSession(name, cfg.WorkDir, fullCommand, cfg.Env)
+		if errors.Is(err, ErrSessionExists) {
+			return nil // race: another process created it
+		}
+		if err != nil {
+			return fmt.Errorf("creating session after dead-session cleanup: %w", err)
+		}
+		return nil
 	}
 
 	// Session exists — without process names we can't distinguish a zombie

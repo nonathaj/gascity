@@ -9,6 +9,9 @@ type fakeExecutor struct {
 	calls [][]string // each call's full args
 	out   string
 	err   error
+	outs  []string
+	errs  []error
+	idx   int
 }
 
 func (f *fakeExecutor) execute(args []string) (string, error) {
@@ -16,6 +19,18 @@ func (f *fakeExecutor) execute(args []string) (string, error) {
 	cp := make([]string, len(args))
 	copy(cp, args)
 	f.calls = append(f.calls, cp)
+	if f.idx < len(f.outs) || f.idx < len(f.errs) {
+		var out string
+		var err error
+		if f.idx < len(f.outs) {
+			out = f.outs[f.idx]
+		}
+		if f.idx < len(f.errs) {
+			err = f.errs[f.idx]
+		}
+		f.idx++
+		return out, err
+	}
 	return f.out, f.err
 }
 
@@ -80,5 +95,46 @@ func TestRunAlwaysPrependsUTF8Flag(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("args[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestIsSessionRunningFalseWhenPaneDead(t *testing.T) {
+	fe := &fakeExecutor{
+		outs: []string{"", "1"},
+	}
+	tm := &Tmux{cfg: Config{SocketName: "x"}, exec: fe}
+
+	if tm.IsSessionRunning("runner") {
+		t.Fatal("IsSessionRunning = true, want false for dead pane")
+	}
+
+	if len(fe.calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(fe.calls))
+	}
+	want := [][]string{
+		{"-u", "-L", "x", "has-session", "-t", "=runner"},
+		{"-u", "-L", "x", "display-message", "-t", "runner:^.0", "-p", "#{pane_dead}"},
+	}
+	for i := range want {
+		if len(fe.calls[i]) != len(want[i]) {
+			t.Fatalf("call %d = %v, want %v", i, fe.calls[i], want[i])
+		}
+		for j := range want[i] {
+			if fe.calls[i][j] != want[i][j] {
+				t.Errorf("call %d arg %d = %q, want %q", i, j, fe.calls[i][j], want[i][j])
+			}
+		}
+	}
+}
+
+func TestIsSessionRunningFallsBackToSessionExistsOnPaneQueryError(t *testing.T) {
+	fe := &fakeExecutor{
+		outs: []string{""},
+		errs: []error{nil, ErrNoServer},
+	}
+	tm := &Tmux{cfg: Config{SocketName: "x"}, exec: fe}
+
+	if !tm.IsSessionRunning("runner") {
+		t.Fatal("IsSessionRunning = false, want true when pane query fails after session exists")
 	}
 }

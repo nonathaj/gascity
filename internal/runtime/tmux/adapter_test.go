@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/runtime/runtimetest"
@@ -109,5 +110,50 @@ func TestProvider_StartWithEnv(t *testing.T) {
 	}
 	if val != "hello" {
 		t.Fatalf("GC_TEST: got %q, want %q", val, "hello")
+	}
+}
+
+func TestProvider_RecyclesDeadPaneWithoutProcessNames(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	cfg := DefaultConfig()
+	cfg.SocketName = testSocketName
+	p := NewProviderWithConfig(cfg)
+	name := "gc-test-dead-pane-recycle"
+	_ = p.Stop(name)
+	defer func() { _ = p.Stop(name) }()
+
+	if err := p.Start(context.Background(), name, runtime.Config{
+		Command: "sleep 0.1",
+		WorkDir: t.TempDir(),
+	}); err != nil {
+		t.Fatalf("Start first session: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		has, err := p.Tmux().HasSession(name)
+		if err != nil {
+			t.Fatalf("HasSession: %v", err)
+		}
+		if has && !p.IsRunning(name) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if p.IsRunning(name) {
+		t.Fatal("IsRunning stayed true after one-shot command exited")
+	}
+
+	if err := p.Start(context.Background(), name, runtime.Config{
+		Command: "sleep 300",
+		WorkDir: t.TempDir(),
+	}); err != nil {
+		t.Fatalf("Start after dead pane: %v", err)
+	}
+	if !p.IsRunning(name) {
+		t.Fatal("session should be running after dead-pane recycle")
 	}
 }

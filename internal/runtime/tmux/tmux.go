@@ -1349,6 +1349,45 @@ func (t *Tmux) GetPanePID(target string) (string, error) {
 	return result, nil
 }
 
+// IsPaneDead reports whether the target pane's process has exited while the
+// pane remains visible (for example because remain-on-exit is enabled).
+// When target is a session name, pane 0 is queried explicitly.
+func (t *Tmux) IsPaneDead(target string) (bool, error) {
+	tmuxTarget := target
+	if !strings.HasPrefix(target, "%") {
+		tmuxTarget = target + ":^.0"
+	}
+	out, err := t.run("display-message", "-t", tmuxTarget, "-p", "#{pane_dead}")
+	if err != nil {
+		return false, err
+	}
+	switch strings.TrimSpace(out) {
+	case "0":
+		return false, nil
+	case "1":
+		return true, nil
+	default:
+		return false, fmt.Errorf("unexpected pane_dead value %q for target %s", out, target)
+	}
+}
+
+// IsSessionRunning reports whether the tmux session exists and its primary pane
+// still has a live process. Dead panes kept by remain-on-exit are treated as
+// not running.
+func (t *Tmux) IsSessionRunning(session string) bool {
+	has, err := t.HasSession(session)
+	if err != nil || !has {
+		return false
+	}
+	dead, err := t.IsPaneDead(session)
+	if err != nil {
+		// Fall back to session existence on query failures to avoid false
+		// negatives when tmux cannot report pane state.
+		return true
+	}
+	return !dead
+}
+
 // GetSessionActivity returns the last activity time for a session.
 // This is updated whenever there's any activity in the session (input/output).
 func (t *Tmux) GetSessionActivity(session string) (time.Time, error) {
