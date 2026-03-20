@@ -777,7 +777,7 @@ ensure_config_yaml() {
     tmp=$(mktemp "$config_file.tmp.XXXXXX")
     cat > "$tmp" <<YAML
 issue_prefix: $prefix
-issue-prefix: ${prefix}-
+issue-prefix: ${prefix}
 dolt.auto-start: false
 YAML
     mv "$tmp" "$config_file"
