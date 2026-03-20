@@ -924,6 +924,7 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 	var lastSentUUID string
 	var seq uint64
 	var lastActivity string
+	sentUUIDs := make(map[string]struct{})
 	lw.onReset = func() { lastSize = 0; lastActivity = "" }
 
 	readAndEmit := func() {
@@ -958,35 +959,51 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 
 		// Emit messages if there are new ones.
 		if len(rawMessages) > 0 {
-			startIdx := 0
-			if lastSentUUID != "" {
+			var toSend []json.RawMessage
+
+			if lastSentUUID == "" {
+				// First emission: send everything.
+				toSend = rawMessages
+			} else {
 				found := false
 				for i, uuid := range uuids {
 					if uuid == lastSentUUID {
-						startIdx = i + 1
+						toSend = rawMessages[i+1:]
 						found = true
 						break
 					}
 				}
 				if !found {
-					// Cursor lost (DAG rewrite, truncation). Log and re-sync
-					// from the beginning so the client gets a complete view.
-					log.Printf("session stream raw: cursor %s lost, re-syncing from start", lastSentUUID)
+					// Cursor lost (DAG rewrite, compaction). Instead of
+					// re-syncing from the beginning (which causes duplicate/
+					// out-of-order messages on the client), emit only messages
+					// we haven't previously sent.
+					log.Printf("session stream raw: cursor %s lost, emitting only new messages", lastSentUUID)
+					for i, uuid := range uuids {
+						if _, seen := sentUUIDs[uuid]; !seen {
+							toSend = append(toSend, rawMessages[i])
+						}
+					}
 				}
 			}
-			if startIdx < len(rawMessages) {
-				lastSentUUID = uuids[len(uuids)-1]
-				seq++
 
+			if len(toSend) > 0 {
+				seq++
 				data, err := json.Marshal(sessionRawTranscriptResponse{
 					ID:       info.ID,
 					Template: info.Template,
 					Format:   "raw",
-					Messages: rawMessages[startIdx:],
+					Messages: toSend,
 				})
 				if err == nil {
 					writeSSE(w, "message", seq, data)
 				}
+			}
+
+			// Track all current UUIDs so cursor-lost can filter correctly.
+			lastSentUUID = uuids[len(uuids)-1]
+			for _, uuid := range uuids {
+				sentUUIDs[uuid] = struct{}{}
 			}
 		}
 
@@ -1010,6 +1027,7 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 	var lastSentUUID string
 	var seq uint64
 	var lastActivity string
+	sentUUIDs := make(map[string]struct{})
 	lw.onReset = func() { lastSize = 0; lastActivity = "" }
 
 	readAndEmit := func() {
@@ -1043,33 +1061,51 @@ func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.Response
 
 		// Emit turns if there are new ones.
 		if len(turns) > 0 {
-			startIdx := 0
-			if lastSentUUID != "" {
+			var toSend []outputTurn
+
+			if lastSentUUID == "" {
+				// First emission: send everything.
+				toSend = turns
+			} else {
 				found := false
 				for i, uuid := range uuids {
 					if uuid == lastSentUUID {
-						startIdx = i + 1
+						toSend = turns[i+1:]
 						found = true
 						break
 					}
 				}
 				if !found {
-					log.Printf("session stream: cursor %s lost, re-syncing from start", lastSentUUID)
+					// Cursor lost (DAG rewrite, compaction). Instead of
+					// re-syncing from the beginning (which causes duplicate/
+					// out-of-order messages on the client), emit only turns
+					// we haven't previously sent.
+					log.Printf("session stream: cursor %s lost, emitting only new turns", lastSentUUID)
+					for i, uuid := range uuids {
+						if _, seen := sentUUIDs[uuid]; !seen {
+							toSend = append(toSend, turns[i])
+						}
+					}
 				}
 			}
-			if startIdx < len(turns) {
-				lastSentUUID = uuids[len(uuids)-1]
-				seq++
 
+			if len(toSend) > 0 {
+				seq++
 				data, err := json.Marshal(sessionTranscriptResponse{
 					ID:       info.ID,
 					Template: info.Template,
 					Format:   "conversation",
-					Turns:    turns[startIdx:],
+					Turns:    toSend,
 				})
 				if err == nil {
 					writeSSE(w, "turn", seq, data)
 				}
+			}
+
+			// Track all current UUIDs so cursor-lost can filter correctly.
+			lastSentUUID = uuids[len(uuids)-1]
+			for _, uuid := range uuids {
+				sentUUIDs[uuid] = struct{}{}
 			}
 		}
 

@@ -308,6 +308,7 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 	lw.onReset = func() { lastSize = 0 }
 	var lastSentUUID string
 	var seq uint64
+	sentUUIDs := make(map[string]struct{})
 
 	readAndEmit := func() {
 		info, err := os.Stat(logPath)
@@ -340,30 +341,49 @@ func (s *Server) streamSessionLog(ctx context.Context, w http.ResponseWriter, na
 			return
 		}
 
-		startIdx := 0
-		if lastSentUUID != "" {
+		var toSend []outputTurn
+
+		if lastSentUUID == "" {
+			// First emission: send everything.
+			toSend = turns
+		} else {
 			found := false
 			for i, uuid := range uuids {
 				if uuid == lastSentUUID {
-					startIdx = i + 1
+					toSend = turns[i+1:]
 					found = true
 					break
 				}
 			}
 			if !found {
-				log.Printf("agent stream: cursor %s lost, re-syncing from start", lastSentUUID)
+				// Cursor lost (DAG rewrite, compaction). Instead of
+				// re-syncing from the beginning (which causes duplicate/
+				// out-of-order messages on the client), emit only turns
+				// we haven't previously sent.
+				log.Printf("agent stream: cursor %s lost, emitting only new turns", lastSentUUID)
+				for i, uuid := range uuids {
+					if _, seen := sentUUIDs[uuid]; !seen {
+						toSend = append(toSend, turns[i])
+					}
+				}
 			}
 		}
-		if startIdx >= len(turns) {
+
+		// Track all current UUIDs so cursor-lost can filter correctly.
+		lastSentUUID = uuids[len(uuids)-1]
+		for _, uuid := range uuids {
+			sentUUIDs[uuid] = struct{}{}
+		}
+
+		if len(toSend) == 0 {
 			return
 		}
-		lastSentUUID = uuids[len(uuids)-1]
 		seq++
 
 		data, err := json.Marshal(agentOutputResponse{
 			Agent:  name,
 			Format: "conversation",
-			Turns:  turns[startIdx:],
+			Turns:  toSend,
 		})
 		if err != nil {
 			return
