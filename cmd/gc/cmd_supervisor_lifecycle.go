@@ -290,6 +290,7 @@ type supervisorServiceData struct {
 	LogPath  string
 	GCHome   string
 	SafeName string
+	Path     string
 }
 
 func buildSupervisorServiceData() (*supervisorServiceData, error) {
@@ -303,6 +304,7 @@ func buildSupervisorServiceData() (*supervisorServiceData, error) {
 		LogPath:  supervisorLogPath(),
 		GCHome:   home,
 		SafeName: sanitizeServiceName(filepath.Base(home)),
+		Path:     os.Getenv("PATH"),
 	}, nil
 }
 
@@ -342,6 +344,8 @@ const supervisorLaunchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <dict>
         <key>GC_HOME</key>
         <string>{{xmlesc .GCHome}}</string>
+        <key>PATH</key>
+        <string>{{xmlesc .Path}}</string>
     </dict>
 </dict>
 </plist>
@@ -358,6 +362,7 @@ RestartSec=5s
 StandardOutput=append:{{.LogPath}}
 StandardError=append:{{.LogPath}}
 Environment=GC_HOME="{{.GCHome}}"
+Environment=PATH="{{.Path}}"
 
 [Install]
 WantedBy=default.target
