@@ -62,7 +62,6 @@ default = ""
 id = "{target}.review-claude"
 title = "Code review: Claude (reasoning-heavy)"
 assignee = "{reviewer_claude}"
-metadata = { "gc.continuation_group" = "review-fan" }
 description = """
 Claude reviews from the BASE worktree (pre-change state). The diff is
 included in the prompt. Claude uses the worktree to trace callers,
@@ -156,7 +155,6 @@ End with:
 id = "{target}.review-codex"
 title = "Code review: Codex (evidence-first)"
 assignee = "{reviewer_codex}"
-metadata = { "gc.continuation_group" = "review-fan" }
 description = """
 Codex reviews from the PR HEAD worktree (post-change state). The diff is
 included in the prompt. Codex uses the worktree to trace callers and
@@ -246,7 +244,6 @@ id = "{target}.review-gemini"
 title = "Code review: Gemini (cross-file consistency)"
 assignee = "{reviewer_gemini}"
 condition = "!{{skip_gemini}}"
-metadata = { "gc.continuation_group" = "review-fan" }
 description = """
 IMPORTANT: This step is soft-fail. If you encounter rate limit errors,
 quota exhaustion, or model unavailability, close this step successfully
@@ -428,4 +425,3 @@ severity-calibrated, action-oriented.
 - Concise, concrete, evidence-linked.
 - The output is for a human maintainer making a merge decision.
 """
-metadata = { "gc.continuation_group" = "main" }

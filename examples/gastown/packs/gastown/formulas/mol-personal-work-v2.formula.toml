@@ -69,7 +69,6 @@ bd show {{issue}} --json | jq '.metadata'
 gc mail inbox
 ```
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 [[steps]]
 id = "workspace-setup"
@@ -91,7 +90,7 @@ cd "$WORKTREE"
 {{setup_command}}
 ```
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 
 # ── Design review loop (Ralph) ───────────────────────────────────────
 
@@ -100,7 +99,7 @@ id = "design-review-loop"
 title = "Design review loop"
 needs = ["workspace-setup"]
 description = "Ralph container for iterative design review."
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 [steps.ralph]
 max_attempts = 5
@@ -114,26 +113,22 @@ timeout = "10m"
 id = "persona-gen-claude"
 title = "Generate review personas: Claude"
 description = "Generate tailored reviewer personas using Claude."
-metadata = { "gc.continuation_group" = "persona-gen-fan", "gc.session_affinity" = "prefer" }
 
 [[steps.children]]
 id = "persona-gen-codex"
 title = "Generate review personas: Codex"
 description = "Generate tailored reviewer personas using Codex."
-metadata = { "gc.continuation_group" = "persona-gen-fan", "gc.session_affinity" = "prefer" }
 
 [[steps.children]]
 id = "persona-gen-gemini"
 title = "Generate review personas: Gemini"
 description = "Generate tailored reviewer personas using Gemini."
-metadata = { "gc.continuation_group" = "persona-gen-fan", "gc.session_affinity" = "prefer" }
 
 [[steps.children]]
 id = "persona-synthesis"
 title = "Synthesize personas"
 needs = ["persona-gen-claude", "persona-gen-codex", "persona-gen-gemini"]
 description = "Merge persona suggestions into a final set of reviewers."
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 [[steps.children]]
 id = "design-review-synthesis"
@@ -143,7 +138,6 @@ description = """
 Run each persona against the design in all three models, then synthesize
 findings into a unified review report with concrete required changes.
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 [[steps.children]]
 id = "apply-design-changes"
@@ -157,7 +151,6 @@ concerns, and set the verdict for the Ralph check script.
 bd update $GC_BEAD_ID --set-metadata design_review.verdict=done   # or iterate
 ```
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 # ── Implement ────────────────────────────────────────────────────────
 
@@ -169,7 +162,7 @@ description = """
 Make the code changes for {{issue}} in the worktree. Commit focused changes.
 Run tests: {{test_command}}
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 # ── Code review loop (Ralph) ─────────────────────────────────────────
 
@@ -178,7 +171,7 @@ id = "code-review-loop"
 title = "Code review loop"
 needs = ["implement"]
 description = "Ralph container for iterative code review."
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 [steps.ralph]
 max_attempts = 5
@@ -204,7 +197,6 @@ Apply fixes for blockers/majors from the synthesis report.
 bd update $GC_BEAD_ID --set-metadata code_review.verdict=done   # or iterate
 ```
 """
-metadata = { "gc.continuation_group" = "main" }
 
 [compose]
 [[compose.expand]]
@@ -227,7 +219,7 @@ cd "$WORKTREE"
 git push --force-with-lease origin HEAD
 ```
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 # ── Teardown (always runs) ──────────────────────────────────────────
 

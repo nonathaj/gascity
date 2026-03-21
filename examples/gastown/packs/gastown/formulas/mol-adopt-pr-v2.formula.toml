@@ -66,7 +66,7 @@ git fetch --prune {{remote_name}}
 git status --short
 ```
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 
 [[steps]]
 id = "rebase-check"
@@ -92,7 +92,7 @@ git checkout -B adopt-pr/{{issue}} FETCH_HEAD
 git rebase --autostash {{remote_name}}/{{base_branch}} --dry-run
 ```
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "setup", "gc.on_fail" = "abort_scope" }
 
 # ── Ralph review/fix loop ───────────────────────────────────────────
 # The review-loop is a Ralph step with nested children.
@@ -107,7 +107,7 @@ id = "review-loop"
 title = "Review / fix loop"
 needs = ["rebase-check"]
 description = "Ralph container for the iterative review/fix cycle."
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 [steps.ralph]
 max_attempts = 5
@@ -144,7 +144,6 @@ bd update $GC_BEAD_ID --set-metadata review.verdict=done
 bd update $GC_BEAD_ID --set-metadata review.verdict=iterate
 ```
 """
-metadata = { "gc.continuation_group" = "main" }
 
 [compose]
 [[compose.expand]]
@@ -174,7 +173,7 @@ git push --force-with-lease {{remote_name}} HEAD
 # observe CI, merge per path
 ```
 """
-metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope", "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.scope_ref" = "body", "gc.scope_role" = "member", "gc.on_fail" = "abort_scope" }
 
 # ── Teardown (always runs) ──────────────────────────────────────────
 

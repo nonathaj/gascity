@@ -94,7 +94,6 @@ Guidelines:
 - Each persona should have a clear "lane"
 - Think about who would actually review this in a real organization
 """
-metadata = { "gc.continuation_group" = "persona-gen", "gc.session_affinity" = "prefer" }
 
 [[template]]
 id = "{target}.persona-gen-codex"
@@ -107,7 +106,6 @@ personas across {{review_waves}} waves.
 [Same prompt content as persona-gen-claude — independent model execution
 catches blind spots any single model would miss.]
 """
-metadata = { "gc.continuation_group" = "persona-gen", "gc.session_affinity" = "prefer" }
 
 [[template]]
 id = "{target}.persona-gen-gemini"
@@ -118,7 +116,6 @@ reason "skipped — dual-model mode".
 
 Same persona generation prompt, run independently on Gemini.
 """
-metadata = { "gc.continuation_group" = "persona-gen", "gc.session_affinity" = "prefer" }
 
 # ── Phase 2: Persona synthesis ──────────────────────────────────────
 
@@ -145,7 +142,6 @@ persona set.
 Save the final persona set as a pipe-delimited list (one per line).
 This output is consumed by the persona-reviews step.
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 # ── Phase 3: Persona reviews ───────────────────────────────────────
 #
@@ -223,7 +219,6 @@ to avoid overwhelming agent pools.
 
 Save all outputs for the synthesis step.
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 # ── Phase 4: Review synthesis ───────────────────────────────────────
 
@@ -282,6 +277,5 @@ Your job:
 1. <most critical change>
 2. ...
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
 # The parent formula owns the apply/verdict step — this expansion only analyzes.
