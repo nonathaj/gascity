@@ -154,7 +154,7 @@ Apply the design review synthesis findings. Update design docs, address
 concerns, and set the verdict for the Ralph check script.
 
 ```bash
-bd meta set $BEAD_ID design_review.verdict=done   # or iterate
+bd update $GC_BEAD_ID --set-metadata design_review.verdict=done   # or iterate
 ```
 """
 metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
@@ -198,15 +198,13 @@ id = "apply-code-fixes"
 title = "Apply code review fixes and set verdict"
 needs = ["review-pipeline"]
 description = """
-Apply fixes for blockers/majors. Set the verdict:
+Apply fixes for blockers/majors from the synthesis report.
 
 ```bash
-bd meta set $BEAD_ID code_review.verdict=done   # or iterate
+bd update $GC_BEAD_ID --set-metadata code_review.verdict=done   # or iterate
 ```
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
-
-# ── Composition ──────────────────────────────────────────────────────
+metadata = { "gc.continuation_group" = "main" }
 
 [compose]
 [[compose.expand]]

@@ -20,8 +20,9 @@
 #   {target}.review-claude    (parallel, base worktree)
 #   {target}.review-codex     (parallel, pr-head worktree)
 #   {target}.review-gemini    (parallel, pr-head worktree, skippable)
-#   {target}.synthesize       (gathers all reviewers)
-#   {target}.apply-fixes      (applies synthesis findings)
+#   {target}.synthesize       (gathers all reviewers, produces decision report)
+#
+# The parent formula owns the fix/verdict step — this expansion only analyzes.
 # ──────────────────────────────────────────────────────────────────────
 
 formula = "expansion-review-pr"
@@ -48,6 +49,8 @@ default = ""
 [[template]]
 id = "{target}.review-claude"
 title = "Code review: Claude (reasoning-heavy)"
+assignee = "polecat"
+metadata = { "gc.continuation_group" = "review-fan" }
 description = """
 Claude reviews from the BASE worktree (pre-change state). The diff is
 included in the prompt. Claude uses the worktree to trace callers,
@@ -137,11 +140,11 @@ End with:
 - Search the codebase to back up claims. Do not guess.
 - Do NOT list pre-existing bugs the PR fixes as "findings."
 """
-metadata = { "gc.continuation_group" = "review-fan", "gc.session_affinity" = "prefer" }
-
 [[template]]
 id = "{target}.review-codex"
 title = "Code review: Codex (evidence-first)"
+assignee = "polecat"
+metadata = { "gc.continuation_group" = "review-fan" }
 description = """
 Codex reviews from the PR HEAD worktree (post-change state). The diff is
 included in the prompt. Codex uses the worktree to trace callers and
@@ -225,14 +228,14 @@ End with:
 - Fewer high-signal findings >> exhaustive speculative lists.
 - Do NOT list pre-existing bugs the PR fixes as "findings."
 """
-metadata = { "gc.continuation_group" = "review-fan", "gc.session_affinity" = "prefer" }
 
 [[template]]
 id = "{target}.review-gemini"
 title = "Code review: Gemini (cross-file consistency)"
+assignee = "polecat"
+condition = "!{{skip_gemini}}"
+metadata = { "gc.continuation_group" = "review-fan" }
 description = """
-Skip this step if {{skip_gemini}} is true. Close immediately with
-reason "skipped — dual-model mode".
 
 Gemini reviews from the PR HEAD worktree. Gemini's focus is cross-file
 consistency, pattern drift, and architectural coherence.
@@ -315,7 +318,6 @@ End with:
 - Do NOT duplicate Claude's edge-case reasoning or Codex's caller tracing.
 - Do NOT list pre-existing bugs the PR fixes as "findings."
 """
-metadata = { "gc.continuation_group" = "review-fan", "gc.session_affinity" = "prefer" }
 
 # ── Synthesis (gather) ──────────────────────────────────────────────
 
@@ -396,29 +398,4 @@ severity-calibrated, action-oriented.
 - Concise, concrete, evidence-linked.
 - The output is for a human maintainer making a merge decision.
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
-
-# ── Apply fixes ─────────────────────────────────────────────────────
-
-[[template]]
-id = "{target}.apply-fixes"
-title = "Apply review fixes"
-needs = ["{target}.synthesize"]
-description = """
-Read the synthesis report. Apply fixes for all blocker and major findings.
-Commit changes to the worktree branch.
-
-For minor/nit findings, fix if straightforward, otherwise note as accepted.
-
-After applying fixes, set the review verdict on the parent bead so the
-Ralph check script can evaluate:
-
-```bash
-# If all blockers/majors addressed:
-gc bead meta set $BEAD_ID review.verdict=done
-
-# If more iteration needed:
-gc bead meta set $BEAD_ID review.verdict=iterate
-```
-"""
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+metadata = { "gc.continuation_group" = "main" }

@@ -118,6 +118,8 @@ path = ".gc/scripts/checks/adopt-pr-review-approved.sh"
 timeout = "10m"
 
 # ── Ralph children: expand review-pr fragment + apply fixes ──────────
+# expansion-review-pr provides: reviewers → synthesize (analysis only)
+# The parent owns the fix/verdict step.
 
 [[steps.children]]
 id = "review-pipeline"
@@ -126,25 +128,23 @@ description = "Expanded via compose.expand with expansion-review-pr"
 
 [[steps.children]]
 id = "apply-fixes"
-title = "Apply synthesized fixes and set verdict"
+title = "Apply review fixes and set verdict"
 needs = ["review-pipeline"]
 description = """
-Apply the synthesized fixes in the worktree. Commit changes.
+Read the synthesis report from the review pipeline. Apply fixes for all
+blocker and major findings. Commit changes to the worktree branch.
 
-After applying fixes, set the review verdict so the Ralph check script
-can evaluate:
+After applying fixes, set the review verdict:
 
 ```bash
 # If all blockers/majors addressed:
-bd meta set $BEAD_ID review.verdict=done
+bd update $GC_BEAD_ID --set-metadata review.verdict=done
 
 # If more iteration needed:
-bd meta set $BEAD_ID review.verdict=iterate
+bd update $GC_BEAD_ID --set-metadata review.verdict=iterate
 ```
 """
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
-
-# ── Composition: expand review-pr fragment into review-pipeline ──────
+metadata = { "gc.continuation_group" = "main" }
 
 [compose]
 [[compose.expand]]

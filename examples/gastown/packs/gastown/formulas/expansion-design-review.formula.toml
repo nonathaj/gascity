@@ -23,7 +23,8 @@
 #   {target}.persona-synthesis    (gathers generators)
 #   {target}.persona-reviews      (runs all persona reviews)
 #   {target}.review-synthesis     (merges all findings)
-#   {target}.apply-changes        (updates the design doc)
+#
+# The parent formula owns the apply/verdict step — this expansion only analyzes.
 # ──────────────────────────────────────────────────────────────────────
 
 formula = "expansion-design-review"
@@ -283,35 +284,4 @@ Your job:
 """
 metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
 
-# ── Phase 5: Apply changes ─────────────────────────────────────────
-
-[[template]]
-id = "{target}.apply-changes"
-title = "Apply required changes to design doc"
-needs = ["{target}.review-synthesis"]
-description = """
-Read the synthesis report. Apply required changes to {{design_doc}}.
-
-## Rules
-
-- Address all [Blocker] and [Major] findings
-- For [Minor] findings, apply if straightforward, otherwise add a
-  "Known Limitations" or "Future Work" section
-- Preserve the document's existing structure and voice
-- Mark substantive additions with <!-- REVIEW: added per <finding> -->
-- Do not remove content unless a finding specifically says to
-
-Commit the updated design doc.
-
-After applying changes, set the review verdict so the Ralph check
-script can evaluate:
-
-```bash
-# If synthesis verdict was approve/approve-with-risks:
-gc bead meta set $BEAD_ID design_review.verdict=done
-
-# If block verdict with changes applied:
-gc bead meta set $BEAD_ID design_review.verdict=iterate
-```
-"""
-metadata = { "gc.continuation_group" = "main", "gc.session_affinity" = "require" }
+# The parent formula owns the apply/verdict step — this expansion only analyzes.
