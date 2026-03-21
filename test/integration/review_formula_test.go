@@ -131,8 +131,10 @@ func setupReviewFormulaCity(t *testing.T, mode string) string {
 
 	startCommand := "GC_GRAPH_MODE=" + mode + " bash " + agentScript("graph-workflow.sh")
 	cityToml := fmt.Sprintf(
-		"[workspace]\nname = %q\n\n[session]\nprovider = \"subprocess\"\n\n[daemon]\npatrol_interval = \"100ms\"\n\n[[agent]]\nname = \"worker\"\nstart_command = %q\n",
-		cityName, startCommand,
+		"[workspace]\nname = %q\n\n[session]\nprovider = \"subprocess\"\n\n[daemon]\npatrol_interval = \"100ms\"\n\n"+
+			"[[agent]]\nname = \"worker\"\nstart_command = %q\n\n"+
+			"[[agent]]\nname = \"polecat\"\nstart_command = %q\n[agent.pool]\nmin = 0\nmax = 3\n",
+		cityName, startCommand, startCommand,
 	)
 	configPath := filepath.Join(t.TempDir(), "review-formula.toml")
 	if err := os.WriteFile(configPath, []byte(cityToml), 0o644); err != nil {
@@ -144,8 +146,9 @@ func setupReviewFormulaCity(t *testing.T, mode string) string {
 		t.Fatalf("gc init failed: %v\noutput: %s", err, out)
 	}
 
-	// Copy review formulas into the city's formula search path.
-	formulaDir := filepath.Join(cityDir, ".beads", "formulas")
+	// Copy review formulas into the city's local formula directory.
+	// The compose layer uses cityRoot/formulas/ as the city-local layer.
+	formulaDir := filepath.Join(cityDir, "formulas")
 	if err := os.MkdirAll(formulaDir, 0o755); err != nil {
 		t.Fatalf("mkdir formulas: %v", err)
 	}

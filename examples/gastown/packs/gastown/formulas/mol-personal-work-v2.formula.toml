@@ -202,7 +202,7 @@ bd update $GC_BEAD_ID --set-metadata code_review.verdict=done   # or iterate
 [[compose.expand]]
 target = "review-pipeline"
 with = "expansion-review-pr"
-vars = { skip_gemini = "{{skip_gemini}}" }
+vars = { skip_gemini = "{skip_gemini}" }
 
 # ── Submit ───────────────────────────────────────────────────────────
 

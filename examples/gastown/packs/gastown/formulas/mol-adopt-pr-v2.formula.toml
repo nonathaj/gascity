@@ -149,7 +149,7 @@ bd update $GC_BEAD_ID --set-metadata review.verdict=iterate
 [[compose.expand]]
 target = "review-pipeline"
 with = "expansion-review-pr"
-vars = { skip_gemini = "{{skip_gemini}}" }
+vars = { skip_gemini = "{skip_gemini}" }
 
 # ── Finalize (after Ralph passes) ───────────────────────────────────
 
