@@ -248,6 +248,20 @@ assignee = "{reviewer_gemini}"
 condition = "!{{skip_gemini}}"
 metadata = { "gc.continuation_group" = "review-fan" }
 description = """
+IMPORTANT: This step is soft-fail. If you encounter rate limit errors,
+quota exhaustion, or model unavailability, close this step successfully
+with a note explaining the skip:
+
+```bash
+bd update $GC_BEAD_ID --set-metadata review.gemini_status=skipped
+bd update $GC_BEAD_ID --set-metadata review.gemini_reason="rate_limited"
+gc mol step done
+```
+
+Do NOT let the step fail — the synthesis step will proceed with
+Claude + Codex output only.
+
+---
 
 Gemini reviews from the PR HEAD worktree. Gemini's focus is cross-file
 consistency, pattern drift, and architectural coherence.
@@ -340,13 +354,17 @@ needs = ["{target}.review-claude", "{target}.review-codex", "{target}.review-gem
 description = """
 Merge all reviewer outputs into a single maintainer-grade decision report.
 
-Read the outputs from all completed reviewer steps. Build the synthesis
-prompt and invoke synthesis.
+Read the outputs from all completed reviewer steps. If Gemini was skipped
+(rate-limited or condition-filtered), synthesize from Claude + Codex only
+and note reduced cross-file coverage in the report.
+
+Check Gemini's bead metadata for `review.gemini_status=skipped` to detect
+graceful degradation vs actual failure.
 
 ## Role: review-synthesizer
 
-You are the "review-synthesizer" combining outputs from codex-reviewer,
-claude-reviewer, and gemini-reviewer.
+You are the "review-synthesizer" combining outputs from available reviewers
+(Claude + Codex, optionally Gemini if it completed).
 
 ## Task
 
