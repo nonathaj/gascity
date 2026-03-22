@@ -73,6 +73,13 @@ func TestProvider_StartStopIsRunning(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 
+	// tmux kill-session may take a moment to propagate.
+	for i := 0; i < 10; i++ {
+		if !p.IsRunning(name) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if p.IsRunning(name) {
 		t.Fatal("session should not be running after Stop")
 	}
