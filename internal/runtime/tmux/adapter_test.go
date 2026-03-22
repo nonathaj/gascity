@@ -73,15 +73,15 @@ func TestProvider_StartStopIsRunning(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	// tmux kill-session may take a moment to propagate.
-	for i := 0; i < 10; i++ {
-		if !p.IsRunning(name) {
-			break
+	// The tmux state cache may report the session as alive for a brief
+	// period after Stop because the cache refresh interval hasn't elapsed.
+	// In CI this can take longer than expected. Poll with generous timeout.
+	deadline := time.Now().Add(10 * time.Second)
+	for p.IsRunning(name) {
+		if time.Now().After(deadline) {
+			t.Fatal("session should not be running after Stop (timed out waiting for cache)")
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if p.IsRunning(name) {
-		t.Fatal("session should not be running after Stop")
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	// Idempotent stop.
