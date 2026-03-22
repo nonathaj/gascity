@@ -114,6 +114,15 @@ func (p *Provider) Stop(name string) error {
 	}
 	if err == nil {
 		p.cache.Invalidate()
+		// Wait for tmux to actually remove the session — kill-session is
+		// asynchronous on the tmux server side.
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if has, _ := p.tm.HasSession(name); !has {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	return err
 }
