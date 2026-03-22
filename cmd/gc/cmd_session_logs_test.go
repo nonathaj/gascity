@@ -366,12 +366,9 @@ func TestResolveConfiguredSessionLogContext_ByExactSingletonAlias(t *testing.T) 
 		},
 	}
 
-	got, sessionKey, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "demo/witness")
+	got, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "demo/witness")
 	if !ok {
 		t.Fatal("resolveConfiguredSessionLogContext() = not found, want found")
-	}
-	if sessionKey != "" {
-		t.Fatalf("sessionKey = %q, want empty", sessionKey)
 	}
 	if got != rigPath {
 		t.Fatalf("resolveConfiguredSessionLogContext() workDir = %q, want %q", got, rigPath)
@@ -388,10 +385,10 @@ func TestResolveConfiguredSessionLogContext_RejectsNonExactOrPoolTargets(t *test
 		},
 	}
 
-	if _, _, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "dog"); ok {
+	if _, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "dog"); ok {
 		t.Fatal("resolveConfiguredSessionLogContext(pool) = found, want not found")
 	}
-	if _, _, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "worker"); ok {
+	if _, ok := resolveConfiguredSessionLogContext(cityPath, cfg, "worker"); ok {
 		t.Fatal("resolveConfiguredSessionLogContext(non-exact bare name) = found, want not found")
 	}
 }

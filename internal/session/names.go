@@ -120,10 +120,6 @@ func EnsureAliasAvailableWithConfigForOwner(store beads.Store, cfg *config.City,
 	return ensureSessionAliasAvailable(store, cfg, alias, selfID, selfOwner)
 }
 
-func withSessionNameReservationLock(name string, fn func() error) error {
-	return withSessionIdentifierReservationLock(name, fn)
-}
-
 func withSessionAliasReservationLock(alias string, fn func() error) error {
 	return withSessionIdentifierReservationLock(alias, fn)
 }
@@ -194,10 +190,14 @@ func releaseSessionIdentifierReservationLock(identifier string, lock *sessionIde
 	sessionIdentifierReservationLocksMu.Unlock()
 }
 
+// WithCitySessionNameLock serializes operations that reserve a session name
+// within a city, preventing concurrent callers from claiming the same name.
 func WithCitySessionNameLock(cityPath, name string, fn func() error) error {
 	return withCitySessionIdentifierLock(cityPath, name, fn)
 }
 
+// WithCitySessionAliasLock serializes operations that reserve a session alias
+// within a city, preventing concurrent callers from claiming the same alias.
 func WithCitySessionAliasLock(cityPath, alias string, fn func() error) error {
 	return withCitySessionIdentifierLock(cityPath, alias, fn)
 }

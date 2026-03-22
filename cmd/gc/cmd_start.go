@@ -720,17 +720,6 @@ func resolveConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs [
 	return resolveAgentDir(cityPath, workDir)
 }
 
-func lookupConfiguredWorkDir(cityPath, cityName string, a *config.Agent, rigs []config.Rig) string {
-	if a == nil {
-		return resolveAgentDirPath(cityPath, "")
-	}
-	workDir, err := workdirutil.ResolveWorkDirPathStrict(cityPath, cityName, a.QualifiedName(), *a, rigs)
-	if err != nil {
-		return ""
-	}
-	return resolveAgentDirPath(cityPath, workDir)
-}
-
 // configuredRigName returns the rig associated with an agent, preferring the
 // legacy dir-as-rig convention and falling back to path matching for inline
 // configs that point directly at a rig path.

@@ -1004,7 +1004,7 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 	sender := defaultMailIdentity()
 	if sender != "human" {
 		v := mailProviderName()
-		if !(strings.HasPrefix(v, "exec:") || v == "fake" || v == "fail") {
+		if !strings.HasPrefix(v, "exec:") && v != "fake" && v != "fail" {
 			store, storeCode := openCityStore(stderr, "gc mail reply")
 			if store == nil {
 				return storeCode
