@@ -103,6 +103,16 @@ func (c *StateCache) Invalidate() {
 	c.mu.Unlock()
 }
 
+// EvictSession removes a specific session from the cache and marks it dirty.
+// Used by Stop to immediately reflect the killed session without waiting for
+// the next refresh cycle (which may race with singleflight coalescing).
+func (c *StateCache) EvictSession(name string) {
+	c.mu.Lock()
+	delete(c.sessions, name)
+	c.dirty = true
+	c.mu.Unlock()
+}
+
 // refresh executes a single coalesced fetch. If the fetch fails, the
 // last-known-good cache is preserved and the error is logged.
 func (c *StateCache) refresh() {
