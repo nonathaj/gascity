@@ -207,18 +207,6 @@ func advanceSessionDrainsWithSessions(
 			continue
 		}
 
-		// Cancelation check: if wake reasons reappeared, cancel drain.
-		// Config-drift, orphaned, and suspended drains are NOT cancelable —
-		// they represent explicit lifecycle decisions that should not be
-		// reversed by the wake contract (the session is leaving the desired set).
-		if ds.reason != "config-drift" && ds.reason != "orphaned" && ds.reason != "suspended" {
-			if eval, ok := wakeEvals[session.ID]; ok && len(eval.Reasons) > 0 {
-				dt.clearIdleProbe(id)
-				dt.remove(id)
-				continue
-			}
-		}
-
 		name := session.Metadata["session_name"]
 
 		// Check if process exited.
@@ -229,6 +217,18 @@ func advanceSessionDrainsWithSessions(
 			dt.remove(id)
 			telemetry.RecordDrainTransition(context.Background(), name, ds.reason, "complete")
 			continue
+		}
+
+		// Cancelation check: if wake reasons reappeared, cancel drain.
+		// Config-drift, orphaned, and suspended drains are NOT cancelable —
+		// they represent explicit lifecycle decisions that should not be
+		// reversed by the wake contract (the session is leaving the desired set).
+		if ds.reason != "config-drift" && ds.reason != "orphaned" && ds.reason != "suspended" {
+			if eval, ok := wakeEvals[session.ID]; ok && len(eval.Reasons) > 0 {
+				dt.clearIdleProbe(id)
+				dt.remove(id)
+				continue
+			}
 		}
 
 		if clk.Now().After(ds.deadline) {

@@ -192,6 +192,24 @@ func configWakeSuppressed(
 	return !clk.Now().Before(idleReference.Add(policy.Duration))
 }
 
+func sessionKeepWarmEligible(
+	session beads.Bead,
+	policy resolvedSessionSleepPolicy,
+	sp runtime.Provider,
+	clk clock.Clock,
+) bool {
+	if !policy.enabled() || policy.Class == config.SessionSleepNonInteractive {
+		return false
+	}
+	if policy.Duration == 0 {
+		return false
+	}
+	if sessionIdleReference(session, sp).IsZero() {
+		return false
+	}
+	return !configWakeSuppressed(session, policy, sp, clk)
+}
+
 func persistSleepPolicyMetadata(
 	session *beads.Bead,
 	store beads.Store,

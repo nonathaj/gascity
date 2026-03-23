@@ -13,6 +13,22 @@ import (
 	"github.com/gastownhall/gascity/internal/formula"
 )
 
+func createWorkflowSessionBead(t *testing.T, store beads.Store, template, sessionName string) {
+	t.Helper()
+	if _, err := store.Create(beads.Bead{
+		Title:  template,
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:" + template},
+		Metadata: map[string]string{
+			"template":     template,
+			"session_name": sessionName,
+			"state":        "asleep",
+		},
+	}); err != nil {
+		t.Fatalf("create session bead %q: %v", template, err)
+	}
+}
+
 func TestDecorateDynamicFragmentRecipeSupportsExplicitPerStepAgents(t *testing.T) {
 	store := beads.NewMemStore()
 	cfg := &config.City{
@@ -23,6 +39,8 @@ func TestDecorateDynamicFragmentRecipeSupportsExplicitPerStepAgents(t *testing.T
 		},
 	}
 	config.InjectImplicitAgents(cfg)
+	createWorkflowSessionBead(t, store, "mayor", "s-mayor")
+	createWorkflowSessionBead(t, store, "reviewer", "s-reviewer")
 
 	mayorSession := lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "mayor", cfg.Workspace.SessionTemplate)
 	reviewerSession := lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "reviewer", cfg.Workspace.SessionTemplate)
@@ -62,7 +80,7 @@ func TestDecorateDynamicFragmentRecipeSupportsExplicitPerStepAgents(t *testing.T
 		},
 	}
 
-	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg); err != nil {
+	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, t.TempDir(), cfg); err != nil {
 		t.Fatalf("decorateDynamicFragmentRecipe: %v", err)
 	}
 
@@ -152,6 +170,7 @@ func TestDecorateDynamicFragmentRecipePreservesPoolFallbackAndScopeMetadata(t *t
 		},
 	}
 	config.InjectImplicitAgents(cfg)
+	createWorkflowSessionBead(t, store, "frontend/reviewer", "s-frontend-reviewer")
 
 	source := beads.Bead{
 		ID:    "gc-source",
@@ -183,7 +202,7 @@ func TestDecorateDynamicFragmentRecipePreservesPoolFallbackAndScopeMetadata(t *t
 		},
 	}
 
-	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg); err != nil {
+	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, t.TempDir(), cfg); err != nil {
 		t.Fatalf("decorateDynamicFragmentRecipe: %v", err)
 	}
 
@@ -243,6 +262,7 @@ func TestDecorateDynamicFragmentRecipeUsesSourceRouteRigContextForBareTargets(t 
 		},
 	}
 	config.InjectImplicitAgents(cfg)
+	createWorkflowSessionBead(t, store, "frontend/reviewer", "s-frontend-reviewer")
 
 	source := beads.Bead{
 		ID:    "gc-source",
@@ -262,7 +282,7 @@ func TestDecorateDynamicFragmentRecipeUsesSourceRouteRigContextForBareTargets(t 
 		},
 	}
 
-	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg); err != nil {
+	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, t.TempDir(), cfg); err != nil {
 		t.Fatalf("decorateDynamicFragmentRecipe: %v", err)
 	}
 
@@ -414,8 +434,9 @@ func TestDecorateDynamicFragmentRecipeSynthesizesInheritedScopeChecks(t *testing
 			{StepID: "expansion-review.submit", DependsOnID: "expansion-review.review", Type: "blocks"},
 		},
 	}
+	createWorkflowSessionBead(t, store, "reviewer", "s-reviewer")
 
-	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg); err != nil {
+	if err := decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, t.TempDir(), cfg); err != nil {
 		t.Fatalf("decorateDynamicFragmentRecipe: %v", err)
 	}
 
@@ -463,6 +484,8 @@ func TestResolveGraphStepBindingWorkflowFinalizeUsesFallback(t *testing.T) {
 		},
 	}
 	config.InjectImplicitAgents(cfg)
+	createWorkflowSessionBead(t, store, "mayor", "s-mayor")
+	createWorkflowSessionBead(t, store, "reviewer", "s-reviewer")
 
 	stepByID := map[string]*formula.RecipeStep{
 		"demo.review": {
@@ -486,7 +509,7 @@ func TestResolveGraphStepBindingWorkflowFinalizeUsesFallback(t *testing.T) {
 		sessionName:   lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "mayor", cfg.Workspace.SessionTemplate),
 	}
 
-	binding, err := resolveGraphStepBinding("demo.workflow-finalize", stepByID, nil, depsByStep, map[string]graphRouteBinding{}, map[string]bool{}, fallback, "", store, cfg.Workspace.Name, cfg)
+	binding, err := resolveGraphStepBinding("demo.workflow-finalize", stepByID, nil, depsByStep, map[string]graphRouteBinding{}, map[string]bool{}, fallback, "", store, cfg.Workspace.Name, t.TempDir(), cfg)
 	if err != nil {
 		t.Fatalf("resolveGraphStepBinding(workflow-finalize): %v", err)
 	}
@@ -504,6 +527,8 @@ func TestResolveGraphStepBindingCheckRejectsInconsistentDeps(t *testing.T) {
 			{Name: "reviewer-b"},
 		},
 	}
+	createWorkflowSessionBead(t, store, "reviewer-a", "s-reviewer-a")
+	createWorkflowSessionBead(t, store, "reviewer-b", "s-reviewer-b")
 
 	stepByID := map[string]*formula.RecipeStep{
 		"demo.review-a": {
@@ -532,7 +557,7 @@ func TestResolveGraphStepBindingCheckRejectsInconsistentDeps(t *testing.T) {
 		sessionName:   lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "reviewer-a", cfg.Workspace.SessionTemplate),
 	}
 
-	if _, err := resolveGraphStepBinding("demo.check", stepByID, nil, depsByStep, map[string]graphRouteBinding{}, map[string]bool{}, fallback, "", store, cfg.Workspace.Name, cfg); err == nil || !strings.Contains(err.Error(), "inconsistent check routing") {
+	if _, err := resolveGraphStepBinding("demo.check", stepByID, nil, depsByStep, map[string]graphRouteBinding{}, map[string]bool{}, fallback, "", store, cfg.Workspace.Name, t.TempDir(), cfg); err == nil || !strings.Contains(err.Error(), "inconsistent check routing") {
 		t.Fatalf("resolveGraphStepBinding(check) error = %v, want inconsistent check routing", err)
 	}
 }

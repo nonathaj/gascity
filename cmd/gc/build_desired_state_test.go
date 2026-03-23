@@ -12,7 +12,7 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
-func TestBuildDesiredState_RealizesDependencyPoolFloor(t *testing.T) {
+func TestBuildDesiredState_SingletonTemplateDoesNotRealizeDependencyPoolFloorWithoutSession(t *testing.T) {
 	cityPath := t.TempDir()
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -38,8 +38,8 @@ func TestBuildDesiredState_RealizesDependencyPoolFloor(t *testing.T) {
 			dbSlots++
 		}
 	}
-	if dbSlots != 1 {
-		t.Fatalf("db desired slots = %d, want 1", dbSlots)
+	if dbSlots != 0 {
+		t.Fatalf("db desired slots = %d, want 0 without a realized dependent session", dbSlots)
 	}
 }
 
@@ -103,7 +103,7 @@ func TestBuildDesiredState_DoesNotRealizeDependencyFloorForSuspendedDependent(t 
 	}
 }
 
-func TestBuildDesiredState_RealizesTransitiveDependencyPoolFloor(t *testing.T) {
+func TestBuildDesiredState_SingletonTemplatesDoNotRealizeTransitiveDependencyPoolFloorWithoutSession(t *testing.T) {
 	cityPath := t.TempDir()
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -142,11 +142,11 @@ func TestBuildDesiredState_RealizesTransitiveDependencyPoolFloor(t *testing.T) {
 			dbSlots++
 		}
 	}
-	if apiSlots != 1 {
-		t.Fatalf("api desired slots = %d, want 1", apiSlots)
+	if apiSlots != 0 {
+		t.Fatalf("api desired slots = %d, want 0 without a realized root session", apiSlots)
 	}
-	if dbSlots != 1 {
-		t.Fatalf("db desired slots = %d, want 1", dbSlots)
+	if dbSlots != 0 {
+		t.Fatalf("db desired slots = %d, want 0 without a realized root session", dbSlots)
 	}
 }
 

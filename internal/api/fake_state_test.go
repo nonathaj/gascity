@@ -62,20 +62,20 @@ func newFakeState(t *testing.T) *fakeState {
 				"test-agent": {DisplayName: "Test Agent"},
 			},
 		},
-		sp:        runtime.NewFake(),
+		sp:           runtime.NewFake(),
 		stores:       map[string]beads.Store{"myrig": store},
 		cityMailProv: mp,
-		eventProv: events.NewFake(),
-		cityName:  "test-city",
-		cityPath:  t.TempDir(),
-		startedAt: time.Now(),
+		eventProv:    events.NewFake(),
+		cityName:     "test-city",
+		cityPath:     t.TempDir(),
+		startedAt:    time.Now(),
 	}
 }
 
-func (f *fakeState) Config() *config.City                    { return f.cfg }
-func (f *fakeState) SessionProvider() runtime.Provider       { return f.sp }
-func (f *fakeState) BeadStore(rig string) beads.Store        { return f.stores[rig] }
-func (f *fakeState) BeadStores() map[string]beads.Store      { return f.stores }
+func (f *fakeState) Config() *config.City                { return f.cfg }
+func (f *fakeState) SessionProvider() runtime.Provider   { return f.sp }
+func (f *fakeState) BeadStore(rig string) beads.Store    { return f.stores[rig] }
+func (f *fakeState) BeadStores() map[string]beads.Store  { return f.stores }
 func (f *fakeState) MailProvider(_ string) mail.Provider { return f.cityMailProv }
 func (f *fakeState) MailProviders() map[string]mail.Provider {
 	if f.cityMailProv == nil {
@@ -83,17 +83,17 @@ func (f *fakeState) MailProviders() map[string]mail.Provider {
 	}
 	return map[string]mail.Provider{f.cityName: f.cityMailProv}
 }
-func (f *fakeState) EventProvider() events.Provider          { return f.eventProv }
-func (f *fakeState) CityName() string                        { return f.cityName }
-func (f *fakeState) CityPath() string                        { return f.cityPath }
-func (f *fakeState) Version() string                         { return "test" }
-func (f *fakeState) StartedAt() time.Time                    { return f.startedAt }
-func (f *fakeState) IsQuarantined(sessionName string) bool   { return f.quarantined[sessionName] }
-func (f *fakeState) ClearCrashHistory(sessionName string)    { delete(f.quarantined, sessionName) }
-func (f *fakeState) CityBeadStore() beads.Store              { return f.cityBeadStore }
-func (f *fakeState) Orders() []orders.Order                  { return f.autos }
-func (f *fakeState) Poke()                                   { f.pokeCount++ }
-func (f *fakeState) ServiceRegistry() workspacesvc.Registry  { return f.services }
+func (f *fakeState) EventProvider() events.Provider         { return f.eventProv }
+func (f *fakeState) CityName() string                       { return f.cityName }
+func (f *fakeState) CityPath() string                       { return f.cityPath }
+func (f *fakeState) Version() string                        { return "test" }
+func (f *fakeState) StartedAt() time.Time                   { return f.startedAt }
+func (f *fakeState) IsQuarantined(sessionName string) bool  { return f.quarantined[sessionName] }
+func (f *fakeState) ClearCrashHistory(sessionName string)   { delete(f.quarantined, sessionName) }
+func (f *fakeState) CityBeadStore() beads.Store             { return f.cityBeadStore }
+func (f *fakeState) Orders() []orders.Order                 { return f.autos }
+func (f *fakeState) Poke()                                  { f.pokeCount++ }
+func (f *fakeState) ServiceRegistry() workspacesvc.Registry { return f.services }
 
 func (f *fakeState) RawConfig() *config.City {
 	if f.rawCfg != nil {

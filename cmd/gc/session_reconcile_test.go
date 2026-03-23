@@ -61,7 +61,7 @@ func makeBead(id string, meta map[string]string) beads.Bead {
 	}
 }
 
-func TestWakeReasons_ConfigPresence(t *testing.T) {
+func TestWakeReasons_SingletonTemplateDoesNotWakeFromConfigAlone(t *testing.T) {
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
 	clk := &clock.Fake{Time: now}
 
@@ -77,8 +77,8 @@ func TestWakeReasons_ConfigPresence(t *testing.T) {
 	})
 
 	reasons := wakeReasons(session, cfg, nil, nil, nil, nil, clk)
-	if len(reasons) != 1 || reasons[0] != WakeConfig {
-		t.Errorf("expected [WakeConfig], got %v", reasons)
+	if len(reasons) != 0 {
+		t.Errorf("expected no reasons, got %v", reasons)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestWakeReasons_HeldUntil(t *testing.T) {
 	}
 }
 
-func TestWakeReasons_HoldExpired(t *testing.T) {
+func TestWakeReasons_HoldExpiredDoesNotRestoreSingletonConfigWake(t *testing.T) {
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
 	clk := &clock.Fake{Time: now}
 
@@ -144,8 +144,8 @@ func TestWakeReasons_HoldExpired(t *testing.T) {
 	})
 
 	reasons := wakeReasons(session, cfg, nil, nil, nil, nil, clk)
-	if len(reasons) != 1 || reasons[0] != WakeConfig {
-		t.Errorf("expired hold should allow reasons, got %v", reasons)
+	if len(reasons) != 0 {
+		t.Errorf("expired hold should not restore singleton config wake, got %v", reasons)
 	}
 }
 
@@ -413,7 +413,7 @@ func TestWakeReasons_DependencyOnlyPoolSlotDoesNotWakeOnWork(t *testing.T) {
 	}
 }
 
-func TestWakeReasons_ManualPoolSessionGetsWakeConfigAtZeroScale(t *testing.T) {
+func TestWakeReasons_ManualPoolSessionDoesNotGetWakeConfigAtZeroScale(t *testing.T) {
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
 	clk := &clock.Fake{Time: now}
 
@@ -431,10 +431,9 @@ func TestWakeReasons_ManualPoolSessionGetsWakeConfigAtZeroScale(t *testing.T) {
 
 	for _, r := range reasons {
 		if r == WakeConfig {
-			return
+			t.Fatalf("manual pool session should not get WakeConfig at zero scale, got %v", reasons)
 		}
 	}
-	t.Fatalf("manual pool session should get WakeConfig at zero scale, got %v", reasons)
 }
 
 func TestWakeReasons_UsesLegacyAgentLabelTemplate(t *testing.T) {

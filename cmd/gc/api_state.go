@@ -31,8 +31,8 @@ type controllerState struct {
 	cfg           *config.City
 	sp            runtime.Provider
 	beadStores    map[string]beads.Store
-	cityBeadStore beads.Store    // city-level store for session beads
-	cityMailProv  mail.Provider  // city-level mail provider (all mail is city-scoped)
+	cityBeadStore beads.Store   // city-level store for session beads
+	cityMailProv  mail.Provider // city-level mail provider (all mail is city-scoped)
 	eventProv     events.Provider
 	editor        *configedit.Editor
 	cityName      string

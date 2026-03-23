@@ -10,9 +10,17 @@ import (
 type WakeReason string
 
 const (
-	// WakeConfig means an [[agent]] entry exists for this session.
-	// For pools, only if the slot is within the desired count.
+	// WakeConfig means a pool slot is within the config-driven desired count.
 	WakeConfig WakeReason = "config"
+	// WakeCreate means the session has an explicit create/start claim that the
+	// reconciler still needs to satisfy.
+	WakeCreate WakeReason = "create"
+	// WakeSession keeps an active interactive session running when idle sleep
+	// is disabled for that session.
+	WakeSession WakeReason = "session"
+	// WakeKeepWarm keeps an interactive session warm for its post-detach
+	// grace window before it becomes eligible for idle sleep.
+	WakeKeepWarm WakeReason = "keep-warm"
 	// WakeAttached means a user terminal is connected to the session.
 	WakeAttached WakeReason = "attached"
 	// WakeWait means a durable wait is ready for this session continuation.

@@ -90,14 +90,14 @@ func TestWakeReasonsInteractiveResumeGraceWindow(t *testing.T) {
 	})
 
 	reasons := wakeReasons(session, cfg, runtime.NewFake(), nil, nil, nil, &clock.Fake{Time: now})
-	if !containsWakeReason(reasons, WakeConfig) {
-		t.Fatalf("expected WakeConfig during keep-warm window, got %v", reasons)
+	if !containsWakeReason(reasons, WakeKeepWarm) {
+		t.Fatalf("expected WakeKeepWarm during keep-warm window, got %v", reasons)
 	}
 
 	expired := &clock.Fake{Time: now.Add(31 * time.Second)}
 	reasons = wakeReasons(session, cfg, runtime.NewFake(), nil, nil, nil, expired)
-	if containsWakeReason(reasons, WakeConfig) {
-		t.Fatalf("did not expect WakeConfig after keep-warm expiry, got %v", reasons)
+	if containsWakeReason(reasons, WakeKeepWarm) {
+		t.Fatalf("did not expect WakeKeepWarm after keep-warm expiry, got %v", reasons)
 	}
 }
 
@@ -325,7 +325,7 @@ func TestReconcileSessionBeads_IdleLatchedSessionDoesNotWake(t *testing.T) {
 	}
 }
 
-func TestReconcileSessionBeads_ConfigChangeWakesIdleLatchedSession(t *testing.T) {
+func TestReconcileSessionBeads_ConfigChangeDoesNotWakeIdleLatchedSession(t *testing.T) {
 	env := newReconcilerTestEnv()
 	oldCfg := &config.City{
 		SessionSleep: config.SessionSleepConfig{
@@ -349,15 +349,15 @@ func TestReconcileSessionBeads_ConfigChangeWakesIdleLatchedSession(t *testing.T)
 
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
 
-	if got := env.reconcile([]beads.Bead{session}); got != 1 {
-		t.Fatalf("planned wakes = %d, want 1", got)
+	if got := env.reconcile([]beads.Bead{session}); got != 0 {
+		t.Fatalf("planned wakes = %d, want 0", got)
 	}
-	if starts := startedSessionNames(env.sp); !starts["worker"] {
-		t.Fatalf("expected worker to start, got %v", starts)
+	if starts := startedSessionNames(env.sp); len(starts) != 0 {
+		t.Fatalf("did not expect worker to start, got %v", starts)
 	}
 }
 
-func TestReconcileSessionBeads_ConfigChangeRetriesAfterFailedWake(t *testing.T) {
+func TestReconcileSessionBeads_ConfigChangeDoesNotRetryIdleLatchedSingletonWake(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.sp = runtime.NewFailFake()
 	oldCfg := &config.City{
@@ -393,8 +393,8 @@ func TestReconcileSessionBeads_ConfigChangeRetriesAfterFailedWake(t *testing.T) 
 			startCalls++
 		}
 	}
-	if startCalls != 2 {
-		t.Fatalf("start calls = %d, want 2", startCalls)
+	if startCalls != 0 {
+		t.Fatalf("start calls = %d, want 0", startCalls)
 	}
 }
 
@@ -450,7 +450,7 @@ func TestReconcileSessionBeads_ConfigChangeCancelsPendingIdleDrain(t *testing.T)
 	}
 }
 
-func TestReconcileSessionBeads_IdleTimeoutRewakesImmediateSleepPolicy(t *testing.T) {
+func TestReconcileSessionBeads_IdleTimeoutLeavesImmediateSleepPolicyAsleep(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{{
@@ -495,15 +495,21 @@ func TestReconcileSessionBeads_IdleTimeoutRewakesImmediateSleepPolicy(t *testing
 		&env.stdout,
 		&env.stderr,
 	)
-	if got != 1 {
-		t.Fatalf("planned wakes = %d, want 1", got)
+	if got != 0 {
+		t.Fatalf("planned wakes = %d, want 0", got)
 	}
-	if !startedSessionNames(env.sp)["worker"] {
-		t.Fatalf("expected worker to restart, calls=%v", env.sp.Calls)
+	startCalls := 0
+	for _, call := range env.sp.Calls {
+		if call.Method == "Start" && call.Name == "worker" {
+			startCalls++
+		}
+	}
+	if startCalls != 1 {
+		t.Fatalf("did not expect worker to restart, calls=%v", env.sp.Calls)
 	}
 }
 
-func TestReconcileSessionBeads_IdleTimeoutRetrySurvivesFailedWake(t *testing.T) {
+func TestReconcileSessionBeads_IdleTimeoutDoesNotRetryWithoutExplicitWakeReason(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{{
@@ -589,18 +595,18 @@ func TestReconcileSessionBeads_IdleTimeoutRetrySurvivesFailedWake(t *testing.T) 
 		&env.stdout,
 		&env.stderr,
 	)
-	if got != 1 {
-		t.Fatalf("planned wakes after retry = %d, want 1", got)
+	if got != 0 {
+		t.Fatalf("planned wakes after retry = %d, want 0", got)
 	}
-	if !env.sp.IsRunning("worker") {
-		t.Fatal("worker should restart on the next tick after failure")
+	if env.sp.IsRunning("worker") {
+		t.Fatal("worker should stay asleep without an explicit wake reason")
 	}
 	retried, err := env.store.Get(session.ID)
 	if err != nil {
 		t.Fatalf("store.Get after retry: %v", err)
 	}
-	if retried.Metadata["sleep_reason"] != "" {
-		t.Fatalf("sleep_reason after successful retry = %q, want empty", retried.Metadata["sleep_reason"])
+	if retried.Metadata["sleep_reason"] != "idle-timeout" {
+		t.Fatalf("sleep_reason after retry = %q, want idle-timeout", retried.Metadata["sleep_reason"])
 	}
 }
 
@@ -815,13 +821,17 @@ func TestReconcileSessionBeads_WakesDependenciesForHardWakeRoots(t *testing.T) {
 	}
 }
 
-func TestComputeWakeEvaluations_ConfigWakeDoesNotPropagateDependencies(t *testing.T) {
+func TestComputeWakeEvaluations_KeepWarmDoesNotPropagateDependencies(t *testing.T) {
 	cfg := &config.City{
+		SessionSleep: config.SessionSleepConfig{
+			InteractiveResume: "60s",
+		},
 		Agents: []config.Agent{
 			{Name: "db"},
 			{Name: "api", DependsOn: []string{"db"}},
 		},
 	}
+	now := time.Now().UTC()
 	sessions := []beads.Bead{
 		makeBead("db-bead", map[string]string{
 			"template":     "db",
@@ -830,15 +840,17 @@ func TestComputeWakeEvaluations_ConfigWakeDoesNotPropagateDependencies(t *testin
 		makeBead("api-bead", map[string]string{
 			"template":     "api",
 			"session_name": "api",
+			"detached_at":  now.Add(-30 * time.Second).Format(time.RFC3339),
 		}),
 	}
-	evals := computeWakeEvaluations(sessions, cfg, runtime.NewFake(), nil, nil, nil, &clock.Fake{Time: time.Now().UTC()})
+	evals := computeWakeEvaluations(sessions, cfg, runtime.NewFake(), nil, nil, nil, &clock.Fake{Time: now})
 	dbEval := evals["db-bead"]
-	if !containsWakeReason(dbEval.Reasons, WakeConfig) {
-		t.Fatalf("db reasons = %v, want WakeConfig", dbEval.Reasons)
-	}
 	if containsWakeReason(dbEval.Reasons, WakeDependency) {
-		t.Fatalf("db reasons = %v, did not want WakeDependency from config-only wake", dbEval.Reasons)
+		t.Fatalf("db reasons = %v, did not want WakeDependency from keep-warm wake", dbEval.Reasons)
+	}
+	apiEval := evals["api-bead"]
+	if !containsWakeReason(apiEval.Reasons, WakeKeepWarm) {
+		t.Fatalf("api reasons = %v, want WakeKeepWarm", apiEval.Reasons)
 	}
 }
 

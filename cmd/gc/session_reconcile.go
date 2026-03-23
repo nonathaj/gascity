@@ -73,15 +73,23 @@ func evaluateWakeReasons(
 	if readyWaitSet != nil && readyWaitSet[session.ID] {
 		reasons = append(reasons, WakeWait)
 	}
+	if sessionStartRequested(session) {
+		reasons = append(reasons, WakeCreate)
+	}
 
 	template := normalizedSessionTemplate(session, cfg)
 	agent, configEligible := sessionWithinDesiredConfig(session, cfg, poolDesired)
-	configSuppressed := false
+	if !waitHold && agent != nil && sessionMetadataState(session) == "active" && !policy.enabled() {
+		reasons = append(reasons, WakeSession)
+	}
+	sleepSuppressed := configWakeSuppressed(session, policy, sp, clk)
 	if configEligible {
-		configSuppressed = configWakeSuppressed(session, policy, sp, clk)
-		if !waitHold && !configSuppressed {
+		if !waitHold && !sleepSuppressed {
 			reasons = append(reasons, WakeConfig)
 		}
+	}
+	if !waitHold && sessionKeepWarmEligible(session, policy, sp, clk) {
+		reasons = append(reasons, WakeKeepWarm)
 	}
 
 	// WakeAttached: check if user terminal is connected.
@@ -119,7 +127,7 @@ func evaluateWakeReasons(
 	return wakeEvaluation{
 		Reasons:          reasons,
 		Policy:           policy,
-		ConfigSuppressed: configEligible && configSuppressed,
+		ConfigSuppressed: policy.enabled() && sleepSuppressed,
 	}
 }
 
@@ -129,14 +137,11 @@ func sessionWithinDesiredConfig(session beads.Bead, cfg *config.City, poolDesire
 	if agent == nil {
 		return nil, false
 	}
-	if session.Metadata["manual_session"] == "true" {
-		return agent, true
-	}
 	if session.Metadata["dependency_only"] == "true" {
 		return agent, false
 	}
 	if agent.Pool == nil {
-		return agent, true
+		return agent, false
 	}
 	slot, _ := strconv.Atoi(session.Metadata["pool_slot"])
 	if slot == 0 && !agent.Pool.IsMultiInstance() {
@@ -144,6 +149,20 @@ func sessionWithinDesiredConfig(session beads.Bead, cfg *config.City, poolDesire
 	}
 	desired := poolDesired[template]
 	return agent, slot > 0 && slot <= desired
+}
+
+func sessionStartRequested(session beads.Bead) bool {
+	return strings.TrimSpace(session.Metadata["state"]) == "creating" ||
+		strings.TrimSpace(session.Metadata["pending_create_claim"]) == "true"
+}
+
+func sessionMetadataState(session beads.Bead) string {
+	switch state := strings.TrimSpace(session.Metadata["state"]); state {
+	case "awake":
+		return "active"
+	default:
+		return state
+	}
 }
 
 func computeWakeEvaluations(
@@ -250,6 +269,8 @@ func containsWakeReason(reasons []WakeReason, want WakeReason) bool {
 func hasDependencyWakeRoot(reasons []WakeReason) bool {
 	return containsWakeReason(reasons, WakeWork) ||
 		containsWakeReason(reasons, WakeWait) ||
+		containsWakeReason(reasons, WakeCreate) ||
+		containsWakeReason(reasons, WakeSession) ||
 		containsWakeReason(reasons, WakeAttached) ||
 		containsWakeReason(reasons, WakePending)
 }
@@ -477,6 +498,13 @@ func healState(session *beads.Bead, alive bool, store beads.Store) {
 	target := "asleep"
 	if alive {
 		target = "awake"
+	} else if session != nil {
+		switch {
+		case sessionStartRequested(*session):
+			target = "creating"
+		case strings.TrimSpace(session.Metadata["state"]) == "active":
+			target = "active"
+		}
 	}
 	if session.Metadata == nil {
 		session.Metadata = make(map[string]string)

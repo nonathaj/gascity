@@ -379,6 +379,8 @@ func TestAdvanceSessionDrains_ProcessExited(t *testing.T) {
 			"session_name": "test-session",
 			"template":     "worker",
 			"generation":   "3",
+			"state":        "active",
+			"pool_slot":    "1",
 		},
 	})
 
@@ -480,17 +482,13 @@ func TestAdvanceSessionDrains_WakeReasonsReappear(t *testing.T) {
 		generation: 3,
 	})
 
-	// Config has the worker agent — WakeConfig will reappear.
-	cfg := &config.City{
-		Agents: []config.Agent{
-			{Name: "worker"},
-		},
-	}
+	// A desired pool slot still has WakeConfig, which should cancel the drain.
+	cfg := &config.City{Agents: []config.Agent{{Name: "worker", Pool: &config.PoolConfig{Min: 1, Max: 1}}}}
 
 	advanceSessionDrains(dt, sp, store, func(id string) *beads.Bead {
 		got, _ := store.Get(id)
 		return &got
-	}, cfg, map[string]int{}, nil, nil, clk)
+	}, cfg, map[string]int{"worker": 1}, nil, nil, clk)
 
 	// Drain should be canceled — wake reasons reappeared.
 	if dt.get(b.ID) != nil {

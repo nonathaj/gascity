@@ -19,14 +19,14 @@ import (
 // for constructing the desired agent set — both reconcilers use it.
 //
 // When store is non-nil, session names are derived from bead IDs
-// ("s-{beadID}") and session beads are auto-created for configured agents
-// that don't have them yet. When store is nil, the legacy SessionNameFor
-// function is used for backward compatibility.
+// ("s-{beadID}") for discovered session beads. Configured singleton agents
+// are treated as templates only; the controller no longer auto-creates a
+// canonical chat session for them. When store is nil, the legacy
+// SessionNameFor function is used for backward compatibility.
 //
-// Performs idempotent side effects on each tick: hook installation,
-// ACP route registration, and session bead auto-creation. These are safe
-// to repeat because hooks are installed to stable filesystem paths,
-// ACP routing is idempotent, and bead creation is deduplicated by template.
+// Performs idempotent side effects on each tick: hook installation and ACP
+// route registration. These are safe to repeat because hooks are installed
+// to stable filesystem paths and ACP routing is idempotent.
 func buildDesiredState(
 	cityName, cityPath string,
 	beaconTime time.Time,
@@ -99,16 +99,8 @@ func buildDesiredStateWithSessionBeads(
 		eligibleTemplates[cfg.Agents[i].QualifiedName()] = true
 
 		if pool.Max == 1 && !cfg.Agents[i].IsPool() {
-			// Fixed agent.
-			fpExtra := buildFingerprintExtra(&cfg.Agents[i])
-			tp, err := resolveTemplate(bp, &cfg.Agents[i], cfg.Agents[i].QualifiedName(), fpExtra)
-			if err != nil {
-				fmt.Fprintf(stderr, "buildDesiredState: %v (skipping)\n", err) //nolint:errcheck
-				continue
-			}
-			installAgentSideEffects(bp, &cfg.Agents[i], tp, stderr)
-			desired[tp.SessionName] = tp
-			realizedTemplates[cfg.Agents[i].QualifiedName()] = true
+			// Singleton agents are templates only. A session exists only after
+			// an explicit create or other on-demand session minting path.
 			continue
 		}
 
