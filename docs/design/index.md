@@ -21,3 +21,4 @@ lives in the [Architecture](/architecture/index) section.
 | `agent-pools` | Implemented | Feature shipped before the current template existed |
 | `dependency-aware-bounded-parallel-lifecycle` | Implemented | Bounded parallel start/stop waves for session lifecycle |
 | `idle-session-sleep` | Accepted | Idle-sleep policy, precedence, and wake mechanics |
+| `external-messaging-fabric` | Implemented | Provider-neutral external conversation bindings, delivery context, and group sessions |
