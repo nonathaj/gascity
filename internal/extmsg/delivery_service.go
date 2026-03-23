@@ -10,8 +10,9 @@ import (
 )
 
 type deliveryContextService struct {
-	store beads.Store
-	locks *bindingLockPool
+	store      beads.Store
+	locks      *bindingLockPool
+	transcript bindingMembershipEnsurer
 }
 
 type deliveryCleaner struct {
@@ -19,8 +20,8 @@ type deliveryCleaner struct {
 	locks *bindingLockPool
 }
 
-func newDeliveryContextService(store beads.Store, locks *bindingLockPool) DeliveryContextService {
-	return &deliveryContextService{store: store, locks: locks}
+func newDeliveryContextService(store beads.Store, locks *bindingLockPool, transcript bindingMembershipEnsurer) DeliveryContextService {
+	return &deliveryContextService{store: store, locks: locks, transcript: transcript}
 }
 
 func (s *deliveryContextService) Record(ctx context.Context, caller Caller, input DeliveryContextRecord) error {
@@ -58,7 +59,7 @@ func (s *deliveryContextService) Record(ctx context.Context, caller Caller, inpu
 		"source_session_id":      strings.TrimSpace(input.SourceSessionID),
 	})
 	return withBindingLock(s.locks, ref, func() error {
-		activeBinding, err := resolveActiveBindingLocked(ctx, s.store, deliveryCleaner{s.store, s.locks}, ref, timeNow())
+		activeBinding, err := resolveActiveBindingLocked(ctx, s.store, deliveryCleaner{s.store, s.locks}, s.transcript, ref, timeNow())
 		if err != nil {
 			return err
 		}
@@ -121,7 +122,7 @@ func (s *deliveryContextService) Resolve(ctx context.Context, sessionID string, 
 	label := deliveryRouteLabel(ref, sessionID)
 	var out *DeliveryContextRecord
 	err = withBindingLock(s.locks, ref, func() error {
-		activeBinding, err := resolveActiveBindingLocked(ctx, s.store, deliveryCleaner{s.store, s.locks}, ref, timeNow())
+		activeBinding, err := resolveActiveBindingLocked(ctx, s.store, deliveryCleaner{s.store, s.locks}, s.transcript, ref, timeNow())
 		if err != nil {
 			return err
 		}

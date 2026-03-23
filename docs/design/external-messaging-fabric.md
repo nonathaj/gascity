@@ -14,6 +14,10 @@ state, and provider-neutral group-session policy so Gas City can support
 OpenClaw-style channel adapters without giving up Gas City's stronger
 "any session can talk to any other session" model.
 
+The transcript-backed shared-thread read model introduced later in
+[`external-messaging-shared-threads.md`](./external-messaging-shared-threads.md)
+supersedes the ambient-read and passive-fanout portions of this design.
+
 ## Problem
 
 Today Gas City's messaging model is:
