@@ -279,18 +279,19 @@ export interface MutateResult {
   errorPayload?: BrokerErrorPayload;
 }
 
-export interface FormulasExecuteMutateResult extends Omit<MutateResult, "ok" | "payload"> {
+export interface OrdersLaunchMutateResult extends Omit<MutateResult, "ok" | "payload"> {
   type: "mutate:result";
   id: string;
   ok: true;
-  payload: FormulasExecuteResponse;
+  payload: OrdersLaunchResponse;
 }
 
-// Preferred alias for the sling-backed launch path. Keep the legacy
-// FormulasExecute names for compatibility while the rollout converges.
-export type OrdersLaunchMutateResult = FormulasExecuteMutateResult;
+// Deprecated compatibility interfaces. OrdersLaunch* is the canonical
+// sling-backed launch shape, but older consumers may still import the
+// FormulasExecute* names from the shared contract.
+export interface FormulasExecuteMutateResult extends OrdersLaunchMutateResult {}
 
-export interface FormulasExecuteRequest {
+export interface OrdersLaunchRequest {
   scope_kind: ScopeKind;
   scope_ref: string;
   target: string;
@@ -299,9 +300,9 @@ export interface FormulasExecuteRequest {
   attached_bead_id?: string;
 }
 
-export type OrdersLaunchRequest = FormulasExecuteRequest;
+export interface FormulasExecuteRequest extends OrdersLaunchRequest {}
 
-export interface FormulasExecuteResponse {
+export interface OrdersLaunchResponse {
   workflow_id: string;
   root_bead_id: string;
   root_store_ref: string;
@@ -311,4 +312,4 @@ export interface FormulasExecuteResponse {
   scope_ref: string;
 }
 
-export type OrdersLaunchResponse = FormulasExecuteResponse;
+export interface FormulasExecuteResponse extends OrdersLaunchResponse {}
