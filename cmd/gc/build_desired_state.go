@@ -172,7 +172,8 @@ func buildDesiredStateWithSessionBeads(
 	// Phase 2: discover session beads created outside config iteration
 	// (e.g., by "gc session new"). Include them in desired state if they
 	// have a valid template and are not held/closed.
-	discoverSessionBeads(bp, cfg, desired, stderr)
+	realizedRoots := discoverSessionBeadsWithRoots(bp, cfg, desired, suspendedRigPaths, stderr)
+	realizeDependencyFloors(bp, cfg, desired, realizedRoots, suspendedRigPaths, stderr)
 
 	return desired
 }
@@ -199,18 +200,29 @@ func discoverSessionBeads(
 	desired map[string]TemplateParams,
 	stderr io.Writer,
 ) {
+	discoverSessionBeadsWithRoots(bp, cfg, desired, nil, stderr)
+}
+
+func discoverSessionBeadsWithRoots(
+	bp *agentBuildParams,
+	cfg *config.City,
+	desired map[string]TemplateParams,
+	suspendedRigPaths map[string]bool,
+	stderr io.Writer,
+) map[string]bool {
 	sessionBeads := bp.sessionBeads
 	if sessionBeads == nil && bp.beadStore != nil {
 		var err error
 		sessionBeads, err = loadSessionBeadSnapshot(bp.beadStore)
 		if err != nil {
 			fmt.Fprintf(stderr, "buildDesiredState: listing session beads: %v\n", err) //nolint:errcheck
-			return
+			return nil
 		}
 	}
 	if sessionBeads == nil {
-		return
+		return nil
 	}
+	roots := make(map[string]bool)
 	for _, b := range sessionBeads.Open() {
 		if b.Status == "closed" {
 			continue
@@ -239,6 +251,10 @@ func discoverSessionBeads(
 		if cfgAgent == nil {
 			continue
 		}
+		if agentInSuspendedRig(bp.cityPath, cfgAgent, cfg.Rigs, suspendedRigPaths) {
+			continue
+		}
+		roots[template] = true
 		// Pool agents: respect the pool's scaling decision. If the main
 		// config iteration (which ran evaluatePool / scale_check) did not
 		// produce any desired entries for this template, the pool wants 0
@@ -246,14 +262,8 @@ func discoverSessionBeads(
 		// scaling and causes infinite wake→drain→stop loops when there's
 		// no work.
 		if cfgAgent.Pool != nil {
-			templateHasDesired := false
-			for _, existing := range desired {
-				if existing.TemplateName == template {
-					templateHasDesired = true
-					break
-				}
-			}
-			if !templateHasDesired {
+			manualSession := b.Metadata["manual_session"] == "true"
+			if !manualSession && !desiredHasTemplate(desired, template) {
 				continue
 			}
 		}
@@ -273,10 +283,103 @@ func discoverSessionBeads(
 		if tp.Env == nil {
 			tp.Env = make(map[string]string)
 		}
+		tp.ManualSession = b.Metadata["manual_session"] == "true"
 		tp.Env["GC_SESSION_NAME"] = sn
 		installAgentSideEffects(bp, cfgAgent, tp, stderr)
 		desired[sn] = tp
 	}
+	return roots
+}
+
+func realizeDependencyFloors(
+	bp *agentBuildParams,
+	cfg *config.City,
+	desired map[string]TemplateParams,
+	roots map[string]bool,
+	suspendedRigPaths map[string]bool,
+	stderr io.Writer,
+) {
+	if cfg == nil || len(roots) == 0 {
+		return
+	}
+	visited := make(map[string]bool)
+	var visit func(string)
+	visit = func(template string) {
+		if template == "" || visited[template] {
+			return
+		}
+		visited[template] = true
+		agent := findAgentByTemplate(cfg, template)
+		if agent == nil {
+			return
+		}
+		for _, dep := range agent.DependsOn {
+			depAgent := findAgentByTemplate(cfg, dep)
+			if depAgent == nil || depAgent.Suspended {
+				continue
+			}
+			if agentInSuspendedRig(bp.cityPath, depAgent, cfg.Rigs, suspendedRigPaths) {
+				continue
+			}
+			ensureDependencyOnlyTemplate(bp, depAgent, desired, stderr)
+			visit(dep)
+		}
+	}
+	for template := range roots {
+		visit(template)
+	}
+}
+
+func ensureDependencyOnlyTemplate(
+	bp *agentBuildParams,
+	cfgAgent *config.Agent,
+	desired map[string]TemplateParams,
+	stderr io.Writer,
+) {
+	if cfgAgent == nil || cfgAgent.Pool == nil || desiredHasTemplate(desired, cfgAgent.QualifiedName()) {
+		return
+	}
+
+	name := cfgAgent.Name
+	if cfgAgent.Pool.IsMultiInstance() {
+		name = poolInstanceName(cfgAgent.Name, 1, *cfgAgent.Pool)
+	}
+	qualifiedInstance := name
+	if cfgAgent.Dir != "" {
+		qualifiedInstance = cfgAgent.Dir + "/" + name
+	}
+	instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
+	fpExtra := buildFingerprintExtra(&instanceAgent)
+	tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
+	if err != nil {
+		fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
+		return
+	}
+	tp.DependencyOnly = true
+	installAgentSideEffects(bp, &instanceAgent, tp, stderr)
+	desired[tp.SessionName] = tp
+}
+
+func desiredHasTemplate(desired map[string]TemplateParams, template string) bool {
+	for _, existing := range desired {
+		if existing.TemplateName == template {
+			return true
+		}
+	}
+	return false
+}
+
+func agentInSuspendedRig(
+	cityPath string,
+	cfgAgent *config.Agent,
+	rigs []config.Rig,
+	suspendedRigPaths map[string]bool,
+) bool {
+	rigName := configuredRigName(cityPath, cfgAgent, rigs)
+	if rigName == "" {
+		return false
+	}
+	return suspendedRigPaths[filepath.Clean(rigRootForName(rigName, rigs))]
 }
 
 // installAgentSideEffects performs idempotent side effects for a resolved
