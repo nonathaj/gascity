@@ -9,10 +9,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/runtime"
-	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
 type slingBody struct {
@@ -25,7 +21,7 @@ type slingBody struct {
 	Vars           map[string]string `json:"vars"`
 }
 
-type slingWorkflowResponse struct {
+type slingResponse struct {
 	Status         string `json:"status"`
 	Target         string `json:"target"`
 	Formula        string `json:"formula,omitempty"`
@@ -36,7 +32,9 @@ type slingWorkflowResponse struct {
 	Mode           string `json:"mode,omitempty"`
 }
 
-var slingFormulaCommandRunner = runSlingFormulaCommand
+// slingCommandRunner is the function that executes gc sling as a subprocess.
+// Replaceable in tests.
+var slingCommandRunner = runSlingCommand
 
 func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 	var body slingBody
@@ -50,9 +48,7 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate target agent exists in config.
-	cfg := s.state.Config()
-	agentCfg, ok := findAgent(cfg, body.Target)
-	if !ok {
+	if _, ok := findAgent(s.state.Config(), body.Target); !ok {
 		writeError(w, http.StatusNotFound, "not_found", "target agent "+body.Target+" not found")
 		return
 	}
@@ -74,81 +70,53 @@ func (s *Server) handleSling(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Formula != "" {
-		resp, status, code, message := s.handleFormulaSling(r.Context(), body)
-		if code != "" {
-			writeError(w, status, code, message)
-			return
-		}
-		writeJSON(w, status, resp)
+	// All sling paths go through `gc sling` CLI to ensure full semantics:
+	// sling query execution, default formula application, auto-convoy,
+	// controller poke, and nudge.
+	resp, status, code, message := s.execSling(r.Context(), body)
+	if code != "" {
+		writeError(w, status, code, message)
 		return
 	}
-
-	// Derive rig from target agent's config if not explicitly provided.
-	rig := body.Rig
-	if rig == "" {
-		rig = agentCfg.Dir
-	}
-	store := s.findStore(rig)
-	if store == nil {
-		writeError(w, http.StatusBadRequest, "invalid", "no bead store available")
-		return
-	}
-
-	// If a bead is specified, assign it to the target agent.
-	if body.Bead != "" {
-		assignee := body.Target
-		if err := store.Update(body.Bead, beads.UpdateOpts{
-			Assignee: &assignee,
-		}); err != nil {
-			writeStoreError(w, err)
-			return
-		}
-	}
-
-	// Nudge the target agent if session provider supports it.
-	sp := s.state.SessionProvider()
-	sessionName := agentSessionName(s.state.CityName(), body.Target, cfg.Workspace.SessionTemplate)
-	resp := map[string]string{"status": "slung", "target": body.Target, "bead": body.Bead}
-	if err := sp.Nudge(sessionName, runtime.TextContent("New work assigned: "+body.Bead)); err != nil {
-		resp["nudge_error"] = err.Error()
-		telemetry.RecordNudge(context.Background(), body.Target, err)
-	} else {
-		telemetry.RecordNudge(context.Background(), body.Target, nil)
-	}
-
-	// Poke unconditionally: even if nudge succeeded, the target may be
-	// asleep and need a reconciler tick to wake via WakeWork. The poke
-	// coalesces via buffered(1) channel so extra pokes are harmless.
-	s.state.Poke()
-
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, status, resp)
 }
 
-func (s *Server) handleFormulaSling(ctx context.Context, body slingBody) (*slingWorkflowResponse, int, string, string) {
+// execSling builds gc sling CLI args from the request body and shells out.
+// Both plain-bead and formula paths use the same subprocess entry point so
+// the HTTP API has identical semantics to the CLI.
+func (s *Server) execSling(ctx context.Context, body slingBody) (*slingResponse, int, string, string) {
 	args := []string{"--city", s.state.CityPath(), "sling", body.Target}
-	mode := "standalone"
-	if beadID := strings.TrimSpace(body.AttachedBeadID); beadID != "" {
-		mode = "attached"
-		args = append(args, beadID, "--on", body.Formula)
+
+	isFormula := body.Formula != ""
+	mode := "direct"
+
+	if isFormula {
+		if beadID := strings.TrimSpace(body.AttachedBeadID); beadID != "" {
+			mode = "attached"
+			args = append(args, beadID, "--on", body.Formula)
+		} else {
+			mode = "standalone"
+			args = append(args, body.Formula, "--formula")
+		}
+		if title := strings.TrimSpace(body.Title); title != "" {
+			args = append(args, "--title", title)
+		}
+		if len(body.Vars) > 0 {
+			keys := make([]string, 0, len(body.Vars))
+			for key := range body.Vars {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				args = append(args, "--var", key+"="+body.Vars[key])
+			}
+		}
 	} else {
-		args = append(args, body.Formula, "--formula")
-	}
-	if title := strings.TrimSpace(body.Title); title != "" {
-		args = append(args, "--title", title)
-	}
-	if len(body.Vars) > 0 {
-		keys := make([]string, 0, len(body.Vars))
-		for key := range body.Vars {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			args = append(args, "--var", key+"="+body.Vars[key])
-		}
+		// Plain bead sling: gc sling <target> <bead>
+		args = append(args, body.Bead)
 	}
 
-	stdout, stderr, err := slingFormulaCommandRunner(ctx, s.state.CityPath(), args)
+	stdout, stderr, err := slingCommandRunner(ctx, s.state.CityPath(), args)
 	if err != nil {
 		message := strings.TrimSpace(stderr)
 		if message == "" {
@@ -160,26 +128,32 @@ func (s *Server) handleFormulaSling(ctx context.Context, body slingBody) (*sling
 		return nil, http.StatusBadRequest, "invalid", message
 	}
 
-	workflowID := parseWorkflowIDFromSlingOutput(stdout)
-	if workflowID == "" {
-		workflowID = parseWorkflowIDFromSlingOutput(stderr)
-	}
-	if workflowID == "" {
-		return nil, http.StatusInternalServerError, "internal", "gc sling did not report a workflow id"
+	resp := &slingResponse{
+		Status: "slung",
+		Target: body.Target,
+		Bead:   body.Bead,
+		Mode:   mode,
 	}
 
-	return &slingWorkflowResponse{
-		Status:         "slung",
-		Target:         body.Target,
-		Formula:        body.Formula,
-		WorkflowID:     workflowID,
-		RootBeadID:     workflowID,
-		AttachedBeadID: strings.TrimSpace(body.AttachedBeadID),
-		Mode:           mode,
-	}, http.StatusCreated, "", ""
+	if isFormula {
+		resp.Formula = body.Formula
+		resp.AttachedBeadID = strings.TrimSpace(body.AttachedBeadID)
+		workflowID := parseWorkflowIDFromSlingOutput(stdout)
+		if workflowID == "" {
+			workflowID = parseWorkflowIDFromSlingOutput(stderr)
+		}
+		if workflowID == "" {
+			return nil, http.StatusInternalServerError, "internal", "gc sling did not report a workflow id"
+		}
+		resp.WorkflowID = workflowID
+		resp.RootBeadID = workflowID
+		return resp, http.StatusCreated, "", ""
+	}
+
+	return resp, http.StatusOK, "", ""
 }
 
-func runSlingFormulaCommand(ctx context.Context, cityPath string, args []string) (string, string, error) {
+func runSlingCommand(ctx context.Context, cityPath string, args []string) (string, string, error) {
 	gcBin, err := os.Executable()
 	if err != nil {
 		return "", "", err

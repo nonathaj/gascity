@@ -9,22 +9,22 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/gastownhall/gascity/internal/beads"
 )
 
 func TestSlingWithBead(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
-	// Create a bead to sling.
-	store := state.stores["myrig"]
-	b, err := store.Create(beads.Bead{Title: "task"})
-	if err != nil {
-		t.Fatalf("create: %v", err)
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
+
+	var gotArgs []string
+	slingCommandRunner = func(_ context.Context, _ string, args []string) (string, string, error) {
+		gotArgs = args
+		return "Slung test-1 → myrig/worker\n", "", nil
 	}
 
-	body := `{"target":"myrig/worker","bead":"` + b.ID + `"}`
+	body := `{"target":"myrig/worker","bead":"test-1"}`
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, newPostRequest("/v0/sling", strings.NewReader(body)))
 
@@ -38,6 +38,13 @@ func TestSlingWithBead(t *testing.T) {
 	}
 	if resp["status"] != "slung" {
 		t.Fatalf("status = %q, want %q", resp["status"], "slung")
+	}
+	if resp["mode"] != "direct" {
+		t.Fatalf("mode = %q, want %q", resp["mode"], "direct")
+	}
+	// Verify CLI args: --city <path> sling <target> <bead>
+	if len(gotArgs) < 4 || gotArgs[2] != "sling" || gotArgs[3] != "myrig/worker" || gotArgs[4] != "test-1" {
+		t.Fatalf("unexpected args: %v", gotArgs)
 	}
 }
 
@@ -97,13 +104,20 @@ func TestSlingBeadNotFound(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
+
+	slingCommandRunner = func(_ context.Context, _ string, _ []string) (string, string, error) {
+		return "", "bead nonexistent not found", errors.New("exit status 1")
+	}
+
 	body := `{"target":"myrig/worker","bead":"nonexistent"}`
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, newPostRequest("/v0/sling", strings.NewReader(body)))
 
-	// Update on nonexistent bead should return 404 (via writeStoreError).
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404; body = %s", rec.Code, rec.Body.String())
+	// gc sling returns non-zero for missing beads; HTTP handler surfaces as 400.
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -111,12 +125,12 @@ func TestSlingFormulaDelegatesToGcSling(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
-	oldRunner := slingFormulaCommandRunner
-	defer func() { slingFormulaCommandRunner = oldRunner }()
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
 
 	var gotCityPath string
 	var gotArgs []string
-	slingFormulaCommandRunner = func(_ context.Context, cityPath string, args []string) (string, string, error) {
+	slingCommandRunner = func(_ context.Context, cityPath string, args []string) (string, string, error) {
 		gotCityPath = cityPath
 		gotArgs = append([]string(nil), args...)
 		return "Started workflow wf_123 (formula \"mol-review\") → myrig/worker\n", "", nil
@@ -141,7 +155,7 @@ func TestSlingFormulaDelegatesToGcSling(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
 	}
 
-	var resp slingWorkflowResponse
+	var resp slingResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -157,11 +171,11 @@ func TestSlingAttachedFormulaDelegatesToGcSling(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
-	oldRunner := slingFormulaCommandRunner
-	defer func() { slingFormulaCommandRunner = oldRunner }()
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
 
 	var gotArgs []string
-	slingFormulaCommandRunner = func(_ context.Context, _ string, args []string) (string, string, error) {
+	slingCommandRunner = func(_ context.Context, _ string, args []string) (string, string, error) {
 		gotArgs = append([]string(nil), args...)
 		return "Attached workflow wf_456 (formula \"mol-review\") to BD-42\n", "", nil
 	}
@@ -182,7 +196,7 @@ func TestSlingAttachedFormulaDelegatesToGcSling(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", gotArgs, wantArgs)
 	}
 
-	var resp slingWorkflowResponse
+	var resp slingResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -208,10 +222,10 @@ func TestSlingFormulaRunnerErrorSurfacesAsBadRequest(t *testing.T) {
 	state := newFakeMutatorState(t)
 	srv := New(state)
 
-	oldRunner := slingFormulaCommandRunner
-	defer func() { slingFormulaCommandRunner = oldRunner }()
+	oldRunner := slingCommandRunner
+	defer func() { slingCommandRunner = oldRunner }()
 
-	slingFormulaCommandRunner = func(_ context.Context, _ string, _ []string) (string, string, error) {
+	slingCommandRunner = func(_ context.Context, _ string, _ []string) (string, string, error) {
 		return "", "gc sling: could not resolve session name", errors.New("exit status 1")
 	}
 
