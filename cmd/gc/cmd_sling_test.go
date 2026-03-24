@@ -102,6 +102,7 @@ func testDeps(cfg *config.City, sp runtime.Provider, runner SlingRunner) (slingD
 		SP:       sp,
 		Runner:   runner,
 		Store:    beads.NewMemStore(),
+		StoreRef: "city:test-city",
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 	}, &stdout, &stderr
@@ -701,7 +702,7 @@ func TestCheckBeadStateAssigneeWarns(t *testing.T) {
 	q := &fakeQuerier{bead: beads.Bead{ID: "BL-42", Assignee: "other-agent"}}
 
 	deps, _, stderr := testDeps(cfg, sp, runner.run)
-	opts := testOpts(a, "BL-42")
+	opts := testOpts(a, "MY-42")
 	code := doSling(opts, deps, q)
 
 	if code != 0 {
@@ -1316,6 +1317,8 @@ title = "Do work"
 	config.InjectImplicitAgents(cfg)
 	opts := testOpts(a, "BL-42")
 	opts.OnFormula = "graph-work"
+	opts.ScopeKind = "city"
+	opts.ScopeRef = "test-city"
 	code := doSling(opts, deps, nil)
 
 	if code != 0 {
@@ -1343,6 +1346,15 @@ title = "Do work"
 	}
 	if got := root.Metadata["gc.source_bead_id"]; got != "BL-42" {
 		t.Fatalf("root gc.source_bead_id = %q, want BL-42", got)
+	}
+	if got := root.Metadata["gc.scope_kind"]; got != "city" {
+		t.Fatalf("root gc.scope_kind = %q, want city", got)
+	}
+	if got := root.Metadata["gc.scope_ref"]; got != "test-city" {
+		t.Fatalf("root gc.scope_ref = %q, want test-city", got)
+	}
+	if got := root.Metadata["gc.root_store_ref"]; got != "city:test-city" {
+		t.Fatalf("root gc.root_store_ref = %q, want city:test-city", got)
 	}
 	all, err := deps.Store.List()
 	if err != nil {
@@ -1393,6 +1405,95 @@ title = "Do work"
 	}
 	if !strings.Contains(stdout.String(), "Attached workflow") {
 		t.Fatalf("stdout = %q, want attached workflow message", stdout.String())
+	}
+}
+
+func TestWorkflowStoreRefForDir(t *testing.T) {
+	cityPath := filepath.Join(string(filepath.Separator), "tmp", "bright-lights")
+	cfg := &config.City{
+		Rigs: []config.Rig{
+			{Name: "alpha", Path: "rigs/alpha"},
+			{Name: "beta", Path: filepath.Join(cityPath, "rigs", "beta")},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		storeDir string
+		cityName string
+		want     string
+	}{
+		{
+			name:     "named city store",
+			storeDir: cityPath,
+			cityName: "bright-lights",
+			want:     "city:bright-lights",
+		},
+		{
+			name:     "unnamed city store uses canonical fallback",
+			storeDir: cityPath,
+			cityName: "",
+			want:     "city:city",
+		},
+		{
+			name:     "relative rig path resolves under city",
+			storeDir: filepath.Join(cityPath, "rigs", "alpha"),
+			cityName: "bright-lights",
+			want:     "rig:alpha",
+		},
+		{
+			name:     "absolute rig path matches directly",
+			storeDir: filepath.Join(cityPath, "rigs", "beta"),
+			cityName: "bright-lights",
+			want:     "rig:beta",
+		},
+		{
+			name:     "unknown store yields empty ref",
+			storeDir: filepath.Join(cityPath, "other"),
+			cityName: "bright-lights",
+			want:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := workflowStoreRefForDir(tt.storeDir, cityPath, tt.cityName, cfg); got != tt.want {
+				t.Fatalf("workflowStoreRefForDir(%q) = %q, want %q", tt.storeDir, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDoSlingRejectsScopeForPlainBeadRouting(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{
+			{Name: "worker", Dir: "myrig"},
+		},
+		Rigs: []config.Rig{
+			{Name: "myrig", Path: "/city/myrig"},
+		},
+	}
+	a, ok := resolveAgentIdentity(cfg, "worker", "")
+	if !ok {
+		t.Fatal("resolveAgentIdentity(worker) failed")
+	}
+	sp := runtime.NewFake()
+	deps, _, stderr := testDeps(cfg, sp, func(dir, command string, env map[string]string) (string, error) {
+		t.Fatalf("runner should not be invoked, got dir=%q command=%q env=%v", dir, command, env)
+		return "", nil
+	})
+	opts := testOpts(a, "MY-42")
+	opts.ScopeKind = "city"
+	opts.ScopeRef = "test-city"
+
+	code := doSling(opts, deps, nil)
+
+	if code == 0 {
+		t.Fatalf("doSling returned %d, want non-zero", code)
+	}
+	if !strings.Contains(stderr.String(), "--scope-kind/--scope-ref require a formula-backed workflow launch") {
+		t.Fatalf("stderr = %q, want scope validation message", stderr.String())
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 )
 
@@ -545,6 +546,69 @@ func TestWorkflowGetUsesSingleSnapshotIndexForHeaderAndBody(t *testing.T) {
 	}
 	if snapshot.SnapshotEventSeq == nil || *snapshot.SnapshotEventSeq != 1 {
 		t.Fatalf("snapshot_event_seq = %v, want 1", snapshot.SnapshotEventSeq)
+	}
+}
+
+func TestWorkflowStoreByRef(t *testing.T) {
+	state := newFakeState(t)
+	state.cityName = ""
+	state.cityBeadStore = beads.NewMemStore()
+	state.stores = map[string]beads.Store{
+		"alpha": beads.NewMemStore(),
+	}
+
+	cityInfo, ok := workflowStoreByRef(state, "city:city")
+	if !ok {
+		t.Fatal("workflowStoreByRef(city:city) = false, want true")
+	}
+	if cityInfo.ref != "city:city" || cityInfo.scopeKind != "city" || cityInfo.scopeRef != "city" {
+		t.Fatalf("city info = %+v, want city:city", cityInfo)
+	}
+	if cityInfo.store != state.cityBeadStore {
+		t.Fatal("city store mismatch")
+	}
+
+	rigInfo, ok := workflowStoreByRef(state, "rig:alpha")
+	if !ok {
+		t.Fatal("workflowStoreByRef(rig:alpha) = false, want true")
+	}
+	if rigInfo.ref != "rig:alpha" || rigInfo.scopeKind != "rig" || rigInfo.scopeRef != "alpha" {
+		t.Fatalf("rig info = %+v, want rig:alpha", rigInfo)
+	}
+	if rigInfo.store != state.stores["alpha"] {
+		t.Fatal("rig store mismatch")
+	}
+
+	if _, ok := workflowStoreByRef(state, "city:bright-lights"); ok {
+		t.Fatal("workflowStoreByRef(city:bright-lights) = true, want false")
+	}
+	if _, ok := workflowStoreByRef(state, "rig:missing"); ok {
+		t.Fatal("workflowStoreByRef(rig:missing) = true, want false")
+	}
+}
+
+func TestWorkflowStoresSkipsCityStoreEntriesFromBeadStoreMap(t *testing.T) {
+	state := newFakeState(t)
+	state.cityName = "bright-lights"
+	cityStore := beads.NewMemStore()
+	state.cityBeadStore = cityStore
+	state.cfg.Rigs = []config.Rig{
+		{Name: "alpha", Path: t.TempDir()},
+	}
+	state.stores = map[string]beads.Store{
+		"bright-lights": cityStore,
+		"alpha":         beads.NewMemStore(),
+	}
+
+	stores := workflowStores(state)
+	if len(stores) != 2 {
+		t.Fatalf("workflowStores() returned %d entries, want 2", len(stores))
+	}
+	if stores[0].ref != "city:bright-lights" {
+		t.Fatalf("stores[0].ref = %q, want city:bright-lights", stores[0].ref)
+	}
+	if stores[1].ref != "rig:alpha" {
+		t.Fatalf("stores[1].ref = %q, want rig:alpha", stores[1].ref)
 	}
 }
 

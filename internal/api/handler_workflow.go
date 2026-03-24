@@ -311,6 +311,21 @@ func workflowSelectionScope(info workflowStoreInfo, root beads.Bead) (string, st
 	return info.scopeKind, info.scopeRef
 }
 
+func workflowEventScope(info workflowStoreInfo, root beads.Bead, cityScopeRef string) (string, string) {
+	if scopeKind, scopeRef := workflowRootScope(root); scopeKind != "" && scopeRef != "" {
+		return scopeKind, scopeRef
+	}
+	// Event projections favor the logical city scope for legacy rig-stored
+	// workflows whose roots predate explicit scope stamping. That keeps live
+	// event scopes aligned with the snapshot API's preserved city-scope reads
+	// for those legacy workflows, while root_store_ref still exposes the
+	// physical store for callers that need it.
+	if info.scopeKind == "rig" {
+		return "city", workflowCityScopeRef(cityScopeRef)
+	}
+	return info.scopeKind, info.scopeRef
+}
+
 func workflowSnapshotScope(info workflowStoreInfo, root beads.Bead, requestedScopeKind, requestedScopeRef, cityScopeRef string) (string, string) {
 	if scopeKind, scopeRef := workflowRootScope(root); scopeKind != "" && scopeRef != "" {
 		return scopeKind, scopeRef
@@ -967,14 +982,12 @@ func addWorkflowSessionRef(index map[string]workflowSessionRef, key string, bead
 	}
 }
 
-func (s *Server) workflowStores() []workflowStoreInfo {
-	stores := make([]workflowStoreInfo, 0, len(s.state.BeadStores())+1)
+func workflowStores(state State) []workflowStoreInfo {
+	beadStores := state.BeadStores()
+	stores := make([]workflowStoreInfo, 0, len(beadStores)+1)
+	cityName := workflowCityScopeRef(state.CityName())
 
-	if cityStore := s.state.CityBeadStore(); cityStore != nil {
-		cityName := strings.TrimSpace(s.state.CityName())
-		if cityName == "" {
-			cityName = "city"
-		}
+	if cityStore := state.CityBeadStore(); cityStore != nil {
 		stores = append(stores, workflowStoreInfo{
 			ref:       "city:" + cityName,
 			scopeKind: "city",
@@ -983,8 +996,11 @@ func (s *Server) workflowStores() []workflowStoreInfo {
 		})
 	}
 
-	for _, rigName := range sortedRigNames(s.state.BeadStores()) {
-		store := s.state.BeadStore(rigName)
+	for _, rigName := range sortedRigNames(beadStores) {
+		if rigName == cityName {
+			continue
+		}
+		store := state.BeadStore(rigName)
 		if store == nil {
 			continue
 		}
@@ -997,6 +1013,61 @@ func (s *Server) workflowStores() []workflowStoreInfo {
 	}
 
 	return stores
+}
+
+func workflowStoreByRef(state State, ref string) (workflowStoreInfo, bool) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return workflowStoreInfo{}, false
+	}
+
+	kind, scopeRef, ok := strings.Cut(ref, ":")
+	if !ok {
+		return workflowStoreInfo{}, false
+	}
+	scopeRef = strings.TrimSpace(scopeRef)
+	if scopeRef == "" {
+		return workflowStoreInfo{}, false
+	}
+
+	switch strings.TrimSpace(kind) {
+	case "city":
+		cityStore := state.CityBeadStore()
+		cityName := workflowCityScopeRef(state.CityName())
+		if cityStore == nil || scopeRef != cityName {
+			return workflowStoreInfo{}, false
+		}
+		return workflowStoreInfo{
+			ref:       "city:" + cityName,
+			scopeKind: "city",
+			scopeRef:  cityName,
+			store:     cityStore,
+		}, true
+	case "rig":
+		store := state.BeadStore(scopeRef)
+		if store == nil {
+			return workflowStoreInfo{}, false
+		}
+		return workflowStoreInfo{
+			ref:       "rig:" + scopeRef,
+			scopeKind: "rig",
+			scopeRef:  scopeRef,
+			store:     store,
+		}, true
+	}
+	return workflowStoreInfo{}, false
+}
+
+func (s *Server) workflowStores() []workflowStoreInfo {
+	return workflowStores(s.state)
+}
+
+func workflowCityScopeRef(cityName string) string {
+	cityName = strings.TrimSpace(cityName)
+	if cityName == "" {
+		return "city"
+	}
+	return cityName
 }
 
 func matchesScopeRef(bead beads.Bead, scopeRef string) bool {
