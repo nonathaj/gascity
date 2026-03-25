@@ -140,6 +140,12 @@ func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackScopeRef string, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
+	// Fast path: try direct SQL for the entire snapshot (root discovery + beads + deps)
+	if snap, err := s.tryFullWorkflowSQL(workflowID, fallbackScopeKind, fallbackScopeRef, snapshotIndex); err == nil {
+		return snap, nil
+	}
+
+	// Slow path: bd subprocess N+1
 	stores := s.workflowStores()
 	storesScanned := make([]string, 0, len(stores))
 	seenStoreRefs := make(map[string]bool, len(stores))
@@ -188,28 +194,48 @@ func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackSc
 }
 
 func (s *Server) snapshotFromStore(info workflowStoreInfo, root beads.Bead, fallbackScopeKind, fallbackScopeRef, cityScopeRef string, storesScanned []string, listPartial bool, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
-	all, err := info.store.List()
-	if err != nil {
-		return nil, err
-	}
+	// Try direct SQL path — ~500x faster than N+1 bd subprocess calls.
+	workflowBeads, beadIndex, depMap, sqlErr := s.tryWorkflowSQL(root.ID)
+	usedSQL := sqlErr == nil && len(workflowBeads) > 0
 
-	workflowBeads := make([]beads.Bead, 0, len(all))
-	for _, bead := range all {
-		if bead.ID == root.ID || bead.Metadata["gc.root_bead_id"] == root.ID {
-			workflowBeads = append(workflowBeads, bead)
+	if !usedSQL {
+		// Fall back to bd subprocess path.
+		all, err := info.store.List()
+		if err != nil {
+			return nil, err
+		}
+
+		workflowBeads = make([]beads.Bead, 0, len(all))
+		for _, bead := range all {
+			if bead.ID == root.ID || bead.Metadata["gc.root_bead_id"] == root.ID {
+				workflowBeads = append(workflowBeads, bead)
+			}
+		}
+
+		beadIndex = make(map[string]beads.Bead, len(workflowBeads))
+		for _, bead := range workflowBeads {
+			beadIndex[bead.ID] = bead
 		}
 	}
+
 	if len(workflowBeads) == 0 {
 		return nil, errWorkflowNotFound
 	}
 
-	beadIndex := make(map[string]beads.Bead, len(workflowBeads))
-	for _, bead := range workflowBeads {
-		beadIndex[bead.ID] = bead
+	// Update root from the fetched data (SQL path may have richer data)
+	if updated, ok := beadIndex[root.ID]; ok {
+		root = updated
+	}
+
+	var store beads.Store
+	if usedSQL {
+		store = &prefetchedDepStore{deps: depMap}
+	} else {
+		store = info.store
 	}
 
 	sessionIndex := s.workflowSessionIndex()
-	workflowDeps, logicalDeps, logicalNodes, scopeGroups, partial := buildWorkflowGraph(root, workflowBeads, beadIndex, info.store, sessionIndex)
+	workflowDeps, logicalDeps, logicalNodes, scopeGroups, partial := buildWorkflowGraph(root, workflowBeads, beadIndex, store, sessionIndex)
 	partial = partial || listPartial
 	scopeKind, scopeRef := workflowSnapshotScope(info, root, fallbackScopeKind, fallbackScopeRef, cityScopeRef)
 
