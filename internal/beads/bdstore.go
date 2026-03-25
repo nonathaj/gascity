@@ -289,19 +289,20 @@ func (m *StringMap) UnmarshalJSON(data []byte) error {
 // bdIssue is the JSON shape returned by bd CLI commands. We decode only the
 // fields Gas City cares about; all others are silently ignored.
 type bdIssue struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Status      string    `json:"status"`
-	IssueType   string    `json:"issue_type"`
-	CreatedAt   time.Time `json:"created_at"`
-	Assignee    string    `json:"assignee"`
-	From        string    `json:"from"`
-	ParentID    string    `json:"parent"`
-	Ref         string    `json:"ref"`
-	Needs       []string  `json:"needs"`
-	Description string    `json:"description"`
-	Labels      []string  `json:"labels"`
-	Metadata    StringMap `json:"metadata,omitempty"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Status       string    `json:"status"`
+	IssueType    string    `json:"issue_type"`
+	CreatedAt    time.Time `json:"created_at"`
+	Assignee     string    `json:"assignee"`
+	From         string    `json:"from"`
+	ParentID     string    `json:"parent"`
+	Ref          string    `json:"ref"`
+	Needs        []string  `json:"needs"`
+	Description  string    `json:"description"`
+	Labels       []string  `json:"labels"`
+	Metadata     StringMap `json:"metadata,omitempty"`
+	Dependencies []Dep     `json:"dependencies,omitempty"`
 }
 
 // parseIssuesTolerant unmarshals a JSON array of bdIssue objects, skipping
@@ -338,19 +339,20 @@ func (b *bdIssue) toBead() Bead {
 		from = b.Metadata["from"]
 	}
 	return Bead{
-		ID:          b.ID,
-		Title:       b.Title,
-		Status:      mapBdStatus(b.Status),
-		Type:        b.IssueType,
-		CreatedAt:   b.CreatedAt.Truncate(time.Second),
-		Assignee:    b.Assignee,
-		From:        from,
-		ParentID:    b.ParentID,
-		Ref:         b.Ref,
-		Needs:       b.Needs,
-		Description: b.Description,
-		Labels:      b.Labels,
-		Metadata:    b.Metadata,
+		ID:           b.ID,
+		Title:        b.Title,
+		Status:       mapBdStatus(b.Status),
+		Type:         b.IssueType,
+		CreatedAt:    b.CreatedAt.Truncate(time.Second),
+		Assignee:     b.Assignee,
+		From:         from,
+		ParentID:     b.ParentID,
+		Ref:          b.Ref,
+		Needs:        b.Needs,
+		Description:  b.Description,
+		Labels:       b.Labels,
+		Metadata:     b.Metadata,
+		Dependencies: append([]Dep(nil), b.Dependencies...),
 	}
 }
 

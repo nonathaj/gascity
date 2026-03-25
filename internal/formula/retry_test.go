@@ -2,6 +2,7 @@ package formula
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,58 +35,82 @@ func TestApplyRetriesBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyRetries failed: %v", err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("len(got) = %d, want 3", len(got))
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2 (control + attempt)", len(got))
 	}
 
-	logical := got[0]
-	run := got[1]
-	eval := got[2]
+	control := got[0]
+	attempt := got[1]
 
-	if logical.ID != "review" {
-		t.Fatalf("logical.ID = %q, want review", logical.ID)
+	// Control bead identity and metadata.
+	if control.ID != "review" {
+		t.Fatalf("control.ID = %q, want review", control.ID)
 	}
-	if run.ID != "review.run.1" {
-		t.Fatalf("run.ID = %q, want review.run.1", run.ID)
+	if control.Metadata["gc.kind"] != "retry" {
+		t.Fatalf("control gc.kind = %q, want retry", control.Metadata["gc.kind"])
 	}
-	if eval.ID != "review.eval.1" {
-		t.Fatalf("eval.ID = %q, want review.eval.1", eval.ID)
+	if control.Metadata["gc.max_attempts"] != "3" {
+		t.Fatalf("control gc.max_attempts = %q, want 3", control.Metadata["gc.max_attempts"])
 	}
-
-	if logical.Metadata["gc.kind"] != "retry" {
-		t.Fatalf("logical gc.kind = %q, want retry", logical.Metadata["gc.kind"])
+	if control.Metadata["gc.on_exhausted"] != "soft_fail" {
+		t.Fatalf("control gc.on_exhausted = %q, want soft_fail", control.Metadata["gc.on_exhausted"])
 	}
-	if logical.Metadata["gc.scope_ref"] != "body" {
-		t.Fatalf("logical gc.scope_ref = %q, want body", logical.Metadata["gc.scope_ref"])
-	}
-	if logical.Metadata["gc.on_fail"] != "abort_scope" {
-		t.Fatalf("logical gc.on_fail = %q, want abort_scope", logical.Metadata["gc.on_fail"])
-	}
-	if len(logical.Needs) != 2 || logical.Needs[0] != "setup" || logical.Needs[1] != "review.eval.1" {
-		t.Fatalf("logical.Needs = %v, want [setup review.eval.1]", logical.Needs)
+	if control.Metadata["gc.control_epoch"] != "1" {
+		t.Fatalf("control gc.control_epoch = %q, want 1", control.Metadata["gc.control_epoch"])
 	}
 
-	if run.Metadata["gc.kind"] != "retry-run" {
-		t.Fatalf("run gc.kind = %q, want retry-run", run.Metadata["gc.kind"])
+	// Control preserves scope metadata (scope_ref, on_fail).
+	if control.Metadata["gc.scope_ref"] != "body" {
+		t.Fatalf("control gc.scope_ref = %q, want body", control.Metadata["gc.scope_ref"])
 	}
-	if run.Metadata["gc.attempt"] != "1" {
-		t.Fatalf("run gc.attempt = %q, want 1", run.Metadata["gc.attempt"])
-	}
-	if run.Metadata["gc.on_exhausted"] != "soft_fail" {
-		t.Fatalf("run gc.on_exhausted = %q, want soft_fail", run.Metadata["gc.on_exhausted"])
-	}
-	if run.Metadata["gc.scope_ref"] != "" || run.Metadata["gc.scope_role"] != "" || run.Metadata["gc.on_fail"] != "" {
-		t.Fatalf("run scope metadata leaked: %#v", run.Metadata)
-	}
-	if run.Metadata["custom"] != "value" {
-		t.Fatalf("run custom metadata = %q, want value", run.Metadata["custom"])
+	if control.Metadata["gc.on_fail"] != "abort_scope" {
+		t.Fatalf("control gc.on_fail = %q, want abort_scope", control.Metadata["gc.on_fail"])
 	}
 
-	if eval.Metadata["gc.kind"] != "retry-eval" {
-		t.Fatalf("eval gc.kind = %q, want retry-eval", eval.Metadata["gc.kind"])
+	// Control blocks on the attempt (not an eval bead).
+	if len(control.Needs) != 2 || control.Needs[0] != "setup" || control.Needs[1] != "review.attempt.1" {
+		t.Fatalf("control.Needs = %v, want [setup review.attempt.1]", control.Needs)
 	}
-	if len(eval.Needs) != 1 || eval.Needs[0] != "review.run.1" {
-		t.Fatalf("eval.Needs = %v, want [review.run.1]", eval.Needs)
+
+	// Control has no assignee (it's a control node, not work).
+	if control.Assignee != "" {
+		t.Fatalf("control.Assignee = %q, want empty", control.Assignee)
+	}
+
+	// Control carries frozen step spec.
+	if control.Metadata["gc.source_step_spec"] == "" {
+		t.Fatal("control missing gc.source_step_spec")
+	}
+	var frozen Step
+	if err := json.Unmarshal([]byte(control.Metadata["gc.source_step_spec"]), &frozen); err != nil {
+		t.Fatalf("frozen step spec is not valid JSON: %v", err)
+	}
+	if frozen.ID != "review" {
+		t.Fatalf("frozen step ID = %q, want review", frozen.ID)
+	}
+	if frozen.Retry == nil || frozen.Retry.MaxAttempts != 3 {
+		t.Fatalf("frozen step retry spec = %+v, want max_attempts=3", frozen.Retry)
+	}
+
+	// Attempt bead identity and metadata.
+	if attempt.ID != "review.attempt.1" {
+		t.Fatalf("attempt.ID = %q, want review.attempt.1", attempt.ID)
+	}
+	if attempt.Metadata["gc.attempt"] != "1" {
+		t.Fatalf("attempt gc.attempt = %q, want 1", attempt.Metadata["gc.attempt"])
+	}
+	// Attempt keeps original step's custom metadata.
+	if attempt.Metadata["custom"] != "value" {
+		t.Fatalf("attempt custom metadata = %q, want value", attempt.Metadata["custom"])
+	}
+	// Attempt strips scope metadata (scope_ref, scope_role, on_fail).
+	if attempt.Metadata["gc.scope_ref"] != "" || attempt.Metadata["gc.scope_role"] != "" || attempt.Metadata["gc.on_fail"] != "" {
+		t.Fatalf("attempt scope metadata leaked: scope_ref=%q scope_role=%q on_fail=%q",
+			attempt.Metadata["gc.scope_ref"], attempt.Metadata["gc.scope_role"], attempt.Metadata["gc.on_fail"])
+	}
+	// Attempt has no retry config (not "retry-run" kind).
+	if attempt.Metadata["gc.kind"] == "retry-run" {
+		t.Fatal("attempt should not have gc.kind=retry-run (v1 pattern)")
 	}
 }
 
@@ -130,7 +155,7 @@ on_exhausted = "soft_fail"
 		t.Fatal("missing workflow finalizer")
 	}
 
-	var sawLogical, sawRun, sawEval bool
+	var sawControl, sawAttempt bool
 	for _, dep := range recipe.Deps {
 		if dep.StepID == rootID && dep.Type == "blocks" && dep.DependsOnID != finalizerID {
 			t.Fatalf("workflow root should only block on finalizer, saw %s", dep.DependsOnID)
@@ -140,17 +165,96 @@ on_exhausted = "soft_fail"
 		}
 		switch dep.DependsOnID {
 		case "retry-demo.review":
-			sawLogical = true
-		case "retry-demo.review.run.1":
-			sawRun = true
-		case "retry-demo.review.eval.1":
-			sawEval = true
+			sawControl = true
+		case "retry-demo.review.attempt.1":
+			sawAttempt = true
 		}
 	}
-	if !sawLogical {
-		t.Fatal("workflow finalizer should block on logical retry bead")
+	if !sawControl {
+		t.Fatal("workflow finalizer should block on retry control bead")
 	}
-	if sawRun || sawEval {
-		t.Fatalf("workflow finalizer should not block directly on retry attempt beads; sawRun=%v sawEval=%v", sawRun, sawEval)
+	if sawAttempt {
+		t.Fatal("workflow finalizer should not block directly on retry attempt bead")
+	}
+}
+
+func TestApplyRetriesPreservesNonRetrySteps(t *testing.T) {
+	steps := []*Step{
+		{ID: "setup", Title: "Setup"},
+		{ID: "review", Title: "Review", Retry: &RetrySpec{MaxAttempts: 2}},
+		{ID: "cleanup", Title: "Cleanup"},
+	}
+
+	got, err := ApplyRetries(steps)
+	if err != nil {
+		t.Fatalf("ApplyRetries failed: %v", err)
+	}
+	// setup + (control + attempt) + cleanup = 4
+	if len(got) != 4 {
+		t.Fatalf("len(got) = %d, want 4", len(got))
+	}
+	if got[0].ID != "setup" {
+		t.Fatalf("got[0].ID = %q, want setup", got[0].ID)
+	}
+	if got[1].ID != "review" { // control
+		t.Fatalf("got[1].ID = %q, want review (control)", got[1].ID)
+	}
+	if got[2].ID != "review.attempt.1" {
+		t.Fatalf("got[2].ID = %q, want review.attempt.1", got[2].ID)
+	}
+	if got[3].ID != "cleanup" {
+		t.Fatalf("got[3].ID = %q, want cleanup", got[3].ID)
+	}
+}
+
+func TestApplyRetriesDefaultOnExhausted(t *testing.T) {
+	steps := []*Step{
+		{ID: "work", Title: "Work", Retry: &RetrySpec{MaxAttempts: 5}},
+	}
+
+	got, err := ApplyRetries(steps)
+	if err != nil {
+		t.Fatalf("ApplyRetries failed: %v", err)
+	}
+	control := got[0]
+	if control.Metadata["gc.on_exhausted"] != "hard_fail" {
+		t.Fatalf("default on_exhausted = %q, want hard_fail", control.Metadata["gc.on_exhausted"])
+	}
+}
+
+func TestApplyRetriesFrozenSpecRoundTrips(t *testing.T) {
+	original := &Step{
+		ID:          "deploy",
+		Title:       "Deploy {{service}}",
+		Description: "Deploy service to production",
+		Type:        "task",
+		Assignee:    "deployer",
+		Labels:      []string{"pool:deploy", "critical"},
+		Metadata:    map[string]string{"env": "prod"},
+		Retry:       &RetrySpec{MaxAttempts: 3, OnExhausted: "soft_fail"},
+	}
+
+	got, err := ApplyRetries([]*Step{original})
+	if err != nil {
+		t.Fatalf("ApplyRetries failed: %v", err)
+	}
+
+	control := got[0]
+	var frozen Step
+	if err := json.Unmarshal([]byte(control.Metadata["gc.source_step_spec"]), &frozen); err != nil {
+		t.Fatalf("unmarshal frozen spec: %v", err)
+	}
+
+	if frozen.Title != "Deploy {{service}}" {
+		t.Errorf("frozen title = %q, want original", frozen.Title)
+	}
+	if frozen.Assignee != "deployer" {
+		t.Errorf("frozen assignee = %q, want deployer", frozen.Assignee)
+	}
+	if len(frozen.Labels) != 2 || frozen.Labels[0] != "pool:deploy" {
+		t.Errorf("frozen labels = %v, want [pool:deploy critical]", frozen.Labels)
+	}
+	if frozen.Retry == nil || frozen.Retry.MaxAttempts != 3 {
+		t.Errorf("frozen retry = %+v, want max_attempts=3", frozen.Retry)
 	}
 }

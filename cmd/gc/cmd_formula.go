@@ -231,54 +231,20 @@ bead into a sub-workflow at runtime.`,
 			cookVars := parseFormulaVars(vars)
 
 			if attach != "" {
-				// Graph-attach mode: compile formula, stamp each step with the
-				// parent workflow's gc.root_bead_id, instantiate, wire blocking
-				// dep. The sub-DAG becomes a real part of the workflow graph.
-				parentBead, err := store.Get(attach)
-				if err != nil {
-					return fmt.Errorf("attach bead %s: %w", attach, err)
-				}
-				rootBeadID := parentBead.Metadata["gc.root_bead_id"]
-				if rootBeadID == "" {
-					// The attach bead IS the workflow root
-					rootBeadID = attach
-				}
-				rootStoreRef := parentBead.Metadata["gc.root_store_ref"]
-
 				recipe, err := formula.Compile(cmd.Context(), args[0], cfg.FormulaLayers.City, cookVars)
 				if err != nil {
 					return fmt.Errorf("compile: %w", err)
 				}
 
-				// Stamp every step with the parent workflow's graph metadata
-				for i := range recipe.Steps {
-					if recipe.Steps[i].Metadata == nil {
-						recipe.Steps[i].Metadata = make(map[string]string)
-					}
-					recipe.Steps[i].Metadata["gc.root_bead_id"] = rootBeadID
-					if rootStoreRef != "" {
-						recipe.Steps[i].Metadata["gc.root_store_ref"] = rootStoreRef
-					}
-				}
-
-				result, err := molecule.Instantiate(cmd.Context(), store, recipe, molecule.Options{
+				result, err := molecule.Attach(cmd.Context(), store, recipe, attach, molecule.AttachOptions{
 					Title: title,
 					Vars:  cookVars,
 				})
 				if err != nil {
-					return fmt.Errorf("instantiate: %w", err)
+					return err
 				}
 
-				// Wire blocking dep: attach bead blocks on sub-DAG root
-				if depStore, ok := store.(interface {
-					DepAdd(issueID, dependsOnID, depType string) error
-				}); ok {
-					if err := depStore.DepAdd(attach, result.RootID, "blocks"); err != nil {
-						return fmt.Errorf("dep %s -> %s: %w", attach, result.RootID, err)
-					}
-				}
-
-				_, _ = fmt.Fprintf(stdout, "Attached: %s -> %s (root: %s)\n", attach, result.RootID, rootBeadID)
+				_, _ = fmt.Fprintf(stdout, "Attached: %s -> %s (root: %s)\n", attach, result.RootID, result.WorkflowRootID)
 				_, _ = fmt.Fprintf(stdout, "Root: %s\n", result.RootID)
 				_, _ = fmt.Fprintf(stdout, "Created: %d\n", result.Created)
 

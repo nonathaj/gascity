@@ -94,6 +94,10 @@ func TestWorkflowGetBuildsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(run): %v", err)
 	}
+	inProgress := "in_progress"
+	if err := cityStore.Update(run.ID, beads.UpdateOpts{Status: &inProgress}); err != nil {
+		t.Fatalf("Update(run status): %v", err)
+	}
 
 	eval, err := cityStore.Create(beads.Bead{
 		Title: "Evaluate review attempt 1",
@@ -205,6 +209,70 @@ func TestWorkflowGetBuildsSnapshot(t *testing.T) {
 
 	if !hasEdge(snapshot.LogicalEdges, body.ID, logical.ID, "blocks") {
 		t.Fatalf("logical edges = %+v, want %s -> %s", snapshot.LogicalEdges, body.ID, logical.ID)
+	}
+}
+
+func TestLogicalStepRefForAttemptBeadPrefersNestedAttemptOverOuterRalphScope(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Metadata: map[string]string{
+			"gc.kind":     "scope-check",
+			"gc.attempt":  "3",
+			"gc.step_ref": "mol-adopt-pr-v2.review-loop.run.3.review-pipeline.review-codex.eval.1-scope-check",
+		},
+	}
+
+	if got := logicalStepRefForAttemptBead(bead); got != "mol-adopt-pr-v2.review-loop.run.3.review-pipeline.review-codex" {
+		t.Fatalf("logicalStepRefForAttemptBead(scope-check) = %q, want nested retry logical step", got)
+	}
+}
+
+func TestLogicalStepRefForAttemptBeadMapsFlatScopeCheckToControlStep(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Metadata: map[string]string{
+			"gc.kind":     "scope-check",
+			"gc.step_ref": "demo.review-scope-check",
+		},
+	}
+
+	if got := logicalStepRefForAttemptBead(bead); got != "demo.review" {
+		t.Fatalf("logicalStepRefForAttemptBead(flat scope-check) = %q, want demo.review", got)
+	}
+}
+
+func TestLogicalGroupIDPrefersExactScopeCheckTargetStep(t *testing.T) {
+	t.Parallel()
+
+	workflowBeads := []beads.Bead{
+		{
+			ID: "parent",
+			Metadata: map[string]string{
+				"gc.kind":     "ralph",
+				"gc.step_ref": "demo.loop",
+			},
+		},
+		{
+			ID: "child",
+			Metadata: map[string]string{
+				"gc.kind":     "retry",
+				"gc.step_ref": "demo.loop.run.1.child",
+			},
+		},
+	}
+	scopeCheck := beads.Bead{
+		ID: "child-scope-check",
+		Metadata: map[string]string{
+			"gc.kind":     "scope-check",
+			"gc.attempt":  "1",
+			"gc.step_ref": "demo.loop.run.1.child-scope-check",
+		},
+	}
+
+	if got := logicalGroupID(workflowBeads, scopeCheck); got != "child" {
+		t.Fatalf("logicalGroupID(child scope-check) = %q, want child", got)
 	}
 }
 
@@ -796,7 +864,6 @@ func TestWorkflowGetTracksMultiAttemptRetryState(t *testing.T) {
 	run3, err := cityStore.Create(beads.Bead{
 		Title:    "Review attempt 3",
 		Type:     "task",
-		Status:   "open",
 		Assignee: "mayor",
 		Metadata: map[string]string{
 			"gc.kind":            "retry-run",
@@ -810,6 +877,10 @@ func TestWorkflowGetTracksMultiAttemptRetryState(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Create(run3): %v", err)
+	}
+	inProgress := "in_progress"
+	if err := cityStore.Update(run3.ID, beads.UpdateOpts{Status: &inProgress}); err != nil {
+		t.Fatalf("Update(run3 status): %v", err)
 	}
 
 	if _, err := cityStore.Create(beads.Bead{
@@ -872,6 +943,34 @@ func TestWorkflowGetTracksMultiAttemptRetryState(t *testing.T) {
 	}
 	if logicalNode.Attempts[2].Attempt != 3 || logicalNode.Attempts[2].Status != "active" || logicalNode.Attempts[2].BeadID != run3.ID {
 		t.Fatalf("attempt[2] = %+v, want active attempt 3 rooted at %s", logicalNode.Attempts[2], run3.ID)
+	}
+}
+
+func TestWorkflowStatusTreatsOpenAssignedWorkAsPending(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Status:   "open",
+		Assignee: "mayor",
+		Metadata: map[string]string{
+			"gc.routed_to": "mayor",
+		},
+	}
+
+	if got := workflowStatus(bead); got != "pending" {
+		t.Fatalf("workflowStatus(open assigned) = %q, want pending", got)
+	}
+}
+
+func TestWorkflowStatusRequiresAssignmentForActive(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Status: "in_progress",
+	}
+
+	if got := workflowStatus(bead); got != "pending" {
+		t.Fatalf("workflowStatus(in_progress unassigned) = %q, want pending", got)
 	}
 }
 

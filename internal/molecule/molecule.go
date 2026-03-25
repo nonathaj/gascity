@@ -8,7 +8,9 @@ package molecule
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -98,6 +100,203 @@ func CookOn(ctx context.Context, store beads.Store, formulaName string, searchPa
 		return nil, fmt.Errorf("CookOn requires Options.ParentID")
 	}
 	return Cook(ctx, store, formulaName, searchPaths, opts)
+}
+
+// AttachOptions configures graph-attach mode for late-bound DAG expansion.
+type AttachOptions struct {
+	// Title overrides the sub-DAG root bead's title.
+	Title string
+
+	// Vars provides variable values for {{placeholder}} substitution.
+	Vars map[string]string
+
+	// IdempotencyKey prevents duplicate Attach calls. If non-empty, Attach
+	// checks for an existing sub-DAG root with this key before creating beads.
+	// Stored as gc.idempotency_key on the sub-DAG root bead.
+	IdempotencyKey string
+
+	// ExpectedEpoch enables optimistic concurrency control. If > 0, Attach
+	// reads gc.control_epoch from the attach bead and aborts with
+	// ErrEpochConflict if it doesn't match. On success, the epoch is
+	// incremented atomically with the dep wiring.
+	//
+	// Callers should always use IdempotencyKey together with ExpectedEpoch
+	// to ensure crash-recovery correctness.
+	ExpectedEpoch int
+}
+
+// ErrEpochConflict is returned when AttachOptions.ExpectedEpoch does not match
+// the attach bead's gc.control_epoch. This indicates another processor already
+// advanced the control bead.
+var ErrEpochConflict = errors.New("attach epoch conflict")
+
+// AttachResult holds the outcome of a graph-attach operation.
+type AttachResult struct {
+	// RootID is the store-assigned ID of the sub-DAG root bead.
+	RootID string
+
+	// WorkflowRootID is the gc.root_bead_id inherited from the parent workflow.
+	WorkflowRootID string
+
+	// Created is the total number of beads created in the sub-DAG.
+	Created int
+
+	// IDMapping maps recipe step IDs to store-assigned bead IDs.
+	IDMapping map[string]string
+
+	// Duplicate is true when IdempotencyKey matched an existing sub-DAG.
+	// RootID and IDMapping are populated from the existing sub-DAG.
+	Duplicate bool
+}
+
+// Attach grafts a compiled recipe as a sub-DAG onto an existing workflow bead.
+// The attach bead gains a blocking dependency on the sub-DAG root, preventing
+// it from closing until the sub-DAG completes. All sub-DAG beads inherit the
+// parent workflow's gc.root_bead_id.
+//
+// This is the core primitive for late-bound DAG expansion — any agent, script,
+// or workflow step can call it to expand a bead into a sub-workflow at runtime.
+//
+// NOTE: Attach mutates the input recipe's Steps metadata in-place, stamping
+// gc.root_bead_id, gc.root_store_ref, and gc.idempotency_key onto steps.
+// Callers must not reuse the recipe after calling Attach.
+//
+// Idempotency: if IdempotencyKey is set and a sub-DAG root with that key
+// already exists under the attach bead's workflow, the existing result is
+// returned with Duplicate=true and no new beads are created.
+//
+// Fencing: if ExpectedEpoch is set, Attach verifies the attach bead's
+// gc.control_epoch matches before proceeding. On success, the epoch is
+// incremented. This prevents concurrent processors from spawning duplicate
+// attempts.
+func Attach(ctx context.Context, store beads.Store, recipe *formula.Recipe, attachBeadID string, opts AttachOptions) (*AttachResult, error) {
+	if recipe == nil {
+		return nil, fmt.Errorf("recipe is nil")
+	}
+	if attachBeadID == "" {
+		return nil, fmt.Errorf("attach bead ID is required")
+	}
+
+	parentBead, err := store.Get(attachBeadID)
+	if err != nil {
+		return nil, fmt.Errorf("attach bead %s: %w", attachBeadID, err)
+	}
+
+	rootBeadID := parentBead.Metadata["gc.root_bead_id"]
+	if rootBeadID == "" {
+		rootBeadID = attachBeadID
+	}
+	rootStoreRef := parentBead.Metadata["gc.root_store_ref"]
+
+	// Idempotency: check for existing sub-DAG with the same key.
+	// This runs before epoch fencing so that crash-retries with stale epochs
+	// still return the existing result instead of failing.
+	if opts.IdempotencyKey != "" {
+		if existing, err := findExistingAttach(store, rootBeadID, attachBeadID, opts.IdempotencyKey); err != nil {
+			return nil, fmt.Errorf("idempotency check: %w", err)
+		} else if existing != nil {
+			return existing, nil
+		}
+	}
+
+	// Epoch fencing: verify no concurrent processor has advanced the control bead.
+	// Only checked for new attaches (not duplicates, which return above).
+	if opts.ExpectedEpoch > 0 {
+		currentEpoch := 0
+		if raw := parentBead.Metadata["gc.control_epoch"]; raw != "" {
+			currentEpoch, _ = strconv.Atoi(raw)
+		}
+		if currentEpoch != opts.ExpectedEpoch {
+			return nil, ErrEpochConflict
+		}
+	}
+
+	// Stamp every step with the parent workflow's graph metadata.
+	for i := range recipe.Steps {
+		if recipe.Steps[i].Metadata == nil {
+			recipe.Steps[i].Metadata = make(map[string]string)
+		}
+		recipe.Steps[i].Metadata["gc.root_bead_id"] = rootBeadID
+		if rootStoreRef != "" {
+			recipe.Steps[i].Metadata["gc.root_store_ref"] = rootStoreRef
+		}
+	}
+
+	// Stamp idempotency key on the root step.
+	if opts.IdempotencyKey != "" && len(recipe.Steps) > 0 {
+		if recipe.Steps[0].Metadata == nil {
+			recipe.Steps[0].Metadata = make(map[string]string)
+		}
+		recipe.Steps[0].Metadata["gc.idempotency_key"] = opts.IdempotencyKey
+	}
+
+	result, err := Instantiate(ctx, store, recipe, Options{
+		Title: opts.Title,
+		Vars:  opts.Vars,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("instantiate: %w", err)
+	}
+
+	// Wire blocking dep: attach bead blocks on sub-DAG root.
+	if err := store.DepAdd(attachBeadID, result.RootID, "blocks"); err != nil {
+		return nil, fmt.Errorf("dep %s -> %s: %w", attachBeadID, result.RootID, err)
+	}
+
+	// Increment epoch after successful attach.
+	if opts.ExpectedEpoch > 0 {
+		nextEpoch := strconv.Itoa(opts.ExpectedEpoch + 1)
+		if err := store.SetMetadata(attachBeadID, "gc.control_epoch", nextEpoch); err != nil {
+			return nil, fmt.Errorf("incrementing epoch on %s: %w", attachBeadID, err)
+		}
+	}
+
+	return &AttachResult{
+		RootID:         result.RootID,
+		WorkflowRootID: rootBeadID,
+		Created:        result.Created,
+		IDMapping:      result.IDMapping,
+	}, nil
+}
+
+// findExistingAttach checks if a sub-DAG root with the given idempotency key
+// already exists in the workflow. Returns nil if not found.
+func findExistingAttach(store beads.Store, rootBeadID, attachBeadID, key string) (*AttachResult, error) {
+	all, err := store.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range all {
+		if b.Metadata["gc.idempotency_key"] != key {
+			continue
+		}
+		if b.Metadata["gc.root_bead_id"] != rootBeadID {
+			continue
+		}
+		// Found existing sub-DAG root. Ensure dep is wired.
+		deps, err := store.DepList(attachBeadID, "down")
+		if err != nil {
+			return nil, err
+		}
+		depExists := false
+		for _, d := range deps {
+			if d.DependsOnID == b.ID && d.Type == "blocks" {
+				depExists = true
+				break
+			}
+		}
+		if !depExists {
+			if err := store.DepAdd(attachBeadID, b.ID, "blocks"); err != nil {
+				return nil, err
+			}
+		}
+		return &AttachResult{
+			RootID:         b.ID,
+			WorkflowRootID: rootBeadID,
+			Duplicate:      true,
+		}, nil
+	}
+	return nil, nil
 }
 
 // Instantiate creates beads from a pre-compiled Recipe. Use this when
@@ -195,8 +394,10 @@ func Instantiate(ctx context.Context, store beads.Store, recipe *formula.Recipe,
 			}
 
 			if graphWorkflow || step.Metadata["gc.kind"] != "" {
-				if rootBeadID, ok := idMapping[recipe.Steps[0].ID]; ok && rootBeadID != "" {
-					b.Metadata["gc.root_bead_id"] = rootBeadID
+				if b.Metadata["gc.root_bead_id"] == "" {
+					if rootBeadID, ok := idMapping[recipe.Steps[0].ID]; ok && rootBeadID != "" {
+						b.Metadata["gc.root_bead_id"] = rootBeadID
+					}
 				}
 			}
 
@@ -473,6 +674,7 @@ func markFailed(store beads.Store, ids []string) {
 func logicalRecipeStepID(step formula.RecipeStep) (string, bool) {
 	kind := step.Metadata["gc.kind"]
 	if attempt := step.Metadata["gc.attempt"]; attempt != "" {
+		// v1 patterns: kind-specific suffix stripping.
 		switch kind {
 		case "run", "scope":
 			if trimmed, ok := trimAttemptSuffix(step.ID, ".run."+attempt); ok {
@@ -490,6 +692,15 @@ func logicalRecipeStepID(step formula.RecipeStep) (string, bool) {
 			if trimmed, ok := trimAttemptSuffix(step.ID, ".eval."+attempt); ok {
 				return trimmed, true
 			}
+		}
+
+		// v2 patterns: attempt/iteration suffix stripping.
+		// v2 beads keep their original kind but have gc.attempt set.
+		if trimmed, ok := trimAttemptSuffix(step.ID, ".attempt."+attempt); ok {
+			return trimmed, true
+		}
+		if trimmed, ok := trimAttemptSuffix(step.ID, ".iteration."+attempt); ok {
+			return trimmed, true
 		}
 	}
 	if logicalID := step.Metadata["gc.ralph_step_id"]; logicalID != "" {

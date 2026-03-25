@@ -50,6 +50,10 @@ func ProcessControl(store beads.Store, bead beads.Bead, opts ProcessOptions) (Co
 	}
 
 	switch bead.Metadata["gc.kind"] {
+	case "retry":
+		return processRetryControl(store, bead, opts)
+	case "ralph":
+		return processRalphControl(store, bead, opts)
 	case "check":
 		return processRalphCheck(store, bead, opts)
 	case "retry-eval":
@@ -176,12 +180,16 @@ func isRetryAttemptSubject(subject beads.Bead) bool {
 	if subject.Metadata["gc.logical_bead_id"] == "" {
 		return false
 	}
+	// v1 pattern: attempt beads have gc.kind "retry-run" or "retry-eval".
 	switch subject.Metadata["gc.kind"] {
 	case "retry-run", "retry-eval":
 		return true
-	default:
-		return false
 	}
+	// v2 pattern: attempt beads keep their original kind but carry gc.attempt.
+	if subject.Metadata["gc.attempt"] != "" {
+		return true
+	}
+	return false
 }
 
 func processWorkflowFinalize(store beads.Store, bead beads.Bead) (ControlResult, error) {
@@ -435,7 +443,12 @@ func listByWorkflowRoot(store beads.Store, rootID string) ([]beads.Bead, error) 
 }
 
 func isRetryDescendant(logical, candidate beads.Bead) bool {
-	if candidate.Metadata["gc.kind"] != "retry-run" && candidate.Metadata["gc.kind"] != "retry-eval" {
+	// v1 pattern: attempt beads have gc.kind "retry-run" or "retry-eval".
+	// v2 pattern: attempt beads keep their original kind but carry gc.attempt
+	// metadata and are blocking deps of a retry/ralph control bead.
+	isV1Attempt := candidate.Metadata["gc.kind"] == "retry-run" || candidate.Metadata["gc.kind"] == "retry-eval"
+	isV2Attempt := candidate.Metadata["gc.attempt"] != ""
+	if !isV1Attempt && !isV2Attempt {
 		return false
 	}
 	if candidate.Metadata["gc.logical_bead_id"] == logical.ID {

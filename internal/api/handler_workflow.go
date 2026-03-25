@@ -140,9 +140,14 @@ func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackScopeRef string, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
-	// Fast path: try direct SQL for the entire snapshot (root discovery + beads + deps)
-	if snap, err := s.tryFullWorkflowSQL(workflowID, fallbackScopeKind, fallbackScopeRef, snapshotIndex); err == nil {
-		return snap, nil
+	// Fast SQL currently resolves only against the city Dolt store. Rig-scoped
+	// workflows still live in rig stores, so routing them through the city SQL
+	// path can degenerate into a long scan before we ever reach the real store.
+	if fallbackScopeKind != "rig" {
+		// Fast path: try direct SQL for the entire snapshot (root discovery + beads + deps)
+		if snap, err := s.tryFullWorkflowSQL(workflowID, fallbackScopeKind, fallbackScopeRef, snapshotIndex); err == nil {
+			return snap, nil
+		}
 	}
 
 	// Slow path: bd subprocess N+1
@@ -195,7 +200,17 @@ func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackSc
 
 func (s *Server) snapshotFromStore(info workflowStoreInfo, root beads.Bead, fallbackScopeKind, fallbackScopeRef, cityScopeRef string, storesScanned []string, listPartial bool, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
 	// Try direct SQL path — ~500x faster than N+1 bd subprocess calls.
-	workflowBeads, beadIndex, depMap, sqlErr := s.tryWorkflowSQL(root.ID)
+	var (
+		workflowBeads []beads.Bead
+		beadIndex     map[string]beads.Bead
+		depMap        map[string][]beads.Dep
+		sqlErr        error
+	)
+	if info.scopeKind == "city" {
+		workflowBeads, beadIndex, depMap, sqlErr = s.tryWorkflowSQL(root.ID)
+	} else {
+		sqlErr = errors.New("sql fast path unsupported for rig-scoped workflows")
+	}
 	usedSQL := sqlErr == nil && len(workflowBeads) > 0
 
 	if !usedSQL {
@@ -231,7 +246,11 @@ func (s *Server) snapshotFromStore(info workflowStoreInfo, root beads.Bead, fall
 	if usedSQL {
 		store = &prefetchedDepStore{deps: depMap}
 	} else {
-		store = info.store
+		if prefetchedDeps, ok := prefetchedDepsForWorkflowBeads(workflowBeads); ok {
+			store = &prefetchedDepStore{deps: prefetchedDeps}
+		} else {
+			store = info.store
+		}
 	}
 
 	sessionIndex := s.workflowSessionIndex()
@@ -483,6 +502,25 @@ func collectWorkflowDeps(store beads.Store, beadIndex map[string]beads.Bead, log
 	return workflowDeps, logicalDeps, partial
 }
 
+func prefetchedDepsForWorkflowBeads(workflowBeads []beads.Bead) (map[string][]beads.Dep, bool) {
+	depMap := make(map[string][]beads.Dep)
+	hasPrefetchedDeps := false
+
+	for _, bead := range workflowBeads {
+		if bead.Dependencies == nil {
+			continue
+		}
+		hasPrefetchedDeps = true
+		if len(bead.Dependencies) == 0 {
+			depMap[bead.ID] = nil
+			continue
+		}
+		depMap[bead.ID] = append([]beads.Dep(nil), bead.Dependencies...)
+	}
+
+	return depMap, hasPrefetchedDeps
+}
+
 func buildLogicalNodes(root beads.Bead, workflowBeads []beads.Bead, groups map[string]*logicalGroup, sessionIndex map[string]workflowSessionRef) []logicalNodeResponse {
 	ordered := make([]*logicalGroup, 0, len(groups))
 	for _, group := range groups {
@@ -677,7 +715,7 @@ func logicalGroupID(workflowBeads []beads.Bead, bead beads.Bead) string {
 	case "ralph", "retry":
 		return bead.ID
 	}
-	if logicalStepRef := logicalStepRefForAttemptBead(bead); logicalStepRef != "" {
+	for _, logicalStepRef := range logicalStepRefCandidatesForBead(bead) {
 		for _, candidate := range workflowBeads {
 			switch strings.TrimSpace(candidate.Metadata["gc.kind"]) {
 			case "ralph", "retry":
@@ -840,33 +878,46 @@ func logicalStepRefForAttemptBead(bead beads.Bead) string {
 	if stepRef == "" {
 		return ""
 	}
-	attempt := strings.TrimSpace(bead.Metadata["gc.attempt"])
-	switch strings.TrimSpace(bead.Metadata["gc.kind"]) {
-	case "run", "scope", "retry-run":
-		if attempt != "" {
-			if trimmed, ok := trimAttemptStepRefSuffix(stepRef, ".run."+attempt); ok {
-				return trimmed
-			}
-		}
-	case "check":
-		if attempt != "" {
-			if trimmed, ok := trimAttemptStepRefSuffix(stepRef, ".check."+attempt); ok {
-				return trimmed
-			}
-		}
-	case "retry-eval":
-		if attempt != "" {
-			if trimmed, ok := trimAttemptStepRefSuffix(stepRef, ".eval."+attempt); ok {
-				return trimmed
-			}
-		}
+	kind := strings.TrimSpace(bead.Metadata["gc.kind"])
+	normalized := stepRef
+	if kind == "scope-check" && strings.HasSuffix(normalized, "-scope-check") {
+		normalized = strings.TrimSuffix(normalized, "-scope-check")
 	}
-	for _, prefix := range []string{".run.", ".check.", ".eval."} {
-		if idx := strings.LastIndex(stepRef, prefix); idx > 0 {
-			return stepRef[:idx]
-		}
+	if trimmed, ok := trimAttemptStepRefForKind(normalized, kind, strings.TrimSpace(bead.Metadata["gc.attempt"])); ok {
+		return trimmed
+	}
+	if trimmed, ok := trimRightmostAttemptStepRef(normalized); ok {
+		return trimmed
+	}
+	if normalized != stepRef || kind == "scope-check" {
+		return normalized
 	}
 	return ""
+}
+
+func logicalStepRefCandidatesForBead(bead beads.Bead) []string {
+	candidates := make([]string, 0, 2)
+	if target := scopeCheckControlledStepRef(bead); target != "" {
+		candidates = append(candidates, target)
+	}
+	if logicalStepRef := logicalStepRefForAttemptBead(bead); logicalStepRef != "" && !containsString(candidates, logicalStepRef) {
+		candidates = append(candidates, logicalStepRef)
+	}
+	return candidates
+}
+
+func scopeCheckControlledStepRef(bead beads.Bead) string {
+	if strings.TrimSpace(bead.Metadata["gc.kind"]) != "scope-check" {
+		return ""
+	}
+	stepRef := strings.TrimSpace(bead.Metadata["gc.step_ref"])
+	if stepRef == "" {
+		stepRef = strings.TrimSpace(bead.Ref)
+	}
+	if stepRef == "" || !strings.HasSuffix(stepRef, "-scope-check") {
+		return ""
+	}
+	return strings.TrimSuffix(stepRef, "-scope-check")
 }
 
 func trimAttemptStepRefSuffix(stepRef, suffix string) (string, bool) {
@@ -874,6 +925,35 @@ func trimAttemptStepRefSuffix(stepRef, suffix string) (string, bool) {
 		return "", false
 	}
 	return strings.TrimSuffix(stepRef, suffix), true
+}
+
+func trimAttemptStepRefForKind(stepRef, kind, attempt string) (string, bool) {
+	if attempt == "" {
+		return "", false
+	}
+	switch kind {
+	case "run", "scope", "retry-run":
+		return trimAttemptStepRefSuffix(stepRef, ".run."+attempt)
+	case "check":
+		return trimAttemptStepRefSuffix(stepRef, ".check."+attempt)
+	case "retry-eval":
+		return trimAttemptStepRefSuffix(stepRef, ".eval."+attempt)
+	default:
+		return "", false
+	}
+}
+
+func trimRightmostAttemptStepRef(stepRef string) (string, bool) {
+	best := -1
+	for _, prefix := range []string{".run.", ".check.", ".eval."} {
+		if idx := strings.LastIndex(stepRef, prefix); idx > best {
+			best = idx
+		}
+	}
+	if best <= 0 {
+		return "", false
+	}
+	return stepRef[:best], true
 }
 
 func metadataInt(meta map[string]string, key string) int {
@@ -901,6 +981,7 @@ func workflowKind(bead beads.Bead) string {
 }
 
 func workflowStatus(bead beads.Bead) string {
+	hasAssignment := strings.TrimSpace(bead.Assignee) != "" || strings.TrimSpace(bead.Metadata["gc.routed_to"]) != ""
 	switch strings.TrimSpace(bead.Status) {
 	case "closed":
 		if strings.TrimSpace(bead.Metadata["gc.outcome"]) == "fail" {
@@ -908,11 +989,11 @@ func workflowStatus(bead beads.Bead) string {
 		}
 		return "completed"
 	case "in_progress":
-		return "active"
-	case "open":
-		if strings.TrimSpace(bead.Assignee) != "" || strings.TrimSpace(bead.Metadata["gc.routed_to"]) != "" {
+		if hasAssignment {
 			return "active"
 		}
+		return "pending"
+	case "open":
 		return "pending"
 	default:
 		if strings.TrimSpace(bead.Metadata["gc.outcome"]) == "fail" {

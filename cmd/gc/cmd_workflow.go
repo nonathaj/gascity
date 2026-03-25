@@ -84,12 +84,9 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 	}
 
 	readDoltPort(cityPath)
-	store, err := openStoreAtForCity(cityPath, cityPath)
-	if err != nil {
-		return fmt.Errorf("opening workflow store: %w", err)
-	}
 
-	bead, err := store.Get(beadID)
+	// Try all stores (city + rigs) to find the bead.
+	store, bead, err := findBeadAcrossStores(cityPath, beadID)
 	if err != nil {
 		return fmt.Errorf("loading bead %s: %w", beadID, err)
 	}
@@ -97,7 +94,7 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 	opts := workflow.ProcessOptions{CityPath: cityPath}
 	loadCfg := false
 	switch bead.Metadata["gc.kind"] {
-	case "check", "fanout", "retry-eval":
+	case "check", "fanout", "retry-eval", "retry", "ralph":
 		loadCfg = true
 	}
 	if loadCfg {
@@ -112,6 +109,15 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 				return decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg)
 			}
 		case "retry-eval":
+			sp := workflowControlSessionProvider()
+			opts.RecycleSession = func(subject beads.Bead) error {
+				if strings.TrimSpace(subject.Assignee) == "" {
+					return fmt.Errorf("subject %s missing assignee for pooled retry recycle", subject.ID)
+				}
+				return sp.Stop(subject.Assignee)
+			}
+		case "retry", "ralph":
+			opts.FormulaSearchPaths = workflowFormulaSearchPaths(cfg, bead)
 			sp := workflowControlSessionProvider()
 			opts.RecycleSession = func(subject beads.Bead) error {
 				if strings.TrimSpace(subject.Assignee) == "" {
@@ -137,6 +143,35 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 		fmt.Fprintln(stdout) //nolint:errcheck
 	}
 	return nil
+}
+
+// findBeadAcrossStores tries the city store first, then all rig stores,
+// returning the store and bead on first match.
+func findBeadAcrossStores(cityPath, beadID string) (beads.Store, beads.Bead, error) {
+	// Try city store first.
+	cityStore, err := openStoreAtForCity(cityPath, cityPath)
+	if err == nil {
+		if b, err := cityStore.Get(beadID); err == nil {
+			return cityStore, b, nil
+		}
+	}
+
+	// Try rig stores.
+	cfg, err := loadCityConfig(cityPath)
+	if err != nil {
+		return nil, beads.Bead{}, fmt.Errorf("getting bead %q: not in city store, and config unavailable: %w", beadID, err)
+	}
+	for _, rig := range cfg.Rigs {
+		rigStore, err := openStoreAtForCity(rig.Path, cityPath)
+		if err != nil {
+			continue
+		}
+		if b, err := rigStore.Get(beadID); err == nil {
+			return rigStore, b, nil
+		}
+	}
+
+	return nil, beads.Bead{}, fmt.Errorf("getting bead %q: bead not found", beadID)
 }
 
 func workflowFormulaSearchPaths(cfg *config.City, bead beads.Bead) []string {
@@ -271,7 +306,7 @@ func propagateDynamicScopeMetadata(step *formula.RecipeStep, source beads.Bead) 
 	switch step.Metadata["gc.kind"] {
 	case "scope":
 		return
-	case "scope-check", "workflow-finalize", "fanout", "check", "retry-eval":
+	case "scope-check", "workflow-finalize", "fanout", "check", "retry-eval", "retry", "ralph":
 		step.Metadata["gc.scope_role"] = "control"
 		return
 	default:

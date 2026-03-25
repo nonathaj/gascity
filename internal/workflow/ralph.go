@@ -701,6 +701,15 @@ func logicalStepRefForAttemptBead(bead beads.Bead) string {
 			}
 		}
 	}
+	// v2 pattern: attempt beads keep their original kind but carry gc.attempt.
+	// Try all suffix patterns when gc.attempt is set regardless of kind.
+	if attempt != "" {
+		for _, suffix := range []string{".run." + attempt, ".check." + attempt, ".eval." + attempt} {
+			if trimmed, ok := trimAttemptStepRefSuffix(stepRef, suffix); ok {
+				return trimmed
+			}
+		}
+	}
 	for _, prefix := range []string{".run.", ".check.", ".eval."} {
 		if idx := strings.LastIndex(stepRef, prefix); idx > 0 {
 			return stepRef[:idx]

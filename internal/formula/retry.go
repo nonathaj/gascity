@@ -1,20 +1,20 @@
 package formula
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 )
 
-// ApplyRetries expands inline retry-managed steps into ordinary graph nodes.
+// ApplyRetries expands inline retry-managed steps into control + attempt beads.
 //
 // A retry-managed step:
-//   - keeps its original step ID as the stable logical step
-//   - emits a first run attempt:  <step>.run.1
-//   - emits a first eval attempt: <step>.eval.1
+//   - keeps its original step ID as the control bead (gc.kind=retry)
+//   - emits a first attempt: <step>.attempt.1
 //
-// The generated graph uses only ordinary blocking deps:
-//   - eval blocks on run
-//   - logical step blocks on eval
+// The control bead blocks on the attempt. When the attempt closes, the
+// controller re-activates the control bead to classify the outcome and
+// optionally spawn the next attempt via molecule.Attach.
 //
 // Downstream steps continue to depend on the original logical step ID.
 func ApplyRetries(steps []*Step) ([]*Step, error) {
@@ -50,41 +50,47 @@ func expandRetry(step *Step) ([]*Step, error) {
 	}
 
 	attempt := 1
-	runID := fmt.Sprintf("%s.run.%d", step.ID, attempt)
-	evalID := fmt.Sprintf("%s.eval.%d", step.ID, attempt)
+	attemptID := fmt.Sprintf("%s.attempt.%d", step.ID, attempt)
 	onExhausted := step.Retry.OnExhausted
 	if onExhausted == "" {
 		onExhausted = "hard_fail"
 	}
 
-	logical := cloneStep(step)
-	logical.Retry = nil
-	logical.Children = nil
-	logical.Assignee = ""
-	logical.Metadata = withMetadata(logical.Metadata, map[string]string{
-		"gc.kind":         "retry",
-		"gc.step_id":      step.ID,
-		"gc.max_attempts": strconv.Itoa(step.Retry.MaxAttempts),
-		"gc.on_exhausted": onExhausted,
+	// Freeze the original step spec for runtime rehydration.
+	stepSpec, err := json.Marshal(step)
+	if err != nil {
+		return nil, fmt.Errorf("serializing step spec for %q: %w", step.ID, err)
+	}
+
+	// Control bead — orchestrates retry attempts.
+	control := cloneStep(step)
+	control.Retry = nil
+	control.Children = nil
+	control.Assignee = ""
+	control.Metadata = withMetadata(control.Metadata, map[string]string{
+		"gc.kind":             "retry",
+		"gc.step_id":          step.ID,
+		"gc.max_attempts":     strconv.Itoa(step.Retry.MaxAttempts),
+		"gc.on_exhausted":     onExhausted,
+		"gc.source_step_spec": string(stepSpec),
+		"gc.control_epoch":    "1",
 	})
 	if kind := step.Metadata["gc.kind"]; kind != "" {
-		logical.Metadata["gc.original_kind"] = kind
+		control.Metadata["gc.original_kind"] = kind
 	}
-	logical.Needs = appendUniqueCopy(logical.Needs, evalID)
-	logical.WaitsFor = ""
+	control.Needs = appendUniqueCopy(control.Needs, attemptID)
+	control.WaitsFor = ""
 
+	// First attempt — the actual work bead, tagged as attempt 1.
 	run := cloneStep(step)
-	run.ID = runID
+	run.ID = attemptID
 	run.Retry = nil
 	run.OnComplete = nil
 	run.Children = nil
 	run.Metadata = withMetadata(run.Metadata, map[string]string{
-		"gc.kind":          "retry-run",
-		"gc.step_id":       step.ID,
-		"gc.retry_step_id": step.ID,
-		"gc.attempt":       strconv.Itoa(attempt),
-		"gc.max_attempts":  strconv.Itoa(step.Retry.MaxAttempts),
-		"gc.on_exhausted":  onExhausted,
+		"gc.attempt":  strconv.Itoa(attempt),
+		"gc.step_id":  step.ID,
+		"gc.step_ref": attemptID,
 	})
 	if kind := step.Metadata["gc.kind"]; kind != "" {
 		run.Metadata["gc.original_kind"] = kind
@@ -92,31 +98,7 @@ func expandRetry(step *Step) ([]*Step, error) {
 	delete(run.Metadata, "gc.scope_ref")
 	delete(run.Metadata, "gc.scope_role")
 	delete(run.Metadata, "gc.on_fail")
-	run.SourceLocation = fmt.Sprintf("%s.retry.run.%d", step.SourceLocation, attempt)
+	run.SourceLocation = fmt.Sprintf("%s.retry.attempt.%d", step.SourceLocation, attempt)
 
-	eval := &Step{
-		ID:             evalID,
-		Title:          fmt.Sprintf("Evaluate %s", step.Title),
-		Description:    fmt.Sprintf("Evaluate %s attempt %d", step.ID, attempt),
-		Type:           "task",
-		Priority:       step.Priority,
-		Labels:         append([]string{}, step.Labels...),
-		Needs:          []string{runID},
-		Condition:      step.Condition,
-		SourceFormula:  step.SourceFormula,
-		SourceLocation: fmt.Sprintf("%s.retry.eval.%d", step.SourceLocation, attempt),
-		Metadata: withMetadata(nil, map[string]string{
-			"gc.kind":          "retry-eval",
-			"gc.step_id":       step.ID,
-			"gc.retry_step_id": step.ID,
-			"gc.attempt":       strconv.Itoa(attempt),
-			"gc.max_attempts":  strconv.Itoa(step.Retry.MaxAttempts),
-			"gc.on_exhausted":  onExhausted,
-		}),
-	}
-	if kind := step.Metadata["gc.kind"]; kind != "" {
-		eval.Metadata["gc.original_kind"] = kind
-	}
-
-	return []*Step{logical, run, eval}, nil
+	return []*Step{control, run}, nil
 }

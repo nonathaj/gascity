@@ -22,7 +22,7 @@ const graphExecutionRouteMetaKey = "gc.execution_routed_to"
 
 func isWorkflowControlKind(kind string) bool {
 	switch kind {
-	case "check", "fanout", "retry-eval", "scope-check", "workflow-finalize":
+	case "check", "fanout", "retry-eval", "scope-check", "workflow-finalize", "retry", "ralph":
 		return true
 	default:
 		return false

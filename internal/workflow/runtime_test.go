@@ -930,6 +930,85 @@ func TestBuildRalphRetryGraphNodeRemapsNestedScopeCheckControlForFromStepRef(t *
 	}
 }
 
+func TestLogicalStepRefForAttemptBeadPrefersNestedAttemptOverOuterRalphScope(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Metadata: map[string]string{
+			"gc.kind":     "scope-check",
+			"gc.attempt":  "3",
+			"gc.step_ref": "mol-adopt-pr-v2.review-loop.run.3.review-pipeline.review-codex.eval.1-scope-check",
+		},
+	}
+
+	if got := logicalStepRefForAttemptBead(bead); got != "mol-adopt-pr-v2.review-loop.run.3.review-pipeline.review-codex" {
+		t.Fatalf("logicalStepRefForAttemptBead(scope-check) = %q, want nested retry logical step", got)
+	}
+}
+
+func TestLogicalStepRefForAttemptBeadMapsFlatScopeCheckToControlStep(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Metadata: map[string]string{
+			"gc.kind":     "scope-check",
+			"gc.step_ref": "demo.review-scope-check",
+		},
+	}
+
+	if got := logicalStepRefForAttemptBead(bead); got != "demo.review" {
+		t.Fatalf("logicalStepRefForAttemptBead(flat scope-check) = %q, want demo.review", got)
+	}
+}
+
+func TestResolveLogicalBeadIDPrefersExactScopeCheckTargetStep(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	root := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	_ = mustCreateWorkflowBead(t, store, beads.Bead{
+		ID:    "parent",
+		Title: "loop",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "ralph",
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "demo.loop",
+		},
+	})
+	child := mustCreateWorkflowBead(t, store, beads.Bead{
+		ID:    "child",
+		Title: "child",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "retry",
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "demo.loop.run.1.child",
+		},
+	})
+	scopeCheck := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize child scope",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": root.ID,
+			"gc.attempt":      "1",
+			"gc.step_ref":     "demo.loop.run.1.child-scope-check",
+		},
+	})
+
+	if got := resolveLogicalBeadID(store, scopeCheck); got != child.ID {
+		t.Fatalf("resolveLogicalBeadID(child scope-check) = %q, want %q", got, child.ID)
+	}
+}
+
 func TestProcessRalphCheckExhaustsRetries(t *testing.T) {
 	t.Parallel()
 

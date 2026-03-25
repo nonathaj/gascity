@@ -173,6 +173,74 @@ func TestInstantiateUsesGraphApplyStoreForRetryLogicalRefs(t *testing.T) {
 	}
 }
 
+func TestLogicalRecipeStepIDV2AttemptAndIteration(t *testing.T) {
+	// Regression: v2 attempt/iteration beads keep their original kind and use
+	// .attempt.N / .iteration.N suffixes. logicalRecipeStepID must strip these
+	// to find the control bead's step ID.
+	tests := []struct {
+		name   string
+		step   formula.RecipeStep
+		wantID string
+		wantOK bool
+	}{
+		{
+			name: "v2 retry attempt",
+			step: formula.RecipeStep{
+				ID:       "mol-feature.review.attempt.2",
+				Metadata: map[string]string{"gc.attempt": "2"},
+			},
+			wantID: "mol-feature.review",
+			wantOK: true,
+		},
+		{
+			name: "v2 ralph iteration",
+			step: formula.RecipeStep{
+				ID:       "mol-feature.design-review-loop.iteration.1",
+				Metadata: map[string]string{"gc.attempt": "1"},
+			},
+			wantID: "mol-feature.design-review-loop",
+			wantOK: true,
+		},
+		{
+			name: "v2 nested iteration",
+			step: formula.RecipeStep{
+				ID:       "mol-arch.converge.iteration.3",
+				Metadata: map[string]string{"gc.attempt": "3", "gc.kind": "scope"},
+			},
+			wantID: "mol-arch.converge",
+			wantOK: true,
+		},
+		{
+			name: "v1 retry-run still works",
+			step: formula.RecipeStep{
+				ID:       "mol-feature.review.run.1",
+				Metadata: map[string]string{"gc.kind": "retry-run", "gc.attempt": "1"},
+			},
+			wantID: "mol-feature.review",
+			wantOK: true,
+		},
+		{
+			name: "no attempt metadata returns false",
+			step: formula.RecipeStep{
+				ID:       "mol-feature.review",
+				Metadata: map[string]string{"gc.kind": "retry"},
+			},
+			wantID: "",
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotID, gotOK := logicalRecipeStepID(tt.step)
+			if gotOK != tt.wantOK || gotID != tt.wantID {
+				t.Errorf("logicalRecipeStepID(%q) = (%q, %v), want (%q, %v)",
+					tt.step.ID, gotID, gotOK, tt.wantID, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestInstantiateRejectsPartialGraphApplyResult(t *testing.T) {
 	store := &graphApplySpyStore{
 		MemStore: beads.NewMemStore(),
