@@ -181,18 +181,9 @@ func (s *Server) handleWorkflowDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		found = true
 
-		// Phase 1: Close all open beads.
-		for _, id := range ids {
-			b, err := info.store.Get(id)
-			if err != nil {
-				continue
-			}
-			if b.Status != "closed" {
-				_ = info.store.SetMetadata(id, "gc.outcome", "skipped")
-				_ = info.store.Close(id)
-				closed++
-			}
-		}
+		// Phase 1: Batch close all open beads.
+		n, _ := info.store.CloseAll(ids, map[string]string{"gc.outcome": "skipped"})
+		closed += n
 
 		// Phase 2: Delete if requested.
 		if deleteFromStore {

@@ -411,20 +411,11 @@ func cmdWorkflowDelete(workflowID string, force, deleteBeads bool, stdout, stder
 		return 0
 	}
 
-	// Phase 1: Close all open beads with gc.outcome=skipped.
+	// Phase 1: Batch close all open beads with gc.outcome=skipped.
 	closed := 0
 	for _, m := range matches {
-		for _, id := range m.ids {
-			b, err := m.store.Get(id)
-			if err != nil {
-				continue
-			}
-			if b.Status != "closed" {
-				_ = m.store.SetMetadata(id, "gc.outcome", "skipped")
-				_ = m.store.Close(id)
-				closed++
-			}
-		}
+		n, _ := m.store.CloseAll(m.ids, map[string]string{"gc.outcome": "skipped"})
+		closed += n
 	}
 	fmt.Fprintf(stdout, "Closed %d open beads\n", closed)
 
