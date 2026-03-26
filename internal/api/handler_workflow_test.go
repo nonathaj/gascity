@@ -989,6 +989,21 @@ func TestWorkflowStatusDoesNotTreatRoutedOnlyWorkAsActive(t *testing.T) {
 	}
 }
 
+func TestWorkflowStatusTreatsSkippedAsSkipped(t *testing.T) {
+	t.Parallel()
+
+	bead := beads.Bead{
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.outcome": "skipped",
+		},
+	}
+
+	if got := workflowStatus(bead); got != "skipped" {
+		t.Fatalf("workflowStatus(closed skipped) = %q, want skipped", got)
+	}
+}
+
 func TestWorkflowGetRejectsNonWorkflowRoot(t *testing.T) {
 	state := newFakeState(t)
 	cityStore := beads.NewMemStore()

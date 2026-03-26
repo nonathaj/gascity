@@ -321,7 +321,9 @@ func skipOpenScopeMembers(store beads.Store, rootID, scopeRef, skipControlID str
 		return 0, err
 	}
 	for _, member := range scopeBeads {
-		if member.Metadata["gc.kind"] != "retry" {
+		switch strings.TrimSpace(member.Metadata["gc.kind"]) {
+		case "retry", "ralph":
+		default:
 			continue
 		}
 		switch member.Metadata["gc.scope_role"] {
@@ -332,7 +334,7 @@ func skipOpenScopeMembers(store beads.Store, rootID, scopeRef, skipControlID str
 			if candidate.Status != "open" {
 				continue
 			}
-			if !isRetryDescendant(member, candidate) {
+			if !isLogicalDescendant(member, candidate) {
 				continue
 			}
 			pending[candidate.ID] = candidate
@@ -442,20 +444,17 @@ func listByWorkflowRoot(store beads.Store, rootID string) ([]beads.Bead, error) 
 	return result, nil
 }
 
-func isRetryDescendant(logical, candidate beads.Bead) bool {
-	// v1 pattern: attempt beads have gc.kind "retry-run" or "retry-eval".
-	// v2 pattern: attempt beads keep their original kind but carry gc.attempt
-	// metadata and are blocking deps of a retry/ralph control bead.
-	isV1Attempt := candidate.Metadata["gc.kind"] == "retry-run" || candidate.Metadata["gc.kind"] == "retry-eval"
-	isV2Attempt := candidate.Metadata["gc.attempt"] != ""
-	if !isV1Attempt && !isV2Attempt {
+func isLogicalDescendant(logical, candidate beads.Bead) bool {
+	if logical.ID == "" || candidate.ID == "" || logical.ID == candidate.ID {
 		return false
 	}
 	if candidate.Metadata["gc.logical_bead_id"] == logical.ID {
 		return true
 	}
-	if strings.HasPrefix(candidate.ID, logical.ID+".run.") || strings.HasPrefix(candidate.ID, logical.ID+".eval.") {
-		return true
+	for _, prefix := range []string{".run.", ".eval.", ".check.", ".iteration."} {
+		if strings.HasPrefix(candidate.ID, logical.ID+prefix) {
+			return true
+		}
 	}
 	logicalRef := strings.TrimSpace(logical.Metadata["gc.step_ref"])
 	if logicalRef == "" {
@@ -468,8 +467,15 @@ func isRetryDescendant(logical, candidate beads.Bead) bool {
 	if candidateRef == "" {
 		candidateRef = strings.TrimSpace(candidate.Ref)
 	}
-	if strings.HasPrefix(candidateRef, logicalRef+".run.") || strings.HasPrefix(candidateRef, logicalRef+".eval.") {
-		return true
+	for _, prefix := range []string{".run.", ".eval.", ".check.", ".iteration."} {
+		if strings.HasPrefix(candidateRef, logicalRef+prefix) {
+			return true
+		}
+	}
+	if logicalStepID := strings.TrimSpace(logical.Metadata["gc.step_id"]); logicalStepID != "" {
+		if strings.TrimSpace(candidate.Metadata["gc.ralph_step_id"]) == logicalStepID {
+			return true
+		}
 	}
 	return false
 }

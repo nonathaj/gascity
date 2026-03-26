@@ -794,10 +794,12 @@ func aggregateAttemptStatus(beadsForAttempt []beads.Bead) string {
 func statusRank(status string) int {
 	switch status {
 	case "active":
-		return 4
+		return 5
 	case "pending":
-		return 3
+		return 4
 	case "failed":
+		return 3
+	case "skipped":
 		return 2
 	case "completed":
 		return 1
@@ -981,11 +983,15 @@ func workflowKind(bead beads.Bead) string {
 }
 
 func workflowStatus(bead beads.Bead) string {
+	outcome := strings.TrimSpace(bead.Metadata["gc.outcome"])
 	hasAssignment := strings.TrimSpace(bead.Assignee) != ""
 	switch strings.TrimSpace(bead.Status) {
 	case "closed":
-		if strings.TrimSpace(bead.Metadata["gc.outcome"]) == "fail" {
+		switch outcome {
+		case "fail":
 			return "failed"
+		case "skipped":
+			return "skipped"
 		}
 		return "completed"
 	case "in_progress":
@@ -996,8 +1002,11 @@ func workflowStatus(bead beads.Bead) string {
 	case "open":
 		return "pending"
 	default:
-		if strings.TrimSpace(bead.Metadata["gc.outcome"]) == "fail" {
+		switch outcome {
+		case "fail":
 			return "failed"
+		case "skipped":
+			return "skipped"
 		}
 		return strings.TrimSpace(bead.Status)
 	}

@@ -133,12 +133,21 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	tmplName := templateNameFor(cfgAgent, qualifiedName)
 	sessName := p.resolveSessionName(qualifiedName, tmplName)
 
+	// Step 7: Derive session bead ID for traceability.
+	// Bead-derived session names have the form "s-{beadID}". Extract the
+	// bead ID so BEADS_ACTOR and GC_SESSION_ID use it for log lookup.
+	sessionBeadID := sessName
+	if strings.HasPrefix(sessName, "s-") {
+		sessionBeadID = strings.TrimPrefix(sessName, "s-")
+	}
+
 	// Step 8: Build agent environment.
 	agentEnv := map[string]string{
 		"GC_SESSION_NAME":     sessName,
+		"GC_SESSION_ID":       sessionBeadID,
 		"GC_TEMPLATE":         templateNameFor(cfgAgent, qualifiedName),
 		"GC_AGENT":            qualifiedName,
-		"BEADS_ACTOR":         sessName,
+		"BEADS_ACTOR":         sessionBeadID,
 		"GC_CITY":             p.cityPath,
 		"GC_CITY_ROOT":        p.cityPath,
 		"GC_CITY_PATH":        p.cityPath,

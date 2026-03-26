@@ -752,3 +752,108 @@ func TestProcessScopeCheckSkipsOpenRetryDescendantsOnAbort(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessScopeCheckSkipsOpenRalphIterationDescendantsOnAbort(t *testing.T) {
+	t.Parallel()
+
+	store := newStrictCloseStore()
+	root := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	body := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "body",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope",
+			"gc.root_bead_id": root.ID,
+			"gc.step_ref":     "demo.body",
+			"gc.scope_role":   "body",
+		},
+	})
+	failed := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "preflight",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": root.ID,
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "member",
+			"gc.outcome":      "fail",
+		},
+	})
+	control := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize scope for preflight",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": root.ID,
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "control",
+		},
+	})
+	logical := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "review loop",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "ralph",
+			"gc.root_bead_id": root.ID,
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "member",
+			"gc.step_id":      "review-loop",
+			"gc.step_ref":     "demo.review-loop",
+		},
+	})
+	iterationChild := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "review claude",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":          "retry",
+			"gc.root_bead_id":  root.ID,
+			"gc.scope_ref":     "review-loop.iteration.1",
+			"gc.scope_role":    "member",
+			"gc.ralph_step_id": "review-loop",
+			"gc.attempt":       "1",
+			"gc.step_ref":      "demo.review-loop.iteration.1.review-claude",
+		},
+	})
+	iterationControl := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize scope for review claude",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":          "scope-check",
+			"gc.root_bead_id":  root.ID,
+			"gc.scope_ref":     "review-loop.iteration.1",
+			"gc.scope_role":    "control",
+			"gc.ralph_step_id": "review-loop",
+			"gc.attempt":       "1",
+			"gc.step_ref":      "demo.review-loop.iteration.1.review-claude-scope-check",
+		},
+	})
+	mustDepAdd(t, store, control.ID, failed.ID, "blocks")
+	mustDepAdd(t, store, body.ID, control.ID, "blocks")
+	mustDepAdd(t, store, logical.ID, iterationControl.ID, "blocks")
+	mustDepAdd(t, store, iterationControl.ID, iterationChild.ID, "blocks")
+
+	result, err := ProcessControl(store, control, ProcessOptions{})
+	if err != nil {
+		t.Fatalf("ProcessControl(scope-check with ralph descendants): %v", err)
+	}
+	if !result.Processed || result.Action != "scope-fail" {
+		t.Fatalf("result = %+v, want processed scope-fail", result)
+	}
+
+	for _, beadID := range []string{logical.ID, iterationChild.ID, iterationControl.ID} {
+		bead := mustGetBead(t, store, beadID)
+		if bead.Status != "closed" {
+			t.Fatalf("%s status = %q, want closed", beadID, bead.Status)
+		}
+		if bead.Metadata["gc.outcome"] != "skipped" {
+			t.Fatalf("%s gc.outcome = %q, want skipped", beadID, bead.Metadata["gc.outcome"])
+		}
+	}
+}
