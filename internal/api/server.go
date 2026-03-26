@@ -236,6 +236,7 @@ func (s *Server) registerRoutes() {
 
 	// Orders
 	s.mux.HandleFunc("GET /v0/orders", s.handleOrderList)
+	s.mux.HandleFunc("GET /v0/orders/feed", s.handleOrdersFeed)
 	s.mux.HandleFunc("GET /v0/orders/check", s.handleOrderCheck)
 	s.mux.HandleFunc("GET /v0/orders/history", s.handleOrderHistory)
 	s.mux.HandleFunc("GET /v0/order/history/{bead_id}", s.handleOrderHistoryDetail)

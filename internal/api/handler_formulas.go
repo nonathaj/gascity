@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/formula"
 )
@@ -82,13 +83,27 @@ func (s *Server) handleFormulaList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := buildFormulaCatalog(paths)
+	runs, err := buildWorkflowRunProjections(s.state, scopeKind, scopeRef)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal", "formula run projection failed")
+		return
+	}
+
+	items, err := buildFormulaCatalog(paths, filterFormulaCatalogRuns(scopeKind, scopeRef, runs.Items))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", "formula catalog failed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	resp := map[string]any{
+		"items":   items,
+		"partial": runs.Partial,
+	}
+	if len(runs.PartialErrors) > 0 {
+		resp["partial_errors"] = runs.PartialErrors
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleFormulaDetail(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +166,7 @@ func (s *Server) formulaSearchPaths(scopeKind, scopeRef string) ([]string, int, 
 	}
 }
 
-func buildFormulaCatalog(paths []string) ([]formulaSummaryResponse, error) {
+func buildFormulaCatalog(paths []string, runs []workflowRunProjection) ([]formulaSummaryResponse, error) {
 	if len(paths) == 0 {
 		return []formulaSummaryResponse{}, nil
 	}
@@ -166,16 +181,78 @@ func buildFormulaCatalog(paths []string) ([]formulaSummaryResponse, error) {
 			}
 			return nil, err
 		}
+		recentRuns := formulaRecentRunsFor(resolved.Formula, runs, 3)
 		items = append(items, formulaSummaryResponse{
 			Name:        resolved.Formula,
 			Description: resolved.Description,
 			Version:     formulaVersionString(resolved),
 			VarDefs:     formulaVarDefs(resolved.Vars),
-			RunCount:    0,
-			RecentRuns:  []formulaRecentRunResponse{},
+			RunCount:    formulaRunCountFor(resolved.Formula, runs),
+			RecentRuns:  recentRuns,
 		})
 	}
 	return items, nil
+}
+
+func filterFormulaCatalogRuns(scopeKind, scopeRef string, runs []workflowRunProjection) []workflowRunProjection {
+	if scopeKind != "city" {
+		return runs
+	}
+
+	filtered := make([]workflowRunProjection, 0, len(runs))
+	for _, run := range runs {
+		if run.ScopeKind == scopeKind && run.ScopeRef == scopeRef {
+			filtered = append(filtered, run)
+		}
+	}
+	return filtered
+}
+
+func formulaRunCountFor(name string, runs []workflowRunProjection) int {
+	count := 0
+	for _, run := range runs {
+		if run.FormulaName == name {
+			count++
+		}
+	}
+	return count
+}
+
+func formulaRecentRunsFor(name string, runs []workflowRunProjection, limit int) []formulaRecentRunResponse {
+	if limit <= 0 {
+		return []formulaRecentRunResponse{}
+	}
+
+	matching := make([]workflowRunProjection, 0, limit)
+	for _, run := range runs {
+		if run.FormulaName != name {
+			continue
+		}
+		matching = append(matching, run)
+	}
+
+	sort.SliceStable(matching, func(i, j int) bool {
+		if !matching[i].UpdatedAt.Equal(matching[j].UpdatedAt) {
+			return matching[i].UpdatedAt.After(matching[j].UpdatedAt)
+		}
+		return matching[i].StartedAt.After(matching[j].StartedAt)
+	})
+
+	if len(matching) > limit {
+		matching = matching[:limit]
+	}
+
+	items := make([]formulaRecentRunResponse, 0, len(matching))
+	for _, run := range matching {
+		items = append(items, formulaRecentRunResponse{
+			WorkflowID: run.WorkflowID,
+			Status:     run.Status,
+			Target:     run.Target,
+			StartedAt:  run.StartedAt.Format(time.RFC3339),
+			UpdatedAt:  run.UpdatedAt.Format(time.RFC3339),
+		})
+	}
+	return items
 }
 
 func buildFormulaDetail(ctx context.Context, name string, paths []string, _ string, vars map[string]string) (*formulaDetailResponse, error) {
