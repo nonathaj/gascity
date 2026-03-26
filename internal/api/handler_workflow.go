@@ -765,7 +765,12 @@ func logicalBaseBead(group *logicalGroup) beads.Bead {
 }
 
 func logicalCurrentBead(group *logicalGroup, base beads.Bead) beads.Bead {
-	if isTerminalWorkflowStatus(workflowStatus(base)) {
+	// For v2 retry/ralph control beads, even when terminal, prefer the
+	// latest attempt bead for session link resolution (the control bead
+	// has no assignee).
+	kind := base.Metadata["gc.kind"]
+	isControl := kind == "retry" || kind == "ralph"
+	if isTerminalWorkflowStatus(workflowStatus(base)) && !isControl {
 		return base
 	}
 
