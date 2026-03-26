@@ -247,6 +247,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v0/formulas/{name}", s.handleFormulaDetail)
 	s.mux.HandleFunc("GET /v0/formula/{name}", s.handleFormulaDetail)
 	s.mux.HandleFunc("GET /v0/workflow/{workflow_id}", s.handleWorkflowGet)
+	s.mux.HandleFunc("DELETE /v0/workflow/{workflow_id}", s.handleWorkflowDelete)
 
 	// Sessions (chat sessions) — id accepts bead ID, alias, or runtime session_name
 	s.mux.HandleFunc("POST /v0/sessions", s.handleSessionCreate)

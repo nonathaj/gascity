@@ -139,6 +139,92 @@ func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 	writeIndexJSON(w, index, snapshot)
 }
 
+func (s *Server) handleWorkflowDelete(w http.ResponseWriter, r *http.Request) {
+	workflowID := strings.TrimSpace(r.PathValue("workflow_id"))
+	if workflowID == "" {
+		writeError(w, http.StatusBadRequest, "invalid", "workflow_id is required")
+		return
+	}
+
+	q := r.URL.Query()
+	scopeKind := strings.TrimSpace(q.Get("scope_kind"))
+	scopeRef := strings.TrimSpace(q.Get("scope_ref"))
+	deleteFromStore := q.Get("delete") == "true"
+
+	stores := s.workflowStores()
+
+	closed := 0
+	deleted := 0
+	found := false
+
+	for _, info := range stores {
+		if info.store == nil {
+			continue
+		}
+		if scopeKind == "rig" && scopeRef != "" && info.scopeRef != scopeRef {
+			continue
+		}
+
+		all, err := info.store.List()
+		if err != nil {
+			continue
+		}
+
+		var ids []string
+		for _, b := range all {
+			if b.ID == workflowID || b.Metadata["gc.root_bead_id"] == workflowID {
+				ids = append(ids, b.ID)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		found = true
+
+		// Phase 1: Close all open beads.
+		for _, id := range ids {
+			b, err := info.store.Get(id)
+			if err != nil {
+				continue
+			}
+			if b.Status != "closed" {
+				_ = info.store.SetMetadata(id, "gc.outcome", "skipped")
+				_ = info.store.Close(id)
+				closed++
+			}
+		}
+
+		// Phase 2: Delete if requested.
+		if deleteFromStore {
+			for _, id := range ids {
+				// Remove deps before delete.
+				if deps, err := info.store.DepList(id, "down"); err == nil {
+					for _, dep := range deps {
+						_ = info.store.DepRemove(id, dep.DependsOnID)
+					}
+				}
+				if deps, err := info.store.DepList(id, "up"); err == nil {
+					for _, dep := range deps {
+						_ = info.store.DepRemove(dep.IssueID, id)
+					}
+				}
+				deleted++
+			}
+		}
+	}
+
+	if !found {
+		writeError(w, http.StatusNotFound, "not_found", "workflow "+workflowID+" not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workflow_id": workflowID,
+		"closed":      closed,
+		"deleted":     deleted,
+	})
+}
+
 func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackScopeRef string, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
 	// Fast SQL currently resolves only against the city Dolt store. Rig-scoped
 	// workflows still live in rig stores, so routing them through the city SQL
