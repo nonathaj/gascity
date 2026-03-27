@@ -1190,7 +1190,7 @@ type Agent struct {
 	// sleeping sessions even without WakeConfig.
 	// Default for fixed agents: "bd ready --assignee=<qualified-name>".
 	// Default for pool agents:
-	// "bd ready --label=pool:<qualified-name> --json --limit=1 2>/dev/null".
+	// "bd ready --label=pool:<qualified-name> --unassigned --json --limit=1 2>/dev/null".
 	// Override to integrate with external task systems.
 	WorkQuery string `toml:"work_query,omitempty"`
 	// SlingQuery is the command template to route a bead to this agent/pool.
@@ -1329,8 +1329,8 @@ func (a *Agent) EffectiveWorkQuery() string {
 		return a.WorkQuery
 	}
 	if a.IsPool() {
-		// Default: find ready beads routed to this agent template.
-		return "bd ready --metadata-field gc.routed_to=" + a.QualifiedName() + " --json --limit=1 2>/dev/null"
+		// Default: find unassigned ready beads routed to this agent template.
+		return "bd ready --metadata-field gc.routed_to=" + a.QualifiedName() + " --unassigned --json --limit=1 2>/dev/null"
 	}
 	return `bd ready --assignee="$GC_SESSION_NAME" --json --limit=1 2>/dev/null`
 }
@@ -1377,7 +1377,7 @@ func (a *Agent) EffectivePool() PoolConfig {
 func (a *Agent) defaultPoolCheck() string {
 	template := a.QualifiedName()
 	return `ready=$(bd ready --metadata-field gc.routed_to=` + template +
-		` --json 2>/dev/null | jq 'length' 2>/dev/null); ` +
+		` --unassigned --json 2>/dev/null | jq 'length' 2>/dev/null); ` +
 		`active=$(bd list --metadata-field gc.routed_to=` + template +
 		` --status=in_progress --json 2>/dev/null | jq 'length' 2>/dev/null); ` +
 		`echo "$(( ${ready:-0} + ${active:-0} ))" || echo 0`

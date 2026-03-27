@@ -1182,7 +1182,7 @@ func TestEffectiveWorkQueryWithDir(t *testing.T) {
 func TestEffectiveWorkQueryPoolDefault(t *testing.T) {
 	a := Agent{Name: "polecat", Dir: "hello-world", Pool: &PoolConfig{Min: 1, Max: 3}}
 	got := a.EffectiveWorkQuery()
-	want := "bd ready --metadata-field gc.routed_to=hello-world/polecat --json --limit=1 2>/dev/null"
+	want := "bd ready --metadata-field gc.routed_to=hello-world/polecat --unassigned --json --limit=1 2>/dev/null"
 	if got != want {
 		t.Errorf("EffectiveWorkQuery() = %q, want %q", got, want)
 	}
@@ -1234,7 +1234,7 @@ func TestEffectiveWorkQueryPoolNameOverride(t *testing.T) {
 		PoolName: "hello-world/dog",
 	}
 	got := a.EffectiveWorkQuery()
-	want := "bd ready --metadata-field gc.routed_to=hello-world/dog-1 --json --limit=1 2>/dev/null"
+	want := "bd ready --metadata-field gc.routed_to=hello-world/dog-1 --unassigned --json --limit=1 2>/dev/null"
 	if got != want {
 		t.Errorf("EffectiveWorkQuery() = %q, want %q", got, want)
 	}
@@ -1243,7 +1243,7 @@ func TestEffectiveWorkQueryPoolNameOverride(t *testing.T) {
 func TestEffectiveWorkQueryPoolNoPoolName(t *testing.T) {
 	a := Agent{Name: "dog", Dir: "hello-world", Pool: &PoolConfig{Min: 1, Max: 3}}
 	got := a.EffectiveWorkQuery()
-	want := "bd ready --metadata-field gc.routed_to=hello-world/dog --json --limit=1 2>/dev/null"
+	want := "bd ready --metadata-field gc.routed_to=hello-world/dog --unassigned --json --limit=1 2>/dev/null"
 	if got != want {
 		t.Errorf("EffectiveWorkQuery() = %q, want %q", got, want)
 	}
