@@ -259,6 +259,12 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 	}
 
 	// Root step for the attempt sub-DAG.
+	// For ralph iterations with children, the root is a scope bead.
+	// For simple retries, it's the work bead itself (no wrapper).
+	rootKind := "task"
+	if step.Ralph != nil && len(step.Children) > 0 {
+		rootKind = "scope"
+	}
 	rootStep := formula.RecipeStep{
 		ID:       attemptPrefix,
 		Title:    step.Title,
@@ -267,7 +273,7 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 		Labels:   append([]string{}, step.Labels...),
 		Assignee: step.Assignee,
 		Metadata: map[string]string{
-			"gc.kind":     "workflow",
+			"gc.kind":     rootKind,
 			"gc.attempt":  strconv.Itoa(attemptNum),
 			"gc.step_id":  stepID,
 			"gc.step_ref": attemptPrefix,
