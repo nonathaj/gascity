@@ -282,6 +282,18 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 	if step.Ralph != nil && len(step.Children) > 0 {
 		rootKind = "scope"
 	}
+	rootMeta := map[string]string{
+		"gc.kind":     rootKind,
+		"gc.attempt":  strconv.Itoa(attemptNum),
+		"gc.step_id":  stepID,
+		"gc.step_ref": attemptPrefix,
+	}
+	// Ralph iterations need scope metadata for grouping.
+	if rootKind == "scope" {
+		rootMeta["gc.scope_role"] = "body"
+		rootMeta["gc.scope_name"] = stepID
+		rootMeta["gc.ralph_step_id"] = stepID
+	}
 	rootStep := formula.RecipeStep{
 		ID:       attemptPrefix,
 		Title:    step.Title,
@@ -289,12 +301,7 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 		IsRoot:   true,
 		Labels:   append([]string{}, step.Labels...),
 		Assignee: step.Assignee,
-		Metadata: map[string]string{
-			"gc.kind":     rootKind,
-			"gc.attempt":  strconv.Itoa(attemptNum),
-			"gc.step_id":  stepID,
-			"gc.step_ref": attemptPrefix,
-		},
+		Metadata: rootMeta,
 	}
 	if step.Type == "" {
 		rootStep.Type = "task"
@@ -322,19 +329,33 @@ func buildAttemptRecipe(step *formula.Step, control beads.Bead, attemptNum int) 
 					childMeta[k] = v
 				}
 			}
-			// Derive gc.kind from the child's retry/ralph config.
+			// Derive gc.kind and control metadata from retry/ralph config.
 			if child.Retry != nil {
 				childMeta["gc.kind"] = "retry"
 				childMeta["gc.max_attempts"] = strconv.Itoa(child.Retry.MaxAttempts)
+				childMeta["gc.control_epoch"] = "1"
 				if child.Retry.OnExhausted != "" {
 					childMeta["gc.on_exhausted"] = child.Retry.OnExhausted
 				} else {
 					childMeta["gc.on_exhausted"] = "hard_fail"
 				}
+				// Freeze child step spec so the nested retry can spawn its own attempts.
+				if specJSON, err := json.Marshal(child); err == nil {
+					childMeta["gc.source_step_spec"] = string(specJSON)
+				}
 			}
 			if child.Ralph != nil {
 				childMeta["gc.kind"] = "ralph"
 				childMeta["gc.max_attempts"] = strconv.Itoa(child.Ralph.MaxAttempts)
+				childMeta["gc.control_epoch"] = "1"
+				if child.Ralph.Check != nil {
+					childMeta["gc.check_mode"] = child.Ralph.Check.Mode
+					childMeta["gc.check_path"] = child.Ralph.Check.Path
+					childMeta["gc.check_timeout"] = child.Ralph.Check.Timeout
+				}
+				if specJSON, err := json.Marshal(child); err == nil {
+					childMeta["gc.source_step_spec"] = string(specJSON)
+				}
 			}
 			childStep := formula.RecipeStep{
 				ID:          childID,
