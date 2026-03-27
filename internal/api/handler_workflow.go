@@ -1053,7 +1053,7 @@ func trimAttemptStepRefForKind(stepRef, kind, attempt string) (string, bool) {
 
 func trimRightmostAttemptStepRef(stepRef string) (string, bool) {
 	best := -1
-	for _, prefix := range []string{".run.", ".check.", ".eval."} {
+	for _, prefix := range []string{".run.", ".check.", ".eval.", ".iteration.", ".attempt."} {
 		if idx := strings.LastIndex(stepRef, prefix); idx > best {
 			best = idx
 		}
