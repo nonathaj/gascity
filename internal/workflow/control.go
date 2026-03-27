@@ -215,18 +215,28 @@ func spawnNextAttempt(ctx context.Context, store beads.Store, control beads.Bead
 
 	recipe := buildAttemptRecipe(&step, control, attemptNum)
 
-	// Resolve assignee from the previous attempt if pool-aware.
-	if prev, err := findLatestAttempt(store, control); err == nil && prev.ID != "" {
-		if assignee := retryPreservedAssignee(prev); assignee != "" {
-			for i := range recipe.Steps {
-				if !recipe.Steps[i].IsRoot {
-					continue
+	// Stamp routing from the control bead onto attempt steps.
+	// Attach bypasses sling routing, so we need to propagate the
+	// execution route and pool label manually.
+	executionRoute := control.Metadata["gc.execution_routed_to"]
+	if executionRoute != "" {
+		poolLabel := "pool:" + executionRoute
+		for i := range recipe.Steps {
+			if recipe.Steps[i].Metadata == nil {
+				recipe.Steps[i].Metadata = make(map[string]string)
+			}
+			recipe.Steps[i].Metadata["gc.routed_to"] = executionRoute
+			recipe.Steps[i].Metadata["gc.execution_routed_to"] = executionRoute
+			// Add pool label if not already present.
+			hasLabel := false
+			for _, l := range recipe.Steps[i].Labels {
+				if l == poolLabel {
+					hasLabel = true
+					break
 				}
-				if recipe.Steps[i].Metadata == nil {
-					recipe.Steps[i].Metadata = make(map[string]string)
-				}
-				// Don't override — let the sling/pool scheduler handle it.
-				break
+			}
+			if !hasLabel {
+				recipe.Steps[i].Labels = append(recipe.Steps[i].Labels, poolLabel)
 			}
 		}
 	}
