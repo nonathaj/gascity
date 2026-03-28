@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,14 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
+
+type listFailStore struct {
+	beads.Store
+}
+
+func (s listFailStore) List() ([]beads.Bead, error) {
+	return nil, errors.New("list failed")
+}
 
 func TestBuildDesiredState_SingletonTemplateDoesNotRealizeDependencyPoolFloorWithoutSession(t *testing.T) {
 	cityPath := t.TempDir()
@@ -250,6 +260,202 @@ func TestBuildDesiredState_ManualZeroScaledPoolSessionStaysDesiredAndKeepsDepend
 	}
 	if dbSlots != 1 {
 		t.Fatalf("db desired slots = %d, want 1", dbSlots)
+	}
+}
+
+func TestBuildDesiredState_UsesBeadNamedPoolSessionsForRoutedWork(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title: "queued worker job",
+		Metadata: map[string]string{
+			"gc.routed_to": "worker",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{
+				Name: "worker",
+				Pool: &config.PoolConfig{Min: 0, Max: 3},
+			},
+		},
+	}
+
+	desired := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	if len(desired) != 1 {
+		t.Fatalf("desired sessions = %d, want 1", len(desired))
+	}
+
+	var (
+		sessionName string
+		tp          TemplateParams
+	)
+	for sn, got := range desired {
+		sessionName = sn
+		tp = got
+	}
+	if tp.TemplateName != "worker" {
+		t.Fatalf("TemplateName = %q, want worker", tp.TemplateName)
+	}
+	if !strings.HasPrefix(sessionName, "worker-") {
+		t.Fatalf("session name = %q, want worker-<beadID>", sessionName)
+	}
+	if strings.HasSuffix(sessionName, "-1") {
+		t.Fatalf("session name = %q, want bead-derived name instead of slot alias", sessionName)
+	}
+
+	sessionBeads, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		t.Fatalf("ListByLabel(%q): %v", sessionBeadLabel, err)
+	}
+	if len(sessionBeads) != 1 {
+		t.Fatalf("session bead count = %d, want 1", len(sessionBeads))
+	}
+	if got := sessionBeads[0].Metadata["session_name"]; got != sessionName {
+		t.Fatalf("stored session_name = %q, want %q", got, sessionName)
+	}
+	if got := sessionBeads[0].Metadata[poolManagedMetadataKey]; got != "true" {
+		t.Fatalf("pool_managed = %q, want true", got)
+	}
+}
+
+func TestBuildDesiredState_FallsBackToLegacyPoolDemandWhenListFails(t *testing.T) {
+	cityPath := t.TempDir()
+	memStore := beads.NewMemStore()
+	store := listFailStore{Store: memStore}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{
+				Name: "worker",
+				Pool: &config.PoolConfig{Min: 1, Max: 1},
+			},
+		},
+	}
+
+	desired := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	if len(desired) != 1 {
+		t.Fatalf("desired sessions = %d, want 1", len(desired))
+	}
+	var sessionName string
+	for sn := range desired {
+		sessionName = sn
+	}
+	if !strings.HasPrefix(sessionName, "worker-") {
+		t.Fatalf("session name = %q, want worker-<beadID>", sessionName)
+	}
+
+	sessionBeads, err := memStore.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		t.Fatalf("ListByLabel(%q): %v", sessionBeadLabel, err)
+	}
+	if len(sessionBeads) != 1 {
+		t.Fatalf("session bead count = %d, want 1", len(sessionBeads))
+	}
+}
+
+func TestBuildDesiredState_DependencyFloorDoesNotReuseRegularPoolWorkerBead(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "worker active",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "agent:worker"},
+		Metadata: map[string]string{
+			"template":             "worker",
+			"session_name":         "worker-existing",
+			"agent_name":           "worker",
+			"state":                "active",
+			"pool_slot":            "1",
+			poolManagedMetadataKey: "true",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Title:  "helper",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:helper"},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"session_name": "helper-session",
+			"state":        "creating",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{
+				Name: "worker",
+				Pool: &config.PoolConfig{Min: 0, Max: 3},
+			},
+			{
+				Name:         "helper",
+				Suspended:    true,
+				DependsOn:    []string{"worker"},
+				StartCommand: "echo",
+			},
+		},
+	}
+
+	desired := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	if _, ok := desired["worker-existing"]; ok {
+		t.Fatalf("dependency floor reused regular worker bead: keys=%v", mapKeys(desired))
+	}
+	workerSessions := 0
+	for sn, tp := range desired {
+		if tp.TemplateName != "worker" {
+			continue
+		}
+		workerSessions++
+		if sn == "worker-existing" {
+			t.Fatalf("dependency floor kept regular worker bead %q desired", sn)
+		}
+	}
+	if workerSessions != 1 {
+		t.Fatalf("worker desired sessions = %d, want 1; desired keys=%v", workerSessions, mapKeys(desired))
+	}
+}
+
+func TestBuildDesiredState_DoesNotCreateDuplicatePoolBeadForDiscoveredSession(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "worker session",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":             "worker",
+			"session_name":         "worker-gc-existing",
+			"manual_session":       "true",
+			poolManagedMetadataKey: "true",
+			"state":                "creating",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{
+				Name: "worker",
+				Pool: &config.PoolConfig{Min: 0, Max: 3},
+			},
+		},
+	}
+
+	desired := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	if _, ok := desired["worker-gc-existing"]; !ok {
+		t.Fatalf("desired state missing discovered pool session: keys=%v", mapKeys(desired))
+	}
+
+	sessionBeads, err := store.ListByLabel(sessionBeadLabel, 0)
+	if err != nil {
+		t.Fatalf("ListByLabel(%q): %v", sessionBeadLabel, err)
+	}
+	if len(sessionBeads) != 1 {
+		t.Fatalf("session bead count = %d, want 1 (no duplicate bead)", len(sessionBeads))
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,49 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 )
+
+type poolEvalWork struct {
+	agentIdx int
+	pool     config.PoolConfig
+	poolDir  string
+}
+
+func evaluatePendingPools(
+	cfg *config.City,
+	pendingPools []poolEvalWork,
+	stderr io.Writer,
+) []int {
+	type poolEvalResult struct {
+		desired int
+		err     error
+	}
+	evalResults := make([]poolEvalResult, len(pendingPools))
+	var wg sync.WaitGroup
+	for j, pw := range pendingPools {
+		wg.Add(1)
+		go func(idx int, name string, pool config.PoolConfig, dir string) {
+			defer wg.Done()
+			d, err := evaluatePool(name, pool, dir, shellScaleCheck)
+			evalResults[idx] = poolEvalResult{desired: d, err: err}
+		}(j, cfg.Agents[pw.agentIdx].Name, pw.pool, pw.poolDir)
+	}
+	wg.Wait()
+
+	counts := make([]int, len(pendingPools))
+	for j, pw := range pendingPools {
+		pr := evalResults[j]
+		if pr.err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: %v (using min=%d)\n", pr.err, pw.pool.Min) //nolint:errcheck
+		}
+		desiredCount := pr.desired
+		floored, floorErr := floorSingletonPoolDesiredFromWorkQuery(cfg.Agents[pw.agentIdx], desiredCount, pw.poolDir, shellScaleCheck)
+		if floorErr != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: work_query fallback for %q: %v\n", cfg.Agents[pw.agentIdx].QualifiedName(), floorErr) //nolint:errcheck
+		}
+		counts[j] = floored
+	}
+	return counts
+}
 
 // buildDesiredState computes the desired session state from config,
 // returning sessionName → TemplateParams. This is the canonical path
@@ -70,12 +114,6 @@ func buildDesiredStateWithSessionBeads(
 		}
 	}
 
-	type poolEvalWork struct {
-		agentIdx int
-		pool     config.PoolConfig
-		poolDir  string
-	}
-
 	desired := make(map[string]TemplateParams)
 	var pendingPools []poolEvalWork
 
@@ -108,64 +146,73 @@ func buildDesiredStateWithSessionBeads(
 			continue
 		}
 
-		// Pool agent: collect for parallel scale_check.
 		rigName := configuredRigName(cityPath, &cfg.Agents[i], cfg.Rigs)
 		if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
 			continue
 		}
+		// Pool agent: collect scale-check inputs. Legacy no-store mode uses
+		// them directly; bead-backed mode falls back to them when work-bead
+		// listing fails so transient store errors do not collapse demand to 0.
 		poolDir := agentCommandDir(cityPath, &cfg.Agents[i], cfg.Rigs)
 		pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, pool: pool, poolDir: poolDir})
 	}
 
-	// Parallel scale_check evaluation for pools.
-	type poolEvalResult struct {
-		desired int
-		err     error
-	}
-	evalResults := make([]poolEvalResult, len(pendingPools))
-	var wg sync.WaitGroup
-	for j, pw := range pendingPools {
-		wg.Add(1)
-		go func(idx int, name string, pool config.PoolConfig, dir string) {
-			defer wg.Done()
-			d, err := evaluatePool(name, pool, dir, shellScaleCheck)
-			evalResults[idx] = poolEvalResult{desired: d, err: err}
-		}(j, cfg.Agents[pw.agentIdx].Name, pw.pool, pw.poolDir)
-	}
-	wg.Wait()
-
-	for j, pw := range pendingPools {
-		pr := evalResults[j]
-		if pr.err != nil {
-			fmt.Fprintf(stderr, "buildDesiredState: %v (using min=%d)\n", pr.err, pw.pool.Min) //nolint:errcheck
+	if store != nil {
+		allBeads, err := store.List()
+		if err == nil {
+			poolDesiredStates := ComputePoolDesiredStates(cfg, allBeads, sessionBeads.Open())
+			for _, poolState := range poolDesiredStates {
+				cfgAgent := findAgentByTemplate(cfg, poolState.Template)
+				if cfgAgent == nil {
+					continue
+				}
+				if agentInSuspendedRig(cityPath, cfgAgent, cfg.Rigs, suspendedRigPaths) {
+					continue
+				}
+				realizePoolDesiredSessions(bp, cfgAgent, poolState, desired, stderr)
+			}
+		} else {
+			fmt.Fprintf(stderr, "buildDesiredState: listing work beads: %v\n", err) //nolint:errcheck
+			desiredCounts := evaluatePendingPools(cfg, pendingPools, stderr)
+			for j, pw := range pendingPools {
+				desiredCount := desiredCounts[j]
+				if desiredCount <= 0 {
+					continue
+				}
+				cfgAgent := &cfg.Agents[pw.agentIdx]
+				poolState := PoolDesiredState{
+					Template: cfgAgent.QualifiedName(),
+					Requests: make([]SessionRequest, desiredCount),
+				}
+				realizePoolDesiredSessions(bp, cfgAgent, poolState, desired, stderr)
+			}
 		}
-		desiredCount := pr.desired
-		floored, floorErr := floorSingletonPoolDesiredFromWorkQuery(cfg.Agents[pw.agentIdx], desiredCount, pw.poolDir, shellScaleCheck)
-		if floorErr != nil {
-			fmt.Fprintf(stderr, "buildDesiredState: work_query fallback for %q: %v\n", cfg.Agents[pw.agentIdx].QualifiedName(), floorErr) //nolint:errcheck
-		}
-		desiredCount = floored
-		for slot := 1; slot <= desiredCount; slot++ {
-			// If single-instance (max == 1), use bare name (no suffix).
-			// If multi-instance (max > 1 or unlimited), use themed name
-			// (from namepool) or {name}-{N} suffix.
-			name := cfg.Agents[pw.agentIdx].Name
-			if pw.pool.IsMultiInstance() {
-				name = poolInstanceName(cfg.Agents[pw.agentIdx].Name, slot, pw.pool)
+	} else {
+		desiredCounts := evaluatePendingPools(cfg, pendingPools, stderr)
+		for j, pw := range pendingPools {
+			desiredCount := desiredCounts[j]
+			for slot := 1; slot <= desiredCount; slot++ {
+				// If single-instance (max == 1), use bare name (no suffix).
+				// If multi-instance (max > 1 or unlimited), use themed name
+				// (from namepool) or {name}-{N} suffix.
+				name := cfg.Agents[pw.agentIdx].Name
+				if pw.pool.IsMultiInstance() {
+					name = poolInstanceName(cfg.Agents[pw.agentIdx].Name, slot, pw.pool)
+				}
+				qualifiedInstance := name
+				if cfg.Agents[pw.agentIdx].Dir != "" {
+					qualifiedInstance = cfg.Agents[pw.agentIdx].Dir + "/" + name
+				}
+				instanceAgent := deepCopyAgent(&cfg.Agents[pw.agentIdx], name, cfg.Agents[pw.agentIdx].Dir)
+				fpExtra := buildFingerprintExtra(&instanceAgent)
+				tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
+				if err != nil {
+					fmt.Fprintf(stderr, "buildDesiredState: pool instance %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
+					continue
+				}
+				installAgentSideEffects(bp, &instanceAgent, tp, stderr)
+				desired[tp.SessionName] = tp
 			}
-			qualifiedInstance := name
-			if cfg.Agents[pw.agentIdx].Dir != "" {
-				qualifiedInstance = cfg.Agents[pw.agentIdx].Dir + "/" + name
-			}
-			instanceAgent := deepCopyAgent(&cfg.Agents[pw.agentIdx], name, cfg.Agents[pw.agentIdx].Dir)
-			fpExtra := buildFingerprintExtra(&instanceAgent)
-			tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
-			if err != nil {
-				fmt.Fprintf(stderr, "buildDesiredState: pool instance %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
-				continue
-			}
-			installAgentSideEffects(bp, &instanceAgent, tp, stderr)
-			desired[tp.SessionName] = tp
 		}
 	}
 
@@ -269,22 +316,16 @@ func discoverSessionBeadsWithRoots(
 		}
 		// Resolve TemplateParams for this bead's session.
 		fpExtra := buildFingerprintExtra(cfgAgent)
-		tp, err := resolveTemplate(bp, cfgAgent, cfgAgent.QualifiedName(), fpExtra)
+		tp, err := resolveTemplateForSessionBead(bp, cfgAgent, cfgAgent.QualifiedName(), fpExtra, b)
 		if err != nil {
 			fmt.Fprintf(stderr, "buildDesiredState: bead %s template %q: %v (skipping)\n", b.ID, template, err) //nolint:errcheck
 			continue
 		}
-		// Override the session name with the bead-derived name.
-		// Also update GC_SESSION_NAME in the env so each fork gets its
-		// own session identity in the config fingerprint. Without this,
-		// forks inherit the primary session's name from resolveSessionName
-		// cache, causing spurious config-drift when the cache changes.
-		tp.SessionName = sn
-		if tp.Env == nil {
-			tp.Env = make(map[string]string)
-		}
 		tp.ManualSession = b.Metadata["manual_session"] == "true"
-		tp.Env["GC_SESSION_NAME"] = sn
+		if cfgAgent.Pool != nil {
+			tp.Alias = ""
+			tp.InstanceName = sn
+		}
 		installAgentSideEffects(bp, cfgAgent, tp, stderr)
 		desired[sn] = tp
 	}
@@ -340,23 +381,44 @@ func ensureDependencyOnlyTemplate(
 		return
 	}
 
-	name := cfgAgent.Name
-	if cfgAgent.Pool.IsMultiInstance() {
-		name = poolInstanceName(cfgAgent.Name, 1, *cfgAgent.Pool)
-	}
-	qualifiedInstance := name
-	if cfgAgent.Dir != "" {
-		qualifiedInstance = cfgAgent.Dir + "/" + name
-	}
-	instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
-	fpExtra := buildFingerprintExtra(&instanceAgent)
-	tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
-	if err != nil {
-		fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
+	if bp.beadStore == nil {
+		name := cfgAgent.Name
+		if cfgAgent.Pool.IsMultiInstance() {
+			name = poolInstanceName(cfgAgent.Name, 1, *cfgAgent.Pool)
+		}
+		qualifiedInstance := name
+		if cfgAgent.Dir != "" {
+			qualifiedInstance = cfgAgent.Dir + "/" + name
+		}
+		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
+		fpExtra := buildFingerprintExtra(&instanceAgent)
+		tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
+		if err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
+			return
+		}
+		tp.DependencyOnly = true
+		installAgentSideEffects(bp, &instanceAgent, tp, stderr)
+		desired[tp.SessionName] = tp
 		return
 	}
+
+	qualifiedName := cfgAgent.QualifiedName()
+	sessionBead, err := selectOrCreateDependencyPoolSessionBead(bp, qualifiedName)
+	if err != nil {
+		fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedName, err) //nolint:errcheck
+		return
+	}
+	fpExtra := buildFingerprintExtra(cfgAgent)
+	tp, err := resolveTemplateForSessionBead(bp, cfgAgent, qualifiedName, fpExtra, sessionBead)
+	if err != nil {
+		fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedName, err) //nolint:errcheck
+		return
+	}
+	tp.Alias = ""
+	tp.InstanceName = sessionBead.Metadata["session_name"]
 	tp.DependencyOnly = true
-	installAgentSideEffects(bp, &instanceAgent, tp, stderr)
+	installAgentSideEffects(bp, cfgAgent, tp, stderr)
 	desired[tp.SessionName] = tp
 }
 
@@ -367,6 +429,121 @@ func desiredHasTemplate(desired map[string]TemplateParams, template string) bool
 		}
 	}
 	return false
+}
+
+func realizePoolDesiredSessions(
+	bp *agentBuildParams,
+	cfgAgent *config.Agent,
+	poolState PoolDesiredState,
+	desired map[string]TemplateParams,
+	stderr io.Writer,
+) {
+	qualifiedName := cfgAgent.QualifiedName()
+	fpExtra := buildFingerprintExtra(cfgAgent)
+	used := make(map[string]bool)
+	for _, request := range poolState.Requests {
+		var prefer *beads.Bead
+		if request.SessionBeadID != "" {
+			if bead, ok := findOpenSessionBeadByID(bp.sessionBeads, request.SessionBeadID); ok {
+				prefer = &bead
+			}
+		}
+		sessionBead, err := selectOrCreatePoolSessionBead(bp, qualifiedName, prefer, used)
+		if err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: pool %q request: %v (skipping)\n", qualifiedName, err) //nolint:errcheck
+			continue
+		}
+		if used[sessionBead.ID] {
+			continue
+		}
+		used[sessionBead.ID] = true
+		tp, err := resolveTemplateForSessionBead(bp, cfgAgent, qualifiedName, fpExtra, sessionBead)
+		if err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: pool %q session %s: %v (skipping)\n", qualifiedName, sessionBead.ID, err) //nolint:errcheck
+			continue
+		}
+		tp.Alias = ""
+		tp.InstanceName = sessionBead.Metadata["session_name"]
+		installAgentSideEffects(bp, cfgAgent, tp, stderr)
+		desired[tp.SessionName] = tp
+	}
+}
+
+func resolveTemplateForSessionBead(
+	bp *agentBuildParams,
+	cfgAgent *config.Agent,
+	qualifiedName string,
+	fpExtra map[string]string,
+	sessionBead beads.Bead,
+) (TemplateParams, error) {
+	local := *bp
+	local.beadNames = map[string]string{qualifiedName: sessionBead.Metadata["session_name"]}
+	return resolveTemplate(&local, cfgAgent, qualifiedName, fpExtra)
+}
+
+func findOpenSessionBeadByID(sessionBeads *sessionBeadSnapshot, id string) (beads.Bead, bool) {
+	if sessionBeads == nil || id == "" {
+		return beads.Bead{}, false
+	}
+	for _, bead := range sessionBeads.Open() {
+		if bead.ID == id {
+			return bead, true
+		}
+	}
+	return beads.Bead{}, false
+}
+
+func selectOrCreatePoolSessionBead(
+	bp *agentBuildParams,
+	template string,
+	preferred *beads.Bead,
+	used map[string]bool,
+) (beads.Bead, error) {
+	if preferred != nil && preferred.ID != "" && !used[preferred.ID] {
+		return *preferred, nil
+	}
+	for _, bead := range bp.sessionBeads.Open() {
+		if bead.Status == "closed" || bead.Metadata["manual_session"] == boolMetadata(true) {
+			continue
+		}
+		if isNamedSessionBead(bead) {
+			continue
+		}
+		if used[bead.ID] {
+			continue
+		}
+		if normalizedSessionTemplate(bead, &config.City{Agents: bp.agents}) != template {
+			continue
+		}
+		if desiredName := strings.TrimSpace(bead.Metadata["session_name"]); desiredName != "" {
+			return bead, nil
+		}
+	}
+	return createPoolSessionBead(bp.beadStore, template, bp.sessionBeads)
+}
+
+func selectOrCreateDependencyPoolSessionBead(
+	bp *agentBuildParams,
+	template string,
+) (beads.Bead, error) {
+	for _, bead := range bp.sessionBeads.Open() {
+		if bead.Status == "closed" || bead.Metadata["manual_session"] == boolMetadata(true) {
+			continue
+		}
+		if isNamedSessionBead(bead) {
+			continue
+		}
+		if bead.Metadata["dependency_only"] != boolMetadata(true) {
+			continue
+		}
+		if normalizedSessionTemplate(bead, &config.City{Agents: bp.agents}) != template {
+			continue
+		}
+		if desiredName := strings.TrimSpace(bead.Metadata["session_name"]); desiredName != "" {
+			return bead, nil
+		}
+	}
+	return createPoolSessionBead(bp.beadStore, template, bp.sessionBeads)
 }
 
 func agentInSuspendedRig(

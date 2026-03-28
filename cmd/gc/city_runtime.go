@@ -575,10 +575,21 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[s
 	if sessionBeads == nil {
 		sessionBeads = cr.loadSessionBeadSnapshot()
 	}
+	allBeads, err := store.List()
+	if err != nil {
+		fmt.Fprintf(cr.stderr, "%s: listing work beads: %v\n", cr.logPrefix, err) //nolint:errcheck
+	}
+	var poolDesired map[string]int
+	if err == nil {
+		poolDesiredStates := ComputePoolDesiredStates(cr.cfg, allBeads, sessionBeads.Open())
+		poolDesired = PoolDesiredCounts(poolDesiredStates)
+	} else {
+		poolDesired = derivePoolDesired(desiredState, cr.cfg)
+	}
+	if err == nil && sweepUndesiredPoolSessionBeads(store, sessionBeads, desiredState, allBeads, cr.cfg, cr.sp) > 0 {
+		sessionBeads = cr.loadSessionBeadSnapshot()
+	}
 	open := sessionBeads.Open()
-
-	// Compute pool desired counts from the desired state.
-	poolDesired := derivePoolDesired(desiredState, cr.cfg)
 
 	// Use cr.cityName consistently — it's the authoritative runtime name.
 	cityName := cr.cityName
@@ -604,6 +615,41 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, desiredState map[s
 	if err := dispatchReadyWaitNudges(cr.cityPath, store, cr.sp, time.Now()); err != nil {
 		fmt.Fprintf(cr.stderr, "%s: dispatching wait nudges: %v\n", cr.logPrefix, err) //nolint:errcheck
 	}
+}
+
+func sweepUndesiredPoolSessionBeads(
+	store beads.Store,
+	sessionBeads *sessionBeadSnapshot,
+	desiredState map[string]TemplateParams,
+	allBeads []beads.Bead,
+	cfg *config.City,
+	sp runtime.Provider,
+) int {
+	if store == nil || sessionBeads == nil || cfg == nil {
+		return 0
+	}
+	var candidates []beads.Bead
+	for _, bead := range sessionBeads.Open() {
+		if bead.Status == "closed" {
+			continue
+		}
+		if _, desired := desiredState[bead.Metadata["session_name"]]; desired {
+			continue
+		}
+		if bead.Metadata["manual_session"] == boolMetadata(true) || isNamedSessionBead(bead) {
+			continue
+		}
+		if sp != nil && sp.IsRunning(bead.Metadata["session_name"]) {
+			continue
+		}
+		template := normalizedSessionTemplate(bead, cfg)
+		agentCfg := findAgentByTemplate(cfg, template)
+		if agentCfg == nil || agentCfg.Pool == nil {
+			continue
+		}
+		candidates = append(candidates, bead)
+	}
+	return len(GCSweepSessionBeads(store, candidates, allBeads))
 }
 
 func (cr *CityRuntime) workflowControlTick(ctx context.Context) {
@@ -642,7 +688,14 @@ func (cr *CityRuntime) workflowControlTick(ctx context.Context) {
 		sessionBeads,
 	)
 	open := filterSessionBeadsByName(updated, cfgNames)
+	allBeads, err := store.List()
+	if err != nil {
+		fmt.Fprintf(cr.stderr, "%s: listing work beads: %v\n", cr.logPrefix, err) //nolint:errcheck
+	}
 	poolDesired := derivePoolDesired(desiredState, filteredCfg)
+	if err == nil {
+		poolDesired = PoolDesiredCounts(ComputePoolDesiredStates(filteredCfg, allBeads, open))
+	}
 	workSet := computeWorkSet(filteredCfg, shellScaleCheck, cr.cityName, cr.cityPath, store, sessionBeads)
 	reconcileSessionBeads(
 		ctx,

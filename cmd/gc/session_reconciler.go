@@ -273,10 +273,9 @@ func reconcileSessionBeads(
 						Message: "drain acknowledged by agent",
 					})
 				}
-				// Close the session bead so the next start creates a fresh one.
 				if store != nil && session.ID != "" {
 					_ = store.SetMetadata(session.ID, "state", "drained")
-					_ = store.Close(session.ID)
+					session.Metadata["state"] = "drained"
 				}
 				continue
 			}

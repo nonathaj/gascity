@@ -36,6 +36,17 @@ type ReconcileDecision struct {
 	// Stop is computed by the reconciler by comparing Start against running sessions.
 }
 
+func PoolDesiredCounts(states []PoolDesiredState) map[string]int {
+	if len(states) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(states))
+	for _, state := range states {
+		counts[state.Template] = len(state.Requests)
+	}
+	return counts
+}
+
 // ComputePoolDesiredStates computes the bead-driven desired state for all pool agents.
 // Returns one PoolDesiredState per agent template.
 func ComputePoolDesiredStates(
