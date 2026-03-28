@@ -266,7 +266,7 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath, include, nameOverride string, start
 		if cityName == "" {
 			cityName = filepath.Base(cityPath)
 		}
-		if err := config.ValidateRigs(cfg.Rigs, cityName); err != nil {
+		if err := config.ValidateRigs(cfg.Rigs, config.EffectiveHQPrefix(cfg.Workspace)); err != nil {
 			fmt.Fprintf(stderr, "gc rig add: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
