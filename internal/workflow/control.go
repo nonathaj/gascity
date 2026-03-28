@@ -123,6 +123,19 @@ func processRalphControl(store beads.Store, bead beads.Bead, opts ProcessOptions
 
 	iterationNum, _ := strconv.Atoi(iteration.Metadata["gc.attempt"])
 
+	// Propagate non-gc metadata from the iteration to the ralph control
+	// BEFORE running the check. This makes the iteration's output (e.g.,
+	// review.verdict) visible on the ralph bead for check scripts that
+	// read $GC_BEAD_ID metadata.
+	if err := propagateRetrySubjectMetadata(store, bead.ID, iteration); err != nil {
+		return ControlResult{}, fmt.Errorf("%s: propagating iteration metadata: %w", bead.ID, err)
+	}
+	// Reload the bead after metadata propagation so the check sees updated values.
+	bead, err = store.Get(bead.ID)
+	if err != nil {
+		return ControlResult{}, fmt.Errorf("%s: reloading after propagation: %w", bead.ID, err)
+	}
+
 	// Run check script. The control bead carries the check config (gc.check_path etc),
 	// and the iteration is the subject whose output is being checked.
 	checkResult, err := runRalphCheck(store, bead, iteration, iterationNum, opts)

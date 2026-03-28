@@ -127,6 +127,14 @@ func processScopeCheck(store beads.Store, bead beads.Bead) (ControlResult, error
 		return ControlResult{Processed: true, Action: "continue"}, nil
 	}
 
+	// Subject must be closed before scope-check can pass. If the subject
+	// is still open (e.g., a retry control waiting for its attempt), the
+	// scope-check is pending. This prevents passing when the attempt bead
+	// is missing or hasn't completed yet.
+	if subject.Status != "closed" {
+		return ControlResult{}, ErrControlPending
+	}
+
 	if subject.Metadata["gc.outcome"] == "fail" {
 		skipped, err := skipOpenScopeMembers(store, rootID, scopeRef, bead.ID)
 		if err != nil {
@@ -152,6 +160,12 @@ func processScopeCheck(store beads.Store, bead beads.Bead) (ControlResult, error
 		return ControlResult{}, fmt.Errorf("%s: checking scope completion: %w", bead.ID, err)
 	}
 	if !remainingOpen {
+		// Propagate non-gc metadata from scope members to the scope body.
+		// This enables compositional metadata bubbling: attempt → retry →
+		// scope → ralph → parent scope, etc.
+		if err := propagateScopeMemberMetadata(store, rootID, scopeRef, body.ID); err != nil {
+			return ControlResult{}, fmt.Errorf("%s: propagating scope metadata: %w", bead.ID, err)
+		}
 		outputJSON, err := resolveScopeOutputJSON(store, rootID, scopeRef, subject)
 		if err != nil {
 			return ControlResult{}, fmt.Errorf("%s: resolving scope output: %w", bead.ID, err)
@@ -174,6 +188,36 @@ func processScopeCheck(store beads.Store, bead beads.Bead) (ControlResult, error
 	}
 
 	return ControlResult{Processed: true, Action: "continue"}, nil
+}
+
+// propagateScopeMemberMetadata merges non-gc metadata from all closed scope
+// members onto the scope body. Later members overwrite earlier ones for the
+// same key, so the final state reflects the last step's output.
+func propagateScopeMemberMetadata(store beads.Store, rootID, scopeRef, bodyID string) error {
+	members, err := listScopeMembers(store, rootID, scopeRef)
+	if err != nil {
+		return err
+	}
+	batch := map[string]string{}
+	for _, member := range members {
+		if member.Status != "closed" {
+			continue
+		}
+		switch member.Metadata["gc.scope_role"] {
+		case "body", "teardown", "control":
+			continue
+		}
+		for key, value := range member.Metadata {
+			if key == "" || strings.HasPrefix(key, "gc.") {
+				continue
+			}
+			batch[key] = value
+		}
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+	return store.SetMetadataBatch(bodyID, batch)
 }
 
 func isRetryAttemptSubject(subject beads.Bead) bool {

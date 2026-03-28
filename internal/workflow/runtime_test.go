@@ -308,6 +308,75 @@ func TestProcessScopeCheckTreatsRetryAttemptFailureAsNonTerminalForScope(t *test
 	}
 }
 
+// Regression: scope-check must not pass when subject is still open.
+// This catches the case where a retry control bead hasn't completed
+// (its attempt is missing or still running) but the scope-check passes
+// anyway, allowing the workflow to proceed without actual work done.
+func TestProcessScopeCheckReturnsPendingWhenSubjectStillOpen(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	body := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "body",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope",
+			"gc.scope_role":   "body",
+			"gc.root_bead_id": "gc-1",
+			"gc.step_ref":     "demo.body",
+		},
+	})
+	// Retry control bead — still open, its attempt hasn't run yet.
+	retryControl := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "review codex",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "retry",
+			"gc.root_bead_id": "gc-1",
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "member",
+			"gc.step_ref":     "demo.review-codex",
+			"gc.max_attempts": "3",
+		},
+	})
+	control := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize scope for review codex",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": "gc-1",
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "control",
+		},
+	})
+
+	mustDepAdd(t, store, control.ID, retryControl.ID, "blocks")
+	mustDepAdd(t, store, body.ID, control.ID, "blocks")
+
+	_, err := ProcessControl(store, mustGetBead(t, store, control.ID), ProcessOptions{})
+	if !errors.Is(err, ErrControlPending) {
+		t.Fatalf("ProcessControl(scope-check with open subject) = %v, want ErrControlPending", err)
+	}
+
+	// Verify nothing was closed.
+	controlAfter := mustGetBead(t, store, control.ID)
+	if controlAfter.Status != "open" {
+		t.Fatalf("control should stay open, got %q", controlAfter.Status)
+	}
+	bodyAfter := mustGetBead(t, store, body.ID)
+	if bodyAfter.Status != "open" {
+		t.Fatalf("body should stay open, got %q", bodyAfter.Status)
+	}
+}
+
 func TestProcessScopeCheckReturnsPendingWhenScopeBodyMissing(t *testing.T) {
 	t.Parallel()
 
@@ -2948,4 +3017,206 @@ func (s *assigneeVisibilityOnCreateStore) Create(bead beads.Bead) (beads.Bead, e
 		s.visibleOnCreate = append(s.visibleOnCreate, created.ID)
 	}
 	return created, nil
+}
+
+// --- Metadata propagation regression tests ---
+
+// Regression: retry control must propagate non-gc metadata from its
+// successful attempt to itself (compositional bubbling).
+func TestRetryControlPropagatesAttemptMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	retryControl := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "review codex",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "retry",
+			"gc.root_bead_id":     "wf-1",
+			"gc.step_ref":         "demo.review-codex",
+			"gc.max_attempts":     "3",
+			"gc.on_exhausted":     "hard_fail",
+			"gc.source_step_spec": "{}",
+			"gc.control_epoch":    "1",
+		},
+	})
+	attempt := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "review codex attempt 1",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id":    "wf-1",
+			"gc.step_ref":        "demo.review-codex.attempt.1",
+			"gc.logical_bead_id": retryControl.ID,
+			"gc.attempt":         "1",
+			"gc.outcome":         "pass",
+			"review.verdict":     "done",
+			"review.summary":     "LGTM",
+		},
+	})
+	mustDepAdd(t, store, retryControl.ID, attempt.ID, "blocks")
+
+	result, err := ProcessControl(store, mustGetBead(t, store, retryControl.ID), ProcessOptions{})
+	if err != nil {
+		t.Fatalf("ProcessControl(retry): %v", err)
+	}
+	if result.Action != "pass" {
+		t.Fatalf("action = %q, want pass", result.Action)
+	}
+
+	after := mustGetBead(t, store, retryControl.ID)
+	if after.Status != "closed" {
+		t.Fatalf("retry status = %q, want closed", after.Status)
+	}
+	if after.Metadata["review.verdict"] != "done" {
+		t.Errorf("review.verdict = %q, want done (propagated from attempt)", after.Metadata["review.verdict"])
+	}
+	if after.Metadata["review.summary"] != "LGTM" {
+		t.Errorf("review.summary = %q, want LGTM (propagated from attempt)", after.Metadata["review.summary"])
+	}
+}
+
+// Regression: scope body must propagate non-gc metadata from its closed
+// members when the scope completes with pass.
+func TestScopeBodyPropagatesMemberMetadata(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	workflow := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+	body := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "body",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope",
+			"gc.scope_role":   "body",
+			"gc.root_bead_id": workflow.ID,
+			"gc.step_ref":     "demo.body",
+		},
+	})
+	step := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "apply fixes",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "member",
+			"gc.outcome":      "pass",
+			"review.verdict":  "done",
+		},
+	})
+	control := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize scope",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "body",
+			"gc.scope_role":   "control",
+		},
+	})
+
+	mustDepAdd(t, store, control.ID, step.ID, "blocks")
+	mustDepAdd(t, store, body.ID, control.ID, "blocks")
+
+	result, err := ProcessControl(store, mustGetBead(t, store, control.ID), ProcessOptions{})
+	if err != nil {
+		t.Fatalf("ProcessControl(scope-check): %v", err)
+	}
+	if result.Action != "scope-pass" {
+		t.Fatalf("action = %q, want scope-pass", result.Action)
+	}
+
+	bodyAfter := mustGetBead(t, store, body.ID)
+	if bodyAfter.Status != "closed" {
+		t.Fatalf("body status = %q, want closed", bodyAfter.Status)
+	}
+	if bodyAfter.Metadata["review.verdict"] != "done" {
+		t.Errorf("body review.verdict = %q, want done (propagated from member)", bodyAfter.Metadata["review.verdict"])
+	}
+}
+
+// Regression: full compositional chain — attempt → retry → scope → ralph.
+// The review.verdict set on a deeply nested attempt must be visible on the
+// ralph control bead before the check script runs.
+func TestFullMetadataPropagationChain(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	workflow := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+		},
+	})
+
+	// Scope body for the iteration.
+	iterBody := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "iteration 1",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":            "scope",
+			"gc.scope_role":      "body",
+			"gc.root_bead_id":    workflow.ID,
+			"gc.step_ref":        "review-loop.iteration.1",
+			"gc.logical_bead_id": "ralph-1",
+			"gc.attempt":         "1",
+		},
+	})
+
+	// Apply-fixes retry — closed with pass, has review.verdict.
+	retryControl := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title:  "apply-fixes",
+		Type:   "task",
+		Status: "closed",
+		Metadata: map[string]string{
+			"gc.kind":         "retry",
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "review-loop.iteration.1",
+			"gc.scope_role":   "member",
+			"gc.outcome":      "pass",
+			"review.verdict":  "done",
+		},
+	})
+
+	// Scope-check for the iteration.
+	scopeCheck := mustCreateWorkflowBead(t, store, beads.Bead{
+		Title: "Finalize iteration",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":         "scope-check",
+			"gc.root_bead_id": workflow.ID,
+			"gc.scope_ref":    "review-loop.iteration.1",
+			"gc.scope_role":   "control",
+		},
+	})
+
+	mustDepAdd(t, store, scopeCheck.ID, retryControl.ID, "blocks")
+	mustDepAdd(t, store, iterBody.ID, scopeCheck.ID, "blocks")
+
+	// Process scope-check — should propagate review.verdict to iteration body.
+	result, err := ProcessControl(store, mustGetBead(t, store, scopeCheck.ID), ProcessOptions{})
+	if err != nil {
+		t.Fatalf("ProcessControl(scope-check): %v", err)
+	}
+	if result.Action != "scope-pass" {
+		t.Fatalf("scope-check action = %q, want scope-pass", result.Action)
+	}
+
+	iterBodyAfter := mustGetBead(t, store, iterBody.ID)
+	if iterBodyAfter.Status != "closed" {
+		t.Fatalf("iteration body status = %q, want closed", iterBodyAfter.Status)
+	}
+	if iterBodyAfter.Metadata["review.verdict"] != "done" {
+		t.Fatalf("iteration body review.verdict = %q, want done (propagated from retry member)", iterBodyAfter.Metadata["review.verdict"])
+	}
 }

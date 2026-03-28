@@ -586,6 +586,16 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	// work beads + new tier from scale_check + min fill.
 	poolDesired := PoolDesiredCounts(ComputePoolDesiredStates(
 		cr.cfg, nil, sessionBeads.Open(), result.ScaleCheckCounts))
+	for tmpl, count := range poolDesired {
+		if count > 0 {
+			fmt.Fprintf(cr.stderr, "poolDesired: %s = %d\n", tmpl, count) //nolint:errcheck
+		}
+	}
+	for tmpl, count := range result.ScaleCheckCounts {
+		if count > 0 {
+			fmt.Fprintf(cr.stderr, "scaleCheck: %s = %d\n", tmpl, count) //nolint:errcheck
+		}
+	}
 	if err == nil && sweepUndesiredPoolSessionBeads(store, sessionBeads, desiredState, allBeads, cr.cfg, cr.sp) > 0 {
 		sessionBeads = cr.loadSessionBeadSnapshot()
 	}
