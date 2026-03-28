@@ -64,6 +64,12 @@ func (s *Server) handleOrdersFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseOrdersFeedLimit(q.Get("limit"))
+	index := s.latestIndex()
+	cacheKey := responseCacheKey("orders-feed", r)
+	if body, ok := s.cachedResponse(cacheKey, index); ok {
+		writeCachedJSON(w, index, body)
+		return
+	}
 
 	workflowRuns, err := buildWorkflowRunProjections(s.state, scopeKind, scopeRef)
 	if err != nil {
@@ -130,7 +136,12 @@ func (s *Server) handleOrdersFeed(w http.ResponseWriter, r *http.Request) {
 		resp["partial_errors"] = workflowRuns.PartialErrors
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	body, err := s.storeResponse(cacheKey, index, resp)
+	if err != nil {
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	writeCachedJSON(w, index, body)
 }
 
 func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScopeRef string) (workflowRunProjectionResult, error) {
