@@ -97,10 +97,7 @@ func (s *Server) handleBeadReady(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBeadGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stores := s.state.BeadStores()
-
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		b, err := store.Get(id)
 		if err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
@@ -117,10 +114,7 @@ func (s *Server) handleBeadGet(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBeadDeps(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stores := s.state.BeadStores()
-
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		children, err := store.Children(id)
 		if err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
@@ -193,10 +187,7 @@ func (s *Server) handleBeadCreate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBeadClose(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stores := s.state.BeadStores()
-
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		if err := store.Close(id); err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
 				continue
@@ -244,7 +235,6 @@ func (s *Server) handleBeadUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stores := s.state.BeadStores()
 	opts := beads.UpdateOpts{
 		Title:        body.Title,
 		Status:       body.Status,
@@ -256,8 +246,7 @@ func (s *Server) handleBeadUpdate(w http.ResponseWriter, r *http.Request) {
 		RemoveLabels: body.RemoveLabels,
 	}
 
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		if err := store.Update(id, opts); err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
 				continue
@@ -280,11 +269,9 @@ func (s *Server) handleBeadUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBeadReopen(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stores := s.state.BeadStores()
 	status := "open"
 
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		b, err := store.Get(id)
 		if err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
@@ -317,9 +304,7 @@ func (s *Server) handleBeadAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stores := s.state.BeadStores()
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		if err := store.Update(id, beads.UpdateOpts{Assignee: &body.Assignee}); err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
 				continue
@@ -335,10 +320,7 @@ func (s *Server) handleBeadAssign(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBeadDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	stores := s.state.BeadStores()
-
-	for _, rigName := range sortedRigNames(stores) {
-		store := stores[rigName]
+	for _, store := range s.beadStoresForID(id) {
 		if err := store.Close(id); err != nil {
 			if errors.Is(err, beads.ErrNotFound) {
 				continue
@@ -391,6 +373,25 @@ func (s *Server) findStore(rig string) beads.Store {
 		return stores[names[0]]
 	}
 	return nil
+}
+
+// beadStoresForID resolves the authoritative store for a bead ID using its
+// prefix/routes mapping when possible. If there is no routed match, it falls
+// back to the legacy store scan order.
+func (s *Server) beadStoresForID(id string) []beads.Store {
+	if prefix := beadPrefix(strings.TrimSpace(id)); prefix != "" {
+		if candidate, ok := workflowSQLRouteCandidate(s.state, prefix); ok && candidate.info.store != nil {
+			return []beads.Store{candidate.info.store}
+		}
+	}
+
+	stores := s.state.BeadStores()
+	rigNames := sortedRigNames(stores)
+	candidates := make([]beads.Store, 0, len(rigNames))
+	for _, rigName := range rigNames {
+		candidates = append(candidates, stores[rigName])
+	}
+	return candidates
 }
 
 // sortedRigNames returns rig names from the store map in deterministic sorted order,
