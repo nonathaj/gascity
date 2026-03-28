@@ -77,7 +77,7 @@ func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query()
-	scopeKind, scopeRef, scopeErr := parseWorkflowRequestScope(q.Get("scope_kind"), q.Get("scope_ref"))
+	scopeKind, scopeRef, scopeErr := parseOptionalWorkflowRequestScope(q.Get("scope_kind"), q.Get("scope_ref"))
 	if scopeErr != "" {
 		writeError(w, http.StatusBadRequest, "invalid", scopeErr)
 		return
@@ -179,14 +179,9 @@ func (s *Server) handleWorkflowDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildWorkflowSnapshot(workflowID, fallbackScopeKind, fallbackScopeRef string, snapshotIndex uint64) (*workflowSnapshotResponse, error) {
-	// Fast SQL currently resolves only against the city Dolt store. Rig-scoped
-	// workflows still live in rig stores, so routing them through the city SQL
-	// path can degenerate into a long scan before we ever reach the real store.
-	if fallbackScopeKind != "rig" {
-		// Fast path: try direct SQL for the entire snapshot (root discovery + beads + deps)
-		if snap, err := s.tryFullWorkflowSQL(workflowID, fallbackScopeKind, fallbackScopeRef, snapshotIndex); err == nil {
-			return snap, nil
-		}
+	// Fast path: resolve the correct store and fetch the entire snapshot via SQL.
+	if snap, err := s.tryFullWorkflowSQL(workflowID, fallbackScopeKind, fallbackScopeRef, snapshotIndex); err == nil {
+		return snap, nil
 	}
 
 	// Slow path: bd subprocess N+1
@@ -245,11 +240,7 @@ func (s *Server) snapshotFromStore(info workflowStoreInfo, root beads.Bead, fall
 		depMap        map[string][]beads.Dep
 		sqlErr        error
 	)
-	if info.scopeKind == "city" {
-		workflowBeads, beadIndex, depMap, sqlErr = s.tryWorkflowSQL(root.ID)
-	} else {
-		sqlErr = errors.New("sql fast path unsupported for rig-scoped workflows")
-	}
+	workflowBeads, beadIndex, depMap, sqlErr = s.tryWorkflowSQL(info, root.ID)
 	usedSQL := sqlErr == nil && len(workflowBeads) > 0
 
 	if !usedSQL {
@@ -448,6 +439,15 @@ func parseWorkflowRequestScope(rawScopeKind, rawScopeRef string) (string, string
 	default:
 		return "", "", "scope_kind must be 'city' or 'rig'"
 	}
+}
+
+func parseOptionalWorkflowRequestScope(rawScopeKind, rawScopeRef string) (string, string, string) {
+	scopeKind := strings.TrimSpace(rawScopeKind)
+	scopeRef := strings.TrimSpace(rawScopeRef)
+	if scopeKind == "" && scopeRef == "" {
+		return "", "", ""
+	}
+	return parseWorkflowRequestScope(scopeKind, scopeRef)
 }
 
 func workflowRootScope(root beads.Bead) (string, string) {

@@ -493,47 +493,34 @@ func (s *Server) handleBeadGraph(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// tryGraphSQL attempts direct SQL for the graph endpoint using the bead ID
-// prefix to route to the correct store via routes.jsonl.
+// tryGraphSQL attempts direct SQL for the graph endpoint by resolving the
+// root bead prefix through routes.jsonl and querying only that store.
 func (s *Server) tryGraphSQL(rootID string) (*beadGraphResponseJSON, error) {
-	cityPath := s.state.CityPath()
-	if cityPath == "" {
-		return nil, fmt.Errorf("no city path")
-	}
-
-	// Extract prefix from bead ID (e.g., "ga" from "ga-5b8i").
 	prefix := beadPrefix(rootID)
 	if prefix == "" {
 		return nil, fmt.Errorf("no prefix in bead ID %q", rootID)
 	}
-
-	// Resolve the store path from routes.jsonl in each rig.
-	cfg := s.state.Config()
-	if cfg == nil {
-		return nil, fmt.Errorf("no config")
+	candidate, ok := workflowSQLRouteCandidate(s.state, prefix)
+	if !ok {
+		return nil, fmt.Errorf("sql fast path unavailable for prefix %q", prefix)
 	}
-
-	for _, rig := range cfg.Rigs {
-		rigPath := rig.Path
-		if !filepath.IsAbs(rigPath) {
-			rigPath = filepath.Join(cityPath, rigPath)
-		}
-		storePath, ok := resolveRoutePrefix(rigPath, prefix)
-		if !ok {
-			continue
-		}
-		port, database, err := resolveDoltConnection(storePath)
-		if err != nil {
-			continue
-		}
-		graphBeads, beadIndex, depMap, err := workflowSQLSnapshot("127.0.0.1", port, database, rootID)
-		if err != nil || len(graphBeads) == 0 {
-			continue
-		}
-		return buildGraphFromSQL(rootID, graphBeads, beadIndex, depMap), nil
+	port, database, err := resolveDoltConnection(candidate.path)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, fmt.Errorf("sql fast path unavailable for prefix %q", prefix)
+	if _, ok, err := workflowSQLGetBead("127.0.0.1", port, database, rootID); err != nil {
+		return nil, err
+	} else if !ok {
+		return nil, fmt.Errorf("root %q not found in routed store", rootID)
+	}
+	graphBeads, beadIndex, depMap, err := workflowSQLSnapshot("127.0.0.1", port, database, rootID)
+	if err != nil {
+		return nil, err
+	}
+	if len(graphBeads) == 0 {
+		return nil, fmt.Errorf("no graph beads found for root %q", rootID)
+	}
+	return buildGraphFromSQL(rootID, graphBeads, beadIndex, depMap), nil
 }
 
 // beadPrefix extracts the alphabetic prefix from a bead ID (e.g., "ga" from "ga-5b8i").

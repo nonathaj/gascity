@@ -6,7 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -252,21 +253,40 @@ func TestWorkflowGetMarksSnapshotPartialWhenDepListFails(t *testing.T) {
 	}
 }
 
-func TestWorkflowGetRequiresScopeFields(t *testing.T) {
+func TestWorkflowGetAllowsMissingScopeFields(t *testing.T) {
 	state := newFakeState(t)
 	state.cityName = "test-city"
-	state.cityBeadStore = beads.NewMemStore()
+	cityStore := beads.NewMemStore()
+	state.cityBeadStore = cityStore
+
+	root, err := cityStore.Create(beads.Bead{
+		Title: "Scope optional workflow",
+		Type:  "task",
+		Metadata: map[string]string{
+			"gc.kind":             "workflow",
+			"gc.formula_contract": "graph.v2",
+			"gc.workflow_id":      "wf_missing_scope",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(root): %v", err)
+	}
 
 	server := New(state)
 	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_missing_scope", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "scope_kind and scope_ref are required") {
-		t.Fatalf("body = %s, want scope requirement error", rec.Body.String())
+
+	var snapshot workflowSnapshotResponse
+	if err := json.NewDecoder(rec.Body).Decode(&snapshot); err != nil {
+		t.Fatalf("Decode(snapshot): %v", err)
+	}
+	if snapshot.RootBeadID != root.ID {
+		t.Fatalf("root_bead_id = %q, want %q", snapshot.RootBeadID, root.ID)
 	}
 }
 
@@ -415,6 +435,129 @@ func TestWorkflowStoresSkipsCityStoreEntriesFromBeadStoreMap(t *testing.T) {
 	}
 	if stores[1].ref != "rig:alpha" {
 		t.Fatalf("stores[1].ref = %q, want rig:alpha", stores[1].ref)
+	}
+}
+
+func TestWorkflowStorePathResolvesCityAndRigPaths(t *testing.T) {
+	state := newFakeState(t)
+	state.cityName = "bright-lights"
+	state.cityPath = t.TempDir()
+	state.cityBeadStore = beads.NewMemStore()
+	absoluteRigPath := t.TempDir()
+	state.cfg.Rigs = []config.Rig{
+		{Name: "alpha", Path: absoluteRigPath},
+		{Name: "beta", Path: "repos/beta"},
+	}
+	state.stores = map[string]beads.Store{
+		"alpha": beads.NewMemStore(),
+		"beta":  beads.NewMemStore(),
+	}
+
+	cityInfo, ok := workflowStoreByRef(state, "city:bright-lights")
+	if !ok {
+		t.Fatal("workflowStoreByRef(city:bright-lights) = false, want true")
+	}
+	cityPath, ok := workflowStorePath(state, cityInfo)
+	if !ok {
+		t.Fatal("workflowStorePath(city) = false, want true")
+	}
+	if cityPath != state.cityPath {
+		t.Fatalf("cityPath = %q, want %q", cityPath, state.cityPath)
+	}
+
+	alphaInfo, ok := workflowStoreByRef(state, "rig:alpha")
+	if !ok {
+		t.Fatal("workflowStoreByRef(rig:alpha) = false, want true")
+	}
+	alphaPath, ok := workflowStorePath(state, alphaInfo)
+	if !ok {
+		t.Fatal("workflowStorePath(rig:alpha) = false, want true")
+	}
+	if alphaPath != absoluteRigPath {
+		t.Fatalf("alphaPath = %q, want %q", alphaPath, absoluteRigPath)
+	}
+
+	betaInfo, ok := workflowStoreByRef(state, "rig:beta")
+	if !ok {
+		t.Fatal("workflowStoreByRef(rig:beta) = false, want true")
+	}
+	betaPath, ok := workflowStorePath(state, betaInfo)
+	if !ok {
+		t.Fatal("workflowStorePath(rig:beta) = false, want true")
+	}
+	wantBetaPath := filepath.Join(state.cityPath, "repos/beta")
+	if betaPath != wantBetaPath {
+		t.Fatalf("betaPath = %q, want %q", betaPath, wantBetaPath)
+	}
+}
+
+func TestWorkflowSQLStoreCandidatesPreferRequestedScope(t *testing.T) {
+	state := newFakeState(t)
+	state.cityName = "bright-lights"
+	state.cityPath = t.TempDir()
+	state.cityBeadStore = beads.NewMemStore()
+	state.stores = map[string]beads.Store{
+		"alpha": beads.NewMemStore(),
+		"beta":  beads.NewMemStore(),
+	}
+	state.cfg.Rigs = []config.Rig{
+		{Name: "alpha", Path: t.TempDir()},
+		{Name: "beta", Path: "repos/beta"},
+	}
+
+	candidates := workflowSQLStoreCandidates(state, "rig", "beta")
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if candidates[0].info.ref != "rig:beta" {
+		t.Fatalf("candidate.ref = %q, want rig:beta", candidates[0].info.ref)
+	}
+	wantPath := filepath.Join(state.cityPath, "repos/beta")
+	if candidates[0].path != wantPath {
+		t.Fatalf("candidate.path = %q, want %q", candidates[0].path, wantPath)
+	}
+
+	allCandidates := workflowSQLStoreCandidates(state, "", "")
+	if len(allCandidates) != 3 {
+		t.Fatalf("len(allCandidates) = %d, want 3", len(allCandidates))
+	}
+	if allCandidates[0].info.ref != "city:bright-lights" {
+		t.Fatalf("allCandidates[0].ref = %q, want city:bright-lights", allCandidates[0].info.ref)
+	}
+}
+
+func TestWorkflowSQLCandidatesForWorkflowIDResolveBeadPrefixViaRoutes(t *testing.T) {
+	state := newFakeState(t)
+	state.cityName = "bright-lights"
+	state.cityPath = t.TempDir()
+	state.cityBeadStore = beads.NewMemStore()
+	state.cfg.Rigs = []config.Rig{
+		{Name: "alpha", Path: "rigs/alpha"},
+		{Name: "beta", Path: "rigs/beta"},
+	}
+	state.stores = map[string]beads.Store{
+		"alpha": beads.NewMemStore(),
+		"beta":  beads.NewMemStore(),
+	}
+
+	alphaPath := filepath.Join(state.cityPath, "rigs/alpha")
+	if err := os.MkdirAll(filepath.Join(alphaPath, ".beads"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(alpha .beads): %v", err)
+	}
+	routes := `{"prefix":"ga","path":"."}` + "\n" + `{"prefix":"gb","path":"../beta"}`
+	if err := os.WriteFile(filepath.Join(alphaPath, ".beads", "routes.jsonl"), []byte(routes), 0o644); err != nil {
+		t.Fatalf("WriteFile(routes.jsonl): %v", err)
+	}
+
+	candidates := workflowSQLCandidatesForWorkflowID(state, "ga-abcd", "", "")
+	if len(candidates) != 1 {
+		t.Fatalf("len(candidates) = %d, want 1", len(candidates))
+	}
+	if candidates[0].info.ref != "rig:alpha" {
+		t.Fatalf("candidate.ref = %q, want rig:alpha", candidates[0].info.ref)
+	}
+	if candidates[0].path != alphaPath {
+		t.Fatalf("candidate.path = %q, want %q", candidates[0].path, alphaPath)
 	}
 }
 
@@ -593,7 +736,7 @@ type failListStore struct {
 	beads.Store
 }
 
-func (s failListStore) List() ([]beads.Bead, error) {
+func (s failListStore) List(status ...string) ([]beads.Bead, error) {
 	return nil, errors.New("list failed")
 }
 
