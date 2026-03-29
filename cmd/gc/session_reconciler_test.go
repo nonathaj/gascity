@@ -1605,10 +1605,10 @@ func TestResolveSessionCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Restart-requested clears session_key
+// Restart-requested rotates session_key
 // ---------------------------------------------------------------------------
 
-func TestReconcileSessionBeads_RestartRequestedClearsSessionKey(t *testing.T) {
+func TestReconcileSessionBeads_RestartRequestedRotatesSessionKey(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
 	env.addDesired("worker", "worker", true) // session is alive
@@ -1635,14 +1635,15 @@ func TestReconcileSessionBeads_RestartRequestedClearsSessionKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getting bead: %v", err)
 	}
-	if got.Metadata["session_key"] != "" {
-		t.Errorf("session_key should be cleared, got %q", got.Metadata["session_key"])
+	// session_key should be rotated to a new non-empty value.
+	if got.Metadata["session_key"] == "" {
+		t.Error("session_key should be rotated to a new value, got empty")
+	}
+	if got.Metadata["session_key"] == "old-conversation-key" {
+		t.Error("session_key should be rotated, still has old value")
 	}
 	if got.Metadata["started_config_hash"] != "" {
 		t.Errorf("started_config_hash should be cleared, got %q", got.Metadata["started_config_hash"])
-	}
-	if got.Metadata["continuation_reset_pending"] != "true" {
-		t.Errorf("continuation_reset_pending should be %q, got %q", "true", got.Metadata["continuation_reset_pending"])
 	}
 	if got.Metadata["restart_requested"] != "" {
 		t.Errorf("restart_requested should be cleared, got %q", got.Metadata["restart_requested"])
@@ -1652,7 +1653,7 @@ func TestReconcileSessionBeads_RestartRequestedClearsSessionKey(t *testing.T) {
 	}
 }
 
-func TestReconcileSessionBeads_RestartRequestedNoKeySkipsClear(t *testing.T) {
+func TestReconcileSessionBeads_RestartRequestedNoKeyGeneratesOne(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
 	env.addDesired("worker", "worker", true)
@@ -1675,9 +1676,9 @@ func TestReconcileSessionBeads_RestartRequestedNoKeySkipsClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getting bead: %v", err)
 	}
-	// continuation_reset_pending should NOT be set when there was no key.
-	if got.Metadata["continuation_reset_pending"] == "true" {
-		t.Error("continuation_reset_pending should not be set when session_key was already empty")
+	// A fresh session_key should be generated even when none existed.
+	if got.Metadata["session_key"] == "" {
+		t.Error("session_key should be generated, got empty")
 	}
 	// restart_requested should be cleared from bead metadata.
 	if got.Metadata["restart_requested"] != "" {
@@ -1716,14 +1717,15 @@ func TestReconcileSessionBeads_RestartRequestedWorksWhenSessionDead(t *testing.T
 	if err != nil {
 		t.Fatalf("getting bead: %v", err)
 	}
-	if got.Metadata["session_key"] != "" {
-		t.Errorf("session_key should be cleared, got %q", got.Metadata["session_key"])
+	// session_key should be rotated to a new non-empty value.
+	if got.Metadata["session_key"] == "" {
+		t.Error("session_key should be rotated to a new value, got empty")
+	}
+	if got.Metadata["session_key"] == "old-conversation-key" {
+		t.Error("session_key should be rotated, still has old value")
 	}
 	if got.Metadata["started_config_hash"] != "" {
 		t.Errorf("started_config_hash should be cleared, got %q", got.Metadata["started_config_hash"])
-	}
-	if got.Metadata["continuation_reset_pending"] != "true" {
-		t.Errorf("continuation_reset_pending should be %q, got %q", "true", got.Metadata["continuation_reset_pending"])
 	}
 	if got.Metadata["restart_requested"] != "" {
 		t.Errorf("restart_requested should be cleared from bead metadata, got %q", got.Metadata["restart_requested"])

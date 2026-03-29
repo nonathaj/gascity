@@ -369,7 +369,10 @@ func cmdRuntimeRequestRestart(stdout, stderr io.Writer) int {
 	}
 
 	readDoltPort(current.cityPath)
-	store, _ := openCityStoreAt(current.cityPath)
+	store, storeErr := openCityStoreAt(current.cityPath)
+	if storeErr != nil {
+		fmt.Fprintf(stderr, "gc runtime request-restart: opening store: %v\n", storeErr) //nolint:errcheck // best-effort stderr
+	}
 	sp := newSessionProvider()
 	dops := newDrainOps(sp)
 	rec := openCityRecorderAt(current.cityPath, stderr)

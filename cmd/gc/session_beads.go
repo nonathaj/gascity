@@ -380,10 +380,7 @@ func syncSessionBeadsWithSnapshot(
 			queueMeta("wake_mode", tp.WakeMode)
 		}
 		// Backfill session_key for beads created before this fix.
-		// Skip when continuation_reset_pending is set — the key was
-		// intentionally cleared (e.g. by gc handoff) and the next wake
-		// should generate a fresh key with firstStart=true semantics.
-		if b.Metadata["session_key"] == "" && b.Metadata["continuation_reset_pending"] == "" &&
+		if b.Metadata["session_key"] == "" &&
 			tp.ResolvedProvider != nil && tp.ResolvedProvider.SessionIDFlag != "" {
 			if key, err := session.GenerateSessionKey(); err == nil {
 				queueMeta("session_key", key)

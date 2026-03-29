@@ -21,6 +21,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
+	sessionpkg "github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
@@ -276,9 +277,10 @@ func reconcileSessionBeads(
 		}
 
 		// Restart-requested: agent asked for a fresh session
-		// (gc runtime request-restart / gc handoff). Clear session_key so
-		// the next wake starts a fresh conversation, then stop immediately;
-		// the next tick will re-create and re-wake.
+		// (gc runtime request-restart / gc handoff). Rotate session_key
+		// to a fresh value and clear started_config_hash so the next wake
+		// builds a first-start command (--session-id <new_key>). Then stop
+		// immediately; the next tick will re-create and re-wake.
 		//
 		// Check both tmux metadata (dops) and bead metadata. The bead
 		// metadata flag survives tmux session death, so this works even
@@ -293,23 +295,20 @@ func reconcileSessionBeads(
 				if tmuxRequested && dops != nil {
 					_ = dops.clearRestartRequested(name)
 				}
-				// Clear restart_requested from bead metadata.
-				if beadRequested {
-					_ = store.SetMetadata(session.ID, "restart_requested", "")
-					session.Metadata["restart_requested"] = ""
+				// Rotate session_key so the next start gets a fresh
+				// conversation. Clearing started_config_hash forces
+				// firstStart=true in resolveSessionCommand.
+				batch := map[string]string{
+					"restart_requested":   "",
+					"started_config_hash": "",
 				}
-				// Clear session_key so the next start gets a fresh conversation
-				// instead of resuming the old one. Mirrors recordWakeFailure().
-				if session.Metadata["session_key"] != "" {
-					_ = store.SetMetadataBatch(session.ID, map[string]string{
-						"session_key":                "",
-						"started_config_hash":        "",
-						"continuation_reset_pending": "true",
-					})
-					session.Metadata["session_key"] = ""
-					session.Metadata["started_config_hash"] = ""
-					session.Metadata["continuation_reset_pending"] = "true"
+				if newKey, err := sessionpkg.GenerateSessionKey(); err == nil {
+					batch["session_key"] = newKey
+					session.Metadata["session_key"] = newKey
 				}
+				_ = store.SetMetadataBatch(session.ID, batch)
+				session.Metadata["restart_requested"] = ""
+				session.Metadata["started_config_hash"] = ""
 				if alive {
 					if err := sp.Stop(name); err != nil {
 						fmt.Fprintf(stderr, "session reconciler: stopping restart-requested %s: %v\n", name, err) //nolint:errcheck
