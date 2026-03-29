@@ -980,16 +980,17 @@ func TestEnsureFreshSession_PromptSuffixAppendedToCommand(t *testing.T) {
 }
 
 // TestEnsureFreshSession_PromptSuffixWithFlagPrefix verifies that when
-// PromptSuffix includes a flag prefix (e.g., "--prompt '<text>'"), the
-// full flag + value is appended to the command. This is the correct
-// behavior for providers that accept prompts via named flags.
+// PromptFlag is set, the flag is prepended to PromptSuffix in the
+// command. This is the correct behavior for providers that accept
+// prompts via named flags.
 func TestEnsureFreshSession_PromptSuffixWithFlagPrefix(t *testing.T) {
 	ops := &fakeStartOps{}
 
 	cfg := runtime.Config{
 		WorkDir:      "/proj",
 		Command:      "myprovider",
-		PromptSuffix: "--prompt 'You are an agent.'",
+		PromptSuffix: "'You are an agent.'",
+		PromptFlag:   "--prompt",
 	}
 	err := ensureFreshSession(ops, "gc-test-flag", cfg)
 	if err != nil {
@@ -1048,5 +1049,35 @@ func TestEnsureFreshSession_LongPromptSuffixUsesFileExpansion(t *testing.T) {
 	}
 	if !strings.Contains(c.command, "$(cat ") {
 		t.Errorf("long prompt should use $(cat ...) file expansion, got %q", c.command)
+	}
+}
+
+// TestEnsureFreshSession_LongPromptWithFlagUsesFileExpansion verifies that
+// the flag-mode file-expansion path preserves the flag as a separate
+// argument. Without this fix, the flag would be lost when the prompt
+// spills to a temp file.
+func TestEnsureFreshSession_LongPromptWithFlagUsesFileExpansion(t *testing.T) {
+	ops := &fakeStartOps{}
+
+	longPrompt := "'" + strings.Repeat("x", maxInlinePromptLen+100) + "'"
+	cfg := runtime.Config{
+		WorkDir:      t.TempDir(),
+		Command:      "myprovider",
+		PromptSuffix: longPrompt,
+		PromptFlag:   "--prompt",
+	}
+	err := ensureFreshSession(ops, "gc-test-flag-long", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	c := ops.calls[0]
+	// Should use sh -c with $(cat ...) expansion.
+	if !strings.HasPrefix(c.command, "sh -c '") {
+		t.Fatalf("long prompt should use sh -c wrapper, got %q", c.command)
+	}
+	// The flag must appear as a separate token before $(cat ...).
+	if !strings.Contains(c.command, "--prompt \"$(cat ") {
+		t.Errorf("flag-mode long prompt should include --prompt before $(cat ...), got %q", c.command)
 	}
 }

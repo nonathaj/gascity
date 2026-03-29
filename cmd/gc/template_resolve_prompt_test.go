@@ -46,9 +46,10 @@ func TestTemplateParamsToConfigArgModeAppendsPromptAsBareArg(t *testing.T) {
 }
 
 // TestTemplateParamsToConfigFlagModePrependsFlag verifies that when
-// PromptMode is "flag", the PromptFlag is prepended to the shell-quoted
-// prompt text in PromptSuffix. The resulting command will be:
-// "provider --prompt '<prompt text>'" instead of "provider '<prompt text>'".
+// PromptMode is "flag", the PromptFlag is stored separately in
+// runtime.Config.PromptFlag and PromptSuffix contains only the
+// shell-quoted prompt text. The runtime (tmux adapter, ACP) combines
+// them: "provider --prompt '<prompt text>'".
 func TestTemplateParamsToConfigFlagModePrependsFlag(t *testing.T) {
 	tp := TemplateParams{
 		Command: "myprovider",
@@ -66,11 +67,15 @@ func TestTemplateParamsToConfigFlagModePrependsFlag(t *testing.T) {
 	if cfg.PromptSuffix == "" {
 		t.Fatal("PromptSuffix should not be empty for flag mode with non-empty prompt")
 	}
-	if !strings.HasPrefix(cfg.PromptSuffix, "--prompt ") {
-		t.Errorf("flag mode PromptSuffix should start with --prompt flag, got %q", cfg.PromptSuffix)
+	if cfg.PromptFlag != "--prompt" {
+		t.Errorf("PromptFlag = %q, want %q", cfg.PromptFlag, "--prompt")
 	}
-	// The full command would be: myprovider --prompt '<text>'
-	fullCommand := cfg.Command + " " + cfg.PromptSuffix
+	// PromptSuffix should be just the quoted text, not the flag.
+	if strings.HasPrefix(cfg.PromptSuffix, "--") {
+		t.Errorf("flag mode PromptSuffix should not contain the flag prefix, got %q", cfg.PromptSuffix)
+	}
+	// The runtime reconstructs: myprovider --prompt '<text>'
+	fullCommand := cfg.Command + " " + cfg.PromptFlag + " " + cfg.PromptSuffix
 	if !strings.Contains(fullCommand, "--prompt '") {
 		t.Errorf("fullCommand = %q, expected --prompt followed by quoted text", fullCommand)
 	}
@@ -122,48 +127,36 @@ func TestTemplateParamsToConfigFlagModeEmptyPrompt(t *testing.T) {
 	}
 }
 
-// TestTemplateParamsToConfigArgModeLongPromptDemonstratesBug demonstrates
-// the original bug: when a provider using PromptMode "arg" receives a long
-// prompt (beacon + session instructions), the prompt is appended as a bare
-// positional argument. For OpenCode, this is interpreted as a filesystem
-// path, causing ENAMETOOLONG (>255 bytes) or "failed to change directory"
-// errors that trigger generation escalation and crash-loop quarantine.
-func TestTemplateParamsToConfigArgModeLongPromptDemonstratesBug(t *testing.T) {
-	// Simulate the kind of prompt that was being generated for agents:
-	// beacon (timestamped) + behavioral instructions from pack templates.
-	longPrompt := strings.Repeat("x", 300) // Exceeds 255-byte filename limit
+// TestTemplateParamsToConfigFlagModeNoFlagInSuffix verifies that flag
+// mode stores the flag in PromptFlag, not in PromptSuffix. This is
+// critical: the tmux adapter's file-expansion path needs them separate
+// to reconstruct the command correctly for long prompts.
+func TestTemplateParamsToConfigFlagModeNoFlagInSuffix(t *testing.T) {
+	longPrompt := strings.Repeat("x", 2000) // Exceeds maxInlinePromptLen
 
 	tp := TemplateParams{
-		Command: "opencode",
+		Command: "myprovider",
 		Prompt:  longPrompt,
 		ResolvedProvider: &config.ResolvedProvider{
-			Name:       "opencode",
-			Command:    "opencode",
-			PromptMode: "arg",
+			Name:       "myprovider",
+			Command:    "myprovider",
+			PromptMode: "flag",
+			PromptFlag: "--prompt",
 		},
 	}
 
 	cfg := templateParamsToConfig(tp)
 
-	// When this PromptSuffix is appended to the command and passed to the
-	// shell, opencode receives the 300-character string as argv[1]. It then
-	// calls os.Chdir(argv[1]), which fails with ENAMETOOLONG because Linux
-	// has a 255-byte limit on individual path components.
-	fullCommand := cfg.Command + " " + cfg.PromptSuffix
-	if !strings.HasPrefix(fullCommand, "opencode ") {
-		t.Fatalf("unexpected command format: %q", fullCommand)
+	if cfg.PromptFlag != "--prompt" {
+		t.Errorf("PromptFlag = %q, want %q", cfg.PromptFlag, "--prompt")
 	}
-
-	// The prompt is shell-quoted, so the actual arg to opencode would be
-	// the 300-char string — well over the 255 filename limit.
-	if len(longPrompt) <= 255 {
-		t.Fatal("test setup error: prompt should exceed filename limit")
+	// PromptSuffix must contain only the quoted prompt, not the flag.
+	if strings.Contains(cfg.PromptSuffix, "--prompt") {
+		t.Errorf("PromptSuffix should not contain the flag, got %q (truncated)", cfg.PromptSuffix[:80])
 	}
-
-	// This test documents the bug rather than testing a fix — the fix is
-	// that OpenCode's PromptMode is now "none", so this code path is never
-	// reached for OpenCode sessions.
-	t.Logf("Bug demonstration: opencode would receive %d-byte positional arg as project directory", len(longPrompt))
+	if cfg.PromptSuffix == "" {
+		t.Fatal("PromptSuffix should not be empty")
+	}
 }
 
 // TestTemplateParamsToConfigNilResolvedProvider verifies that
