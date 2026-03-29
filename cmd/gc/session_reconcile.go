@@ -172,7 +172,83 @@ func computeWakeEvaluations(
 		evals[session.ID] = evaluateWakeReasons(session, cfg, sp, poolDesired, workSet, readyWaitSet, clk)
 	}
 	applyDependencyWakeReasons(sessions, cfg, evals)
+	capWakeConfigByDemand(sessions, cfg, evals, poolDesired)
 	return evals
+}
+
+// capWakeConfigByDemand removes WakeConfig from excess sessions so that
+// at most poolDesired[template] sessions get WakeConfig per template.
+//
+// Priority: sessions that are already alive or have resume-tier reasons
+// (WakeSession, WakeAttached) keep their WakeConfig. Excess asleep
+// sessions lose it. Sessions in creating/awake state that don't have
+// assigned work count against the budget (they're "in-flight new"
+// sessions that haven't claimed yet).
+func capWakeConfigByDemand(sessions []beads.Bead, cfg *config.City, evals map[string]wakeEvaluation, poolDesired map[string]int) {
+	// Group sessions by template and count how many already need to be awake.
+	type templateBudget struct {
+		desired int
+		active  int      // creating/awake — already consuming a slot
+		wakeIDs []string // sessions with WakeConfig that are asleep
+	}
+	budgets := make(map[string]*templateBudget)
+
+	for _, session := range sessions {
+		eval, ok := evals[session.ID]
+		if !ok {
+			continue
+		}
+		if !containsWakeReason(eval.Reasons, WakeConfig) {
+			continue
+		}
+		template := normalizedSessionTemplate(session, cfg)
+		if template == "" {
+			continue
+		}
+
+		b := budgets[template]
+		if b == nil {
+			b = &templateBudget{desired: poolDesired[template]}
+			budgets[template] = b
+		}
+
+		state := sessionMetadataState(session)
+		switch state {
+		case "active", "creating":
+			// Already running or starting — counts against desired.
+			b.active++
+		default:
+			// Asleep — candidate for wake, subject to budget.
+			b.wakeIDs = append(b.wakeIDs, session.ID)
+		}
+	}
+
+	// For each template, only allow enough asleep→wake transitions to
+	// fill the gap between active and desired.
+	for _, b := range budgets {
+		slotsAvailable := b.desired - b.active
+		if slotsAvailable < 0 {
+			slotsAvailable = 0
+		}
+		// Keep the first slotsAvailable asleep sessions, strip WakeConfig from the rest.
+		for i, id := range b.wakeIDs {
+			if i >= slotsAvailable {
+				eval := evals[id]
+				eval.Reasons = removeWakeReason(eval.Reasons, WakeConfig)
+				evals[id] = eval
+			}
+		}
+	}
+}
+
+func removeWakeReason(reasons []WakeReason, remove WakeReason) []WakeReason {
+	var result []WakeReason
+	for _, r := range reasons {
+		if r != remove {
+			result = append(result, r)
+		}
+	}
+	return result
 }
 
 func applyDependencyWakeReasons(sessions []beads.Bead, cfg *config.City, evals map[string]wakeEvaluation) {
