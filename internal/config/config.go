@@ -410,12 +410,17 @@ func (r *Rig) EffectivePrefix() string {
 
 // EffectiveHQPrefix returns the bead ID prefix for the city's HQ store.
 // Uses the explicit workspace Prefix if set, otherwise derives one from
-// the city name.
-func EffectiveHQPrefix(ws Workspace) string {
-	if ws.Prefix != "" {
-		return ws.Prefix
+// the city name (falling back to ResolvedWorkspaceName when the TOML
+// name field is omitted).
+func EffectiveHQPrefix(cfg *City) string {
+	if cfg.Workspace.Prefix != "" {
+		return cfg.Workspace.Prefix
 	}
-	return DeriveBeadsPrefix(ws.Name)
+	name := cfg.Workspace.Name
+	if name == "" {
+		name = cfg.ResolvedWorkspaceName
+	}
+	return DeriveBeadsPrefix(name)
 }
 
 // DeriveBeadsPrefix computes a short bead ID prefix from a rig/city name.

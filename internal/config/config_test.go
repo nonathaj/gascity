@@ -2311,16 +2311,36 @@ func TestValidateRigs_ExplicitPrefixAvoidsCollision(t *testing.T) {
 }
 
 func TestEffectiveHQPrefix_Explicit(t *testing.T) {
-	ws := Workspace{Name: "gascity", Prefix: "hq"}
-	if got := EffectiveHQPrefix(ws); got != "hq" {
+	cfg := &City{Workspace: Workspace{Name: "gascity", Prefix: "hq"}}
+	if got := EffectiveHQPrefix(cfg); got != "hq" {
 		t.Errorf("EffectiveHQPrefix() = %q, want %q", got, "hq")
 	}
 }
 
 func TestEffectiveHQPrefix_Derived(t *testing.T) {
-	ws := Workspace{Name: "gascity"}
-	if got := EffectiveHQPrefix(ws); got != "ga" {
+	cfg := &City{Workspace: Workspace{Name: "gascity"}}
+	if got := EffectiveHQPrefix(cfg); got != "ga" {
 		t.Errorf("EffectiveHQPrefix() = %q, want %q", got, "ga")
+	}
+}
+
+func TestEffectiveHQPrefix_FallbackToResolvedName(t *testing.T) {
+	cfg := &City{
+		Workspace:             Workspace{},
+		ResolvedWorkspaceName: "my-project",
+	}
+	if got := EffectiveHQPrefix(cfg); got != "mp" {
+		t.Errorf("EffectiveHQPrefix() = %q, want %q", got, "mp")
+	}
+}
+
+func TestEffectiveHQPrefix_ExplicitPrefixOverridesAll(t *testing.T) {
+	cfg := &City{
+		Workspace:             Workspace{Name: "gascity", Prefix: "custom"},
+		ResolvedWorkspaceName: "other",
+	}
+	if got := EffectiveHQPrefix(cfg); got != "custom" {
+		t.Errorf("EffectiveHQPrefix() = %q, want %q", got, "custom")
 	}
 }
 
