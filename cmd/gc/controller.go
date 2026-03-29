@@ -585,6 +585,7 @@ func runController(
 		cs.ct = cr.crashTrack()
 		cs.pokeCh = pokeCh
 		cs.services = cr.svc
+		cs.startBeadEventWatcher(ctx)
 		cr.setControllerState(cs)
 		bind := cfg.API.BindOrDefault()
 		nonLocal := bind != "127.0.0.1" && bind != "localhost" && bind != "::1"

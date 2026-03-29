@@ -684,6 +684,65 @@ func TestListNormalizesLegacyDrainedToAsleep(t *testing.T) {
 	}
 }
 
+func TestGetNormalizesAwakeToActive(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	bead, err := store.Create(beads.Bead{
+		Title:  "awake session",
+		Type:   BeadType,
+		Labels: []string{LabelSession},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"state":        "awake",
+			"session_name": "live-awake",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create awake session: %v", err)
+	}
+	if err := sp.Start(context.Background(), "live-awake", runtime.Config{Command: "true"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	got, err := mgr.Get(bead.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.State != StateActive {
+		t.Fatalf("Get state = %q, want %q", got.State, StateActive)
+	}
+}
+
+func TestGetDowngradesStaleActiveStateToAsleep(t *testing.T) {
+	store := beads.NewMemStore()
+	sp := runtime.NewFake()
+	mgr := NewManager(store, sp)
+
+	bead, err := store.Create(beads.Bead{
+		Title:  "stale awake session",
+		Type:   BeadType,
+		Labels: []string{LabelSession},
+		Metadata: map[string]string{
+			"template":     "helper",
+			"state":        "awake",
+			"session_name": "stale-awake",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create stale awake session: %v", err)
+	}
+
+	got, err := mgr.Get(bead.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.State != StateAsleep {
+		t.Fatalf("Get state = %q, want %q", got.State, StateAsleep)
+	}
+}
+
 func TestPeek(t *testing.T) {
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()

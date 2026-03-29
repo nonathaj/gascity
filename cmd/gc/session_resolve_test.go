@@ -543,3 +543,45 @@ func TestResolveSessionIDMaterializingNamed_TemplatePrefixBypassesNamedSessionAl
 		t.Fatalf("configured_named_session = %q, want empty", bead.Metadata[namedSessionMetadataKey])
 	}
 }
+
+func TestResolveSessionIDMaterializingNamed_ReusesExistingQualifiedTemplateSession(t *testing.T) {
+	store := beads.NewMemStore()
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:         "claude",
+			Dir:          "gascity",
+			StartCommand: "true",
+		}},
+	}
+	existing, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession, "template:gascity/claude"},
+		Metadata: map[string]string{
+			"template":             "gascity/claude",
+			"session_name":         "s-gc-existing",
+			"state":                "creating",
+			"pending_create_claim": "true",
+			"manual_session":       "true",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create existing session: %v", err)
+	}
+
+	id, err := resolveSessionIDMaterializingNamed(t.TempDir(), cfg, store, "gascity/claude")
+	if err != nil {
+		t.Fatalf("resolveSessionIDMaterializingNamed(gascity/claude): %v", err)
+	}
+	if id != existing.ID {
+		t.Fatalf("got %q, want existing session %q", id, existing.ID)
+	}
+
+	all, err := store.ListByLabel(session.LabelSession, 0)
+	if err != nil {
+		t.Fatalf("ListByLabel: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("session count = %d, want 1", len(all))
+	}
+}
