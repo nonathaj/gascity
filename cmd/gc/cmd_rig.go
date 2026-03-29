@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -84,7 +85,8 @@ The rig's agents won't spawn until explicitly resumed with "gc rig resume".`,
 }
 
 func newRigListCmd(stdout, stderr io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var jsonFlag bool
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List registered rigs",
 		Long: `List all registered rigs with their paths, prefixes, and beads status.
@@ -93,12 +95,14 @@ Shows the HQ rig (the city itself) and all configured rigs. Each rig
 displays its bead ID prefix and whether its beads database is initialized.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdRigList(args, stdout, stderr) != 0 {
+			if cmdRigList(args, jsonFlag, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
+	return cmd
 }
 
 // cmdRigAdd registers an external project directory as a rig in the city.
@@ -368,20 +372,37 @@ func findEnclosingRig(dir string, rigs []config.Rig) (name, rigPath string, foun
 }
 
 // cmdRigList lists all registered rigs in the current city.
-func cmdRigList(args []string, stdout, stderr io.Writer) int {
+func cmdRigList(args []string, jsonOutput bool, stdout, stderr io.Writer) int {
 	_ = args // no arguments used yet
 	cityPath, err := resolveCity()
 	if err != nil {
 		fmt.Fprintf(stderr, "gc rig list: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	return doRigList(fsys.OSFS{}, cityPath, stdout, stderr)
+	return doRigList(fsys.OSFS{}, cityPath, jsonOutput, stdout, stderr)
+}
+
+// RigListJSON is the JSON output format for "gc rig list --json".
+type RigListJSON struct {
+	CityPath string        `json:"city_path"`
+	CityName string        `json:"city_name"`
+	Rigs     []RigListItem `json:"rigs"`
+}
+
+// RigListItem is one rig entry in the JSON output.
+type RigListItem struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Prefix    string `json:"prefix"`
+	HQ        bool   `json:"hq"`
+	Suspended bool   `json:"suspended"`
+	Beads     string `json:"beads"`
 }
 
 // doRigList is the pure logic for "gc rig list". It reads rigs from city.toml
 // and prints each with its prefix and beads status. Accepts an injected FS for
 // testability.
-func doRigList(fs fsys.FS, cityPath string, stdout, stderr io.Writer) int {
+func doRigList(fs fsys.FS, cityPath string, jsonOutput bool, stdout, stderr io.Writer) int {
 	cfg, err := loadCityConfigFS(fs, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "gc rig list: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -393,6 +414,36 @@ func doRigList(fs fsys.FS, cityPath string, stdout, stderr io.Writer) int {
 		cityName = filepath.Base(cityPath)
 	}
 	hqPrefix := config.DeriveBeadsPrefix(cityName)
+
+	if jsonOutput {
+		result := RigListJSON{
+			CityPath: cityPath,
+			CityName: cityName,
+		}
+		result.Rigs = append(result.Rigs, RigListItem{
+			Name:   cityName,
+			Path:   cityPath,
+			Prefix: hqPrefix,
+			HQ:     true,
+			Beads:  rigBeadsStatus(fs, cityPath),
+		})
+		for i := range cfg.Rigs {
+			result.Rigs = append(result.Rigs, RigListItem{
+				Name:      cfg.Rigs[i].Name,
+				Path:      cfg.Rigs[i].Path,
+				Prefix:    cfg.Rigs[i].EffectivePrefix(),
+				Suspended: cfg.Rigs[i].Suspended,
+				Beads:     rigBeadsStatus(fs, cfg.Rigs[i].Path),
+			})
+		}
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(result); err != nil {
+			fmt.Fprintf(stderr, "gc rig list: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
+		return 0
+	}
 
 	w := func(s string) { fmt.Fprintln(stdout, s) } //nolint:errcheck // best-effort stdout
 	w("")

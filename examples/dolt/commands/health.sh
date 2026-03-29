@@ -16,28 +16,32 @@ metadata_files() {
   printf '%s\n' "$GC_CITY_PATH/.beads/metadata.json"
 
   if command -v gc >/dev/null 2>&1; then
-    gc config show --city "$GC_CITY_PATH" 2>/dev/null | awk '
-      /^\[\[rigs\]\]/ { in_rig=1; next }
-      /^\[/ && $0 !~ /^\[\[rigs/ { in_rig=0 }
-      in_rig && $1 == "path" {
-        path = $3
-        gsub(/^"|"$/, "", path)
-        if (path != "") print path "/.beads/metadata.json"
-      }
-    '
-    return
+    rig_paths=$(gc rig list --json --city "$GC_CITY_PATH" 2>/dev/null \
+      | if command -v jq >/dev/null 2>&1; then
+          jq -r '.rigs[].path' 2>/dev/null
+        else
+          grep '"path"' | sed 's/.*"path": *"//;s/".*//'
+        fi) || true
+    if [ -n "$rig_paths" ]; then
+      printf '%s\n' "$rig_paths" | while IFS= read -r p; do
+        [ -n "$p" ] && printf '%s\n' "$p/.beads/metadata.json"
+      done
+      return
+    fi
   fi
 
-  find "$GC_CITY_PATH/rigs" -mindepth 2 -maxdepth 2 -path '*/.beads/metadata.json' 2>/dev/null
+  # Fallback: scan local rigs/ directory only. Cannot discover external rigs
+  # when gc is unavailable — acceptable degradation.
+  find "$GC_CITY_PATH/rigs" -path '*/.beads/metadata.json' 2>/dev/null || true
 }
 
 metadata_db() {
   meta="$1"
   if command -v jq >/dev/null 2>&1; then
-    jq -r '.dolt_database // empty' "$meta" 2>/dev/null
+    jq -r '.dolt_database // empty' "$meta" 2>/dev/null || true
     return
   fi
-  grep -o '"dolt_database"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta" 2>/dev/null | sed 's/.*: *"//;s/"$//'
+  grep -o '"dolt_database"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta" 2>/dev/null | sed 's/.*: *"//;s/"$//' || true
 }
 
 json_output=false
@@ -85,6 +89,11 @@ if [ -n "$pid" ]; then
   fi
 fi
 
+# Cache metadata file paths once (avoids repeated gc calls and word-splitting).
+_meta_cache=$(mktemp)
+metadata_files > "$_meta_cache"
+trap 'rm -f "$_meta_cache"' EXIT
+
 # Collect database info.
 db_info=""
 if [ -d "$data_dir" ] && [ "$server_running" = true ]; then
@@ -97,7 +106,7 @@ if [ -d "$data_dir" ] && [ "$server_running" = true ]; then
     commits=$(echo "$commits" | tr -d '[:space:]')
     # Count open beads (best-effort).
     open_beads=0
-    for meta in $(metadata_files); do
+    while IFS= read -r meta; do
       [ -f "$meta" ] || continue
       db=$(metadata_db "$meta")
       if [ "$db" = "$name" ]; then
@@ -107,7 +116,7 @@ if [ -d "$data_dir" ] && [ "$server_running" = true ]; then
         fi
         break
       fi
-    done
+    done < "$_meta_cache"
     db_info="$db_info$name|$commits|$open_beads
 "
   done
@@ -137,11 +146,11 @@ orphan_list=""
 orphan_count=0
 if [ -d "$data_dir" ]; then
   referenced=""
-  for meta in $(metadata_files); do
+  while IFS= read -r meta; do
     [ -f "$meta" ] || continue
     db=$(metadata_db "$meta")
     [ -n "$db" ] && referenced="$referenced $db "
-  done
+  done < "$_meta_cache"
   for d in "$data_dir"/*/; do
     [ ! -d "$d/.dolt" ] && continue
     name="$(basename "$d")"
