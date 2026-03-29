@@ -198,6 +198,20 @@ func TestCreate_metadataRoundTripsViaConformance(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
+	// Verify Create return value has normalized metadata and labels.
+	if created.Metadata["session_name"] != "gascity-mayor" {
+		t.Errorf("created.Metadata[session_name] = %q, want %q", created.Metadata["session_name"], "gascity-mayor")
+	}
+	if created.Metadata["agent_name"] != "mayor" {
+		t.Errorf("created.Metadata[agent_name] = %q, want %q", created.Metadata["agent_name"], "mayor")
+	}
+	for _, l := range created.Labels {
+		if strings.HasPrefix(l, "meta:") {
+			t.Errorf("meta: label leaked into created.Labels: %s", l)
+		}
+	}
+
+	// Verify Get returns the same normalized data.
 	got, err := s.Get(created.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
@@ -208,11 +222,99 @@ func TestCreate_metadataRoundTripsViaConformance(t *testing.T) {
 	if got.Metadata["agent_name"] != "mayor" {
 		t.Errorf("Metadata[agent_name] = %q, want %q", got.Metadata["agent_name"], "mayor")
 	}
-	// Metadata keys should not leak into the labels array.
 	for _, l := range got.Labels {
 		if strings.HasPrefix(l, "meta:") {
 			t.Errorf("meta: label leaked into Labels: %s", l)
 		}
+	}
+}
+
+func TestUpdate_metadataRoundTripsViaConformance(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not available")
+	}
+	scriptPath, err := filepath.Abs(filepath.Join("testdata", "conformance.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewStore(scriptPath)
+	s.SetEnv(map[string]string{"BEADS_DIR": t.TempDir()})
+
+	created, err := s.Create(beads.Bead{
+		Title:  "mayor",
+		Type:   "session",
+		Labels: []string{"gc:session"},
+		Metadata: map[string]string{
+			"session_name": "gascity-mayor",
+			"state":        "stopped",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Update metadata via Store.Update.
+	if err := s.Update(created.ID, beads.UpdateOpts{
+		Metadata: map[string]string{"state": "running"},
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := s.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Metadata["state"] != "running" {
+		t.Errorf("Metadata[state] = %q after Update, want %q", got.Metadata["state"], "running")
+	}
+	// Original metadata should be preserved.
+	if got.Metadata["session_name"] != "gascity-mayor" {
+		t.Errorf("Metadata[session_name] = %q, want %q (should be preserved)", got.Metadata["session_name"], "gascity-mayor")
+	}
+	// No duplicate meta: labels should exist.
+	for _, l := range got.Labels {
+		if strings.HasPrefix(l, "meta:") {
+			t.Errorf("meta: label leaked into Labels: %s", l)
+		}
+	}
+}
+
+func TestSetMetadata_deduplicatesViaConformance(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq not available")
+	}
+	scriptPath, err := filepath.Abs(filepath.Join("testdata", "conformance.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := NewStore(scriptPath)
+	s.SetEnv(map[string]string{"BEADS_DIR": t.TempDir()})
+
+	created, err := s.Create(beads.Bead{
+		Title:  "test",
+		Type:   "session",
+		Labels: []string{"gc:session"},
+		Metadata: map[string]string{
+			"state": "stopped",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Overwrite via SetMetadata — should replace, not accumulate.
+	if err := s.SetMetadata(created.ID, "state", "running"); err != nil {
+		t.Fatalf("SetMetadata: %v", err)
+	}
+
+	got, err := s.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Metadata["state"] != "running" {
+		t.Errorf("Metadata[state] = %q, want %q", got.Metadata["state"], "running")
 	}
 }
 
