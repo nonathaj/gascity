@@ -20,11 +20,13 @@ import (
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/supervisor"
+	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
 	"github.com/spf13/cobra"
 )
@@ -877,6 +879,8 @@ func reconcileCities(
 		done := make(chan struct{})
 		mc := &managedCity{name: cityName, cancel: cityCancel, done: done, closer: fr}
 
+		convergenceReqCh := make(chan convergenceRequest, 16)
+
 		cityRuntime := newCityRuntime(CityRuntimeParams{
 			CityPath:                path,
 			CityName:                cityName,
@@ -892,6 +896,7 @@ func reconcileCities(
 			Rec:                     rec,
 			PoolSessions:            poolSessions,
 			PoolDeathHandlers:       poolDeathHandlers,
+			ConvergenceReqCh:        convergenceReqCh,
 			PokeCh:                  pokeCh,
 			OnStarted: func() {
 				cr.UpdateCallback(path, func(m *managedCity) {
@@ -957,7 +962,117 @@ func reconcileCities(
 			continue
 		}
 
-		go func(n, p string, cityFr *events.FileRecorder) {
+		// Acquire controller lock to prevent split-brain with standalone
+		// controllers (mirrors runController in controller.go).
+		lock, lockErr := acquireControllerLock(path)
+		if lockErr != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': controller lock: %v\n", cityName, lockErr) //nolint:errcheck
+			cityCancel()
+			cityRuntime.shutdown()
+			if fr != nil {
+				fr.Close() //nolint:errcheck
+			}
+			cr.BatchUpdate(func(
+				cities map[string]*managedCity,
+				_ map[string]cityInitProgress,
+				_ map[string]*initFailRecord,
+				_ map[string]*panicRecord,
+			) {
+				delete(cities, path)
+			})
+			recordInitFailure(cityName, fmt.Sprintf("controller lock: %v", lockErr))
+			continue
+		}
+
+		// Start controller socket AFTER the alreadyRunning check so we
+		// never destroy a live city's socket or leak a listener.
+		sockPath := filepath.Join(path, ".gc", "controller.sock")
+		lis, lisErr := startControllerSocket(path, cityCancel, convergenceReqCh, pokeCh)
+		if lisErr != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': controller socket: %v\n", cityName, lisErr) //nolint:errcheck
+			lock.Close()                                                                               //nolint:errcheck // no socket to race with
+			cityCancel()
+			cityRuntime.shutdown()
+			if fr != nil {
+				fr.Close() //nolint:errcheck
+			}
+			cr.BatchUpdate(func(
+				cities map[string]*managedCity,
+				_ map[string]cityInitProgress,
+				_ map[string]*initFailRecord,
+				_ map[string]*panicRecord,
+			) {
+				delete(cities, path)
+			})
+			recordInitFailure(cityName, fmt.Sprintf("controller socket: %v", lisErr))
+			continue
+		}
+
+		// Generate controller token for convergence ACL
+		// (mirrors runController in controller.go).
+		controllerToken, tokenErr := convergence.GenerateToken()
+		if tokenErr != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': controller token: %v\n", cityName, tokenErr) //nolint:errcheck
+			lis.Close()                                                                                 //nolint:errcheck
+			os.Remove(sockPath)                                                                         //nolint:errcheck
+			lock.Close()                                                                                //nolint:errcheck // lock released last
+			cityCancel()
+			cityRuntime.shutdown()
+			if fr != nil {
+				fr.Close() //nolint:errcheck
+			}
+			cr.BatchUpdate(func(
+				cities map[string]*managedCity,
+				_ map[string]cityInitProgress,
+				_ map[string]*initFailRecord,
+				_ map[string]*panicRecord,
+			) {
+				delete(cities, path)
+			})
+			recordInitFailure(cityName, fmt.Sprintf("controller token: %v", tokenErr))
+			continue
+		}
+		_ = controllerToken // available for future waves via function parameters
+		if err := convergence.WriteToken(path, controllerToken); err != nil {
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': writing controller token: %v\n", cityName, err) //nolint:errcheck
+			lis.Close()                                                                                    //nolint:errcheck
+			os.Remove(sockPath)                                                                            //nolint:errcheck
+			lock.Close()                                                                                   //nolint:errcheck // lock released last
+			cityCancel()
+			cityRuntime.shutdown()
+			if fr != nil {
+				fr.Close() //nolint:errcheck
+			}
+			cr.BatchUpdate(func(
+				cities map[string]*managedCity,
+				_ map[string]cityInitProgress,
+				_ map[string]*initFailRecord,
+				_ map[string]*panicRecord,
+			) {
+				delete(cities, path)
+			})
+			recordInitFailure(cityName, fmt.Sprintf("controller token write: %v", err))
+			continue
+		}
+
+		// Capture the socket's os.FileInfo so the goroutine can perform
+		// ownership-safe socket removal on exit via os.SameFile — a
+		// replacement city that re-bound the same path won't have its
+		// socket unlinked. Uses os.SameFile for cross-platform safety.
+		sockInfo, _ := os.Stat(sockPath)
+
+		// Disable automatic socket unlinking on listener close so our
+		// ownership-safe removal logic is the sole path for cleanup.
+		// Without this, l.Close() unconditionally unlinks the socket
+		// file, defeating the SameFile check.
+		if ul, ok := lis.(*net.UnixListener); ok {
+			ul.SetUnlinkOnClose(false)
+		}
+
+		go func(n, p string, cityFr *events.FileRecorder, l net.Listener, sock string, origSockInfo os.FileInfo, lk *os.File) {
+			// Recovery and close(done) defer is pushed FIRST so it
+			// executes LAST (Go LIFO), preserving the invariant that
+			// completion is signaled only after all resource cleanup.
 			defer func() {
 				if r := recover(); r != nil {
 					fmt.Fprintf(stderr, "gc supervisor: city '%s' panicked: %v\n", n, r) //nolint:errcheck
@@ -1020,10 +1135,30 @@ func reconcileCities(
 				// waiters (shutdown/unregister paths) proceed.
 				close(done)
 			}()
+			// Resource cleanup defers pushed AFTER recovery/done so they
+			// execute BEFORE it in LIFO order: resources are released,
+			// then done is closed.
+			defer lk.Close()                 //nolint:errcheck // release controller lock (last released)
+			defer convergence.RemoveToken(p) //nolint:errcheck // best-effort cleanup
+			defer func() {
+				// Ownership-safe socket removal: only unlink if the
+				// on-disk file is the same one we created, so a
+				// replacement city's socket is never destroyed.
+				if origSockInfo != nil {
+					if cur, err := os.Stat(sock); err == nil {
+						if os.SameFile(origSockInfo, cur) {
+							os.Remove(sock) //nolint:errcheck
+						}
+					}
+				}
+			}()
+			defer l.Close() //nolint:errcheck // close listener (after socket removal)
+			defer telemetry.RecordControllerLifecycle(context.Background(), "stopped")
 			cityRuntime.run(cityCtx)
-		}(cityName, path, fr)
+		}(cityName, path, fr, lis, sockPath, sockInfo, lock)
 
 		rec.Record(events.Event{Type: events.ControllerStarted, Actor: "gc"})
+		telemetry.RecordControllerLifecycle(context.Background(), "started")
 		fmt.Fprintf(stdout, "Launching city '%s' (%s)\n", cityName, path) //nolint:errcheck
 	}
 }
