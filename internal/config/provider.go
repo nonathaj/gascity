@@ -223,6 +223,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 			Args:        nil,
 			OptionDefaults: map[string]string{
 				"permission_mode": "unrestricted",
+				"effort":          "max",
 			},
 			PromptMode:             "arg",
 			ReadyDelayMs:           10000,
