@@ -258,11 +258,6 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 
 	switch kind {
 	case "agent":
-		if len(body.Options) > 0 {
-			s.idem.unreserve(idemKey)
-			writeError(w, http.StatusBadRequest, "invalid", "options are not supported for agent sessions; use kind=provider to specify options")
-			return
-		}
 		var err error
 		resolved, workDir, transport, template, err = s.resolveSessionTemplate(name)
 		if err != nil {
@@ -275,8 +270,21 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		// Agent track: command comes from the agent config as-is.
-		// Do NOT inject OptionsSchema defaults — agents encode their own CLI flags.
+		if len(body.Options) > 0 {
+			if len(resolved.OptionsSchema) == 0 {
+				s.idem.unreserve(idemKey)
+				writeError(w, http.StatusBadRequest, "unknown_option",
+					"agent '"+name+"' does not accept options (provider has no options_schema)")
+				return
+			}
+			var optErr error
+			extraArgs, optErr = config.ResolveExplicitOptions(resolved.OptionsSchema, body.Options)
+			if optErr != nil {
+				s.idem.unreserve(idemKey)
+				writeError(w, http.StatusBadRequest, "invalid_option_value", optErr.Error())
+				return
+			}
+		}
 
 	case "provider":
 		s.createProviderSession(w, r, store, body, name, idemKey, bodyHash)
@@ -286,11 +294,6 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	title := body.Title
 	if title == "" {
 		title = template
-	}
-	if body.Async && strings.TrimSpace(body.Message) != "" {
-		s.idem.unreserve(idemKey)
-		writeError(w, http.StatusBadRequest, "invalid", "message is not supported with async session creation; create the session, then POST /v0/session/{id}/messages")
-		return
 	}
 
 	resume := session.ProviderResume{
@@ -309,7 +312,24 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	// Merge extra args from options into the command string.
 	command := resolved.CommandString()
 	if len(extraArgs) > 0 {
-		command = command + " " + shellquote.Join(extraArgs)
+		command = config.ReplaceSchemaFlags(command, resolved.OptionsSchema, extraArgs)
+	}
+
+	// Append message as prompt argument.
+	if msg := strings.TrimSpace(body.Message); msg != "" {
+		if resolved.PromptMode == "flag" && resolved.PromptFlag != "" {
+			command = command + " " + resolved.PromptFlag + " " + shellquote.Quote(msg)
+		} else if resolved.PromptMode != "none" {
+			command = command + " " + shellquote.Quote(msg)
+		}
+	}
+
+	// Build template_overrides metadata for persistence.
+	var extraMeta map[string]string
+	if len(body.Options) > 0 {
+		if overridesJSON, jsonErr := json.Marshal(body.Options); jsonErr == nil {
+			extraMeta = map[string]string{"template_overrides": string(overridesJSON)}
+		}
 	}
 
 	mgr := s.sessionManager(store)
@@ -321,7 +341,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		var createErr error
 		if body.Async {
-			info, createErr = mgr.CreateAliasedBeadOnlyNamed(
+			info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(
 				alias,
 				"",
 				template,
@@ -330,11 +350,11 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 				workDir,
 				resolved.Name,
 				transport,
-				resolved.Env,
 				resume,
+				extraMeta,
 			)
 		} else {
-			info, createErr = mgr.CreateAliasedNamedWithTransport(
+			info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(
 				r.Context(),
 				alias,
 				"",
@@ -347,6 +367,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 				resolved.Env,
 				resume,
 				hints,
+				extraMeta,
 			)
 		}
 		return createErr
@@ -361,18 +382,6 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	s.persistSessionMeta(store, info.ID, "agent", body.ProjectID, optMeta)
 	if body.Async {
 		s.state.Poke()
-	}
-
-	// Deliver initial message if provided.
-	if msg := strings.TrimSpace(body.Message); msg != "" {
-		resumeCommand, nudgeHints := s.buildSessionResume(info)
-		if sendErr := mgr.Send(r.Context(), info.ID, msg, resumeCommand, nudgeHints); sendErr != nil {
-			log.Printf("session %s: initial message delivery failed: %v", info.ID, sendErr)
-			s.idem.unreserve(idemKey)
-			writeError(w, http.StatusInternalServerError, "message_delivery_failed",
-				fmt.Sprintf("session created but initial message failed: %v", sendErr))
-			return
-		}
 	}
 
 	resp := sessionToResponse(info, s.state.Config())

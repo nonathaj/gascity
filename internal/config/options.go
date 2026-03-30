@@ -1,6 +1,10 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/gastownhall/gascity/internal/shellquote"
+)
 
 // ValidateOptionsSchema checks that every option default resolves to a declared choice.
 // Call at config load time to catch misconfigured providers early.
@@ -49,6 +53,94 @@ func ResolveOptions(schema []ProviderOption, options map[string]string) (extraAr
 	}
 
 	return extraArgs, metadata, nil
+}
+
+// ResolveExplicitOptions validates user-specified options against a provider's
+// schema and produces extra CLI args, but does NOT inject schema defaults for
+// unspecified options. Used for template overrides where the base command
+// already encodes the provider's default flags.
+//
+// Args are emitted in schema declaration order for deterministic command lines.
+func ResolveExplicitOptions(schema []ProviderOption, options map[string]string) (extraArgs []string, err error) {
+	// Validate user-specified option keys and values up front.
+	for key, value := range options {
+		opt := findOption(schema, key)
+		if opt == nil {
+			return nil, fmt.Errorf("%w: %s", ErrUnknownOption, key)
+		}
+		if findChoice(opt.Choices, value) == nil {
+			return nil, fmt.Errorf("invalid value for %s: %s", key, value)
+		}
+	}
+
+	// Iterate in schema declaration order for deterministic arg ordering.
+	for _, opt := range schema {
+		if value, ok := options[opt.Key]; ok {
+			choice := findChoice(opt.Choices, value)
+			extraArgs = append(extraArgs, choice.FlagArgs...)
+		}
+	}
+
+	return extraArgs, nil
+}
+
+// ReplaceSchemaFlags strips all CLI flags associated with the provider's
+// OptionsSchema from the command, then appends the given override flags.
+func ReplaceSchemaFlags(command string, schema []ProviderOption, overrideArgs []string) string {
+	allFlags := CollectAllSchemaFlags(schema)
+	stripped := StripFlags(command, allFlags)
+	if len(overrideArgs) > 0 {
+		stripped = stripped + " " + shellquote.Join(overrideArgs)
+	}
+	return stripped
+}
+
+// CollectAllSchemaFlags gathers all FlagArgs from all choices across all options.
+func CollectAllSchemaFlags(schema []ProviderOption) [][]string {
+	var flags [][]string
+	for _, opt := range schema {
+		for _, choice := range opt.Choices {
+			if len(choice.FlagArgs) > 0 {
+				flags = append(flags, choice.FlagArgs)
+			}
+		}
+	}
+	return flags
+}
+
+// StripFlags removes known flag sequences from a tokenized command.
+func StripFlags(command string, flags [][]string) string {
+	tokens := shellquote.Split(command)
+	var result []string
+	i := 0
+	for i < len(tokens) {
+		matched := false
+		for _, seq := range flags {
+			if len(seq) == 0 {
+				continue
+			}
+			if i+len(seq) > len(tokens) {
+				continue
+			}
+			match := true
+			for j, part := range seq {
+				if tokens[i+j] != part {
+					match = false
+					break
+				}
+			}
+			if match {
+				i += len(seq)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			result = append(result, tokens[i])
+			i++
+		}
+	}
+	return shellquote.Join(result)
 }
 
 func findOption(schema []ProviderOption, key string) *ProviderOption {

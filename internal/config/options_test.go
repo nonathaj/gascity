@@ -179,3 +179,84 @@ func TestValidateOptionsSchema_NoDefault(t *testing.T) {
 		t.Fatalf("empty default should pass: %v", err)
 	}
 }
+
+func TestResolveExplicitOptions_SubsetOfOptions(t *testing.T) {
+	schema := []ProviderOption{
+		{
+			Key: "permission_mode", Label: "Permission Mode", Type: "select",
+			Default: "auto-edit",
+			Choices: []OptionChoice{
+				{Value: "auto-edit", Label: "Edit automatically", FlagArgs: []string{"--permission-mode", "auto-edit"}},
+				{Value: "plan", Label: "Plan mode", FlagArgs: []string{"--permission-mode", "plan"}},
+			},
+		},
+		{
+			Key: "model", Label: "Model", Type: "select",
+			Default: "",
+			Choices: []OptionChoice{
+				{Value: "", Label: "Default", FlagArgs: nil},
+				{Value: "opus", Label: "Opus", FlagArgs: []string{"--model", "claude-opus-4-6"}},
+			},
+		},
+	}
+
+	// Only specify model, not permission_mode.
+	args, err := ResolveExplicitOptions(schema, map[string]string{"model": "opus"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should only return model flags, not permission_mode defaults.
+	wantArgs := []string{"--model", "claude-opus-4-6"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("got args=%v, want %v", args, wantArgs)
+	}
+	for i, w := range wantArgs {
+		if args[i] != w {
+			t.Errorf("args[%d]=%q, want %q", i, args[i], w)
+		}
+	}
+}
+
+func TestResolveExplicitOptions_InvalidKey(t *testing.T) {
+	schema := []ProviderOption{
+		{Key: "mode", Choices: []OptionChoice{{Value: "a"}}},
+	}
+	_, err := ResolveExplicitOptions(schema, map[string]string{"bogus": "val"})
+	if err == nil {
+		t.Fatal("expected error for unknown option")
+	}
+}
+
+func TestResolveExplicitOptions_InvalidValue(t *testing.T) {
+	schema := []ProviderOption{
+		{
+			Key: "mode", Choices: []OptionChoice{
+				{Value: "a", Label: "A"},
+				{Value: "b", Label: "B"},
+			},
+		},
+	}
+	_, err := ResolveExplicitOptions(schema, map[string]string{"mode": "c"})
+	if err == nil {
+		t.Fatal("expected error for invalid value")
+	}
+}
+
+func TestResolveExplicitOptions_EmptyMap(t *testing.T) {
+	schema := []ProviderOption{
+		{
+			Key: "mode", Default: "a",
+			Choices: []OptionChoice{
+				{Value: "a", FlagArgs: []string{"--mode", "a"}},
+			},
+		},
+	}
+	args, err := ResolveExplicitOptions(schema, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args != nil {
+		t.Errorf("expected nil args for empty options, got %v", args)
+	}
+}

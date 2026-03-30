@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -274,6 +276,20 @@ func prepareStartCandidate(
 	if sk := session.Metadata["session_key"]; sk != "" && tp.ResolvedProvider != nil {
 		firstStart := session.Metadata["started_config_hash"] == ""
 		agentCfg.Command = resolveSessionCommand(agentCfg.Command, sk, tp.ResolvedProvider, firstStart)
+	}
+	if tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
+		if raw := session.Metadata["template_overrides"]; raw != "" {
+			var overrides map[string]string
+			if err := json.Unmarshal([]byte(raw), &overrides); err == nil && len(overrides) > 0 {
+				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, overrides)
+				if resolveErr == nil && len(args) > 0 {
+					agentCfg.Command = replaceSchemaFlags(agentCfg.Command, tp.ResolvedProvider.OptionsSchema, args)
+				}
+				if resolveErr != nil {
+					log.Printf("session %s: template_overrides resolution failed: %v", session.ID, resolveErr)
+				}
+			}
+		}
 	}
 	generation, _ := strconv.Atoi(session.Metadata["generation"])
 	if generation <= 0 {

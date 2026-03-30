@@ -164,6 +164,7 @@ func buildDesiredStateWithSessionBeads(
 				continue
 			}
 			installAgentSideEffects(bp, &cfg.Agents[i], tp, stderr)
+			fmt.Fprintf(stderr, "DEBUG fixed-agent %q: SessionName=%q\n", cfg.Agents[i].QualifiedName(), tp.SessionName) //nolint:errcheck
 			desired[tp.SessionName] = tp
 			continue
 		}
@@ -233,13 +234,16 @@ func buildDesiredStateWithSessionBeads(
 	// sessions are materialized only when they already have a canonical bead or
 	// when their work query returns ready work.
 	namedSpecs := make(map[string]namedSessionSpec)
+	fmt.Fprintf(stderr, "DEBUG named_sessions: %d configured\n", len(cfg.NamedSessions)) //nolint:errcheck
 	for i := range cfg.NamedSessions {
 		identity := cfg.NamedSessions[i].QualifiedName()
 		spec, ok := findNamedSessionSpec(cfg, cityName, identity)
 		if !ok {
+			fmt.Fprintf(stderr, "DEBUG named_session %q: findNamedSessionSpec failed\n", identity) //nolint:errcheck
 			continue
 		}
 		if agentInSuspendedRig(cityPath, spec.Agent, cfg.Rigs, suspendedRigPaths) {
+			fmt.Fprintf(stderr, "DEBUG named_session %q: agent in suspended rig\n", identity) //nolint:errcheck
 			continue
 		}
 		namedSpecs[identity] = spec
@@ -264,12 +268,18 @@ func buildDesiredStateWithSessionBeads(
 	}
 	for identity, spec := range namedSpecs {
 		canonicalBead, hasCanonical := findCanonicalNamedSessionBead(bp.sessionBeads, identity)
+		fmt.Fprintf(stderr, "DEBUG named_session %q: mode=%s hasCanonical=%v\n", identity, spec.Mode, hasCanonical) //nolint:errcheck
+		if hasCanonical {
+			fmt.Fprintf(stderr, "DEBUG named_session %q: canonical=%s sn=%s\n", identity, canonicalBead.ID, canonicalBead.Metadata["session_name"]) //nolint:errcheck
+		}
 		if !hasCanonical {
 			if _, conflict := findNamedSessionConflict(bp.sessionBeads, spec); conflict {
+				fmt.Fprintf(stderr, "DEBUG named_session %q: conflict\n", identity) //nolint:errcheck
 				continue
 			}
 		}
 		if spec.Mode != "always" && !hasCanonical && !namedWorkReady[identity] {
+			fmt.Fprintf(stderr, "DEBUG named_session %q: skipped (not always, no canonical, no work)\n", identity) //nolint:errcheck
 			continue
 		}
 		fpExtra := buildFingerprintExtra(spec.Agent)
@@ -278,6 +288,7 @@ func buildDesiredStateWithSessionBeads(
 			fmt.Fprintf(stderr, "buildDesiredState: named session %q: %v (skipping)\n", identity, err) //nolint:errcheck
 			continue
 		}
+		fmt.Fprintf(stderr, "DEBUG named_session %q: added to desired as %q\n", identity, tp.SessionName) //nolint:errcheck
 		tp.Alias = identity
 		tp.ConfiguredNamedIdentity = identity
 		tp.ConfiguredNamedMode = spec.Mode
