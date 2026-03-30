@@ -1118,7 +1118,40 @@ func (s *Server) streamSessionTranscriptLogRaw(ctx context.Context, w http.Respo
 		}
 	}
 
-	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) })
+	// Stall detection: when the log hasn't grown for 5s, check the tmux
+	// pane for a tool approval prompt. If found, emit a "pending" SSE event
+	// so the UI can show the approval panel.
+	var lastPendingID string
+	onStall := func() {
+		sp := s.state.SessionProvider()
+		ip, ok := sp.(runtime.InteractionProvider)
+		if !ok {
+			return
+		}
+		pending, err := ip.Pending(info.SessionName)
+		if err != nil || pending == nil {
+			if lastPendingID != "" {
+				// Approval cleared — emit activity update.
+				lastPendingID = ""
+				seq++
+				actData, _ := json.Marshal(map[string]string{"activity": "in-turn"})
+				writeSSE(w, "activity", seq, actData)
+			}
+			return
+		}
+		if pending.RequestID == lastPendingID {
+			return // already emitted this approval
+		}
+		lastPendingID = pending.RequestID
+		seq++
+		pendingData, _ := json.Marshal(pending)
+		writeSSE(w, "pending", seq, pendingData)
+	}
+
+	lw.Run(ctx, readAndEmit, func() { writeSSEComment(w) }, RunOpts{
+		OnStall:      onStall,
+		StallTimeout: 5 * time.Second,
+	})
 }
 
 func (s *Server) streamSessionTranscriptLog(ctx context.Context, w http.ResponseWriter, info session.Info, logPath string) {
@@ -1236,6 +1269,8 @@ func (s *Server) streamSessionPeekRaw(ctx context.Context, w http.ResponseWriter
 	var lastOutput string
 	var seq uint64
 
+	var lastPeekPendingID string
+
 	emitPeek := func() {
 		if !sp.IsRunning(info.SessionName) {
 			return
@@ -1269,6 +1304,19 @@ func (s *Server) streamSessionPeekRaw(ctx context.Context, w http.ResponseWriter
 			return
 		}
 		writeSSE(w, "message", seq, data)
+
+		// Check for approval prompts in the pane output we already have.
+		if ip, ok := sp.(runtime.InteractionProvider); ok {
+			pending, pErr := ip.Pending(info.SessionName)
+			if pErr == nil && pending != nil && pending.RequestID != lastPeekPendingID {
+				lastPeekPendingID = pending.RequestID
+				seq++
+				pendingData, _ := json.Marshal(pending)
+				writeSSE(w, "pending", seq, pendingData)
+			} else if pending == nil && lastPeekPendingID != "" {
+				lastPeekPendingID = ""
+			}
+		}
 	}
 
 	emitPeek()
