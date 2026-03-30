@@ -315,19 +315,20 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		command = config.ReplaceSchemaFlags(command, resolved.OptionsSchema, extraArgs)
 	}
 
-	// Append message as prompt argument.
-	if msg := strings.TrimSpace(body.Message); msg != "" {
-		if resolved.PromptMode == "flag" && resolved.PromptFlag != "" {
-			command = command + " " + resolved.PromptFlag + " " + shellquote.Quote(msg)
-		} else if resolved.PromptMode != "none" {
-			command = command + " " + shellquote.Quote(msg)
-		}
+	// Build template_overrides metadata. Includes schema overrides AND
+	// the initial message (as "initial_message" key). The reconciler
+	// handles both: schema overrides map to CLI flags, initial_message
+	// is appended to the prompt on first start only.
+	allOverrides := make(map[string]string)
+	for k, v := range body.Options {
+		allOverrides[k] = v
 	}
-
-	// Build template_overrides metadata for persistence.
+	if msg := strings.TrimSpace(body.Message); msg != "" {
+		allOverrides["initial_message"] = msg
+	}
 	var extraMeta map[string]string
-	if len(body.Options) > 0 {
-		if overridesJSON, jsonErr := json.Marshal(body.Options); jsonErr == nil {
+	if len(allOverrides) > 0 {
+		if overridesJSON, jsonErr := json.Marshal(allOverrides); jsonErr == nil {
 			extraMeta = map[string]string{"template_overrides": string(overridesJSON)}
 		}
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/shellquote"
 )
 
 const (
@@ -277,10 +278,34 @@ func prepareStartCandidate(
 		firstStart := session.Metadata["started_config_hash"] == ""
 		agentCfg.Command = resolveSessionCommand(agentCfg.Command, sk, tp.ResolvedProvider, firstStart)
 	}
-	if tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
-		if raw := session.Metadata["template_overrides"]; raw != "" {
-			var overrides map[string]string
-			if err := json.Unmarshal([]byte(raw), &overrides); err == nil && len(overrides) > 0 {
+	if raw := session.Metadata["template_overrides"]; raw != "" {
+		var overrides map[string]string
+		if err := json.Unmarshal([]byte(raw), &overrides); err == nil && len(overrides) > 0 {
+			// Initial message: append to prompt on first start only.
+			// The template's PromptSuffix is already shell-quoted; we rebuild
+			// a combined prompt with the user's message appended.
+			firstStart := session.Metadata["started_config_hash"] == ""
+			if msg, ok := overrides["initial_message"]; ok && msg != "" {
+				delete(overrides, "initial_message")
+				if firstStart {
+					// Reconstruct: unquote existing prompt, append message, re-quote
+					existing := ""
+					if agentCfg.PromptSuffix != "" {
+						parts := shellquote.Split(agentCfg.PromptSuffix)
+						if len(parts) > 0 {
+							existing = parts[0]
+						}
+					}
+					if existing != "" {
+						agentCfg.PromptSuffix = shellquote.Quote(existing + "\n\n---\n\nUser message:\n" + msg)
+					} else {
+						agentCfg.PromptSuffix = shellquote.Quote(msg)
+					}
+				}
+			}
+
+			// Schema overrides (model, permission_mode, etc.)
+			if len(overrides) > 0 && tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
 				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, overrides)
 				if resolveErr == nil && len(args) > 0 {
 					agentCfg.Command = replaceSchemaFlags(agentCfg.Command, tp.ResolvedProvider.OptionsSchema, args)
