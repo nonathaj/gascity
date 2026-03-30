@@ -89,6 +89,16 @@ type ProviderSpec struct {
 	// Each option maps to CLI args via its Choices[].FlagArgs field.
 	// Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side.
 	OptionsSchema []ProviderOption `toml:"options_schema,omitempty" json:"-"`
+	// PrintArgs are CLI arguments that enable one-shot non-interactive mode.
+	// The provider prints its response to stdout and exits. When empty, the
+	// provider does not support one-shot invocation.
+	// Examples: ["-p"] (claude, gemini), ["exec"] (codex)
+	PrintArgs []string `toml:"print_args,omitempty"`
+	// TitleModel is the OptionsSchema model key used for title generation.
+	// Resolved via the "model" option in OptionsSchema to get FlagArgs.
+	// Defaults to the cheapest/fastest model for each provider.
+	// Examples: "haiku" (claude), "o4-mini" (codex), "gemini-2.5-flash" (gemini)
+	TitleModel string `toml:"title_model,omitempty"`
 }
 
 // ResolvedProvider is the fully-merged, ready-to-use provider config.
@@ -113,6 +123,8 @@ type ResolvedProvider struct {
 	SessionIDFlag          string
 	PermissionModes        map[string]string
 	OptionsSchema          []ProviderOption
+	PrintArgs              []string
+	TitleModel             string
 }
 
 // CommandString returns the full command line: command followed by args.
@@ -121,6 +133,26 @@ func (rp *ResolvedProvider) CommandString() string {
 		return rp.Command
 	}
 	return rp.Command + " " + shellquote.Join(rp.Args)
+}
+
+// TitleModelFlagArgs resolves the TitleModel key against the "model"
+// OptionsSchema entry. Returns the CLI flag args for the title model,
+// or nil if TitleModel is empty or not found in the schema.
+func (rp *ResolvedProvider) TitleModelFlagArgs() []string {
+	if rp.TitleModel == "" {
+		return nil
+	}
+	for _, opt := range rp.OptionsSchema {
+		if opt.Key != "model" {
+			continue
+		}
+		for _, c := range opt.Choices {
+			if c.Value == rp.TitleModel {
+				return c.FlagArgs
+			}
+		}
+	}
+	return nil
 }
 
 // pathCheckBinary returns the binary name to use for PATH detection.
@@ -169,6 +201,8 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ResumeFlag:             "--resume",
 			ResumeStyle:            "flag",
 			SessionIDFlag:          "--session-id",
+			PrintArgs:              []string{"-p"},
+			TitleModel:             "haiku",
 			PermissionModes: map[string]string{
 				"unrestricted": "--dangerously-skip-permissions",
 				"plan":         "--permission-mode plan",
@@ -217,6 +251,8 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ProcessNames:     []string{"codex"},
 			SupportsHooks:    true,
 			InstructionsFile: "AGENTS.md",
+			PrintArgs:        []string{"exec"},
+			TitleModel:       "o4-mini",
 			PermissionModes: map[string]string{
 				"suggest":      "--ask-for-approval untrusted --sandbox read-only",
 				"auto-edit":    "--full-auto",
@@ -252,6 +288,8 @@ func BuiltinProviders() map[string]ProviderSpec {
 			ProcessNames:     []string{"gemini"},
 			SupportsHooks:    true,
 			InstructionsFile: "AGENTS.md",
+			PrintArgs:        []string{"-p"},
+			TitleModel:       "gemini-2.5-flash",
 			PermissionModes: map[string]string{
 				"default":      "--approval-mode default",
 				"auto-edit":    "--approval-mode auto_edit",

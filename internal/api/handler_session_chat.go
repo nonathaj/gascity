@@ -332,44 +332,29 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Agent sessions always use async (bead-only) creation. The reconciler
+	// starts the agent process on the next tick. This avoids blocking the
+	// HTTP response for 10-30s while the agent boots in tmux, and lets MC
+	// show the session in the sidebar immediately via optimistic UI.
 	mgr := s.sessionManager(store)
-	hints := sessionCreateHints(resolved)
 	var info session.Info
 	err = session.WithCitySessionAliasLock(s.state.CityPath(), alias, func() error {
 		if err := session.EnsureAliasAvailableWithConfig(store, s.state.Config(), alias, ""); err != nil {
 			return err
 		}
 		var createErr error
-		if body.Async {
-			info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(
-				alias,
-				"",
-				template,
-				title,
-				command,
-				workDir,
-				resolved.Name,
-				transport,
-				resume,
-				extraMeta,
-			)
-		} else {
-			info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(
-				r.Context(),
-				alias,
-				"",
-				template,
-				title,
-				command,
-				workDir,
-				resolved.Name,
-				transport,
-				resolved.Env,
-				resume,
-				hints,
-				extraMeta,
-			)
-		}
+		info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(
+			alias,
+			"",
+			template,
+			title,
+			command,
+			workDir,
+			resolved.Name,
+			transport,
+			resume,
+			extraMeta,
+		)
 		return createErr
 	})
 	if err != nil {
@@ -380,17 +365,18 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Persist kind, option metadata, and project_id on the bead.
 	s.persistSessionMeta(store, info.ID, "agent", body.ProjectID, optMeta)
-	if body.Async {
-		s.state.Poke()
-	}
+	s.state.Poke() // wake reconciler to start the agent
+
+	// Auto-generate a title from the user's message if no explicit title was provided.
+	titleProvider := s.resolveTitleProvider()
+	maybeGenerateTitleAsync(store, info.ID, body.Title, body.Message, titleProvider, info.WorkDir, func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "session %s: "+format+"\n", append([]any{info.ID}, args...)...)
+	})
 
 	resp := sessionToResponse(info, s.state.Config())
 	resp.Kind = "agent"
 	s.enrichSessionResponse(&resp, info, s.state.Config(), s.state.SessionProvider(), false)
-	statusCode := http.StatusCreated
-	if body.Async {
-		statusCode = http.StatusAccepted
-	}
+	statusCode := http.StatusAccepted // always async for agent sessions
 	s.idem.storeResponse(idemKey, bodyHash, statusCode, resp)
 	writeJSON(w, statusCode, resp)
 }
@@ -517,6 +503,12 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 	if body.Async {
 		s.state.Poke()
 	}
+
+	// Auto-generate a title from the user's message if no explicit title was provided.
+	titleProvider := s.resolveTitleProvider()
+	maybeGenerateTitleAsync(store, info.ID, body.Title, body.Message, titleProvider, info.WorkDir, func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "session %s: "+format+"\n", append([]any{info.ID}, args...)...)
+	})
 
 	// Deliver initial message if provided.
 	if msg := strings.TrimSpace(body.Message); msg != "" {

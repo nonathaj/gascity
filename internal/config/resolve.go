@@ -189,6 +189,10 @@ func mergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 		result.SessionIDFlag = city.SessionIDFlag
 	}
 
+	if city.TitleModel != "" {
+		result.TitleModel = city.TitleModel
+	}
+
 	// Slice fields: replace entirely when non-nil.
 	if city.Args != nil {
 		result.Args = city.Args
@@ -198,6 +202,9 @@ func mergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 	}
 	if city.OptionsSchema != nil {
 		result.OptionsSchema = city.OptionsSchema
+	}
+	if city.PrintArgs != nil {
+		result.PrintArgs = city.PrintArgs
 	}
 
 	// Map fields: merge additively (city keys win).
@@ -256,6 +263,7 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		ResumeStyle:            spec.ResumeStyle,
 		ResumeCommand:          spec.ResumeCommand,
 		SessionIDFlag:          spec.SessionIDFlag,
+		TitleModel:             spec.TitleModel,
 	}
 	// Deep-copy OptionsSchema to avoid aliasing the spec's slice.
 	if len(spec.OptionsSchema) > 0 {
@@ -298,6 +306,10 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		for k, v := range spec.PermissionModes {
 			rp.PermissionModes[k] = v
 		}
+	}
+	if len(spec.PrintArgs) > 0 {
+		rp.PrintArgs = make([]string, len(spec.PrintArgs))
+		copy(rp.PrintArgs, spec.PrintArgs)
 	}
 	return rp
 }

@@ -207,6 +207,10 @@ func capWakeConfigByDemand(sessions []beads.Bead, cfg *config.City, evals map[st
 		if !containsWakeReason(eval.Reasons, WakeConfig) {
 			continue
 		}
+		// Named sessions with mode=always are not pool-managed — skip capping.
+		if isNamedSessionBead(session) && namedSessionMode(session) == "always" {
+			continue
+		}
 		template := normalizedSessionTemplate(session, cfg)
 		if template == "" {
 			continue

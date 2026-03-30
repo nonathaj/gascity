@@ -810,6 +810,8 @@ func TestMergeProviderOverBuiltinFieldSync(t *testing.T) {
 		SessionIDFlag:          "--session-id",
 		PermissionModes:        map[string]string{"yolo": "--yolo"},
 		OptionsSchema:          []ProviderOption{{Key: "model"}},
+		PrintArgs:              []string{"-p"},
+		TitleModel:             "haiku",
 	}
 
 	// Verify every field on city is non-zero (catches new fields not added to test data).

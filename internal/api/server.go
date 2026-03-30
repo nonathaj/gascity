@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/config"
 )
 
 // Server is the GC API HTTP server. It serves /v0/* endpoints and /health.
@@ -71,6 +73,29 @@ func (s *Server) cachedLookPath(binary string) bool {
 	found := err == nil
 	s.lookPathEntries[binary] = lookPathEntry{found: found, expires: time.Now().Add(lookPathCacheTTL)}
 	return found
+}
+
+// resolveTitleProvider resolves the workspace default provider for title
+// generation. Returns nil if the provider can't be resolved.
+func (s *Server) resolveTitleProvider() *config.ResolvedProvider {
+	cfg := s.state.Config()
+	if cfg == nil {
+		return nil
+	}
+	lookPath := s.LookPathFunc
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	rp, err := config.ResolveProvider(
+		&config.Agent{},
+		&cfg.Workspace,
+		cfg.Providers,
+		lookPath,
+	)
+	if err != nil {
+		return nil
+	}
+	return rp
 }
 
 // cachedSessionFile returns a cached session file path, or "" if not cached.
