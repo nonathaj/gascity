@@ -84,10 +84,11 @@ func evaluateWakeReasons(
 	}
 	sleepSuppressed := configWakeSuppressed(session, policy, sp, clk)
 	if configEligible {
-		// When there's active demand (poolDesired > 0), override sleep
-		// suppression. Sessions wake for demand, sleep when idle.
+		// When there's active demand (poolDesired > 0) or the session is
+		// a mode=always named session, override sleep suppression.
 		hasDemand := poolDesired[template] > 0
-		if !waitHold && (!sleepSuppressed || hasDemand) {
+		isAlwaysNamed := isNamedSessionBead(session) && namedSessionMode(session) == "always"
+		if !waitHold && (!sleepSuppressed || hasDemand || isAlwaysNamed) {
 			reasons = append(reasons, WakeConfig)
 		}
 	}
