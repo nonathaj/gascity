@@ -271,7 +271,6 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(body.Options) > 0 {
-			log.Printf("DEBUG template_overrides: agent=%s provider=%s schema_len=%d", name, resolved.Name, len(resolved.OptionsSchema))
 			if len(resolved.OptionsSchema) == 0 {
 				s.idem.unreserve(idemKey)
 				writeError(w, http.StatusBadRequest, "unknown_option",
