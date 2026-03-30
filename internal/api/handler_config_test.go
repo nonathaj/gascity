@@ -13,7 +13,6 @@ import (
 func TestHandleConfigGet(t *testing.T) {
 	fs := newFakeState(t)
 	fs.cfg.Workspace.Provider = "claude"
-	fs.cfg.Agents[0].Pool = &config.PoolConfig{Min: 0, Max: 3}
 	fs.cfg.Providers = map[string]config.ProviderSpec{
 		"custom": {DisplayName: "Custom", Command: "custom-cli"},
 	}
@@ -38,9 +37,6 @@ func TestHandleConfigGet(t *testing.T) {
 	}
 	if len(resp.Agents) != 1 {
 		t.Errorf("agents count = %d, want 1", len(resp.Agents))
-	}
-	if !resp.Agents[0].IsPool {
-		t.Error("expected config agent to expose is_pool=true")
 	}
 	if len(resp.Rigs) != 1 {
 		t.Errorf("rigs count = %d, want 1", len(resp.Rigs))
@@ -97,7 +93,6 @@ func TestHandleConfigGet_WithPatches(t *testing.T) {
 
 func TestHandleConfigExplain(t *testing.T) {
 	fs := newFakeState(t)
-	fs.cfg.Agents[0].Pool = &config.PoolConfig{Min: 0, Max: 3}
 	fs.cfg.Providers = map[string]config.ProviderSpec{
 		"claude": {DisplayName: "My Claude", Command: "my-claude"},
 	}
@@ -125,9 +120,6 @@ func TestHandleConfigExplain(t *testing.T) {
 	agent0 := agents[0].(map[string]any)
 	if agent0["origin"] != "inline" {
 		t.Errorf("agent origin = %q, want %q", agent0["origin"], "inline")
-	}
-	if agent0["is_pool"] != true {
-		t.Errorf("agent is_pool = %#v, want true", agent0["is_pool"])
 	}
 
 	// Check providers have origin annotations.

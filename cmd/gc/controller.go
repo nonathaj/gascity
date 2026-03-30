@@ -53,13 +53,7 @@ func acquireControllerLock(cityPath string) (*os.File, error) {
 // When a client sends "stop\n", cancelFn is called to shut down the
 // controller loop. convergenceReqCh is used to route convergence commands
 // to the event loop for serialized processing. Returns the listener for cleanup.
-func startControllerSocket(
-	cityPath string,
-	cancelFn context.CancelFunc,
-	convergenceReqCh chan convergenceRequest,
-	pokeCh chan struct{},
-	workflowControlCh chan struct{},
-) (net.Listener, error) {
+func startControllerSocket(cityPath string, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest, pokeCh chan struct{}) (net.Listener, error) {
 	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
 	// Remove stale socket from a previous crash.
 	os.Remove(sockPath) //nolint:errcheck // stale socket cleanup
@@ -73,7 +67,7 @@ func startControllerSocket(
 			if err != nil {
 				return // listener closed
 			}
-			go handleControllerConn(conn, cancelFn, convergenceReqCh, pokeCh, workflowControlCh)
+			go handleControllerConn(conn, cancelFn, convergenceReqCh, pokeCh)
 		}
 	}()
 	return lis, nil
@@ -82,13 +76,7 @@ func startControllerSocket(
 // handleControllerConn reads from a connection and dispatches commands.
 // Supported commands: "stop" (shutdown), "ping" (liveness check, returns PID),
 // "converge:{json}" (convergence commands routed to event loop).
-func handleControllerConn(
-	conn net.Conn,
-	cancelFn context.CancelFunc,
-	convergenceReqCh chan convergenceRequest,
-	pokeCh chan struct{},
-	workflowControlCh chan struct{},
-) {
+func handleControllerConn(conn net.Conn, cancelFn context.CancelFunc, convergenceReqCh chan convergenceRequest, pokeCh chan struct{}) {
 	defer conn.Close()                                 //nolint:errcheck // best-effort cleanup
 	conn.SetDeadline(time.Now().Add(95 * time.Second)) //nolint:errcheck // symmetric read+write deadline; 5s margin over 30s enqueue + 60s reply
 	scanner := bufio.NewScanner(conn)
@@ -108,12 +96,6 @@ func handleControllerConn(
 			select {
 			case pokeCh <- struct{}{}:
 			default: // poke already pending
-			}
-			conn.Write([]byte("ok\n")) //nolint:errcheck // best-effort ack
-		case line == "workflow-control":
-			select {
-			case workflowControlCh <- struct{}{}:
-			default:
 			}
 			conn.Write([]byte("ok\n")) //nolint:errcheck // best-effort ack
 		case strings.HasPrefix(line, "converge:"):
@@ -277,7 +259,6 @@ func tryReloadConfig(tomlPath, lockedCityName, cityRoot string, stderr io.Writer
 	if err != nil {
 		return nil, fmt.Errorf("parsing city.toml: %w", err)
 	}
-	applyFeatureFlags(newCfg)
 	if strictMode && len(prov.Warnings) > 0 {
 		for _, w := range prov.Warnings {
 			fmt.Fprintf(stderr, "gc start: strict: %s\n", w) //nolint:errcheck // best-effort stderr
@@ -396,7 +377,7 @@ func controllerLoop(
 	cityName string,
 	tomlPath string,
 	watchDirs []string,
-	buildFn func(*config.City, runtime.Provider, beads.Store) DesiredStateResult,
+	buildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams,
 	sp runtime.Provider,
 	dops drainOps,
 	ct crashTracker,
@@ -441,7 +422,6 @@ func controllerLoop(
 		poolDeathHandlers: poolDeathHandlers,
 		suspendedNames:    suspendedNames,
 		pokeCh:            make(chan struct{}, 1),
-		workflowControlCh: make(chan struct{}, 1),
 		logPrefix:         "gc start",
 		stdout:            stdout,
 		stderr:            stderr,
@@ -489,8 +469,8 @@ func runController(
 	tomlPath string,
 	cfg *config.City,
 	configRev string,
-	buildFn func(*config.City, runtime.Provider, beads.Store) DesiredStateResult,
-	buildFnWithSessionBeads func(*config.City, runtime.Provider, beads.Store, *sessionBeadSnapshot) DesiredStateResult,
+	buildFn func(*config.City, runtime.Provider, beads.Store) map[string]TemplateParams,
+	buildFnWithSessionBeads func(*config.City, runtime.Provider, beads.Store, *sessionBeadSnapshot) map[string]TemplateParams,
 	sp runtime.Provider,
 	dops drainOps,
 	poolSessions map[string]time.Duration,
@@ -520,10 +500,9 @@ func runController(
 
 	convergenceReqCh := make(chan convergenceRequest, 16)
 	pokeCh := make(chan struct{}, 1)
-	workflowControlCh := make(chan struct{}, 1)
 
 	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
-	lis, err := startControllerSocket(cityPath, cancel, convergenceReqCh, pokeCh, workflowControlCh)
+	lis, err := startControllerSocket(cityPath, cancel, convergenceReqCh, pokeCh)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -574,7 +553,6 @@ func runController(
 		PoolDeathHandlers:       poolDeathHandlers,
 		ConvergenceReqCh:        convergenceReqCh,
 		PokeCh:                  pokeCh,
-		WorkflowControlCh:       workflowControlCh,
 		Stdout:                  stdout,
 		Stderr:                  stderr,
 	})

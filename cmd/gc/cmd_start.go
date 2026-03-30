@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/clock"
@@ -29,10 +28,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func startupSessionName(cityName, agentName, sessionTemplate string) string {
-	return agent.SessionNameFor(cityName, agentName, sessionTemplate)
-}
-
 // computeSuspendedNames builds a set of session names for agents marked
 // suspended in the config or belonging to suspended rigs. Also includes
 // all agents when the city itself is suspended (workspace.suspended).
@@ -45,7 +40,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	// City-level suspend: all agents are suspended.
 	if cfg.Workspace.Suspended {
 		for _, a := range cfg.Agents {
-			names[startupSessionName(cityName, a.QualifiedName(), st)] = true
+			names[cliSessionName(cityPath, cityName, a.QualifiedName(), st)] = true
 		}
 		return names
 	}
@@ -54,7 +49,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 	for _, a := range cfg.Agents {
 		if a.Suspended {
 			qn := a.QualifiedName()
-			names[startupSessionName(cityName, qn, st)] = true
+			names[cliSessionName(cityPath, cityName, qn, st)] = true
 		}
 	}
 	// Agents in suspended rigs.
@@ -71,7 +66,7 @@ func computeSuspendedNames(cfg *config.City, cityName, cityPath string) map[stri
 			}
 			rigName := configuredRigName(cityPath, &a, cfg.Rigs)
 			if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
-				names[startupSessionName(cityName, a.QualifiedName(), st)] = true
+				names[cliSessionName(cityPath, cityName, a.QualifiedName(), st)] = true
 			}
 		}
 	}
@@ -93,7 +88,7 @@ func computePoolSessions(cfg *config.City, cityName, cityPath string, sp runtime
 		}
 		timeout := pool.DrainTimeoutDuration()
 		for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-			ps[startupSessionName(cityName, qualifiedInstance, st)] = timeout
+			ps[cliSessionName(cityPath, cityName, qualifiedInstance, st)] = timeout
 		}
 	}
 	return ps
@@ -127,7 +122,7 @@ func computePoolDeathHandlers(cfg *config.City, cityName, cityPath string, sp ru
 				continue
 			}
 			dir := agentCommandDir(cityPath, &a, cfg.Rigs)
-			sn := startupSessionName(cityName, qualifiedInstance, st)
+			sn := cliSessionName(cityPath, cityName, qualifiedInstance, st)
 			handlers[sn] = poolDeathInfo{Command: cmd, Dir: dir}
 		}
 	}
@@ -172,11 +167,11 @@ func buildIdleTracker(cfg *config.City, cityName, cityPath string, sp runtime.Pr
 		if a.IsPool() && pool.IsMultiInstance() {
 			// Register each pool instance (worker-1, worker-2, ...).
 			for _, qualifiedInstance := range discoverPoolInstances(a.Name, a.Dir, pool, cityName, st, sp) {
-				sn := startupSessionName(cityName, qualifiedInstance, st)
+				sn := cliSessionName(cityPath, cityName, qualifiedInstance, st)
 				it.setTimeout(sn, timeout)
 			}
 		} else {
-			sn := startupSessionName(cityName, a.QualifiedName(), st)
+			sn := cliSessionName(cityPath, cityName, a.QualifiedName(), st)
 			it.setTimeout(sn, timeout)
 		}
 	}
@@ -352,7 +347,6 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		fmt.Fprintln(stderr, "hint: run \"gc doctor\" for diagnostics") //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	applyFeatureFlags(cfg)
 	// Strict mode (default) promotes composition warnings to errors.
 	if strictMode && len(prov.Warnings) > 0 {
 		for _, w := range prov.Warnings {
@@ -508,10 +502,10 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	// Called once for one-shot, or on each tick for controller mode.
 	// Pool check commands are re-evaluated each call. Accepts a *config.City
 	// parameter so the controller loop can pass freshly-reloaded config.
-	buildAgents := func(c *config.City, currentSP runtime.Provider, store beads.Store) DesiredStateResult {
+	buildAgents := func(c *config.City, currentSP runtime.Provider, store beads.Store) map[string]TemplateParams {
 		return buildDesiredState(cityName, cityPath, beaconTime, c, currentSP, store, stderr)
 	}
-	buildAgentsWithSessionBeads := func(c *config.City, currentSP runtime.Provider, store beads.Store, sessionBeads *sessionBeadSnapshot) DesiredStateResult {
+	buildAgentsWithSessionBeads := func(c *config.City, currentSP runtime.Provider, store beads.Store, sessionBeads *sessionBeadSnapshot) map[string]TemplateParams {
 		return buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, c, currentSP, store, sessionBeads, stderr)
 	}
 
@@ -532,7 +526,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	// --dry-run: build agents and print preview without starting.
 	if dryRunMode {
 		agents := buildAgents(cfg, sp, nil)
-		printDryRunPreview(agents.State, cfg, cityName, stdout)
+		printDryRunPreview(agents, cfg, cityName, stdout)
 		return 0
 	}
 
@@ -580,8 +574,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc start: loading session beads: %v\n", err) //nolint:errcheck
 		sessionBeads = nil
 	}
-	dsResult := buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, sessionBeads, stderr)
-	ds := dsResult.State
+	ds := buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, sessionBeads, stderr)
 	cfgNames := configuredSessionNamesWithSnapshot(cfg, cityName, sessionBeads)
 	_, sessionBeads = syncSessionBeadsWithSnapshot(
 		cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, true, sessionBeads,
@@ -589,8 +582,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 
 	open := sessionBeads.Open()
 	dt := newDrainTracker()
-	poolDesired := PoolDesiredCounts(ComputePoolDesiredStates(
-		cfg, nil, sessionBeads.Open(), dsResult.ScaleCheckCounts))
+	poolDesired := derivePoolDesired(ds, cfg)
 	reconcileSessionBeads(
 		sigCtx, open, ds, cfgNames, cfg, sp, oneShotStore,
 		nil, nil, nil, dt, poolDesired, cityName,
@@ -604,8 +596,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc start: loading session beads: %v\n", err) //nolint:errcheck
 		sessionBeads = nil
 	}
-	dsResult = buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, sessionBeads, stderr)
-	ds = dsResult.State
+	ds = buildDesiredStateWithSessionBeads(cityName, cityPath, beaconTime, cfg, sp, oneShotStore, sessionBeads, stderr)
 	cfgNames = configuredSessionNamesWithSnapshot(cfg, cityName, sessionBeads)
 	syncSessionBeadsWithSnapshot(cityPath, oneShotStore, ds, sp, cfgNames, cfg, clock.Real{}, stderr, false, sessionBeads)
 

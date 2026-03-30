@@ -34,17 +34,11 @@ func newSessionBeadSnapshot(open []beads.Bead) *sessionBeadSnapshot {
 			continue
 		}
 		if agentName := sessionBeadAgentName(b); agentName != "" {
-			if isPoolManagedSessionBead(b) && agentName == b.Metadata["template"] {
-				agentName = ""
-			}
-			if agentName == "" {
-				continue
-			}
 			if _, exists := sessionNameByAgentName[agentName]; !exists {
 				sessionNameByAgentName[agentName] = sn
 			}
 		}
-		if isPoolManagedSessionBead(b) {
+		if b.Metadata["pool_slot"] != "" {
 			continue
 		}
 		if template := b.Metadata["template"]; template != "" {
@@ -64,29 +58,6 @@ func newSessionBeadSnapshot(open []beads.Bead) *sessionBeadSnapshot {
 		sessionNameByAgentName:    sessionNameByAgentName,
 		sessionNameByTemplateHint: sessionNameByTemplateHint,
 	}
-}
-
-func (s *sessionBeadSnapshot) replaceOpen(open []beads.Bead) {
-	if s == nil {
-		return
-	}
-	rebuilt := newSessionBeadSnapshot(open)
-	if rebuilt == nil {
-		s.open = nil
-		s.sessionNameByAgentName = nil
-		s.sessionNameByTemplateHint = nil
-		return
-	}
-	*s = *rebuilt
-}
-
-func (s *sessionBeadSnapshot) add(bead beads.Bead) {
-	if s == nil {
-		return
-	}
-	open := s.Open()
-	open = append(open, bead)
-	s.replaceOpen(open)
 }
 
 func (s *sessionBeadSnapshot) Open() []beads.Bead {

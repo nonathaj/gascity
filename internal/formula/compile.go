@@ -3,7 +3,6 @@ package formula
 import (
 	"context"
 	"fmt"
-	"log"
 )
 
 // Compile loads a formula by name and runs the full compilation pipeline.
@@ -41,16 +40,6 @@ func Compile(_ context.Context, name string, searchPaths []string, vars map[stri
 		return nil, fmt.Errorf("resolving formula %q: %w", name, err)
 	}
 
-	compileVars := make(map[string]string)
-	for vname, def := range resolved.Vars {
-		if def != nil && def.Default != nil {
-			compileVars[vname] = *def.Default
-		}
-	}
-	for k, v := range vars {
-		compileVars[k] = v
-	}
-
 	// Stage 3: Apply control flow operators — loops, branches, gates
 	controlFlowSteps, err := ApplyControlFlow(resolved.Steps, resolved.Compose)
 	if err != nil {
@@ -72,7 +61,7 @@ func Compile(_ context.Context, name string, searchPaths []string, vars map[stri
 
 	// Stage 6: Apply expansion operators (compose.expand/map)
 	if resolved.Compose != nil && (len(resolved.Compose.Expand) > 0 || len(resolved.Compose.Map) > 0) {
-		expandedSteps, err := ApplyExpansionsWithVars(resolved.Steps, resolved.Compose, parser, compileVars)
+		expandedSteps, err := ApplyExpansions(resolved.Steps, resolved.Compose, parser)
 		if err != nil {
 			return nil, fmt.Errorf("applying expansions to %q: %w", name, err)
 		}
@@ -97,7 +86,16 @@ func Compile(_ context.Context, name string, searchPaths []string, vars map[stri
 
 	// Stage 8: Apply step condition filtering if vars provided
 	if vars != nil {
-		filteredSteps, err := FilterStepsByCondition(resolved.Steps, compileVars)
+		mergedVars := make(map[string]string)
+		for vname, def := range resolved.Vars {
+			if def != nil && def.Default != nil {
+				mergedVars[vname] = *def.Default
+			}
+		}
+		for k, v := range vars {
+			mergedVars[k] = v
+		}
+		filteredSteps, err := FilterStepsByCondition(resolved.Steps, mergedVars)
 		if err != nil {
 			return nil, fmt.Errorf("filtering steps by condition: %w", err)
 		}
@@ -120,30 +118,23 @@ func Compile(_ context.Context, name string, searchPaths []string, vars map[stri
 		}
 	}
 
-	// Stage 10: Expand inline retry-managed steps.
-	retrySteps, err := ApplyRetries(resolved.Steps)
-	if err != nil {
-		return nil, fmt.Errorf("applying retry transforms to %q: %w", name, err)
-	}
-	resolved.Steps = retrySteps
-
-	// Stage 11: Expand inline Ralph steps
+	// Stage 10: Expand inline Ralph steps
 	ralphSteps, err := ApplyRalph(resolved.Steps)
 	if err != nil {
 		return nil, fmt.Errorf("applying ralph transforms to %q: %w", name, err)
 	}
 	resolved.Steps = ralphSteps
 
-	// Stage 12: Add graph-first control beads for v2 workflow formulas.
+	// Stage 11: Add graph-first control beads for v2 workflow formulas.
 	ApplyGraphControls(resolved)
 
-	// Stage 13: Flatten to Recipe
-	return toRecipe(resolved)
+	// Stage 12: Flatten to Recipe
+	return toRecipe(resolved), nil
 }
 
 // toRecipe converts a resolved Formula into a Recipe by flattening the
 // step tree into an ordered list with namespaced IDs and dependency edges.
-func toRecipe(f *Formula) (*Recipe, error) {
+func toRecipe(f *Formula) *Recipe {
 	r := &Recipe{
 		Name:        f.Formula,
 		Description: f.Description,
@@ -203,20 +194,16 @@ func toRecipe(f *Formula) (*Recipe, error) {
 	if graphWorkflow {
 		addWorkflowRootDeps(f.Formula, f.Steps, idMapping, &r.Deps)
 		if f.Version >= 2 {
-			orderedSteps, err := orderGraphRecipeSteps(f.Formula, r.Steps, r.Deps)
-			if err != nil {
-				return nil, err
-			}
-			r.Steps = orderedSteps
+			r.Steps = orderGraphRecipeSteps(f.Formula, r.Steps, r.Deps)
 		}
 	}
 
-	return r, nil
+	return r
 }
 
-func orderGraphRecipeSteps(rootID string, steps []RecipeStep, deps []RecipeDep) ([]RecipeStep, error) {
+func orderGraphRecipeSteps(rootID string, steps []RecipeStep, deps []RecipeDep) []RecipeStep {
 	if len(steps) <= 2 {
-		return steps, nil
+		return steps
 	}
 
 	stepByID := make(map[string]RecipeStep, len(steps))
@@ -280,9 +267,9 @@ func orderGraphRecipeSteps(rootID string, steps []RecipeStep, deps []RecipeDep) 
 	}
 
 	if len(result) != len(steps) {
-		return nil, fmt.Errorf("graph.v2 formula %q contains a dependency cycle", rootID)
+		return steps
 	}
-	return result, nil
+	return result
 }
 
 // flattenSteps recursively converts formula Steps into RecipeSteps,
@@ -378,20 +365,8 @@ func flattenSteps(steps []*Step, parentID string, idMapping map[string]string, o
 	}
 }
 
-// GraphWorkflowsEnabled controls whether graph.v2 formula compilation is
-// allowed. When false, isGraphWorkflow always returns false regardless of
-// the formula's Version field, causing v2 formulas to compile as v1.
-// Set by the daemon config loader from [daemon] graph_workflows.
-var GraphWorkflowsEnabled bool
-
 func isGraphWorkflow(f *Formula) bool {
 	if f == nil {
-		return false
-	}
-	if !GraphWorkflowsEnabled {
-		if f.Version >= 2 {
-			log.Printf("formula declares version %d but graph_workflows is disabled; compiling as v1", f.Version)
-		}
 		return false
 	}
 	if f.Version >= 2 {
@@ -405,7 +380,7 @@ func isDetachedGraphStep(step *Step) bool {
 		return false
 	}
 	switch step.Metadata["gc.kind"] {
-	case "ralph", "run", "check", "retry", "retry-run", "retry-eval":
+	case "ralph", "run", "check":
 		return true
 	default:
 		return false
@@ -458,7 +433,7 @@ func isWorkflowRootBlocker(step *Step) bool {
 		return false
 	}
 	switch step.Metadata["gc.kind"] {
-	case "run", "check", "retry-run", "retry-eval":
+	case "run", "check":
 		return false
 	default:
 		return true

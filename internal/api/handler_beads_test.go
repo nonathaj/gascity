@@ -116,16 +116,8 @@ func (s *prefixedAliasStore) Close(id string) error {
 	return s.base.Close(s.aliasToBase(id))
 }
 
-func (s *prefixedAliasStore) CloseAll(ids []string, metadata map[string]string) (int, error) {
-	mapped := make([]string, 0, len(ids))
-	for _, id := range ids {
-		mapped = append(mapped, s.aliasToBase(id))
-	}
-	return s.base.CloseAll(mapped, metadata)
-}
-
-func (s *prefixedAliasStore) List(status ...string) ([]beads.Bead, error) {
-	items, err := s.base.List(status...)
+func (s *prefixedAliasStore) List() ([]beads.Bead, error) {
+	items, err := s.base.List()
 	if err != nil {
 		return nil, err
 	}
@@ -203,6 +195,14 @@ func (s *prefixedAliasStore) DepAdd(issueID, dependsOnID, depType string) error 
 
 func (s *prefixedAliasStore) DepRemove(issueID, dependsOnID string) error {
 	return s.base.DepRemove(s.aliasToBase(issueID), s.aliasToBase(dependsOnID))
+}
+
+func (s *prefixedAliasStore) CloseAll(ids []string, metadata map[string]string) (int, error) {
+	baseIDs := make([]string, len(ids))
+	for i, id := range ids {
+		baseIDs[i] = s.aliasToBase(id)
+	}
+	return s.base.CloseAll(baseIDs, metadata)
 }
 
 func (s *prefixedAliasStore) DepList(id, direction string) ([]beads.Dep, error) {

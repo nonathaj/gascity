@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +26,9 @@ func TestControllerLoopCancel(t *testing.T) {
 	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return DesiredStateResult{State: map[string]TemplateParams{name: tp}}
+		return map[string]TemplateParams{name: tp}
 	}
 
 	cfg := &config.City{Workspace: config.Workspace{Name: "test"}}
@@ -61,9 +60,9 @@ func TestControllerLoopTick(t *testing.T) {
 	}
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return DesiredStateResult{State: map[string]TemplateParams{name: tp}}
+		return map[string]TemplateParams{name: tp}
 	}
 
 	cfg := &config.City{Workspace: config.Workspace{Name: "test"}}
@@ -118,8 +117,8 @@ func TestControllerShutdown(t *testing.T) {
 		Command:      "echo hello",
 	}
 
-	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
-		return DesiredStateResult{State: map[string]TemplateParams{name: tp}}
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
+		return map[string]TemplateParams{name: tp}
 	}
 
 	dir := t.TempDir()
@@ -218,7 +217,7 @@ func TestControllerReloadsConfig(t *testing.T) {
 	// buildFn creates TemplateParams from the config it receives.
 	var lastAgentNames atomic.Value
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		var names []string
 		ds := make(map[string]TemplateParams)
@@ -234,7 +233,7 @@ func TestControllerReloadsConfig(t *testing.T) {
 			}
 		}
 		lastAgentNames.Store(names)
-		return DesiredStateResult{State: ds}
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -287,52 +286,6 @@ func TestControllerReloadsConfig(t *testing.T) {
 	}
 }
 
-func TestHandleControllerConnWorkflowControl(t *testing.T) {
-	server, client := net.Pipe()
-	defer client.Close() //nolint:errcheck
-
-	convergenceReqCh := make(chan convergenceRequest, 1)
-	pokeCh := make(chan struct{}, 1)
-	workflowControlCh := make(chan struct{}, 1)
-
-	done := make(chan struct{})
-	go func() {
-		handleControllerConn(server, func() {}, convergenceReqCh, pokeCh, workflowControlCh)
-		close(done)
-	}()
-
-	if _, err := client.Write([]byte("workflow-control\n")); err != nil {
-		t.Fatalf("write command: %v", err)
-	}
-	buf := make([]byte, 16)
-	n, err := client.Read(buf)
-	if err != nil {
-		t.Fatalf("read ack: %v", err)
-	}
-	if got := string(buf[:n]); got != "ok\n" {
-		t.Fatalf("ack = %q, want %q", got, "ok\n")
-	}
-
-	select {
-	case <-workflowControlCh:
-	default:
-		t.Fatal("workflow-control channel was not signaled")
-	}
-
-	select {
-	case <-pokeCh:
-		t.Fatal("generic poke channel should remain untouched")
-	default:
-	}
-
-	client.Close() //nolint:errcheck
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("handleControllerConn did not exit")
-	}
-}
-
 func TestControllerReloadInvalidConfig(t *testing.T) {
 	old := debounceDelay
 	debounceDelay = 5 * time.Millisecond
@@ -348,7 +301,7 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
@@ -358,7 +311,7 @@ func TestControllerReloadInvalidConfig(t *testing.T) {
 				Command:      "echo hello",
 			}
 		}
-		return DesiredStateResult{State: ds}
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -416,7 +369,7 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 
 	sp := runtime.NewFake()
 	var reconcileCount atomic.Int32
-	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(c *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
 		ds := make(map[string]TemplateParams)
 		for _, a := range c.Agents {
@@ -426,7 +379,7 @@ func TestControllerReloadCityNameChange(t *testing.T) {
 				Command:      "echo hello",
 			}
 		}
-		return DesiredStateResult{State: ds}
+		return ds
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -498,9 +451,9 @@ func TestControllerPokeTriggersImmediate(t *testing.T) {
 	sp := runtime.NewFake()
 
 	var reconcileCount atomic.Int32
-	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) DesiredStateResult {
+	buildFn := func(_ *config.City, _ runtime.Provider, _ beads.Store) map[string]TemplateParams {
 		reconcileCount.Add(1)
-		return DesiredStateResult{State: map[string]TemplateParams{}}
+		return map[string]TemplateParams{}
 	}
 
 	dir := t.TempDir()
