@@ -357,6 +357,11 @@ func (cr *CityRuntime) tick(
 	sessionBeads := cr.loadSessionBeadSnapshot()
 	result := cr.buildDesiredState(sessionBeads)
 	sessionBeads = cr.syncBeadsAndUpdateIndex(result.State, sessionBeads)
+	// Reload snapshot after sync so the reconciler sees metadata written
+	// by syncBeadsAndUpdateIndex (e.g., configured_named_session/mode
+	// stamped on adopted beads). The CachingStore has the updated data
+	// from SetMetadataBatch write-through.
+	sessionBeads = cr.loadSessionBeadSnapshot()
 
 	// Bead-driven reconciliation (requires bead store / drain tracker).
 	if cr.sessionDrains != nil {
