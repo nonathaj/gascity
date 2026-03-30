@@ -267,6 +267,36 @@ func prepareStartCandidate(
 		return nil, err
 	}
 	agentCfg := templateParamsToConfig(tp)
+
+	// Apply template_overrides from bead metadata. These are per-session
+	// schema option overrides (e.g., {"model":"opus","effort":"high"}) that
+	// override the agent's default CLI flags for specific options.
+	// Build complete options: effective defaults + explicit overrides so
+	// unoverridden defaults are preserved when replaceSchemaFlags strips all
+	// schema flags.
+	if rawOverrides := session.Metadata["template_overrides"]; rawOverrides != "" {
+		if tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
+			var overrides map[string]string
+			if err := json.Unmarshal([]byte(rawOverrides), &overrides); err != nil {
+				log.Printf("session %s: invalid template_overrides JSON: %v", session.ID, err)
+			} else if len(overrides) > 0 {
+				fullOptions := make(map[string]string)
+				for k, v := range tp.ResolvedProvider.EffectiveDefaults {
+					fullOptions[k] = v
+				}
+				for k, v := range overrides {
+					fullOptions[k] = v
+				}
+				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, fullOptions)
+				if resolveErr != nil {
+					log.Printf("session %s: template_overrides resolution error: %v", session.ID, resolveErr)
+				} else if len(args) > 0 {
+					agentCfg.Command = replaceSchemaFlags(agentCfg.Command, tp.ResolvedProvider.OptionsSchema, args)
+				}
+			}
+		}
+	}
+
 	coreHash := runtime.CoreFingerprint(agentCfg)
 	liveHash := runtime.LiveFingerprint(agentCfg)
 	if wd := resolveTaskWorkDir(store, candidate.logicalTemplate(cfg)); wd != "" {
@@ -305,8 +335,18 @@ func prepareStartCandidate(
 			}
 
 			// Schema overrides (model, permission_mode, etc.)
+			// Build complete options: effective defaults + explicit overrides.
+			// This ensures unoverridden defaults (e.g., permission_mode) are
+			// preserved when the user only overrides a subset (e.g., model).
 			if len(overrides) > 0 && tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
-				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, overrides)
+				fullOptions := make(map[string]string)
+				for k, v := range tp.ResolvedProvider.EffectiveDefaults {
+					fullOptions[k] = v
+				}
+				for k, v := range overrides {
+					fullOptions[k] = v
+				}
+				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, fullOptions)
 				if resolveErr == nil && len(args) > 0 {
 					agentCfg.Command = replaceSchemaFlags(agentCfg.Command, tp.ResolvedProvider.OptionsSchema, args)
 				}

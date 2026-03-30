@@ -1141,6 +1141,11 @@ type Agent struct {
 	EmitsPermissionWarning *bool `toml:"emits_permission_warning,omitempty"`
 	// Env sets additional environment variables for the agent process.
 	Env map[string]string `toml:"env,omitempty"`
+	// OptionDefaults overrides the provider's effective schema defaults
+	// for this agent. Keys are option keys, values are choice values.
+	// Applied on top of the provider's OptionDefaults (agent keys win).
+	// Example: option_defaults = { permission_mode = "plan", model = "sonnet" }
+	OptionDefaults map[string]string `toml:"option_defaults,omitempty"`
 	// MaxActiveSessions is the agent-level cap on concurrent sessions.
 	// Nil means inherit from rig, then workspace, then unlimited.
 	// Replaces pool.max.

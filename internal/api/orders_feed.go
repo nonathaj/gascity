@@ -67,7 +67,7 @@ func (s *Server) handleOrdersFeed(w http.ResponseWriter, r *http.Request) {
 	index := s.latestIndex()
 	cacheKey := responseCacheKey("orders-feed", r)
 	if body, ok := s.cachedResponse(cacheKey, index); ok {
-		writeCachedJSON(w, index, body)
+		writeCachedJSON(w, r, index, body)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (s *Server) handleOrdersFeed(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	writeCachedJSON(w, index, body)
+	writeCachedJSON(w, r, index, body)
 }
 
 func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScopeRef string) (workflowRunProjectionResult, error) {

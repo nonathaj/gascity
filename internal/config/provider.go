@@ -85,6 +85,12 @@ type ProviderSpec struct {
 	// to populate permission mode dropdowns. Launch-time flag substitution is planned
 	// for a follow-up PR — currently no runtime code reads this field.
 	PermissionModes map[string]string `toml:"permission_modes,omitempty"`
+	// OptionDefaults overrides the Default value in OptionsSchema entries
+	// without redefining the schema itself. Keys are option keys (e.g.,
+	// "permission_mode"), values are choice values (e.g., "unrestricted").
+	// city.toml users set this to customize provider behavior without
+	// touching Args or OptionsSchema.
+	OptionDefaults map[string]string `toml:"option_defaults,omitempty"`
 	// OptionsSchema declares the configurable options this provider supports.
 	// Each option maps to CLI args via its Choices[].FlagArgs field.
 	// Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side.
@@ -125,6 +131,11 @@ type ResolvedProvider struct {
 	OptionsSchema          []ProviderOption
 	PrintArgs              []string
 	TitleModel             string
+	// EffectiveDefaults is the fully-merged option default map.
+	// Computed from: schema Default -> provider OptionDefaults -> agent OptionDefaults.
+	// Used by ResolveDefaultArgs() to produce CLI flags and by the API to
+	// tell MC what pre-selections to show.
+	EffectiveDefaults map[string]string
 }
 
 // CommandString returns the full command line: command followed by args.
@@ -153,6 +164,26 @@ func (rp *ResolvedProvider) TitleModelFlagArgs() []string {
 		}
 	}
 	return nil
+}
+
+// ResolveDefaultArgs produces CLI flag args from EffectiveDefaults.
+// For each schema option with an effective default, the corresponding
+// FlagArgs are emitted. Options with no effective default (or whose
+// default is "") are skipped.
+// Args are emitted in schema declaration order for deterministic output.
+func (rp *ResolvedProvider) ResolveDefaultArgs() []string {
+	var args []string
+	for _, opt := range rp.OptionsSchema {
+		value := rp.EffectiveDefaults[opt.Key]
+		if value == "" {
+			continue
+		}
+		choice := findChoice(opt.Choices, value)
+		if choice != nil {
+			args = append(args, choice.FlagArgs...)
+		}
+	}
+	return args
 }
 
 // pathCheckBinary returns the binary name to use for PATH detection.
@@ -187,9 +218,12 @@ func BuiltinProviderOrder() []string {
 func BuiltinProviders() map[string]ProviderSpec {
 	return map[string]ProviderSpec{
 		"claude": {
-			DisplayName:            "Claude Code",
-			Command:                "claude",
-			Args:                   []string{"--dangerously-skip-permissions"},
+			DisplayName: "Claude Code",
+			Command:     "claude",
+			Args:        nil,
+			OptionDefaults: map[string]string{
+				"permission_mode": "unrestricted",
+			},
 			PromptMode:             "arg",
 			ReadyDelayMs:           10000,
 			ReadyPromptPrefix:      "\u276f ", // ❯
@@ -221,13 +255,14 @@ func BuiltinProviders() map[string]ProviderSpec {
 					},
 				},
 				{
-					Key: "thinking", Label: "Thinking", Type: "select",
+					Key: "effort", Label: "Effort", Type: "select",
 					Default: "",
 					Choices: []OptionChoice{
 						{Value: "", Label: "Default", FlagArgs: nil},
-						{Value: "off", Label: "Off", FlagArgs: []string{"--thinking", "off"}},
-						{Value: "high", Label: "High", FlagArgs: []string{"--thinking", "high"}},
-						{Value: "max", Label: "Max", FlagArgs: []string{"--thinking", "max"}},
+						{Value: "low", Label: "Low", FlagArgs: []string{"--effort", "low"}},
+						{Value: "medium", Label: "Medium", FlagArgs: []string{"--effort", "medium"}},
+						{Value: "high", Label: "High", FlagArgs: []string{"--effort", "high"}},
+						{Value: "max", Label: "Max", FlagArgs: []string{"--effort", "max"}},
 					},
 				},
 				{
@@ -243,9 +278,12 @@ func BuiltinProviders() map[string]ProviderSpec {
 			},
 		},
 		"codex": {
-			DisplayName:      "Codex CLI",
-			Command:          "codex",
-			Args:             []string{"--dangerously-bypass-approvals-and-sandbox"},
+			DisplayName: "Codex CLI",
+			Command:     "codex",
+			Args:        nil,
+			OptionDefaults: map[string]string{
+				"permission_mode": "unrestricted",
+			},
 			PromptMode:       "arg",
 			ReadyDelayMs:     3000,
 			ProcessNames:     []string{"codex"},
@@ -277,12 +315,24 @@ func BuiltinProviders() map[string]ProviderSpec {
 						{Value: "o4-mini", Label: "o4-mini", FlagArgs: []string{"--model", "o4-mini"}},
 					},
 				},
+				{
+					Key: "sandbox", Label: "Sandbox", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "read-only", Label: "Read Only", FlagArgs: []string{"--sandbox", "read-only"}},
+						{Value: "network-off", Label: "Network Off", FlagArgs: []string{"--sandbox", "network-off"}},
+					},
+				},
 			},
 		},
 		"gemini": {
-			DisplayName:      "Gemini CLI",
-			Command:          "gemini",
-			Args:             []string{"--approval-mode", "yolo"},
+			DisplayName: "Gemini CLI",
+			Command:     "gemini",
+			Args:        nil,
+			OptionDefaults: map[string]string{
+				"permission_mode": "unrestricted",
+			},
 			PromptMode:       "arg",
 			ReadyDelayMs:     5000,
 			ProcessNames:     []string{"gemini"},

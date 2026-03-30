@@ -229,6 +229,18 @@ func mergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 		result.Env = merged
 	}
 
+	// OptionDefaults: merge additively (city keys win), same as Env and PermissionModes.
+	if city.OptionDefaults != nil {
+		merged := make(map[string]string, len(base.OptionDefaults)+len(city.OptionDefaults))
+		for k, v := range base.OptionDefaults {
+			merged[k] = v
+		}
+		for k, v := range city.OptionDefaults {
+			merged[k] = v
+		}
+		result.OptionDefaults = merged
+	}
+
 	return result
 }
 
@@ -291,6 +303,26 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 		rp.Args = make([]string, len(spec.Args))
 		copy(rp.Args, spec.Args)
 	}
+
+	// Strip schema-managed flags from Args. This handles backward compatibility:
+	// if a city.toml still has schema-managed flags in args (e.g.,
+	// --dangerously-skip-permissions), they get removed because the option is
+	// covered by OptionsSchema. Inferred defaults preserve user intent.
+	if len(rp.OptionsSchema) > 0 && len(rp.Args) > 0 {
+		allFlags := CollectAllSchemaFlags(rp.OptionsSchema)
+		inferredDefaults := make(map[string]string)
+		// Seed with existing OptionDefaults so they aren't overridden.
+		for k, v := range spec.OptionDefaults {
+			inferredDefaults[k] = v
+		}
+		rp.Args = stripArgsSlice(rp.Args, allFlags, rp.OptionsSchema, inferredDefaults)
+		// Compute EffectiveDefaults using inferred defaults (which include
+		// both the spec's OptionDefaults and any values inferred from stripped Args).
+		rp.EffectiveDefaults = ComputeEffectiveDefaults(rp.OptionsSchema, inferredDefaults, nil)
+	} else {
+		rp.EffectiveDefaults = ComputeEffectiveDefaults(rp.OptionsSchema, spec.OptionDefaults, nil)
+	}
+
 	if len(spec.ProcessNames) > 0 {
 		rp.ProcessNames = make([]string, len(spec.ProcessNames))
 		copy(rp.ProcessNames, spec.ProcessNames)
@@ -377,6 +409,16 @@ func mergeAgentOverrides(rp *ResolvedProvider, agent *Agent) {
 		}
 		for k, v := range agent.Env {
 			rp.Env[k] = v
+		}
+	}
+
+	// OptionDefaults: agent overrides merge on top of effective defaults.
+	if len(agent.OptionDefaults) > 0 {
+		if rp.EffectiveDefaults == nil {
+			rp.EffectiveDefaults = make(map[string]string)
+		}
+		for k, v := range agent.OptionDefaults {
+			rp.EffectiveDefaults[k] = v
 		}
 	}
 }

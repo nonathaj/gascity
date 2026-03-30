@@ -114,9 +114,14 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	// Step 4: Resolve overlay directory.
 	overlayDir := resolveOverlayDir(cfgAgent.OverlayDir, p.cityPath)
 
-	// Step 5: Build copy_files and command with settings args.
+	// Step 5: Build copy_files and command with settings args + schema defaults.
 	var copyFiles []runtime.CopyEntry
 	command := resolved.CommandString()
+	// Append schema-derived default args (e.g., --dangerously-skip-permissions
+	// from EffectiveDefaults["permission_mode"] = "unrestricted").
+	if defaultArgs := resolved.ResolveDefaultArgs(); len(defaultArgs) > 0 {
+		command = command + " " + shellquote.Join(defaultArgs)
+	}
 	if sa := settingsArgs(p.cityPath, resolved.Name); sa != "" {
 		command = command + " " + sa
 		settingsFile := citylayout.ClaudeHookFilePath(p.cityPath)

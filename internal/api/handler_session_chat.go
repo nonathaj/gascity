@@ -256,6 +256,8 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	var extraArgs []string
 	var optMeta map[string]string
 
+	var templateOverrides string
+
 	switch kind {
 	case "agent":
 		var err error
@@ -270,20 +272,33 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
+		// Agent track: command comes from the agent config as-is.
+		// Do NOT inject OptionsSchema defaults — agents encode their own CLI flags.
+		// Options are stored as template_overrides and applied at start time
+		// by the session lifecycle via ResolveExplicitOptions.
 		if len(body.Options) > 0 {
 			if len(resolved.OptionsSchema) == 0 {
 				s.idem.unreserve(idemKey)
-				writeError(w, http.StatusBadRequest, "unknown_option",
-					"agent '"+name+"' does not accept options (provider has no options_schema)")
+				writeError(w, http.StatusBadRequest, "unknown_option", "agent '"+name+"' does not accept options")
 				return
 			}
-			var optErr error
-			extraArgs, optErr = config.ResolveExplicitOptions(resolved.OptionsSchema, body.Options)
-			if optErr != nil {
+			// Validate options against the schema without applying defaults.
+			if _, err := config.ResolveExplicitOptions(resolved.OptionsSchema, body.Options); err != nil {
 				s.idem.unreserve(idemKey)
-				writeError(w, http.StatusBadRequest, "invalid_option_value", optErr.Error())
+				if errors.Is(err, config.ErrUnknownOption) {
+					writeError(w, http.StatusBadRequest, "unknown_option", err.Error())
+					return
+				}
+				writeError(w, http.StatusBadRequest, "invalid_option_value", err.Error())
 				return
 			}
+			overridesJSON, marshalErr := json.Marshal(body.Options)
+			if marshalErr != nil {
+				s.idem.unreserve(idemKey)
+				writeError(w, http.StatusInternalServerError, "internal", marshalErr.Error())
+				return
+			}
+			templateOverrides = string(overridesJSON)
 		}
 
 	case "provider":
@@ -366,6 +381,11 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Persist kind, option metadata, and project_id on the bead.
 	s.persistSessionMeta(store, info.ID, "agent", body.ProjectID, optMeta)
+	if templateOverrides != "" {
+		if err := store.SetMetadata(info.ID, "template_overrides", templateOverrides); err != nil {
+			log.Printf("session %s: storing template_overrides: %v", info.ID, err)
+		}
+	}
 	s.state.Poke() // wake reconciler to start the agent
 
 	// Auto-generate a title from the user's message if no explicit title was provided.
@@ -421,7 +441,7 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 	}
 	if len(resolved.OptionsSchema) > 0 {
 		var optErr error
-		extraArgs, optMeta, optErr = config.ResolveOptions(resolved.OptionsSchema, body.Options)
+		extraArgs, optMeta, optErr = config.ResolveOptions(resolved.OptionsSchema, body.Options, resolved.EffectiveDefaults)
 		if optErr != nil {
 			s.idem.unreserve(idemKey)
 			if errors.Is(optErr, config.ErrUnknownOption) {
