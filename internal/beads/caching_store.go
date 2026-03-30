@@ -100,13 +100,22 @@ func newCachingStore(backing Store, onChange func(eventType, beadID string, payl
 
 // Prime loads all beads and deps from the backing store into memory.
 // Closes the primeReady channel on completion so blocked List() callers
-// can proceed. Only the first call to Prime signals; subsequent calls
-// (from the reconciler) update the cache in place.
+// can proceed. Retries up to 3 times on failure since bd list can time
+// out under concurrent dolt load.
 func (c *CachingStore) Prime(_ context.Context) error {
-	all, err := c.backing.List()
+	var all []Bead
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		all, err = c.backing.List()
+		if err == nil {
+			break
+		}
+		log.Printf("caching-store: prime attempt %d/3 failed: %v", attempt, err)
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt*5) * time.Second)
+		}
+	}
 	if err != nil {
-		// Signal waiters even on failure so they don't block forever.
-		// They'll fall through to the backing store.
 		c.primeErr = err
 		c.signalPrimeReady()
 		return fmt.Errorf("prime list: %w", err)

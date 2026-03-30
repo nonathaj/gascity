@@ -101,9 +101,15 @@ func lookupProvider(name string, cityProviders map[string]ProviderSpec, lookPath
 					return nil, fmt.Errorf("%w: provider %q command %q", ErrProviderNotInPATH, name, spec.pathCheckBinary())
 				}
 			}
-			// If the command matches a built-in provider, layer city
-			// overrides on top so we inherit PromptMode, PromptFlag, etc.
+			// Layer city overrides on top of the built-in if the provider
+			// name or command matches a known builtin. This lets city
+			// configs override command/args while inheriting OptionsSchema,
+			// PromptMode, ResumeFlag, etc. from the builtin defaults.
 			builtins := BuiltinProviders()
+			if base, ok := builtins[name]; ok {
+				merged := mergeProviderOverBuiltin(base, spec)
+				return &merged, nil
+			}
 			if base, ok := builtins[spec.Command]; ok {
 				merged := mergeProviderOverBuiltin(base, spec)
 				return &merged, nil
