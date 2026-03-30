@@ -457,6 +457,9 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		DependsOn:              []string{"other-agent"},
 		WakeMode:               "fresh",
 		Implicit:               true,
+		MaxActiveSessions:      &intVal,
+		MinActiveSessions:      &intVal,
+		ScaleCheck:             "echo 3",
 	}
 
 	// Verify every Agent field is set (non-zero) in the test data.

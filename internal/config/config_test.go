@@ -3387,6 +3387,7 @@ func TestInjectImplicitAgents_WorkspaceProvider(t *testing.T) {
 	cfg := &City{
 		Daemon:    DaemonConfig{GraphWorkflows: true},
 		Workspace: Workspace{Provider: "claude"},
+		Daemon:    DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3413,6 +3414,7 @@ func TestInjectImplicitAgents_WorkspaceProviderPlusExplicit(t *testing.T) {
 		Providers: map[string]ProviderSpec{
 			"codex": {},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3439,6 +3441,7 @@ func TestInjectImplicitAgents_WorkspaceProviderNoDuplicate(t *testing.T) {
 		Providers: map[string]ProviderSpec{
 			"claude": {},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3453,6 +3456,7 @@ func TestInjectImplicitAgents_WorkspaceProviderNonBuiltin(t *testing.T) {
 	cfg := &City{
 		Daemon:    DaemonConfig{GraphWorkflows: true},
 		Workspace: Workspace{Provider: "my-custom-llm"},
+		Daemon:    DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3470,6 +3474,7 @@ func TestInjectImplicitAgents_WorkspaceProviderNonBuiltinWithEntry(t *testing.T)
 		Providers: map[string]ProviderSpec{
 			"my-custom-llm": {Command: "ollama"},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3493,6 +3498,7 @@ func TestInjectImplicitAgents_ExplicitAgentUnconfiguredProvider(t *testing.T) {
 		Agents: []Agent{
 			{Name: "my-gemini-worker", Provider: "gemini"},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3525,6 +3531,7 @@ func TestInjectImplicitAgents_ConfiguredOnly(t *testing.T) {
 			"claude": {},
 			"codex":  {},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3566,6 +3573,7 @@ func TestInjectImplicitAgents_CustomProvider(t *testing.T) {
 			"zebra":    {Command: "zebra-llm"},
 			"my-local": {Command: "ollama"},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3594,6 +3602,7 @@ func TestInjectImplicitAgents_ExplicitWins(t *testing.T) {
 		Agents: []Agent{
 			{Name: "claude", Provider: "claude", Pool: &PoolConfig{Min: 1, Max: 3}},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
@@ -3631,7 +3640,8 @@ func TestInjectImplicitAgents_RigScopedExplicitDoesNotBlockCity(t *testing.T) {
 			"claude": {},
 			"codex":  {},
 		},
-		Rigs: []Rig{{Name: "my-rig", Path: "/tmp/my-rig"}},
+		Rigs:   []Rig{{Name: "my-rig", Path: "/tmp/my-rig"}},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 		Agents: []Agent{
 			{Name: "claude", Dir: "my-rig", Provider: "claude"},
 		},
@@ -3681,6 +3691,7 @@ func TestInjectImplicitAgents_RigInjection(t *testing.T) {
 			{Name: "frontend", Path: "/tmp/frontend"},
 			{Name: "backend", Path: "/tmp/backend"},
 		},
+		Daemon: DaemonConfig{GraphWorkflows: true},
 	}
 	InjectImplicitAgents(cfg)
 
