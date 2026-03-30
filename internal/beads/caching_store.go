@@ -459,27 +459,32 @@ func (c *CachingStore) ListByMetadata(filters map[string]string, limit int) ([]B
 		return result, nil
 	}
 	c.mu.RUnlock()
-	// BdStore has ListByMetadata; other stores fall back to filter-in-Go.
-	type metadataLister interface {
-		ListByMetadata(map[string]string, int) ([]Bead, error)
-	}
-	if ml, ok := c.backing.(metadataLister); ok {
-		return ml.ListByMetadata(filters, limit)
-	}
-	all, err := c.backing.List()
-	if err != nil {
-		return nil, err
-	}
-	var result []Bead
-	for _, b := range all {
-		if matchesMetadata(b, filters) {
-			result = append(result, b)
-			if limit > 0 && len(result) >= limit {
-				return result, nil
+
+	// Cache not live — wait for prime then serve from memory.
+	<-c.primeReady
+	c.mu.RLock()
+	if c.state == cacheLive {
+		var result []Bead
+		for _, b := range c.beads {
+			if matchesMetadata(b, filters) {
+				result = append(result, cloneBead(b))
+				if limit > 0 && len(result) >= limit {
+					c.mu.RUnlock()
+					return result, nil
+				}
 			}
 		}
+		c.mu.RUnlock()
+		return result, nil
 	}
-	return result, nil
+	c.mu.RUnlock()
+	// Prime failed — fall through to backing store.
+	if ml, ok := c.backing.(interface {
+		ListByMetadata(map[string]string, int) ([]Bead, error)
+	}); ok {
+		return ml.ListByMetadata(filters, limit)
+	}
+	return nil, fmt.Errorf("ListByMetadata unavailable: cache not live and backing store does not support it")
 }
 
 func matchesMetadata(b Bead, filters map[string]string) bool {
