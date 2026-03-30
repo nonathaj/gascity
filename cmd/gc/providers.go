@@ -187,8 +187,9 @@ func hasACPAgents(agents []config.Agent) bool {
 // pre-registration that requires multiple Dolt queries.
 func newReadOnlySessionProvider() runtime.Provider {
 	var sc config.SessionConfig
-	var cityName string
+	var cityName, cityPath string
 	if cp, err := resolveCity(); err == nil {
+		cityPath = cp
 		if cfg, err := loadCityConfig(cp); err == nil {
 			sc = cfg.Session
 			cityName = cfg.Workspace.Name
@@ -198,7 +199,7 @@ func newReadOnlySessionProvider() runtime.Provider {
 		}
 	}
 	provName := sessionProviderName()
-	sp, err := newSessionProviderByName(provName, sc, cityName)
+	sp, err := newSessionProviderByName(provName, sc, cityName, cityPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
 		os.Exit(1)
