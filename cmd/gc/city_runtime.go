@@ -260,12 +260,8 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	result := cr.buildDesiredState(sessionBeads)
 	sessionBeads = cr.syncBeadsAndUpdateIndex(result.State, sessionBeads)
 
-	// Convergence startup reconciliation: recover in-progress convergence
-	// beads that were interrupted by a controller crash. Uses List() which
-	// waits for CachingStore prime, then serves from memory.
-	cr.convergenceStartupReconcile(ctx)
-
-	// Initial reconciliation.
+	// Mark city as started. Convergence startup reconciliation runs on
+	// the first tick (it calls List() which waits for the full async prime).
 	if cr.onStatus != nil {
 		cr.onStatus("starting_agents")
 	}
@@ -277,6 +273,12 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	if cr.sessionDrains != nil {
 		cr.beadReconcileTick(ctx, result, sessionBeads)
 	}
+
+	// Convergence startup reconciliation: recover in-progress convergence
+	// beads that were interrupted by a controller crash. Runs after "City
+	// started" so it doesn't block readiness. List() waits for the full
+	// CachingStore prime, then serves from memory.
+	cr.convergenceStartupReconcile(ctx)
 
 	interval := cr.cfg.Daemon.PatrolIntervalDuration()
 	ticker := time.NewTicker(interval)
