@@ -284,6 +284,7 @@ func BuiltinProviders() map[string]ProviderSpec {
 			Args:        nil,
 			OptionDefaults: map[string]string{
 				"permission_mode": "unrestricted",
+				"effort":          "xhigh",
 			},
 			PromptMode:       "arg",
 			ReadyDelayMs:     3000,
@@ -323,6 +324,17 @@ func BuiltinProviders() map[string]ProviderSpec {
 						{Value: "", Label: "Default", FlagArgs: nil},
 						{Value: "read-only", Label: "Read Only", FlagArgs: []string{"--sandbox", "read-only"}},
 						{Value: "network-off", Label: "Network Off", FlagArgs: []string{"--sandbox", "network-off"}},
+					},
+				},
+				{
+					Key: "effort", Label: "Effort", Type: "select",
+					Default: "",
+					Choices: []OptionChoice{
+						{Value: "", Label: "Default", FlagArgs: nil},
+						{Value: "low", Label: "Low", FlagArgs: []string{"-c", "model_reasoning_effort=low"}},
+						{Value: "medium", Label: "Medium", FlagArgs: []string{"-c", "model_reasoning_effort=medium"}},
+						{Value: "high", Label: "High", FlagArgs: []string{"-c", "model_reasoning_effort=high"}},
+						{Value: "xhigh", Label: "Extra High", FlagArgs: []string{"-c", "model_reasoning_effort=xhigh"}},
 					},
 				},
 			},
