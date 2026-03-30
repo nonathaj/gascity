@@ -57,12 +57,13 @@ func canRebindConfiguredNamedSession(b beads.Bead, identity string) bool {
 	if strings.TrimSpace(b.Metadata[namedSessionIdentityMetadata]) == identity {
 		return true
 	}
-	// Also allow rebind for pre-existing beads whose session_name or alias
-	// matches the named session identity (adoption of beads created before
-	// the named session config was added).
+	// Also allow rebind for pre-existing beads whose session_name, alias,
+	// or alias_history matches the named session identity (adoption of beads
+	// created before the named session config was added). Rig-scoped names
+	// use "--" instead of "/" for tmux, so alias_history is needed.
 	sn := strings.TrimSpace(b.Metadata["session_name"])
 	alias := strings.TrimSpace(b.Metadata["alias"])
-	return sn == identity || alias == identity
+	return sn == identity || alias == identity || sessionAliasHistoryContains(b.Metadata, identity)
 }
 
 // syncSessionBeads ensures every desired session has a corresponding session

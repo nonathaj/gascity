@@ -99,8 +99,18 @@ func (c *CachingStore) Prime(_ context.Context) error {
 	}
 
 	beadMap := make(map[string]Bead, len(all))
+	var emptyTypeCount int
 	for _, b := range all {
+		if b.Type == "" {
+			emptyTypeCount++
+			if emptyTypeCount <= 3 {
+				log.Printf("DEBUG Prime: bead %s has empty Type, status=%q title=%q", b.ID, b.Status, b.Title)
+			}
+		}
 		beadMap[b.ID] = cloneBead(b)
+	}
+	if emptyTypeCount > 0 {
+		log.Printf("DEBUG Prime: %d/%d beads have empty Type!", emptyTypeCount, len(all))
 	}
 	// Batch-fetch deps in one subprocess call (if backing is BdStore).
 	depMap := make(map[string][]Dep)
@@ -506,6 +516,13 @@ func (c *CachingStore) Update(id string, opts UpdateOpts) error {
 	}
 	// Re-fetch from backing to get the authoritative state.
 	if fresh, err := c.backing.Get(id); err == nil {
+		if fresh.Type == "" {
+			c.mu.RLock()
+			old, hadOld := c.beads[id]
+			c.mu.RUnlock()
+			log.Printf("DEBUG CachingStore.Update: id=%s fresh.Type=%q (EMPTY from backing!) old_cached_type=%q had_old=%v opts=%+v",
+				id, fresh.Type, old.Type, hadOld, opts)
+		}
 		c.mu.Lock()
 		c.beads[id] = cloneBead(fresh)
 		c.mu.Unlock()

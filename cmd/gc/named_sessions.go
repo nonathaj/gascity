@@ -206,14 +206,16 @@ func findCanonicalNamedSessionBead(sessionBeads *sessionBeadSnapshot, identity s
 			return b, true
 		}
 	}
-	// Second pass: adopt pre-existing session beads whose session_name or
-	// alias matches the named session identity. This covers beads created
-	// before the named session config was added (e.g., implicit agents
-	// promoted to named sessions).
+	// Second pass: adopt pre-existing session beads whose session_name,
+	// alias, or alias_history matches the named session identity. This
+	// covers beads created before the named session config was added
+	// (e.g., implicit agents promoted to named sessions). Rig-scoped
+	// session names use "--" instead of "/" for tmux compatibility, so
+	// also check alias_history which preserves the canonical form.
 	for _, b := range sessionBeads.Open() {
 		sn := strings.TrimSpace(b.Metadata["session_name"])
 		alias := strings.TrimSpace(b.Metadata["alias"])
-		if sn == identity || alias == identity {
+		if sn == identity || alias == identity || sessionAliasHistoryContains(b.Metadata, identity) {
 			return b, true
 		}
 	}
