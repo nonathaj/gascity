@@ -569,14 +569,14 @@ func selectOrCreatePoolSessionBead(
 	if preferred != nil && preferred.ID != "" && !used[preferred.ID] {
 		return *preferred, nil
 	}
-	// Reuse an existing active session bead. Skip drained (dormant,
-	// only revived via resume tier) and closed (terminal).
+	// Reuse an existing active session bead. Skip drained sessions
+	// (dormant and only revived via explicit targeting / resume tier)
+	// and closed (terminal).
 	for _, bead := range bp.sessionBeads.Open() {
 		if bead.Status == "closed" {
 			continue
 		}
-		state := bead.Metadata["state"]
-		if state == "drained" {
+		if isDrainedSessionBead(bead) {
 			continue
 		}
 		if bead.Metadata["manual_session"] == boolMetadata(true) {

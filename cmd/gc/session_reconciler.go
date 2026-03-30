@@ -707,7 +707,7 @@ func derivePoolDesired(desiredState map[string]TemplateParams, cfg *config.City)
 	counts := make(map[string]int)
 	for _, tp := range desiredState {
 		cfgAgent := findAgentByTemplate(cfg, tp.TemplateName)
-		if cfgAgent != nil && cfgAgent.Pool != nil && !tp.ManualSession {
+		if cfgAgent != nil && isMultiSessionCfgAgent(cfgAgent) && !tp.ManualSession {
 			counts[tp.TemplateName]++
 		}
 	}

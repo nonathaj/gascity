@@ -1164,7 +1164,7 @@ func TestReconcileSessionBeads_DoesNotRollbackExistingSessionWithoutPendingClaim
 	cfgNames := configuredSessionNames(cfg, "", store)
 	woken := reconcileSessionBeads(
 		context.Background(), []beads.Bead{bead}, desired, cfgNames,
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"helper": 1}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
 		nil, clk, events.Discard, 0, 0, &stdout, &stderr,
 	)
 	if woken != 0 {
