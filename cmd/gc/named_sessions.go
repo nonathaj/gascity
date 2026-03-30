@@ -200,8 +200,20 @@ func findCanonicalNamedSessionBead(sessionBeads *sessionBeadSnapshot, identity s
 		return beads.Bead{}, false
 	}
 	identity = normalizeNamedSessionTarget(identity)
+	// First pass: look for beads explicitly tagged as this named session.
 	for _, b := range sessionBeads.Open() {
 		if isNamedSessionBead(b) && namedSessionIdentity(b) == identity {
+			return b, true
+		}
+	}
+	// Second pass: adopt pre-existing session beads whose session_name or
+	// alias matches the named session identity. This covers beads created
+	// before the named session config was added (e.g., implicit agents
+	// promoted to named sessions).
+	for _, b := range sessionBeads.Open() {
+		sn := strings.TrimSpace(b.Metadata["session_name"])
+		alias := strings.TrimSpace(b.Metadata["alias"])
+		if sn == identity || alias == identity {
 			return b, true
 		}
 	}
