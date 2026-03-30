@@ -11,8 +11,21 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
-// Compile-time check that Tmux implements InteractionProvider.
-var _ runtime.InteractionProvider = (*Tmux)(nil)
+// Compile-time checks that both Tmux and Provider implement InteractionProvider.
+var (
+	_ runtime.InteractionProvider = (*Tmux)(nil)
+	_ runtime.InteractionProvider = (*Provider)(nil)
+)
+
+// Pending delegates to the underlying Tmux instance.
+func (p *Provider) Pending(name string) (*runtime.PendingInteraction, error) {
+	return p.tm.Pending(name)
+}
+
+// Respond delegates to the underlying Tmux instance.
+func (p *Provider) Respond(name string, response runtime.InteractionResponse) error {
+	return p.tm.Respond(name, response)
+}
 
 // ---------------------------------------------------------------------------
 // Pane-based approval detection
