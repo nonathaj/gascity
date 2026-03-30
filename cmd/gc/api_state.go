@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,8 +102,9 @@ func wrapWithCachingStore(store beads.Store, ep events.Provider) beads.Store {
 	// Prime asynchronously — reads fall through to backing store until
 	// the cache is live. This avoids blocking city startup.
 	go func() {
+		log.Printf("caching-store: priming ...")
 		if err := cs.Prime(context.Background()); err != nil {
-			fmt.Fprintf(os.Stderr, "api: cache prime failed: %v (reads will use bd subprocess)\n", err)
+			log.Printf("caching-store: prime FAILED: %v (reads will use bd subprocess)", err)
 			return
 		}
 		cs.StartReconciler(context.Background())
