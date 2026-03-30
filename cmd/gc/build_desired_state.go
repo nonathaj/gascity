@@ -228,6 +228,63 @@ func buildDesiredStateWithSessionBeads(
 		}
 	}
 
+	// Named sessions: materialize session beads for configured [[named_session]]
+	// entries. "always" mode sessions are unconditionally materialized; "on_demand"
+	// sessions are materialized only when they already have a canonical bead or
+	// when their work query returns ready work.
+	namedSpecs := make(map[string]namedSessionSpec)
+	for i := range cfg.NamedSessions {
+		identity := cfg.NamedSessions[i].QualifiedName()
+		spec, ok := findNamedSessionSpec(cfg, cityName, identity)
+		if !ok {
+			continue
+		}
+		if agentInSuspendedRig(cityPath, spec.Agent, cfg.Rigs, suspendedRigPaths) {
+			continue
+		}
+		namedSpecs[identity] = spec
+	}
+	namedWorkReady := make(map[string]bool, len(namedSpecs))
+	for identity, spec := range namedSpecs {
+		if spec.Mode == "always" {
+			continue
+		}
+		wq := spec.Agent.EffectiveWorkQuery()
+		if wq == "" {
+			continue
+		}
+		dir := agentCommandDir(cityPath, spec.Agent, cfg.Rigs)
+		out, err := shellScaleCheck(wq, dir)
+		if err != nil {
+			continue
+		}
+		if workQueryHasReadyWork(strings.TrimSpace(out)) {
+			namedWorkReady[identity] = true
+		}
+	}
+	for identity, spec := range namedSpecs {
+		_, hasCanonical := findCanonicalNamedSessionBead(bp.sessionBeads, identity)
+		if !hasCanonical {
+			if _, conflict := findNamedSessionConflict(bp.sessionBeads, spec); conflict {
+				continue
+			}
+		}
+		if spec.Mode != "always" && !hasCanonical && !namedWorkReady[identity] {
+			continue
+		}
+		fpExtra := buildFingerprintExtra(spec.Agent)
+		tp, err := resolveTemplate(bp, spec.Agent, identity, fpExtra)
+		if err != nil {
+			fmt.Fprintf(stderr, "buildDesiredState: named session %q: %v (skipping)\n", identity, err) //nolint:errcheck
+			continue
+		}
+		tp.Alias = identity
+		tp.ConfiguredNamedIdentity = identity
+		tp.ConfiguredNamedMode = spec.Mode
+		installAgentSideEffects(bp, spec.Agent, tp, stderr)
+		desired[tp.SessionName] = tp
+	}
+
 	// Phase 2: discover session beads created outside config iteration
 	// (e.g., by "gc session new"). Include them in desired state if they
 	// have a valid template and are not held/closed.
