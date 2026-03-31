@@ -285,6 +285,9 @@ func prepareStartCandidate(
 					fullOptions[k] = v
 				}
 				for k, v := range overrides {
+					if k == "initial_message" {
+						continue // handled separately below, not a schema option
+					}
 					fullOptions[k] = v
 				}
 				args, resolveErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, fullOptions)
