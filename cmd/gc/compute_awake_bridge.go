@@ -124,12 +124,12 @@ func awakeSetToWakeEvals(decisions map[string]AwakeDecision, sessionBeads []Awak
 		}
 		var reasons []WakeReason
 		if d.ShouldWake {
-			switch {
-			case d.Reason == "attached":
+			switch d.Reason {
+			case "attached":
 				reasons = []WakeReason{WakeAttached}
-			case d.Reason == "pending":
+			case "pending":
 				reasons = []WakeReason{WakePending}
-			case d.Reason == "wait-ready":
+			case "wait-ready":
 				reasons = []WakeReason{WakeWait}
 			default:
 				reasons = []WakeReason{WakeConfig}

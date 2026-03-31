@@ -198,7 +198,17 @@ func (e *reconcilerTestEnv) markSessionActive(session *beads.Bead) {
 }
 
 func (e *reconcilerTestEnv) reconcile(sessions []beads.Bead) int {
-	return e.reconcileWithPoolDesired(sessions, map[string]int{})
+	// Auto-derive poolDesired from desiredState, mirroring production behavior
+	// where ComputePoolDesiredStates populates ScaleCheckCounts before calling
+	// reconcileSessionBeads. Each template in the desired set gets a count of
+	// how many sessions reference it.
+	poolDesired := make(map[string]int)
+	for _, tp := range e.desiredState {
+		if tp.TemplateName != "" {
+			poolDesired[tp.TemplateName]++
+		}
+	}
+	return e.reconcileWithPoolDesired(sessions, poolDesired)
 }
 
 func (e *reconcilerTestEnv) reconcileWithPoolDesired(sessions []beads.Bead, poolDesired map[string]int) int {
@@ -630,8 +640,10 @@ func TestReconcileSessionBeads_PoolDependencyUnblocksWake(t *testing.T) {
 	env.addDesired("db-1", "db", true) // one pool instance alive
 	workerBead := env.createSessionBead("worker", "worker")
 	env.markSessionCreating(&workerBead)
+	dbBead := env.createSessionBead("db-1", "db")
+	env.markSessionActive(&dbBead)
 
-	woken := env.reconcile([]beads.Bead{workerBead})
+	woken := env.reconcile([]beads.Bead{workerBead, dbBead})
 
 	if woken != 1 {
 		t.Errorf("expected 1 woken (pool dep alive), got %d", woken)
@@ -910,7 +922,7 @@ func TestReconcileSessionBeads_RollsBackAdHocCreateOnRuntimeCollision(t *testing
 	cfgNames := configuredSessionNames(cfg, "", store)
 	woken := reconcileSessionBeads(
 		context.Background(), []beads.Bead{bead}, desired, cfgNames,
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"helper": 1}, "",
 		nil, clk, events.Discard, 0, 0, &stdout, &stderr,
 	)
 	if woken != 0 {
@@ -976,7 +988,7 @@ func TestReconcileSessionBeads_ConvergesPendingCreateWhenRuntimeMatchesBead(t *t
 	cfgNames := configuredSessionNames(cfg, "", store)
 	woken := reconcileSessionBeads(
 		context.Background(), []beads.Bead{bead}, desired, cfgNames,
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"helper": 1}, "",
 		nil, clk, events.Discard, 0, 0, &stdout, &stderr,
 	)
 	if woken != 1 {
@@ -1110,7 +1122,7 @@ func TestReconcileSessionBeads_ConvergesPendingCreateOnLateSuccessStartError(t *
 	cfgNames := configuredSessionNames(cfg, "", store)
 	woken := reconcileSessionBeads(
 		context.Background(), []beads.Bead{bead}, desired, cfgNames,
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"helper": 1}, "",
 		nil, clk, events.Discard, 0, 0, &stdout, &stderr,
 	)
 	if woken != 1 {
@@ -1226,7 +1238,7 @@ func TestReconcileSessionBeads_RollsBackPendingCreateOnProviderError(t *testing.
 	cfgNames := configuredSessionNames(cfg, "", store)
 	woken := reconcileSessionBeads(
 		context.Background(), []beads.Bead{bead}, desired, cfgNames,
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"helper": 1}, "",
 		nil, clk, events.Discard, 0, 0, &stdout, &stderr,
 	)
 	if woken != 0 {

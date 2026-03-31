@@ -152,6 +152,30 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 		}
 	}
 
+	// Sessions with assigned work — a session that has open or in_progress
+	// work assigned to it (by bead ID or template alias) must stay awake.
+	for _, bead := range input.SessionBeads {
+		if bead.State == "closed" || bead.Drained {
+			continue
+		}
+		if _, already := desired[bead.SessionName]; already {
+			continue
+		}
+		for _, wb := range input.WorkBeads {
+			assignee := strings.TrimSpace(wb.Assignee)
+			if assignee == "" {
+				continue
+			}
+			if wb.Status != "open" && wb.Status != "in_progress" {
+				continue
+			}
+			if assignee == bead.ID || assignee == bead.Template {
+				desired[bead.SessionName] = "assigned-work"
+				break
+			}
+		}
+	}
+
 	// Step 2-3: Decide awake
 	result := make(map[string]AwakeDecision)
 
@@ -211,19 +235,29 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 			decision.Reason = "quarantined"
 		}
 
-		// Dependency gate
+		// Dependency gate: block wake when a dependency has no running
+		// session and is not itself desired to wake. When the dep is
+		// desired (in the desired set or running), both can proceed in
+		// the same tick — executePlannedStarts handles wave-based
+		// ordering via allDependenciesAliveForTemplate.
 		if decision.ShouldWake {
 			agent, ok := agentsByName[bead.Template]
 			if ok && len(agent.DependsOn) > 0 {
 				for _, dep := range agent.DependsOn {
-					depRunning := false
+					depSatisfied := false
 					for _, other := range input.SessionBeads {
-						if other.Template == dep && input.RunningSessions[other.SessionName] {
-							depRunning = true
-							break
+						if other.Template == dep {
+							if input.RunningSessions[other.SessionName] {
+								depSatisfied = true
+								break
+							}
+							if _, inDesired := desired[other.SessionName]; inDesired {
+								depSatisfied = true
+								break
+							}
 						}
 					}
-					if !depRunning {
+					if !depSatisfied {
 						decision.ShouldWake = false
 						decision.Reason = "dependency-not-running:" + dep
 						break

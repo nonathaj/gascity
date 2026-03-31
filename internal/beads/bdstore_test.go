@@ -428,7 +428,7 @@ func TestBdStoreList(t *testing.T) {
 		out []byte
 		err error
 	}{
-		`bd list --json --limit 0 --all --include-infra`: {
+		`bd list --json --limit 0 --include-infra`: {
 			out: []byte(`[{"id":"bd-aaa","title":"first","status":"open","issue_type":"task","created_at":"2025-01-15T10:30:00Z"},{"id":"bd-bbb","title":"second","status":"closed","issue_type":"bug","created_at":"2025-01-15T10:31:00Z"}]`),
 		},
 	})
@@ -453,7 +453,7 @@ func TestBdStoreListEmpty(t *testing.T) {
 		out []byte
 		err error
 	}{
-		`bd list --json --limit 0 --all --include-infra`: {out: []byte(`[]`)},
+		`bd list --json --limit 0 --include-infra`: {out: []byte(`[]`)},
 	})
 	s := beads.NewBdStore("/city", runner)
 	got, err := s.List()

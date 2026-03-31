@@ -436,6 +436,15 @@ func reconcileSessionBeads(
 		shouldWake := hasDec && decision.ShouldWake
 
 		eval := wakeEvals[target.session.ID]
+		// Resolve full sleep policy — ComputeAwakeSet handles agent-level
+		// SleepAfterIdle but the workspace-level session_sleep policies
+		// (InteractiveResume, NonInteractive, etc.) require cfg + provider.
+		policy := resolveSessionSleepPolicy(*target.session, cfg, sp)
+		eval.Policy = policy
+		if shouldWake && configWakeSuppressed(*target.session, policy, sp, clk) {
+			shouldWake = false
+			eval.ConfigSuppressed = true
+		}
 		persistSleepPolicyMetadata(target.session, store, eval.Policy, eval.ConfigSuppressed)
 
 		if shouldWake && !target.alive {

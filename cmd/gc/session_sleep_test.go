@@ -221,16 +221,17 @@ func TestReconcileSessionBeads_StartsIdleDrainAfterGrace(t *testing.T) {
 	session.Metadata["detached_at"] = ts
 	env.sp.WaitForIdleErrors["worker"] = nil
 
+	poolDesired := map[string]int{"worker": 1}
 	cfgNames := configuredSessionNames(env.cfg, "", env.store)
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{session}, env.desiredState, cfgNames, env.cfg, env.sp,
-		env.store, nil, nil, nil, env.dt, map[string]int{}, "",
+		env.store, nil, nil, nil, env.dt, poolDesired, "",
 		nil, env.clk, env.rec, 0, 0, &env.stdout, &env.stderr,
 	)
 	waitForIdleProbeReady(t, env.dt, session.ID)
 	reconcileSessionBeads(
 		context.Background(), []beads.Bead{session}, env.desiredState, cfgNames, env.cfg, env.sp,
-		env.store, nil, nil, nil, env.dt, map[string]int{}, "",
+		env.store, nil, nil, nil, env.dt, poolDesired, "",
 		nil, env.clk, env.rec, 0, 0, &env.stdout, &env.stderr,
 	)
 
