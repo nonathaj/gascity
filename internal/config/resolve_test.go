@@ -63,8 +63,15 @@ func TestResolveProviderAgentProvider(t *testing.T) {
 		t.Errorf("CommandString() = %q, want %q", cs, "claude")
 	}
 	defaultArgs := rp.ResolveDefaultArgs()
-	if len(defaultArgs) != 1 || defaultArgs[0] != "--dangerously-skip-permissions" {
-		t.Errorf("ResolveDefaultArgs() = %v, want [--dangerously-skip-permissions]", defaultArgs)
+	wantArgs := []string{"--dangerously-skip-permissions", "--effort", "max"}
+	if len(defaultArgs) != len(wantArgs) {
+		t.Errorf("ResolveDefaultArgs() = %v, want %v", defaultArgs, wantArgs)
+	} else {
+		for i, w := range wantArgs {
+			if defaultArgs[i] != w {
+				t.Errorf("ResolveDefaultArgs()[%d] = %q, want %q", i, defaultArgs[i], w)
+			}
+		}
 	}
 }
 
@@ -83,8 +90,15 @@ func TestResolveProviderWorkspaceProvider(t *testing.T) {
 		t.Errorf("CommandString() = %q, want %q", rp.CommandString(), "codex")
 	}
 	defaultArgs := rp.ResolveDefaultArgs()
-	if len(defaultArgs) != 1 || defaultArgs[0] != "--dangerously-bypass-approvals-and-sandbox" {
-		t.Errorf("ResolveDefaultArgs() = %v, want [--dangerously-bypass-approvals-and-sandbox]", defaultArgs)
+	codexWantArgs := []string{"--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=xhigh"}
+	if len(defaultArgs) != len(codexWantArgs) {
+		t.Errorf("ResolveDefaultArgs() = %v, want %v", defaultArgs, codexWantArgs)
+	} else {
+		for i, w := range codexWantArgs {
+			if defaultArgs[i] != w {
+				t.Errorf("ResolveDefaultArgs()[%d] = %q, want %q", i, defaultArgs[i], w)
+			}
+		}
 	}
 }
 

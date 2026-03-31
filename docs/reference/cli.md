@@ -25,7 +25,7 @@ gc [flags]
 | [gc cities](#gc-cities) | List registered cities |
 | [gc config](#gc-config) | Inspect and validate city configuration |
 | [gc converge](#gc-converge) | Manage convergence loops (bounded iterative refinement) |
-| [gc convoy](#gc-convoy) | Manage convoys (batch work tracking) |
+| [gc convoy](#gc-convoy) | Manage convoys — graphs of related work |
 | [gc dashboard](#gc-dashboard) | Web dashboard for monitoring the city |
 | [gc doctor](#gc-doctor) | Check workspace health |
 | [gc event](#gc-event) | Event operations |
@@ -58,7 +58,6 @@ gc [flags]
 | [gc unregister](#gc-unregister) | Remove a city from the machine-wide supervisor |
 | [gc version](#gc-version) | Print gc version |
 | [gc wait](#gc-wait) | Inspect and manage durable session waits |
-| [gc workflow](#gc-workflow) | Run explicit graph-first workflow control beads |
 
 ## gc agent
 
@@ -403,11 +402,11 @@ gc converge test-gate <bead-id>
 
 ## gc convoy
 
-Manage convoys — batch work tracking containers.
+Manage convoys — graphs of related work beads.
 
-A convoy is a bead that groups related issues. Issues are linked to a
-convoy via parent-child relationships. Convoys track completion progress
-and can be auto-closed when all their issues are resolved.
+A convoy is a named graph of beads with dependencies. Simple convoys
+group related issues via parent-child relationships. Complex convoys
+use formula-compiled DAGs with control beads for orchestration.
 
 ```
 gc convoy
@@ -418,7 +417,9 @@ gc convoy
 | [gc convoy add](#gc-convoy-add) | Add an issue to a convoy |
 | [gc convoy check](#gc-convoy-check) | Auto-close convoys where all issues are closed |
 | [gc convoy close](#gc-convoy-close) | Close a convoy |
+| [gc convoy control](#gc-convoy-control) | Execute control beads or run the control-dispatcher loop |
 | [gc convoy create](#gc-convoy-create) | Create a convoy and optionally track issues |
+| [gc convoy delete](#gc-convoy-delete) | Close and optionally delete a convoy and all its beads |
 | [gc convoy land](#gc-convoy-land) | Land an owned convoy (terminate + cleanup) |
 | [gc convoy list](#gc-convoy-list) | List open convoys with progress |
 | [gc convoy status](#gc-convoy-status) | Show detailed convoy status |
@@ -458,6 +459,21 @@ Marks the convoy as closed regardless of child issue status. Use
 gc convoy close <id>
 ```
 
+## gc convoy control
+
+Process a single control bead, or run the control-dispatcher loop
+with --serve to continuously process ready control beads.
+Use --follow &lt;agent&gt; to filter the serve loop to a specific agent template.
+
+```
+gc convoy control [bead-id] [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--follow` | string |  | Run serve loop filtered to a specific agent template |
+| `--serve` | bool |  | Run the control-dispatcher loop (continuous) |
+
 ## gc convoy create
 
 Create a convoy and optionally link existing issues to it.
@@ -485,6 +501,25 @@ gc convoy create sprint-42
 | `--owned` | bool |  | mark convoy as owned (manual lifecycle, no auto-close) |
 | `--owner` | string |  | convoy owner (who manages it) |
 | `--target` | string |  | target branch inherited by child work beads |
+
+## gc convoy delete
+
+Close all open beads in a convoy, then optionally delete them.
+
+Searches all stores (city + rigs) for the convoy root and all beads
+with matching gc.root_bead_id. Without --force, shows a preview.
+
+By default, beads are closed with gc.outcome=skipped. Use --delete to
+also remove them from the store via bd delete --force.
+
+```
+gc convoy delete <convoy-id> [flags]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--delete` | bool |  | Also delete beads from the store after closing |
+| `-f`, `--force` | bool |  | Actually close/delete (without this, shows preview) |
 
 ## gc convoy land
 
@@ -692,12 +727,19 @@ Compile and instantiate a formula as real beads in the current store.
 This is a low-level workflow construction tool. It creates the formula root
 and all compiled step beads without routing any work.
 
+With --attach=&lt;bead-id&gt;, the sub-DAG is created as children of the given
+bead. The bead gains a blocking dependency on the sub-DAG root, so it won't
+close until the sub-DAG completes. This is the core primitive for late-bound
+DAG expansion — any agent, script, or workflow step can call it to expand a
+bead into a sub-workflow at runtime.
+
 ```
 gc formula cook <formula-name> [flags]
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--attach` | string |  | attach sub-DAG to existing bead (bead gains blocking dep on sub-DAG root) |
 | `--meta` | stringArray |  | set root bead metadata after cook (key=value, repeatable) |
 | `-t`, `--title` | string |  | override root bead title |
 | `--var` | stringArray |  | variable substitution for formula (key=value, repeatable) |
@@ -1821,6 +1863,8 @@ gc sling [target] <bead-or-formula-or-text> [flags]
 | `--nudge` | bool |  | nudge target after routing |
 | `--on` | string |  | attach wisp from formula to bead before routing |
 | `--owned` | bool |  | mark auto-convoy as owned (skip auto-close) |
+| `--scope-kind` | string |  | logical workflow scope kind for graph.v2 launches |
+| `--scope-ref` | string |  | logical workflow scope ref for graph.v2 launches |
 | `--stdin` | bool |  | read bead text from stdin (first line = title, rest = description) |
 | `-t`, `--title` | string |  | wisp root bead title (with --formula or --on) |
 | `--var` | stringArray |  | variable substitution for formula (key=value, repeatable) |
@@ -2071,44 +2115,4 @@ Manually mark a wait ready
 ```
 gc wait ready <wait-id>
 ```
-
-## gc workflow
-
-Run explicit graph-first workflow control beads
-
-```
-gc workflow
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| [gc workflow control](#gc-workflow-control) | Execute a graph.v2 control bead in the current city |
-| [gc workflow delete](#gc-workflow-delete) | Close and optionally delete a workflow and all its beads |
-
-## gc workflow control
-
-Execute a graph.v2 control bead in the current city
-
-```
-gc workflow control <bead-id>
-```
-
-## gc workflow delete
-
-Close all open beads in a workflow, then optionally delete them.
-
-Searches all stores (city + rigs) for the workflow root and all beads
-with matching gc.root_bead_id. Without --force, shows a preview.
-
-By default, beads are closed with gc.outcome=skipped. Use --delete to
-also remove them from the store via bd delete --force.
-
-```
-gc workflow delete <workflow-id> [flags]
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--delete` | bool |  | Also delete beads from the store after closing |
-| `-f`, `--force` | bool |  | Actually close/delete (without this, shows preview) |
 

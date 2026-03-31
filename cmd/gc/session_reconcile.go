@@ -130,7 +130,10 @@ func sessionWithinDesiredConfig(session beads.Bead, cfg *config.City, poolDesire
 		return agent, namedSessionMode(session) == "always"
 	}
 	if session.Metadata["manual_session"] == "true" && isMultiSessionCfgAgent(agent) {
-		return agent, false
+		// Manual sessions on multi-session (implicit) agents are always
+		// config-eligible — they were created by the user and should stay
+		// alive until explicitly closed or idle-suspended.
+		return agent, true
 	}
 	// Both pool and non-pool agents are config-eligible when demand exists.
 	return agent, poolDesired[template] > 0

@@ -840,8 +840,8 @@ func TestHandleSessionCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
 	var resp sessionResponse
@@ -854,8 +854,10 @@ func TestHandleSessionCreate(t *testing.T) {
 	if resp.Title != "myrig/worker" {
 		t.Errorf("Title = %q, want default %q", resp.Title, "myrig/worker")
 	}
-	if !resp.Running {
-		t.Errorf("Running = %v, want true", resp.Running)
+	// Agent sessions are always created async — not running until the
+	// reconciler starts the process.
+	if resp.Running {
+		t.Errorf("Running = %v, want false for async create", resp.Running)
 	}
 	if resp.DisplayName != "Test Agent" {
 		t.Errorf("DisplayName = %q, want %q", resp.DisplayName, "Test Agent")
@@ -893,20 +895,19 @@ func TestHandleSessionCreateAsync(t *testing.T) {
 	}
 }
 
-func TestHandleSessionCreateAsyncRejectsInlineMessage(t *testing.T) {
+func TestHandleSessionCreateAsyncAcceptsInlineMessage(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)
 
+	// Agent sessions are always async; messages are stored as initial_message
+	// in template_overrides for the reconciler to pick up.
 	body := `{"kind":"agent","name":"myrig/worker","async":true,"message":"hello"}`
 	req := newPostRequest("/v0/sessions", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), "message is not supported with async session creation") {
-		t.Fatalf("body = %q, want async message guidance", w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 }
 
@@ -939,8 +940,8 @@ func TestHandleSessionCreatePersistsAlias(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
 	var resp sessionResponse
@@ -1038,8 +1039,8 @@ func TestHandleSessionCreateRejectsDuplicateAlias(t *testing.T) {
 	first := newPostRequest("/v0/sessions", strings.NewReader(`{"kind":"agent","name":"myrig/worker","alias":"sky"}`))
 	firstW := httptest.NewRecorder()
 	srv.ServeHTTP(firstW, first)
-	if firstW.Code != http.StatusCreated {
-		t.Fatalf("first create status %d, want %d; body: %s", firstW.Code, http.StatusCreated, firstW.Body.String())
+	if firstW.Code != http.StatusAccepted {
+		t.Fatalf("first create status %d, want %d; body: %s", firstW.Code, http.StatusAccepted, firstW.Body.String())
 	}
 
 	second := newPostRequest("/v0/sessions", strings.NewReader(`{"kind":"agent","name":"myrig/worker","alias":"sky"}`))
@@ -1059,8 +1060,8 @@ func TestHandleSessionCreateCanonicalizesBareTemplate(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
-	if w.Code != http.StatusCreated {
-		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("got status %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
 	}
 
 	var resp sessionResponse

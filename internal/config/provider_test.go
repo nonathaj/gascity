@@ -83,10 +83,17 @@ func TestBuiltinClaudeCommandString(t *testing.T) {
 	if cs != "claude" {
 		t.Errorf("CommandString() = %q, want %q", cs, "claude")
 	}
-	// Default args should produce the permission flag.
+	// Default args should produce the permission flag and effort flag.
 	defaultArgs := rp.ResolveDefaultArgs()
-	if len(defaultArgs) != 1 || defaultArgs[0] != "--dangerously-skip-permissions" {
-		t.Errorf("ResolveDefaultArgs() = %v, want [--dangerously-skip-permissions]", defaultArgs)
+	wantArgs := []string{"--dangerously-skip-permissions", "--effort", "max"}
+	if len(defaultArgs) != len(wantArgs) {
+		t.Errorf("ResolveDefaultArgs() = %v, want %v", defaultArgs, wantArgs)
+	} else {
+		for i, w := range wantArgs {
+			if defaultArgs[i] != w {
+				t.Errorf("ResolveDefaultArgs()[%d] = %q, want %q", i, defaultArgs[i], w)
+			}
+		}
 	}
 }
 

@@ -523,9 +523,9 @@ func TestResolveDefaultArgs_ClaudeSchema(t *testing.T) {
 
 	args := rp.ResolveDefaultArgs()
 
-	// Claude effective defaults: permission_mode=unrestricted (from OptionDefaults).
-	// Should produce --dangerously-skip-permissions.
-	wantArgs := []string{"--dangerously-skip-permissions"}
+	// Claude effective defaults: permission_mode=unrestricted, effort=max (from OptionDefaults).
+	// Should produce --dangerously-skip-permissions --effort max.
+	wantArgs := []string{"--dangerously-skip-permissions", "--effort", "max"}
 	if len(args) != len(wantArgs) {
 		t.Fatalf("got args=%v, want %v", args, wantArgs)
 	}

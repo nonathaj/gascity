@@ -79,6 +79,7 @@ Agent defines a configured agent in the city.
 | `process_names` | []string |  |  | ProcessNames lists process names to look for when checking if the agent is running. |
 | `emits_permission_warning` | boolean |  |  | EmitsPermissionWarning indicates whether the agent emits permission prompts that should be suppressed. |
 | `env` | map[string]string |  |  | Env sets additional environment variables for the agent process. |
+| `option_defaults` | map[string]string |  |  | OptionDefaults overrides the provider's effective schema defaults for this agent. Keys are option keys, values are choice values. Applied on top of the provider's OptionDefaults (agent keys win). Example: option_defaults = &#123; permission_mode = "plan", model = "sonnet" &#125; |
 | `max_active_sessions` | integer |  |  | MaxActiveSessions is the agent-level cap on concurrent sessions. Nil means inherit from rig, then workspace, then unlimited. Replaces pool.max. |
 | `min_active_sessions` | integer |  |  | MinActiveSessions is the minimum number of sessions to keep alive. Agent-level only. Counts against rig/workspace caps. Replaces pool.min. |
 | `scale_check` | string |  |  | ScaleCheck is a shell command whose output determines desired session count. Optional override — when set, its output is the desired count (still clamped by all cap levels). |
@@ -232,8 +233,8 @@ DaemonConfig holds controller daemon settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `formula_v2` | boolean |  |  | FormulaV2 enables formula v2 graph workflow infrastructure: the workflow-control implicit agent, graph.v2 formula compilation, and batch graph-apply bead creation. Requires bd with --graph support. Default: false (opt-in while the feature stabilizes). |
-| `graph_workflows` | boolean |  |  | Deprecated alias for `formula_v2`. If `graph_workflows` is true and `formula_v2` is not set, `formula_v2` is promoted automatically during parsing. |
+| `formula_v2` | boolean |  |  | FormulaV2 enables formula v2 graph workflow infrastructure: the control-dispatcher implicit agent, graph.v2 formula compilation, and batch graph-apply bead creation. Requires bd with --graph support. Default: false (opt-in while the feature stabilizes). |
+| `graph_workflows` | boolean |  |  | GraphWorkflows is the deprecated predecessor of FormulaV2. Retained for backwards compatibility: if graph_workflows is true in TOML and formula_v2 is not set, FormulaV2 is promoted automatically during parsing. |
 | `patrol_interval` | string |  | `30s` | PatrolInterval is the health patrol interval. Duration string (e.g., "30s", "5m", "1h"). Defaults to "30s". |
 | `max_restarts` | integer |  | `5` | MaxRestarts is the maximum number of agent restarts within RestartWindow before the agent is quarantined. 0 means unlimited (no crash loop detection). Defaults to 5. |
 | `restart_window` | string |  | `1h` | RestartWindow is the sliding time window for counting restarts. Duration string (e.g., "30s", "5m", "1h"). Defaults to "1h". |
@@ -425,7 +426,10 @@ ProviderSpec defines a named provider's startup parameters.
 | `resume_command` | string |  |  | ResumeCommand is the full shell command to run when resuming a session. Supports &#123;&#123;.SessionKey&#125;&#125; template variable. When set, takes precedence over ResumeFlag/ResumeStyle. Example:   "claude --resume &#123;&#123;.SessionKey&#125;&#125; --dangerously-skip-permissions" |
 | `session_id_flag` | string |  |  | SessionIDFlag is the CLI flag for creating a session with a specific ID. Enables the Generate & Pass strategy for session key management. Example: "--session-id" (claude) |
 | `permission_modes` | map[string]string |  |  | PermissionModes maps permission mode names to CLI flags. Example: &#123;"unrestricted": "--dangerously-skip-permissions", "plan": "--permission-mode plan"&#125; This is a config-only lookup table consumed by external clients (e.g., Mission Control) to populate permission mode dropdowns. Launch-time flag substitution is planned for a follow-up PR — currently no runtime code reads this field. |
+| `option_defaults` | map[string]string |  |  | OptionDefaults overrides the Default value in OptionsSchema entries without redefining the schema itself. Keys are option keys (e.g., "permission_mode"), values are choice values (e.g., "unrestricted"). city.toml users set this to customize provider behavior without touching Args or OptionsSchema. |
 | `options_schema` | []ProviderOption |  |  | OptionsSchema declares the configurable options this provider supports. Each option maps to CLI args via its Choices[].FlagArgs field. Serialized via a dedicated DTO (not directly to JSON) so FlagArgs stays server-side. |
+| `print_args` | []string |  |  | PrintArgs are CLI arguments that enable one-shot non-interactive mode. The provider prints its response to stdout and exits. When empty, the provider does not support one-shot invocation. Examples: ["-p"] (claude, gemini), ["exec"] (codex) |
+| `title_model` | string |  |  | TitleModel is the OptionsSchema model key used for title generation. Resolved via the "model" option in OptionsSchema to get FlagArgs. Defaults to the cheapest/fastest model for each provider. Examples: "haiku" (claude), "o4-mini" (codex), "gemini-2.5-flash" (gemini) |
 
 ## Rig
 

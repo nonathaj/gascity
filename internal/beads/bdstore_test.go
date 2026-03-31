@@ -1207,10 +1207,10 @@ func TestBdStoreApplyGraphPlan(t *testing.T) {
 		if name != "bd" {
 			t.Fatalf("runner name = %q, want bd", name)
 		}
-		if len(args) != 4 || args[0] != "graph-apply" || args[1] != "--json" || args[2] != "--plan-file" {
+		if len(args) != 4 || args[0] != "create" || args[1] != "--graph" || args[3] != "--json" {
 			t.Fatalf("args = %q", args)
 		}
-		data, err := os.ReadFile(args[3])
+		data, err := os.ReadFile(args[2])
 		if err != nil {
 			t.Fatalf("reading plan file: %v", err)
 		}
