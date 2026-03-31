@@ -20,8 +20,9 @@ import (
 // can pass ScaleCheckCounts to ComputePoolDesiredStates without re-running
 // scale_check commands.
 type DesiredStateResult struct {
-	State            map[string]TemplateParams
-	ScaleCheckCounts map[string]int // nil when store is nil or scale_check not run
+	State             map[string]TemplateParams
+	ScaleCheckCounts  map[string]int // nil when store is nil or scale_check not run
+	AssignedWorkBeads []beads.Bead   // work beads with non-empty Assignee
 }
 
 type poolEvalWork struct {
@@ -328,7 +329,7 @@ func buildDesiredStateWithSessionBeads(
 	realizedRoots := discoverSessionBeadsWithRoots(bp, cfg, desired, suspendedRigPaths, stderr)
 	realizeDependencyFloors(bp, cfg, desired, realizedRoots, suspendedRigPaths, stderr)
 
-	return DesiredStateResult{State: desired, ScaleCheckCounts: scaleCheckCounts}
+	return DesiredStateResult{State: desired, ScaleCheckCounts: scaleCheckCounts, AssignedWorkBeads: assignedWorkBeads}
 }
 
 // collectAssignedWorkBeads queries each store (city + rigs) for work beads

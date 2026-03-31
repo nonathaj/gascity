@@ -119,7 +119,7 @@ func reconcileSessionBeads(
 	sp runtime.Provider,
 	store beads.Store,
 	dops drainOps,
-	workSet map[string]bool, //nolint:unparam // workSet will be populated when work_query integration lands
+	assignedWorkBeads []beads.Bead,
 	readyWaitSet map[string]bool,
 	dt *drainTracker,
 	poolDesired map[string]int,
@@ -419,24 +419,24 @@ func reconcileSessionBeads(
 		wakeTargets = append(wakeTargets, wakeTarget{session: session, tp: tp, alive: alive})
 	}
 
-	evalInput := make([]beads.Bead, len(wakeTargets))
-	for i, target := range wakeTargets {
-		evalInput[i] = *target.session
-	}
-	wakeEvals := computeWakeEvaluations(evalInput, cfg, sp, poolDesired, workSet, readyWaitSet, clk)
+	// Use ComputeAwakeSet for the wake/sleep decision.
+	awakeInput := buildAwakeInputFromReconciler(
+		cfg, ordered, poolDesired, readyWaitSet,
+		assignedWorkBeads, wakeTargets, sp, clk.Now(),
+	)
+	awakeDecisions := ComputeAwakeSet(awakeInput)
+	wakeEvals := awakeSetToWakeEvals(awakeDecisions, awakeInput.SessionBeads)
+
 	idleProbeTargets := selectIdleProbeTargets(wakeTargets, wakeEvals, dt)
 	launchIdleProbes(ctx, idleProbeTargets, wakeTargets, dt, sp, clk)
 
 	for _, target := range wakeTargets {
-		eval, ok := wakeEvals[target.session.ID]
-		if !ok {
-			eval = wakeEvaluation{Policy: resolveSessionSleepPolicy(*target.session, cfg, sp)}
-		}
+		name := target.session.Metadata["session_name"]
+		decision, hasDec := awakeDecisions[name]
+		shouldWake := hasDec && decision.ShouldWake
+
+		eval := wakeEvals[target.session.ID]
 		persistSleepPolicyMetadata(target.session, store, eval.Policy, eval.ConfigSuppressed)
-		shouldWake := len(eval.Reasons) > 0
-		if target.session.Metadata["state"] == "creating" {
-			fmt.Fprintf(stderr, "DEBUG creating %s: shouldWake=%v alive=%v reasons=%v\n", target.session.Metadata["session_name"], shouldWake, target.alive, eval.Reasons) //nolint:errcheck
-		}
 
 		if shouldWake && !target.alive {
 			// Session should be awake but isn't — wake it.
@@ -470,7 +470,7 @@ func reconcileSessionBeads(
 				reason = "idle"
 			case intent != "":
 				reason = intent
-			case eval.ConfigSuppressed && eval.Policy.enabled():
+			case hasDec && decision.Reason == "idle-sleep":
 				reason = "idle"
 			default:
 				reason = "no-wake-reason"
@@ -500,7 +500,7 @@ func reconcileSessionBeads(
 	sessionLookup := func(id string) *beads.Bead {
 		return beadByID[id]
 	}
-	advanceSessionDrainsWithSessions(dt, sp, store, sessionLookup, ordered, wakeEvals, cfg, poolDesired, workSet, readyWaitSet, clk)
+	advanceSessionDrainsWithSessions(dt, sp, store, sessionLookup, ordered, wakeEvals, cfg, poolDesired, nil, readyWaitSet, clk)
 	clearMissingIdleProbes(dt, beadByID)
 
 	return plannedWakes
