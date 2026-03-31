@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -199,24 +200,31 @@ func (sm *SupervisorMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveCityRequest resolves a city's State and dispatches to a per-city Server.
 func (sm *SupervisorMux) serveCityRequest(w http.ResponseWriter, r *http.Request, cityName, path string) {
+	t0 := time.Now()
 	state := sm.resolver.CityState(cityName)
 	if state == nil {
-		// Evict stale cache entry if the city is gone.
 		sm.cacheMu.Lock()
 		delete(sm.cache, cityName)
 		sm.cacheMu.Unlock()
 		writeError(w, http.StatusNotFound, "not_found", "city not found or not running: "+cityName)
 		return
 	}
+	t1 := time.Now()
 
 	srv := sm.getCityServer(cityName, state)
+	t2 := time.Now()
 
-	// Rewrite the request path to the per-city route.
 	r2 := r.Clone(r.Context())
 	r2.URL.Path = path
 	r2.URL.RawPath = ""
-	// Dispatch through the mux directly — middleware is applied at the SupervisorMux level.
 	srv.mux.ServeHTTP(w, r2)
+	t3 := time.Now()
+
+	total := t3.Sub(t0)
+	if total > 500*time.Millisecond {
+		log.Printf("SLOW serveCityRequest %s: resolve=%s getServer=%s handler=%s total=%s",
+			path, t1.Sub(t0), t2.Sub(t1), t3.Sub(t2), total)
+	}
 }
 
 // getCityServer returns a cached per-city Server, creating one if the
