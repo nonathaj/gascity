@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/shellquote"
 	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
@@ -323,6 +325,17 @@ func reconcileSessionBeads(
 				cfgAgent := findAgentByTemplate(cfg, template)
 				if cfgAgent != nil {
 					agentCfg := templateParamsToConfig(tp)
+					// Apply template_overrides so the fingerprint matches prepareSessionStart.
+					if rawOvr := session.Metadata["template_overrides"]; rawOvr != "" {
+						if tp.ResolvedProvider != nil && len(tp.ResolvedProvider.OptionsSchema) > 0 {
+							var ovr map[string]string
+							if err := json.Unmarshal([]byte(rawOvr), &ovr); err == nil && len(ovr) > 0 {
+								if extra, rErr := config.ResolveExplicitOptions(tp.ResolvedProvider.OptionsSchema, ovr); rErr == nil && len(extra) > 0 {
+									agentCfg.Command = agentCfg.Command + " " + shellquote.Join(extra)
+								}
+							}
+						}
+					}
 					currentHash := runtime.CoreFingerprint(agentCfg)
 					if storedHash != currentHash {
 						fmt.Fprintf(stderr, "config-drift %s: stored=%s current=%s cmd=%q\n", name, storedHash[:12], currentHash[:12], agentCfg.Command) //nolint:errcheck
