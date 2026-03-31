@@ -183,10 +183,12 @@ func buildDesiredStateWithSessionBeads(
 	// demand signal for new sessions. Computed once, returned in result.
 	scaleCheckCounts := evaluatePendingPoolsMap(cfg, pendingPools, stderr)
 
+	// Collect work beads with assignees — used for both pool demand and
+	// named session on_demand wake. Hoisted out of the store block so
+	// the named session section can also use it.
+	var assignedWorkBeads []beads.Bead
 	if store != nil {
-		// Cross-reference: for each non-closed session, query its scope's
-		// store for work beads assigned to that session (in-progress + open).
-		assignedWorkBeads := collectAssignedWorkBeads(cfg, store, rigStores, suspendedRigPaths)
+		assignedWorkBeads = collectAssignedWorkBeads(cfg, store, rigStores, suspendedRigPaths)
 		poolDesiredStates := ComputePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads.Open(), scaleCheckCounts)
 		for _, poolState := range poolDesiredStates {
 			cfgAgent := findAgentByTemplate(cfg, poolState.Template)
@@ -245,8 +247,20 @@ func buildDesiredStateWithSessionBeads(
 		namedSpecs[identity] = spec
 	}
 	namedWorkReady := make(map[string]bool, len(namedSpecs))
+	// Check assigned work beads: if any work bead's Assignee matches a
+	// named session's identity (alias), that session has demand.
+	// This handles cross-agent handoff (e.g., polecat assigns work to
+	// refinery by setting Assignee to the refinery's alias).
+	for identity := range namedSpecs {
+		for _, wb := range assignedWorkBeads {
+			if strings.TrimSpace(wb.Assignee) == identity && (wb.Status == "open" || wb.Status == "in_progress") {
+				namedWorkReady[identity] = true
+				break
+			}
+		}
+	}
 	for identity, spec := range namedSpecs {
-		if spec.Mode == "always" {
+		if spec.Mode == "always" || namedWorkReady[identity] {
 			continue
 		}
 		wq := spec.Agent.EffectiveWorkQuery()

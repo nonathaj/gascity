@@ -434,6 +434,9 @@ func reconcileSessionBeads(
 		}
 		persistSleepPolicyMetadata(target.session, store, eval.Policy, eval.ConfigSuppressed)
 		shouldWake := len(eval.Reasons) > 0
+		if target.session.Metadata["state"] == "creating" {
+			fmt.Fprintf(stderr, "DEBUG creating %s: shouldWake=%v alive=%v reasons=%v\n", target.session.Metadata["session_name"], shouldWake, target.alive, eval.Reasons) //nolint:errcheck
+		}
 
 		if shouldWake && !target.alive {
 			// Session should be awake but isn't — wake it.
