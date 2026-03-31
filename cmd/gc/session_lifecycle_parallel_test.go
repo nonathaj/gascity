@@ -369,7 +369,7 @@ func TestReconcileSessionBeads_StartsIndependentWaveInParallelBeforeDependentWav
 	go func() {
 		done <- reconcileSessionBeads(
 			context.Background(), sessions, desired, configuredSessionNames(cfg, "", store),
-			cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+			cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{"db": 1, "cache": 1, "worker": 1}, "",
 			nil, clk, rec, 5*time.Second, 0, ioDiscard{}, ioDiscard{},
 		)
 	}()
@@ -597,9 +597,10 @@ func TestExecutePlannedStarts_RevalidatesDependenciesBetweenWaveBatches(t *testi
 		sessions = append(sessions, created)
 	}
 
+	poolDesired := map[string]int{"app-1": 1, "app-2": 1, "app-3": 1, "app-4": 1}
 	woken := reconcileSessionBeads(
 		context.Background(), sessions, desired, configuredSessionNames(cfg, "", store),
-		cfg, sp, store, nil, nil, nil, newDrainTracker(), map[string]int{}, "",
+		cfg, sp, store, nil, nil, nil, newDrainTracker(), poolDesired, "",
 		nil, clk, events.Discard, 5*time.Second, 0, ioDiscard{}, ioDiscard{},
 	)
 

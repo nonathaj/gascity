@@ -74,7 +74,9 @@ type AwakeDecision struct {
 //  3. Attached/pending/ready-wait override (wake even if not desired)
 //  4. Idle sleep suppression
 //  5. Hold + quarantine suppression (overrides everything)
-//  6. Dependency gate
+//
+// Dependency ordering is NOT enforced here — the reconciler's
+// executePlannedStarts handles it via wave-based starts.
 func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 	agentsByName := make(map[string]AwakeAgent, len(input.Agents))
 	for _, a := range input.Agents {
@@ -232,26 +234,12 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 			decision.Reason = "quarantined"
 		}
 
-		// Dependency gate
-		if decision.ShouldWake {
-			agent, ok := agentsByName[bead.Template]
-			if ok && len(agent.DependsOn) > 0 {
-				for _, dep := range agent.DependsOn {
-					depRunning := false
-					for _, other := range input.SessionBeads {
-						if other.Template == dep && input.RunningSessions[other.SessionName] {
-							depRunning = true
-							break
-						}
-					}
-					if !depRunning {
-						decision.ShouldWake = false
-						decision.Reason = "dependency-not-running:" + dep
-						break
-					}
-				}
-			}
-		}
+		// NOTE: Dependency ordering is NOT enforced here. The reconciler's
+		// executePlannedStarts handles dependency-aware wave ordering via
+		// allDependenciesAliveForTemplate at wave boundaries. Applying
+		// the gate here would prevent candidates from reaching the start
+		// list, breaking wave-based starts (where dep starts in wave 0
+		// and dependent starts in wave 1).
 
 		result[name] = decision
 	}

@@ -517,7 +517,11 @@ func TestDependency_DepRunning(t *testing.T) {
 	assertAwake(t, result, "polecat-mc-p")
 }
 
-func TestDependency_DepNotRunning(t *testing.T) {
+func TestDependency_DepNotRunning_StillDesired(t *testing.T) {
+	// Dependency ordering is handled by the reconciler's wave-based
+	// executePlannedStarts, not ComputeAwakeSet. A session whose
+	// dependency isn't running yet should still be marked ShouldWake
+	// so it reaches the start candidate list.
 	result := ComputeAwakeSet(AwakeInput{
 		Agents: []AwakeAgent{
 			{QualifiedName: "hello-world/witness"},
@@ -530,7 +534,7 @@ func TestDependency_DepNotRunning(t *testing.T) {
 		ScaleCheckCounts: map[string]int{"hello-world/polecat": 1},
 		Now:              now,
 	})
-	assertAsleep(t, result, "polecat-mc-p")
+	assertAwake(t, result, "polecat-mc-p")
 }
 
 // ---------------------------------------------------------------------------
@@ -731,4 +735,43 @@ func TestRegression_SessionWithWorkByAlias_StaysAwake(t *testing.T) {
 		Now:              now,
 	})
 	assertAwake(t, result, "polecat-mc-p1")
+}
+
+// ---------------------------------------------------------------------------
+// Asleep ephemeral with assigned work (e2e regression)
+// ---------------------------------------------------------------------------
+
+func TestRegression_AsleepEphemeralWithAssignedWork_WakesViaAssignedWork(t *testing.T) {
+	// An asleep polecat that has in_progress work assigned to its bead ID
+	// must wake via the assigned-work path, even though scaleCheck alone
+	// would not wake it. This is the production path after a city restart:
+	// the polecat claimed work, went to asleep, resume tier puts it in
+	// desired, and ComputeAwakeSet must mark it ShouldWake=true.
+	result := ComputeAwakeSet(AwakeInput{
+		Agents: []AwakeAgent{{QualifiedName: "hello-world/polecat"}},
+		SessionBeads: []AwakeSessionBead{
+			{ID: "mc-sctve", SessionName: "polecat-mc-sctve", Template: "hello-world/polecat", State: "asleep"},
+		},
+		WorkBeads:        []AwakeWorkBead{{ID: "hw-8lb", Assignee: "mc-sctve", Status: "in_progress"}},
+		ScaleCheckCounts: map[string]int{"hello-world/polecat": 1},
+		Now:              now,
+	})
+	assertAwake(t, result, "polecat-mc-sctve")
+	if result["polecat-mc-sctve"].Reason != "assigned-work" {
+		t.Errorf("reason = %q, want assigned-work", result["polecat-mc-sctve"].Reason)
+	}
+}
+
+func TestRegression_AsleepEphemeralWithoutWork_StaysAsleep(t *testing.T) {
+	// An asleep polecat WITHOUT assigned work should NOT wake, even with
+	// scaleCheck demand. A fresh session should be created instead.
+	result := ComputeAwakeSet(AwakeInput{
+		Agents: []AwakeAgent{{QualifiedName: "hello-world/polecat"}},
+		SessionBeads: []AwakeSessionBead{
+			{ID: "mc-old", SessionName: "polecat-mc-old", Template: "hello-world/polecat", State: "asleep"},
+		},
+		ScaleCheckCounts: map[string]int{"hello-world/polecat": 1},
+		Now:              now,
+	})
+	assertAsleep(t, result, "polecat-mc-old")
 }

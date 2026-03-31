@@ -718,3 +718,169 @@ func TestSelectOrCreatePoolSessionBead_ReusesAvailableForNewTier(t *testing.T) {
 		t.Fatal("new-tier should reuse available (non-drained) session bead")
 	}
 }
+
+func TestSelectOrCreatePoolSessionBead_SkipsAsleepBeads(t *testing.T) {
+	// An asleep pool session should NOT be reused for new demand.
+	// The reconciler should create a fresh session instead.
+	// This prevents a deadlock where an asleep bead fills a pool slot
+	// but ComputeAwakeSet correctly refuses to wake it (asleep
+	// ephemerals are not reused).
+	store := beads.NewMemStore()
+	cfgAgent := config.Agent{Name: "polecat", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+
+	asleep, err := store.Create(beads.Bead{
+		Title:  "polecat",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:polecat"},
+		Metadata: map[string]string{
+			"template":     "polecat",
+			"session_name": "polecat-mc-old",
+			"state":        "asleep",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := newSessionBeadSnapshot([]beads.Bead{asleep})
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, err := selectOrCreatePoolSessionBead(bp, "polecat", nil, map[string]bool{})
+	if err != nil {
+		t.Fatalf("selectOrCreatePoolSessionBead: %v", err)
+	}
+	if result.ID == asleep.ID {
+		t.Fatal("asleep pool session should not be reused — a fresh session should be created instead")
+	}
+}
+
+func TestSelectOrCreatePoolSessionBead_ReusesActiveBeforeCreatingNew(t *testing.T) {
+	// An active (awake) pool session IS reused — no fresh bead created.
+	store := beads.NewMemStore()
+	cfgAgent := config.Agent{Name: "polecat", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+
+	active, err := store.Create(beads.Bead{
+		Title:  "polecat",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:polecat"},
+		Metadata: map[string]string{
+			"template":     "polecat",
+			"session_name": "polecat-mc-live",
+			"state":        "active",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := newSessionBeadSnapshot([]beads.Bead{active})
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, err := selectOrCreatePoolSessionBead(bp, "polecat", nil, map[string]bool{})
+	if err != nil {
+		t.Fatalf("selectOrCreatePoolSessionBead: %v", err)
+	}
+	if result.ID != active.ID {
+		t.Fatalf("active pool session should be reused, got %s want %s", result.ID, active.ID)
+	}
+}
+
+func TestSelectOrCreatePoolSessionBead_ReusesCreatingBeforeCreatingNew(t *testing.T) {
+	// A creating pool session IS reused — no fresh bead created.
+	store := beads.NewMemStore()
+	cfgAgent := config.Agent{Name: "polecat", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+
+	creating, err := store.Create(beads.Bead{
+		Title:  "polecat",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:polecat"},
+		Metadata: map[string]string{
+			"template":     "polecat",
+			"session_name": "polecat-mc-new",
+			"state":        "creating",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := newSessionBeadSnapshot([]beads.Bead{creating})
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, err := selectOrCreatePoolSessionBead(bp, "polecat", nil, map[string]bool{})
+	if err != nil {
+		t.Fatalf("selectOrCreatePoolSessionBead: %v", err)
+	}
+	if result.ID != creating.ID {
+		t.Fatalf("creating pool session should be reused, got %s want %s", result.ID, creating.ID)
+	}
+}
+
+func TestSelectOrCreatePoolSessionBead_SkipsAsleepButReusesActive(t *testing.T) {
+	// With both an asleep and active bead for the same template,
+	// the active one is reused and the asleep one is ignored.
+	store := beads.NewMemStore()
+	cfgAgent := config.Agent{Name: "polecat", MinActiveSessions: intPtr(0), MaxActiveSessions: intPtr(5)}
+
+	asleep, err := store.Create(beads.Bead{
+		Title:  "polecat",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:polecat"},
+		Metadata: map[string]string{
+			"template":     "polecat",
+			"session_name": "polecat-mc-old",
+			"state":        "asleep",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.Create(beads.Bead{
+		Title:  "polecat",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:polecat"},
+		Metadata: map[string]string{
+			"template":     "polecat",
+			"session_name": "polecat-mc-live",
+			"state":        "active",
+			"pool_managed": "true",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := newSessionBeadSnapshot([]beads.Bead{asleep, active})
+	bp := &agentBuildParams{
+		beadStore:    store,
+		sessionBeads: snapshot,
+		agents:       []config.Agent{cfgAgent},
+	}
+
+	result, err := selectOrCreatePoolSessionBead(bp, "polecat", nil, map[string]bool{})
+	if err != nil {
+		t.Fatalf("selectOrCreatePoolSessionBead: %v", err)
+	}
+	if result.ID == asleep.ID {
+		t.Fatal("should skip asleep bead")
+	}
+	if result.ID != active.ID {
+		t.Fatalf("should reuse active bead, got %s want %s", result.ID, active.ID)
+	}
+}

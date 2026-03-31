@@ -497,3 +497,53 @@ func TestComputePoolDesiredStates_PerRigScoping(t *testing.T) {
 		t.Errorf("rig-scoped poolDesired = %d, want 1 (resume for rig work)", counts["myrig/claude"])
 	}
 }
+
+// TestResumeTier_AsleepSessionWithAssignedWork verifies that the resume tier
+// fires for an asleep session bead that has in-progress work assigned to it.
+// This is the exact scenario that caused the e2e failure: polecat claimed work,
+// then went to asleep (e.g. city restart). The resume tier must generate a
+// request pointing to the asleep bead so realizePoolDesiredSessions puts it
+// back in desired state and prevents the orphan close from killing it.
+func TestResumeTier_AsleepSessionWithAssignedWork(t *testing.T) {
+	cfg := &config.City{
+		Agents: []config.Agent{
+			poolAgent("polecat", "hello-world", intPtr(5), 0),
+		},
+	}
+
+	// Asleep session bead — polecat that ran, then was stopped (city restart).
+	sessions := []beads.Bead{
+		{ID: "mc-sctve", Status: "open", Type: "session", Metadata: map[string]string{
+			"template": "hello-world/polecat", "session_name": "polecat-mc-sctve",
+			"state": "asleep", "pool_managed": "true",
+		}},
+	}
+
+	// Work bead assigned to the asleep polecat.
+	work := []beads.Bead{
+		workBead("hw-8lb", "hello-world/polecat", "mc-sctve", "in_progress", 2),
+	}
+
+	scaleCheck := map[string]int{"hello-world/polecat": 1}
+
+	result := ComputePoolDesiredStates(cfg, work, sessions, scaleCheck)
+
+	// Must have a resume request pointing to mc-sctve.
+	var resumeFound bool
+	for _, state := range result {
+		for _, req := range state.Requests {
+			if req.Tier == "resume" && req.SessionBeadID == "mc-sctve" {
+				resumeFound = true
+			}
+		}
+	}
+	if !resumeFound {
+		// Dump what we got for debugging.
+		for _, state := range result {
+			for i, req := range state.Requests {
+				t.Logf("request[%d] tier=%s sessionBeadID=%s workBeadID=%s", i, req.Tier, req.SessionBeadID, req.WorkBeadID)
+			}
+		}
+		t.Fatal("resume tier must fire for asleep session with assigned work")
+	}
+}

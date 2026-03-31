@@ -775,7 +775,10 @@ func TestReconcileSessionBeads_ClearsIdleProbeForMissingSession(t *testing.T) {
 	}
 }
 
-func TestReconcileSessionBeads_WakesDependenciesForHardWakeRoots(t *testing.T) {
+func TestReconcileSessionBeads_AsleepSingletonsDoNotWakeViaScaleCheck(t *testing.T) {
+	// Asleep sessions are never restarted by scaleCheck/poolDesired alone.
+	// They wake only via direct assignment to their alias. The reconciler
+	// creates fresh sessions to fill demand instead of reusing asleep ones.
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		SessionSleep: config.SessionSleepConfig{
@@ -792,11 +795,6 @@ func TestReconcileSessionBeads_WakesDependenciesForHardWakeRoots(t *testing.T) {
 	apiSession := env.createSessionBead("api", "api")
 	cfgNames := configuredSessionNames(env.cfg, "", env.store)
 
-	// With WakeWork removed, demand is expressed via poolDesired which
-	// makes the session config-eligible and overrides sleep suppression.
-	// Both api AND its dependency db need poolDesired entries — in
-	// production, buildDesiredState computes poolDesired for all agents
-	// that have sessions in the desired set.
 	got := reconcileSessionBeads(
 		context.Background(),
 		[]beads.Bead{dbSession, apiSession},
@@ -819,12 +817,8 @@ func TestReconcileSessionBeads_WakesDependenciesForHardWakeRoots(t *testing.T) {
 		&env.stdout,
 		&env.stderr,
 	)
-	if got != 2 {
-		t.Fatalf("planned wakes = %d, want 2", got)
-	}
-	starts := startedSessionNames(env.sp)
-	if !starts["api"] || !starts["db"] {
-		t.Fatalf("expected api and db starts, got %v", starts)
+	if got != 0 {
+		t.Fatalf("planned wakes = %d, want 0 (asleep sessions stay asleep)", got)
 	}
 }
 

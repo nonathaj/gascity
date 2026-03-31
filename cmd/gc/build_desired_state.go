@@ -464,14 +464,6 @@ func discoverSessionBeadsWithRoots(
 		// no work.
 		if isMultiSessionCfgAgent(cfgAgent) {
 			manualSession := b.Metadata["manual_session"] == "true"
-			// Controller-owned multi-session session beads are realized exclusively
-			// via poolDesired. Rediscovering them here keeps drained/stale
-			// sessions in desired state forever, which prevents sweep from
-			// closing them and forces future generic demand to create fresh
-			// session beads instead of cleaning up the old ones.
-			// Exception: beads still in "creating" state haven't had their
-			// first start yet — they MUST enter desired state so the
-			// reconciler can wake them.
 			creating := b.Metadata["state"] == "creating"
 			if isPoolManagedSessionBead(b) && !manualSession && !isNamedSessionBead(b) && !creating {
 				continue
@@ -671,14 +663,17 @@ func selectOrCreatePoolSessionBead(
 	if preferred != nil && preferred.ID != "" && !used[preferred.ID] {
 		return *preferred, nil
 	}
-	// Reuse an existing active session bead. Skip drained sessions
-	// (dormant and only revived via explicit targeting / resume tier)
-	// and closed (terminal).
+	// Reuse an existing active/creating session bead. Skip drained, closed,
+	// and asleep — asleep ephemerals are not restarted; a fresh session is
+	// created instead. The reconciler closes orphaned asleep beads.
 	for _, bead := range bp.sessionBeads.Open() {
 		if bead.Status == "closed" {
 			continue
 		}
 		if isDrainedSessionBead(bead) {
+			continue
+		}
+		if bead.Metadata["state"] == "asleep" {
 			continue
 		}
 		if bead.Metadata["manual_session"] == boolMetadata(true) {

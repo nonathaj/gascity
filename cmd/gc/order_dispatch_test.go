@@ -567,7 +567,7 @@ func TestEffectiveTimeout(t *testing.T) {
 		maxTimeout time.Duration
 		want       time.Duration
 	}{
-		{"exec default", orders.Order{Exec: "x.sh"}, 0, 60 * time.Second},
+		{"exec default", orders.Order{Exec: "x.sh"}, 0, 300 * time.Second},
 		{"formula default", orders.Order{Formula: "mol-x"}, 0, 30 * time.Second},
 		{"custom timeout", orders.Order{Exec: "x.sh", Timeout: "90s"}, 0, 90 * time.Second},
 		{"capped by max", orders.Order{Exec: "x.sh", Timeout: "120s"}, 60 * time.Second, 60 * time.Second},
