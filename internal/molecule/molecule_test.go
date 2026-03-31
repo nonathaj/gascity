@@ -853,6 +853,8 @@ depends_on = ["implement"]
 }
 
 func TestCookEndToEndRalph(t *testing.T) {
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = false })
 	dir := t.TempDir()
 	toml := `
 formula = "ralph-demo"
@@ -888,29 +890,25 @@ timeout = "2m"
 		t.Fatalf("Cook: %v", err)
 	}
 
-	if result.Created != 5 {
-		t.Fatalf("Created = %d, want 5 (root + design + logical + run + check)", result.Created)
+	if result.Created != 4 {
+		t.Fatalf("Created = %d, want 4 (root + design + control + iteration)", result.Created)
 	}
 
 	root, err := store.Get(result.RootID)
 	if err != nil {
 		t.Fatalf("get root: %v", err)
 	}
-	logical, err := store.Get(result.IDMapping["ralph-demo.implement"])
+	control, err := store.Get(result.IDMapping["ralph-demo.implement"])
 	if err != nil {
-		t.Fatalf("get logical: %v", err)
+		t.Fatalf("get control: %v", err)
 	}
-	run, err := store.Get(result.IDMapping["ralph-demo.implement.run.1"])
+	iteration, err := store.Get(result.IDMapping["ralph-demo.implement.iteration.1"])
 	if err != nil {
-		t.Fatalf("get run: %v", err)
-	}
-	check, err := store.Get(result.IDMapping["ralph-demo.implement.check.1"])
-	if err != nil {
-		t.Fatalf("get check: %v", err)
+		t.Fatalf("get iteration: %v", err)
 	}
 
-	if logical.Metadata["gc.kind"] != "ralph" {
-		t.Fatalf("logical gc.kind = %q, want ralph", logical.Metadata["gc.kind"])
+	if control.Metadata["gc.kind"] != "ralph" {
+		t.Fatalf("control gc.kind = %q, want ralph", control.Metadata["gc.kind"])
 	}
 	if root.Metadata["gc.kind"] != "workflow" {
 		t.Fatalf("root gc.kind = %q, want workflow", root.Metadata["gc.kind"])
@@ -918,65 +916,42 @@ timeout = "2m"
 	if root.Type != "task" {
 		t.Fatalf("root type = %q, want task", root.Type)
 	}
-	if run.Metadata["gc.kind"] != "run" {
-		t.Fatalf("run gc.kind = %q, want run", run.Metadata["gc.kind"])
+	if control.Metadata["gc.check_mode"] != "exec" {
+		t.Fatalf("control gc.check_mode = %q, want exec", control.Metadata["gc.check_mode"])
 	}
-	if run.ParentID != "" {
-		t.Fatalf("run ParentID = %q, want detached graph node", run.ParentID)
+	if control.Metadata["gc.check_path"] != ".gascity/checks/widget.sh" {
+		t.Fatalf("control gc.check_path = %q, want .gascity/checks/widget.sh", control.Metadata["gc.check_path"])
 	}
-	if run.Metadata["gc.logical_bead_id"] != logical.ID {
-		t.Fatalf("run gc.logical_bead_id = %q, want %q", run.Metadata["gc.logical_bead_id"], logical.ID)
+	if iteration.Metadata["gc.ralph_step_id"] != "implement" {
+		t.Fatalf("iteration gc.ralph_step_id = %q, want implement", iteration.Metadata["gc.ralph_step_id"])
 	}
-	if run.Metadata["gc.root_bead_id"] != result.RootID {
-		t.Fatalf("run gc.root_bead_id = %q, want %q", run.Metadata["gc.root_bead_id"], result.RootID)
+	if iteration.Metadata["gc.attempt"] != "1" {
+		t.Fatalf("iteration gc.attempt = %q, want 1", iteration.Metadata["gc.attempt"])
 	}
-	if run.Metadata["custom"] != "value" {
-		t.Fatalf("run custom metadata = %q, want value", run.Metadata["custom"])
+	if iteration.ParentID != "" {
+		t.Fatalf("iteration ParentID = %q, want detached graph node", iteration.ParentID)
 	}
-	if check.Metadata["gc.kind"] != "check" {
-		t.Fatalf("check gc.kind = %q, want check", check.Metadata["gc.kind"])
+	if iteration.Metadata["gc.root_bead_id"] != result.RootID {
+		t.Fatalf("iteration gc.root_bead_id = %q, want %q", iteration.Metadata["gc.root_bead_id"], result.RootID)
 	}
-	if check.ParentID != "" {
-		t.Fatalf("check ParentID = %q, want detached graph node", check.ParentID)
-	}
-	if check.Metadata["gc.logical_bead_id"] != logical.ID {
-		t.Fatalf("check gc.logical_bead_id = %q, want %q", check.Metadata["gc.logical_bead_id"], logical.ID)
-	}
-	if check.Metadata["gc.root_bead_id"] != result.RootID {
-		t.Fatalf("check gc.root_bead_id = %q, want %q", check.Metadata["gc.root_bead_id"], result.RootID)
-	}
-	if check.Metadata["gc.check_path"] != ".gascity/checks/widget.sh" {
-		t.Fatalf("check gc.check_path = %q, want .gascity/checks/widget.sh", check.Metadata["gc.check_path"])
+	if iteration.Metadata["custom"] != "value" {
+		t.Fatalf("iteration custom metadata = %q, want value", iteration.Metadata["custom"])
 	}
 
-	checkDeps, err := store.DepList(check.ID, "down")
+	// Control bead blocks on iteration.
+	controlDeps, err := store.DepList(control.ID, "down")
 	if err != nil {
-		t.Fatalf("dep list check: %v", err)
+		t.Fatalf("dep list control: %v", err)
 	}
-	foundRunBlock := false
-	for _, dep := range checkDeps {
-		if dep.Type == "blocks" && dep.DependsOnID == run.ID {
-			foundRunBlock = true
+	foundIterBlock := false
+	for _, dep := range controlDeps {
+		if dep.Type == "blocks" && dep.DependsOnID == iteration.ID {
+			foundIterBlock = true
 			break
 		}
 	}
-	if !foundRunBlock {
-		t.Fatalf("check bead does not block on run bead; deps=%v", checkDeps)
-	}
-
-	logicalDeps, err := store.DepList(logical.ID, "down")
-	if err != nil {
-		t.Fatalf("dep list logical: %v", err)
-	}
-	foundCheckBlock := false
-	for _, dep := range logicalDeps {
-		if dep.Type == "blocks" && dep.DependsOnID == check.ID {
-			foundCheckBlock = true
-			break
-		}
-	}
-	if !foundCheckBlock {
-		t.Fatalf("logical bead does not block on check bead; deps=%v", logicalDeps)
+	if !foundIterBlock {
+		t.Fatalf("control bead does not block on iteration bead; deps=%v", controlDeps)
 	}
 
 	rootDeps, err := store.DepList(root.ID, "down")
@@ -984,7 +959,7 @@ timeout = "2m"
 		t.Fatalf("dep list root: %v", err)
 	}
 	foundDesignBlock := false
-	foundLogicalBlock := false
+	foundControlBlock := false
 	for _, dep := range rootDeps {
 		if dep.Type != "blocks" {
 			continue
@@ -992,19 +967,21 @@ timeout = "2m"
 		switch dep.DependsOnID {
 		case result.IDMapping["ralph-demo.design"]:
 			foundDesignBlock = true
-		case logical.ID:
-			foundLogicalBlock = true
+		case control.ID:
+			foundControlBlock = true
 		}
 	}
 	if !foundDesignBlock {
 		t.Fatalf("root bead does not block on design bead; deps=%v", rootDeps)
 	}
-	if !foundLogicalBlock {
-		t.Fatalf("root bead does not block on logical bead; deps=%v", rootDeps)
+	if !foundControlBlock {
+		t.Fatalf("root bead does not block on control bead; deps=%v", rootDeps)
 	}
 }
 
 func TestCookEndToEndScopedWorkflowStampsRootAndScopeMetadata(t *testing.T) {
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = false })
 	dir := t.TempDir()
 	toml := `
 formula = "scoped-demo"

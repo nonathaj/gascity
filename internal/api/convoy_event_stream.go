@@ -44,7 +44,7 @@ func streamProjectedEventsWithWatcher(
 	ctx context.Context,
 	w http.ResponseWriter,
 	watcher events.Watcher,
-	_ State,
+	state State,
 ) {
 	defer watcher.Close() //nolint:errcheck
 
@@ -78,7 +78,8 @@ func streamProjectedEventsWithWatcher(
 				return
 			}
 			data, err := json.Marshal(eventStreamEnvelope{
-				Event: r.event,
+				Event:    r.event,
+				Workflow: projectWorkflowEvent(state, r.event),
 			})
 			if err == nil {
 				writeSSE(w, r.event.Type, r.event.Seq, data)
@@ -95,7 +96,7 @@ func streamProjectedGlobalEvents(
 	w http.ResponseWriter,
 	mw *events.MuxWatcher,
 	cursors map[string]uint64,
-	_ CityResolver,
+	resolver CityResolver,
 ) {
 	defer mw.Close() //nolint:errcheck
 
@@ -133,8 +134,13 @@ func streamProjectedGlobalEvents(
 				return
 			}
 			cursors[r.event.City] = r.event.Seq
+			var wfp *workflowEventProjection
+			if cs := resolver.CityState(r.event.City); cs != nil {
+				wfp = projectWorkflowEvent(cs, r.event.Event)
+			}
 			data, err := json.Marshal(taggedEventStreamEnvelope{
 				TaggedEvent: r.event,
+				Workflow:    wfp,
 			})
 			if err == nil {
 				cursorID := events.FormatCursor(cursors)

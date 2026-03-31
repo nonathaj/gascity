@@ -51,7 +51,9 @@ func TestSessionWithinDesiredConfig_ManualPoolSessionIsNotConfigEligible(t *test
 	if agent == nil {
 		t.Fatal("sessionWithinDesiredConfig returned nil agent")
 	}
-	if eligible {
-		t.Fatal("manual pool session should not be config-eligible")
+	// Manual sessions on multi-session (implicit) agents are config-eligible
+	// so they get WakeConfig and survive the reconciler.
+	if !eligible {
+		t.Fatal("manual pool session should be config-eligible")
 	}
 }

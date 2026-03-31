@@ -343,17 +343,20 @@ func TestBuildAttemptRecipeEnrichesNestedRetryChildren(t *testing.T) {
 
 	recipe := buildAttemptRecipe(step, control, 2)
 
-	// Should have 3 steps: scope root + 2 children.
-	if len(recipe.Steps) != 3 {
-		t.Fatalf("steps = %d, want 3", len(recipe.Steps))
+	// Should have 4 steps: scope root + 2 children + 1 spec bead.
+	if len(recipe.Steps) != 4 {
+		t.Fatalf("steps = %d, want 4", len(recipe.Steps))
 	}
 
 	// Find the review-code child step.
 	var reviewStep *formula.RecipeStep
+	var specStep *formula.RecipeStep
 	for i := range recipe.Steps {
 		if recipe.Steps[i].ID == "mol-demo.self-review.iteration.2.review-code" {
 			reviewStep = &recipe.Steps[i]
-			break
+		}
+		if recipe.Steps[i].ID == "mol-demo.self-review.iteration.2.review-code.spec" {
+			specStep = &recipe.Steps[i]
 		}
 	}
 	if reviewStep == nil {
@@ -374,13 +377,15 @@ func TestBuildAttemptRecipeEnrichesNestedRetryChildren(t *testing.T) {
 		t.Errorf("review-code gc.on_exhausted = %q, want soft_fail", reviewStep.Metadata["gc.on_exhausted"])
 	}
 
-	// Should have frozen step spec.
-	specJSON := reviewStep.Metadata["gc.source_step_spec"]
-	if specJSON == "" {
-		t.Fatal("review-code missing gc.source_step_spec")
+	// Frozen step spec stored as a separate spec bead.
+	if specStep == nil {
+		t.Fatal("review-code.spec bead not found in recipe")
+	}
+	if specStep.Metadata["gc.kind"] != "spec" {
+		t.Errorf("spec gc.kind = %q, want spec", specStep.Metadata["gc.kind"])
 	}
 	var frozenSpec formula.Step
-	if err := json.Unmarshal([]byte(specJSON), &frozenSpec); err != nil {
+	if err := json.Unmarshal([]byte(specStep.Description), &frozenSpec); err != nil {
 		t.Fatalf("unmarshal frozen spec: %v", err)
 	}
 	if frozenSpec.ID != "review-code" {
@@ -392,7 +397,7 @@ func TestBuildAttemptRecipeEnrichesNestedRetryChildren(t *testing.T) {
 }
 
 // TestBuildAttemptRecipeEnrichesNestedRalphChildren verifies that
-// buildAttemptRecipe propagates gc.kind, gc.check_*, gc.source_step_spec
+// buildAttemptRecipe propagates gc.kind, gc.check_*, and a spec bead
 // for nested ralph children.
 func TestBuildAttemptRecipeEnrichesNestedRalphChildren(t *testing.T) {
 	t.Parallel()
@@ -456,8 +461,18 @@ func TestBuildAttemptRecipeEnrichesNestedRalphChildren(t *testing.T) {
 	if innerStep.Metadata["gc.check_timeout"] != "30s" {
 		t.Errorf("inner gc.check_timeout = %q, want 30s", innerStep.Metadata["gc.check_timeout"])
 	}
-	if innerStep.Metadata["gc.source_step_spec"] == "" {
-		t.Error("inner missing gc.source_step_spec")
+	// Frozen step spec stored as a separate spec bead.
+	var innerSpecStep *formula.RecipeStep
+	for i := range recipe.Steps {
+		if recipe.Steps[i].ID == "mol-test.converge.iteration.1.inner-converge.spec" {
+			innerSpecStep = &recipe.Steps[i]
+			break
+		}
+	}
+	if innerSpecStep == nil {
+		t.Error("inner missing spec bead for frozen step spec")
+	} else if innerSpecStep.Metadata["gc.kind"] != "spec" {
+		t.Errorf("inner spec gc.kind = %q, want spec", innerSpecStep.Metadata["gc.kind"])
 	}
 }
 

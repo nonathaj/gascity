@@ -1027,15 +1027,27 @@ func TestBuildAttemptRecipeComposeExpandFanout(t *testing.T) {
 	}
 
 	// Children with retry should have gc.kind=retry in metadata.
+	foundRetryStep := false
+	foundSpecBead := false
 	for _, s := range recipe.Steps {
 		if s.ID == scopeID+".review-pipeline.review-claude" {
+			foundRetryStep = true
 			if s.Metadata["gc.kind"] != "retry" {
 				t.Errorf("review-claude gc.kind = %q, want retry", s.Metadata["gc.kind"])
 			}
-			if s.Metadata["gc.source_step_spec"] == "" {
-				t.Error("review-claude missing frozen step spec")
+		}
+		if s.ID == scopeID+".review-pipeline.review-claude.spec" {
+			foundSpecBead = true
+			if s.Metadata["gc.kind"] != "spec" {
+				t.Errorf("review-claude spec gc.kind = %q, want spec", s.Metadata["gc.kind"])
 			}
 		}
+	}
+	if !foundRetryStep {
+		t.Error("review-claude retry step not found")
+	}
+	if !foundSpecBead {
+		t.Error("review-claude missing spec bead for frozen step spec")
 	}
 }
 

@@ -469,7 +469,7 @@ func TestWakeReasons_DependencyOnlyPoolSlotDoesNotWakeOnWork(t *testing.T) {
 	}
 }
 
-func TestWakeReasons_ManualPoolSessionDoesNotGetWakeConfigAtZeroScale(t *testing.T) {
+func TestWakeReasons_ManualPoolSessionGetsWakeConfigOnImplicitAgent(t *testing.T) {
 	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
 	clk := &clock.Fake{Time: now}
 
@@ -485,10 +485,17 @@ func TestWakeReasons_ManualPoolSessionDoesNotGetWakeConfigAtZeroScale(t *testing
 		"manual_session": "true",
 	}), cfg, nil, map[string]int{"pooled": 0}, nil, nil, clk)
 
+	// Manual sessions on multi-session (implicit) agents are config-eligible
+	// and should get WakeConfig so they survive the reconciler.
+	foundWakeConfig := false
 	for _, r := range reasons {
 		if r == WakeConfig {
-			t.Fatalf("manual pool session should not get WakeConfig at zero scale, got %v", reasons)
+			foundWakeConfig = true
+			break
 		}
+	}
+	if !foundWakeConfig {
+		t.Fatalf("manual pool session should get WakeConfig, got %v", reasons)
 	}
 }
 
