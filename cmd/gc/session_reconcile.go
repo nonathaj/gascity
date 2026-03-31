@@ -127,7 +127,11 @@ func sessionWithinDesiredConfig(session beads.Bead, cfg *config.City, poolDesire
 		return agent, false
 	}
 	if isNamedSessionBead(session) {
-		return agent, namedSessionMode(session) == "always"
+		// Named sessions are config-eligible when they're "always" mode OR
+		// when poolDesired > 0 (on_demand with active demand — e.g., work
+		// assigned to their alias). buildDesiredState only adds on_demand
+		// sessions when namedWorkReady is true.
+		return agent, namedSessionMode(session) == "always" || poolDesired[template] > 0
 	}
 	if session.Metadata["manual_session"] == "true" && isMultiSessionCfgAgent(agent) {
 		// Manual sessions on multi-session (implicit) agents are always

@@ -189,6 +189,14 @@ func buildDesiredStateWithSessionBeads(
 	var assignedWorkBeads []beads.Bead
 	if store != nil {
 		assignedWorkBeads = collectAssignedWorkBeads(cfg, store, rigStores, suspendedRigPaths)
+		if len(assignedWorkBeads) > 0 {
+			fmt.Fprintf(stderr, "assignedWorkBeads: %d beads found\n", len(assignedWorkBeads)) //nolint:errcheck
+			for _, wb := range assignedWorkBeads {
+				fmt.Fprintf(stderr, "  %s assignee=%s routed=%s status=%s\n", wb.ID, wb.Assignee, wb.Metadata["gc.routed_to"], wb.Status) //nolint:errcheck
+			}
+		} else {
+			fmt.Fprintf(stderr, "assignedWorkBeads: 0 beads (rigStores=%d)\n", len(rigStores)) //nolint:errcheck
+		}
 		poolDesiredStates := ComputePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads.Open(), scaleCheckCounts)
 		for _, poolState := range poolDesiredStates {
 			cfgAgent := findAgentByTemplate(cfg, poolState.Template)
@@ -254,10 +262,14 @@ func buildDesiredStateWithSessionBeads(
 	for identity := range namedSpecs {
 		for _, wb := range assignedWorkBeads {
 			if strings.TrimSpace(wb.Assignee) == identity && (wb.Status == "open" || wb.Status == "in_progress") {
+				fmt.Fprintf(stderr, "namedWorkReady: %s matched by bead %s (assignee=%s status=%s)\n", identity, wb.ID, wb.Assignee, wb.Status) //nolint:errcheck
 				namedWorkReady[identity] = true
 				break
 			}
 		}
+	}
+	if len(assignedWorkBeads) > 0 {
+		fmt.Fprintf(stderr, "namedWorkReady: %d assigned beads, %d named specs, ready=%v\n", len(assignedWorkBeads), len(namedSpecs), namedWorkReady) //nolint:errcheck
 	}
 	for identity, spec := range namedSpecs {
 		if spec.Mode == "always" || namedWorkReady[identity] {

@@ -146,6 +146,26 @@ func syncSessionBeadsWithSnapshot(
 		}
 	}
 
+	// Close duplicate open beads: only the last bead per session_name
+	// (the one in bySessionName) should remain open. This prevents bead
+	// accumulation when multiple beads are created for the same session
+	// across restarts or config-drift cycles.
+	for i, b := range openBeads {
+		if b.Status == "closed" {
+			continue
+		}
+		sn := b.Metadata["session_name"]
+		if sn == "" {
+			continue
+		}
+		canonical, ok := bySessionName[sn]
+		if ok && canonical.ID != b.ID {
+			if closeBead(store, b.ID, "duplicate", clk.Now().UTC(), stderr) {
+				openBeads[i].Status = "closed"
+			}
+		}
+	}
+
 	// Track open bead IDs for the returned index.
 	openIndex := make(map[string]string, len(desiredState))
 	downgraded := make(map[string]bool)
