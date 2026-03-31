@@ -17,6 +17,7 @@ import (
 func bdCommandRunnerForCity(cityPath string) beads.CommandRunner {
 	return func(dir, name string, args ...string) ([]byte, error) {
 		env := bdRuntimeEnv(cityPath)
+		env["BEADS_DIR"] = filepath.Join(dir, ".beads")
 		runner := beads.ExecCommandRunnerWithEnv(env)
 		return runner(dir, name, args...)
 	}
