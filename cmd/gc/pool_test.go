@@ -711,17 +711,8 @@ func TestShellScaleCheck_NoBEADS_DOLT_PORT_Injection(t *testing.T) {
 		t.Fatalf("BEADS_DOLT_PORT = %q in subprocess, want %q (should not be set)", trimmed, "unset")
 	}
 
-	// BUG: PR #207 — for a rig-scoped agent with a managed Dolt server,
-	// the scale_check subprocess SHOULD receive BEADS_DOLT_PORT so bd
-	// commands can connect. When the parent process does NOT have the
-	// var set (the controller manages ports per-rig, not globally),
-	// the subprocess must still receive it via explicit injection.
-	t.Setenv("BEADS_DOLT_PORT", "") // explicitly unset
-	out2, err := shellScaleCheck("echo ${BEADS_DOLT_PORT:-unset}", "")
-	if err != nil {
-		t.Fatalf("shellScaleCheck: %v", err)
-	}
-	if strings.TrimSpace(out2) == "unset" {
-		t.Fatalf("BEADS_DOLT_PORT not injected into scale_check subprocess — rig-scoped pool agents with managed Dolt will fail (PR #207)")
-	}
+	// Note: BEADS_DOLT_PORT injection happens at the evaluatePendingPools
+	// level (PR #207), not in shellScaleCheck itself. See
+	// TestBuildDesiredState_PoolCheckInjectsDoltPortForRigScopedAgent
+	// for the integration test.
 }
