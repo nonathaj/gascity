@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -234,8 +235,8 @@ func cityFormulaLayers(cityPath string, cfg *config.City) []string {
 func cityOrderRoots(cityPath string, cfg *config.City) []orders.ScanRoot {
 	formulaLayers := cityFormulaLayers(cityPath, cfg)
 	localFormulas := citylayout.ResolveFormulasDir(cityPath, cfg.FormulasDir())
-	roots := make([]orders.ScanRoot, 0, len(formulaLayers)+2)
-	seen := make(map[string]bool, len(formulaLayers)+2)
+	roots := make([]orders.ScanRoot, 0, len(formulaLayers)+len(cfg.PackDirs)+2)
+	seen := make(map[string]bool, len(formulaLayers)+len(cfg.PackDirs)+2)
 	appendRoot := func(root orders.ScanRoot) {
 		dir := filepath.Clean(root.Dir)
 		if seen[dir] {
@@ -244,6 +245,37 @@ func cityOrderRoots(cityPath string, cfg *config.City) []orders.ScanRoot {
 		seen[dir] = true
 		roots = append(roots, root)
 	}
+
+	// 1. On-disk user packs (lowest priority). Scan packs/*/ for order
+	// directories. These packs may exist on disk without being listed
+	// in workspace.includes (e.g. materialized by gc init).
+	packsDir := filepath.Join(cityPath, "packs")
+	if entries, err := os.ReadDir(packsDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			formulaLayer := filepath.Join(packsDir, e.Name(), "formulas")
+			appendRoot(orders.ScanRoot{
+				Dir:          filepath.Join(formulaLayer, "orders"),
+				FormulaLayer: formulaLayer,
+			})
+		}
+	}
+
+	// 2. System + user packs via PackDirs. injectBuiltinPacks adds
+	// system packs to PackDirs but not to FormulaLayers.City, so
+	// orders in those packs would otherwise be invisible.
+	for _, packDir := range cfg.PackDirs {
+		formulaLayer := filepath.Join(packDir, "formulas")
+		appendRoot(orders.ScanRoot{
+			Dir:          filepath.Join(formulaLayer, "orders"),
+			FormulaLayer: formulaLayer,
+		})
+	}
+
+	// 3. Formula layers (highest priority). City-local formulas
+	// override pack formulas when order names collide.
 	for _, layer := range formulaLayers {
 		formulaRoot := filepath.Join(layer, "orders")
 		if layer == localFormulas {
@@ -262,18 +294,6 @@ func cityOrderRoots(cityPath string, cfg *config.City) []orders.ScanRoot {
 		appendRoot(orders.ScanRoot{
 			Dir:          formulaRoot,
 			FormulaLayer: layer,
-		})
-	}
-
-	// Also scan pack formula dirs (system + user packs via PackDirs).
-	// injectBuiltinPacks adds system packs to PackDirs but not to
-	// FormulaLayers.City, so orders in those packs would otherwise be
-	// invisible to the CLI and API.
-	for _, packDir := range cfg.PackDirs {
-		formulaLayer := filepath.Join(packDir, "formulas")
-		appendRoot(orders.ScanRoot{
-			Dir:          filepath.Join(formulaLayer, "orders"),
-			FormulaLayer: formulaLayer,
 		})
 	}
 
