@@ -387,7 +387,11 @@ func (s *Server) beadStoresForID(id string) []beads.Store {
 
 	stores := s.state.BeadStores()
 	rigNames := sortedRigNames(stores)
-	candidates := make([]beads.Store, 0, len(rigNames))
+	candidates := make([]beads.Store, 0, len(rigNames)+1)
+	// City-scoped session beads live in the city store, not any rig store.
+	if cityStore := s.state.CityBeadStore(); cityStore != nil {
+		candidates = append(candidates, cityStore)
+	}
 	for _, rigName := range rigNames {
 		candidates = append(candidates, stores[rigName])
 	}
