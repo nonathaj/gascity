@@ -53,7 +53,7 @@ func ExecCommandRunnerWithEnv(env map[string]string) CommandRunner {
 				time.Now().UTC().Format(time.RFC3339Nano), status, time.Since(start), dir, name, args, msg)
 		}
 		trace("start", nil)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, name, args...)
 		cmd.WaitDelay = 2 * time.Second
@@ -70,7 +70,7 @@ func ExecCommandRunnerWithEnv(env map[string]string) CommandRunner {
 				err, out, stderr.String())
 		}
 		if ctx.Err() == context.DeadlineExceeded {
-			timeoutErr := fmt.Errorf("timed out after 30s")
+			timeoutErr := fmt.Errorf("timed out after 120s")
 			trace("timeout", timeoutErr)
 			if stderr.Len() > 0 {
 				return out, fmt.Errorf("%w: %s", timeoutErr, stderr.String())
