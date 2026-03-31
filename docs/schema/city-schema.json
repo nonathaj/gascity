@@ -866,9 +866,13 @@
     },
     "DaemonConfig": {
       "properties": {
+        "formula_v2": {
+          "type": "boolean",
+          "description": "FormulaV2 enables formula v2 graph workflow infrastructure:\nthe workflow-control implicit agent, graph.v2 formula compilation,\nand batch graph-apply bead creation. Requires bd with --graph support.\nDefault: false (opt-in while the feature stabilizes)."
+        },
         "graph_workflows": {
           "type": "boolean",
-          "description": "GraphWorkflows enables formula v2 graph workflow infrastructure:\nthe workflow-control implicit agent, graph.v2 formula compilation,\nand batch graph-apply bead creation. Requires bd with --graph support.\nDefault: false (opt-in while the feature stabilizes)."
+          "description": "Deprecated alias for formula_v2. If graph_workflows is true and formula_v2 is not set, formula_v2 is promoted automatically during parsing."
         },
         "patrol_interval": {
           "type": "string",

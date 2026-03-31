@@ -14,7 +14,7 @@ import (
 
 // GraphApplyEnabled controls whether Instantiate uses the GraphApplyStore
 // batch path. When false, falls back to sequential bead creation.
-// Set by the daemon config loader from [daemon] graph_workflows.
+// Set by the daemon config loader from [daemon] formula_v2.
 var GraphApplyEnabled bool
 
 func graphApplyTracef(format string, args ...any) {

@@ -12,15 +12,14 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/dispatch"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/formula"
-	"github.com/gastownhall/gascity/internal/workflow"
-	"github.com/spf13/cobra"
 )
 
 const graphExecutionRouteMetaKey = "gc.execution_routed_to"
 
-func isWorkflowControlKind(kind string) bool {
+func isControlDispatcherKind(kind string) bool {
 	switch kind {
 	case "check", "fanout", "retry-eval", "scope-check", "workflow-finalize", "retry", "ralph":
 		return true
@@ -43,13 +42,13 @@ func workflowExecutionRoute(bead beads.Bead) string {
 	return workflowExecutionRouteFromMeta(bead.Metadata)
 }
 
-func workflowControlBinding(store beads.Store, cityName string, cfg *config.City, rigContext string) (graphRouteBinding, error) {
+func controlDispatcherBinding(store beads.Store, cityName string, cfg *config.City, rigContext string) (graphRouteBinding, error) {
 	if cfg == nil {
-		return graphRouteBinding{}, fmt.Errorf("workflow-control route requires config")
+		return graphRouteBinding{}, fmt.Errorf("control-dispatcher route requires config")
 	}
-	agentCfg, ok := resolveAgentIdentity(cfg, config.WorkflowControlAgentName, rigContext)
+	agentCfg, ok := resolveAgentIdentity(cfg, config.ControlDispatcherAgentName, rigContext)
 	if !ok {
-		return graphRouteBinding{}, fmt.Errorf("workflow-control agent %q not found", config.WorkflowControlAgentName)
+		return graphRouteBinding{}, fmt.Errorf("control-dispatcher agent %q not found", config.ControlDispatcherAgentName)
 	}
 	binding := graphRouteBinding{qualifiedName: agentCfg.QualifiedName()}
 	if isMultiSessionCfgAgent(&agentCfg) {
@@ -89,9 +88,9 @@ func assignGraphStepRoute(step *formula.RecipeStep, executionBinding graphRouteB
 
 var (
 	workflowServeList               = nextWorkflowServeBeads
-	workflowServeControl            = runWorkflowControl
+	controlDispatcherServe          = runControlDispatcher
 	workflowServeOpenEventsProvider = func(stderr io.Writer) (events.Provider, error) {
-		ep, code := openCityEventsProvider(stderr, "gc workflow serve")
+		ep, code := openCityEventsProvider(stderr, "gc convoy control --serve")
 		if ep == nil {
 			return nil, fmt.Errorf("opening events provider (exit %d)", code)
 		}
@@ -104,27 +103,17 @@ var (
 
 const workflowServeScanLimit = 20
 
-func newWorkflowServeCmd(stdout, stderr io.Writer) *cobra.Command {
-	var follow bool
-	cmd := &cobra.Command{
-		Use:    "serve [agent]",
-		Short:  "Run graph.v2 workflow control work",
-		Hidden: true,
-		Args:   cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			var agentName string
-			if len(args) > 0 {
-				agentName = args[0]
-			}
-			if err := runWorkflowServe(agentName, follow, stdout, stderr); err != nil {
-				fmt.Fprintf(stderr, "gc workflow serve: %v\n", err) //nolint:errcheck
-				return errExit
-			}
-			return nil
-		},
+// runConvoyControlServe is the entry point for `gc convoy control --serve`.
+func runConvoyControlServe(args []string, stdout, stderr io.Writer) error {
+	var agentName string
+	if len(args) > 0 {
+		agentName = args[0]
 	}
-	cmd.Flags().BoolVar(&follow, "follow", false, "Stay resident and wait for workflow-relevant city events")
-	return cmd
+	if err := runWorkflowServe(agentName, true, stdout, stderr); err != nil {
+		fmt.Fprintf(stderr, "gc convoy control --serve: %v\n", err) //nolint:errcheck
+		return errExit
+	}
+	return nil
 }
 
 type hookBead struct {
@@ -181,7 +170,7 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 		agentName = os.Getenv("GC_AGENT")
 	}
 	if agentName == "" {
-		agentName = config.WorkflowControlAgentName
+		agentName = config.ControlDispatcherAgentName
 	}
 	agentCfg, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 	if !ok {
@@ -221,13 +210,13 @@ func drainWorkflowServeWork(agentCfg config.Agent, workDir string, stderr io.Wri
 		for _, candidate := range queue {
 			beadID := candidate.ID
 			kind := strings.TrimSpace(candidate.Metadata["gc.kind"])
-			if !isWorkflowControlKind(kind) {
+			if !isControlDispatcherKind(kind) {
 				workflowTracef("serve unexpected-kind bead=%s kind=%s", beadID, kind)
 				return processedAny, fmt.Errorf("bead %s has unexpected non-control kind %q", beadID, kind)
 			}
 			workflowTracef("serve process bead=%s kind=%s", beadID, kind)
-			if err := workflowServeControl(beadID, io.Discard, stderr); err != nil {
-				if errors.Is(err, workflow.ErrControlPending) {
+			if err := controlDispatcherServe(beadID, io.Discard, stderr); err != nil {
+				if errors.Is(err, dispatch.ErrControlPending) {
 					pendingCount++
 					workflowTracef("serve pending bead=%s kind=%s", beadID, kind)
 					continue

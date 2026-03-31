@@ -9,60 +9,76 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/dispatch"
 	"github.com/gastownhall/gascity/internal/formula"
-	"github.com/gastownhall/gascity/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
-var workflowControlSessionProvider = newSessionProvider
+var dispatchControlSessionProvider = newSessionProvider
 
+// convoyDispatchSubcommands returns the dispatch-related subcommands to add to gc convoy.
+func convoyDispatchSubcommands(stdout, stderr io.Writer) []*cobra.Command {
+	return []*cobra.Command{
+		newConvoyControlCmd(stdout, stderr),
+		newConvoyPokeCmd(stdout, stderr),
+		newConvoyDeleteCmd(stdout, stderr),
+	}
+}
+
+// newWorkflowCmd returns a hidden alias for backwards compatibility.
 func newWorkflowCmd(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "workflow",
-		Short: "Run explicit graph-first workflow control beads",
+		Use:    "workflow",
+		Short:  "Alias for gc convoy (deprecated)",
+		Hidden: true,
 	}
-	cmd.AddCommand(
-		newWorkflowControlCmd(stdout, stderr),
-		newWorkflowPokeCmd(stdout, stderr),
-		newWorkflowServeCmd(stdout, stderr),
-		newWorkflowDeleteCmd(stdout, stderr),
-	)
+	cmd.AddCommand(convoyDispatchSubcommands(stdout, stderr)...)
 	return cmd
 }
 
-func newWorkflowControlCmd(stdout, stderr io.Writer) *cobra.Command {
+func newConvoyControlCmd(stdout, stderr io.Writer) *cobra.Command {
+	var serve bool
 	cmd := &cobra.Command{
-		Use:   "control <bead-id>",
-		Short: "Execute a graph.v2 control bead in the current city",
-		Args:  cobra.ExactArgs(1),
+		Use:   "control [bead-id]",
+		Short: "Execute control beads or run the control-dispatcher loop",
+		Long: `Process a single control bead, or run the control-dispatcher loop
+with --serve to continuously process ready control beads.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if err := runWorkflowControl(args[0], stdout, stderr); err != nil {
-				if errors.Is(err, workflow.ErrControlPending) {
+			if serve {
+				return runConvoyControlServe(args, stdout, stderr)
+			}
+			if len(args) == 0 {
+				return fmt.Errorf("bead-id is required (or use --serve)")
+			}
+			if err := runControlDispatcher(args[0], stdout, stderr); err != nil {
+				if errors.Is(err, dispatch.ErrControlPending) {
 					return nil
 				}
-				fmt.Fprintf(stderr, "gc workflow control: %v\n", err) //nolint:errcheck
+				fmt.Fprintf(stderr, "gc convoy control: %v\n", err) //nolint:errcheck
 				return errExit
 			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&serve, "serve", false, "Run the control-dispatcher loop (continuous)")
 	return cmd
 }
 
-func newWorkflowPokeCmd(_ io.Writer, stderr io.Writer) *cobra.Command {
+func newConvoyPokeCmd(_ io.Writer, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "poke",
-		Short:  "Trigger immediate workflow/control reconciliation",
+		Short:  "Trigger immediate control dispatch reconciliation",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			cityPath, err := resolveCity()
 			if err != nil {
-				fmt.Fprintf(stderr, "gc workflow poke: %v\n", err) //nolint:errcheck
+				fmt.Fprintf(stderr, "gc convoy poke: %v\n", err) //nolint:errcheck
 				return errExit
 			}
-			if err := pokeWorkflowControl(cityPath); err != nil {
-				fmt.Fprintf(stderr, "gc workflow poke: %v\n", err) //nolint:errcheck
+			if err := pokeControlDispatch(cityPath); err != nil {
+				fmt.Fprintf(stderr, "gc convoy poke: %v\n", err) //nolint:errcheck
 				return errExit
 			}
 			return nil
@@ -71,14 +87,14 @@ func newWorkflowPokeCmd(_ io.Writer, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
-func pokeWorkflowControl(cityPath string) error {
-	if _, err := sendControllerCommand(cityPath, "workflow-control"); err == nil {
+func pokeControlDispatch(cityPath string) error {
+	if _, err := sendControllerCommand(cityPath, "control-dispatcher"); err == nil {
 		return nil
 	}
 	return pokeController(cityPath)
 }
 
-func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
+func runControlDispatcher(beadID string, stdout, _ io.Writer) error {
 	cityPath, err := resolveCity()
 	if err != nil {
 		return err
@@ -92,7 +108,7 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 		return fmt.Errorf("loading bead %s: %w", beadID, err)
 	}
 
-	opts := workflow.ProcessOptions{CityPath: cityPath}
+	opts := dispatch.ProcessOptions{CityPath: cityPath}
 	loadCfg := false
 	switch bead.Metadata["gc.kind"] {
 	case "check", "fanout", "retry-eval", "retry", "ralph":
@@ -110,7 +126,7 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 				return decorateDynamicFragmentRecipe(fragment, source, store, cfg.Workspace.Name, cfg)
 			}
 		case "retry-eval":
-			sp := workflowControlSessionProvider()
+			sp := dispatchControlSessionProvider()
 			opts.RecycleSession = func(subject beads.Bead) error {
 				if strings.TrimSpace(subject.Assignee) == "" {
 					return fmt.Errorf("subject %s missing assignee for pooled retry recycle", subject.ID)
@@ -119,7 +135,7 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 			}
 		case "retry", "ralph":
 			opts.FormulaSearchPaths = workflowFormulaSearchPaths(cfg, bead)
-			sp := workflowControlSessionProvider()
+			sp := dispatchControlSessionProvider()
 			opts.RecycleSession = func(subject beads.Bead) error {
 				if strings.TrimSpace(subject.Assignee) == "" {
 					return fmt.Errorf("subject %s missing assignee for pooled retry recycle", subject.ID)
@@ -129,12 +145,12 @@ func runWorkflowControl(beadID string, stdout, _ io.Writer) error {
 		}
 	}
 
-	result, err := workflow.ProcessControl(store, bead, opts)
+	result, err := dispatch.ProcessControl(store, bead, opts)
 	if err != nil {
 		return err
 	}
 	if result.Processed {
-		fmt.Fprintf(stdout, "workflow control: bead=%s action=%s", beadID, result.Action) //nolint:errcheck
+		fmt.Fprintf(stdout, "control dispatch: bead=%s action=%s", beadID, result.Action) //nolint:errcheck
 		if result.Created > 0 {
 			fmt.Fprintf(stdout, " created=%d", result.Created) //nolint:errcheck
 		}
@@ -199,7 +215,7 @@ func decorateDynamicFragmentRecipe(fragment *formula.FragmentRecipe, source bead
 		return err
 	}
 	routingRigContext := graphRouteRigContext(defaultRoute.qualifiedName)
-	controlRoute, err := workflowControlBinding(store, cityName, cfg, routingRigContext)
+	controlRoute, err := controlDispatcherBinding(store, cityName, cfg, routingRigContext)
 	if err != nil {
 		return err
 	}
@@ -243,7 +259,7 @@ func decorateDynamicFragmentRecipe(fragment *formula.FragmentRecipe, source bead
 		if err != nil {
 			return err
 		}
-		if isWorkflowControlKind(step.Metadata["gc.kind"]) {
+		if isControlDispatcherKind(step.Metadata["gc.kind"]) {
 			assignGraphStepRoute(step, binding, &controlRoute)
 			continue
 		}
@@ -315,15 +331,15 @@ func propagateDynamicScopeMetadata(step *formula.RecipeStep, source beads.Bead) 
 	}
 }
 
-func newWorkflowDeleteCmd(stdout, stderr io.Writer) *cobra.Command {
+func newConvoyDeleteCmd(stdout, stderr io.Writer) *cobra.Command {
 	var force bool
 	var deleteBeads bool
 	cmd := &cobra.Command{
-		Use:   "delete <workflow-id>",
-		Short: "Close and optionally delete a workflow and all its beads",
-		Long: `Close all open beads in a workflow, then optionally delete them.
+		Use:   "delete <convoy-id>",
+		Short: "Close and optionally delete a convoy and all its beads",
+		Long: `Close all open beads in a convoy, then optionally delete them.
 
-Searches all stores (city + rigs) for the workflow root and all beads
+Searches all stores (city + rigs) for the convoy root and all beads
 with matching gc.root_bead_id. Without --force, shows a preview.
 
 By default, beads are closed with gc.outcome=skipped. Use --delete to

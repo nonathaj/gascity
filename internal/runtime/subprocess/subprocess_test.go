@@ -37,7 +37,7 @@ func TestStartLongSocketPathUsesShortSocketName(t *testing.T) {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	const name = "workflow-control"
+	const name = "control-dispatcher"
 	longDir := ""
 	for i := 1; i <= 32; i++ {
 		candidate := filepath.Join(root, strings.Repeat("deep-path-", i), "socks")

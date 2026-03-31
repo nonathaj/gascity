@@ -15,7 +15,7 @@ func TestDecorateGraphWorkflowRecipeSubstitutesRouteTargetsWithinRigContext(t *t
 		Agents: []config.Agent{
 			{Name: "claude", Dir: "frontend", MaxActiveSessions: intPtr(1)},
 			{Name: "codex", Dir: "frontend", MaxActiveSessions: intPtr(1)},
-			{Name: "workflow-control", Dir: "frontend", MinActiveSessions: intPtr(1), MaxActiveSessions: intPtr(1)},
+			{Name: "control-dispatcher", Dir: "frontend", MinActiveSessions: intPtr(1), MaxActiveSessions: intPtr(1)},
 		},
 	}
 	config.InjectImplicitAgents(cfg)

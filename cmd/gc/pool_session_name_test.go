@@ -15,7 +15,7 @@ func TestPoolSessionName(t *testing.T) {
 		{"gascity/claude", "mc-xyz", "claude-mc-xyz"},
 		{"claude", "mc-abc", "claude-mc-abc"},
 		{"myrig/codex", "mc-123", "codex-mc-123"},
-		{"workflow-control", "mc-wfc", "workflow-control-mc-wfc"},
+		{"control-dispatcher", "mc-wfc", "control-dispatcher-mc-wfc"},
 	}
 	for _, tt := range tests {
 		got := PoolSessionName(tt.template, tt.beadID)

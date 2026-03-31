@@ -232,7 +232,8 @@ DaemonConfig holds controller daemon settings.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `graph_workflows` | boolean |  |  | GraphWorkflows enables formula v2 graph workflow infrastructure: the workflow-control implicit agent, graph.v2 formula compilation, and batch graph-apply bead creation. Requires bd with --graph support. Default: false (opt-in while the feature stabilizes). |
+| `formula_v2` | boolean |  |  | FormulaV2 enables formula v2 graph workflow infrastructure: the workflow-control implicit agent, graph.v2 formula compilation, and batch graph-apply bead creation. Requires bd with --graph support. Default: false (opt-in while the feature stabilizes). |
+| `graph_workflows` | boolean |  |  | Deprecated alias for `formula_v2`. If `graph_workflows` is true and `formula_v2` is not set, `formula_v2` is promoted automatically during parsing. |
 | `patrol_interval` | string |  | `30s` | PatrolInterval is the health patrol interval. Duration string (e.g., "30s", "5m", "1h"). Defaults to "30s". |
 | `max_restarts` | integer |  | `5` | MaxRestarts is the maximum number of agent restarts within RestartWindow before the agent is quarantined. 0 means unlimited (no crash loop detection). Defaults to 5. |
 | `restart_window` | string |  | `1h` | RestartWindow is the sliding time window for counting restarts. Duration string (e.g., "30s", "5m", "1h"). Defaults to "1h". |

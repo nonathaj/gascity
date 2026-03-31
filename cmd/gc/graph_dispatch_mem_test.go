@@ -9,8 +9,8 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/dispatch"
 	"github.com/gastownhall/gascity/internal/runtime"
-	"github.com/gastownhall/gascity/internal/workflow"
 )
 
 func builtinFormulaDir(t *testing.T) string {
@@ -26,7 +26,7 @@ func buildMemGraphWorkflowConfig(t *testing.T) *config.City {
 	t.Helper()
 	cfg := &config.City{
 		Daemon: config.DaemonConfig{
-			GraphWorkflows: true,
+			FormulaV2: true,
 		},
 		Workspace: config.Workspace{Name: "test-city"},
 		FormulaLayers: config.FormulaLayers{
@@ -65,7 +65,7 @@ func selectExecutableGraphWorkerBead(ready []beads.Bead, assignee string) (beads
 		}
 		kind := bead.Metadata["gc.kind"]
 		switch {
-		case isWorkflowControlKind(kind):
+		case isControlDispatcherKind(kind):
 			return beads.Bead{}, false, fmt.Errorf("worker queue exposed control bead %s kind=%s ref=%s", bead.ID, kind, beadRef(bead))
 		case kind == "workflow" || kind == "scope" || kind == "ralph" || kind == "retry":
 			return beads.Bead{}, false, fmt.Errorf("worker queue exposed latch bead %s kind=%s ref=%s", bead.ID, kind, beadRef(bead))
@@ -155,10 +155,10 @@ func runMemGraphWorkflowToCompletion(t *testing.T, store beads.Store, workflowID
 
 		progressed := false
 		for _, bead := range ready {
-			if !isWorkflowControlKind(bead.Metadata["gc.kind"]) {
+			if !isControlDispatcherKind(bead.Metadata["gc.kind"]) {
 				continue
 			}
-			result, err := workflow.ProcessControl(store, bead, workflow.ProcessOptions{CityPath: cityPath})
+			result, err := dispatch.ProcessControl(store, bead, dispatch.ProcessOptions{CityPath: cityPath})
 			if err != nil {
 				t.Fatalf("ProcessControl(%s): %v", bead.ID, err)
 			}
@@ -407,7 +407,7 @@ func TestGraphWorkflowInMemoryCreateExecuteWaitFlow(t *testing.T) {
 	}
 }
 
-func TestGraphWorkflowInMemoryRouteUsesWorkflowControlForControlBeads(t *testing.T) {
+func TestGraphWorkflowInMemoryRouteUsesControlDispatcherForControlBeads(t *testing.T) {
 	store, _, workflowID := startMemScopedWorkflow(t)
 
 	all, err := store.List()
@@ -419,19 +419,19 @@ func TestGraphWorkflowInMemoryRouteUsesWorkflowControlForControlBeads(t *testing
 		if bead.Metadata["gc.root_bead_id"] != workflowID {
 			continue
 		}
-		if !isWorkflowControlKind(bead.Metadata["gc.kind"]) {
+		if !isControlDispatcherKind(bead.Metadata["gc.kind"]) {
 			continue
 		}
 		foundControl = true
-		if bead.Assignee != config.WorkflowControlAgentName {
-			t.Fatalf("control bead %s assignee = %q, want %q", bead.ID, bead.Assignee, config.WorkflowControlAgentName)
+		if bead.Assignee != config.ControlDispatcherAgentName {
+			t.Fatalf("control bead %s assignee = %q, want %q", bead.ID, bead.Assignee, config.ControlDispatcherAgentName)
 		}
-		if bead.Metadata["gc.routed_to"] != config.WorkflowControlAgentName {
-			t.Fatalf("control bead %s gc.routed_to = %q, want %q", bead.ID, bead.Metadata["gc.routed_to"], config.WorkflowControlAgentName)
+		if bead.Metadata["gc.routed_to"] != config.ControlDispatcherAgentName {
+			t.Fatalf("control bead %s gc.routed_to = %q, want %q", bead.ID, bead.Metadata["gc.routed_to"], config.ControlDispatcherAgentName)
 		}
 	}
 	if !foundControl {
-		t.Fatal("expected at least one workflow control bead")
+		t.Fatal("expected at least one control-dispatcher bead")
 	}
 }
 

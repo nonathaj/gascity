@@ -152,8 +152,8 @@ type slingOpts struct {
 }
 
 var (
-	slingPokeController      = pokeController
-	slingPokeWorkflowControl = pokeWorkflowControl
+	slingPokeController        = pokeController
+	slingPokeControlDispatcher = pokeControlDispatch
 )
 
 // slingDeps bundles infrastructure dependencies injected for testability.
@@ -1135,7 +1135,7 @@ func decorateGraphWorkflowRecipe(recipe *formula.Recipe, routeVars map[string]st
 		defaultRoute.label = "pool:" + routedTo
 	}
 	routingRigContext := graphRouteRigContext(defaultRoute.qualifiedName)
-	controlRoute, err := workflowControlBinding(store, cityName, cfg, routingRigContext)
+	controlRoute, err := controlDispatcherBinding(store, cityName, cfg, routingRigContext)
 	if err != nil {
 		return err
 	}
@@ -1187,7 +1187,7 @@ func decorateGraphWorkflowRecipe(recipe *formula.Recipe, routeVars map[string]st
 		if err != nil {
 			return err
 		}
-		if isWorkflowControlKind(step.Metadata["gc.kind"]) {
+		if isControlDispatcherKind(step.Metadata["gc.kind"]) {
 			assignGraphStepRoute(step, binding, &controlRoute)
 			continue
 		}
@@ -1431,7 +1431,7 @@ func startGraphWorkflow(result *molecule.Result, sourceBeadID string, a config.A
 		slingTracef("workflow-start metadata-done root=%s source=%s dur=%s", rootID, sourceBeadID, time.Since(metaStart))
 	}
 	pokeStart := time.Now()
-	_ = slingPokeWorkflowControl(deps.CityPath)
+	_ = slingPokeControlDispatcher(deps.CityPath)
 	slingTracef("workflow-start poke-done root=%s dur=%s", rootID, time.Since(pokeStart))
 
 	telemetry.RecordSling(context.Background(), a.QualifiedName(), targetType(&a), method, nil)

@@ -304,6 +304,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v0/formulas", s.handleFormulaList)
 	s.mux.HandleFunc("GET /v0/formulas/{name}", s.handleFormulaDetail)
 	s.mux.HandleFunc("GET /v0/formula/{name}", s.handleFormulaDetail)
+	// Backwards-compatible aliases for the old /v0/workflow routes.
+	// New code uses /v0/convoy/{id} which delegates to the graph handler
+	// for formula-compiled convoys.
 	s.mux.HandleFunc("GET /v0/workflow/{workflow_id}", s.handleWorkflowGet)
 	s.mux.HandleFunc("DELETE /v0/workflow/{workflow_id}", s.handleWorkflowDelete)
 

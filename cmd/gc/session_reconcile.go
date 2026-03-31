@@ -436,7 +436,7 @@ func checkStability(session *beads.Bead, cfg *config.City, alive bool, dt *drain
 	}
 	// Subprocess sessions are used for headless and deterministic workers that
 	// intentionally exit after a unit of work. Treating those short-lived exits
-	// as crashes quarantines valid one-shot workers like workflow-control.
+	// as crashes quarantines valid one-shot workers like control-dispatcher.
 	if cfg != nil && cfg.Session.Provider == "subprocess" {
 		return false
 	}

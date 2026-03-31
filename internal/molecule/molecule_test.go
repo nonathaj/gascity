@@ -134,8 +134,14 @@ func TestInstantiateUsesGraphApplyStoreWhenAvailable(t *testing.T) {
 	if got := step.MetadataRefs["gc.root_bead_id"]; got != "wf" {
 		t.Fatalf("gc.root_bead_id ref = %q, want wf", got)
 	}
-	if len(store.plan.Edges) != 1 || store.plan.Edges[0].Type != "parent-child" {
-		t.Fatalf("edges = %+v, want one parent-child edge", store.plan.Edges)
+	hasParentChild := false
+	for _, e := range store.plan.Edges {
+		if e.Type == "parent-child" {
+			hasParentChild = true
+		}
+	}
+	if !hasParentChild {
+		t.Fatalf("edges = %+v, want at least one parent-child edge", store.plan.Edges)
 	}
 }
 

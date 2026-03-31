@@ -22,20 +22,20 @@ import (
 var validAgentName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 const (
-	// WorkflowControlAgentName is the built-in deterministic control lane for
+	// ControlDispatcherAgentName is the built-in deterministic control lane for
 	// graph.v2 workflow control beads.
-	WorkflowControlAgentName = "workflow-control"
-	// WorkflowControlStartCommand runs the built-in workflow control worker.
+	ControlDispatcherAgentName = "control-dispatcher"
+	// ControlDispatcherStartCommand runs the built-in control-dispatcher worker.
 	// Wrapped in `sh -c` so any appended prompt suffix is ignored as $0.
 	// The control lane is kept resident and blocks on workflow-relevant city
 	// events instead of exiting after each one-shot drain.
-	WorkflowControlStartCommand = `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CITY}/workflow-control-trace.log}"; exec "${GC_BIN:-gc}" workflow serve --follow ` + WorkflowControlAgentName + `'`
+	ControlDispatcherStartCommand = `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CITY}/control-dispatcher-trace.log}"; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + ControlDispatcherAgentName + `'`
 )
 
-// WorkflowControlStartCommandFor returns the start command for a
-// workflow-control agent with the given qualified name.
-func WorkflowControlStartCommandFor(qualifiedName string) string {
-	return `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CITY}/workflow-control-trace.log}"; exec "${GC_BIN:-gc}" workflow serve --follow ` + qualifiedName + `'`
+// ControlDispatcherStartCommandFor returns the start command for a
+// control-dispatcher agent with the given qualified name.
+func ControlDispatcherStartCommandFor(qualifiedName string) string {
+	return `sh -c 'export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CITY}/control-dispatcher-trace.log}"; exec "${GC_BIN:-gc}" convoy control --serve --follow ` + qualifiedName + `'`
 }
 
 // QualifiedName returns the agent's canonical identity.
@@ -930,10 +930,15 @@ func (c ConvergenceConfig) MaxTotalOrDefault() int {
 
 // DaemonConfig holds controller daemon settings.
 type DaemonConfig struct {
-	// GraphWorkflows enables formula v2 graph workflow infrastructure:
-	// the workflow-control implicit agent, graph.v2 formula compilation,
+	// FormulaV2 enables formula v2 graph workflow infrastructure:
+	// the control-dispatcher implicit agent, graph.v2 formula compilation,
 	// and batch graph-apply bead creation. Requires bd with --graph support.
 	// Default: false (opt-in while the feature stabilizes).
+	FormulaV2 bool `toml:"formula_v2,omitempty"`
+	// GraphWorkflows is the deprecated predecessor of FormulaV2. Retained
+	// for backwards compatibility: if graph_workflows is true in TOML and
+	// formula_v2 is not set, FormulaV2 is promoted automatically during
+	// parsing.
 	GraphWorkflows bool `toml:"graph_workflows,omitempty"`
 	// PatrolInterval is the health patrol interval. Duration string (e.g., "30s", "5m", "1h"). Defaults to "30s".
 	PatrolInterval string `toml:"patrol_interval,omitempty" jsonschema:"default=30s"`
@@ -1442,7 +1447,7 @@ func InjectImplicitAgents(cfg *City) {
 
 	configured := configuredProviders(cfg)
 	if len(configured) == 0 {
-		injectWorkflowControlAgents(cfg, existing)
+		injectControlDispatcherAgents(cfg, existing)
 		return
 	}
 
@@ -1482,38 +1487,38 @@ func InjectImplicitAgents(cfg *City) {
 			})
 		}
 	}
-	injectWorkflowControlAgents(cfg, existing)
+	injectControlDispatcherAgents(cfg, existing)
 }
 
-// injectWorkflowControlAgents adds city-scoped and rig-scoped workflow-control
-// agents and named sessions when graph_workflows is enabled and no explicit
+// injectControlDispatcherAgents adds city-scoped and rig-scoped control-dispatcher
+// agents and named sessions when formula_v2 is enabled and no explicit
 // entry exists. Using named sessions ensures the reconciler reopens the
 // existing session bead on restart instead of creating a new one (which
 // would conflict on the session alias).
-func injectWorkflowControlAgents(cfg *City, existing map[agentKey]bool) {
-	if !cfg.Daemon.GraphWorkflows {
+func injectControlDispatcherAgents(cfg *City, existing map[agentKey]bool) {
+	if !cfg.Daemon.FormulaV2 {
 		return
 	}
 	existingNS := make(map[string]bool, len(cfg.NamedSessions))
 	for _, ns := range cfg.NamedSessions {
 		existingNS[ns.QualifiedName()] = true
 	}
-	if !existing[agentKey{"", WorkflowControlAgentName}] {
-		cfg.Agents = append(cfg.Agents, newWorkflowControlAgent(""))
-		if !existingNS[WorkflowControlAgentName] {
+	if !existing[agentKey{"", ControlDispatcherAgentName}] {
+		cfg.Agents = append(cfg.Agents, newControlDispatcherAgent(""))
+		if !existingNS[ControlDispatcherAgentName] {
 			cfg.NamedSessions = append(cfg.NamedSessions, NamedSession{
-				Template: WorkflowControlAgentName,
+				Template: ControlDispatcherAgentName,
 				Mode:     "always",
 			})
 		}
 	}
 	for _, rig := range cfg.Rigs {
-		if !existing[agentKey{rig.Name, WorkflowControlAgentName}] {
-			cfg.Agents = append(cfg.Agents, newWorkflowControlAgent(rig.Name))
-			qn := rig.Name + "/" + WorkflowControlAgentName
+		if !existing[agentKey{rig.Name, ControlDispatcherAgentName}] {
+			cfg.Agents = append(cfg.Agents, newControlDispatcherAgent(rig.Name))
+			qn := rig.Name + "/" + ControlDispatcherAgentName
 			if !existingNS[qn] {
 				cfg.NamedSessions = append(cfg.NamedSessions, NamedSession{
-					Template: WorkflowControlAgentName,
+					Template: ControlDispatcherAgentName,
 					Dir:      rig.Name,
 					Mode:     "always",
 				})
@@ -1522,18 +1527,18 @@ func injectWorkflowControlAgents(cfg *City, existing map[agentKey]bool) {
 	}
 }
 
-// newWorkflowControlAgent creates a workflow-control agent for the given scope.
-func newWorkflowControlAgent(dir string) Agent {
-	qualifiedName := WorkflowControlAgentName
+// newControlDispatcherAgent creates a control-dispatcher agent for the given scope.
+func newControlDispatcherAgent(dir string) Agent {
+	qualifiedName := ControlDispatcherAgentName
 	if dir != "" {
-		qualifiedName = dir + "/" + WorkflowControlAgentName
+		qualifiedName = dir + "/" + ControlDispatcherAgentName
 	}
 	one := 1
 	a := Agent{
-		Name:              WorkflowControlAgentName,
+		Name:              ControlDispatcherAgentName,
 		Dir:               dir,
 		Description:       "Built-in deterministic graph.v2 workflow control worker",
-		StartCommand:      WorkflowControlStartCommandFor(qualifiedName),
+		StartCommand:      ControlDispatcherStartCommandFor(qualifiedName),
 		MaxActiveSessions: &one,
 		Implicit:          true,
 	}
@@ -1925,5 +1930,9 @@ func Parse(data []byte) (*City, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 	NormalizeSessionSleepFields(&cfg)
+	// Backwards compat: promote deprecated graph_workflows → formula_v2.
+	if cfg.Daemon.GraphWorkflows && !cfg.Daemon.FormulaV2 {
+		cfg.Daemon.FormulaV2 = true
+	}
 	return &cfg, nil
 }

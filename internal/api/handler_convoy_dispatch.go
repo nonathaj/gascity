@@ -72,7 +72,10 @@ type workflowRootMatch struct {
 func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 	workflowID := strings.TrimSpace(r.PathValue("workflow_id"))
 	if workflowID == "" {
-		writeError(w, http.StatusBadRequest, "invalid", "workflow_id is required")
+		workflowID = strings.TrimSpace(r.PathValue("id"))
+	}
+	if workflowID == "" {
+		writeError(w, http.StatusBadRequest, "invalid", "convoy id is required")
 		return
 	}
 
@@ -100,7 +103,10 @@ func (s *Server) handleWorkflowGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWorkflowDelete(w http.ResponseWriter, r *http.Request) {
 	workflowID := strings.TrimSpace(r.PathValue("workflow_id"))
 	if workflowID == "" {
-		writeError(w, http.StatusBadRequest, "invalid", "workflow_id is required")
+		workflowID = strings.TrimSpace(r.PathValue("id"))
+	}
+	if workflowID == "" {
+		writeError(w, http.StatusBadRequest, "invalid", "convoy id is required")
 		return
 	}
 
@@ -327,6 +333,12 @@ func (s *Server) snapshotFromStore(info workflowStoreInfo, root beads.Bead, fall
 
 func isWorkflowRoot(bead beads.Bead) bool {
 	return strings.TrimSpace(bead.Metadata["gc.kind"]) == "workflow"
+}
+
+// isGraphConvoyBead reports whether a bead is a formula-compiled graph
+// convoy (as opposed to a simple parent-child convoy).
+func isGraphConvoyBead(b beads.Bead) bool {
+	return isWorkflowRoot(b)
 }
 
 func resolvedWorkflowID(root beads.Bead) string {

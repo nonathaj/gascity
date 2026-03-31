@@ -49,7 +49,7 @@ func TestWorkflowGetSelectsScopedRootMatch(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_shared?scope_kind=rig&scope_ref=alpha", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_shared?scope_kind=rig&scope_ref=alpha", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -97,7 +97,7 @@ func TestWorkflowGetPreservesRequestedScopeForUniqueCrossStoreWorkflow(t *testin
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_city_scope?scope_kind=city&scope_ref=gascity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_city_scope?scope_kind=city&scope_ref=gascity", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -141,7 +141,7 @@ func TestWorkflowGetRejectsMismatchedCityScopeForUniqueCrossStoreWorkflow(t *tes
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_wrong_city_scope?scope_kind=city&scope_ref=other-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_wrong_city_scope?scope_kind=city&scope_ref=other-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -168,7 +168,7 @@ func TestWorkflowGetRejectsInvalidScopeKind(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_invalid_scope?scope_kind=workspace&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_invalid_scope?scope_kind=workspace&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -197,7 +197,7 @@ func TestWorkflowGetRejectsMismatchedRigScopeForUniqueCrossStoreWorkflow(t *test
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_rig_only?scope_kind=rig&scope_ref=beta", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_rig_only?scope_kind=rig&scope_ref=beta", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -236,7 +236,7 @@ func TestWorkflowGetMarksSnapshotPartialWhenDepListFails(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_partial?scope_kind=city&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_partial?scope_kind=city&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -273,7 +273,7 @@ func TestWorkflowGetAllowsMissingScopeFields(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_missing_scope", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_missing_scope", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -312,7 +312,7 @@ func TestWorkflowGetScopedRequestSurvivesUnrelatedStoreListFailure(t *testing.T)
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_city_partial?scope_kind=city&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_city_partial?scope_kind=city&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -351,7 +351,7 @@ func TestWorkflowGetUsesSingleSnapshotIndexForHeaderAndBody(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/wf_index?scope_kind=city&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/wf_index?scope_kind=city&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -608,7 +608,7 @@ func TestWorkflowGetNormalizesShortScopeRefs(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/"+root.ID+"?scope_kind=city&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/"+root.ID+"?scope_kind=city&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -708,7 +708,7 @@ func TestWorkflowGetRejectsNonWorkflowRoot(t *testing.T) {
 	}
 
 	server := New(state)
-	req := httptest.NewRequest(http.MethodGet, "/v0/workflow/"+bead.ID+"?scope_kind=city&scope_ref=test-city", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v0/convoy/"+bead.ID+"?scope_kind=city&scope_ref=test-city", nil)
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 

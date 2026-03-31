@@ -104,7 +104,7 @@ func TestGraphWorkflowSuccessPath(t *testing.T) {
 		}
 	}
 
-	assertWorkflowControlLane(t, cityDir)
+	assertControlDispatcherLane(t, cityDir)
 }
 
 func TestGraphWorkflowFailureRunsCleanup(t *testing.T) {
@@ -151,15 +151,15 @@ func TestGraphWorkflowFailureRunsCleanup(t *testing.T) {
 		}
 	}
 
-	assertWorkflowControlLane(t, cityDir)
+	assertControlDispatcherLane(t, cityDir)
 }
 
-func assertWorkflowControlLane(t *testing.T, cityDir string) {
+func assertControlDispatcherLane(t *testing.T, cityDir string) {
 	t.Helper()
 
-	workflowTrace := readOptionalFile(filepath.Join(cityDir, "workflow-control-trace.log"))
+	workflowTrace := readOptionalFile(filepath.Join(cityDir, "control-dispatcher-trace.log"))
 	if !strings.Contains(workflowTrace, "serve process bead=") {
-		t.Fatalf("workflow-control trace missing processed control bead evidence:\n%s", workflowTrace)
+		t.Fatalf("control-dispatcher trace missing processed control bead evidence:\n%s", workflowTrace)
 	}
 
 	workerTrace := readOptionalFile(filepath.Join(cityDir, "graph-workflow-trace.log"))
@@ -277,7 +277,7 @@ func waitForBeadClosed(t *testing.T, cityDir, beadID string, timeout time.Durati
 		sessionPeekOut = fmt.Sprintf("gc session peek worker failed: %v\noutput: %s", sessionPeekErr, sessionPeekOut)
 	}
 	traceOut := readOptionalFile(filepath.Join(cityDir, "graph-workflow-trace.log"))
-	workflowTraceOut := readOptionalFile(filepath.Join(cityDir, "workflow-control-trace.log"))
+	workflowTraceOut := readOptionalFile(filepath.Join(cityDir, "control-dispatcher-trace.log"))
 	t.Fatalf("timed out waiting for bead %s to close\nready:\n%s\nready worker:\n%s\nsessions:\n%s\nworker peek:\n%s\ntrace:\n%s\nworkflow trace:\n%s\nbeads:\n%s",
 		beadID, readyOut, readyAssigneeOut, sessionListOut, sessionPeekOut, traceOut, workflowTraceOut, out)
 	return graphBead{}

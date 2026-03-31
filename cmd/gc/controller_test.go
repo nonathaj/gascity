@@ -287,21 +287,21 @@ func TestControllerReloadsConfig(t *testing.T) {
 	}
 }
 
-func TestHandleControllerConnWorkflowControl(t *testing.T) {
+func TestHandleControllerConnControlDispatcher(t *testing.T) {
 	server, client := net.Pipe()
 	defer client.Close() //nolint:errcheck
 
 	convergenceReqCh := make(chan convergenceRequest, 1)
 	pokeCh := make(chan struct{}, 1)
-	workflowControlCh := make(chan struct{}, 1)
+	controlDispatcherCh := make(chan struct{}, 1)
 
 	done := make(chan struct{})
 	go func() {
-		handleControllerConn(server, func() {}, convergenceReqCh, pokeCh, workflowControlCh)
+		handleControllerConn(server, func() {}, convergenceReqCh, pokeCh, controlDispatcherCh)
 		close(done)
 	}()
 
-	if _, err := client.Write([]byte("workflow-control\n")); err != nil {
+	if _, err := client.Write([]byte("control-dispatcher\n")); err != nil {
 		t.Fatalf("write command: %v", err)
 	}
 	buf := make([]byte, 16)
@@ -314,9 +314,9 @@ func TestHandleControllerConnWorkflowControl(t *testing.T) {
 	}
 
 	select {
-	case <-workflowControlCh:
+	case <-controlDispatcherCh:
 	default:
-		t.Fatal("workflow-control channel was not signaled")
+		t.Fatal("control-dispatcher channel was not signaled")
 	}
 
 	select {

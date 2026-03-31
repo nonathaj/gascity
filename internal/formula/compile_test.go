@@ -203,8 +203,8 @@ title = "Scan"
 }
 
 func TestCompileRalphMarksWorkflowRootAndBlocksOnTopLevelSteps(t *testing.T) {
-	GraphWorkflowsEnabled = true
-	t.Cleanup(func() { GraphWorkflowsEnabled = false })
+	FormulaV2Enabled = true
+	t.Cleanup(func() { FormulaV2Enabled = false })
 
 	dir := t.TempDir()
 	formulaContent := `
@@ -273,8 +273,8 @@ timeout = "30s"
 }
 
 func TestCompileVersion2UsesGraphWorkflowRootAndNoParentChild(t *testing.T) {
-	GraphWorkflowsEnabled = true
-	t.Cleanup(func() { GraphWorkflowsEnabled = false })
+	FormulaV2Enabled = true
+	t.Cleanup(func() { FormulaV2Enabled = false })
 
 	dir := t.TempDir()
 	formulaContent := `
@@ -345,8 +345,8 @@ needs = ["setup"]
 }
 
 func TestCompileScopedWorkCarriesScopeAndCleanupMetadata(t *testing.T) {
-	GraphWorkflowsEnabled = true
-	t.Cleanup(func() { GraphWorkflowsEnabled = false })
+	FormulaV2Enabled = true
+	t.Cleanup(func() { FormulaV2Enabled = false })
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -451,8 +451,8 @@ func TestCompileScopedWorkCarriesScopeAndCleanupMetadata(t *testing.T) {
 }
 
 func TestCompileGraphWorkflowRejectsCycles(t *testing.T) {
-	GraphWorkflowsEnabled = true
-	t.Cleanup(func() { GraphWorkflowsEnabled = false })
+	FormulaV2Enabled = true
+	t.Cleanup(func() { FormulaV2Enabled = false })
 
 	dir := t.TempDir()
 	formulaText := `

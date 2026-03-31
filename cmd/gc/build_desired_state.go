@@ -347,13 +347,13 @@ func appendAssigned(dst *[]beads.Bead, beadList []beads.Bead) {
 	}
 }
 
-func workflowControlOnlyConfig(cfg *config.City) *config.City {
+func controlDispatcherOnlyConfig(cfg *config.City) *config.City {
 	if cfg == nil {
 		return nil
 	}
-	// Only include city-scoped workflow-control. Rig-scoped instances are
+	// Only include city-scoped control-dispatcher. Rig-scoped instances are
 	// handled by the main reconcile loop which has per-rig stores.
-	agentCfg, ok := resolveAgentIdentity(cfg, config.WorkflowControlAgentName, "")
+	agentCfg, ok := resolveAgentIdentity(cfg, config.ControlDispatcherAgentName, "")
 	if !ok {
 		return nil
 	}

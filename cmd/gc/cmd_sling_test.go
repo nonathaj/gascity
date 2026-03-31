@@ -1375,7 +1375,7 @@ func TestOnFormulaGraphWorkflowPreassignsNonLatchBeadsForFixedAgent(t *testing.T
 	runner := newFakeRunner()
 	sp := runtime.NewFake()
 	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
-	cfg.Daemon.GraphWorkflows = true
+	cfg.Daemon.FormulaV2 = true
 	applyFeatureFlags(cfg)
 	t.Cleanup(func() { applyFeatureFlags(&config.City{}) })
 	cfg.FormulaLayers.City = []string{testFormulaDir(t)}
@@ -1460,11 +1460,11 @@ title = "Do work"
 				t.Fatalf("latch bead %s assignee = %q, want empty", bead.ID, bead.Assignee)
 			}
 		case "workflow-finalize":
-			if bead.Assignee != config.WorkflowControlAgentName {
-				t.Fatalf("workflow-finalize assignee = %q, want %q", bead.Assignee, config.WorkflowControlAgentName)
+			if bead.Assignee != config.ControlDispatcherAgentName {
+				t.Fatalf("workflow-finalize assignee = %q, want %q", bead.Assignee, config.ControlDispatcherAgentName)
 			}
-			if bead.Metadata["gc.routed_to"] != config.WorkflowControlAgentName {
-				t.Fatalf("workflow-finalize gc.routed_to = %q, want %q", bead.Metadata["gc.routed_to"], config.WorkflowControlAgentName)
+			if bead.Metadata["gc.routed_to"] != config.ControlDispatcherAgentName {
+				t.Fatalf("workflow-finalize gc.routed_to = %q, want %q", bead.Metadata["gc.routed_to"], config.ControlDispatcherAgentName)
 			}
 			if bead.Metadata[graphExecutionRouteMetaKey] != "mayor" {
 				t.Fatalf("workflow-finalize execution route = %q, want mayor", bead.Metadata[graphExecutionRouteMetaKey])
@@ -1581,7 +1581,7 @@ func TestOnFormulaGraphWorkflowPokesOnce(t *testing.T) {
 	runner := newFakeRunner()
 	sp := runtime.NewFake()
 	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
-	cfg.Daemon.GraphWorkflows = true
+	cfg.Daemon.FormulaV2 = true
 	applyFeatureFlags(cfg)
 	t.Cleanup(func() { applyFeatureFlags(&config.City{}) })
 	config.InjectImplicitAgents(cfg)
@@ -1607,10 +1607,10 @@ title = "Do work"
 	opts := testOpts(a, "BL-42")
 	opts.OnFormula = "graph-work"
 
-	oldPoke := slingPokeWorkflowControl
-	defer func() { slingPokeWorkflowControl = oldPoke }()
+	oldPoke := slingPokeControlDispatcher
+	defer func() { slingPokeControlDispatcher = oldPoke }()
 	pokes := 0
-	slingPokeWorkflowControl = func(string) error {
+	slingPokeControlDispatcher = func(string) error {
 		pokes++
 		return nil
 	}

@@ -12,17 +12,17 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/dispatch"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/runtime"
-	"github.com/gastownhall/gascity/internal/workflow"
 )
 
 func TestDecorateDynamicFragmentRecipeSupportsExplicitPerStepAgents(t *testing.T) {
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "mayor", MaxActiveSessions: intPtr(1)},
 			{Name: "reviewer", MaxActiveSessions: intPtr(1)},
@@ -86,11 +86,11 @@ func TestDecorateDynamicFragmentRecipeSupportsExplicitPerStepAgents(t *testing.T
 	}
 
 	control := steps["expansion-review.review-scope-check"]
-	if control.Assignee != config.WorkflowControlAgentName {
-		t.Fatalf("review scope-check assignee = %q, want %q", control.Assignee, config.WorkflowControlAgentName)
+	if control.Assignee != config.ControlDispatcherAgentName {
+		t.Fatalf("review scope-check assignee = %q, want %q", control.Assignee, config.ControlDispatcherAgentName)
 	}
-	if control.Metadata["gc.routed_to"] != config.WorkflowControlAgentName {
-		t.Fatalf("review scope-check gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.WorkflowControlAgentName)
+	if control.Metadata["gc.routed_to"] != config.ControlDispatcherAgentName {
+		t.Fatalf("review scope-check gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.ControlDispatcherAgentName)
 	}
 	if control.Metadata[graphExecutionRouteMetaKey] != "reviewer" {
 		t.Fatalf("review scope-check execution route = %q, want reviewer", control.Metadata[graphExecutionRouteMetaKey])
@@ -130,7 +130,7 @@ func TestWorkflowFormulaSearchPathsUsesRoutedRigLayers(t *testing.T) {
 
 	control := workflowFormulaSearchPaths(cfg, beads.Bead{
 		Metadata: map[string]string{
-			"gc.routed_to":             config.WorkflowControlAgentName,
+			"gc.routed_to":             config.ControlDispatcherAgentName,
 			graphExecutionRouteMetaKey: "frontend/reviewer",
 		},
 	})
@@ -143,7 +143,7 @@ func TestDecorateDynamicFragmentRecipePreservesPoolFallbackAndScopeMetadata(t *t
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "reviewer", Dir: "frontend", MinActiveSessions: intPtr(1), MaxActiveSessions: intPtr(3)},
 		},
@@ -222,8 +222,8 @@ func TestDecorateDynamicFragmentRecipePreservesPoolFallbackAndScopeMetadata(t *t
 	if control.Metadata["gc.scope_role"] != "control" {
 		t.Fatalf("control gc.scope_role = %q, want control", control.Metadata["gc.scope_role"])
 	}
-	if control.Metadata["gc.routed_to"] != config.WorkflowControlAgentName {
-		t.Fatalf("control gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.WorkflowControlAgentName)
+	if control.Metadata["gc.routed_to"] != config.ControlDispatcherAgentName {
+		t.Fatalf("control gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.ControlDispatcherAgentName)
 	}
 	if control.Metadata[graphExecutionRouteMetaKey] != "frontend/reviewer" {
 		t.Fatalf("control execution route = %q, want frontend/reviewer", control.Metadata[graphExecutionRouteMetaKey])
@@ -234,7 +234,7 @@ func TestDecorateDynamicFragmentRecipeUsesSourceRouteRigContextForBareTargets(t 
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "reviewer", Dir: "frontend", MaxActiveSessions: intPtr(1)},
 			{Name: "reviewer", Dir: "backend", MaxActiveSessions: intPtr(1)},
@@ -278,7 +278,7 @@ func TestDecorateDynamicFragmentRecipeMarksRetryEvalAsScopedControl(t *testing.T
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "reviewer", Dir: "frontend", MaxActiveSessions: intPtr(1)},
 		},
@@ -338,14 +338,14 @@ func TestDecorateDynamicFragmentRecipeMarksRetryEvalAsScopedControl(t *testing.T
 
 func TestRunWorkflowServeProcessesReadyControlBeadsThenExits(t *testing.T) {
 	cityDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\ngraph_workflows = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
 		t.Fatalf("write city.toml: %v", err)
 	}
 	t.Setenv("GC_CITY", cityDir)
 
 	prevCityFlag := cityFlag
 	prevList := workflowServeList
-	prevControl := workflowServeControl
+	prevControl := controlDispatcherServe
 	prevInterval := workflowServeIdlePollInterval
 	prevAttempts := workflowServeIdlePollAttempts
 	cityFlag = ""
@@ -354,12 +354,12 @@ func TestRunWorkflowServeProcessesReadyControlBeadsThenExits(t *testing.T) {
 	t.Cleanup(func() {
 		cityFlag = prevCityFlag
 		workflowServeList = prevList
-		workflowServeControl = prevControl
+		controlDispatcherServe = prevControl
 		workflowServeIdlePollInterval = prevInterval
 		workflowServeIdlePollAttempts = prevAttempts
 	})
 
-	wantQuery := `bd ready --metadata-field gc.routed_to=` + config.WorkflowControlAgentName + ` --unassigned --json --limit=20 2>/dev/null`
+	wantQuery := `bd ready --metadata-field gc.routed_to=` + config.ControlDispatcherAgentName + ` --unassigned --json --limit=20 2>/dev/null`
 	var gotQueries []string
 	var gotDirs []string
 	var controlled []string
@@ -378,7 +378,7 @@ func TestRunWorkflowServeProcessesReadyControlBeadsThenExits(t *testing.T) {
 		sequence = sequence[1:]
 		return next, nil
 	}
-	workflowServeControl = func(beadID string, _ io.Writer, _ io.Writer) error {
+	controlDispatcherServe = func(beadID string, _ io.Writer, _ io.Writer) error {
 		controlled = append(controlled, beadID)
 		return nil
 	}
@@ -407,14 +407,14 @@ func TestRunWorkflowServeProcessesReadyControlBeadsThenExits(t *testing.T) {
 
 func TestRunWorkflowServeRetriesBrieflyAfterProcessingBeforeIdleExit(t *testing.T) {
 	cityDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\ngraph_workflows = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
 		t.Fatalf("write city.toml: %v", err)
 	}
 	t.Setenv("GC_CITY", cityDir)
 
 	prevCityFlag := cityFlag
 	prevList := workflowServeList
-	prevControl := workflowServeControl
+	prevControl := controlDispatcherServe
 	prevInterval := workflowServeIdlePollInterval
 	prevAttempts := workflowServeIdlePollAttempts
 	cityFlag = ""
@@ -423,7 +423,7 @@ func TestRunWorkflowServeRetriesBrieflyAfterProcessingBeforeIdleExit(t *testing.
 	t.Cleanup(func() {
 		cityFlag = prevCityFlag
 		workflowServeList = prevList
-		workflowServeControl = prevControl
+		controlDispatcherServe = prevControl
 		workflowServeIdlePollInterval = prevInterval
 		workflowServeIdlePollAttempts = prevAttempts
 	})
@@ -443,7 +443,7 @@ func TestRunWorkflowServeRetriesBrieflyAfterProcessingBeforeIdleExit(t *testing.
 			return nil, nil
 		}
 	}
-	workflowServeControl = func(beadID string, _ io.Writer, _ io.Writer) error {
+	controlDispatcherServe = func(beadID string, _ io.Writer, _ io.Writer) error {
 		controlled = append(controlled, beadID)
 		return nil
 	}
@@ -459,14 +459,14 @@ func TestRunWorkflowServeRetriesBrieflyAfterProcessingBeforeIdleExit(t *testing.
 
 func TestRunWorkflowServeSkipsPendingControlBeadAndProcessesLaterReady(t *testing.T) {
 	cityDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\ngraph_workflows = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
 		t.Fatalf("write city.toml: %v", err)
 	}
 	t.Setenv("GC_CITY", cityDir)
 
 	prevCityFlag := cityFlag
 	prevList := workflowServeList
-	prevControl := workflowServeControl
+	prevControl := controlDispatcherServe
 	prevInterval := workflowServeIdlePollInterval
 	prevAttempts := workflowServeIdlePollAttempts
 	cityFlag = ""
@@ -475,7 +475,7 @@ func TestRunWorkflowServeSkipsPendingControlBeadAndProcessesLaterReady(t *testin
 	t.Cleanup(func() {
 		cityFlag = prevCityFlag
 		workflowServeList = prevList
-		workflowServeControl = prevControl
+		controlDispatcherServe = prevControl
 		workflowServeIdlePollInterval = prevInterval
 		workflowServeIdlePollAttempts = prevAttempts
 	})
@@ -495,10 +495,10 @@ func TestRunWorkflowServeSkipsPendingControlBeadAndProcessesLaterReady(t *testin
 			return nil, nil
 		}
 	}
-	workflowServeControl = func(beadID string, _ io.Writer, _ io.Writer) error {
+	controlDispatcherServe = func(beadID string, _ io.Writer, _ io.Writer) error {
 		attempted = append(attempted, beadID)
 		if beadID == "gc-pending" {
-			return workflow.ErrControlPending
+			return dispatch.ErrControlPending
 		}
 		processed = append(processed, beadID)
 		return nil
@@ -518,26 +518,26 @@ func TestRunWorkflowServeSkipsPendingControlBeadAndProcessesLaterReady(t *testin
 
 func TestRunWorkflowServeReturnsQueryError(t *testing.T) {
 	cityDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\ngraph_workflows = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n\n[daemon]\nformula_v2 = true\n"), 0o644); err != nil {
 		t.Fatalf("write city.toml: %v", err)
 	}
 	t.Setenv("GC_CITY", cityDir)
 
 	prevCityFlag := cityFlag
 	prevList := workflowServeList
-	prevControl := workflowServeControl
+	prevControl := controlDispatcherServe
 	cityFlag = ""
 	t.Cleanup(func() {
 		cityFlag = prevCityFlag
 		workflowServeList = prevList
-		workflowServeControl = prevControl
+		controlDispatcherServe = prevControl
 	})
 
 	workflowServeList = func(_, _ string) ([]hookBead, error) {
 		return nil, os.ErrDeadlineExceeded
 	}
-	workflowServeControl = func(string, io.Writer, io.Writer) error {
-		t.Fatal("workflowServeControl should not be called on query failure")
+	controlDispatcherServe = func(string, io.Writer, io.Writer) error {
+		t.Fatal("controlDispatcherServe should not be called on query failure")
 		return nil
 	}
 
@@ -555,13 +555,13 @@ func TestRunWorkflowServeFollowUsesSweepFallback(t *testing.T) {
 	ep := newTestProvider(t, eventsDir)
 
 	prevList := workflowServeList
-	prevControl := workflowServeControl
+	prevControl := controlDispatcherServe
 	prevProvider := workflowServeOpenEventsProvider
 	prevSweep := workflowServeWakeSweepInterval
 	workflowServeWakeSweepInterval = time.Millisecond
 	t.Cleanup(func() {
 		workflowServeList = prevList
-		workflowServeControl = prevControl
+		controlDispatcherServe = prevControl
 		workflowServeOpenEventsProvider = prevProvider
 		workflowServeWakeSweepInterval = prevSweep
 	})
@@ -583,12 +583,12 @@ func TestRunWorkflowServeFollowUsesSweepFallback(t *testing.T) {
 			return nil, nil
 		}
 	}
-	workflowServeControl = func(beadID string, _ io.Writer, _ io.Writer) error {
+	controlDispatcherServe = func(beadID string, _ io.Writer, _ io.Writer) error {
 		processed = append(processed, beadID)
 		return os.ErrDeadlineExceeded
 	}
 
-	wfcAgent := config.Agent{Name: "workflow-control", MinActiveSessions: intPtr(1), MaxActiveSessions: intPtr(1)}
+	wfcAgent := config.Agent{Name: "control-dispatcher", MinActiveSessions: intPtr(1), MaxActiveSessions: intPtr(1)}
 	err := runWorkflowServeFollow(
 		wfcAgent,
 		t.TempDir(),
@@ -630,7 +630,7 @@ func TestDecorateDynamicFragmentRecipeSynthesizesInheritedScopeChecks(t *testing
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "reviewer", MaxActiveSessions: intPtr(1)},
 		},
@@ -682,8 +682,8 @@ func TestDecorateDynamicFragmentRecipeSynthesizesInheritedScopeChecks(t *testing
 	if control.Metadata["gc.scope_ref"] != "body" {
 		t.Fatalf("review scope-check gc.scope_ref = %q, want body", control.Metadata["gc.scope_ref"])
 	}
-	if control.Metadata["gc.routed_to"] != config.WorkflowControlAgentName {
-		t.Fatalf("review scope-check gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.WorkflowControlAgentName)
+	if control.Metadata["gc.routed_to"] != config.ControlDispatcherAgentName {
+		t.Fatalf("review scope-check gc.routed_to = %q, want %q", control.Metadata["gc.routed_to"], config.ControlDispatcherAgentName)
 	}
 	if control.Metadata[graphExecutionRouteMetaKey] != "reviewer" {
 		t.Fatalf("review scope-check execution route = %q, want reviewer", control.Metadata[graphExecutionRouteMetaKey])
@@ -708,7 +708,7 @@ func TestResolveGraphStepBindingWorkflowFinalizeUsesFallback(t *testing.T) {
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "mayor", MaxActiveSessions: intPtr(1)},
 			{Name: "reviewer", MaxActiveSessions: intPtr(1)},
@@ -720,7 +720,7 @@ func TestResolveGraphStepBindingWorkflowFinalizeUsesFallback(t *testing.T) {
 		"demo.owner": {
 			ID:       "demo.owner",
 			Title:    "Owner step",
-			Assignee: "workflow-control",
+			Assignee: "control-dispatcher",
 		},
 		"demo.review": {
 			ID:       "demo.review",
@@ -801,10 +801,10 @@ func TestResolveGraphStepBindingRetryEvalUsesDependencyRoute(t *testing.T) {
 	store := beads.NewMemStore()
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
-		Daemon:    config.DaemonConfig{GraphWorkflows: true},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
 		Agents: []config.Agent{
 			{Name: "reviewer", MaxActiveSessions: intPtr(1)},
-			{Name: "workflow-control"},
+			{Name: "control-dispatcher"},
 		},
 	}
 	config.InjectImplicitAgents(cfg)
@@ -813,7 +813,7 @@ func TestResolveGraphStepBindingRetryEvalUsesDependencyRoute(t *testing.T) {
 		"demo.owner": {
 			ID:       "demo.owner",
 			Title:    "Owner step",
-			Assignee: "workflow-control",
+			Assignee: "control-dispatcher",
 		},
 		"demo.review": {
 			ID:       "demo.review",
@@ -835,8 +835,8 @@ func TestResolveGraphStepBindingRetryEvalUsesDependencyRoute(t *testing.T) {
 		"demo.review.eval.1": {"demo.owner", "demo.review"},
 	}
 	fallback := graphRouteBinding{
-		qualifiedName: "workflow-control",
-		sessionName:   lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "workflow-control", cfg.Workspace.SessionTemplate),
+		qualifiedName: "control-dispatcher",
+		sessionName:   lookupSessionNameOrLegacy(store, cfg.Workspace.Name, "control-dispatcher", cfg.Workspace.SessionTemplate),
 	}
 
 	binding, err := resolveGraphStepBinding("demo.review.eval.1", stepByID, nil, depsByStep, map[string]graphRouteBinding{}, map[string]bool{}, fallback, "", store, cfg.Workspace.Name, cfg)
@@ -848,7 +848,7 @@ func TestResolveGraphStepBindingRetryEvalUsesDependencyRoute(t *testing.T) {
 	}
 }
 
-func TestRunWorkflowControlRetryEvalRecyclesPooledSession(t *testing.T) {
+func TestRunControlDispatcherRetryEvalRecyclesPooledSession(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(`[workspace]
 name = "test-city"
@@ -857,7 +857,7 @@ name = "test-city"
 provider = "file"
 
 [[agent]]
-name = "workflow-control"
+name = "control-dispatcher"
 start_command = "echo hello"
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(city.toml): %v", err)
@@ -942,13 +942,13 @@ start_command = "echo hello"
 	}
 
 	fakeProvider := runtime.NewFake()
-	oldProvider := workflowControlSessionProvider
-	workflowControlSessionProvider = func() runtime.Provider { return fakeProvider }
-	t.Cleanup(func() { workflowControlSessionProvider = oldProvider })
+	oldProvider := dispatchControlSessionProvider
+	dispatchControlSessionProvider = func() runtime.Provider { return fakeProvider }
+	t.Cleanup(func() { dispatchControlSessionProvider = oldProvider })
 
 	var stdout bytes.Buffer
-	if err := runWorkflowControl(eval1.ID, &stdout, io.Discard); err != nil {
-		t.Fatalf("runWorkflowControl(retry-eval): %v", err)
+	if err := runControlDispatcher(eval1.ID, &stdout, io.Discard); err != nil {
+		t.Fatalf("runControlDispatcher(retry-eval): %v", err)
 	}
 
 	stopCalls := 0

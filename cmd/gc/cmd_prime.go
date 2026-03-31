@@ -157,13 +157,13 @@ func doPrimeWithMode(args []string, stdout, _ io.Writer, hookMode bool) int { //
 			}
 		}
 		// Agents without a prompt_template: read a materialized builtin prompt.
-		// When graph_workflows is enabled, all agents use graph-worker.md.
+		// When formula_v2 is enabled, all agents use graph-worker.md.
 		// Otherwise pool agents use pool-worker.md.
 		// Pool instances have Pool=nil after resolution, so also check the
 		// template agent via findAgentByName.
 		if ok && a.PromptTemplate == "" {
 			promptFile := ""
-			if cfg.Daemon.GraphWorkflows {
+			if cfg.Daemon.FormulaV2 {
 				promptFile = "prompts/graph-worker.md"
 			} else if isMultiSessionCfgAgent(&a) || isPoolInstance(cfg, a) {
 				promptFile = "prompts/pool-worker.md"

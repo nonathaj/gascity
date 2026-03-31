@@ -222,7 +222,7 @@ func isSubprocessTestRoot(cmd, agentScript string) bool {
 	switch {
 	case strings.Contains(cmd, agentScript):
 		return true
-	case strings.Contains(cmd, "gc workflow serve --follow workflow-control") && strings.Contains(cmd, "gc-integration-"):
+	case strings.Contains(cmd, "gc convoy control --serve --follow control-dispatcher") && strings.Contains(cmd, "gc-integration-"):
 		return true
 	case strings.Contains(cmd, "gc supervisor run") && strings.Contains(cmd, "gc-integration-"):
 		return true

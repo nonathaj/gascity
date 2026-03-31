@@ -248,8 +248,8 @@ bead into a sub-workflow at runtime.`,
 				_, _ = fmt.Fprintf(stdout, "Root: %s\n", result.RootID)
 				_, _ = fmt.Fprintf(stdout, "Created: %d\n", result.Created)
 
-				// Poke workflow controller to pick up new beads
-				_ = pokeWorkflowControl(cityPath)
+				// Poke control dispatcher to pick up new beads
+				_ = pokeControlDispatch(cityPath)
 				return nil
 			}
 

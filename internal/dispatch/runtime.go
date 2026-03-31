@@ -1,4 +1,4 @@
-package workflow
+package dispatch
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ type ControlResult struct {
 	Skipped   int
 }
 
-// ProcessOptions provides workflow-control execution context.
+// ProcessOptions provides control-dispatcher execution context.
 type ProcessOptions struct {
 	CityPath           string
 	FormulaSearchPaths []string
