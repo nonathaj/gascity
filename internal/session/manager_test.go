@@ -51,7 +51,7 @@ func (p *failOnceStartProvider) IsRunning(name string) bool {
 	if p.dieOnce {
 		p.dieOnce = false
 		// Simulate: process started but died immediately (stale key).
-		_ = p.Fake.Stop(name) // actually kill it so state is consistent
+		_ = p.Stop(name) // actually kill it so state is consistent
 		return false
 	}
 	return p.Fake.IsRunning(name)
@@ -77,10 +77,10 @@ func (p *dieAndFailProvider) Start(ctx context.Context, name string, cfg runtime
 func (p *dieAndFailProvider) IsRunning(name string) bool {
 	if p.callCount == 1 {
 		// After first Start: process died (stale key).
-		_ = p.Fake.Stop(name)
+		_ = p.Stop(name)
 		return false
 	}
-	return p.Fake.IsRunning(name)
+	return p.Fake.IsRunning(name) //nolint:staticcheck // intentional: IsRunning is not on Fake, it's on Provider
 }
 
 type lateSuccessStartProvider struct {

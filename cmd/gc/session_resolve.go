@@ -75,6 +75,16 @@ func resolveConfiguredNamedSessionID(
 	if bead, ok := findCanonicalNamedSessionBead(snapshot, spec.Identity); ok {
 		return bead.ID, true, nil
 	}
+	// When materializing, check for a closed bead with this identity and
+	// reopen it (preserves bead ID for reference continuity).
+	if opts.materialize {
+		if bead, ok := findClosedNamedSessionBead(store, spec.Identity); ok {
+			open := "open"
+			if err := store.Update(bead.ID, beads.UpdateOpts{Status: &open}); err == nil {
+				return bead.ID, true, nil
+			}
+		}
+	}
 	if bead, conflict := findNamedSessionConflict(snapshot, spec); conflict {
 		return "", true, fmt.Errorf("%w: %q conflicts with configured named session %q via live bead %s", errNamedSessionConflict, identifier, spec.Identity, bead.ID)
 	}

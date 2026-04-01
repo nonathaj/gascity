@@ -46,7 +46,7 @@ func evaluatePendingPools(
 		wg.Add(1)
 		// For rig-scoped agents with an external Dolt server, prefix
 		// the pool check command with BEADS_DOLT_PORT so bd connects
-		// to the correct server (matching computeWorkSet behaviour).
+		// to the correct server (matching computeWorkSet behavior).
 		sp := pw.sp
 		if dir := cfg.Agents[pw.agentIdx].Dir; dir != "" {
 			for _, r := range cfg.Rigs {

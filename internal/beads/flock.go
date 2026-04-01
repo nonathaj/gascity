@@ -34,7 +34,7 @@ func (fl *FileFlock) Lock() error {
 		return fmt.Errorf("flock open: %w", err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("flock lock: %w", err)
 	}
 	fl.f = f
