@@ -388,7 +388,6 @@ func (s *Server) beadStoresForID(id string) []beads.Store {
 	stores := s.state.BeadStores()
 	rigNames := sortedRigNames(stores)
 	candidates := make([]beads.Store, 0, len(rigNames)+1)
-	// City-scoped session beads live in the city store, not any rig store.
 	if cityStore := s.state.CityBeadStore(); cityStore != nil {
 		candidates = append(candidates, cityStore)
 	}
@@ -398,9 +397,9 @@ func (s *Server) beadStoresForID(id string) []beads.Store {
 	return candidates
 }
 
-// resolveStoreByPrefix finds the rig store that owns a bead prefix
-// by checking each rig's routes.jsonl file and mapping the resolved
-// store path back to the correct rig.
+// resolveStoreByPrefix finds the store that owns a bead prefix by checking
+// routes.jsonl files in the city and each rig's .beads/ directory, then
+// mapping the resolved store path back to the correct store.
 func (s *Server) resolveStoreByPrefix(prefix string) beads.Store {
 	cfg := s.state.Config()
 	if cfg == nil {
@@ -408,6 +407,15 @@ func (s *Server) resolveStoreByPrefix(prefix string) beads.Store {
 	}
 	stores := s.state.BeadStores()
 	cityPath := strings.TrimSpace(s.state.CityPath())
+
+	// Check city-level routes first.
+	if cityPath != "" {
+		if _, ok := resolveRoutePrefix(cityPath, prefix); ok {
+			if cityStore := s.state.CityBeadStore(); cityStore != nil {
+				return cityStore
+			}
+		}
+	}
 
 	// Build rig path → name map for reverse lookup.
 	rigPathToName := make(map[string]string, len(cfg.Rigs))
