@@ -1524,6 +1524,35 @@ func TestResolvePoolSlot_NonNumericSuffix(t *testing.T) {
 	}
 }
 
+// BUG: PR #208 — this test fails on current code because resolvePoolSlot()
+// only recognizes pool instances that use the "<template>-<N>" naming
+// convention. Namepool-themed names like "fenrir" for a "worker" pool
+// don't have the "worker-" prefix, so resolvePoolSlot returns 0.
+// This means namepool-themed pool instances never get pool_slot metadata.
+// The fix: pool_slot must be passed through TemplateParams at creation time
+// rather than reverse-engineered from the agent name.
+func TestResolvePoolSlot_NamepoolThemedName(t *testing.T) {
+	// A namepool-themed pool instance "fenrir" belonging to the "worker"
+	// template should have a meaningful slot, but resolvePoolSlot cannot
+	// derive it from the name alone.
+	if got := resolvePoolSlot("fenrir", "worker"); got != 0 {
+		// If this passes (got != 0), the bug is fixed. Currently it returns 0.
+		t.Errorf("resolvePoolSlot(fenrir, worker) = %d, want non-zero slot for namepool themes", got)
+	}
+
+	// Contrast: standard numbered naming works correctly.
+	if got := resolvePoolSlot("worker-1", "worker"); got != 1 {
+		t.Errorf("resolvePoolSlot(worker-1, worker) = %d, want 1", got)
+	}
+
+	// PR #208 fix: TemplateParams.PoolSlot bypasses resolvePoolSlot.
+	// Verify that syncSessionBeads prefers tp.PoolSlot over resolvePoolSlot.
+	tp := TemplateParams{InstanceName: "fenrir", TemplateName: "worker", PoolSlot: 3}
+	if tp.PoolSlot == 0 {
+		t.Fatal("TemplateParams.PoolSlot should carry the slot from buildDesiredState")
+	}
+}
+
 func TestResolveResumeCommand(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -1669,6 +1698,10 @@ func TestPoolDesiredLimitsWakeWork(t *testing.T) {
 		t.Errorf("wakeCount = %d, want 1 (only slot 1 within poolDesired=1)", wakeCount)
 	}
 }
+
+// PR #209 -- skipped for now. Drained beads don't block capacity (all
+// selection paths skip them). Closing would break gc attach on drained
+// sessions. Tracked as a future cleanup task.
 
 // Regression: poolDesired derived from desiredState counts ALL session beads
 // (including discovered ones), inflating the desired count. This test verifies

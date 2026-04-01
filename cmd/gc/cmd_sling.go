@@ -324,13 +324,15 @@ func cmdSling(args []string, isFormula, doNudge, force bool, title string, vars 
 			storeDir = rd
 		}
 	}
-	store := bdStoreForCity(storeDir, cityPath)
+	store := bdStoreForRig(storeDir, cityPath, cfg)
 	storeRef := workflowStoreRefForDir(storeDir, cityPath, cfg.Workspace.Name, cfg)
 
 	// Inline text mode: if the argument doesn't look like a bead ID
 	// (and we're not in formula mode), create a task bead from the text.
 	// Skip during dry-run to avoid side effects.
-	if !isFormula && !dryRun && !looksLikeBeadID(beadOrFormula) {
+	// Also check if the bead exists in the store — hierarchical IDs like
+	// "Prefix-abc.1" have dots that looksLikeBeadID doesn't recognize.
+	if !isFormula && !dryRun && !looksLikeBeadID(beadOrFormula) && !beadExistsInStore(store, beadOrFormula) {
 		created, err := store.Create(beads.Bead{Title: beadOrFormula, Description: stdinDescription, Type: "task"})
 		if err != nil {
 			fmt.Fprintf(stderr, "gc sling: creating bead: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -357,12 +359,28 @@ func cmdSling(args []string, isFormula, doNudge, force bool, title string, vars 
 		ScopeKind:     scopeKind,
 		ScopeRef:      scopeRef,
 	}
+	// Wrap the sling runner with rig-level Dolt env when the store dir
+	// differs from the city (rig has its own Dolt server).
+	runner := SlingRunner(shellSlingRunner)
+	if storeDir != cityPath {
+		rigEnv := bdRuntimeEnvForRig(cityPath, cfg, storeDir)
+		runner = func(dir, command string, env map[string]string) (string, error) {
+			merged := make(map[string]string)
+			for k, v := range rigEnv {
+				merged[k] = v
+			}
+			for k, v := range env {
+				merged[k] = v
+			}
+			return shellSlingRunner(dir, command, merged)
+		}
+	}
 	deps := slingDeps{
 		CityName: cityName,
 		CityPath: cityPath,
 		Cfg:      cfg,
 		SP:       sp,
-		Runner:   shellSlingRunner,
+		Runner:   runner,
 		Store:    store,
 		StoreRef: storeRef,
 		Stdout:   stdout,
@@ -1923,6 +1941,14 @@ func isCustomSlingQuery(a config.Agent) bool {
 // digits after the first character, so the prefix matcher must allow that.
 // Strings with spaces or multiple dashes (like "code-review" or "hello-world")
 // are treated as inline text for ad-hoc bead creation.
+// beadExistsInStore returns true if the given ID resolves to a bead in the store.
+// Used as a fallback when looksLikeBeadID returns false for valid hierarchical
+// IDs (e.g., "ProjectWrenUnity-0fze.1").
+func beadExistsInStore(store beads.Store, id string) bool {
+	_, err := store.Get(id)
+	return err == nil
+}
+
 func looksLikeBeadID(s string) bool {
 	if strings.ContainsAny(s, " \t\n") {
 		return false
@@ -1948,14 +1974,20 @@ func looksLikeBeadID(s string) bool {
 		}
 	}
 	suffix := s[i+1:]
-	for _, c := range suffix {
+	// Strip hierarchical child suffix (e.g., ".1" from "0fze.1") for validation.
+	// Dots delimit parent-child hierarchy in bead IDs.
+	baseSuffix := suffix
+	if dot := strings.IndexByte(suffix, '.'); dot > 0 {
+		baseSuffix = suffix[:dot]
+	}
+	for _, c := range baseSuffix {
 		if ('0' > c || c > '9') && ('a' > c || c > 'z') && ('A' > c || c > 'Z') {
 			return false
 		}
 	}
 	// Bead ID suffixes from bd are short base36 hashes (2-4 chars).
 	// Names like "code-review" or "hello-world" have longer suffixes.
-	return len(suffix) <= 4
+	return len(baseSuffix) <= 4
 }
 
 // beadPrefix extracts the rig prefix from a bead ID by taking the lowercase

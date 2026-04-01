@@ -680,3 +680,39 @@ func handlerKeys(m map[string]poolDeathInfo) []string {
 	}
 	return keys
 }
+
+// BUG: PR #207 — shellScaleCheck runs `sh -c <command>` without injecting
+// BEADS_DOLT_PORT (or any rig-scoped environment variables) into the
+// subprocess environment. For rig-scoped agents whose scale_check commands
+// query bd (beads via Dolt), the subprocess cannot connect to the managed
+// Dolt instance because the port is not propagated.
+//
+// This test demonstrates that shellScaleCheck does not set any environment
+// variables — it relies entirely on the parent process environment. A
+// rig-scoped agent's scale_check needs BEADS_DOLT_PORT injected so bd can
+// find the managed Dolt server, but shellScaleCheck has no mechanism for this.
+func TestShellScaleCheck_NoBEADS_DOLT_PORT_Injection(t *testing.T) {
+	// shellScaleCheck runs the command via `sh -c`. Verify that the command
+	// environment does NOT contain BEADS_DOLT_PORT by having the command
+	// print the variable.
+	//
+	// Clear any inherited value first so we can detect injection (or lack thereof).
+	t.Setenv("BEADS_DOLT_PORT", "")
+
+	out, err := shellScaleCheck("echo ${BEADS_DOLT_PORT:-unset}", "")
+	if err != nil {
+		t.Fatalf("shellScaleCheck: %v", err)
+	}
+	trimmed := strings.TrimSpace(out)
+
+	// The output should be "unset" because shellScaleCheck does not inject
+	// BEADS_DOLT_PORT into the subprocess environment.
+	if trimmed != "unset" {
+		t.Fatalf("BEADS_DOLT_PORT = %q in subprocess, want %q (should not be set)", trimmed, "unset")
+	}
+
+	// Note: BEADS_DOLT_PORT injection happens at the evaluatePendingPools
+	// level (PR #207), not in shellScaleCheck itself. See
+	// TestBuildDesiredState_PoolCheckInjectsDoltPortForRigScopedAgent
+	// for the integration test.
+}
