@@ -694,10 +694,11 @@ func TestBdStorePurge(t *testing.T) {
 	if result.Purged != 5 {
 		t.Errorf("Purged = %d, want 5", result.Purged)
 	}
-	// Verify args include --allow-stale purge --json.
+	// Verify args include purge --json (no --allow-stale: bd purge
+	// does not support that flag).
 	args := strings.Join(gotArgs, " ")
-	if !strings.Contains(args, "--allow-stale") || !strings.Contains(args, "purge") || !strings.Contains(args, "--json") {
-		t.Errorf("args = %q, want --allow-stale purge --json", args)
+	if !strings.Contains(args, "purge") || !strings.Contains(args, "--json") {
+		t.Errorf("args = %q, want purge --json", args)
 	}
 	// Should NOT contain --dry-run.
 	if strings.Contains(args, "--dry-run") {

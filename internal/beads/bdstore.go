@@ -147,7 +147,7 @@ func (s *BdStore) SetPurgeRunner(fn PurgeRunnerFunc) {
 // beads directory. Uses a 60-second timeout as a safety circuit breaker.
 // The beadsDir is the .beads/ directory path; bd runs from its parent.
 func (s *BdStore) Purge(beadsDir string, dryRun bool) (PurgeResult, error) {
-	args := []string{"--allow-stale", "purge", "--json"}
+	args := []string{"purge", "--json"}
 	if dryRun {
 		args = append(args, "--dry-run")
 	}
