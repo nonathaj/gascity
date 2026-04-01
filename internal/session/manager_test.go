@@ -27,19 +27,60 @@ func (p *startOverrideProvider) Start(ctx context.Context, name string, cfg runt
 	return p.Fake.Start(ctx, name, cfg)
 }
 
-// failOnceStartProvider fails the first Start call after arming, then
-// succeeds on subsequent calls. Used to simulate stale session key retry.
+// failOnceStartProvider simulates a stale session key: the first Start
+// after arming succeeds but the process immediately dies (IsRunning returns
+// false). The second Start (fresh retry) succeeds and stays running.
 type failOnceStartProvider struct {
 	*runtime.Fake
-	armed bool
+	armed   bool
+	dieOnce bool // set after armed Start to make IsRunning return false once
 }
 
 func (p *failOnceStartProvider) Start(ctx context.Context, name string, cfg runtime.Config) error {
 	if p.armed {
 		p.armed = false
-		return errors.New("session not found: stale key")
+		p.dieOnce = true
+		// Start "succeeds" but process will appear dead on next IsRunning check.
+		return p.Fake.Start(ctx, name, cfg)
 	}
+	p.dieOnce = false
 	return p.Fake.Start(ctx, name, cfg)
+}
+
+func (p *failOnceStartProvider) IsRunning(name string) bool {
+	if p.dieOnce {
+		p.dieOnce = false
+		// Simulate: process started but died immediately (stale key).
+		_ = p.Fake.Stop(name) // actually kill it so state is consistent
+		return false
+	}
+	return p.Fake.IsRunning(name)
+}
+
+// dieAndFailProvider: first Start succeeds but process dies immediately,
+// second Start fails outright. Simulates stale key + provider unavailable.
+type dieAndFailProvider struct {
+	*runtime.Fake
+	callCount int
+}
+
+func (p *dieAndFailProvider) Start(ctx context.Context, name string, cfg runtime.Config) error {
+	p.callCount++
+	if p.callCount == 1 {
+		// First call: start succeeds but process will appear dead.
+		return p.Fake.Start(ctx, name, cfg)
+	}
+	// Second call (fresh retry): fail outright.
+	return errors.New("provider unavailable")
+}
+
+func (p *dieAndFailProvider) IsRunning(name string) bool {
+	if p.callCount == 1 {
+		// After first Start: process died (stale key).
+		_ = p.Fake.Stop(name)
+		return false
+	}
+	return p.Fake.IsRunning(name)
 }
 
 type lateSuccessStartProvider struct {
@@ -2151,5 +2192,54 @@ func TestEnsureRunning_RetriesWithoutStaleSessionKey(t *testing.T) {
 	b, _ = store.Get(info.ID)
 	if b.Metadata["session_key"] != "" {
 		t.Errorf("session_key should be cleared after stale key retry, got %q", b.Metadata["session_key"])
+	}
+}
+
+// TestEnsureRunning_StaleKeyRetryAlsoFails verifies that when the stale-key
+// resume detects death and the fresh retry also fails, the error propagates.
+func TestEnsureRunning_StaleKeyRetryAlsoFails(t *testing.T) {
+	store := beads.NewMemStore()
+	base := runtime.NewFake()
+
+	// dieAndFailProvider: first Start succeeds but process dies (stale key
+	// detection triggers), second Start fails outright (fresh retry fails).
+	sp := &dieAndFailProvider{Fake: base}
+	mgr := NewManager(store, sp)
+
+	info, err := mgr.Create(context.Background(), "worker", "", "claude --dangerously", "/tmp", "claude", nil, ProviderResume{
+		ResumeFlag:    "--resume",
+		SessionIDFlag: "--session-id",
+	}, runtime.Config{})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	b, err := store.Get(info.ID)
+	if err != nil {
+		t.Fatalf("Get bead: %v", err)
+	}
+	if b.Metadata["session_key"] == "" {
+		t.Fatal("expected session_key in bead metadata")
+	}
+
+	if err := mgr.Suspend(info.ID); err != nil {
+		t.Fatalf("Suspend: %v", err)
+	}
+
+	// Reset callCount — Create already called Start once during setup.
+	// We want the NEXT Start (from Send) to be treated as call 1 (dies)
+	// and the retry as call 2 (fails outright).
+	sp.callCount = 0
+	resumeCmd := "claude --dangerously --resume " + b.Metadata["session_key"]
+	err = mgr.Send(context.Background(), info.ID, "hello", resumeCmd, runtime.Config{WorkDir: "/tmp"})
+
+	// Both attempts should fail, and the error must propagate (not silently swallowed).
+	if err == nil {
+		t.Fatal("Send should fail when both stale-key resume and fresh retry fail")
+	}
+	// The session_key should still be cleared even though retry failed.
+	b, _ = store.Get(info.ID)
+	if b.Metadata["session_key"] != "" {
+		t.Errorf("session_key should be cleared even on retry failure, got %q", b.Metadata["session_key"])
 	}
 }
