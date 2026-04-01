@@ -1110,7 +1110,7 @@ func instantiateSlingFormula(ctx context.Context, formulaName string, searchPath
 			slingTracef("instantiate decorate-error formula=%s err=%v", formulaName, err)
 			return nil, err
 		}
-	} else if a.IsPool() {
+	} else if isMultiSessionCfgAgent(&a) {
 		// Non-graph formulas (legacy molecules) don't go through
 		// decorateGraphWorkflowRecipe, so step beads won't inherit
 		// gc.routed_to. Propagate it so the work query and wake
