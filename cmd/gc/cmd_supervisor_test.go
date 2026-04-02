@@ -43,11 +43,10 @@ func TestDoSupervisorLogsNoFile(t *testing.T) {
 
 func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 	data := &supervisorServiceData{
-		GCPath:    "/usr/local/bin/gc",
-		LogPath:   "/home/user/.gc/supervisor.log",
-		GCHome:    "/home/user/.gc",
-		XDGRunDir: "/run/user/1000",
-		Path:      "/usr/local/bin:/usr/bin:/bin",
+		GCPath:  "/usr/local/bin/gc",
+		LogPath: "/home/user/.gc/supervisor.log",
+		GCHome:  "/home/user/.gc",
+		Path:    "/usr/local/bin:/usr/bin:/bin",
 	}
 
 	content, err := renderSupervisorTemplate(supervisorLaunchdTemplate, data)
@@ -62,8 +61,6 @@ func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 		"run",
 		"/home/user/.gc/supervisor.log",
 		"GC_HOME",
-		"XDG_RUNTIME_DIR",
-		"/run/user/1000",
 		"<key>PATH</key>",
 	} {
 		if !strings.Contains(content, check) {
@@ -74,11 +71,10 @@ func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 
 func TestRenderSupervisorSystemdTemplate(t *testing.T) {
 	data := &supervisorServiceData{
-		GCPath:    "/usr/local/bin/gc",
-		LogPath:   "/home/user/.gc/supervisor.log",
-		GCHome:    "/home/user/.gc",
-		XDGRunDir: "/run/user/1000",
-		Path:      "/usr/local/bin:/usr/bin:/bin",
+		GCPath:  "/usr/local/bin/gc",
+		LogPath: "/home/user/.gc/supervisor.log",
+		GCHome:  "/home/user/.gc",
+		Path:    "/usr/local/bin:/usr/bin:/bin",
 	}
 
 	content, err := renderSupervisorTemplate(supervisorSystemdTemplate, data)
@@ -91,7 +87,6 @@ func TestRenderSupervisorSystemdTemplate(t *testing.T) {
 		`ExecStart=/usr/local/bin/gc supervisor run`,
 		`StandardOutput=append:/home/user/.gc/supervisor.log`,
 		`Environment=GC_HOME="/home/user/.gc"`,
-		`Environment=XDG_RUNTIME_DIR="/run/user/1000"`,
 		`Environment=PATH="/usr/local/bin:/usr/bin:/bin"`,
 	} {
 		if !strings.Contains(content, check) {
