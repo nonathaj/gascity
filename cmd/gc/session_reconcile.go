@@ -609,8 +609,27 @@ func healState(session *beads.Bead, alive bool, store beads.Store, clk clock.Clo
 		session.Metadata = make(map[string]string)
 	}
 	if session.Metadata["state"] != target {
-		_ = store.SetMetadata(session.ID, "state", target)
-		session.Metadata["state"] = target
+		batch := map[string]string{"state": target}
+		// When a session with a resume key dies unexpectedly (no drain
+		// in progress), clear the key so the next start uses a fresh
+		// session instead of retrying a stale resume key. Skip this for
+		// deliberate drains (idle sleep, scale-down) where the key is
+		// still valid for future resume.
+		if target == "asleep" && session.Metadata["session_key"] != "" {
+			prevState := session.Metadata["state"]
+			sleepReason := session.Metadata["sleep_reason"]
+			isDraining := sleepReason == "idle" || sleepReason == "idle-timeout" ||
+				sleepReason == "no-wake-reason" || sleepReason == "config-drift" ||
+				sleepReason == "drained" || sleepReason == "user-hold"
+			if !isDraining && (prevState == "active" || prevState == "awake" || prevState == "creating") {
+				batch["session_key"] = ""
+				batch["continuation_reset_pending"] = "true"
+			}
+		}
+		_ = store.SetMetadataBatch(session.ID, batch)
+		for k, v := range batch {
+			session.Metadata[k] = v
+		}
 	}
 }
 
