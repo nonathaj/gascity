@@ -1142,6 +1142,102 @@ func TestHealState_StaleCreatingWithoutPendingClaimHealsToAsleep(t *testing.T) {
 	}
 }
 
+func TestHealState_ClearsStaleSessionKey(t *testing.T) {
+	tests := []struct {
+		name           string
+		prevState      string
+		sleepReason    string
+		sessionKey     string
+		wantKeyCleared bool
+	}{
+		{
+			name:      "active with no drain reason — key cleared",
+			prevState: "active", sleepReason: "", sessionKey: "abc-123",
+			wantKeyCleared: true,
+		},
+		{
+			name:      "awake with no drain reason — key cleared",
+			prevState: "awake", sleepReason: "", sessionKey: "abc-123",
+			wantKeyCleared: true,
+		},
+		{
+			name:      "creating with no drain reason — key cleared",
+			prevState: "creating", sleepReason: "", sessionKey: "abc-123",
+			wantKeyCleared: true,
+		},
+		{
+			name:      "idle drain — key preserved",
+			prevState: "active", sleepReason: "idle", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "idle-timeout drain — key preserved",
+			prevState: "active", sleepReason: "idle-timeout", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "no-wake-reason drain — key preserved",
+			prevState: "active", sleepReason: "no-wake-reason", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "config-drift drain — key preserved",
+			prevState: "active", sleepReason: "config-drift", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "user-hold drain — key preserved",
+			prevState: "active", sleepReason: "user-hold", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "wait-hold drain — key preserved",
+			prevState: "active", sleepReason: "wait-hold", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "drained — key preserved",
+			prevState: "active", sleepReason: "drained", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "asleep prev state — key preserved (not in active set)",
+			prevState: "asleep", sleepReason: "", sessionKey: "abc-123",
+			wantKeyCleared: false,
+		},
+		{
+			name:      "no session key — nothing to clear",
+			prevState: "active", sleepReason: "", sessionKey: "",
+			wantKeyCleared: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore()
+			clk := &clock.Fake{Time: time.Date(2026, 4, 3, 12, 0, 0, 0, time.UTC)}
+			session := makeBead("b1", map[string]string{
+				"state":        tt.prevState,
+				"sleep_reason": tt.sleepReason,
+				"session_key":  tt.sessionKey,
+			})
+			healState(&session, false, store, clk)
+			keyAfter := session.Metadata["session_key"]
+			if tt.wantKeyCleared && keyAfter != "" {
+				t.Errorf("session_key should be cleared, got %q", keyAfter)
+			}
+			if !tt.wantKeyCleared && keyAfter != tt.sessionKey {
+				t.Errorf("session_key should be preserved as %q, got %q", tt.sessionKey, keyAfter)
+			}
+			if tt.wantKeyCleared {
+				if session.Metadata["continuation_reset_pending"] != "true" {
+					t.Error("continuation_reset_pending should be set when key is cleared")
+				}
+			}
+		})
+	}
+}
+
 func TestTopoOrder_NoDeps(t *testing.T) {
 	sessions := []beads.Bead{
 		makeBead("b1", map[string]string{"template": "a"}),

@@ -5,6 +5,8 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -609,8 +611,33 @@ func healState(session *beads.Bead, alive bool, store beads.Store, clk clock.Clo
 		session.Metadata = make(map[string]string)
 	}
 	if session.Metadata["state"] != target {
-		_ = store.SetMetadata(session.ID, "state", target)
-		session.Metadata["state"] = target
+		batch := map[string]string{"state": target}
+		// When a session with a resume key dies unexpectedly (no drain
+		// in progress), clear the key so the next start uses a fresh
+		// session instead of retrying a stale resume key. Skip this for
+		// deliberate drains where the key is still valid for future resume.
+		//
+		// Default is "clear key" (safe for crash loops). Any new sleep_reason
+		// that represents a deliberate drain must be added here to preserve
+		// the resume key. See sleep_reason assignment sites across the codebase.
+		if target == "asleep" && session.Metadata["session_key"] != "" {
+			prevState := session.Metadata["state"]
+			sleepReason := session.Metadata["sleep_reason"]
+			isDraining := sleepReason == "idle" || sleepReason == "idle-timeout" ||
+				sleepReason == "no-wake-reason" || sleepReason == "config-drift" ||
+				sleepReason == "drained" || sleepReason == "user-hold" ||
+				sleepReason == "wait-hold"
+			if !isDraining && (prevState == "active" || prevState == "awake" || prevState == "creating") {
+				batch["session_key"] = ""
+				batch["continuation_reset_pending"] = "true"
+			}
+		}
+		if err := store.SetMetadataBatch(session.ID, batch); err != nil {
+			fmt.Fprintf(os.Stderr, "healState: SetMetadataBatch %s: %v\n", session.ID, err) //nolint:errcheck
+		}
+		for k, v := range batch {
+			session.Metadata[k] = v
+		}
 	}
 }
 
