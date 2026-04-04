@@ -224,13 +224,21 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 	// returning success to the reconciler, which triggers recordWakeFailure
 	// and the crash-loop recovery (clear session_key, bump continuation_epoch).
 	if p.postStartSettle > 0 {
-		time.Sleep(p.postStartSettle)
+		timer := time.NewTimer(p.postStartSettle)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			cleanup("post-start settle canceled")
+			return fmt.Errorf("waiting for post-start settle for session %q: %w", name, ctx.Err())
+		case <-timer.C:
+		}
 	}
 	_, tmuxErr := p.ops.execInPod(ctx, podName, "agent",
 		[]string{"tmux", "has-session", "-t", tmuxSession}, nil)
 	if tmuxErr != nil {
 		cleanup("session died immediately after startup")
-		return fmt.Errorf("session %q died immediately after startup: %w", name, tmuxErr)
+		return fmt.Errorf("%w: session %q died immediately after startup: %w",
+			runtime.ErrSessionDiedDuringStartup, name, tmuxErr)
 	}
 
 	return nil

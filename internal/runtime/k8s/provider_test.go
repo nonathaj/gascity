@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -849,8 +850,8 @@ func TestStartDetectsImmediateSessionDeath(t *testing.T) {
 	if err == nil {
 		t.Fatal("Start should fail when session dies immediately after startup")
 	}
-	if want := "died immediately"; !contains(err.Error(), want) {
-		t.Errorf("error = %q, want containing %q", err, want)
+	if !errors.Is(err, runtime.ErrSessionDiedDuringStartup) {
+		t.Fatalf("Start error = %v, want ErrSessionDiedDuringStartup", err)
 	}
 
 	// Pod should have been cleaned up.
@@ -875,6 +876,46 @@ func TestStartSucceedsWhenSessionStaysAlive(t *testing.T) {
 	err := p.Start(context.Background(), "gc-test-agent", cfg)
 	if err != nil {
 		t.Fatalf("Start should succeed when session stays alive: %v", err)
+	}
+}
+
+func TestStartHonorsCancellationDuringPostStartSettle(t *testing.T) {
+	fake := newFakeK8sOps()
+	p := newProviderWithOps(fake)
+	p.postStartSettle = 100 * time.Millisecond
+
+	hasSessionCalls := 0
+	fake.execFunc = func(_ string, cmd []string) (string, error) {
+		if len(cmd) >= 3 && cmd[0] == "tmux" && cmd[1] == "has-session" {
+			hasSessionCalls++
+		}
+		return "", nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	cfg := runtime.Config{
+		Command: "claude --session-id fresh-key",
+		Env:     map[string]string{"GC_AGENT": "deacon", "GC_CITY": "/workspace"},
+	}
+
+	started := time.Now()
+	err := p.Start(ctx, "gc-test-agent", cfg)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start error = %v, want context canceled", err)
+	}
+	if elapsed := time.Since(started); elapsed >= p.postStartSettle {
+		t.Fatalf("Start returned after %v, want before settle duration %v", elapsed, p.postStartSettle)
+	}
+	if hasSessionCalls != 1 {
+		t.Fatalf("tmux has-session calls = %d, want 1 before settle cancellation", hasSessionCalls)
+	}
+	if _, exists := fake.pods["gc-test-agent"]; exists {
+		t.Error("pod should have been deleted after settle cancellation")
 	}
 }
 
