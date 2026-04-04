@@ -769,7 +769,7 @@ func (m *Manager) PruneDetailed(before time.Time) (PruneResult, error) {
 	}
 	result := PruneResult{}
 	for _, b := range all {
-		if b.Type != BeadType {
+		if !IsSessionBeadOrRepairable(b) {
 			continue
 		}
 		if b.Status == "closed" {
@@ -850,7 +850,7 @@ func (m *Manager) ListFull(stateFilter string, templateFilter string) (*ListResu
 func (m *Manager) ListFullFromBeads(all []beads.Bead, stateFilter string, templateFilter string) *ListResult {
 	var result []Info
 	for _, b := range all {
-		if b.Type != BeadType {
+		if !IsSessionBeadOrRepairable(b) {
 			continue
 		}
 		state := normalizeInfoState(State(b.Metadata["state"]))
