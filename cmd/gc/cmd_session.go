@@ -150,16 +150,9 @@ func cmdSessionNew(args []string, alias, title string, noAttach bool, stdout, st
 	// Store the canonical qualified name so the reconciler can match it
 	// via findAgentByTemplate (which compares against QualifiedName()).
 	canonicalTemplate := found.QualifiedName()
+	singletonOwner := sessionNewAliasOwner(cfg, &found)
 
 	// Try reconciler-first path: create bead, poke controller.
-	// For singleton agents, pass the canonical template name as selfOwner
-	// so the alias reservation check recognises a new session bead as the
-	// legitimate owner of the singleton's reserved alias.
-	singletonOwner := ""
-	if !found.IsPool() {
-		singletonOwner = canonicalTemplate
-	}
-
 	if pokeErr := pokeController(cityPath); pokeErr == nil {
 		// Controller is running — create bead only, let reconciler start it.
 		var info session.Info
@@ -263,6 +256,17 @@ func resolveSessionTemplate(cfg *config.City, input, currentRigDir string) (conf
 		}
 	}
 	return config.Agent{}, false
+}
+
+func sessionNewAliasOwner(cfg *config.City, agent *config.Agent) string {
+	if cfg == nil || agent == nil {
+		return ""
+	}
+	owner := agent.QualifiedName()
+	if config.FindNamedSession(cfg, owner) == nil {
+		return ""
+	}
+	return owner
 }
 
 // waitForSession polls the provider until the session is running or timeout.
