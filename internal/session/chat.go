@@ -227,16 +227,14 @@ func (m *Manager) ensureRunning(ctx context.Context, id string, b beads.Bead, se
 				return err
 			}
 			started = retried
-		} else {
+		} else if !errors.Is(err, runtime.ErrSessionExists) || !m.sp.IsRunning(sessName) {
 			// Another caller may have resumed the same session after we loaded the
 			// bead but before we reached Start. If the runtime is already up, treat
 			// the resume as converged and only persist active state below.
-			if !errors.Is(err, runtime.ErrSessionExists) || !m.sp.IsRunning(sessName) {
-				if unroute != nil {
-					unroute()
-				}
-				return fmt.Errorf("resuming session: %w", err)
+			if unroute != nil {
+				unroute()
 			}
+			return fmt.Errorf("resuming session: %w", err)
 		}
 	} else {
 		started = true

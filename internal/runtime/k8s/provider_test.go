@@ -831,7 +831,7 @@ func TestStartDetectsImmediateSessionDeath(t *testing.T) {
 
 	// tmux has-session succeeds during waitForTmux, then fails on post-start check.
 	hasSessionCalls := 0
-	fake.execFunc = func(pod string, cmd []string) (string, error) {
+	fake.execFunc = func(_ string, cmd []string) (string, error) {
 		if len(cmd) >= 3 && cmd[0] == "tmux" && cmd[1] == "has-session" {
 			hasSessionCalls++
 			if hasSessionCalls <= 1 {
