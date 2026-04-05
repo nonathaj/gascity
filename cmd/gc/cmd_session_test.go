@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +15,30 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 )
+
+type attachmentAwareProvider struct {
+	*runtime.Fake
+	sleepCapability runtime.SessionSleepCapability
+	pending         *runtime.PendingInteraction
+	responded       runtime.InteractionResponse
+}
+
+func (p *attachmentAwareProvider) SleepCapability(string) runtime.SessionSleepCapability {
+	return p.sleepCapability
+}
+
+func (p *attachmentAwareProvider) Pending(string) (*runtime.PendingInteraction, error) {
+	if p.pending == nil {
+		return nil, nil
+	}
+	copy := *p.pending
+	return &copy, nil
+}
+
+func (p *attachmentAwareProvider) Respond(_ string, response runtime.InteractionResponse) error {
+	p.responded = response
+	return nil
+}
 
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
@@ -222,6 +247,52 @@ func TestSessionReason_FallsThroughToProviderForSleepingAttachment(t *testing.T)
 	)
 	if reason != string(WakeAttached) {
 		t.Fatalf("sessionReason = %q, want %q", reason, WakeAttached)
+	}
+}
+
+func TestAttachmentCachingProvider_DelegatesSleepCapability(t *testing.T) {
+	provider := &attachmentAwareProvider{
+		Fake:            runtime.NewFake(),
+		sleepCapability: runtime.SessionSleepCapabilityTimedOnly,
+	}
+	wrapped := &attachmentCachingProvider{Provider: provider, cache: map[string]bool{}}
+
+	if got := resolveSleepCapability(wrapped, "worker"); got != runtime.SessionSleepCapabilityTimedOnly {
+		t.Fatalf("resolveSleepCapability = %q, want %q", got, runtime.SessionSleepCapabilityTimedOnly)
+	}
+}
+
+func TestAttachmentCachingProvider_DelegatesPendingInteraction(t *testing.T) {
+	provider := &attachmentAwareProvider{
+		Fake: runtime.NewFake(),
+		pending: &runtime.PendingInteraction{
+			RequestID: "req-1",
+			Kind:      "approval",
+		},
+	}
+	wrapped := &attachmentCachingProvider{Provider: provider, cache: map[string]bool{}}
+
+	if !pendingInteractionReady(wrapped, "worker") {
+		t.Fatal("pendingInteractionReady should delegate to wrapped provider")
+	}
+
+	response := runtime.InteractionResponse{RequestID: "req-1", Action: "approve"}
+	if err := wrapped.Respond("worker", response); err != nil {
+		t.Fatalf("Respond error = %v", err)
+	}
+	if provider.responded.RequestID != response.RequestID || provider.responded.Action != response.Action {
+		t.Fatalf("responded = %+v, want request_id=%q action=%q", provider.responded, response.RequestID, response.Action)
+	}
+}
+
+func TestAttachmentCachingProvider_RejectsUnsupportedInteraction(t *testing.T) {
+	wrapped := &attachmentCachingProvider{cache: map[string]bool{}}
+
+	if _, err := wrapped.Pending("worker"); !errors.Is(err, runtime.ErrInteractionUnsupported) {
+		t.Fatalf("Pending error = %v, want ErrInteractionUnsupported", err)
+	}
+	if err := wrapped.Respond("worker", runtime.InteractionResponse{Action: "approve"}); !errors.Is(err, runtime.ErrInteractionUnsupported) {
+		t.Fatalf("Respond error = %v, want ErrInteractionUnsupported", err)
 	}
 }
 
