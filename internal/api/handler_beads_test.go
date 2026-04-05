@@ -136,6 +136,34 @@ func (s *prefixedAliasStore) ListOpen(status ...string) ([]beads.Bead, error) {
 	return out, nil
 }
 
+func (s *prefixedAliasStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.ParentID != "" {
+		s.childrenCalls++
+		query.ParentID = s.aliasToBase(query.ParentID)
+	}
+	if len(query.Metadata) > 0 {
+		filters := make(map[string]string, len(query.Metadata))
+		for k, v := range query.Metadata {
+			switch k {
+			case "gc.root_bead_id", "gc.workflow_id", "gc.source_bead_id":
+				filters[k] = s.aliasToBase(v)
+			default:
+				filters[k] = v
+			}
+		}
+		query.Metadata = filters
+	}
+	items, err := s.base.List(query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]beads.Bead, 0, len(items))
+	for _, item := range items {
+		out = append(out, s.beadToAlias(item))
+	}
+	return out, nil
+}
+
 func (s *prefixedAliasStore) Ready() ([]beads.Bead, error) {
 	items, err := s.base.Ready()
 	if err != nil {

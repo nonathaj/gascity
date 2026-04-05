@@ -142,6 +142,13 @@ type waitFailStore struct {
 	*beads.MemStore
 }
 
+func (s waitFailStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.Label == WaitBeadLabel {
+		return nil, errors.New("wait list failed")
+	}
+	return s.MemStore.List(query)
+}
+
 func (s waitFailStore) ListByLabel(label string, limit int, opts ...beads.QueryOpt) ([]beads.Bead, error) {
 	if label == WaitBeadLabel {
 		return nil, errors.New("wait list failed")
@@ -726,6 +733,9 @@ func TestList(t *testing.T) {
 	}
 	if len(sessions) != 2 {
 		t.Fatalf("List returned %d sessions, want 2", len(sessions))
+	}
+	if sessions[0].ID != info2.ID {
+		t.Fatalf("List order first ID = %q, want newest %q", sessions[0].ID, info2.ID)
 	}
 
 	// Filter by state.

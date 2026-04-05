@@ -233,9 +233,13 @@ func findClosedNamedSessionBead(store beads.Store, identity string) (beads.Bead,
 func findClosedNamedSessionBeadForSessionName(store beads.Store, identity, sessionName string) (beads.Bead, bool) {
 	identity = normalizeNamedSessionTarget(identity)
 	sessionName = strings.TrimSpace(sessionName)
-	candidates, err := store.ListByMetadata(map[string]string{
-		namedSessionIdentityMetadata: identity,
-	}, 0, beads.IncludeClosed)
+	candidates, err := store.List(beads.ListQuery{
+		Metadata: map[string]string{
+			namedSessionIdentityMetadata: identity,
+		},
+		IncludeClosed: true,
+		Sort:          beads.SortCreatedDesc,
+	})
 	if err != nil {
 		return beads.Bead{}, false
 	}

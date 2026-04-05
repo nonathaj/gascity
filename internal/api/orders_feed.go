@@ -156,7 +156,7 @@ func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScope
 		if info.store == nil {
 			continue
 		}
-		openBeads, err := info.store.ListOpen()
+		openBeads, err := listActiveWorkflowProjectionBeads(info.store)
 		if err != nil {
 			if requestedScopeErr == nil && info.scopeKind == requestedScopeKind && info.scopeRef == requestedScopeRef {
 				requestedScopeErr = err
@@ -178,10 +178,13 @@ func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScope
 			openChildrenByRoot[rootID] = append(openChildrenByRoot[rootID], bead)
 		}
 
-		roots, err := info.store.ListByMetadata(map[string]string{
-			"gc.kind":             "workflow",
-			"gc.formula_contract": "graph.v2",
-		}, 0, beads.IncludeClosed)
+		roots, err := info.store.List(beads.ListQuery{
+			Metadata: map[string]string{
+				"gc.kind":             "workflow",
+				"gc.formula_contract": "graph.v2",
+			},
+			IncludeClosed: true,
+		})
 		if err != nil {
 			log.Printf("api: workflow run projection closed-root list failed for %s: %v", info.ref, err)
 			roots = nil
@@ -206,7 +209,10 @@ func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScope
 			}
 
 			runBeads := append([]beads.Bead{bead}, openChildrenByRoot[bead.ID]...)
-			children, childErr := info.store.ListByMetadata(map[string]string{"gc.root_bead_id": bead.ID}, 0, beads.IncludeClosed)
+			children, childErr := info.store.List(beads.ListQuery{
+				Metadata:      map[string]string{"gc.root_bead_id": bead.ID},
+				IncludeClosed: true,
+			})
 			if childErr != nil {
 				log.Printf("api: workflow run projection child list failed for %s root %s: %v", info.ref, bead.ID, childErr)
 			} else {
@@ -262,13 +268,24 @@ func buildWorkflowRunProjections(state State, requestedScopeKind, requestedScope
 	}, nil
 }
 
+func listActiveWorkflowProjectionBeads(store beads.Store) ([]beads.Bead, error) {
+	// Preserve the old ListOpen() semantics as a single active snapshot. A
+	// union of separate open/in_progress queries can miss beads that change
+	// status between reads, so this is one of the intentional raw scans until
+	// ListQuery grows a multi-status selector.
+	return store.List(beads.ListQuery{AllowScan: true})
+}
+
 func buildOrderRunFeedItems(state State, requestedScopeKind, requestedScopeRef string) ([]monitorFeedItemResponse, error) {
 	store := state.CityBeadStore()
 	if store == nil {
 		return []monitorFeedItemResponse{}, nil
 	}
 
-	results, err := store.ListByLabel("order-tracking", 0)
+	results, err := store.List(beads.ListQuery{
+		Label: "order-tracking",
+		Sort:  beads.SortCreatedDesc,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +345,11 @@ func orderTrackingUpdatedAt(store beads.Store, tracking beads.Bead, scopedName s
 		return updatedAt
 	}
 
-	runs, err := store.ListByLabel("order-run:"+scopedName, 1)
+	runs, err := store.List(beads.ListQuery{
+		Label: "order-run:" + scopedName,
+		Limit: 1,
+		Sort:  beads.SortCreatedDesc,
+	})
 	if err != nil {
 		return updatedAt
 	}

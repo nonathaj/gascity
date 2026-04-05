@@ -648,7 +648,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	// and pool demand computation gracefully handle nil/empty lists.
 	var allBeads []beads.Bead
 	if cs, ok := store.(*beads.CachingStore); ok && cs.IsLive() {
-		allBeads, _ = store.ListOpen()
+		allBeads, _ = store.List(beads.ListQuery{AllowScan: true})
 	} else {
 		// Don't block startup waiting for full prime — skip sweep on this tick.
 		allBeads = nil

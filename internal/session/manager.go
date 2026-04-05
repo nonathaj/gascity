@@ -760,7 +760,10 @@ func (m *Manager) Prune(before time.Time) (int, error) {
 // PruneDetailed closes suspended sessions whose suspension time is before the
 // given cutoff and reports the affected session IDs and queued wait nudges.
 func (m *Manager) PruneDetailed(before time.Time) (PruneResult, error) {
-	all, err := m.store.ListByLabel(LabelSession, 0)
+	all, err := m.store.List(beads.ListQuery{
+		Label: LabelSession,
+		Type:  BeadType,
+	})
 	if err != nil {
 		return PruneResult{}, fmt.Errorf("listing sessions: %w", err)
 	}
@@ -830,7 +833,11 @@ func (m *Manager) List(stateFilter string, templateFilter string) ([]Info, error
 // ListFull is like List but also returns the raw session beads to avoid
 // redundant store queries by the caller (e.g., for building a bead index).
 func (m *Manager) ListFull(stateFilter string, templateFilter string) (*ListResult, error) {
-	all, err := m.store.ListByLabel(LabelSession, 0)
+	all, err := m.store.List(beads.ListQuery{
+		Label: LabelSession,
+		Type:  BeadType,
+		Sort:  beads.SortCreatedDesc,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}

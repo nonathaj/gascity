@@ -392,7 +392,10 @@ func listLiveSessionMailboxes(store beads.Store) (map[string]bool, error) {
 	if store == nil {
 		return recipients, nil
 	}
-	all, err := store.ListByLabel(session.LabelSession, 0)
+	all, err := store.List(beads.ListQuery{
+		Label: session.LabelSession,
+		Type:  session.BeadType,
+	})
 	if err != nil {
 		return nil, err
 	}

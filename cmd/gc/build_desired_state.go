@@ -403,10 +403,10 @@ func collectAssignedWorkBeads(
 	seen := make(map[string]struct{})
 	for _, s := range stores {
 		// In-progress beads with an assignee (active work).
-		if inProgress, err := s.ListOpen("in_progress"); err == nil {
+		if inProgress, err := s.List(beads.ListQuery{Status: "in_progress"}); err == nil {
 			appendAssignedUnique(&result, inProgress, seen)
 		} else {
-			log.Printf("collectAssignedWorkBeads: ListOpen(in_progress) failed: %v", err)
+			log.Printf("collectAssignedWorkBeads: List(in_progress) failed: %v", err)
 			partial = true
 		}
 		// Ready beads with an assignee (queued direct handoff work that is

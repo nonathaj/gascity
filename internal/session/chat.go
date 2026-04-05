@@ -395,7 +395,10 @@ func (m *Manager) TranscriptPath(id string, searchPaths []string) (string, error
 		}
 	}
 
-	all, err := m.store.ListByLabel(LabelSession, 0)
+	all, err := m.store.List(beads.ListQuery{
+		Label: LabelSession,
+		Type:  BeadType,
+	})
 	if err != nil {
 		return "", fmt.Errorf("listing sessions: %w", err)
 	}

@@ -651,13 +651,13 @@ func TestBeadsStoreCheck_OpenError(t *testing.T) {
 }
 
 func TestBeadsStoreCheck_ListPassesOpenFilter(t *testing.T) {
-	// The check should call ListOpen("open") to avoid unbounded queries
+	// The check should call List(Status:"open") to avoid unbounded queries
 	// that time out on large stores.
-	var gotStatus []string
-	spy := &spyOpenStore{
-		listOpenFunc: func(status ...string) ([]beads.Bead, error) {
-			gotStatus = status
-			return []beads.Bead{{Title: "x"}}, nil
+	var gotQuery beads.ListQuery
+	spy := &spyListStore{
+		listFunc: func(query beads.ListQuery) ([]beads.Bead, error) {
+			gotQuery = query
+			return []beads.Bead{{Title: "x", Status: "open"}}, nil
 		},
 	}
 	c := NewBeadsStoreCheck(t.TempDir(), func(_ string) (beads.Store, error) {
@@ -667,22 +667,25 @@ func TestBeadsStoreCheck_ListPassesOpenFilter(t *testing.T) {
 	if r.Status != StatusOK {
 		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
 	}
-	if len(gotStatus) == 0 || gotStatus[0] != "open" {
-		t.Errorf("ListOpen called with status %v, want [\"open\"]", gotStatus)
+	if gotQuery.Status != "open" {
+		t.Errorf("List called with status %q, want %q", gotQuery.Status, "open")
+	}
+	if gotQuery.AllowScan {
+		t.Error("List called with AllowScan=true, want false")
 	}
 }
 
-// spyOpenStore is a minimal Store that records ListOpen calls.
-type spyOpenStore struct {
+// spyListStore is a minimal Store that records List calls.
+type spyListStore struct {
 	beads.MemStore
-	listOpenFunc func(status ...string) ([]beads.Bead, error)
+	listFunc func(query beads.ListQuery) ([]beads.Bead, error)
 }
 
-func (s *spyOpenStore) ListOpen(status ...string) ([]beads.Bead, error) {
-	if s.listOpenFunc != nil {
-		return s.listOpenFunc(status...)
+func (s *spyListStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if s.listFunc != nil {
+		return s.listFunc(query)
 	}
-	return s.MemStore.ListOpen(status...)
+	return s.MemStore.List(query)
 }
 
 // --- DoltServerCheck ---
@@ -818,11 +821,11 @@ func TestRigBeadsCheck_Error(t *testing.T) {
 }
 
 func TestRigBeadsCheck_ListPassesOpenFilter(t *testing.T) {
-	var gotStatus []string
-	spy := &spyOpenStore{
-		listOpenFunc: func(status ...string) ([]beads.Bead, error) {
-			gotStatus = status
-			return []beads.Bead{{Title: "x"}}, nil
+	var gotQuery beads.ListQuery
+	spy := &spyListStore{
+		listFunc: func(query beads.ListQuery) ([]beads.Bead, error) {
+			gotQuery = query
+			return []beads.Bead{{Title: "x", Status: "open"}}, nil
 		},
 	}
 	c := NewRigBeadsCheck(config.Rig{Name: "myrig", Path: t.TempDir()}, func(_ string) (beads.Store, error) {
@@ -832,8 +835,11 @@ func TestRigBeadsCheck_ListPassesOpenFilter(t *testing.T) {
 	if r.Status != StatusOK {
 		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
 	}
-	if len(gotStatus) == 0 || gotStatus[0] != "open" {
-		t.Errorf("ListOpen called with status %v, want [\"open\"]", gotStatus)
+	if gotQuery.Status != "open" {
+		t.Errorf("List called with status %q, want %q", gotQuery.Status, "open")
+	}
+	if gotQuery.AllowScan {
+		t.Error("List called with AllowScan=true, want false")
 	}
 }
 
