@@ -327,7 +327,7 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 		return code
 	}
 
-	sp := newReadOnlySessionProvider()
+	sp := newSessionProvider()
 	mgr := newSessionManager(store, sp)
 
 	// Launch readyWaitSet and config loading concurrently with ListFull,

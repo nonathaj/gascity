@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
@@ -160,11 +161,8 @@ func newSessionProvider() runtime.Provider {
 		if cityPath != "" {
 			store, _ = openCityStoreAt(cityPath)
 		}
-		for _, a := range agents {
-			if a.Session == "acp" {
-				sessName := lookupSessionNameOrLegacy(store, cityName, a.QualifiedName(), sessionTemplate)
-				autoSP.RouteACP(sessName)
-			}
+		for _, sessName := range configuredACPSessionNames(store, cityName, sessionTemplate, agents) {
+			autoSP.RouteACP(sessName)
 		}
 		return autoSP
 	}
@@ -181,44 +179,31 @@ func hasACPAgents(agents []config.Agent) bool {
 	return false
 }
 
-// newReadOnlySessionProvider returns a lightweight session provider suitable
-// for read-only operations (e.g. session list) that only need tmux queries
-// (IsAttached, GetLastActivity, Names). It skips the expensive ACP route
-// pre-registration that requires multiple Dolt queries; ACP routing is done
-// lazily per-session if needed.
-func newReadOnlySessionProvider() runtime.Provider {
-	var sc config.SessionConfig
-	var cityName, cityPath string
-	var agents []config.Agent
-	if cp, err := resolveCity(); err == nil {
-		cityPath = cp
-		if cfg, err := loadCityConfig(cp); err == nil {
-			sc = cfg.Session
-			cityName = cfg.Workspace.Name
-			if cityName == "" {
-				cityName = filepath.Base(cp)
+// configuredACPSessionNames resolves the runtime session names for ACP-backed
+// agents using a single session-bead snapshot. When the store is unavailable
+// or bead lookup fails, it falls back to the legacy deterministic name.
+func configuredACPSessionNames(store beads.Store, cityName, sessionTemplate string, agents []config.Agent) []string {
+	var snapshot *sessionBeadSnapshot
+	if store != nil {
+		if loaded, err := loadSessionBeadSnapshot(store); err == nil {
+			snapshot = loaded
+		}
+	}
+
+	names := make([]string, 0, len(agents))
+	for _, a := range agents {
+		if a.Session != "acp" {
+			continue
+		}
+		sessName := agent.SessionNameFor(cityName, a.QualifiedName(), sessionTemplate)
+		if snapshot != nil {
+			if beadName := snapshot.FindSessionNameByTemplate(a.QualifiedName()); beadName != "" {
+				sessName = beadName
 			}
-			agents = cfg.Agents
 		}
+		names = append(names, sessName)
 	}
-	provName := sessionProviderName()
-	sp, err := newSessionProviderByName(provName, sc, cityName, cityPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
-		os.Exit(1)
-	}
-	// Wrap in auto provider for mixed setups (default != acp but some agents
-	// use acp). Skip pre-registration — listing only needs tmux state queries
-	// which the auto provider delegates to the base provider for non-ACP sessions.
-	if provName != "acp" && hasACPAgents(agents) {
-		acpSP, acpErr := newSessionProviderByName("acp", sc, cityName, cityPath)
-		if acpErr != nil {
-			fmt.Fprintf(os.Stderr, "acp provider: %v\n", acpErr) //nolint:errcheck // best-effort stderr
-			os.Exit(1)
-		}
-		return sessionauto.New(sp, acpSP)
-	}
-	return sp
+	return names
 }
 
 // displayProviderName returns a human-readable provider name for logging.
