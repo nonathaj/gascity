@@ -12,7 +12,9 @@ var ErrQueryRequiresScan = errors.New("bead query requires scan")
 // SortOrder controls optional result ordering for List queries.
 type SortOrder string
 
+// List query sort orders.
 const (
+	// SortDefault leaves store-defined ordering unchanged.
 	SortDefault     SortOrder = ""
 	SortCreatedAsc  SortOrder = "created_asc"
 	SortCreatedDesc SortOrder = "created_desc"

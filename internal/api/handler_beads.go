@@ -373,32 +373,6 @@ func (s *Server) handleBeadDelete(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "not_found", "bead "+id+" not found")
 }
 
-// matchBead applies filters to a bead.
-func matchBead(b beads.Bead, status, typ, label, assignee string) bool {
-	if status != "" && b.Status != status {
-		return false
-	}
-	if typ != "" && b.Type != typ {
-		return false
-	}
-	if assignee != "" && b.Assignee != assignee {
-		return false
-	}
-	if label != "" {
-		found := false
-		for _, l := range b.Labels {
-			if l == label {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
 // findStore returns the bead store for the given rig. If rig is empty, returns
 // the sole store when exactly one exists (after deduplication), or nil when
 // multiple distinct stores exist (caller should require explicit rig).
