@@ -38,8 +38,8 @@ func startTestSupervisorSocket(t *testing.T, sockPath string, handler func(strin
 		t.Fatalf("Listen(unix, %q): %v", sockPath, err)
 	}
 	t.Cleanup(func() {
-		lis.Close()            //nolint:errcheck
-		os.Remove(sockPath)   //nolint:errcheck
+		lis.Close()         //nolint:errcheck
+		os.Remove(sockPath) //nolint:errcheck
 	})
 
 	go func() {
