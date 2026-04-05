@@ -29,21 +29,8 @@ func TestTmuxConfigFromSessionPreservesExplicitSocket(t *testing.T) {
 	}
 }
 
-type countingSessionStore struct {
-	*beads.MemStore
-	listCalls int
-}
-
-func (s *countingSessionStore) ListByLabel(label string, limit int, opts ...beads.QueryOpt) ([]beads.Bead, error) {
-	if label == sessionBeadLabel {
-		s.listCalls++
-	}
-	return s.MemStore.ListByLabel(label, limit, opts...)
-}
-
-func TestConfiguredACPSessionNames_UsesSingleSnapshot(t *testing.T) {
-	store := &countingSessionStore{MemStore: beads.NewMemStore()}
-	if _, err := store.Create(beads.Bead{
+func TestConfiguredACPSessionNames_UsesProvidedSnapshot(t *testing.T) {
+	snapshot := newSessionBeadSnapshot([]beads.Bead{{
 		Type:   sessionBeadType,
 		Labels: []string{sessionBeadLabel, "agent:reviewer"},
 		Metadata: map[string]string{
@@ -51,9 +38,7 @@ func TestConfiguredACPSessionNames_UsesSingleSnapshot(t *testing.T) {
 			"agent_name":   "reviewer",
 			"session_name": "custom-reviewer",
 		},
-	}); err != nil {
-		t.Fatalf("Create(session bead): %v", err)
-	}
+	}})
 
 	agents := []config.Agent{
 		{Name: "reviewer", Session: "acp"},
@@ -61,7 +46,7 @@ func TestConfiguredACPSessionNames_UsesSingleSnapshot(t *testing.T) {
 		{Name: "mayor"},
 	}
 
-	got := configuredACPSessionNames(store, "city", "", agents)
+	got := configuredACPSessionNames(snapshot, "city", "", agents)
 	want := []string{
 		"custom-reviewer",
 		agent.SessionNameFor("city", "witness", ""),
@@ -73,9 +58,6 @@ func TestConfiguredACPSessionNames_UsesSingleSnapshot(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("configuredACPSessionNames[%d] = %q, want %q", i, got[i], want[i])
 		}
-	}
-	if store.listCalls != 1 {
-		t.Fatalf("session ListByLabel calls = %d, want 1", store.listCalls)
 	}
 }
 

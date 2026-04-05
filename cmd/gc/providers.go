@@ -29,18 +29,37 @@ import (
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
-// sessionProviderName returns the session provider name.
-// Priority: GC_SESSION env var → city.toml [session].provider → "" (default: tmux).
-func sessionProviderName() string {
-	if v := os.Getenv("GC_SESSION"); v != "" {
-		return v
+type sessionProviderContext struct {
+	providerName    string
+	cfg             *config.City
+	sc              config.SessionConfig
+	cityName        string
+	cityPath        string
+	agents          []config.Agent
+	sessionTemplate string
+}
+
+func loadSessionProviderContext() sessionProviderContext {
+	ctx := sessionProviderContext{
+		providerName: os.Getenv("GC_SESSION"),
 	}
 	if cp, err := resolveCity(); err == nil {
-		if cfg, err := loadCityConfig(cp); err == nil && cfg.Session.Provider != "" {
-			return cfg.Session.Provider
+		ctx.cityPath = cp
+		if cfg, err := loadCityConfig(cp); err == nil {
+			ctx.cfg = cfg
+			ctx.sc = cfg.Session
+			ctx.cityName = cfg.Workspace.Name
+			if ctx.cityName == "" {
+				ctx.cityName = filepath.Base(cp)
+			}
+			ctx.agents = cfg.Agents
+			ctx.sessionTemplate = cfg.Workspace.SessionTemplate
+			if ctx.providerName == "" {
+				ctx.providerName = cfg.Session.Provider
+			}
 		}
 	}
-	return ""
+	return ctx
 }
 
 // tmuxConfigFromSession converts a config.SessionConfig into a
@@ -120,25 +139,20 @@ func newSessionProviderByName(name string, sc config.SessionConfig, cityName, ci
 // "acp" but some agents have session = "acp", returns an auto.Provider that
 // routes per-session. Startup path — exits on error.
 func newSessionProvider() runtime.Provider {
-	var sc config.SessionConfig
-	var cityName string
-	var cityPath string
-	var agents []config.Agent
-	var sessionTemplate string
-	if cp, err := resolveCity(); err == nil {
-		cityPath = cp
-		if cfg, err := loadCityConfig(cp); err == nil {
-			sc = cfg.Session
-			cityName = cfg.Workspace.Name
-			if cityName == "" {
-				cityName = filepath.Base(cp)
+	ctx := loadSessionProviderContext()
+	var sessionBeads *sessionBeadSnapshot
+	if ctx.cityPath != "" {
+		if store, err := openCityStoreAt(ctx.cityPath); err == nil {
+			if all, err := store.ListByLabel(sessionBeadLabel, 0); err == nil {
+				sessionBeads = newSessionBeadSnapshot(all)
 			}
-			agents = cfg.Agents
-			sessionTemplate = cfg.Workspace.SessionTemplate
 		}
 	}
-	provName := sessionProviderName()
-	sp, err := newSessionProviderByName(provName, sc, cityName, cityPath)
+	return newSessionProviderFromContext(ctx, sessionBeads)
+}
+
+func newSessionProviderFromContext(ctx sessionProviderContext, sessionBeads *sessionBeadSnapshot) runtime.Provider {
+	sp, err := newSessionProviderByName(ctx.providerName, ctx.sc, ctx.cityName, ctx.cityPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err) //nolint:errcheck // best-effort stderr
 		os.Exit(1)
@@ -147,21 +161,14 @@ func newSessionProvider() runtime.Provider {
 	// wrap in an auto provider that routes per-session.
 	// NOTE: agents comes from loadCityConfig which applies pack overrides,
 	// so the Session field from overrides is already resolved here.
-	if provName != "acp" && hasACPAgents(agents) {
-		acpSP, acpErr := newSessionProviderByName("acp", sc, cityName, cityPath)
+	if ctx.providerName != "acp" && hasACPAgents(ctx.agents) {
+		acpSP, acpErr := newSessionProviderByName("acp", ctx.sc, ctx.cityName, ctx.cityPath)
 		if acpErr != nil {
 			fmt.Fprintf(os.Stderr, "acp provider: %v\n", acpErr) //nolint:errcheck // best-effort stderr
 			os.Exit(1)
 		}
 		autoSP := sessionauto.New(sp, acpSP)
-		// Pre-register routes for known ACP agents so one-off commands
-		// (gc status, gc agent nudge, etc.) route correctly.
-		// Best-effort store for bead-derived session name lookup.
-		var store beads.Store
-		if cityPath != "" {
-			store, _ = openCityStoreAt(cityPath)
-		}
-		for _, sessName := range configuredACPSessionNames(store, cityName, sessionTemplate, agents) {
+		for _, sessName := range configuredACPSessionNames(sessionBeads, ctx.cityName, ctx.sessionTemplate, ctx.agents) {
 			autoSP.RouteACP(sessName)
 		}
 		return autoSP
@@ -180,16 +187,9 @@ func hasACPAgents(agents []config.Agent) bool {
 }
 
 // configuredACPSessionNames resolves the runtime session names for ACP-backed
-// agents using a single session-bead snapshot. When the store is unavailable
+// agents using a single session-bead snapshot. When the snapshot is unavailable
 // or bead lookup fails, it falls back to the legacy deterministic name.
-func configuredACPSessionNames(store beads.Store, cityName, sessionTemplate string, agents []config.Agent) []string {
-	var snapshot *sessionBeadSnapshot
-	if store != nil {
-		if loaded, err := loadSessionBeadSnapshot(store); err == nil {
-			snapshot = loaded
-		}
-	}
-
+func configuredACPSessionNames(snapshot *sessionBeadSnapshot, cityName, sessionTemplate string, agents []config.Agent) []string {
 	names := make([]string, 0, len(agents))
 	for _, a := range agents {
 		if a.Session != "acp" {

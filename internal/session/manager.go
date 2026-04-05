@@ -834,7 +834,13 @@ func (m *Manager) ListFull(stateFilter string, templateFilter string) (*ListResu
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
+	return m.ListFullFromBeads(all, stateFilter, templateFilter), nil
+}
 
+// ListFullFromBeads is like ListFull but reuses a caller-supplied slice of
+// session-labeled beads. Callers that already loaded session beads can avoid
+// a second store scan by passing the same slice here.
+func (m *Manager) ListFullFromBeads(all []beads.Bead, stateFilter string, templateFilter string) *ListResult {
 	var result []Info
 	for _, b := range all {
 		if b.Type != BeadType {
@@ -876,7 +882,7 @@ func (m *Manager) ListFull(stateFilter string, templateFilter string) (*ListResu
 
 		result = append(result, m.infoFromBead(b))
 	}
-	return &ListResult{Sessions: result, Beads: all}, nil
+	return &ListResult{Sessions: result, Beads: all}
 }
 
 // Peek captures the last N lines of output from the session.

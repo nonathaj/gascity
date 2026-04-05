@@ -327,46 +327,34 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 		return code
 	}
 
-	sp := newSessionProvider()
-	mgr := newSessionManager(store, sp)
+	providerCtx := loadSessionProviderContext()
 
-	// Launch readyWaitSet and config loading concurrently with ListFull,
+	// Launch readyWaitSet concurrently with the shared session-bead load,
 	// but only on the non-JSON path — JSON output returns early and doesn't
-	// need these, so avoid the extra store/config I/O entirely.
+	// need wait-state computation.
 	type waitResult struct {
 		set map[string]bool
 	}
-	type cfgResult struct {
-		cfg         *config.City
-		poolDesired map[string]int
-	}
 	var waitCh chan waitResult
-	var cfgCh chan cfgResult
 
 	if !jsonOutput {
 		waitCh = make(chan waitResult, 1)
-		cfgCh = make(chan cfgResult, 1)
 
 		go func() {
 			waitCh <- waitResult{set: readyWaitSetForList(store)}
 		}()
-		go func() {
-			var r cfgResult
-			if cityPath, err := resolveCity(); err == nil {
-				if c, err := loadCityConfig(cityPath); err == nil {
-					r.cfg = c
-					r.poolDesired = cliPoolDesired(c)
-				}
-			}
-			cfgCh <- r
-		}()
 	}
 
-	listResult, err := mgr.ListFull(stateFilter, templateFilter)
+	allSessionBeads, err := store.ListByLabel(session.LabelSession, 0)
 	if err != nil {
-		fmt.Fprintf(stderr, "gc session list: %v\n", err) //nolint:errcheck // best-effort stderr
+		fmt.Fprintf(stderr, "gc session list: listing sessions: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+
+	sessionBeads := newSessionBeadSnapshot(allSessionBeads)
+	sp := newSessionProviderFromContext(providerCtx, sessionBeads)
+	mgr := newSessionManager(store, sp)
+	listResult := mgr.ListFullFromBeads(allSessionBeads, stateFilter, templateFilter)
 	sessions := listResult.Sessions
 
 	if jsonOutput {
@@ -383,19 +371,16 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 	}
 
 	readyWaitSet := (<-waitCh).set
-	cr := <-cfgCh
-	cfg := cr.cfg
-	poolDesired := cr.poolDesired
+	cfg := providerCtx.cfg
+	poolDesired := cliPoolDesired(cfg)
 
 	// Build attachment cache from Attached already populated by ListFull,
-	// avoiding redundant tmux subprocess calls per active session.
+	// avoiding redundant tmux subprocess calls in wakeReasons.
 	attachedSet := make(map[string]bool)
 	for _, s := range sessions {
-		if s.State == session.StateActive {
-			name := s.SessionName
-			if name != "" {
-				attachedSet[name] = s.Attached
-			}
+		name := s.SessionName
+		if name != "" {
+			attachedSet[name] = s.Attached
 		}
 	}
 
