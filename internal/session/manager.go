@@ -221,6 +221,9 @@ func (m *Manager) createAliasedNamedWithTransport(ctx context.Context, alias, ex
 	if err != nil {
 		return Info{}, err
 	}
+	if title == "" {
+		title = template
+	}
 	var info Info
 	err = withSessionIdentifierReservationLocks([]string{alias, explicitName}, func() error {
 		if err := ensureSessionAliasAvailable(m.store, nil, alias, "", ""); err != nil {
@@ -424,6 +427,9 @@ func (m *Manager) createAliasedBeadOnlyNamed(alias, explicitName, template, titl
 	if err != nil {
 		return Info{}, err
 	}
+	if title == "" {
+		title = template
+	}
 	var info Info
 	err = withSessionIdentifierReservationLocks([]string{alias, explicitName}, func() error {
 		if err := ensureSessionAliasAvailable(m.store, nil, alias, "", ""); err != nil {
@@ -465,10 +471,10 @@ func (m *Manager) createAliasedBeadOnlyNamed(alias, explicitName, template, titl
 		if sessionKey != "" {
 			meta["session_key"] = sessionKey
 		}
+		meta["pending_create_claim"] = "true"
 		if explicitName != "" {
 			meta["session_name"] = explicitName
 			meta["session_name_explicit"] = "true"
-			meta["pending_create_claim"] = "true"
 		}
 		for k, v := range extraMeta {
 			meta[k] = v
@@ -805,13 +811,36 @@ func (m *Manager) Get(id string) (Info, error) {
 	return m.infoFromBead(b), nil
 }
 
+// ListResult holds the results of a ListFull call, including the raw beads
+// to avoid redundant store queries.
+type ListResult struct {
+	Sessions []Info
+	Beads    []beads.Bead // All session beads (unfiltered by state/template)
+}
+
 // List returns all chat sessions, optionally filtered by state and template.
 func (m *Manager) List(stateFilter string, templateFilter string) ([]Info, error) {
+	r, err := m.ListFull(stateFilter, templateFilter)
+	if err != nil {
+		return nil, err
+	}
+	return r.Sessions, nil
+}
+
+// ListFull is like List but also returns the raw session beads to avoid
+// redundant store queries by the caller (e.g., for building a bead index).
+func (m *Manager) ListFull(stateFilter string, templateFilter string) (*ListResult, error) {
 	all, err := m.store.ListByLabel(LabelSession, 0)
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions: %w", err)
 	}
+	return m.ListFullFromBeads(all, stateFilter, templateFilter), nil
+}
 
+// ListFullFromBeads is like ListFull but reuses a caller-supplied slice of
+// session-labeled beads. Callers that already loaded session beads can avoid
+// a second store scan by passing the same slice here.
+func (m *Manager) ListFullFromBeads(all []beads.Bead, stateFilter string, templateFilter string) *ListResult {
 	var result []Info
 	for _, b := range all {
 		if b.Type != BeadType {
@@ -853,7 +882,7 @@ func (m *Manager) List(stateFilter string, templateFilter string) ([]Info, error
 
 		result = append(result, m.infoFromBead(b))
 	}
-	return result, nil
+	return &ListResult{Sessions: result, Beads: all}
 }
 
 // Peek captures the last N lines of output from the session.

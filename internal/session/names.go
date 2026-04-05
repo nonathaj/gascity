@@ -263,15 +263,22 @@ func sessionIdentifierLockFileName(identifier string) string {
 }
 
 func ensureSessionNameAvailable(store beads.Store, name string) error {
+	return ensureSessionNameAvailableForSelf(store, name, "")
+}
+
+func ensureSessionNameAvailableForSelf(store beads.Store, name, selfID string) error {
 	if name == "" {
 		return nil
 	}
-	all, err := store.ListByLabel(LabelSession, 0)
+	all, err := store.ListByLabel(LabelSession, 0, beads.IncludeClosed)
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
 	for _, b := range all {
 		if b.Type != BeadType {
+			continue
+		}
+		if b.ID == selfID {
 			continue
 		}
 		// Explicit session names are permanent identities; once claimed by any
@@ -346,7 +353,7 @@ func configuredNamedSessionOwnerForSessionName(cfg *config.City, b beads.Bead, r
 }
 
 func ensureConfiguredSessionNameAvailable(store beads.Store, cfg *config.City, name, selfID, selfOwner string) error {
-	if err := ensureSessionNameAvailable(store, name); err != nil {
+	if err := ensureSessionNameAvailableForSelf(store, name, selfID); err != nil {
 		return err
 	}
 	if cfg == nil || name == "" {

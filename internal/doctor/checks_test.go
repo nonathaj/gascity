@@ -651,11 +651,11 @@ func TestBeadsStoreCheck_OpenError(t *testing.T) {
 }
 
 func TestBeadsStoreCheck_ListPassesOpenFilter(t *testing.T) {
-	// The check should call List("open") to avoid unbounded queries
+	// The check should call ListOpen("open") to avoid unbounded queries
 	// that time out on large stores.
 	var gotStatus []string
-	spy := &spyStore{
-		listFunc: func(status ...string) ([]beads.Bead, error) {
+	spy := &spyOpenStore{
+		listOpenFunc: func(status ...string) ([]beads.Bead, error) {
 			gotStatus = status
 			return []beads.Bead{{Title: "x"}}, nil
 		},
@@ -668,21 +668,21 @@ func TestBeadsStoreCheck_ListPassesOpenFilter(t *testing.T) {
 		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
 	}
 	if len(gotStatus) == 0 || gotStatus[0] != "open" {
-		t.Errorf("List called with status %v, want [\"open\"]", gotStatus)
+		t.Errorf("ListOpen called with status %v, want [\"open\"]", gotStatus)
 	}
 }
 
-// spyStore is a minimal Store that records List calls.
-type spyStore struct {
+// spyOpenStore is a minimal Store that records ListOpen calls.
+type spyOpenStore struct {
 	beads.MemStore
-	listFunc func(status ...string) ([]beads.Bead, error)
+	listOpenFunc func(status ...string) ([]beads.Bead, error)
 }
 
-func (s *spyStore) List(status ...string) ([]beads.Bead, error) {
-	if s.listFunc != nil {
-		return s.listFunc(status...)
+func (s *spyOpenStore) ListOpen(status ...string) ([]beads.Bead, error) {
+	if s.listOpenFunc != nil {
+		return s.listOpenFunc(status...)
 	}
-	return s.MemStore.List(status...)
+	return s.MemStore.ListOpen(status...)
 }
 
 // --- DoltServerCheck ---
@@ -814,6 +814,26 @@ func TestRigBeadsCheck_Error(t *testing.T) {
 	r := c.Run(&CheckContext{})
 	if r.Status != StatusError {
 		t.Errorf("status = %d, want Error", r.Status)
+	}
+}
+
+func TestRigBeadsCheck_ListPassesOpenFilter(t *testing.T) {
+	var gotStatus []string
+	spy := &spyOpenStore{
+		listOpenFunc: func(status ...string) ([]beads.Bead, error) {
+			gotStatus = status
+			return []beads.Bead{{Title: "x"}}, nil
+		},
+	}
+	c := NewRigBeadsCheck(config.Rig{Name: "myrig", Path: t.TempDir()}, func(_ string) (beads.Store, error) {
+		return spy, nil
+	})
+	r := c.Run(&CheckContext{})
+	if r.Status != StatusOK {
+		t.Fatalf("status = %d, want OK; msg = %s", r.Status, r.Message)
+	}
+	if len(gotStatus) == 0 || gotStatus[0] != "open" {
+		t.Errorf("ListOpen called with status %v, want [\"open\"]", gotStatus)
 	}
 }
 
