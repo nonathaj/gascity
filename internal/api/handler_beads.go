@@ -43,16 +43,20 @@ func (s *Server) handleBeadList(w http.ResponseWriter, r *http.Request) {
 	var all []beads.Bead
 	for _, rigName := range rigNames {
 		store := stores[rigName]
-		list, err := store.ListOpen()
+		query := beads.ListQuery{
+			Status:   qStatus,
+			Type:     qType,
+			Label:    qLabel,
+			Assignee: qAssignee,
+		}
+		if !query.HasFilter() {
+			query.AllowScan = true
+		}
+		list, err := store.List(query)
 		if err != nil {
 			continue
 		}
-		for _, b := range list {
-			if !matchBead(b, qStatus, qType, qLabel, qAssignee) {
-				continue
-			}
-			all = append(all, b)
-		}
+		all = append(all, list...)
 	}
 
 	if all == nil {
@@ -123,7 +127,10 @@ func (s *Server) handleBeadDeps(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
 		}
-		children, err := store.Children(id)
+		children, err := store.List(beads.ListQuery{
+			ParentID: id,
+			Sort:     beads.SortCreatedAsc,
+		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal", err.Error())
 			return
@@ -366,32 +373,6 @@ func (s *Server) handleBeadDelete(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "not_found", "bead "+id+" not found")
 }
 
-// matchBead applies filters to a bead.
-func matchBead(b beads.Bead, status, typ, label, assignee string) bool {
-	if status != "" && b.Status != status {
-		return false
-	}
-	if typ != "" && b.Type != typ {
-		return false
-	}
-	if assignee != "" && b.Assignee != assignee {
-		return false
-	}
-	if label != "" {
-		found := false
-		for _, l := range b.Labels {
-			if l == label {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
 // findStore returns the bead store for the given rig. If rig is empty, returns
 // the sole store when exactly one exists (after deduplication), or nil when
 // multiple distinct stores exist (caller should require explicit rig).
@@ -562,7 +543,10 @@ func (s *Server) handleBeadGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Collect all beads in the graph: root + workflow descendants keyed by gc.root_bead_id.
-	all, err := foundStore.ListByMetadata(map[string]string{"gc.root_bead_id": rootID}, 0, beads.IncludeClosed)
+	all, err := foundStore.List(beads.ListQuery{
+		Metadata:      map[string]string{"gc.root_bead_id": rootID},
+		IncludeClosed: true,
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return

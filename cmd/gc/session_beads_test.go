@@ -1817,3 +1817,47 @@ func TestFindClosedNamedSessionBeadForSessionName_PrefersMatchingCanonicalCandid
 		t.Fatalf("generic lookup bead ID = %q, want canonical %q", generic.ID, canonical.ID)
 	}
 }
+
+func TestFindClosedNamedSessionBead_PrefersNewestClosedCanonical(t *testing.T) {
+	store := beads.NewMemStore()
+
+	older, err := store.Create(beads.Bead{
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               "test-city--mayor",
+			namedSessionMetadataKey:      "true",
+			namedSessionIdentityMetadata: "mayor",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(older): %v", err)
+	}
+	if err := store.Close(older.ID); err != nil {
+		t.Fatalf("Close(older): %v", err)
+	}
+
+	newer, err := store.Create(beads.Bead{
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               "test-city--mayor",
+			namedSessionMetadataKey:      "true",
+			namedSessionIdentityMetadata: "mayor",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(newer): %v", err)
+	}
+	if err := store.Close(newer.ID); err != nil {
+		t.Fatalf("Close(newer): %v", err)
+	}
+
+	found, ok := findClosedNamedSessionBead(store, "mayor")
+	if !ok {
+		t.Fatal("findClosedNamedSessionBead did not find closed mayor bead")
+	}
+	if found.ID != newer.ID {
+		t.Fatalf("found bead ID = %q, want newest canonical %q", found.ID, newer.ID)
+	}
+}

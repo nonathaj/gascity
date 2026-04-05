@@ -345,7 +345,11 @@ func cmdSessionList(stateFilter, templateFilter string, jsonOutput bool, stdout,
 		}()
 	}
 
-	allSessionBeads, err := store.ListByLabel(session.LabelSession, 0)
+	allSessionBeads, err := store.List(beads.ListQuery{
+		Label: session.LabelSession,
+		Type:  session.BeadType,
+		Sort:  beads.SortCreatedDesc,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session list: listing sessions: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1

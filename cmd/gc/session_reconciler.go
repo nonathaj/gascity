@@ -894,7 +894,11 @@ func clearMissingIdleProbes(dt *drainTracker, beadByID map[string]*beads.Bead) {
 // in the worktree that the previous session (or this session's prior run)
 // created, without any prompt-side logic.
 func resolveTaskWorkDir(store beads.Store, agentName string) string {
-	assigned, err := store.ListByAssignee(agentName, "in_progress", 0)
+	assigned, err := store.List(beads.ListQuery{
+		Assignee: agentName,
+		Status:   "in_progress",
+		Sort:     beads.SortCreatedDesc,
+	})
 	if err != nil {
 		return ""
 	}

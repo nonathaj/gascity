@@ -428,7 +428,7 @@ func TestBdStoreList(t *testing.T) {
 		out []byte
 		err error
 	}{
-		`bd list --json --limit 0 --include-infra`: {
+		`bd list --json --include-infra --limit 0`: {
 			out: []byte(`[{"id":"bd-aaa","title":"first","status":"open","issue_type":"task","created_at":"2025-01-15T10:30:00Z"},{"id":"bd-bbb","title":"second","status":"closed","issue_type":"bug","created_at":"2025-01-15T10:31:00Z"}]`),
 		},
 	})
@@ -437,14 +437,14 @@ func TestBdStoreList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("List() returned %d beads, want 2", len(got))
+	if len(got) != 1 {
+		t.Fatalf("ListOpen() returned %d beads, want 1", len(got))
 	}
 	if got[0].ID != "bd-aaa" {
 		t.Errorf("got[0].ID = %q, want %q", got[0].ID, "bd-aaa")
 	}
-	if got[1].Status != "closed" {
-		t.Errorf("got[1].Status = %q, want %q", got[1].Status, "closed")
+	if got[0].Status != "open" {
+		t.Errorf("got[0].Status = %q, want %q", got[0].Status, "open")
 	}
 }
 
@@ -453,7 +453,7 @@ func TestBdStoreListEmpty(t *testing.T) {
 		out []byte
 		err error
 	}{
-		`bd list --json --limit 0 --include-infra`: {out: []byte(`[]`)},
+		`bd list --json --include-infra --limit 0`: {out: []byte(`[]`)},
 	})
 	s := beads.NewBdStore("/city", runner)
 	got, err := s.ListOpen()

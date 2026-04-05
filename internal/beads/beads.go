@@ -132,6 +132,11 @@ type Store interface {
 	// Returns the number of beads actually closed.
 	CloseAll(ids []string, metadata map[string]string) (int, error)
 
+	// List returns beads matching the query. Queries must include at least
+	// one filter unless AllowScan is set explicitly.
+	List(query ListQuery) ([]Bead, error)
+
+	// Legacy helper; prefer List with ListQuery in new code.
 	// ListOpen returns non-closed beads by default. With a status argument
 	// (e.g., "in_progress" or "closed"), returns only beads matching that
 	// status. In-process stores return creation order; external stores may not
@@ -142,20 +147,24 @@ type Store interface {
 	// as List.
 	Ready() ([]Bead, error)
 
+	// Legacy helper; prefer List with ListQuery in new code.
 	// Children returns all beads whose ParentID matches the given ID,
 	// in creation order. Pass IncludeClosed to include closed children.
 	Children(parentID string, opts ...QueryOpt) ([]Bead, error)
 
+	// Legacy helper; prefer List with ListQuery in new code.
 	// ListByLabel returns beads matching an exact label string.
 	// Limit controls max results (0 = unlimited). Results are ordered
 	// newest first where supported; in-process stores return creation order.
 	// Pass IncludeClosed to include closed beads.
 	ListByLabel(label string, limit int, opts ...QueryOpt) ([]Bead, error)
 
+	// Legacy helper; prefer List with ListQuery in new code.
 	// ListByAssignee returns beads assigned to the given agent with the
 	// specified status. Limit controls max results (0 = unlimited).
 	ListByAssignee(assignee, status string, limit int) ([]Bead, error)
 
+	// Legacy helper; prefer List with ListQuery in new code.
 	// ListByMetadata returns beads whose metadata contains all key-value pairs
 	// in filters. Limit controls max results (0 = unlimited). Pass
 	// IncludeClosed to include closed beads.

@@ -143,7 +143,7 @@ func newSessionProvider() runtime.Provider {
 	var sessionBeads *sessionBeadSnapshot
 	if ctx.cityPath != "" {
 		if store, err := openCityStoreAt(ctx.cityPath); err == nil {
-			if all, err := store.ListByLabel(sessionBeadLabel, 0); err == nil {
+			if all, err := store.List(beads.ListQuery{Label: sessionBeadLabel, Type: sessionBeadType}); err == nil {
 				sessionBeads = newSessionBeadSnapshot(all)
 			}
 		}

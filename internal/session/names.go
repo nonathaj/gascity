@@ -270,7 +270,11 @@ func ensureSessionNameAvailableForSelf(store beads.Store, name, selfID string) e
 	if name == "" {
 		return nil
 	}
-	all, err := store.ListByLabel(LabelSession, 0, beads.IncludeClosed)
+	all, err := store.List(beads.ListQuery{
+		Label:         LabelSession,
+		Type:          BeadType,
+		IncludeClosed: true,
+	})
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}
@@ -395,7 +399,10 @@ func ensureSessionAliasAvailable(store beads.Store, cfg *config.City, alias, sel
 			hasSelfBead = true
 		}
 	}
-	all, err := store.ListByLabel(LabelSession, 0)
+	all, err := store.List(beads.ListQuery{
+		Label: LabelSession,
+		Type:  BeadType,
+	})
 	if err != nil {
 		return fmt.Errorf("listing sessions: %w", err)
 	}

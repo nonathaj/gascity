@@ -27,7 +27,10 @@ func loadSessionBeads(store beads.Store) ([]beads.Bead, error) {
 	if store == nil {
 		return nil, nil
 	}
-	all, err := store.ListByLabel(sessionBeadLabel, 0)
+	all, err := store.List(beads.ListQuery{
+		Label: sessionBeadLabel,
+		Type:  sessionBeadType,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("listing session beads: %w", err)
 	}
@@ -901,7 +904,10 @@ func setBeadRestartRequested(store beads.Store, sessionName string) error {
 	if store == nil {
 		return fmt.Errorf("no store available")
 	}
-	all, err := store.ListByLabel(sessionBeadLabel, 0)
+	all, err := store.List(beads.ListQuery{
+		Label: sessionBeadLabel,
+		Type:  sessionBeadType,
+	})
 	if err != nil {
 		return fmt.Errorf("listing session beads: %w", err)
 	}
