@@ -20,7 +20,9 @@ type attachmentAwareProvider struct {
 	*runtime.Fake
 	sleepCapability runtime.SessionSleepCapability
 	pending         *runtime.PendingInteraction
+	pendingErr      error
 	responded       runtime.InteractionResponse
+	respondErr      error
 }
 
 func (p *attachmentAwareProvider) SleepCapability(string) runtime.SessionSleepCapability {
@@ -28,14 +30,20 @@ func (p *attachmentAwareProvider) SleepCapability(string) runtime.SessionSleepCa
 }
 
 func (p *attachmentAwareProvider) Pending(string) (*runtime.PendingInteraction, error) {
+	if p.pendingErr != nil {
+		return nil, p.pendingErr
+	}
 	if p.pending == nil {
 		return nil, nil
 	}
-	copy := *p.pending
-	return &copy, nil
+	pendingCopy := *p.pending
+	return &pendingCopy, nil
 }
 
 func (p *attachmentAwareProvider) Respond(_ string, response runtime.InteractionResponse) error {
+	if p.respondErr != nil {
+		return p.respondErr
+	}
 	p.responded = response
 	return nil
 }
