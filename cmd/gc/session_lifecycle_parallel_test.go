@@ -1351,6 +1351,36 @@ func TestInterruptTargetsBounded_RespectsInterruptCap(t *testing.T) {
 	}
 }
 
+func TestInterruptTargetsBounded_StopsPoolManagedSessions(t *testing.T) {
+	sp := runtime.NewFake()
+	// Start both sessions.
+	for _, name := range []string{"human-worker", "pool-worker"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	targets := []stopTarget{
+		{name: "human-worker", template: "worker", resolved: true, poolManaged: false},
+		{name: "pool-worker", template: "pool", resolved: true, poolManaged: true},
+	}
+	var stderr bytes.Buffer
+	sent := interruptTargetsBounded(targets, sp, &stderr)
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1 (only human-worker)", sent)
+	}
+	if !strings.Contains(stderr.String(), "stopped_pool_managed") {
+		t.Fatalf("stderr = %q, want stopped_pool_managed log entry", stderr.String())
+	}
+	// Pool-managed session should have been stopped, not interrupted.
+	if sp.IsRunning("pool-worker") {
+		t.Fatal("pool-worker should have been stopped")
+	}
+	// Human worker should still be running (only interrupted, not stopped).
+	if !sp.IsRunning("human-worker") {
+		t.Fatal("human-worker should still be running (only interrupted)")
+	}
+}
+
 func TestExecutePreparedStartWave_PanicIncludesStackTrace(t *testing.T) {
 	results := executePreparedStartWave(
 		context.Background(),
