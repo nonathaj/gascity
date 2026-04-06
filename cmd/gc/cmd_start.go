@@ -850,8 +850,9 @@ func passthroughEnv() map[string]string {
 	}
 	// USER/LOGNAME are required on macOS for Keychain access — without them
 	// providers like Claude Code cannot read stored OAuth credentials.
-	for _, key := range []string{"USER", "LOGNAME"} {
-	for _, key := range []string{"HOME", "USER", "LOGNAME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN"} {
+	// CLAUDE_CONFIG_DIR and CLAUDE_CODE_OAUTH_TOKEN let managed Claude
+	// sessions find stored credentials and token-based auth.
+	for _, key := range []string{"USER", "LOGNAME", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN"} {
 		if v := os.Getenv(key); v != "" {
 			m[key] = v
 		}
@@ -869,6 +870,10 @@ func passthroughEnv() map[string]string {
 	} else if home := os.Getenv("HOME"); home != "" {
 		m["XDG_STATE_HOME"] = filepath.Join(home, ".local", "state")
 	}
+	// Pass through all GC_* and ANTHROPIC_* vars. Agent credentials are
+	// included in the global baseline because the SDK cannot know which
+	// agent uses which provider (zero hardcoded roles); the trust boundary
+	// is the managed session itself.
 	for _, entry := range os.Environ() {
 		key, val, ok := strings.Cut(entry, "=")
 		if !ok || val == "" {

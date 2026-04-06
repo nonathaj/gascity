@@ -192,6 +192,35 @@ func TestPassthroughEnvIncludesClaudeAuthContext(t *testing.T) {
 	}
 }
 
+func TestPassthroughEnvXDGFallbackFromHOME(t *testing.T) {
+	t.Setenv("HOME", "/tmp/gc-home")
+	// Explicitly unset XDG vars so fallback logic fires.
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+
+	got := passthroughEnv()
+
+	if got["XDG_CONFIG_HOME"] != "/tmp/gc-home/.config" {
+		t.Errorf("XDG_CONFIG_HOME = %q, want %q (fallback from HOME)", got["XDG_CONFIG_HOME"], "/tmp/gc-home/.config")
+	}
+	if got["XDG_STATE_HOME"] != "/tmp/gc-home/.local/state" {
+		t.Errorf("XDG_STATE_HOME = %q, want %q (fallback from HOME)", got["XDG_STATE_HOME"], "/tmp/gc-home/.local/state")
+	}
+}
+
+func TestPassthroughEnvOmitsEmptyAnthropicVars(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
+
+	got := passthroughEnv()
+
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"} {
+		if _, ok := got[key]; ok {
+			t.Errorf("passthroughEnv() should omit empty %s", key)
+		}
+	}
+}
+
 func TestPassthroughEnvStripsClaudeNesting(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
 	t.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
