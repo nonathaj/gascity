@@ -125,6 +125,11 @@ func buildSessionWorkLookup(sessions []beads.Bead, workBeads []beads.Bead) map[s
 
 	result := make(map[string]bool)
 	for _, wb := range workBeads {
+		// Session and message beads are not work — skip them to avoid
+		// false-positive nudges when they appear in the work query results.
+		if wb.Type == "session" || wb.Type == "message" {
+			continue
+		}
 		assignee := strings.TrimSpace(wb.Assignee)
 		if assignee == "" {
 			continue
