@@ -596,17 +596,23 @@ func TestPodManifestCompatibility(t *testing.T) {
 
 func TestBuildPodEnvRemapsVars(t *testing.T) {
 	cfgEnv := map[string]string{
-		"GC_AGENT":        "mayor",
-		"GC_CITY":         "/host/city",
-		"GC_DIR":          "/host/city/rig",
-		"GC_SESSION":      "exec:gc-session-k8s",
-		"GC_BEADS":        "exec:something",
-		"GC_EVENTS":       "exec:other",
-		"GC_DOLT_HOST":    "localhost",
-		"GC_DOLT_PORT":    "3307",
-		"GC_MAIL":         "exec:mail",
-		"GC_MCP_MAIL_URL": "http://localhost:8765",
-		"CUSTOM_VAR":      "preserved",
+		"GC_AGENT":               "mayor",
+		"GC_CITY":                "/host/city",
+		"GC_DIR":                 "/host/city/rig",
+		"GC_SESSION":             "exec:gc-session-k8s",
+		"GC_BEADS":               "exec:something",
+		"GC_EVENTS":              "exec:other",
+		"GC_DOLT_HOST":           "localhost",
+		"GC_DOLT_PORT":           "3307",
+		"BEADS_DOLT_SERVER_HOST": "localhost",
+		"BEADS_DOLT_SERVER_PORT": "3307",
+		"GC_DOLT_USER":           "admin",
+		"GC_DOLT_PASSWORD":       "secret",
+		"BEADS_DOLT_SERVER_USER": "admin",
+		"BEADS_DOLT_PASSWORD":    "secret",
+		"GC_MAIL":                "exec:mail",
+		"GC_MCP_MAIL_URL":        "http://localhost:8765",
+		"CUSTOM_VAR":             "preserved",
 	}
 
 	env := buildPodEnv(cfgEnv, "/workspace/rig")
@@ -626,10 +632,17 @@ func TestBuildPodEnvRemapsVars(t *testing.T) {
 		t.Errorf("GC_DIR = %q, want /workspace/rig", envMap["GC_DIR"])
 	}
 
-	// Controller-only vars should be removed.
-	for _, key := range []string{"GC_SESSION", "GC_BEADS", "GC_EVENTS", "GC_DOLT_HOST", "GC_DOLT_PORT"} {
+	// Controller-only connection vars should be removed (host/port are
+	// replaced with K8s-specific endpoints). Auth credentials pass through.
+	for _, key := range []string{"GC_SESSION", "GC_BEADS", "GC_EVENTS", "GC_DOLT_HOST", "GC_DOLT_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT"} {
 		if _, exists := envMap[key]; exists {
 			t.Errorf("controller-only var %s should be removed", key)
+		}
+	}
+	// Auth credentials should pass through to agent pods.
+	for _, key := range []string{"GC_DOLT_USER", "GC_DOLT_PASSWORD", "BEADS_DOLT_SERVER_USER", "BEADS_DOLT_PASSWORD"} {
+		if _, exists := envMap[key]; !exists {
+			t.Errorf("auth var %s should be preserved in agent pods", key)
 		}
 	}
 

@@ -228,7 +228,9 @@ case "$op" in
       --arg mcp_mail_project "$mail_project" \
       --arg tmux_session "$TMUX_SESSION" \
       --arg pod_dir "$pod_work_dir" '
-      del(.GC_DOLT_HOST, .GC_DOLT_PORT, .GC_BEADS, .GC_SESSION, .GC_EVENTS,
+      del(.GC_DOLT_HOST, .GC_DOLT_PORT,
+          .BEADS_DOLT_SERVER_HOST, .BEADS_DOLT_SERVER_PORT,
+          .GC_BEADS, .GC_SESSION, .GC_EVENTS,
           .GC_MAIL, .GC_MCP_MAIL_URL, .GC_MCP_MAIL_PROJECT)
       | .GC_CITY = "/workspace" | .GC_DIR = $pod_dir
       | to_entries
