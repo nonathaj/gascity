@@ -90,7 +90,7 @@ func resolveConfiguredNamedSessionID(
 		return "", true, fmt.Errorf("%w: %q conflicts with configured named session %q via live bead %s", errNamedSessionConflict, identifier, spec.Identity, bead.ID)
 	}
 	if !opts.materialize {
-		return "", true, fmt.Errorf("%w: %q", session.ErrSessionNotFound, identifier)
+		return "", false, fmt.Errorf("%w: %q", session.ErrSessionNotFound, identifier)
 	}
 	id, err := ensureSessionIDForTemplate(cityPath, cfg, store, spec.Identity, nil)
 	return id, true, err
@@ -155,17 +155,34 @@ func resolveSessionIDWithOptions(
 	} else if !errors.Is(err, session.ErrSessionNotFound) {
 		return "", err
 	}
+	if opts.materialize {
+		if id, matched, err := resolveConfiguredNamedSessionID(cityPath, cfg, store, identifier, opts); err == nil {
+			return id, nil
+		} else if matched || !errors.Is(err, session.ErrSessionNotFound) {
+			return "", err
+		}
+	}
 	if id, err := session.ResolveSessionID(store, identifier); err == nil {
 		return id, nil
 	} else if !errors.Is(err, session.ErrSessionNotFound) {
 		return "", err
 	}
-	if id, matched, err := resolveConfiguredNamedSessionID(cityPath, cfg, store, identifier, opts); err == nil {
-		return id, nil
-	} else if matched || !errors.Is(err, session.ErrSessionNotFound) {
-		return "", err
+	if !opts.materialize {
+		if id, matched, err := resolveConfiguredNamedSessionID(cityPath, cfg, store, identifier, opts); err == nil {
+			return id, nil
+		} else if matched || !errors.Is(err, session.ErrSessionNotFound) {
+			return "", err
+		}
 	}
 	if opts.allowClosed {
+		if cfg != nil {
+			cityName := config.EffectiveCityName(cfg, filepath.Base(cityPath))
+			if _, ok, err := findNamedSessionSpecForTarget(cfg, cityName, store, identifier); err != nil {
+				return "", err
+			} else if ok {
+				return "", fmt.Errorf("%w: %q", session.ErrSessionNotFound, identifier)
+			}
+		}
 		if id, err := session.ResolveSessionIDAllowClosed(store, identifier); err == nil {
 			return id, nil
 		} else if !errors.Is(err, session.ErrSessionNotFound) {

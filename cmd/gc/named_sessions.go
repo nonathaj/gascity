@@ -195,6 +195,15 @@ func namedSessionMode(b beads.Bead) string {
 	return strings.TrimSpace(b.Metadata[namedSessionModeMetadata])
 }
 
+func namedSessionBeadMatchesSpec(b beads.Bead, spec namedSessionSpec) bool {
+	if isNamedSessionBead(b) && namedSessionIdentity(b) == spec.Identity {
+		return true
+	}
+	template := normalizeNamedSessionTarget(strings.TrimSpace(b.Metadata["template"]))
+	agentName := normalizeNamedSessionTarget(strings.TrimSpace(b.Metadata["agent_name"]))
+	return template == spec.Identity || agentName == spec.Identity
+}
+
 func findCanonicalNamedSessionBead(sessionBeads *sessionBeadSnapshot, spec namedSessionSpec) (beads.Bead, bool) {
 	if sessionBeads == nil {
 		return beads.Bead{}, false
@@ -207,13 +216,15 @@ func findCanonicalNamedSessionBead(sessionBeads *sessionBeadSnapshot, spec named
 		}
 	}
 	// Second pass: adopt pre-existing session beads whose canonical runtime
-	// session_name, alias, or alias_history matches the named session. This
+	// session_name matches the named session. This
 	// covers beads created before the named session config was added
 	// (e.g., implicit agents promoted to named sessions).
 	for _, b := range sessionBeads.Open() {
+		if !namedSessionBeadMatchesSpec(b, spec) {
+			continue
+		}
 		sn := strings.TrimSpace(b.Metadata["session_name"])
-		alias := strings.TrimSpace(b.Metadata["alias"])
-		if sn == spec.SessionName || sn == identity || alias == identity || sessionAliasHistoryContains(b.Metadata, identity) {
+		if sn == spec.SessionName || sn == identity {
 			return b, true
 		}
 	}
@@ -272,7 +283,7 @@ func beadConflictsWithNamedSession(b beads.Bead, spec namedSessionSpec) bool {
 		return false
 	}
 	if strings.TrimSpace(b.Metadata["session_name"]) == spec.SessionName {
-		return false
+		return !namedSessionBeadMatchesSpec(b, spec)
 	}
 	if strings.TrimSpace(b.Metadata["alias"]) == spec.Identity {
 		return true
