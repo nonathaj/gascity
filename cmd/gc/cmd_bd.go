@@ -95,6 +95,13 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 	} else {
 		env = append(env, "GC_RIG=", "GC_RIG_ROOT=")
 	}
+	// Mirror user/password to beads v1.0.0 env var names.
+	if user := os.Getenv("GC_DOLT_USER"); user != "" {
+		env = append(env, "BEADS_DOLT_SERVER_USER="+user)
+	}
+	if pass := os.Getenv("GC_DOLT_PASSWORD"); pass != "" {
+		env = append(env, "BEADS_DOLT_PASSWORD="+pass)
+	}
 	cmd.Env = env
 
 	if err := cmd.Run(); err != nil {

@@ -27,7 +27,15 @@ func controllerQueryEnv(cityPath string, cfg *config.City, agentCfg *config.Agen
 		return nil
 	}
 	env := map[string]string{}
-	for _, key := range []string{"GC_DOLT_HOST", "GC_DOLT_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT"} {
+	// Only include connection coordinates (host/port) in the prefix — NOT
+	// credentials. Passwords serialized into the shell prefix would be
+	// visible in process listings. Auth vars (GC_DOLT_USER, GC_DOLT_PASSWORD,
+	// BEADS_DOLT_SERVER_USER, BEADS_DOLT_PASSWORD) are inherited from the
+	// controller's process env set by cityRuntimeProcessEnv.
+	for _, key := range []string{
+		"GC_DOLT_HOST", "GC_DOLT_PORT",
+		"BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT",
+	} {
 		if value, ok := source[key]; ok {
 			env[key] = value
 		}

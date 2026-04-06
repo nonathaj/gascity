@@ -17,6 +17,8 @@ func TestBdRuntimeEnvIncludesDoltHost(t *testing.T) {
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT_HOST", "mini2.hippo-tilapia.ts.net")
 	t.Setenv("GC_DOLT_PORT", "3307")
+	t.Setenv("GC_DOLT_USER", "agent")
+	t.Setenv("GC_DOLT_PASSWORD", "s3cret")
 	t.Setenv("GC_DOLT", "skip")
 
 	cityPath := t.TempDir()
@@ -33,6 +35,12 @@ func TestBdRuntimeEnvIncludesDoltHost(t *testing.T) {
 	}
 	if got := env["BEADS_DOLT_SERVER_PORT"]; got != "3307" {
 		t.Errorf("BEADS_DOLT_SERVER_PORT = %q, want %q", got, "3307")
+	}
+	if got := env["BEADS_DOLT_SERVER_USER"]; got != "agent" {
+		t.Errorf("BEADS_DOLT_SERVER_USER = %q, want %q", got, "agent")
+	}
+	if got := env["BEADS_DOLT_PASSWORD"]; got != "s3cret" {
+		t.Errorf("BEADS_DOLT_PASSWORD = %q, want %q", got, "s3cret")
 	}
 }
 
@@ -57,12 +65,14 @@ func TestCityRuntimeProcessEnvIncludesDoltHost(t *testing.T) {
 	t.Setenv("GC_BEADS", "bd")
 	t.Setenv("GC_DOLT_HOST", "mini2.hippo-tilapia.ts.net")
 	t.Setenv("GC_DOLT_PORT", "3307")
+	t.Setenv("GC_DOLT_USER", "agent")
+	t.Setenv("GC_DOLT_PASSWORD", "s3cret")
 	t.Setenv("GC_DOLT", "skip")
 
 	cityPath := t.TempDir()
 	env := cityRuntimeProcessEnv(cityPath)
 
-	var foundHost, foundPort, foundBeadsHost, foundBeadsPort bool
+	var foundHost, foundPort, foundBeadsHost, foundBeadsPort, foundBeadsUser, foundBeadsPass bool
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GC_DOLT_HOST=") {
 			foundHost = true
@@ -88,6 +98,18 @@ func TestCityRuntimeProcessEnvIncludesDoltHost(t *testing.T) {
 				t.Errorf("BEADS_DOLT_SERVER_PORT = %q, want %q", got, "3307")
 			}
 		}
+		if strings.HasPrefix(entry, "BEADS_DOLT_SERVER_USER=") {
+			foundBeadsUser = true
+			if got := strings.TrimPrefix(entry, "BEADS_DOLT_SERVER_USER="); got != "agent" {
+				t.Errorf("BEADS_DOLT_SERVER_USER = %q, want %q", got, "agent")
+			}
+		}
+		if strings.HasPrefix(entry, "BEADS_DOLT_PASSWORD=") {
+			foundBeadsPass = true
+			if got := strings.TrimPrefix(entry, "BEADS_DOLT_PASSWORD="); got != "s3cret" {
+				t.Errorf("BEADS_DOLT_PASSWORD = %q, want %q", got, "s3cret")
+			}
+		}
 	}
 	if !foundHost {
 		t.Error("GC_DOLT_HOST not found in cityRuntimeProcessEnv output")
@@ -100,6 +122,12 @@ func TestCityRuntimeProcessEnvIncludesDoltHost(t *testing.T) {
 	}
 	if !foundBeadsPort {
 		t.Error("BEADS_DOLT_SERVER_PORT not found in cityRuntimeProcessEnv output")
+	}
+	if !foundBeadsUser {
+		t.Error("BEADS_DOLT_SERVER_USER not found in cityRuntimeProcessEnv output")
+	}
+	if !foundBeadsPass {
+		t.Error("BEADS_DOLT_PASSWORD not found in cityRuntimeProcessEnv output")
 	}
 }
 

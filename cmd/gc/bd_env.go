@@ -96,6 +96,14 @@ func bdRuntimeEnv(cityPath string) map[string]string {
 	// Propagate Dolt host/port from per-city config (registered by
 	// startBeadsLifecycle) or user env vars. Per-city config avoids
 	// process-global env pollution that breaks supervisor multi-tenancy.
+	// User/password have no per-city config; propagate from process env
+	// so mirrorBeadsDoltEnv can translate them to beads v1.0.0 names.
+	if user := os.Getenv("GC_DOLT_USER"); user != "" {
+		env["GC_DOLT_USER"] = user
+	}
+	if pass := os.Getenv("GC_DOLT_PASSWORD"); pass != "" {
+		env["GC_DOLT_PASSWORD"] = pass
+	}
 	if host := doltHostForCity(cityPath); host != "" {
 		env["GC_DOLT_HOST"] = host
 	}
@@ -148,6 +156,14 @@ func cityRuntimeProcessEnv(cityPath string) []string {
 			overrides["GC_DOLT_PORT"] = port
 			overrides["BEADS_DOLT_SERVER_PORT"] = port
 		}
+		if user := os.Getenv("GC_DOLT_USER"); user != "" {
+			overrides["GC_DOLT_USER"] = user
+			overrides["BEADS_DOLT_SERVER_USER"] = user
+		}
+		if pass := os.Getenv("GC_DOLT_PASSWORD"); pass != "" {
+			overrides["GC_DOLT_PASSWORD"] = pass
+			overrides["BEADS_DOLT_PASSWORD"] = pass
+		}
 	}
 	return mergeRuntimeEnv(os.Environ(), overrides)
 }
@@ -166,6 +182,19 @@ func mirrorBeadsDoltEnv(env map[string]string) {
 	} else {
 		delete(env, "BEADS_DOLT_SERVER_PORT")
 	}
+	if user := strings.TrimSpace(env["GC_DOLT_USER"]); user != "" {
+		env["BEADS_DOLT_SERVER_USER"] = user
+	} else {
+		delete(env, "BEADS_DOLT_SERVER_USER")
+	}
+	// Note: beads v1.0.0 reads BEADS_DOLT_PASSWORD (no _SERVER_ infix).
+	// The asymmetry with BEADS_DOLT_SERVER_USER is intentional per beads
+	// upstream convention.
+	if pass := env["GC_DOLT_PASSWORD"]; pass != "" {
+		env["BEADS_DOLT_PASSWORD"] = pass
+	} else {
+		delete(env, "BEADS_DOLT_PASSWORD")
+	}
 }
 
 func cityForStoreDir(dir string) string {
@@ -183,14 +212,18 @@ func cityForStoreDir(dir string) string {
 func mergeRuntimeEnv(environ []string, overrides map[string]string) []string {
 	keys := []string{
 		"BEADS_DIR",
+		"BEADS_DOLT_PASSWORD",
 		"BEADS_DOLT_SERVER_HOST",
 		"BEADS_DOLT_SERVER_PORT",
+		"BEADS_DOLT_SERVER_USER",
 		"GC_CITY",
 		"GC_CITY_ROOT",
 		"GC_CITY_PATH",
 		"GC_CITY_RUNTIME_DIR",
 		"GC_DOLT_HOST",
+		"GC_DOLT_PASSWORD",
 		"GC_DOLT_PORT",
+		"GC_DOLT_USER",
 		"GC_PACK_STATE_DIR",
 		"GC_RIG",
 		"GC_RIG_ROOT",

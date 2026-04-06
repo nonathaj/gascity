@@ -307,13 +307,25 @@ func sessionDoltEnv(cityPath, rigRoot string, rigs []config.Rig) map[string]stri
 		// the server environment when the current city/rig does not use them.
 		"GC_DOLT_HOST":           "",
 		"GC_DOLT_PORT":           "",
+		"GC_DOLT_USER":           "",
+		"GC_DOLT_PASSWORD":       "",
 		"BEADS_DOLT_SERVER_HOST": "",
 		"BEADS_DOLT_SERVER_PORT": "",
+		"BEADS_DOLT_SERVER_USER": "",
+		"BEADS_DOLT_PASSWORD":    "",
 	}
 
 	if host := doltHostForCity(cityPath); host != "" {
 		env["GC_DOLT_HOST"] = host
 		env["BEADS_DOLT_SERVER_HOST"] = host
+	}
+	if user := os.Getenv("GC_DOLT_USER"); user != "" {
+		env["GC_DOLT_USER"] = user
+		env["BEADS_DOLT_SERVER_USER"] = user
+	}
+	if pass := os.Getenv("GC_DOLT_PASSWORD"); pass != "" {
+		env["GC_DOLT_PASSWORD"] = pass
+		env["BEADS_DOLT_PASSWORD"] = pass
 	}
 	if isExternalDolt(cityPath) {
 		if port := doltPortForCity(cityPath); port != "" {

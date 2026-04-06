@@ -219,11 +219,18 @@ func agentSecurityContext(linuxUsername string) *corev1.SecurityContext {
 func buildPodEnv(cfgEnv map[string]string, podWorkDir string) []corev1.EnvVar {
 	// Start with cfg.Env, removing controller-only vars.
 	skip := map[string]bool{
-		"GC_BEADS":     true,
-		"GC_SESSION":   true,
-		"GC_EVENTS":    true,
-		"GC_DOLT_HOST": true,
-		"GC_DOLT_PORT": true,
+		"GC_BEADS":               true,
+		"GC_SESSION":             true,
+		"GC_EVENTS":              true,
+		"GC_DOLT_HOST":           true,
+		"GC_DOLT_PORT":           true,
+		"BEADS_DOLT_SERVER_HOST": true,
+		"BEADS_DOLT_SERVER_PORT": true,
+		// Note: GC_DOLT_USER, GC_DOLT_PASSWORD, BEADS_DOLT_SERVER_USER,
+		// and BEADS_DOLT_PASSWORD are intentionally NOT stripped — agents
+		// need auth credentials to authenticate against the in-cluster
+		// Dolt service. Only host/port are stripped and replaced with
+		// K8s-specific endpoints.
 	}
 
 	var env []corev1.EnvVar
