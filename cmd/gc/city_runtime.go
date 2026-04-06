@@ -646,7 +646,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	// duplicate shell-outs). Resume tier from cross-referenced assigned
 	// work beads + new tier from scale_check + min fill.
 	poolDesired := PoolDesiredCounts(ComputePoolDesiredStatesTraced(
-		cr.cfg, nil, sessionBeads.Open(), result.ScaleCheckCounts, trace))
+		cr.cfg, result.AssignedWorkBeads, sessionBeads.Open(), result.ScaleCheckCounts, trace))
 	for tmpl, count := range poolDesired {
 		if count > 0 {
 			fmt.Fprintf(cr.stderr, "poolDesired: %s = %d\n", tmpl, count) //nolint:errcheck
@@ -871,7 +871,7 @@ func (cr *CityRuntime) controlDispatcherTick(ctx context.Context) {
 	)
 	open := filterSessionBeadsByName(updated, cfgNames)
 	poolDesired := PoolDesiredCounts(ComputePoolDesiredStates(
-		filteredCfg, nil, sessionBeads.Open(), wfcResult.ScaleCheckCounts))
+		filteredCfg, wfcResult.AssignedWorkBeads, open, wfcResult.ScaleCheckCounts))
 	reconcileSessionBeadsAtPath(
 		ctx,
 		cr.cityPath,
