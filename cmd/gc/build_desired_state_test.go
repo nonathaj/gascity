@@ -149,6 +149,79 @@ func TestBuildDesiredState_RoutedQueueDoesNotCreateOneSessionPerBead(t *testing.
 	}
 }
 
+func TestBuildDesiredState_OnDemandNamedSession_RoutedMetadataAloneDoesNotMaterialize(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "queued mayor work",
+		Type:   "task",
+		Status: "open",
+		Metadata: map[string]string{
+			"gc.routed_to": "mayor",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:              "mayor",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(1),
+			WorkQuery:         "printf ''",
+		}},
+		NamedSessions: []config.NamedSession{{
+			Template: "mayor",
+			Mode:     "on_demand",
+		}},
+	}
+
+	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	for _, tp := range dsResult.State {
+		if tp.TemplateName == "mayor" {
+			t.Fatalf("routed metadata alone should not materialize on-demand named session: %+v", tp)
+		}
+	}
+}
+
+func TestBuildDesiredState_OnDemandNamedSession_DirectAssigneeMaterializes(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:    "assigned mayor work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: "mayor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:              "mayor",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(1),
+			WorkQuery:         "printf ''",
+		}},
+		NamedSessions: []config.NamedSession{{
+			Template: "mayor",
+			Mode:     "on_demand",
+		}},
+	}
+
+	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	found := false
+	for _, tp := range dsResult.State {
+		if tp.TemplateName == "mayor" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("direct assignee should materialize on-demand named session")
+	}
+}
+
 func TestBuildDesiredState_SingletonTemplateDoesNotRealizeDependencyPoolFloorWithoutSession(t *testing.T) {
 	cityPath := t.TempDir()
 	cfg := &config.City{

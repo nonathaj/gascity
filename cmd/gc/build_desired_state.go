@@ -176,6 +176,11 @@ func buildDesiredStateWithSessionBeads(
 		if cfg.Agents[i].Suspended {
 			continue
 		}
+		// Agents that back configured named sessions are materialized by the
+		// named-session pass below so on-demand/always semantics stay centralized.
+		if _, ok := findNamedSessionSpec(cfg, cityName, cfg.Agents[i].QualifiedName()); ok {
+			continue
+		}
 
 		sp := scaleParamsFor(&cfg.Agents[i])
 
@@ -294,19 +299,22 @@ func buildDesiredStateWithSessionBeads(
 		namedSpecs[identity] = spec
 	}
 	namedWorkReady := make(map[string]bool, len(namedSpecs))
-	// Check assigned work beads: if any work bead's Assignee or gc.routed_to
-	// matches a named session's identity, that session has demand.
-	// Assignee is set by formula-dispatched work; gc.routed_to is set by
-	// the default sling query (metadata-based routing).
+	// Check assigned work beads: if any work bead's Assignee matches a named
+	// session's identity, that session has direct demand.
+	//
+	// Raw gc.routed_to metadata is intentionally NOT treated as direct named
+	// demand here. Routed metadata feeds the named agent's work_query, and the
+	// on-demand session only materializes from that path once the work is
+	// actually actionable. This keeps blocked or merely routed work from
+	// waking/materializing the named session prematurely.
 	for identity := range namedSpecs {
 		for _, wb := range assignedWorkBeads {
 			if wb.Status != "open" && wb.Status != "in_progress" {
 				continue
 			}
 			assignee := strings.TrimSpace(wb.Assignee)
-			routedTo := strings.TrimSpace(wb.Metadata["gc.routed_to"])
-			if assignee == identity || routedTo == identity {
-				fmt.Fprintf(stderr, "namedWorkReady: %s matched by bead %s (assignee=%s routed_to=%s status=%s)\n", identity, wb.ID, assignee, routedTo, wb.Status) //nolint:errcheck
+			if assignee == identity {
+				fmt.Fprintf(stderr, "namedWorkReady: %s matched by bead %s (assignee=%s status=%s)\n", identity, wb.ID, assignee, wb.Status) //nolint:errcheck
 				namedWorkReady[identity] = true
 				break
 			}
