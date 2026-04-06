@@ -853,10 +853,7 @@ func TestShellScaleCheck_NoBEADS_DOLT_SERVER_PORT_Injection(t *testing.T) {
 
 func runExternal(t *testing.T, dir, name string, args ...string) {
 	t.Helper()
-	out := runExternalOutput(t, dir, name, args...)
-	if len(out) != 0 {
-		return
-	}
+	runExternalOutput(t, dir, name, args...)
 }
 
 func runExternalOutput(t *testing.T, dir, name string, args ...string) []byte {
