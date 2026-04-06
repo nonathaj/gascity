@@ -379,9 +379,21 @@ func reconcileSessionBeadsTraced(
 			continue // crash recorded, skip further processing
 		}
 
+		// Churn check: detect context exhaustion death spiral.
+		// Fires for sessions that survived past stabilityThreshold but
+		// died before churnProductivityThreshold — alive long enough to
+		// not be a rapid crash, but too short to be productive.
+		if checkChurn(session, cfg, alive, dt, store, clk) {
+			continue // churn recorded, skip further processing
+		}
+
 		// Clear wake failures for sessions that have been stable long enough.
 		if alive && stableLongEnough(*session, clk) {
 			clearWakeFailures(session, store)
+		}
+		// Clear churn counter for sessions that have been productive.
+		if alive && productiveLongEnough(*session, clk) {
+			clearChurn(session, store)
 		}
 		if alive && shouldRollbackPendingCreate(session) {
 			if err := clearPendingCreateClaim(session, store); err != nil {
@@ -410,10 +422,13 @@ func reconcileSessionBeadsTraced(
 				}
 				// Rotate session_key so the next start gets a fresh
 				// conversation. Clearing started_config_hash forces
-				// firstStart=true in resolveSessionCommand.
+				// firstStart=true in resolveSessionCommand. Clearing
+				// last_woke_at masks the intentional death from crash
+				// and churn trackers (both check last_woke_at first).
 				batch := map[string]string{
 					"restart_requested":   "",
 					"started_config_hash": "",
+					"last_woke_at":        "",
 				}
 				if newKey, err := sessionpkg.GenerateSessionKey(); err == nil {
 					batch["session_key"] = newKey
@@ -422,6 +437,7 @@ func reconcileSessionBeadsTraced(
 				_ = store.SetMetadataBatch(session.ID, batch)
 				session.Metadata["restart_requested"] = ""
 				session.Metadata["started_config_hash"] = ""
+				session.Metadata["last_woke_at"] = ""
 				if alive {
 					if err := sp.Stop(name); err != nil {
 						fmt.Fprintf(stderr, "session reconciler: stopping restart-requested %s: %v\n", name, err) //nolint:errcheck
