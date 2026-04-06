@@ -85,7 +85,10 @@ func doPrime(args []string, stdout, _ io.Writer) int { //nolint:unparam // alway
 }
 
 func doPrimeWithMode(args []string, stdout, _ io.Writer, hookMode bool) int { //nolint:unparam // always returns 0 by design (graceful fallback)
-	agentName := os.Getenv("GC_AGENT")
+	agentName := os.Getenv("GC_ALIAS")
+	if agentName == "" {
+		agentName = os.Getenv("GC_AGENT")
+	}
 	if len(args) > 0 {
 		agentName = args[0]
 	}
@@ -314,8 +317,10 @@ func buildPrimeContext(cityPath string, a *config.Agent, rigs []config.Rig) Prom
 		Env:          a.Env,
 	}
 
-	// Agent identity: prefer GC_AGENT env (managed session), else config.
-	if gcAgent := os.Getenv("GC_AGENT"); gcAgent != "" {
+	// Agent identity: prefer GC_ALIAS, then GC_AGENT, else config.
+	if gcAlias := os.Getenv("GC_ALIAS"); gcAlias != "" {
+		ctx.AgentName = gcAlias
+	} else if gcAgent := os.Getenv("GC_AGENT"); gcAgent != "" {
 		ctx.AgentName = gcAgent
 	} else {
 		ctx.AgentName = a.QualifiedName()
