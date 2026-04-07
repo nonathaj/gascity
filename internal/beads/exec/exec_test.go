@@ -318,6 +318,11 @@ func TestSetMetadata_deduplicatesViaConformance(t *testing.T) {
 	}
 }
 
+// TestCreate_metadataWithSpecialCharsRoundTrips validates the exec.Store
+// protocol contract: metadata values containing quotes and commas must
+// round-trip correctly. This exercises conformance.sh (the reference
+// provider), not gc-beads-k8s directly. The gc-beads-k8s fix was verified
+// via K8s homelab deployment (see PR #367).
 func TestCreate_metadataWithSpecialCharsRoundTrips(t *testing.T) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not available")
@@ -364,6 +369,10 @@ func TestCreate_metadataWithSpecialCharsRoundTrips(t *testing.T) {
 	}
 }
 
+// TestCreate_numericLookingMetadataStaysString validates the exec.Store
+// protocol contract: numeric-looking metadata values must round-trip as
+// strings. This exercises conformance.sh (the reference provider), not
+// gc-beads-k8s directly.
 func TestCreate_numericLookingMetadataStaysString(t *testing.T) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not available")

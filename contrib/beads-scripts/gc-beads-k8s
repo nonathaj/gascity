@@ -280,6 +280,9 @@ case "$op" in
     [ -n "$parent_id" ] && cmd_args+=(--add-label "parent:$parent_id")
 
     # Handle metadata via --metadata (avoids CSV quoting issues with --add-label).
+    # bd --metadata uses merge semantics: new keys are added, existing keys are
+    # overwritten, and keys not in the payload are preserved. Verified against
+    # bd 0.62+ (see TestUpdate_metadataRoundTripsViaConformance).
     metadata_json=$(echo "$input" | jq -c '.metadata // empty')
     [ -n "$metadata_json" ] && cmd_args+=(--metadata "$metadata_json")
 
