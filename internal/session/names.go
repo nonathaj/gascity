@@ -378,7 +378,7 @@ func ensureConfiguredSessionNameAvailable(store beads.Store, cfg *config.City, n
 		if !isConfiguredNamedSessionRuntimeName(cfg, name, selfOwner) {
 			return err
 		}
-		if !allSessionNameHoldersAreClosed(store, name, selfID) {
+		if !noLiveSessionNameCollisions(store, name, selfID) {
 			return err
 		}
 		// All holders are closed and the name belongs to a configured named
@@ -423,9 +423,12 @@ func isConfiguredNamedSessionRuntimeName(cfg *config.City, name, owner string) b
 	return false
 }
 
-// allSessionNameHoldersAreClosed reports whether every bead that holds the
-// given session_name (excluding selfID) is closed.
-func allSessionNameHoldersAreClosed(store beads.Store, name, selfID string) bool {
+// noLiveSessionNameCollisions reports whether no live bead conflicts with
+// the given name via session_name, alias, alias_history, or identifier
+// fields. This mirrors the full collision check in
+// ensureSessionNameAvailableForSelf so the legacy-bypass path cannot
+// suppress rejections from live alias or identifier collisions.
+func noLiveSessionNameCollisions(store beads.Store, name, selfID string) bool {
 	all, err := store.List(beads.ListQuery{
 		Label:         LabelSession,
 		IncludeClosed: true,
@@ -437,7 +440,25 @@ func allSessionNameHoldersAreClosed(store beads.Store, name, selfID string) bool
 		if !IsSessionBeadOrRepairable(b) || b.ID == selfID {
 			continue
 		}
+		// A live bead holding the name as session_name blocks.
 		if strings.TrimSpace(b.Metadata["session_name"]) == name && b.Status != "closed" {
+			return false
+		}
+		if b.Status == "closed" {
+			continue
+		}
+		// Live alias collision blocks.
+		if strings.TrimSpace(b.Metadata["alias"]) == name {
+			return false
+		}
+		// Live alias history collision blocks.
+		for _, historicalAlias := range AliasHistory(b.Metadata) {
+			if historicalAlias == name {
+				return false
+			}
+		}
+		// Live identifier collision blocks.
+		if sessionNameConflictsWithExistingIdentifier(b, name) {
 			return false
 		}
 	}
