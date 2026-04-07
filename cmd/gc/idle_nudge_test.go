@@ -148,13 +148,13 @@ func TestIdleNudge_IgnoresSessionAndMessageBeads(t *testing.T) {
 	sessionBead := beads.Bead{
 		ID:       "s-2",
 		Status:   "open",
-		Type:     "session",
+		Type:     sessionBeadType,
 		Assignee: "worker-1",
 	}
 	messageBead := beads.Bead{
 		ID:       "m-1",
 		Status:   "open",
-		Type:     "message",
+		Type:     messageBeadType,
 		Assignee: "worker-1",
 	}
 
@@ -166,6 +166,21 @@ func TestIdleNudge_IgnoresSessionAndMessageBeads(t *testing.T) {
 	in.nudgeIdleSessions(sp, []beads.Bead{session}, []beads.Bead{sessionBead, messageBead}, time.Now().Add(time.Second), &out)
 	if out.Len() > 0 {
 		t.Fatalf("should not nudge when only session/message beads are assigned: %s", out.String())
+	}
+
+	// With a real task bead alongside the filtered types, the nudge should fire.
+	taskBead := beads.Bead{
+		ID:       "t-1",
+		Status:   "in_progress",
+		Assignee: "worker-1",
+	}
+	out.Reset()
+	in2 := newIdleNudger()
+	in2.grace = 0
+	in2.nudgeIdleSessions(sp, []beads.Bead{session}, []beads.Bead{sessionBead, messageBead, taskBead}, time.Now(), &out)
+	in2.nudgeIdleSessions(sp, []beads.Bead{session}, []beads.Bead{sessionBead, messageBead, taskBead}, time.Now().Add(time.Second), &out)
+	if !bytes.Contains(out.Bytes(), []byte("idle-nudge: nudged worker-1")) {
+		t.Fatalf("should nudge when real task bead is present alongside session/message beads, got: %s", out.String())
 	}
 }
 
