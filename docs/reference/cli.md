@@ -904,6 +904,7 @@ gc init
   gc init ~/my-city
   gc init --provider codex ~/my-city
   gc init --provider codex --bootstrap-profile k8s-cell /city
+  gc init --name my-city
   gc init --from ~/elan --name elan /city
   gc init --file examples/gastown.toml ~/bright-lights
 ```

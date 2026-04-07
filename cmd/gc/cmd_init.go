@@ -196,13 +196,11 @@ existing TOML config file.`,
   gc init ~/my-city
   gc init --provider codex ~/my-city
   gc init --provider codex --bootstrap-profile k8s-cell /city
+  gc init --name my-city
   gc init --from ~/elan --name elan /city
   gc init --file examples/gastown.toml ~/bright-lights`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if nameFlag != "" && fromFlag == "" && fileFlag == "" {
-				return fmt.Errorf("--name requires --from or --file")
-			}
 			if fromFlag != "" {
 				if cmdInitFromDirWithOptions(fromFlag, args, nameFlag, stdout, stderr, skipProviderReadiness) != 0 {
 					return errExit
@@ -215,7 +213,7 @@ existing TOML config file.`,
 				}
 				return nil
 			}
-			if cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, stdout, stderr, skipProviderReadiness) != 0 {
+			if cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, nameFlag, stdout, stderr, skipProviderReadiness) != 0 {
 				return errExit
 			}
 			return nil
@@ -240,10 +238,10 @@ existing TOML config file.`,
 // Creates the runtime scaffold and city.toml. If the bead provider is "bd", also
 // runs bd init.
 func cmdInit(args []string, providerFlag, bootstrapProfileFlag string, stdout, stderr io.Writer) int {
-	return cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, stdout, stderr, false)
+	return cmdInitWithOptions(args, providerFlag, bootstrapProfileFlag, "", stdout, stderr, false)
 }
 
-func cmdInitWithOptions(args []string, providerFlag, bootstrapProfileFlag string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
+func cmdInitWithOptions(args []string, providerFlag, bootstrapProfileFlag, nameOverride string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
 	var cityPath string
 	if len(args) > 0 {
 		var err error
@@ -278,7 +276,7 @@ func cmdInitWithOptions(args []string, providerFlag, bootstrapProfileFlag string
 	default:
 		wiz = defaultWizardConfig()
 	}
-	if code := doInit(fsys.OSFS{}, cityPath, wiz, stdout, stderr); code != 0 {
+	if code := doInit(fsys.OSFS{}, cityPath, wiz, nameOverride, stdout, stderr); code != 0 {
 		return code
 	}
 	return finalizeInit(cityPath, stdout, stderr, initFinalizeOptions{
@@ -383,7 +381,7 @@ func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath, nameOverride 
 	}
 
 	// --file creates a new city from a template; default to target dir name.
-	cityName := resolveCityName(nameOverride, "", cityPath)
+	cityName := resolveCityName(nameOverride, cityPath)
 	cfg.Workspace.Name = cityName
 
 	// Re-marshal so the name is updated.
@@ -443,7 +441,7 @@ func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath, nameOverride 
 // when a provider or start command is supplied; otherwise init writes the
 // default mayor-only city. Errors if the runtime scaffold already exists. Accepts an
 // injected FS for testability.
-func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Writer) int {
+func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, stdout, stderr io.Writer) int {
 	tomlPath := filepath.Join(cityPath, citylayout.CityConfigFile)
 	if cityHasScaffoldFS(fs, cityPath) {
 		fmt.Fprintln(stderr, "gc init: already initialized") //nolint:errcheck // best-effort stderr
@@ -461,8 +459,14 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 		if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 			return code
 		}
-		fmt.Fprintln(stdout, "Welcome to Gas City!")                                             //nolint:errcheck // best-effort stdout
-		fmt.Fprintf(stdout, "Bootstrapped city %q runtime scaffold.\n", filepath.Base(cityPath)) //nolint:errcheck // best-effort stdout
+		if nameOverride != "" {
+			if code := overrideCityName(fs, tomlPath, nameOverride, stderr); code != 0 {
+				return code
+			}
+		}
+		cityName := resolveCityName(nameOverride, cityPath)
+		fmt.Fprintln(stdout, "Welcome to Gas City!")                              //nolint:errcheck // best-effort stdout
+		fmt.Fprintf(stdout, "Bootstrapped city %q runtime scaffold.\n", cityName) //nolint:errcheck // best-effort stdout
 		return 0
 	}
 
@@ -500,7 +504,7 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, stdout, stderr io.Wri
 	// Write city.toml — wizard path gets one agent + provider/startCommand;
 	// --provider path gets the same city shape non-interactively;
 	// custom path gets one mayor + no provider (user configures manually).
-	cityName := filepath.Base(cityPath)
+	cityName := resolveCityName(nameOverride, cityPath)
 	var cfg config.City
 	switch {
 	case wiz.configName == "custom":
@@ -600,14 +604,36 @@ func initFromSkip(relPath string, isDir bool) bool {
 	return false
 }
 
+// overrideCityName reads an existing city.toml, updates workspace.name, and writes it back.
+func overrideCityName(f fsys.FS, tomlPath, name string, stderr io.Writer) int {
+	data, err := f.ReadFile(tomlPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc init: reading %q: %v\n", tomlPath, err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	cfg, err := config.Parse(data)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	cfg.Workspace.Name = name
+	content, err := cfg.Marshal()
+	if err != nil {
+		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	if err := f.WriteFile(tomlPath, content, 0o644); err != nil {
+		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	return 0
+}
+
 // resolveCityName returns the workspace name to use during init.
-// Priority: explicit --name flag > source config name > target directory basename.
-func resolveCityName(nameOverride, sourceName, cityPath string) string {
+// Priority: explicit --name flag > target directory basename.
+func resolveCityName(nameOverride, cityPath string) string {
 	if nameOverride != "" {
 		return nameOverride
-	}
-	if sourceName != "" {
-		return sourceName
 	}
 	return filepath.Base(cityPath)
 }
@@ -683,7 +709,7 @@ func doInitFromDirWithOptions(srcDir, cityPath, nameOverride string, stdout, std
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cityName := resolveCityName(nameOverride, cfg.Workspace.Name, cityPath)
+	cityName := resolveCityName(nameOverride, cityPath)
 	cfg.Workspace.Name = cityName
 	content, err := cfg.Marshal()
 	if err != nil {
