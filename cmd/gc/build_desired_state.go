@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -191,6 +192,9 @@ func buildDesiredStateWithSessionBeads(
 		}
 		// Agents that back configured named sessions are materialized by the
 		// named-session pass below so on-demand/always semantics stay centralized.
+		// Their scale_check (when explicitly configured) is evaluated in that
+		// pass too — not here — to keep demand detection within the named-session
+		// section and avoid feeding named-session agents into the pool pipeline.
 		if _, ok := findNamedSessionSpec(cfg, cityName, cfg.Agents[i].QualifiedName()); ok {
 			continue
 		}
@@ -340,6 +344,64 @@ func buildDesiredStateWithSessionBeads(
 		if spec.Mode == "always" || namedWorkReady[identity] {
 			continue
 		}
+		// Check explicit scale_check first — it is the primary demand signal
+		// when the operator has configured one on the backing agent.
+		// Named-session agents are skipped from the pool evaluation loop
+		// (pendingPools), so their scale_check must be evaluated here.
+		//
+		// We check spec.Agent.ScaleCheck (the raw config field), NOT
+		// EffectiveScaleCheck(), because the default EffectiveScaleCheck
+		// generates a bd-ready query that overlaps with the work_query
+		// fallback below. Only an operator-configured scale_check warrants
+		// this path. On scale_check error or zero, we fall through to
+		// work_query as defense-in-depth — the two signals are complementary.
+		if sc := spec.Agent.ScaleCheck; sc != "" {
+			template := spec.Agent.QualifiedName()
+			dir := agentCommandDir(cityPath, spec.Agent, cfg.Rigs)
+			scCmd := prefixControllerQueryEnv(cityPath, cfg, spec.Agent, sc)
+			started := time.Now()
+			out, err := shellScaleCheck(scCmd, dir)
+			n := 0
+			outcome := "success"
+			var parseErr error
+			if err != nil {
+				outcome = "failed"
+			} else if trimmed := strings.TrimSpace(out); trimmed != "" {
+				n, parseErr = strconv.Atoi(trimmed)
+				if parseErr != nil {
+					outcome = "parse_error"
+					n = 0
+				}
+			}
+			if trace != nil {
+				var errStr string
+				if err != nil {
+					errStr = err.Error()
+				}
+				if parseErr != nil {
+					errStr = fmt.Sprintf("parse error: %v (raw output: %q)", parseErr, strings.TrimSpace(out))
+				}
+				trace.recordOperation("trace.scale_check_exec", template, "", "", "scale_check", outcome, traceRecordPayload{
+					"command":        sc,
+					"desired":        n,
+					"error":          errStr,
+					"duration_ms":    time.Since(started).Milliseconds(),
+					"agent_template": template,
+					"named_session":  identity,
+				}, "")
+			}
+			// Record the count for trace visibility. Safe to mutate
+			// scaleCheckCounts here — ComputePoolDesiredStatesTraced has
+			// already consumed it above.
+			scaleCheckCounts[template] = n
+			if parseErr == nil && err == nil && n > 0 {
+				fmt.Fprintf(stderr, "namedWorkReady: %s matched by scale_check (count=%d)\n", identity, n) //nolint:errcheck
+				namedWorkReady[identity] = true
+				continue
+			}
+			// Parse error, execution error, or zero demand — fall through to work_query.
+		}
+		// Fall back to work_query for demand detection.
 		wq := spec.Agent.EffectiveWorkQuery()
 		if wq == "" {
 			continue
