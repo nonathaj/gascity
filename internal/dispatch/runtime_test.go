@@ -1506,7 +1506,9 @@ func TestProcessRalphCheckRecoversRetryAttemptMissingFinalAssigneePass(t *testin
 }
 
 func TestProcessFanoutSpawnsFragmentsAndClosesOnSecondPass(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -1634,7 +1636,9 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutResumesExistingFragmentsWithoutDuplicates(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -1737,7 +1741,9 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutSequentialChainsFragments(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -1840,7 +1846,9 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialResumeRestoresExternalDeps(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -1957,7 +1965,9 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialChainSurvivesEmptyMiddleFragment(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -2077,7 +2087,9 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutRecoversPartialFragmentInstance(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -2176,7 +2188,9 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutRecoversIncompletelyWiredFragmentInstance(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
@@ -2473,7 +2487,9 @@ func TestCanDiscardPartialFragmentBeadWaitsForDependents(t *testing.T) {
 }
 
 func TestProcessFanoutClosesScopeWhenLastMember(t *testing.T) {
-	t.Parallel()
+	prev := formula.FormulaV2Enabled
+	formula.FormulaV2Enabled = true
+	t.Cleanup(func() { formula.FormulaV2Enabled = prev })
 
 	dir := t.TempDir()
 	expansion := `
