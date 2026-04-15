@@ -23,8 +23,10 @@ func newRegisterCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Register a city directory with the machine-wide supervisor.
 
 If no path is given, registers the current city (discovered from cwd).
-Use --name to store a machine-local alias in the supervisor registry
-without rewriting pack.toml or city.toml.
+Use --name to set the registration name; this also persists workspace.name
+in city.toml so later registrations stay aligned. When --name is omitted,
+workspace.name is used if present, otherwise [pack].name is used and
+backfilled into workspace.name.
 Registration is idempotent — registering the same city twice is a no-op.
 The supervisor is started if needed and immediately reconciles the city.`,
 		Args: cobra.MaximumNArgs(1),
@@ -91,9 +93,6 @@ func resolveRegistrationName(cityPath, nameOverride string) (string, bool, error
 	packName, err := readPackName(filepath.Join(cityPath, "pack.toml"))
 	if err != nil {
 		return "", false, err
-	}
-	if strings.TrimSpace(packName) == "" {
-		return "", false, fmt.Errorf("%s: missing [pack].name for registration fallback", filepath.Join(cityPath, "pack.toml"))
 	}
 	return packName, true, nil
 }
