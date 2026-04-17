@@ -1439,6 +1439,28 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 		return fmt.Errorf("validate agents: %w", err)
 	}
 
+	// Skill collision validation precedes materialisation so a
+	// collision cannot produce half-written sinks. Errors abort the
+	// tick without touching materialisation state; the operator
+	// sees the collision message on the supervisor's stderr stream.
+	if err := runStep("validating_skill_collisions", func() error {
+		return checkSkillCollisions(cfg, cityPath)
+	}); err != nil {
+		return fmt.Errorf("validate skill collisions: %w", err)
+	}
+
+	// Stage-1 skill materialisation. Runs on every tick so
+	// catalogue edits land without requiring a supervisor restart.
+	// Idempotent — converged passes create nothing new.
+	if err := runStep("materializing_skills", func() error {
+		return runStage1SkillMaterialization(cityPath, cfg, stderr)
+	}); err != nil {
+		fmt.Fprintf(stderr, "gc supervisor: city '%s': materialize-skills: %v\n", cityName, err) //nolint:errcheck
+		// Non-fatal — catalogue-load failures shouldn't stop the tick
+		// entirely; per-agent materialisation errors were already
+		// logged inline by runStage1SkillMaterialization.
+	}
+
 	// Validate install_agent_hooks (workspace + all agents).
 	if err := runStep("validating_hooks", func() error {
 		if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {

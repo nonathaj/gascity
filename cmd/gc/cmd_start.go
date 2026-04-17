@@ -500,6 +500,27 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		return 1
 	}
 
+	// Skill collision validator — hard gate. Two agents sharing a
+	// (scope-root, vendor) sink cannot both provide an agent-local
+	// skill under the same name; the materialiser below would write
+	// conflicting symlinks. Block start so the operator fixes the
+	// collision before any half-written sink state lands. Per
+	// engdocs/proposals/skill-materialization.md § "Collision
+	// validation (startup validator)".
+	if err := checkSkillCollisions(cfg, cityPath); err != nil {
+		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
+	// Stage-1 skill materialization — runs for every eligible agent
+	// at its scope root before sessions spawn. Non-fatal: per-agent
+	// errors log but don't block start, because catalogue edits
+	// during an active city are the common case.
+	if err := runStage1SkillMaterialization(cityPath, cfg, stderr); err != nil {
+		fmt.Fprintf(stderr, "gc start: stage-1 materialize-skills: %v\n", err) //nolint:errcheck // best-effort stderr
+		// Non-fatal.
+	}
+
 	// Validate install_agent_hooks (workspace + all agents).
 	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
 		if err := hooks.Validate(ih); err != nil {

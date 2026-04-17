@@ -55,7 +55,6 @@ gc [flags]
 | [gc service](#gc-service) | Inspect workspace services |
 | [gc session](#gc-session) | Manage interactive chat sessions |
 | [gc skill](#gc-skill) | List visible skills |
-| [gc skills](#gc-skills) | Show command reference for a topic |
 | [gc sling](#gc-sling) | Route work to an agent or pool |
 | [gc start](#gc-start) | Start the city under the machine-wide supervisor |
 | [gc status](#gc-status) | Show city-wide status overview |
@@ -2544,8 +2543,9 @@ gc session wake gc-42
 List visible Pack/City skills for the current city pack.
 
 Use "gc skill list" to show discovered skills, optionally scoped to an
-agent or session. The built-in topic/reference viewer now lives under
-"gc skills".
+agent or session. Output includes bootstrap implicit-import pack skills
+(e.g. core) alongside the current city pack's catalog — the same set
+the materializer delivers into each agent's provider sink.
 
 ```
 gc skill
@@ -2567,25 +2567,6 @@ gc skill list [flags]
 |------|------|---------|-------------|
 | `--agent` | string |  | show the effective skill view for this agent |
 | `--session` | string |  | show the effective skill view for this session |
-
-## gc skills
-
-Show curated command reference for a Gas City topic.
-
-Without arguments, lists available topics. With a topic name,
-prints the full command reference for that topic.
-
-```
-gc skills [topic]
-```
-
-**Example:**
-
-```
-gc skills work       # beads command reference
-  gc skills dispatch   # sling and formula reference
-  gc skills            # list all topics
-```
 
 ## gc sling
 

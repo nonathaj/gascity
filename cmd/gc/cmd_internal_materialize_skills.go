@@ -65,13 +65,14 @@ func newInternalMaterializeSkillsCmd(stdout, stderr io.Writer) *cobra.Command {
 				return errExit
 			}
 
-			vendorSink, sinkOK := materialize.VendorSink(agent.Provider)
+			provider := effectiveAgentProvider(&agent, cfg.Workspace.Provider)
+			vendorSink, sinkOK := materialize.VendorSink(provider)
 			if !sinkOK {
 				// Providers outside the v0.15.1 four-vendor set (copilot,
 				// cursor, pi, omp, or an unknown provider) have no sink.
 				// Log once per session spawn per the spec and exit
 				// successfully — this is not an error condition.
-				fmt.Fprintf(stdout, "gc internal materialize-skills: provider %q has no skill sink in v0.15.1; skipping\n", agent.Provider) //nolint:errcheck // best-effort stdout
+				fmt.Fprintf(stdout, "gc internal materialize-skills: provider %q has no skill sink in v0.15.1; skipping\n", provider) //nolint:errcheck // best-effort stdout
 				return nil
 			}
 

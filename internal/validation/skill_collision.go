@@ -83,7 +83,15 @@ func ValidateSkillCollisions(cfg *config.City) []SkillCollision {
 	for i := range cfg.Agents {
 		a := &cfg.Agents[i]
 
+		// Agent provider falls back to workspace provider when not
+		// set per-agent — matches the effective-provider resolution
+		// used throughout the binary. Without this fallback,
+		// workspace-level "provider = claude" configs with
+		// non-overriding agents would bypass collision detection.
 		vendor := a.Provider
+		if vendor == "" {
+			vendor = cfg.Workspace.Provider
+		}
 		if _, ok := supportedSkillVendors[vendor]; !ok {
 			continue
 		}

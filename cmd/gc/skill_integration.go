@@ -120,20 +120,42 @@ func canonicaliseFilePath(path, base string) string {
 	return filepath.Clean(path)
 }
 
+// effectiveAgentProvider returns the vendor/provider name used for
+// skill materialization, falling back from the per-agent `provider`
+// field to `workspace.provider` when the agent didn't override.
+// Matches how Gas City resolves the effective provider throughout
+// the binary (config.ResolveProvider's input chain). Returns ""
+// when both are empty.
+//
+// Empty string from this helper means "no provider configured" —
+// the materializer treats it as no vendor sink, skipping the agent.
+// A non-empty return value is still subject to materialize.VendorSink
+// for the actual sink-directory lookup.
+func effectiveAgentProvider(agent *config.Agent, workspaceProvider string) string {
+	if agent == nil {
+		return ""
+	}
+	if strings.TrimSpace(agent.Provider) != "" {
+		return agent.Provider
+	}
+	return workspaceProvider
+}
+
 // effectiveSkillsForAgent returns the post-precedence desired skill set
-// for one agent. Returns nil when the agent's provider has no vendor
-// sink, when no catalog produced any entries, or when the agent is
-// nil.
+// for one agent. Returns nil when the agent's effective provider has
+// no vendor sink, when no catalog produced any entries, or when the
+// agent is nil.
 //
 // Agent-catalog load failures are logged to stderr (matching the
 // city-catalog pattern in newAgentBuildParams) so a permissions
 // glitch on an agent's skills_dir is observable rather than silently
 // dropping agent-local skills.
-func effectiveSkillsForAgent(city *materialize.CityCatalog, agent *config.Agent, stderr io.Writer) []materialize.SkillEntry {
+func effectiveSkillsForAgent(city *materialize.CityCatalog, agent *config.Agent, workspaceProvider string, stderr io.Writer) []materialize.SkillEntry {
 	if agent == nil {
 		return nil
 	}
-	if _, ok := materialize.VendorSink(agent.Provider); !ok {
+	provider := effectiveAgentProvider(agent, workspaceProvider)
+	if _, ok := materialize.VendorSink(provider); !ok {
 		return nil
 	}
 

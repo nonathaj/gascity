@@ -90,7 +90,7 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 	t.Run("claude eligible shared catalog", func(t *testing.T) {
 		t.Parallel()
 		a := &config.Agent{Provider: "claude"}
-		desired := effectiveSkillsForAgent(&shared, a, nil)
+		desired := effectiveSkillsForAgent(&shared, a, "", nil)
 		if len(desired) != 1 || desired[0].Name != "plan" {
 			t.Fatalf("desired = %+v", desired)
 		}
@@ -100,7 +100,7 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 	t.Run("copilot provider has no sink", func(t *testing.T) {
 		t.Parallel()
 		a := &config.Agent{Provider: "copilot"}
-		desired := effectiveSkillsForAgent(&shared, a, nil)
+		desired := effectiveSkillsForAgent(&shared, a, "", nil)
 		if desired != nil {
 			t.Fatalf("want nil, got %+v", desired)
 		}
@@ -112,7 +112,7 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 		agentDir := filepath.Join(tmp, "agents", "mayor", "skills")
 		mustCreateSkill(t, filepath.Join(agentDir, "private"))
 		a := &config.Agent{Provider: "codex", SkillsDir: agentDir}
-		desired := effectiveSkillsForAgent(&shared, a, nil)
+		desired := effectiveSkillsForAgent(&shared, a, "", nil)
 		names := namesOf(desired)
 		if !reflect.DeepEqual(names, []string{"plan", "private"}) {
 			t.Fatalf("names = %v", names)
@@ -125,7 +125,7 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 		agentDir := filepath.Join(tmp, "agents", "solo", "skills")
 		mustCreateSkill(t, filepath.Join(agentDir, "only"))
 		a := &config.Agent{Provider: "gemini", SkillsDir: agentDir}
-		desired := effectiveSkillsForAgent(nil, a, nil)
+		desired := effectiveSkillsForAgent(nil, a, "", nil)
 		if len(desired) != 1 || desired[0].Name != "only" {
 			t.Fatalf("desired = %+v", desired)
 		}
@@ -136,9 +136,21 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 		t.Parallel()
 		a := &config.Agent{Provider: "claude"}
 		empty := materialize.CityCatalog{}
-		desired := effectiveSkillsForAgent(&empty, a, nil)
+		desired := effectiveSkillsForAgent(&empty, a, "", nil)
 		if desired != nil {
 			t.Fatalf("want nil, got %+v", desired)
+		}
+	})
+
+	// Workspace-provider fallback: agent without explicit provider
+	// inherits from workspace. Regression for the latent bug found
+	// during Phase 4B acceptance testing.
+	t.Run("agent inherits workspace provider", func(t *testing.T) {
+		t.Parallel()
+		a := &config.Agent{Name: "mayor"} // Provider="" — inherits.
+		desired := effectiveSkillsForAgent(&shared, a, "claude", nil)
+		if len(desired) != 1 || desired[0].Name != "plan" {
+			t.Fatalf("desired = %+v (workspace-provider fallback broken)", desired)
 		}
 	})
 
@@ -163,7 +175,7 @@ func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
 
 		a := &config.Agent{Name: "mayor", Provider: "claude", SkillsDir: unreadable}
 		var buf strings.Builder
-		_ = effectiveSkillsForAgent(&shared, a, &buf)
+		_ = effectiveSkillsForAgent(&shared, a, "", &buf)
 		if !strings.Contains(buf.String(), "LoadAgentCatalog") {
 			t.Errorf("expected stderr to mention LoadAgentCatalog, got %q", buf.String())
 		}
