@@ -351,7 +351,14 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		if len(desired) > 0 {
 			fpExtra = mergeSkillFingerprintEntries(fpExtra, desired)
 			if canonWorkDir != scopeRoot {
-				expandedPreStart = appendMaterializeSkillsPreStart(expandedPreStart, qualifiedName, workDir)
+				// Pool instances inherit their skill catalog from the
+				// template, not the instance — namepool members (e.g.
+				// repo/furiosa from polecat) are not resolvable as
+				// standalone agents by `gc internal materialize-skills`.
+				// templateNameFor returns cfgAgent.PoolName for pool
+				// instances and qualifiedName for singletons.
+				materializeAgent := templateNameFor(cfgAgent, qualifiedName)
+				expandedPreStart = appendMaterializeSkillsPreStart(expandedPreStart, materializeAgent, workDir)
 			}
 		}
 	}

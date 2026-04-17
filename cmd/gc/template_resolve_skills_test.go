@@ -316,3 +316,116 @@ func TestResolveTemplateAppendsAssignedSkillsPrompt(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveTemplatePoolInstanceMaterializeUsesTemplateName is the
+// v0.15.1-rc1 → rc2 regression. Pool instances (especially namepool-
+// themed ones like polecat → furiosa) must route the stage-2 PreStart
+// `gc internal materialize-skills --agent` flag at the TEMPLATE's
+// qualified name, not the instance's. The materialize-skills command
+// resolves the agent via resolveAgentIdentity, which cannot map a
+// namepool member (`rig/furiosa`) back to its template (`rig/polecat`)
+// — it treats `rig/furiosa` as an unknown agent and exits with code 1,
+// failing pre_start[1] on every polecat start in tier C. See
+// TestGastown_PolecatImplementsRefineryMerges.
+func TestResolveTemplatePoolInstanceMaterializeUsesTemplateName(t *testing.T) {
+	cityPath := t.TempDir()
+	writeTemplateResolveCityConfig(t, cityPath, "file")
+	if err := os.WriteFile(filepath.Join(cityPath, "pack.toml"),
+		[]byte("[pack]\nname = \"s\"\nversion = \"0.1.0\"\nschema = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(cityPath, "skills", "plan")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: plan\ndescription: test\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sharedCat, err := materialize.LoadCityCatalog(filepath.Join(cityPath, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Namepool-themed instance: template is "rig/polecat" (PoolName),
+	// concrete instance name is "furiosa", Dir="rig".
+	// WorkDir != scope root so stage-2 PreStart injection fires.
+	instance := &config.Agent{
+		Name:     "furiosa",
+		Dir:      "rig",
+		Scope:    "rig",
+		Provider: "claude",
+		WorkDir:  ".gc/worktrees/rig/polecats/furiosa",
+		PoolName: "rig/polecat",
+	}
+
+	params := &agentBuildParams{
+		cityName:  "city",
+		cityPath:  cityPath,
+		workspace: &config.Workspace{Provider: "claude"},
+		providers: map[string]config.ProviderSpec{
+			"claude": {Command: "echo", PromptMode: "none"},
+		},
+		lookPath:        func(string) (string, error) { return "/bin/echo", nil },
+		fs:              fsys.OSFS{},
+		rigs:            []config.Rig{{Name: "rig", Path: filepath.Join(cityPath, "rig")}},
+		beaconTime:      time.Unix(0, 0),
+		beadNames:       make(map[string]string),
+		stderr:          io.Discard,
+		skillCatalog:    &sharedCat,
+		sessionProvider: "tmux",
+	}
+
+	tp, err := resolveTemplate(params, instance, instance.QualifiedName(), nil)
+	if err != nil {
+		t.Fatalf("resolveTemplate: %v", err)
+	}
+
+	var materializeCmd string
+	for _, entry := range tp.Hints.PreStart {
+		if strings.Contains(entry, "internal materialize-skills") {
+			materializeCmd = entry
+			break
+		}
+	}
+	if materializeCmd == "" {
+		t.Fatalf("expected stage-2 materialize-skills PreStart entry; PreStart=%v", tp.Hints.PreStart)
+	}
+
+	// The --agent flag must carry the TEMPLATE qualified name, not the
+	// instance. `gc internal materialize-skills --agent rig/furiosa`
+	// exits 1 with "unknown agent" because resolveAgentIdentity can't
+	// walk a namepool member back to its pool template.
+	// shellquote.Join emits bare (unquoted) tokens when no escaping is
+	// needed, so match on the raw substring after --agent.
+	if !strings.Contains(materializeCmd, "--agent rig/polecat") {
+		t.Errorf("materialize-skills --agent flag should carry template name rig/polecat; got: %q", materializeCmd)
+	}
+	if strings.Contains(materializeCmd, "--agent rig/furiosa") {
+		t.Errorf("materialize-skills --agent flag must NOT carry namepool instance name rig/furiosa; got: %q", materializeCmd)
+	}
+
+	// Non-pool singleton: cfgAgent.PoolName is empty, so the cmd carries
+	// the agent's own qualified name. Guards against over-correction
+	// where templateNameFor's fallback breaks non-pool cases.
+	singleton := &config.Agent{
+		Name:     "mayor",
+		Scope:    "city",
+		Provider: "claude",
+		WorkDir:  ".gc/agents/mayor",
+	}
+	tp2, err := resolveTemplate(params, singleton, singleton.QualifiedName(), nil)
+	if err != nil {
+		t.Fatalf("resolveTemplate singleton: %v", err)
+	}
+	var singletonCmd string
+	for _, entry := range tp2.Hints.PreStart {
+		if strings.Contains(entry, "internal materialize-skills") {
+			singletonCmd = entry
+			break
+		}
+	}
+	if singletonCmd != "" && !strings.Contains(singletonCmd, "--agent mayor") {
+		t.Errorf("singleton materialize-skills should carry own qualified name mayor; got: %q", singletonCmd)
+	}
+}
