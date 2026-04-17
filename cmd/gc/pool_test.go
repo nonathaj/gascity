@@ -577,6 +577,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		SkillsDir:              "/skills",
 		MCPDir:                 "/mcp",
 		HooksInstalled:         &trueVal,
+		InjectAssignedSkills:   &trueVal,
 		SessionSetup:           []string{"setup-cmd"},
 		SessionSetupScript:     "scripts/setup.sh",
 		SessionLive:            []string{"live-cmd"},

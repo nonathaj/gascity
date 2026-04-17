@@ -78,6 +78,9 @@ type AgentPatch struct {
 	MCPAppend []string `toml:"mcp_append,omitempty"`
 	// HooksInstalled overrides automatic hook detection.
 	HooksInstalled *bool `toml:"hooks_installed,omitempty"`
+	// InjectAssignedSkills overrides per-agent appendix injection
+	// (see Agent.InjectAssignedSkills).
+	InjectAssignedSkills *bool `toml:"inject_assigned_skills,omitempty"`
 	// SessionSetup overrides the agent's session_setup commands.
 	SessionSetup []string `toml:"session_setup,omitempty"`
 	// SessionSetupScript overrides the agent's session_setup_script path.
@@ -272,6 +275,9 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if p.HooksInstalled != nil {
 		a.HooksInstalled = p.HooksInstalled
+	}
+	if p.InjectAssignedSkills != nil {
+		a.InjectAssignedSkills = p.InjectAssignedSkills
 	}
 	if len(p.SessionSetup) > 0 {
 		a.SessionSetup = append([]string(nil), p.SessionSetup...)

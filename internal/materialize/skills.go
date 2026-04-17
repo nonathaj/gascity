@@ -94,6 +94,11 @@ type SkillEntry struct {
 	// Origin is a diagnostic label describing which catalog this entry
 	// came from. One of: "city", "<bootstrap-pack-name>", "agent".
 	Origin string
+	// Description is the one-line summary pulled from the SKILL.md YAML
+	// frontmatter `description:` field, or "" when the frontmatter is
+	// absent/malformed. Used by prompt-rendering surfaces that want to
+	// show each skill's purpose alongside its name.
+	Description string
 }
 
 // ShadowedEntry records a name that was provided by more than one source
@@ -517,6 +522,63 @@ func LegacyStubNames() []string {
 	return out
 }
 
+// readSkillDescription parses the SKILL.md YAML frontmatter and returns
+// the `description:` value. Returns "" when:
+//   - the file is unreadable
+//   - the file has no `---` frontmatter delimiters
+//   - the frontmatter lacks a description key
+//
+// Only the first 64 lines of the file are scanned — description lives
+// in frontmatter near the top; this caps the I/O cost of rendering
+// every skill's description alongside the catalog without pulling
+// large skill bodies into memory.
+//
+// This is a minimal YAML consumer rather than a real parser. It
+// recognizes `description: <value>` (single-line), strips optional
+// surrounding quotes, and stops at the closing `---` delimiter.
+// Multi-line block scalars (`description: >\n  ...`) are not
+// supported in v0.15.1 and return "" — same end state as a missing
+// description, which the caller handles gracefully.
+func readSkillDescription(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	text := string(data)
+	// Require frontmatter to begin on the first line.
+	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
+		return ""
+	}
+	// Find the closing `---` on a line by itself.
+	lines := strings.Split(text, "\n")
+	const maxScan = 64
+	end := len(lines)
+	if end > maxScan {
+		end = maxScan
+	}
+	for i := 1; i < end; i++ {
+		line := strings.TrimRight(lines[i], "\r")
+		if line == "---" {
+			break
+		}
+		trimmed := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmed, "description:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "description:"))
+		// Strip a matching pair of surrounding quotes; no escape handling
+		// needed for the typical single-line description.
+		if len(value) >= 2 {
+			first, last := value[0], value[len(value)-1]
+			if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		return value
+	}
+	return ""
+}
+
 // readSkillDir enumerates skill subdirectories of root. A subdirectory
 // counts as a skill iff it contains a SKILL.md file (case-sensitive,
 // matching the vendor convention). Returns nil if root does not exist.
@@ -545,13 +607,15 @@ func readSkillDir(root, origin string) ([]SkillEntry, error) {
 			continue
 		}
 		dir := filepath.Join(abs, e.Name())
-		if _, statErr := os.Stat(filepath.Join(dir, "SKILL.md")); statErr != nil {
+		skillMD := filepath.Join(dir, "SKILL.md")
+		if _, statErr := os.Stat(skillMD); statErr != nil {
 			continue
 		}
 		out = append(out, SkillEntry{
-			Name:   e.Name(),
-			Source: dir,
-			Origin: origin,
+			Name:        e.Name(),
+			Source:      dir,
+			Origin:      origin,
+			Description: readSkillDescription(skillMD),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

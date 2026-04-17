@@ -364,6 +364,7 @@ func TestAgentConfigFromAgentCoversPersistedFields(t *testing.T) {
 		SleepAfterIdle:         "30s",
 		InstallAgentHooks:      []string{"claude"},
 		HooksInstalled:         &trueVal,
+		InjectAssignedSkills:   &trueVal,
 		SessionSetup:           []string{"setup-cmd"},
 		SessionSetupScript:     "scripts/setup.sh",
 		SessionLive:            []string{"live-cmd"},

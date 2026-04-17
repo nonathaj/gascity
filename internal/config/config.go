@@ -409,6 +409,9 @@ type AgentOverride struct {
 	MCP []string `toml:"mcp,omitempty"`
 	// HooksInstalled overrides automatic hook detection.
 	HooksInstalled *bool `toml:"hooks_installed,omitempty"`
+	// InjectAssignedSkills overrides Agent.InjectAssignedSkills
+	// (see that field for semantics).
+	InjectAssignedSkills *bool `toml:"inject_assigned_skills,omitempty"`
 	// SessionSetup overrides the agent's session_setup commands.
 	SessionSetup []string `toml:"session_setup,omitempty"`
 	// SessionSetupScript overrides the agent's session_setup_script path.
@@ -1492,6 +1495,21 @@ type Agent struct {
 	// rendered prompt. Fragments come from shared template directories across
 	// all loaded packs. Each name must match a {{ define "name" }} block.
 	InjectFragments []string `toml:"inject_fragments,omitempty"`
+	// InjectAssignedSkills controls whether gc appends an
+	// "assigned skills" appendix to the agent's rendered prompt. The
+	// appendix lists every skill visible to this agent, partitioned
+	// into (assigned-to-you, shared-with-every-agent), so agents
+	// sharing a scope-root sink can tell which skills are their
+	// specialisation vs which are the city-wide set.
+	//
+	// Pointer tri-state:
+	//   nil  → inherit: inject when the agent has a vendor sink
+	//   *true  → explicitly inject (equivalent to the default)
+	//   *false → disable; the template is responsible for rendering
+	//            any skill guidance itself
+	//
+	// See engdocs/proposals/skill-materialization.md.
+	InjectAssignedSkills *bool `toml:"inject_assigned_skills,omitempty"`
 	// Attach controls whether the agent's session supports interactive
 	// attachment (e.g., tmux attach). When false, the agent can use a
 	// lighter runtime (subprocess instead of tmux). Defaults to true.

@@ -244,6 +244,108 @@ func mergeSkillFingerprintEntries(fpExtra map[string]string, desired []materiali
 	return fpExtra
 }
 
+// effectiveInjectAssignedSkills resolves the agent's prompt-appendix
+// preference. Returns true by default (nil pointer → inject) so the
+// feature is opt-out rather than opt-in. An explicit agent-level
+// `inject_assigned_skills = false` disables it for that agent.
+func effectiveInjectAssignedSkills(agent *config.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	if agent.InjectAssignedSkills != nil {
+		return *agent.InjectAssignedSkills
+	}
+	return true
+}
+
+// buildAssignedSkillsPromptFragment renders a markdown appendix that
+// lists every skill the agent sees, partitioned into (assigned-to-this-
+// agent, shared-with-every-agent-in-the-city). The goal is that agents
+// sharing a scope-root sink (multiple city-scoped agents, multiple
+// rig-scoped agents on the same rig) can tell which skills are their
+// specialisation vs which are the shared set — the materialiser
+// physically delivers both into the same sink directory.
+//
+// Returns "" when the agent has no skills to list (no vendor sink, no
+// catalog entries, or opt-out). Safe to append unconditionally:
+// the caller's template gets nothing extra when the fragment is empty.
+//
+// The fragment uses the SKILL.md frontmatter description for each
+// entry so agents see both the name and a one-line purpose. Origin
+// tags identify whether a shared skill came from the city pack or a
+// bootstrap implicit-import pack (e.g. `core`).
+func buildAssignedSkillsPromptFragment(
+	agent *config.Agent,
+	city *materialize.CityCatalog,
+	agentCat materialize.AgentCatalog,
+) string {
+	if agent == nil {
+		return ""
+	}
+	var shared []materialize.SkillEntry
+	if city != nil {
+		// Exclude entries that the agent-local catalog overrides —
+		// the agent's own entry wins precedence and will appear in
+		// the "assigned to you" section instead.
+		byAgentName := make(map[string]struct{}, len(agentCat.Entries))
+		for _, e := range agentCat.Entries {
+			byAgentName[e.Name] = struct{}{}
+		}
+		for _, e := range city.Entries {
+			if _, shadowed := byAgentName[e.Name]; shadowed {
+				continue
+			}
+			shared = append(shared, e)
+		}
+	}
+	if len(shared) == 0 && len(agentCat.Entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("## Skills available to this session\n\n")
+	fmt.Fprintf(&b, "You are `%s`. The following skills are materialized in your provider's skill directory and load automatically — you don't need to invoke anything extra.\n\n", //nolint:errcheck // strings.Builder.Write never errors
+		agent.QualifiedName())
+
+	if len(agentCat.Entries) > 0 {
+		b.WriteString("### Assigned to you\n\n")
+		writeSkillBullets(&b, agentCat.Entries, "")
+		b.WriteString("\n")
+	}
+
+	if len(shared) > 0 {
+		b.WriteString("### Shared (visible to every agent in this city)\n\n")
+		writeSkillBullets(&b, shared, "origin")
+		b.WriteString("\n")
+	}
+
+	b.WriteString("These are discovery-time hints, not execution gates — the vendor loads every skill from the sink directory regardless of what this appendix lists.\n")
+	return b.String()
+}
+
+// writeSkillBullets renders a bullet list of skill entries. When
+// originTag is non-empty, each bullet trails with " *(origin)*" so
+// shared entries can show whether they came from the city pack or a
+// bootstrap pack (e.g. `core`). Descriptions are included when the
+// SKILL.md frontmatter provided one.
+func writeSkillBullets(b *strings.Builder, entries []materialize.SkillEntry, originTag string) {
+	for _, e := range entries {
+		b.WriteString("- `")
+		b.WriteString(e.Name)
+		b.WriteString("`")
+		if strings.TrimSpace(e.Description) != "" {
+			b.WriteString(" — ")
+			b.WriteString(strings.TrimSpace(e.Description))
+		}
+		if originTag != "" && strings.TrimSpace(e.Origin) != "" {
+			b.WriteString(" *(")
+			b.WriteString(e.Origin)
+			b.WriteString(")*")
+		}
+		b.WriteString("\n")
+	}
+}
+
 // appendMaterializeSkillsPreStart appends a PreStart command that
 // invokes `gc internal materialize-skills --agent <name> --workdir
 // <path>` for per-session-worktree materialization. The command is

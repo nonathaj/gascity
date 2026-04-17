@@ -22,6 +22,7 @@ import (
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/convergence"
+	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/shellquote"
@@ -252,6 +253,41 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		prompt = beacon + "\n\n" + prompt
 	} else {
 		prompt = beacon
+	}
+
+	// Step 9b: Append the assigned-skills appendix when the agent opts
+	// in (default) AND has a vendor sink. Running at this point means
+	// the appendix lands at the very end of the prompt, after any
+	// template content but before any later modifications. See
+	// engdocs/proposals/skill-materialization.md § "Assigned-skills
+	// prompt appendix".
+	//
+	// The skill integration helpers gate on sink + opt-out themselves;
+	// here we just pipe the agent's catalog through. Stage-2 eligibility
+	// is NOT required — the appendix is helpful for tmux sessions too
+	// even when their work_dir equals the scope root.
+	if effectiveInjectAssignedSkills(cfgAgent) {
+		wsProvider := ""
+		if p.workspace != nil {
+			wsProvider = p.workspace.Provider
+		}
+		provider := effectiveAgentProvider(cfgAgent, wsProvider)
+		if _, ok := materialize.VendorSink(provider); ok {
+			var agentCat materialize.AgentCatalog
+			if cfgAgent.SkillsDir != "" {
+				// Best-effort: a transient I/O failure loading the
+				// agent catalog shouldn't break the prompt render.
+				// The error is already surfaced via
+				// effectiveSkillsForAgent's stderr path earlier in
+				// the call graph.
+				if c, err := materialize.LoadAgentCatalog(cfgAgent.SkillsDir); err == nil {
+					agentCat = c
+				}
+			}
+			if frag := buildAssignedSkillsPromptFragment(cfgAgent, p.skillCatalog, agentCat); frag != "" {
+				prompt = prompt + "\n\n" + frag
+			}
+		}
 	}
 
 	// Step 10: Merge environment layers.

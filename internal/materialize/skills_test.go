@@ -31,6 +31,64 @@ func requireBootstrapNames(t *testing.T, want ...string) {
 	}
 }
 
+func TestReadSkillDescription(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"plain", "---\nname: x\ndescription: A plan\n---\nbody\n", "A plan"},
+		{"quoted double", "---\nname: x\ndescription: \"A plan\"\n---\n", "A plan"},
+		{"quoted single", "---\nname: x\ndescription: 'A plan'\n---\n", "A plan"},
+		{"no frontmatter", "no dashes here\ndescription: ignored\n", ""},
+		{"missing description", "---\nname: x\n---\nbody\n", ""},
+		{"frontmatter trailing CRLF", "---\r\nname: x\r\ndescription: win\r\n---\r\n", "win"},
+		{"description after closing", "---\nname: x\n---\ndescription: outside\n", ""},
+		{"empty value", "---\ndescription:\n---\n", ""},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "SKILL.md")
+			if err := os.WriteFile(path, []byte(c.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			got := readSkillDescription(path)
+			if got != c.want {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+	if got := readSkillDescription(filepath.Join(t.TempDir(), "missing.md")); got != "" {
+		t.Errorf("missing file: got %q", got)
+	}
+}
+
+func TestReadSkillDirPopulatesDescription(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "plan")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: plan\ndescription: Plan the work\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := readSkillDir(root, "city")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Description != "Plan the work" {
+		t.Errorf("Description = %q, want %q", entries[0].Description, "Plan the work")
+	}
+}
+
 func TestVendorSink(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

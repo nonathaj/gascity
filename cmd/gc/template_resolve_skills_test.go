@@ -158,3 +158,90 @@ func TestResolveTemplateSkillsIntegration(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveTemplateAppendsAssignedSkillsPrompt verifies that the
+// assigned-skills appendix lands at the tail of the rendered prompt
+// for every stage-1-eligible agent with a vendor sink (by default).
+// Opt-out via InjectAssignedSkills = &false is honored.
+func TestResolveTemplateAppendsAssignedSkillsPrompt(t *testing.T) {
+	cityPath := t.TempDir()
+	writeTemplateResolveCityConfig(t, cityPath, "file")
+	if err := os.WriteFile(filepath.Join(cityPath, "pack.toml"),
+		[]byte("[pack]\nname = \"s\"\nversion = \"0.1.0\"\nschema = 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skillDir := filepath.Join(cityPath, "skills", "plan")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: plan\ndescription: Plan the work\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sharedCat, err := materialize.LoadCityCatalog(filepath.Join(cityPath, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buildParams := func() *agentBuildParams {
+		return &agentBuildParams{
+			cityName:  "city",
+			cityPath:  cityPath,
+			workspace: &config.Workspace{Provider: "claude"},
+			providers: map[string]config.ProviderSpec{
+				"claude": {Command: "echo", PromptMode: "none"},
+			},
+			lookPath:        func(string) (string, error) { return "/bin/echo", nil },
+			fs:              fsys.OSFS{},
+			rigs:            []config.Rig{},
+			beaconTime:      time.Unix(0, 0),
+			beadNames:       make(map[string]string),
+			stderr:          io.Discard,
+			skillCatalog:    &sharedCat,
+			sessionProvider: "tmux",
+		}
+	}
+
+	t.Run("default inject", func(t *testing.T) {
+		a := &config.Agent{Name: "mayor", Scope: "city", Provider: "claude"}
+		tp, err := resolveTemplate(buildParams(), a, a.QualifiedName(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, needle := range []string{
+			"## Skills available to this session",
+			"`plan` — Plan the work",
+		} {
+			if !strings.Contains(tp.Prompt, needle) {
+				t.Errorf("prompt missing %q:\n%s", needle, tp.Prompt)
+			}
+		}
+	})
+
+	t.Run("opt out", func(t *testing.T) {
+		no := false
+		a := &config.Agent{Name: "quiet", Scope: "city", Provider: "claude", InjectAssignedSkills: &no}
+		tp, err := resolveTemplate(buildParams(), a, a.QualifiedName(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(tp.Prompt, "Skills available to this session") {
+			t.Errorf("opt-out agent got the appendix anyway:\n%s", tp.Prompt)
+		}
+	})
+
+	t.Run("no sink skipped", func(t *testing.T) {
+		// provider=copilot has no vendor sink → no appendix
+		params := buildParams()
+		params.providers["copilot"] = config.ProviderSpec{Command: "echo", PromptMode: "none"}
+		a := &config.Agent{Name: "sinkless", Scope: "city", Provider: "copilot"}
+		tp, err := resolveTemplate(params, a, a.QualifiedName(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(tp.Prompt, "Skills available to this session") {
+			t.Errorf("sinkless agent got the appendix:\n%s", tp.Prompt)
+		}
+	})
+}

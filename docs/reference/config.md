@@ -102,6 +102,7 @@ Agent defines a configured agent in the city.
 | `overlay_dir` | string |  |  | OverlayDir is a directory whose contents are recursively copied (additive) into the agent's working directory at startup. Existing files are not overwritten. Relative paths resolve against the declaring config file's directory (pack-safe). |
 | `default_sling_formula` | string |  |  | DefaultSlingFormula is the formula name automatically applied via --on when beads are slung to this agent, unless --no-formula is set. Example: "mol-polecat-work" |
 | `inject_fragments` | []string |  |  | InjectFragments lists named template fragments to append to this agent's rendered prompt. Fragments come from shared template directories across all loaded packs. Each name must match a &#123;&#123; define "name" &#125;&#125; block. |
+| `inject_assigned_skills` | boolean |  |  | InjectAssignedSkills controls whether gc appends an "assigned skills" appendix to the agent's rendered prompt. The appendix lists every skill visible to this agent, partitioned into (assigned-to-you, shared-with-every-agent), so agents sharing a scope-root sink can tell which skills are their specialisation vs which are the city-wide set.  Pointer tri-state:   nil  → inherit: inject when the agent has a vendor sink   *true  → explicitly inject (equivalent to the default)   *false → disable; the template is responsible for rendering            any skill guidance itself  See engdocs/proposals/skill-materialization.md. |
 | `attach` | boolean |  |  | Attach controls whether the agent's session supports interactive attachment (e.g., tmux attach). When false, the agent can use a lighter runtime (subprocess instead of tmux). Defaults to true. |
 | `fallback` | boolean |  |  | Fallback marks this agent as a fallback definition. During pack composition, a non-fallback agent with the same name wins silently. When two fallbacks collide, the first loaded (depth-first) wins. |
 | `depends_on` | []string |  |  | DependsOn lists agent names that must be awake before this agent wakes. Used for dependency-ordered startup and shutdown. Validated for cycles at config load time. |
@@ -149,6 +150,7 @@ AgentOverride modifies a pack-stamped agent for a specific rig.
 | `skills` | []string |  |  | Skills is a tombstone field retained for v0.15.1 backwards compatibility.  Deprecated: removed in v0.16. Tombstone — accepted but ignored. See engdocs/proposals/skill-materialization.md |
 | `mcp` | []string |  |  | MCP is a tombstone field retained for v0.15.1 backwards compatibility.  Deprecated: removed in v0.16. Tombstone — accepted but ignored. See engdocs/proposals/skill-materialization.md |
 | `hooks_installed` | boolean |  |  | HooksInstalled overrides automatic hook detection. |
+| `inject_assigned_skills` | boolean |  |  | InjectAssignedSkills overrides Agent.InjectAssignedSkills (see that field for semantics). |
 | `session_setup` | []string |  |  | SessionSetup overrides the agent's session_setup commands. |
 | `session_setup_script` | string |  |  | SessionSetupScript overrides the agent's session_setup_script path. Relative paths resolve against the city directory. |
 | `session_live` | []string |  |  | SessionLive overrides the agent's session_live commands. |
@@ -199,6 +201,7 @@ AgentPatch modifies an existing agent identified by (Dir, Name).
 | `skills_append` | []string |  |  | SkillsAppend is a tombstone field retained for v0.15.1 backwards compatibility.  Deprecated: removed in v0.16. Tombstone — accepted but ignored. See engdocs/proposals/skill-materialization.md |
 | `mcp_append` | []string |  |  | MCPAppend is a tombstone field retained for v0.15.1 backwards compatibility.  Deprecated: removed in v0.16. Tombstone — accepted but ignored. See engdocs/proposals/skill-materialization.md |
 | `hooks_installed` | boolean |  |  | HooksInstalled overrides automatic hook detection. |
+| `inject_assigned_skills` | boolean |  |  | InjectAssignedSkills overrides per-agent appendix injection (see Agent.InjectAssignedSkills). |
 | `session_setup` | []string |  |  | SessionSetup overrides the agent's session_setup commands. |
 | `session_setup_script` | string |  |  | SessionSetupScript overrides the agent's session_setup_script path. Relative paths resolve against the city directory. |
 | `session_live` | []string |  |  | SessionLive overrides the agent's session_live commands. |

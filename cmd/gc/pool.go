@@ -289,6 +289,10 @@ func deepCopyAgent(src *config.Agent, name, dir string) config.Agent {
 		v := *src.HooksInstalled
 		dst.HooksInstalled = &v
 	}
+	if src.InjectAssignedSkills != nil {
+		v := *src.InjectAssignedSkills
+		dst.InjectAssignedSkills = &v
+	}
 	if src.DefaultSlingFormula != nil {
 		v := *src.DefaultSlingFormula
 		dst.DefaultSlingFormula = &v

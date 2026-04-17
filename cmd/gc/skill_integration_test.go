@@ -239,6 +239,136 @@ func TestMergeSkillFingerprintEntriesPrefixPartitioning(t *testing.T) {
 	}
 }
 
+func TestEffectiveInjectAssignedSkills(t *testing.T) {
+	t.Parallel()
+	yes, no := true, false
+	cases := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{"nil defaults to true", nil, true},
+		{"explicit true", &yes, true},
+		{"explicit false", &no, false},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			agent := &config.Agent{InjectAssignedSkills: c.ptr}
+			if got := effectiveInjectAssignedSkills(agent); got != c.want {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+	if effectiveInjectAssignedSkills(nil) {
+		t.Error("nil agent should not inject")
+	}
+}
+
+func TestBuildAssignedSkillsPromptFragmentPartitions(t *testing.T) {
+	t.Parallel()
+	city := &materialize.CityCatalog{
+		Entries: []materialize.SkillEntry{
+			{Name: "code-review", Source: "/x", Origin: "city", Description: "Review pull requests"},
+			{Name: "gc-work", Source: "/y", Origin: "core", Description: "Working with beads"},
+			{Name: "planning", Source: "/z", Origin: "city", Description: "Shared planning"},
+		},
+	}
+	agentCat := materialize.AgentCatalog{
+		Entries: []materialize.SkillEntry{
+			{Name: "mayor-planning", Source: "/a", Origin: "agent", Description: "Mayor-only strategy"},
+			// Overrides shared "planning" — should NOT appear in the shared section.
+			{Name: "planning", Source: "/b", Origin: "agent", Description: "Mayor's planning override"},
+		},
+	}
+	a := &config.Agent{Name: "mayor", Scope: "city"}
+	got := buildAssignedSkillsPromptFragment(a, city, agentCat)
+
+	mustContain := []string{
+		"## Skills available to this session",
+		"You are `mayor`",
+		"### Assigned to you",
+		"`mayor-planning` — Mayor-only strategy",
+		"`planning` — Mayor's planning override",
+		"### Shared (visible to every agent in this city)",
+		"`code-review` — Review pull requests *(city)*",
+		"`gc-work` — Working with beads *(core)*",
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(got, want) {
+			t.Errorf("fragment missing %q:\n%s", want, got)
+		}
+	}
+
+	// Agent-local "planning" must SHADOW the city "planning" from the
+	// shared section — agents should see their override, not the
+	// conflicting shared entry.
+	if strings.Contains(got, "Shared planning") {
+		t.Errorf("shared section still lists the shadowed city planning entry:\n%s", got)
+	}
+}
+
+func TestBuildAssignedSkillsPromptFragmentEmptyInputs(t *testing.T) {
+	t.Parallel()
+	a := &config.Agent{Name: "x"}
+	if got := buildAssignedSkillsPromptFragment(a, nil, materialize.AgentCatalog{}); got != "" {
+		t.Errorf("empty inputs should return empty fragment, got: %q", got)
+	}
+	// City-only (no agent-local) still renders, just without the Assigned section.
+	city := &materialize.CityCatalog{
+		Entries: []materialize.SkillEntry{
+			{Name: "gc-work", Source: "/x", Origin: "core", Description: "Work stuff"},
+		},
+	}
+	got := buildAssignedSkillsPromptFragment(a, city, materialize.AgentCatalog{})
+	if got == "" {
+		t.Fatal("expected non-empty fragment when city catalog has entries")
+	}
+	if strings.Contains(got, "### Assigned to you") {
+		t.Errorf("should not render Assigned section when no agent-local skills:\n%s", got)
+	}
+	if !strings.Contains(got, "### Shared") {
+		t.Errorf("should render Shared section:\n%s", got)
+	}
+}
+
+func TestBuildAssignedSkillsPromptFragmentAgentOnlyNoCity(t *testing.T) {
+	t.Parallel()
+	a := &config.Agent{Name: "solo"}
+	agentCat := materialize.AgentCatalog{
+		Entries: []materialize.SkillEntry{{Name: "only-mine", Source: "/x", Origin: "agent"}},
+	}
+	got := buildAssignedSkillsPromptFragment(a, nil, agentCat)
+	if got == "" {
+		t.Fatal("agent-local-only should still render")
+	}
+	if !strings.Contains(got, "### Assigned to you") {
+		t.Errorf("missing Assigned section:\n%s", got)
+	}
+	if strings.Contains(got, "### Shared") {
+		t.Errorf("Shared section should not render when no city catalog:\n%s", got)
+	}
+}
+
+func TestBuildAssignedSkillsPromptFragmentOmitsDescriptionWhenMissing(t *testing.T) {
+	t.Parallel()
+	a := &config.Agent{Name: "x"}
+	city := &materialize.CityCatalog{
+		Entries: []materialize.SkillEntry{
+			{Name: "bare", Source: "/x", Origin: "city"}, // no Description
+		},
+	}
+	got := buildAssignedSkillsPromptFragment(a, city, materialize.AgentCatalog{})
+	// Name present, no dash-separator.
+	if !strings.Contains(got, "`bare`") {
+		t.Errorf("missing bare skill name:\n%s", got)
+	}
+	if strings.Contains(got, "`bare` — ") {
+		t.Errorf("should not render em-dash separator when description is empty:\n%s", got)
+	}
+}
+
 func TestAppendMaterializeSkillsPreStart(t *testing.T) {
 	t.Parallel()
 	existing := []string{"mkdir -p .cache", "./setup.sh"}
