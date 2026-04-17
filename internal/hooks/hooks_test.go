@@ -14,23 +14,65 @@ import (
 
 func claudeHookCommand(t *testing.T, data []byte, event string) string {
 	t.Helper()
-	var cfg struct {
-		Hooks map[string][]struct {
-			Hooks []struct {
-				Command string `json:"command"`
-			} `json:"hooks"`
-		} `json:"hooks"`
-	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		t.Fatalf("unmarshal claude hooks: %v", err)
-	}
-	entries := cfg.Hooks[event]
+	entries := claudeHookEntries(t, data, event)
 	if len(entries) == 0 || len(entries[0].Hooks) == 0 {
 		t.Fatalf("missing claude hook for %s", event)
 	}
 	return entries[0].Hooks[0].Command
 }
 
+type claudeHookEntry struct {
+	Matcher string `json:"matcher"`
+	Hooks   []struct {
+		Command string `json:"command"`
+	} `json:"hooks"`
+}
+
+func claudeHookEntries(t *testing.T, data []byte, event string) []claudeHookEntry {
+	t.Helper()
+	var cfg struct {
+		Hooks map[string][]claudeHookEntry `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal claude hooks: %v", err)
+	}
+	return cfg.Hooks[event]
+}
+
+func cursorHookCommand(t *testing.T, data []byte, event string) string {
+	t.Helper()
+	var cfg struct {
+		Hooks map[string][]struct {
+			Command string `json:"command"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal cursor hooks: %v", err)
+	}
+	entries := cfg.Hooks[event]
+	if len(entries) == 0 {
+		t.Fatalf("missing cursor hook for %s", event)
+	}
+	return entries[0].Command
+}
+
+const openCodePluginPath = "/work/.opencode/plugins/gascity.js"
+
+func installOpenCodePlugin(t *testing.T, existing string) string {
+	t.Helper()
+	fs := fsys.NewFake()
+	if existing != "" {
+		fs.Files[openCodePluginPath] = []byte(existing)
+	}
+	if err := Install(fs, "/city", "/work", []string{"opencode"}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, ok := fs.Files[openCodePluginPath]
+	if !ok {
+		t.Fatalf("expected %s to be written", openCodePluginPath)
+	}
+	return string(data)
+}
 func TestSupportedProviders(t *testing.T) {
 	got := SupportedProviders()
 	want := map[string]bool{
@@ -104,6 +146,14 @@ func TestInstallClaude(t *testing.T) {
 	}
 	if !strings.Contains(sessionStartCommand, "GC_MANAGED_SESSION_HOOK=1") {
 		t.Error("claude SessionStart hook should mark managed hook invocation")
+	}
+	if entries := claudeHookEntries(t, runtimeData, "SessionStart"); len(entries) == 0 || entries[0].Matcher != "startup" {
+		t.Errorf("claude SessionStart matcher should be \"startup\" to avoid re-injecting prompt on resume/clear/compact, got %q", func() string {
+			if len(entries) == 0 {
+				return ""
+			}
+			return entries[0].Matcher
+		}())
 	}
 	if !strings.Contains(claudeHookCommand(t, runtimeData, "PreCompact"), `gc handoff "context cycle"`) {
 		t.Error("claude PreCompact hook should use gc handoff (not gc prime) to avoid context accumulation on compaction")
