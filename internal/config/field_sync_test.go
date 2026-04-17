@@ -230,8 +230,12 @@ func TestApplyAgentPatchCoversAllFields(t *testing.T) {
 		"SessionLiveAppend":       true,
 		"InstallAgentHooksAppend": true,
 		"InjectFragmentsAppend":   true,
-		"SkillsAppend":            true,
-		"MCPAppend":               true,
+		// Tombstone fields (deprecated in v0.15.1, removed in v0.16) are
+		// parsed but not applied. See engdocs/proposals/skill-materialization.md
+		"Skills":       true,
+		"MCP":          true,
+		"SkillsAppend": true,
+		"MCPAppend":    true,
 	}
 
 	// Check that all non-targeting, non-modifier fields were applied.
@@ -369,8 +373,12 @@ func TestApplyAgentOverrideCoversAllFields(t *testing.T) {
 		"SessionLiveAppend":       true,
 		"InstallAgentHooksAppend": true,
 		"InjectFragmentsAppend":   true,
-		"SkillsAppend":            true,
-		"MCPAppend":               true,
+		// Tombstone fields (deprecated in v0.15.1, removed in v0.16) are
+		// parsed but not applied. See engdocs/proposals/skill-materialization.md
+		"Skills":       true,
+		"MCP":          true,
+		"SkillsAppend": true,
+		"MCPAppend":    true,
 	}
 
 	av := reflect.ValueOf(agent)

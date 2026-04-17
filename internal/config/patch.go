@@ -54,13 +54,27 @@ type AgentPatch struct {
 	SleepAfterIdle *string `toml:"sleep_after_idle,omitempty"`
 	// InstallAgentHooks overrides the agent's install_agent_hooks list.
 	InstallAgentHooks []string `toml:"install_agent_hooks,omitempty"`
-	// Skills overrides the agent's attached shared skills list.
+	// Skills is a tombstone field retained for v0.15.1 backwards compatibility.
+	//
+	// Deprecated: removed in v0.16. Tombstone — accepted but ignored. See
+	// engdocs/proposals/skill-materialization.md
 	Skills []string `toml:"skills,omitempty"`
-	// MCP overrides the agent's attached shared MCP list.
+	// MCP is a tombstone field retained for v0.15.1 backwards compatibility.
+	//
+	// Deprecated: removed in v0.16. Tombstone — accepted but ignored. See
+	// engdocs/proposals/skill-materialization.md
 	MCP []string `toml:"mcp,omitempty"`
-	// SkillsAppend appends to the agent's attached shared skills list.
+	// SkillsAppend is a tombstone field retained for v0.15.1 backwards
+	// compatibility.
+	//
+	// Deprecated: removed in v0.16. Tombstone — accepted but ignored. See
+	// engdocs/proposals/skill-materialization.md
 	SkillsAppend []string `toml:"skills_append,omitempty"`
-	// MCPAppend appends to the agent's attached shared MCP list.
+	// MCPAppend is a tombstone field retained for v0.15.1 backwards
+	// compatibility.
+	//
+	// Deprecated: removed in v0.16. Tombstone — accepted but ignored. See
+	// engdocs/proposals/skill-materialization.md
 	MCPAppend []string `toml:"mcp_append,omitempty"`
 	// HooksInstalled overrides automatic hook detection.
 	HooksInstalled *bool `toml:"hooks_installed,omitempty"`
@@ -255,18 +269,6 @@ func applyAgentPatchFields(a *Agent, p *AgentPatch) {
 	}
 	if len(p.InstallAgentHooksAppend) > 0 {
 		a.InstallAgentHooks = append(a.InstallAgentHooks, p.InstallAgentHooksAppend...)
-	}
-	if len(p.Skills) > 0 {
-		a.Skills = append([]string(nil), p.Skills...)
-	}
-	if len(p.SkillsAppend) > 0 {
-		a.Skills = append(a.Skills, p.SkillsAppend...)
-	}
-	if len(p.MCP) > 0 {
-		a.MCP = append([]string(nil), p.MCP...)
-	}
-	if len(p.MCPAppend) > 0 {
-		a.MCP = append(a.MCP, p.MCPAppend...)
 	}
 	if p.HooksInstalled != nil {
 		a.HooksInstalled = p.HooksInstalled

@@ -81,8 +81,6 @@ type agentFile struct {
 	IdleTimeout            string            `toml:"idle_timeout,omitempty"`
 	SleepAfterIdle         string            `toml:"sleep_after_idle,omitempty"`
 	InstallAgentHooks      []string          `toml:"install_agent_hooks,omitempty"`
-	Skills                 []string          `toml:"skills,omitempty"`
-	MCP                    []string          `toml:"mcp,omitempty"`
 	HooksInstalled         *bool             `toml:"hooks_installed,omitempty"`
 	SessionSetup           []string          `toml:"session_setup,omitempty"`
 	SessionSetupScript     string            `toml:"session_setup_script,omitempty"`
@@ -656,8 +654,6 @@ func agentConfigFromAgent(agent config.Agent) agentFile {
 		IdleTimeout:            agent.IdleTimeout,
 		SleepAfterIdle:         agent.SleepAfterIdle,
 		InstallAgentHooks:      agent.InstallAgentHooks,
-		Skills:                 agent.Skills,
-		MCP:                    agent.MCP,
 		HooksInstalled:         agent.HooksInstalled,
 		SessionSetup:           agent.SessionSetup,
 		SessionSetupScript:     agent.SessionSetupScript,
@@ -702,8 +698,6 @@ func isZeroAgentConfig(cfg agentFile) bool {
 		cfg.IdleTimeout == "" &&
 		cfg.SleepAfterIdle == "" &&
 		len(cfg.InstallAgentHooks) == 0 &&
-		len(cfg.Skills) == 0 &&
-		len(cfg.MCP) == 0 &&
 		cfg.HooksInstalled == nil &&
 		len(cfg.SessionSetup) == 0 &&
 		cfg.SessionSetupScript == "" &&

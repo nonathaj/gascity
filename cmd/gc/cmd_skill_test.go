@@ -159,18 +159,20 @@ func TestSkillListSessionCatalog(t *testing.T) {
 	}
 }
 
-// TestSkillListAgentAttachmentFilter verifies that when an agent declares an
-// explicit skills attachment list, the city catalog is filtered to those
-// names. Agent-local entries remain visible regardless of attachment config.
-func TestSkillListAgentAttachmentFilter(t *testing.T) {
+// TestSkillListAgentShowsFullCityCatalog verifies that an agent-scoped
+// `gc skill list --agent mayor` returns the entire city catalog plus the
+// agent's private skills. Per engdocs/proposals/skill-materialization.md
+// there is no attachment filtering — every agent sees every city skill.
+// The `skills = [...]` tombstone on the agent is accepted but ignored.
+func TestSkillListAgentShowsFullCityCatalog(t *testing.T) {
 	clearGCEnv(t)
 	cityDir := t.TempDir()
 	t.Setenv("GC_CITY", cityDir)
 	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(.gc): %v", err)
 	}
-	// mayor attaches only "attached-skill" from the city catalog; "other-skill"
-	// must be filtered out.
+	// mayor declares an attachment list — this is a v0.15.0 tombstone and
+	// must be ignored; other-skill should still appear in the agent's view.
 	toml := `[workspace]
 name = "test-city"
 
@@ -205,8 +207,8 @@ template = "mayor"
 	if !strings.Contains(out, "private-workflow") {
 		t.Errorf("agent-local private-workflow missing from output:\n%s", out)
 	}
-	if strings.Contains(out, "other-skill") {
-		t.Errorf("other-skill should be filtered out (not attached):\n%s", out)
+	if !strings.Contains(out, "other-skill") {
+		t.Errorf("other-skill must remain visible — no attachment filtering:\n%s", out)
 	}
 }
 
