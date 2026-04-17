@@ -1,0 +1,269 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/materialize"
+)
+
+func TestIsStage2EligibleSession(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		cityProvider   string
+		agentSession   string
+		wantEligible   bool
+	}{
+		{"default empty → tmux (eligible)", "", "", true},
+		{"tmux eligible", "tmux", "", true},
+		{"subprocess eligible", "subprocess", "", true},
+		{"k8s ineligible", "k8s", "", false},
+		{"acp city ineligible", "acp", "", false},
+		{"hybrid ineligible", "hybrid", "", false},
+		{"exec prefix ineligible", "exec:./run.sh", "", false},
+		{"fake ineligible", "fake", "", false},
+		{"tmux + acp agent → ineligible", "tmux", "acp", false},
+		{"subprocess + acp agent → ineligible", "subprocess", "acp", false},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			agent := &config.Agent{Session: c.agentSession}
+			got := isStage2EligibleSession(c.cityProvider, agent)
+			if got != c.wantEligible {
+				t.Fatalf("isStage2EligibleSession(%q, %q) = %v, want %v",
+					c.cityProvider, c.agentSession, got, c.wantEligible)
+			}
+		})
+	}
+}
+
+func TestAgentScopeRoot(t *testing.T) {
+	t.Parallel()
+	rigs := []config.Rig{
+		{Name: "fe", Path: "/rigs/fe"},
+		{Name: "be", Path: "/rigs/be"},
+	}
+	cases := []struct {
+		name    string
+		agent   config.Agent
+		want    string
+	}{
+		{"city-scoped returns cityPath", config.Agent{Scope: "city"}, "/city"},
+		{"rig-scoped returns rig path", config.Agent{Scope: "rig", Dir: "fe"}, "/rigs/fe"},
+		{"empty scope defaults to rig", config.Agent{Dir: "be"}, "/rigs/be"},
+		{"unknown rig falls back to cityPath", config.Agent{Scope: "rig", Dir: "unknown"}, "/city"},
+		{"empty dir rig-scope falls back", config.Agent{Scope: "rig"}, "/city"},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := agentScopeRoot(&c.agent, "/city", rigs)
+			if got != c.want {
+				t.Fatalf("agentScopeRoot(%+v) = %q, want %q", c.agent, got, c.want)
+			}
+		})
+	}
+}
+
+func TestEffectiveSkillsForAgentFourBranches(t *testing.T) {
+	t.Parallel()
+
+	// Build a tiny catalog with one shared entry.
+	tmp := t.TempDir()
+	sharedSkill := filepath.Join(tmp, "shared", "plan")
+	mustCreateSkill(t, sharedSkill)
+	shared := materialize.CityCatalog{
+		Entries:    []materialize.SkillEntry{{Name: "plan", Source: sharedSkill, Origin: "city"}},
+		OwnedRoots: []string{filepath.Dir(sharedSkill)},
+	}
+
+	// Branch 1: eligible + WorkDir == scope root (shared catalog drives).
+	t.Run("claude eligible shared catalog", func(t *testing.T) {
+		t.Parallel()
+		a := &config.Agent{Provider: "claude"}
+		desired, owned := effectiveSkillsForAgent(&shared, a)
+		if len(desired) != 1 || desired[0].Name != "plan" {
+			t.Fatalf("desired = %+v", desired)
+		}
+		if len(owned) != 1 || owned[0] != filepath.Dir(sharedSkill) {
+			t.Fatalf("owned = %+v", owned)
+		}
+	})
+
+	// Branch 2: ineligible provider (copilot) returns nothing — no sink.
+	t.Run("copilot provider has no sink", func(t *testing.T) {
+		t.Parallel()
+		a := &config.Agent{Provider: "copilot"}
+		desired, owned := effectiveSkillsForAgent(&shared, a)
+		if desired != nil || owned != nil {
+			t.Fatalf("want (nil, nil), got desired=%+v owned=%+v", desired, owned)
+		}
+	})
+
+	// Branch 3: eligible provider + per-agent local skills overlay.
+	t.Run("agent-local catalog overlay", func(t *testing.T) {
+		t.Parallel()
+		agentDir := filepath.Join(tmp, "agents", "mayor", "skills")
+		mustCreateSkill(t, filepath.Join(agentDir, "private"))
+		a := &config.Agent{Provider: "codex", SkillsDir: agentDir}
+		desired, owned := effectiveSkillsForAgent(&shared, a)
+		names := namesOf(desired)
+		if !reflect.DeepEqual(names, []string{"plan", "private"}) {
+			t.Fatalf("names = %v", names)
+		}
+		absAgent, _ := filepath.Abs(agentDir)
+		found := false
+		for _, root := range owned {
+			if root == absAgent {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("owned missing agent root %q: %v", absAgent, owned)
+		}
+	})
+
+	// Branch 4: city catalog nil (load failed) — agent-local skills still work.
+	t.Run("nil city catalog + agent-local only", func(t *testing.T) {
+		t.Parallel()
+		agentDir := filepath.Join(tmp, "agents", "solo", "skills")
+		mustCreateSkill(t, filepath.Join(agentDir, "only"))
+		a := &config.Agent{Provider: "gemini", SkillsDir: agentDir}
+		desired, owned := effectiveSkillsForAgent(nil, a)
+		if len(desired) != 1 || desired[0].Name != "only" {
+			t.Fatalf("desired = %+v", desired)
+		}
+		if len(owned) != 1 {
+			t.Fatalf("want 1 owned root, got %v", owned)
+		}
+	})
+
+	// Empty catalog + no agent skills → nothing.
+	t.Run("no skills anywhere", func(t *testing.T) {
+		t.Parallel()
+		a := &config.Agent{Provider: "claude"}
+		empty := materialize.CityCatalog{}
+		desired, owned := effectiveSkillsForAgent(&empty, a)
+		if desired != nil || owned != nil {
+			t.Fatalf("want (nil, nil), got desired=%+v owned=%+v", desired, owned)
+		}
+	})
+}
+
+func TestMergeSkillFingerprintEntries(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+	mustCreateSkill(t, filepath.Join(tmp, "alpha"))
+	mustCreateSkill(t, filepath.Join(tmp, "beta"))
+	desired := []materialize.SkillEntry{
+		{Name: "alpha", Source: filepath.Join(tmp, "alpha")},
+		{Name: "beta", Source: filepath.Join(tmp, "beta")},
+	}
+
+	// Nil fpExtra: allocates and populates.
+	got := mergeSkillFingerprintEntries(nil, desired)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2; %+v", len(got), got)
+	}
+	for _, name := range []string{"skills:alpha", "skills:beta"} {
+		if got[name] == "" {
+			t.Errorf("missing or empty %q in %+v", name, got)
+		}
+	}
+
+	// Non-nil fpExtra: preserves existing keys.
+	base := map[string]string{"pool.max": "3"}
+	got = mergeSkillFingerprintEntries(base, desired)
+	if got["pool.max"] != "3" {
+		t.Errorf("existing key dropped: %+v", got)
+	}
+	if got["skills:alpha"] == "" {
+		t.Errorf("skills:alpha missing: %+v", got)
+	}
+
+	// Empty desired: returns input unchanged.
+	orig := map[string]string{"x": "y"}
+	got = mergeSkillFingerprintEntries(orig, nil)
+	if !reflect.DeepEqual(got, orig) {
+		t.Errorf("empty desired modified map: got %+v, want %+v", got, orig)
+	}
+}
+
+// TestMergeSkillFingerprintEntriesPrefixPartitioning asserts that the
+// "skills:" prefix keeps entries from colliding with other
+// fpExtra keys like "skills_dir" that might conceivably be added later.
+func TestMergeSkillFingerprintEntriesPrefixPartitioning(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	mustCreateSkill(t, filepath.Join(tmp, "x"))
+	desired := []materialize.SkillEntry{{Name: "x", Source: filepath.Join(tmp, "x")}}
+
+	got := mergeSkillFingerprintEntries(nil, desired)
+	for k := range got {
+		if !strings.HasPrefix(k, "skills:") {
+			t.Errorf("non-prefix key present: %q", k)
+		}
+	}
+}
+
+func TestAppendMaterializeSkillsPreStart(t *testing.T) {
+	t.Parallel()
+	existing := []string{"mkdir -p .cache", "./setup.sh"}
+	got := appendMaterializeSkillsPreStart(existing, "hello-world/polecat", "/worktrees/polecat-1")
+	if len(got) != 3 {
+		t.Fatalf("want 3 entries, got %d (%v)", len(got), got)
+	}
+	// User-configured entries come first (per spec: "appended ... user
+	// setup runs first, materialize-skills runs last").
+	if got[0] != "mkdir -p .cache" || got[1] != "./setup.sh" {
+		t.Errorf("user entries reordered: %v", got)
+	}
+	// Final entry is the materialize-skills command with both flags
+	// properly quoted.
+	last := got[2]
+	if !strings.Contains(last, "internal materialize-skills") {
+		t.Errorf("materialize-skills command missing: %q", last)
+	}
+	if !strings.Contains(last, "--agent") || !strings.Contains(last, "hello-world/polecat") {
+		t.Errorf("--agent flag missing: %q", last)
+	}
+	if !strings.Contains(last, "--workdir") || !strings.Contains(last, "/worktrees/polecat-1") {
+		t.Errorf("--workdir flag missing: %q", last)
+	}
+	// gc binary reference must go through ${GC_BIN:-gc} so the runtime
+	// env provides the authoritative binary path.
+	if !strings.Contains(last, "${GC_BIN:-gc}") {
+		t.Errorf("GC_BIN reference missing: %q", last)
+	}
+}
+
+// helpers
+
+func mustCreateSkill(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\nname: " + filepath.Base(dir) + "\ndescription: test\n---\nbody\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func namesOf(entries []materialize.SkillEntry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Name
+	}
+	return out
+}
