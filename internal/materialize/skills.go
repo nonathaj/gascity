@@ -347,19 +347,20 @@ func MaterializeAgent(req MaterializeRequest) (MaterializeResult, error) {
 		desiredByName[e.Name] = e
 	}
 
+	var result MaterializeResult
+
 	owned := make([]string, 0, len(req.OwnedRoots))
 	for _, root := range req.OwnedRoots {
 		if root == "" {
 			continue
 		}
-		abs, err := filepath.Abs(root)
+		canon, err := canonicalizePath(root)
 		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("canonicalize owned root %q: %v", root, err))
 			continue
 		}
-		owned = append(owned, abs)
+		owned = append(owned, canon)
 	}
-
-	var result MaterializeResult
 
 	// Step 2: legacy stub migration.
 	for _, name := range req.LegacyNames {
@@ -393,7 +394,12 @@ func MaterializeAgent(req MaterializeRequest) (MaterializeResult, error) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("readlink %q: %v", path, rerr))
 			continue
 		}
-		if !targetUnderOwnedRoot(target, owned) {
+		canonTarget, terr := canonicalizePath(target)
+		if terr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("canonicalize target %q: %v", target, terr))
+			continue
+		}
+		if !targetUnderOwnedRoot(canonTarget, owned) {
 			// External target — symlink the user placed themselves.
 			continue
 		}
@@ -410,7 +416,12 @@ func MaterializeAgent(req MaterializeRequest) (MaterializeResult, error) {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("resolving desired target %q: %v", desired.Source, terr))
 			continue
 		}
-		if filepath.Clean(target) == filepath.Clean(desiredAbs) {
+		canonDesired, derr := canonicalizePath(desiredAbs)
+		if derr != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("canonicalize desired target %q: %v", desiredAbs, derr))
+			continue
+		}
+		if canonTarget == canonDesired {
 			// Already correct — record and move on. The create loop
 			// will see this name has been satisfied via desiredByName
 			// removal below.
@@ -418,7 +429,9 @@ func MaterializeAgent(req MaterializeRequest) (MaterializeResult, error) {
 			delete(desiredByName, name)
 			continue
 		}
-		// Drifted target — atomic replace.
+		// Drifted target — atomic replace. Use the lexical desiredAbs
+		// (not canonicalized) so the on-disk symlink target remains the
+		// caller-intended path; canonicalization is comparison-only.
 		if rerr := atomicSymlink(desiredAbs, path); rerr != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("replacing symlink %q: %v", path, rerr))
 			continue
@@ -560,7 +573,7 @@ func bootstrapSkillDirs() ([]namedSkillsDir, error) {
 	for _, name := range bootstrap.BootstrapPackNames() {
 		bootstrapNames[name] = struct{}{}
 	}
-	gcHome := implicitGCHome()
+	gcHome := config.ImplicitGCHome()
 	if gcHome == "" {
 		return nil, nil
 	}
@@ -582,45 +595,75 @@ func bootstrapSkillDirs() ([]namedSkillsDir, error) {
 	return out, nil
 }
 
-// implicitGCHome mirrors config.implicitGCHome (which is unexported).
-// The two must agree on the same path for bootstrap source resolution
-// to find the cache root populated by bootstrap.EnsureBootstrap.
-func implicitGCHome() string {
-	if v := strings.TrimSpace(os.Getenv("GC_HOME")); v != "" {
-		return v
-	}
-	if strings.HasSuffix(os.Args[0], ".test") {
-		return ""
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), ".gc")
-	}
-	return filepath.Join(home, ".gc")
-}
-
-// targetUnderOwnedRoot reports whether the given symlink target falls
-// under one of the gc-managed source root prefixes. Targets are
-// normalised before comparison so relative-vs-absolute differences do
-// not mis-classify ownership.
+// targetUnderOwnedRoot reports whether the given canonical symlink
+// target falls under one of the canonical gc-managed source root
+// prefixes. Both the target and the roots must already be passed
+// through canonicalizePath so /var ↔ /private/var aliases compare
+// equal; otherwise a self-written symlink can be mis-classified as
+// external (the failure mode the macOS path-alias regression catches).
 func targetUnderOwnedRoot(target string, ownedRoots []string) bool {
-	abs := target
-	if !filepath.IsAbs(abs) {
+	if !filepath.IsAbs(target) {
 		// Materializer always writes absolute targets, so a relative
 		// link is by definition not ours.
 		return false
 	}
-	abs = filepath.Clean(abs)
 	for _, root := range ownedRoots {
-		root = filepath.Clean(root)
-		if abs == root {
+		if target == root {
 			return true
 		}
-		if strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+		if strings.HasPrefix(target, root+string(os.PathSeparator)) {
 			return true
 		}
 	}
 	return false
+}
+
+// canonicalizePath returns a path with all leading symlinks resolved
+// (via filepath.EvalSymlinks). When the path itself does not exist
+// (e.g., a dangling symlink target or a not-yet-created sink entry),
+// the function walks up to find the deepest ancestor that does exist,
+// canonicalises that, and re-appends the missing tail. This handles
+// platforms where common roots are symlinks (macOS /tmp →
+// /private/tmp; certain Linux distros where /var symlinks elsewhere)
+// without breaking comparisons against materializer-written targets
+// that may have been recorded with the unresolved prefix.
+//
+// Returns an error only when filepath.Abs fails on a relative input.
+// All EvalSymlinks errors are absorbed by the walk-up fallback.
+func canonicalizePath(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	abs := path
+	if !filepath.IsAbs(abs) {
+		a, err := filepath.Abs(abs)
+		if err != nil {
+			return "", err
+		}
+		abs = a
+	}
+	abs = filepath.Clean(abs)
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	// Walk up until an ancestor exists; canonicalise it, then re-append
+	// the missing suffix. Falls back to the cleaned absolute path when
+	// nothing along the way exists (e.g., entirely-fictional path
+	// supplied by a test).
+	var suffix []string
+	cur := abs
+	for {
+		parent := filepath.Dir(cur)
+		suffix = append([]string{filepath.Base(cur)}, suffix...)
+		if parent == cur {
+			return abs, nil
+		}
+		if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+			parts := append([]string{resolved}, suffix...)
+			return filepath.Join(parts...), nil
+		}
+		cur = parent
+	}
 }
 
 // atomicSymlink creates or replaces a symlink at path pointing to

@@ -294,6 +294,115 @@ func TestDeprecatedAttachmentFieldsCheckNoCityPath(t *testing.T) {
 	}
 }
 
+// TestRewritePreservesMultilineStringContent is the regression for the
+// Phase 2 review: the scanner must not strip lines whose content
+// happens to look like a deprecated assignment when they live inside
+// a TOML multi-line string. Without triple-quote tracking,
+// `gc doctor --fix` would corrupt an illustrative example embedded
+// in a description or prompt field.
+func TestRewritePreservesMultilineStringContent(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "city.toml")
+	src := `[[agent]]
+name = "mayor"
+provider = "claude"
+description = """
+The v0.15.0 config used:
+skills = ["foo"]
+mcp = ["bar"]
+skills_append = ["baz"]
+"""
+skills = ["real"]
+nudge = "hi"
+
+[[agent]]
+name = "polecat"
+literal_example = '''
+Copy this to your city.toml:
+  skills = ["legacy"]
+  mcp = []
+'''
+mcp = ["real"]
+`
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rewriteWithoutDeprecatedAttachmentFields(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `[[agent]]
+name = "mayor"
+provider = "claude"
+description = """
+The v0.15.0 config used:
+skills = ["foo"]
+mcp = ["bar"]
+skills_append = ["baz"]
+"""
+nudge = "hi"
+
+[[agent]]
+name = "polecat"
+literal_example = '''
+Copy this to your city.toml:
+  skills = ["legacy"]
+  mcp = []
+'''
+`
+	if string(got) != want {
+		t.Fatalf("multi-line string content corrupted.\nGot:\n%s\nWant:\n%s", string(got), want)
+	}
+}
+
+func TestFindDeprecatedInMultilineStringSkipped(t *testing.T) {
+	t.Parallel()
+	src := `description = """
+skills = ["embedded"]
+"""
+skills = ["real"]
+`
+	got := findDeprecatedAttachmentFieldLines(src)
+	want := []deprecatedAttachmentLine{{Key: "skills", Line: 4}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v (the line inside the multi-line string must NOT be reported)", got, want)
+	}
+}
+
+func TestTomlStringStateTransitions(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		line string
+		in   tomlStringState
+		want tomlStringState
+	}{
+		{"open basic", `x = """`, tomlStringState{}, tomlStringState{inBasic: true}},
+		{"close basic", `"""`, tomlStringState{inBasic: true}, tomlStringState{}},
+		{"basic one-liner", `x = """one"""`, tomlStringState{}, tomlStringState{}},
+		{"open literal", `x = '''`, tomlStringState{}, tomlStringState{inLiteral: true}},
+		{"close literal", `'''`, tomlStringState{inLiteral: true}, tomlStringState{}},
+		{"literal one-liner", `x = '''raw'''`, tomlStringState{}, tomlStringState{}},
+		{"basic-while-in-literal ignored", `blah """ blah`, tomlStringState{inLiteral: true}, tomlStringState{inLiteral: true}},
+		{"literal-while-in-basic ignored", `blah ''' blah`, tomlStringState{inBasic: true}, tomlStringState{inBasic: true}},
+		{"plain line", `x = "single"`, tomlStringState{}, tomlStringState{}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := c.in.update(c.line)
+			if got != c.want {
+				t.Fatalf("got %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestDeprecatedAttachmentFieldsCheckCanFix(t *testing.T) {
 	t.Parallel()
 	if !(&DeprecatedAttachmentFieldsCheck{}).CanFix() {

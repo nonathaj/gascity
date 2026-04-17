@@ -150,18 +150,31 @@ func scanCityForDeprecatedAttachmentFields(cityPath string) ([]deprecatedAttachm
 // (key, line) pair per occurrence. Line numbers are 1-indexed and
 // point at the assignment line; subsequent lines belonging to the
 // same multi-line array are not separately listed.
+//
+// Lines that fall inside a TOML multi-line string (`"""..."""` or
+// `'''...'''`) are opaque content and never match — this prevents
+// `gc doctor --fix` from corrupting a `description = """..."""`
+// field whose body happens to embed an illustrative `skills = [...]`
+// line.
 func findDeprecatedAttachmentFieldLines(source string) []deprecatedAttachmentLine {
 	var hits []deprecatedAttachmentLine
 	lines := splitLinesPreserving(source)
+	state := tomlStringState{}
 	for i := 0; i < len(lines); i++ {
+		if state.inMultiline() {
+			state = state.update(lines[i])
+			continue
+		}
 		key, isAssign := matchedDeprecatedKey(lines[i])
 		if !isAssign {
+			state = state.update(lines[i])
 			continue
 		}
 		hits = append(hits, deprecatedAttachmentLine{Key: key, Line: i + 1})
-		// Skip any continuation lines belonging to a multi-line array
-		// so a single occurrence isn't double-counted.
 		consumed := arrayLineSpan(lines, i)
+		for j := 0; j < consumed; j++ {
+			state = state.update(lines[i+j])
+		}
 		if consumed > 1 {
 			i += consumed - 1
 		}
@@ -174,6 +187,11 @@ func findDeprecatedAttachmentFieldLines(source string) []deprecatedAttachmentLin
 // Multi-line arrays are removed in full. Surrounding lines, comments,
 // and section headers are preserved verbatim. Trailing-newline shape
 // is preserved when present.
+//
+// Mirrors findDeprecatedAttachmentFieldLines's multi-line string
+// state tracking: lines inside a `"""..."""` or `'''...'''` block
+// are never stripped, even if their content syntactically resembles
+// a deprecated assignment.
 func rewriteWithoutDeprecatedAttachmentFields(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -184,15 +202,25 @@ func rewriteWithoutDeprecatedAttachmentFields(path string) error {
 	lines := splitLinesPreserving(source)
 
 	out := make([]string, 0, len(lines))
+	state := tomlStringState{}
 	for i := 0; i < len(lines); i++ {
+		if state.inMultiline() {
+			out = append(out, lines[i])
+			state = state.update(lines[i])
+			continue
+		}
 		if _, ok := matchedDeprecatedKey(lines[i]); ok {
 			consumed := arrayLineSpan(lines, i)
+			for j := 0; j < consumed; j++ {
+				state = state.update(lines[i+j])
+			}
 			if consumed > 1 {
 				i += consumed - 1
 			}
 			continue
 		}
 		out = append(out, lines[i])
+		state = state.update(lines[i])
 	}
 
 	rendered := strings.Join(out, "\n")
@@ -215,6 +243,61 @@ func rewriteWithoutDeprecatedAttachmentFields(path string) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+// tomlStringState tracks whether the scanner is currently inside an
+// open TOML multi-line string. Two flavours: basic (`"""..."""` —
+// escape sequences apply) and literal (`'''...'''` — raw content).
+//
+// The scanner only needs to find the closing triple-quote token; it
+// does not need full TOML grammar fidelity. Per-line update is
+// recursive so a line that opens AND closes the same flavour
+// (`description = """one-liner"""`) leaves the state unchanged.
+type tomlStringState struct {
+	inBasic   bool
+	inLiteral bool
+}
+
+// inMultiline reports whether the scanner is mid-multi-line-string at
+// the start of the next line.
+func (s tomlStringState) inMultiline() bool {
+	return s.inBasic || s.inLiteral
+}
+
+// update returns the new state after walking line, looking for the
+// triple-quote tokens that toggle multi-line state. Operates only on
+// the input flavour at most: when inside a basic string only `"""`
+// can close it; same for literal `'''`. When outside both, the first
+// triple-quote token (whichever flavour) opens its kind and the rest
+// of the line is rescanned from inside that state.
+func (s tomlStringState) update(line string) tomlStringState {
+	if s.inBasic {
+		idx := strings.Index(line, `"""`)
+		if idx < 0 {
+			return s
+		}
+		s.inBasic = false
+		return s.update(line[idx+3:])
+	}
+	if s.inLiteral {
+		idx := strings.Index(line, `'''`)
+		if idx < 0 {
+			return s
+		}
+		s.inLiteral = false
+		return s.update(line[idx+3:])
+	}
+	basicIdx := strings.Index(line, `"""`)
+	literalIdx := strings.Index(line, `'''`)
+	if basicIdx < 0 && literalIdx < 0 {
+		return s
+	}
+	if basicIdx >= 0 && (literalIdx < 0 || basicIdx < literalIdx) {
+		s.inBasic = true
+		return s.update(line[basicIdx+3:])
+	}
+	s.inLiteral = true
+	return s.update(line[literalIdx+3:])
 }
 
 // matchedDeprecatedKey reports whether line is a key assignment for one

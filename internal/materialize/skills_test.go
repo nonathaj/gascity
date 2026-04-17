@@ -8,8 +8,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/bootstrap"
 	"github.com/gastownhall/gascity/internal/config"
 )
+
+// requireBootstrapNames asserts every name in want exists in the
+// production bootstrap pack list. The materialize tests build fake
+// implicit-import.toml entries for these names; if a pack is renamed
+// or removed in production code, the test helper would silently drop
+// the entry from discovery and the assertions would pass vacuously.
+// This guard fails loudly instead.
+func requireBootstrapNames(t *testing.T, want ...string) {
+	t.Helper()
+	have := make(map[string]struct{})
+	for _, name := range bootstrap.BootstrapPackNames() {
+		have[name] = struct{}{}
+	}
+	for _, name := range want {
+		if _, ok := have[name]; !ok {
+			t.Fatalf("test fixture references bootstrap pack %q which is no longer in bootstrap.BootstrapPackNames() = %v", name, bootstrap.BootstrapPackNames())
+		}
+	}
+}
 
 func TestVendorSink(t *testing.T) {
 	t.Parallel()
@@ -126,6 +146,7 @@ func TestLoadCityCatalogCityOnly(t *testing.T) {
 }
 
 func TestLoadCityCatalogBootstrapMerge(t *testing.T) {
+	requireBootstrapNames(t, "core", "registry")
 	gcHome := setupBootstrapHome(t, map[string][]string{
 		"core":     {"alpha", "shared"},
 		"registry": {"reg-only"},
@@ -167,6 +188,7 @@ func TestLoadCityCatalogBootstrapMerge(t *testing.T) {
 }
 
 func TestLoadCityCatalogIgnoresUnknownImplicitImport(t *testing.T) {
+	requireBootstrapNames(t, "core")
 	gcHome := setupBootstrapHome(t, map[string][]string{
 		"core": {"alpha"},
 	})
@@ -567,6 +589,103 @@ func TestMaterializeAgentRemovesAllOwnedWhenDesiredEmpty(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(sink, "user.md")); err != nil {
 		t.Errorf("user file removed: %v", err)
+	}
+}
+
+// TestMaterializeAgentAliasedOwnedRoot exercises the path-alias case
+// from the Phase 2 review: when the owned root is supplied as a path
+// that traverses a symlink (e.g., /tmp/proj/skills where /tmp →
+// /private/tmp on macOS), the materializer must still recognise
+// previously-written symlinks pointing at the resolved form as its
+// own. Without canonicalisation the symlink would be reclassified as
+// external and never updated.
+func TestMaterializeAgentAliasedOwnedRoot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// Real source dir: <root>/real/skills
+	realSkills := filepath.Join(root, "real", "skills")
+	mkSkill(t, realSkills, "alpha")
+	// Symlinked alias: <root>/alias -> <root>/real
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "alias")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	aliasedRoot := filepath.Join(root, "alias", "skills")
+
+	sink := filepath.Join(t.TempDir(), "skills")
+
+	// First pass: materialise via the aliased owned-root path. The link
+	// target is also written using the aliased path.
+	res, err := MaterializeAgent(MaterializeRequest{
+		SinkDir:    sink,
+		Desired:    []SkillEntry{{Name: "alpha", Source: filepath.Join(aliasedRoot, "alpha"), Origin: "city"}},
+		OwnedRoots: []string{aliasedRoot},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res.Materialized, []string{"alpha"}) {
+		t.Fatalf("first pass materialized = %v", res.Materialized)
+	}
+
+	// Second pass: same desired set, but supply the owned root via the
+	// canonical (resolved) path. Without canonicalisation the symlink
+	// written above would be classified as external; cleanup would skip
+	// it and the create loop would Skip the desired entry as a
+	// "user-owned symlink at sink path" — not what we want.
+	res2, err := MaterializeAgent(MaterializeRequest{
+		SinkDir:    sink,
+		Desired:    []SkillEntry{{Name: "alpha", Source: filepath.Join(realSkills, "alpha"), Origin: "city"}},
+		OwnedRoots: []string{realSkills},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res2.Materialized, []string{"alpha"}) {
+		t.Fatalf("second pass materialized = %v (want [alpha]); skipped=%+v warnings=%v",
+			res2.Materialized, res2.Skipped, res2.Warnings)
+	}
+	if len(res2.Skipped) != 0 {
+		t.Fatalf("aliased root reclassified as user-owned: %+v", res2.Skipped)
+	}
+}
+
+func TestCanonicalizePath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(real, alias); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	// Existing directory: alias resolves to real.
+	got, err := canonicalizePath(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, _ := filepath.EvalSymlinks(alias)
+	if got != expected {
+		t.Errorf("alias dir: got %q, want %q", got, expected)
+	}
+
+	// Missing tail under an aliased ancestor: walk-up + suffix re-append.
+	missing := filepath.Join(alias, "not-yet-created", "leaf")
+	got, err = canonicalizePath(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix, _ := filepath.EvalSymlinks(alias)
+	wantMissing := filepath.Join(wantPrefix, "not-yet-created", "leaf")
+	if got != wantMissing {
+		t.Errorf("missing tail: got %q, want %q", got, wantMissing)
+	}
+
+	// Empty input.
+	if got, err := canonicalizePath(""); err != nil || got != "" {
+		t.Errorf("empty: got (%q, %v), want (\"\", nil)", got, err)
 	}
 }
 
