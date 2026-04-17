@@ -1432,21 +1432,6 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 		}
 	}
 
-	// Materialize Claude skill stubs.
-	if cfg.Workspace.Provider == "claude" {
-		dirs := []string{cityPath}
-		for _, r := range cfg.Rigs {
-			if r.Path != "" {
-				dirs = append(dirs, r.Path)
-			}
-		}
-		if err := runStep("materializing_skill_stubs", func() error {
-			return materializeSkillStubs(dirs...)
-		}); err != nil {
-			fmt.Fprintf(stderr, "gc supervisor: city '%s': skill stubs: %v\n", cityName, err) //nolint:errcheck
-		}
-	}
-
 	// Validate agents.
 	if err := runStep("validating_agents", func() error {
 		return config.ValidateAgents(cfg.Agents)

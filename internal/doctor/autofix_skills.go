@@ -1,0 +1,383 @@
+package doctor
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// DeprecatedAttachmentFieldsCheck scans user-editable city TOML files
+// for the v0.15.0 attachment-list tombstone fields (`skills`, `mcp`,
+// `skills_append`, `mcp_append`) and offers a `--fix` rule that strips
+// them in place.
+//
+// The fields parse cleanly in v0.15.1 but are ignored by the new
+// materializer; they are scheduled to become a hard parse error in
+// v0.16. This check is the migration helper that pairs with the
+// load-time deprecation warning emitted by
+// config.WarnDeprecatedAttachmentFields.
+//
+// Scope: only the city's own TOML files
+// (`<cityPath>/city.toml` and `<cityPath>/pack.toml` when present).
+// Pack-vendored files under `<gcHome>/cache/` and external includes
+// are out of scope — the user owns the fix on those surfaces.
+type DeprecatedAttachmentFieldsCheck struct{}
+
+// deprecatedAttachmentKeys lists the array-of-string TOML keys that the
+// v0.15.1 tombstone covers. Order matters only for deterministic output.
+var deprecatedAttachmentKeys = []string{
+	"skills",
+	"mcp",
+	"skills_append",
+	"mcp_append",
+}
+
+// Name returns the check identifier.
+func (c *DeprecatedAttachmentFieldsCheck) Name() string { return "deprecated-attachment-fields" }
+
+// CanFix reports that the check supports automatic remediation.
+func (c *DeprecatedAttachmentFieldsCheck) CanFix() bool { return true }
+
+// Run reports a warning when any city TOML file still references the
+// tombstone attachment-list fields. Returns OK when none are found.
+func (c *DeprecatedAttachmentFieldsCheck) Run(ctx *CheckContext) *CheckResult {
+	r := &CheckResult{Name: c.Name()}
+	if ctx == nil || ctx.CityPath == "" {
+		r.Status = StatusOK
+		r.Message = "no city path provided"
+		return r
+	}
+
+	hits, err := scanCityForDeprecatedAttachmentFields(ctx.CityPath)
+	if err != nil {
+		r.Status = StatusError
+		r.Message = err.Error()
+		return r
+	}
+	if len(hits) == 0 {
+		r.Status = StatusOK
+		r.Message = "no deprecated attachment-list fields found"
+		return r
+	}
+
+	totalLines := 0
+	for _, h := range hits {
+		totalLines += len(h.Lines)
+		r.Details = append(r.Details, formatHit(h))
+	}
+
+	r.Status = StatusWarning
+	r.Message = fmt.Sprintf(
+		"found deprecated attachment-list field(s) in %d file(s) (%d line range(s))",
+		len(hits), totalLines,
+	)
+	r.FixHint = `run "gc doctor --fix" to strip the deprecated fields`
+	return r
+}
+
+// Fix strips the tombstone fields from each affected file. Each file
+// is rewritten atomically (tmp + rename). Pre-existing comments,
+// formatting, and unrelated content are preserved.
+func (c *DeprecatedAttachmentFieldsCheck) Fix(ctx *CheckContext) error {
+	if ctx == nil || ctx.CityPath == "" {
+		return nil
+	}
+	hits, err := scanCityForDeprecatedAttachmentFields(ctx.CityPath)
+	if err != nil {
+		return err
+	}
+	for _, h := range hits {
+		if err := rewriteWithoutDeprecatedAttachmentFields(h.Path); err != nil {
+			return fmt.Errorf("rewriting %s: %w", h.Path, err)
+		}
+	}
+	return nil
+}
+
+// deprecatedAttachmentHit describes the deprecated-field occurrences
+// found in a single TOML file.
+type deprecatedAttachmentHit struct {
+	// Path is the absolute filesystem path to the affected file.
+	Path string
+	// Lines records each occurrence as a (key, line-number) pair. Line
+	// numbers are 1-indexed and point at the assignment line.
+	Lines []deprecatedAttachmentLine
+}
+
+type deprecatedAttachmentLine struct {
+	Key  string
+	Line int
+}
+
+// scanCityForDeprecatedAttachmentFields walks the well-known city
+// TOML files and returns the set of files with stale tombstone fields.
+// Files are ordered by path so the report is deterministic.
+func scanCityForDeprecatedAttachmentFields(cityPath string) ([]deprecatedAttachmentHit, error) {
+	candidates := []string{
+		filepath.Join(cityPath, "city.toml"),
+		filepath.Join(cityPath, "pack.toml"),
+	}
+	var hits []deprecatedAttachmentHit
+	for _, path := range candidates {
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if info.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		matches := findDeprecatedAttachmentFieldLines(string(data))
+		if len(matches) == 0 {
+			continue
+		}
+		hits = append(hits, deprecatedAttachmentHit{Path: path, Lines: matches})
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].Path < hits[j].Path })
+	return hits, nil
+}
+
+// findDeprecatedAttachmentFieldLines locates each occurrence of a
+// tombstone key assignment in the TOML source and returns one
+// (key, line) pair per occurrence. Line numbers are 1-indexed and
+// point at the assignment line; subsequent lines belonging to the
+// same multi-line array are not separately listed.
+func findDeprecatedAttachmentFieldLines(source string) []deprecatedAttachmentLine {
+	var hits []deprecatedAttachmentLine
+	lines := splitLinesPreserving(source)
+	for i := 0; i < len(lines); i++ {
+		key, isAssign := matchedDeprecatedKey(lines[i])
+		if !isAssign {
+			continue
+		}
+		hits = append(hits, deprecatedAttachmentLine{Key: key, Line: i + 1})
+		// Skip any continuation lines belonging to a multi-line array
+		// so a single occurrence isn't double-counted.
+		consumed := arrayLineSpan(lines, i)
+		if consumed > 1 {
+			i += consumed - 1
+		}
+	}
+	return hits
+}
+
+// rewriteWithoutDeprecatedAttachmentFields rewrites the file at path,
+// removing every assignment whose key is one of the tombstone names.
+// Multi-line arrays are removed in full. Surrounding lines, comments,
+// and section headers are preserved verbatim. Trailing-newline shape
+// is preserved when present.
+func rewriteWithoutDeprecatedAttachmentFields(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	source := string(data)
+	hadTrailingNewline := strings.HasSuffix(source, "\n")
+	lines := splitLinesPreserving(source)
+
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if _, ok := matchedDeprecatedKey(lines[i]); ok {
+			consumed := arrayLineSpan(lines, i)
+			if consumed > 1 {
+				i += consumed - 1
+			}
+			continue
+		}
+		out = append(out, lines[i])
+	}
+
+	rendered := strings.Join(out, "\n")
+	if hadTrailingNewline && !strings.HasSuffix(rendered, "\n") {
+		rendered += "\n"
+	}
+
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath) //nolint:errcheck // best-effort cleanup
+	if _, err := tmp.WriteString(rendered); err != nil {
+		tmp.Close() //nolint:errcheck
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
+}
+
+// matchedDeprecatedKey reports whether line is a key assignment for one
+// of the tombstone keys, returning the matched key and true. The match
+// is anchored: leading whitespace is ignored, the key must be followed
+// by `=` (with optional surrounding whitespace), and the line must not
+// be a comment.
+func matchedDeprecatedKey(line string) (string, bool) {
+	stripped := strings.TrimLeft(line, " \t")
+	if stripped == "" || strings.HasPrefix(stripped, "#") {
+		return "", false
+	}
+	for _, key := range deprecatedAttachmentKeys {
+		if !strings.HasPrefix(stripped, key) {
+			continue
+		}
+		rest := strings.TrimLeft(stripped[len(key):], " \t")
+		if strings.HasPrefix(rest, "=") {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// arrayLineSpan returns the number of source lines occupied by the
+// assignment starting at lines[start]. Returns 1 for a single-line
+// value (whether the value is an array or anything else, the
+// assignment occupies one line). Returns >1 when the value is a
+// multi-line bracketed array, in which case the span ends at the
+// line containing the closing `]`.
+//
+// String values may contain `[` or `]`; the scanner respects double-
+// quoted strings (with `\"` escapes) so a name like "weird]name" does
+// not falsely close an array.
+func arrayLineSpan(lines []string, start int) int {
+	if start < 0 || start >= len(lines) {
+		return 1
+	}
+	first := lines[start]
+	eqIdx := strings.Index(first, "=")
+	if eqIdx < 0 {
+		return 1
+	}
+	value := first[eqIdx+1:]
+	bracketStart := indexOutsideString(value, '[')
+	if bracketStart < 0 {
+		// No array bracket on the assignment line — single-line scalar
+		// or string assignment. Span = 1.
+		return 1
+	}
+	depth, _ := scanBrackets(value[bracketStart:], 0, false)
+	if depth == 0 {
+		return 1 // array opens and closes on the same line
+	}
+	inString := false
+	for i := start + 1; i < len(lines); i++ {
+		var newDepth int
+		newDepth, inString = scanBrackets(lines[i], depth, inString)
+		depth = newDepth
+		if depth == 0 {
+			return i - start + 1
+		}
+	}
+	// Unclosed array — give up and treat as single-line so we don't
+	// mass-delete the rest of the file. The TOML parser would reject
+	// this file anyway.
+	return 1
+}
+
+// scanBrackets walks segment one rune at a time, tracking string state
+// and bracket depth. Returns the new depth and the new inString state.
+func scanBrackets(segment string, depth int, inString bool) (int, bool) {
+	escape := false
+	for _, r := range segment {
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if r == '\\' {
+				escape = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '[':
+			depth++
+		case ']':
+			if depth > 0 {
+				depth--
+			}
+		case '#':
+			// Rest of line is a comment — bail out without changing depth.
+			return depth, inString
+		}
+	}
+	return depth, inString
+}
+
+// indexOutsideString returns the index of the first occurrence of want
+// in s that is not inside a double-quoted string. Returns -1 if not
+// found. Used to locate the array-opening `[` on an assignment line.
+func indexOutsideString(s string, want rune) int {
+	inString := false
+	escape := false
+	for i, r := range s {
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if r == '\\' {
+				escape = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		if r == '"' {
+			inString = true
+			continue
+		}
+		if r == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// splitLinesPreserving splits source into lines without consuming a
+// trailing empty token from a final newline. Each element is the line
+// text without its terminating newline.
+func splitLinesPreserving(source string) []string {
+	if source == "" {
+		return nil
+	}
+	trimmed := strings.TrimSuffix(source, "\n")
+	if trimmed == "" {
+		// File was just a newline — preserve as a single empty line so
+		// rewriters can re-add the trailing newline cleanly.
+		return []string{""}
+	}
+	return strings.Split(trimmed, "\n")
+}
+
+// formatHit renders a hit for inclusion in CheckResult.Details. Each
+// rendered line follows the "<path>:<line> <key>=" convention so the
+// output is greppable and matches typical compiler output.
+func formatHit(h deprecatedAttachmentHit) string {
+	var b strings.Builder
+	for i, ln := range h.Lines {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%s:%d %s=", h.Path, ln.Line, ln.Key)
+	}
+	return b.String()
+}

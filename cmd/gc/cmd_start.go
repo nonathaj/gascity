@@ -480,20 +480,6 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		}
 	}
 
-	// Materialize Claude skill stubs (after formulas, before agent startup).
-	if cfg.Workspace.Provider == "claude" {
-		dirs := []string{cityPath}
-		for _, r := range cfg.Rigs {
-			if r.Path != "" {
-				dirs = append(dirs, r.Path)
-			}
-		}
-		if err := materializeSkillStubs(dirs...); err != nil {
-			fmt.Fprintf(stderr, "gc start: skill stubs: %v\n", err) //nolint:errcheck // best-effort stderr
-			// Non-fatal.
-		}
-	}
-
 	// Materialize script symlinks before agent startup.
 	if len(cfg.ScriptLayers.City) > 0 {
 		if err := ResolveScripts(cityPath, cfg.ScriptLayers.City); err != nil {

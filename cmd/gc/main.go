@@ -125,7 +125,6 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 		newHandoffCmd(stdout, stderr),
 		newBeadsCmd(stdout, stderr),
 		newBuildImageCmd(stdout, stderr),
-		newSkillsCmd(stdout, stderr),
 		newSkillCmd(stdout, stderr),
 		newMcpCmd(stdout, stderr),
 		newVersionCmd(stdout),

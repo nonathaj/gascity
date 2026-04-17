@@ -11,63 +11,6 @@ import (
 	"github.com/gastownhall/gascity/internal/session"
 )
 
-func TestSkillsWorkOutput(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"skills", "work"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("gc skills work exited %d: %s", code, stderr.String())
-	}
-	out := stdout.String()
-	if out == "" {
-		t.Fatal("gc skills work produced no output")
-	}
-	// Should contain bd commands.
-	for _, want := range []string{"bd create", "bd list", "bd close", "bd ready"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q", want)
-		}
-	}
-}
-
-func TestSkillsListTopics(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"skills"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("gc skills exited %d: %s", code, stderr.String())
-	}
-	out := stdout.String()
-	for _, topic := range []string{"work", "dispatch", "agents", "rigs", "mail", "city", "dashboard"} {
-		if !strings.Contains(out, topic) {
-			t.Errorf("topic listing missing %q", topic)
-		}
-	}
-}
-
-func TestSkillsUnknownTopic(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"skills", "bogus"}, &stdout, &stderr)
-	if code == 0 {
-		t.Fatal("gc skills bogus should fail")
-	}
-	if !strings.Contains(stderr.String(), "unknown topic") {
-		t.Errorf("stderr = %q, want 'unknown topic'", stderr.String())
-	}
-}
-
-func TestSkillsAllTopicsReadable(t *testing.T) {
-	// Verify every registered topic has a matching embedded file.
-	for _, topic := range skillTopics {
-		var stdout, stderr bytes.Buffer
-		code := run([]string{"skills", topic.Arg}, &stdout, &stderr)
-		if code != 0 {
-			t.Errorf("gc skills %s failed: %s", topic.Arg, stderr.String())
-		}
-		if stdout.Len() == 0 {
-			t.Errorf("gc skills %s produced no output", topic.Arg)
-		}
-	}
-}
-
 func TestSkillRejectsTopicMode(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"skill", "work"}, &stdout, &stderr)
