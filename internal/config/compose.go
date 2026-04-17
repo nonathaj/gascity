@@ -396,7 +396,51 @@ func LoadWithIncludes(fs fsys.FS, path string, extraIncludes ...string) (*City, 
 	// materializer.
 	WarnDeprecatedAttachmentFields(root)
 
+	// v0.15.1: enrich every agent with its convention-discovered
+	// agent-local asset paths (agents/<name>/skills/, agents/<name>/mcp/).
+	// DiscoverPackAgents only does this for agents it creates — it skips
+	// names already present in pack.toml [[agent]] or city.toml
+	// [[agent]] entries, so those agents leave the discovery pass with
+	// empty SkillsDir/MCPDir even when agents/<name>/skills/ exists on
+	// disk. The materializer and collision validator both key off
+	// SkillsDir, so that gap silently loses agent-local skills for every
+	// explicitly-declared agent. Populate the fields here so the
+	// convention works uniformly.
+	populateAgentLocalAssetDirs(fs, root, cityRoot)
+
 	return root, prov, nil
+}
+
+// populateAgentLocalAssetDirs fills Agent.SkillsDir and Agent.MCPDir for
+// every agent whose convention path exists on disk but wasn't already
+// set by DiscoverPackAgents (e.g., because the agent was explicitly
+// declared in pack.toml or city.toml and therefore skipped by the
+// convention-discovery pass). Agents whose field is already set keep
+// it — so a pack that already carried SkillsDir via discovery isn't
+// overwritten.
+func populateAgentLocalAssetDirs(fs fsys.FS, root *City, cityRoot string) {
+	if root == nil {
+		return
+	}
+	for i := range root.Agents {
+		a := &root.Agents[i]
+		base := a.SourceDir
+		if base == "" {
+			base = cityRoot
+		}
+		if a.SkillsDir == "" {
+			skillsDir := filepath.Join(base, "agents", a.Name, "skills")
+			if info, err := fs.Stat(skillsDir); err == nil && info.IsDir() {
+				a.SkillsDir = skillsDir
+			}
+		}
+		if a.MCPDir == "" {
+			mcpDir := filepath.Join(base, "agents", a.Name, "mcp")
+			if info, err := fs.Stat(mcpDir); err == nil && info.IsDir() {
+				a.MCPDir = mcpDir
+			}
+		}
+	}
 }
 
 // collidesWithImplicitImports reports which bootstrap implicit-import

@@ -1454,7 +1454,7 @@ name = "mayor"
 	if !strings.Contains(msg, "core") {
 		t.Fatalf("error should name the colliding import: %v", err)
 	}
-	if !strings.Contains(msg, "Rename one side") {
+	if !strings.Contains(msg, "rename one side") {
 		t.Fatalf("error should suggest remediation: %v", err)
 	}
 }
@@ -1524,5 +1524,86 @@ name = "mayor"
 	}
 	if _, ok := cfg.Imports["myteam"]; !ok {
 		t.Fatalf("explicit myteam import should be preserved: imports=%v", cfg.Imports)
+	}
+}
+
+// TestPopulateAgentLocalAssetDirsForDeclaredAgent verifies that an
+// agent declared explicitly in city.toml gets its SkillsDir populated
+// from agents/<name>/skills/ at compose time. Without this, the
+// materializer and collision validator see an empty SkillsDir for
+// every city.toml-declared agent and silently drop agent-local
+// skills. Regression for the bug found during Phase 4 smoke testing.
+func TestPopulateAgentLocalAssetDirsForDeclaredAgent(t *testing.T) {
+	dir := t.TempDir()
+
+	// agents/mayor/skills/ exists on disk.
+	skillsDir := filepath.Join(dir, "agents", "mayor", "skills", "plan")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"),
+		[]byte("---\nname: plan\ndescription: test\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// agents/mayor/mcp/ exists too — verify both get populated.
+	mcpDir := filepath.Join(dir, "agents", "mayor", "mcp")
+	if err := os.MkdirAll(mcpDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// City.toml declares mayor explicitly — this path doesn't go
+	// through DiscoverPackAgents, so historically SkillsDir stayed
+	// empty for this agent.
+	if err := os.WriteFile(filepath.Join(dir, "city.toml"), []byte(`
+[workspace]
+name = "test"
+provider = "claude"
+
+[[agent]]
+name = "mayor"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(dir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+	var mayor *Agent
+	for i := range cfg.Agents {
+		if cfg.Agents[i].Name == "mayor" {
+			mayor = &cfg.Agents[i]
+			break
+		}
+	}
+	if mayor == nil {
+		t.Fatal("mayor agent missing from loaded config")
+	}
+	wantSkills := filepath.Join(dir, "agents", "mayor", "skills")
+	if mayor.SkillsDir != wantSkills {
+		t.Errorf("mayor.SkillsDir = %q, want %q", mayor.SkillsDir, wantSkills)
+	}
+	wantMCP := filepath.Join(dir, "agents", "mayor", "mcp")
+	if mayor.MCPDir != wantMCP {
+		t.Errorf("mayor.MCPDir = %q, want %q", mayor.MCPDir, wantMCP)
+	}
+}
+
+// TestPopulateAgentLocalAssetDirsPreservesExisting ensures the
+// post-compose enrichment doesn't overwrite a SkillsDir/MCPDir that
+// was already set (e.g., by DiscoverPackAgents for a conventional
+// pack-agent, or explicitly set elsewhere).
+func TestPopulateAgentLocalAssetDirsPreservesExisting(t *testing.T) {
+	cfg := &City{
+		Agents: []Agent{
+			{Name: "mayor", SkillsDir: "/already/set/skills", MCPDir: "/already/set/mcp"},
+		},
+	}
+	populateAgentLocalAssetDirs(fsys.OSFS{}, cfg, "/nonexistent-city-root")
+	if cfg.Agents[0].SkillsDir != "/already/set/skills" {
+		t.Errorf("SkillsDir overwritten: %q", cfg.Agents[0].SkillsDir)
+	}
+	if cfg.Agents[0].MCPDir != "/already/set/mcp" {
+		t.Errorf("MCPDir overwritten: %q", cfg.Agents[0].MCPDir)
 	}
 }
