@@ -1,10 +1,15 @@
-// template_resolve.go extracts a pure function for resolving agent config
-// into session parameters. This is the data-only half of buildOneAgent:
-// all steps that compute values (provider resolution, dir expansion, env
-// merging, prompt rendering) without side effects.
+// template_resolve.go extracts a value-producing function for resolving
+// agent config into session parameters. Most of the work is pure (provider
+// resolution, dir expansion, env merging, prompt rendering).
 //
-// Side effects (ACP route registration, hook installation) are handled
-// by the caller (buildOneAgent).
+// One side effect lives here by necessity: managed Claude settings are
+// projected to .gc/settings.json via ensureClaudeSettingsArgs so that the
+// --settings path is on disk before runtime fingerprints are captured.
+// This is the single chokepoint for Claude projection — installAgentSideEffects
+// skips the "claude" entry in its hook list to avoid duplicate work.
+//
+// Other side effects (ACP route registration, non-Claude hook installation)
+// are handled by the caller (buildOneAgent → installAgentSideEffects).
 //
 // resolveTemplate returns TemplateParams — a value type suitable for
 // session.Manager.CreateFromParams or for constructing runtime.Config.
@@ -103,10 +108,9 @@ func (tp TemplateParams) DisplayName() string {
 	return tp.TemplateName
 }
 
-// resolveTemplate computes all session parameters from a config.Agent without
-// side effects. This is a pure extraction of steps 1-13 and 15-16 from
-// buildOneAgent. The only side effect excluded is ACP route registration
-// (step 14), which the caller handles.
+// resolveTemplate computes all session parameters from a config.Agent.
+// It also reconciles managed Claude settings before wiring the active
+// --settings path so runtime fingerprinting sees the current projected file.
 //
 // qualifiedName is the agent's canonical identity. fpExtra carries additional
 // fingerprint data (e.g., pool bounds); pass nil for pool instances.
@@ -142,7 +146,11 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 	if defaultArgs := resolved.ResolveDefaultArgs(); len(defaultArgs) > 0 {
 		command = command + " " + shellquote.Join(defaultArgs)
 	}
-	if sa := settingsArgs(p.cityPath, resolved.Name); sa != "" {
+	sa, err := ensureClaudeSettingsArgs(p.fs, p.cityPath, resolved.Name, p.stderr)
+	if err != nil {
+		return TemplateParams{}, fmt.Errorf("agent %q: %w", qualifiedName, err)
+	}
+	if sa != "" {
 		command = command + " " + sa
 		settingsFile, relDst := claudeSettingsSource(p.cityPath)
 		if settingsFile != "" {

@@ -681,6 +681,10 @@ func printDryRunPreview(desiredState map[string]TemplateParams, cfg *config.City
 // it resolves correctly regardless of the session's working directory. The K8s
 // provider remaps city-root references to /workspace automatically.
 // Returns empty string for non-Claude providers or if no settings file is present.
+//
+// Note: this uses Stat-level existence only. It does NOT verify the file is
+// readable. Use settingsArgsIfReadable in best-effort fallback paths where
+// pointing Claude at an unreadable file would be worse than no --settings.
 func settingsArgs(cityPath, providerName string) string {
 	if providerName != "claude" {
 		return ""
@@ -690,6 +694,59 @@ func settingsArgs(cityPath, providerName string) string {
 		return ""
 	}
 	return fmt.Sprintf("--settings %q", settingsPath)
+}
+
+// settingsArgsIfReadable is the stricter variant used by best-effort fallback
+// paths (e.g. buildResumeCommand on projection failure). It returns "--settings
+// <path>" only if the discovered file is actually readable — not just present.
+// This prevents `gc session attach` from pointing Claude at a 0o000 or
+// otherwise-unreadable .gc/settings.json that a failed projection could not
+// repair this tick.
+func settingsArgsIfReadable(cityPath, providerName string) string {
+	if providerName != "claude" {
+		return ""
+	}
+	settingsPath, _ := claudeSettingsSource(cityPath)
+	if settingsPath == "" {
+		return ""
+	}
+	if _, err := os.ReadFile(settingsPath); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("--settings %q", settingsPath)
+}
+
+// ensureClaudeSettingsArgs projects managed Claude settings to
+// .gc/settings.json (idempotent: no-op when bytes match) and returns the
+// "--settings <path>" arg for the resolved Claude command. This is the
+// single chokepoint that guarantees every Claude launch path — reconciler
+// or session attach/submit — sees the projected file before settingsArgs
+// probes for it. Returns empty string and nil error for non-Claude providers.
+//
+// Returns a non-nil error when projection fails. Strict callers
+// (resolveTemplate) should propagate so that a malformed preferred override
+// fails loudly at agent creation rather than silently running with stale
+// bytes from a prior tick. Best-effort callers (buildResumeCommand) may
+// choose to log-and-continue so a `gc session attach` still succeeds when
+// projection is transiently broken.
+//
+// fs may be nil; in that case OSFS is used. stderr may be nil; in that
+// case projection errors are only returned, not written.
+func ensureClaudeSettingsArgs(fs fsys.FS, cityPath, providerName string, stderr io.Writer) (string, error) {
+	if providerName != "claude" || cityPath == "" {
+		return "", nil
+	}
+	if fs == nil {
+		fs = fsys.OSFS{}
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	if err := hooks.Install(fs, cityPath, cityPath, []string{"claude"}); err != nil {
+		fmt.Fprintf(stderr, "claude hooks: %v\n", err) //nolint:errcheck // best-effort stderr
+		return "", fmt.Errorf("projecting Claude settings: %w", err)
+	}
+	return settingsArgs(cityPath, providerName), nil
 }
 
 func claudeSettingsSource(cityPath string) (src, rel string) {
