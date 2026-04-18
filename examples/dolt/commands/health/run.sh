@@ -16,7 +16,10 @@ metadata_files() {
   printf '%s\n' "$GC_CITY_PATH/.beads/metadata.json"
 
   if command -v gc >/dev/null 2>&1; then
-    rig_paths=$(gc rig list --json 2>/dev/null \
+    # Bound the gc rig list call: if gc is itself in a bad state (the
+    # failure mode this patrol is meant to detect) we must not block
+    # here. Degrade to the fallback rig scan below.
+    rig_paths=$(run_bounded 5 gc rig list --json 2>/dev/null \
       | if command -v jq >/dev/null 2>&1; then
           jq -r '.rigs[].path' 2>/dev/null
         else
@@ -63,6 +66,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Note: run_bounded / TIMEOUT_BIN are provided by assets/scripts/runtime.sh.
+
 # Determine host for probing.
 host="${GC_DOLT_HOST:-127.0.0.1}"
 
@@ -70,6 +75,7 @@ host="${GC_DOLT_HOST:-127.0.0.1}"
 server_running=false
 server_pid=0
 server_latency=0
+server_reachable=false
 
 # Find dolt PID by port.
 pid=$(lsof -ti :"$GC_DOLT_PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)
@@ -79,10 +85,17 @@ if [ -n "$pid" ]; then
   # Measure query latency.
   start_ms=$(date +%s%N 2>/dev/null | cut -c1-13 || date +%s)
   conn_args="--host $host --port $GC_DOLT_PORT --user $GC_DOLT_USER --no-tls"
-  if [ -n "$GC_DOLT_PASSWORD" ]; then
-    export DOLT_CLI_PASSWORD="$GC_DOLT_PASSWORD"
-  fi
-  if dolt $conn_args sql -q "SELECT 1" >/dev/null 2>&1; then
+  # Always export DOLT_CLI_PASSWORD (even empty) so the client does not
+  # prompt for a password on stdin. Without this, the SELECT 1 probe
+  # silently fails with "Failed to parse credentials: operation not
+  # supported by device" on sessions without a controlling TTY —
+  # which then left the health report claiming "server: running" but
+  # never reporting per-database detail.
+  export DOLT_CLI_PASSWORD="${GC_DOLT_PASSWORD:-}"
+  # Bound the ping. A TCP-reachable but unresponsive server (stuck
+  # goroutine, saturated pool, migration lock) would otherwise hang.
+  if run_bounded 5 dolt $conn_args sql -q "SELECT 1" >/dev/null 2>&1; then
+    server_reachable=true
     end_ms=$(date +%s%N 2>/dev/null | cut -c1-13 || date +%s)
     server_latency=$((end_ms - start_ms))
     [ "$server_latency" -lt 0 ] && server_latency=0
@@ -95,15 +108,45 @@ metadata_files > "$_meta_cache"
 trap 'rm -f "$_meta_cache"' EXIT
 
 # Collect database info.
+#
+# NOTE: we must NOT invoke `dolt log` against the on-disk database
+# directory while the sql-server holds it open. Historically this was
+# done with `cd "$d" && dolt log --oneline | wc -l`; on an active DB
+# the client contends with the server for Dolt's file locks and the
+# client process blocks indefinitely, orphaning zombie `dolt log`
+# processes and wedging the health CLI. Query the running server via
+# SQL instead — it's the authoritative source, never deadlocks with
+# itself, and is cheap (dolt_log is indexed by commit hash).
 db_info=""
-if [ -d "$data_dir" ] && [ "$server_running" = true ]; then
+if [ -d "$data_dir" ] && [ "$server_reachable" = true ]; then
   for d in "$data_dir"/*/; do
     [ ! -d "$d/.dolt" ] && continue
     name="$(basename "$d")"
     case "$name" in information_schema|mysql|dolt_cluster) continue ;; esac
-    # Count commits (best-effort).
-    commits=$(cd "$d" && dolt log --oneline 2>/dev/null | wc -l || echo 0)
-    commits=$(echo "$commits" | tr -d '[:space:]')
+    # Reject names with anything outside [A-Za-z0-9_] before interpolating
+    # into the SQL identifier. Dolt permits directory names that shell
+    # basename happily returns (e.g. backticks, semicolons) but which
+    # would break out of the identifier and execute attacker-chosen SQL
+    # as the patrol user. Not an external-attack surface today — data
+    # directories are server-controlled — but fragile enough under
+    # config drift that it's worth skipping rather than probing.
+    case "$name" in
+      *[!A-Za-z0-9_]*|'') continue ;;
+    esac
+    # Count commits via SQL (bounded). 0 on timeout or error — keep
+    # going rather than hang the whole report. Extract the first
+    # fully-numeric line rather than `sed -n '2p'`: future dolt builds
+    # may emit a status row for `USE` or a warning banner, in which
+    # case positional parsing silently collapses the count to 0 and the
+    # "empty repo" fallback masks the parse miss. Numeric-line grep
+    # gives a deterministic result or clearly-failed parse.
+    commits_csv=$(run_bounded 5 dolt $conn_args sql --result-format csv \
+      -q "USE \`$name\`; SELECT COUNT(*) FROM dolt_log;" 2>/dev/null || true)
+    commits=$(printf '%s\n' "$commits_csv" | grep -E '^[0-9]+$' | head -1)
+    # JSON consumers (deacon patrol) require a number; use 0 on failure.
+    case "$commits" in
+      ''|*[!0-9]*) commits=0 ;;
+    esac
     # Count open beads (best-effort).
     open_beads=0
     while IFS= read -r meta; do
@@ -175,29 +218,43 @@ fi
 # each is actually running sql-server via ps. This avoids false
 # positives from processes that merely mention "dolt" in their args
 # (e.g., Claude sessions whose prompt text contains "dolt sql-server").
+#
+# GC_HEALTH_SKIP_ZOMBIE_SCAN is a test-only escape hatch. Zombie
+# enumeration spawns one `ps` per matching process, which on shared
+# dev machines with many accumulated dolt processes dominates the
+# runtime of the hang-mode test below. Setting it to "1" skips the
+# scan so tests exercise just the bounded-probe behavior they care
+# about without being hostage to ambient process state.
 zombie_count=0
 zombie_pids=""
-for p in $(pgrep -x dolt 2>/dev/null || true); do
-  [ "$p" = "$server_pid" ] && continue
-  cmd=$(ps -p "$p" -o args= 2>/dev/null || true)
-  case "$cmd" in
-    *sql-server*) ;;
-    *) continue ;;
-  esac
-  zombie_count=$((zombie_count + 1))
-  zombie_pids="$zombie_pids $p"
-done
+if [ "${GC_HEALTH_SKIP_ZOMBIE_SCAN:-0}" != "1" ]; then
+  for p in $(pgrep -x dolt 2>/dev/null || true); do
+    [ "$p" = "$server_pid" ] && continue
+    cmd=$(ps -p "$p" -o args= 2>/dev/null || true)
+    case "$cmd" in
+      *sql-server*) ;;
+      *) continue ;;
+    esac
+    zombie_count=$((zombie_count + 1))
+    zombie_pids="$zombie_pids $p"
+  done
+fi
 
 # Output.
 timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 if [ "$json_output" = true ]; then
-  # Build JSON output.
+  # Build JSON output. `server.reachable` reports whether the SQL
+  # handshake actually succeeded (port listening AND server answering
+  # SELECT 1). Consumers (deacon patrol) should key health off
+  # `server.reachable`, not `server.running`, because a process can
+  # hold the port while its goroutines are wedged.
   cat <<JSONEOF
 {
   "timestamp": "$timestamp",
   "server": {
     "running": $server_running,
+    "reachable": $server_reachable,
     "pid": $server_pid,
     "port": $GC_DOLT_PORT,
     "latency_ms": $server_latency
@@ -235,6 +292,13 @@ JSONEOF
   }
 }
 JSONEOF
+  # JSON mode always exits 0 when the payload is well-formed. Health
+  # state is signalled in-band via `server.reachable` (and the rest of
+  # the document). Automation that parses the JSON — notably the deacon
+  # patrol formula — must not fail before stdout is parsed just because
+  # the server is down; that's exactly the condition the patrol is
+  # supposed to detect and react to. Callers that want exit-code
+  # signalling should use the human-readable form.
   exit 0
 fi
 
@@ -277,3 +341,16 @@ if [ "$zombie_count" -gt 0 ]; then
   echo ""
   echo "Zombie processes: $zombie_count (PIDs:$zombie_pids)"
 fi
+
+# Exit status (human mode only): 0 when the data plane is healthy
+# (server running AND answering SQL). Non-zero signals a CLI caller
+# that something is wrong — server not running, or port in use by a
+# process that isn't speaking MySQL. Stale backups, orphans, and
+# zombies are informational and do not fail the exit code.
+#
+# JSON mode is unconditionally exit 0 (see above) — programmatic
+# consumers read `server.reachable` from the payload instead.
+if [ "$server_reachable" = true ]; then
+  exit 0
+fi
+exit 1
