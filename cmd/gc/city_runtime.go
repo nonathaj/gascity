@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -308,54 +309,65 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// Session bead sync BEFORE reconciliation: ensures beads exist for
 	// the reconciler to read/write hashes. Uses ListByLabel (indexed,
 	// fast even before CachingStore is primed).
-	sessionBeads := cr.loadSessionBeadSnapshot()
-	startupTrace := cr.beginTraceCycle("startup", "initial_reconcile", sessionBeads)
-	result := cr.buildDesiredState(sessionBeads, startupTrace)
-	sessionBeads = cr.loadSessionBeadSnapshot()
-	result = refreshDesiredStateWithSessionBeads(
-		result,
-		cr.cityName,
-		cr.cityPath,
-		cr.cfg,
-		cr.sp,
-		cr.cityBeadStore(),
-		sessionBeads,
-		cr.stderr,
-	)
-	sessionBeads = cr.syncBeadsAndUpdateIndex(result.State, sessionBeads)
-	result = refreshDesiredStateWithSessionBeads(
-		result,
-		cr.cityName,
-		cr.cityPath,
-		cr.cfg,
-		cr.sp,
-		cr.cityBeadStore(),
-		sessionBeads,
-		cr.stderr,
-	)
-	if ctx.Err() != nil {
-		if startupTrace != nil {
-			startupTrace.end(TraceCompletionAborted, traceRecordPayload{"phase": "startup"})
+	//
+	// Wrapped in safeTick so a panic during startup reconciliation (e.g.
+	// a transient bead-store failure triggering a downstream nil deref)
+	// does not propagate to the supervisor's panic recovery and cascade
+	// into cityRuntime.shutdown(). See issue #663. The trace cycle is
+	// ended inside the closure via defer so it's closed out on panic,
+	// ctx cancellation, or normal completion alike.
+	cr.safeTick(func() {
+		sessionBeads := cr.loadSessionBeadSnapshot()
+		startupTrace := cr.beginTraceCycle("startup", "initial_reconcile", sessionBeads)
+		completion := TraceCompletionAborted
+		defer func() {
+			if startupTrace != nil {
+				startupTrace.end(completion, traceRecordPayload{"phase": "startup"})
+			}
+		}()
+
+		result := cr.buildDesiredState(sessionBeads, startupTrace)
+		sessionBeads = cr.loadSessionBeadSnapshot()
+		result = refreshDesiredStateWithSessionBeads(
+			result,
+			cr.cityName,
+			cr.cityPath,
+			cr.cfg,
+			cr.sp,
+			cr.cityBeadStore(),
+			sessionBeads,
+			cr.stderr,
+		)
+		sessionBeads = cr.syncBeadsAndUpdateIndex(result.State, sessionBeads)
+		result = refreshDesiredStateWithSessionBeads(
+			result,
+			cr.cityName,
+			cr.cityPath,
+			cr.cfg,
+			cr.sp,
+			cr.cityBeadStore(),
+			sessionBeads,
+			cr.stderr,
+		)
+		if ctx.Err() != nil {
+			return
 		}
-		return
-	}
 
-	// Mark city as started. Convergence startup reconciliation runs on
-	// the first tick (it calls List() which waits for the full async prime).
-	if cr.onStatus != nil {
-		cr.onStatus("starting_agents")
-	}
-	if cr.onStarted != nil {
-		cr.onStarted()
-	}
-	fmt.Fprintln(cr.stdout, "City started.") //nolint:errcheck // best-effort stdout
+		// Mark city as started. Convergence startup reconciliation runs on
+		// the first tick (it calls List() which waits for the full async prime).
+		if cr.onStatus != nil {
+			cr.onStatus("starting_agents")
+		}
+		if cr.onStarted != nil {
+			cr.onStarted()
+		}
+		fmt.Fprintln(cr.stdout, "City started.") //nolint:errcheck // best-effort stdout
 
-	if cr.sessionDrains != nil {
-		cr.beadReconcileTick(ctx, result, sessionBeads, startupTrace)
-	}
-	if startupTrace != nil {
-		startupTrace.end(TraceCompletionCompleted, traceRecordPayload{"phase": "startup"})
-	}
+		if cr.sessionDrains != nil {
+			cr.beadReconcileTick(ctx, result, sessionBeads, startupTrace)
+		}
+		completion = TraceCompletionCompleted
+	}, "startup")
 	if ctx.Err() != nil {
 		return
 	}
@@ -364,14 +376,26 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	// beads that were interrupted by a controller crash. Runs after "City
 	// started" so it doesn't block readiness. List() waits for the full
 	// CachingStore prime, then serves from memory.
-	cr.convergenceStartupReconcile(ctx)
+	//
+	// Wrapped in safeTick so a panic during convergence recovery (same
+	// class of transient store failure as #663) doesn't cascade to
+	// cityRuntime.shutdown(). The next patrol tick will re-drain any
+	// still-pending convergence beads.
+	cr.safeTick(func() {
+		cr.convergenceStartupReconcile(ctx)
+	}, "convergence-startup")
 	if ctx.Err() != nil {
 		return
 	}
 	// Track pool instance liveness for death detection.
 	var prevPoolRunning map[string]bool
+	runTick := func(trigger string) {
+		cr.safeTick(func() {
+			cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning, trigger)
+		}, trigger)
+	}
 	if dirty.Load() {
-		cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning, "startup-poke")
+		runTick("startup-poke")
 		if ctx.Err() != nil {
 			return
 		}
@@ -384,14 +408,16 @@ func (cr *CityRuntime) run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning, "patrol")
+			runTick("patrol")
 		case <-cr.pokeCh:
 			// Event-driven wake path: sling or API assigned work to a sleeping
 			// session. Trigger an immediate tick so the reconciler sees the new
 			// work via workSet/poolDesired and wakes the target promptly.
-			cr.tick(ctx, dirty, &lastProviderName, cityRoot, &prevPoolRunning, "poke")
+			runTick("poke")
 		case <-cr.controlDispatcherCh:
-			cr.controlDispatcherTick(ctx)
+			cr.safeTick(func() {
+				cr.controlDispatcherTick(ctx)
+			}, "control-dispatcher")
 		case req := <-cr.reloadReqCh:
 			cr.handleReloadRequest(&req)
 		case req := <-cr.convergenceReqCh:
@@ -408,6 +434,40 @@ func (cr *CityRuntime) run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// safeTick runs fn with panic recovery. A panic inside fn is logged to
+// stderr and swallowed so the reconciler loop can continue to the next
+// tick. Without this wrapper, a panic in the reconciliation body
+// propagates to cmd_supervisor.go's per-city goroutine recovery, which
+// escalates to cityRuntime.shutdown() -> gracefulStopAll for every
+// session in the city. Transient bead-store failures (e.g. Dolt EOF on
+// a single metadata write) must not cascade into a full-city restart:
+// the next tick is idempotent and will retry the failed work.
+//
+// This intentionally swallows ALL panics, including non-transient bugs
+// (e.g. nil derefs from broken invariants). That tradeoff is explicit:
+// a latent invariant bug that panics every tick will log visibly on
+// each patrol interval, surfacing the bug via repetition, which is
+// strictly better than the prior behavior of one panic killing every
+// session in the city with no log of what triggered it. Operators
+// should treat repeated "reconciler tick panicked" lines as a bug
+// report, not a steady-state condition.
+//
+// Trigger identifies which tick site fired so operators can correlate
+// the log with the cause.
+func (cr *CityRuntime) safeTick(fn func(), trigger string) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Include the recovered type and a stack trace so a latent
+			// invariant bug (e.g. nil deref) is diagnosable from the log
+			// alone — crucial because safeTick intentionally swallows
+			// the panic and the bug may only surface via repetition.
+			fmt.Fprintf(cr.stderr, "%s: reconciler tick panicked (trigger=%s): %v (type=%T)\n%s\n", //nolint:errcheck // best-effort stderr
+				cr.logPrefix, trigger, r, r, debug.Stack())
+		}
+	}()
+	fn()
 }
 
 // tick performs one reconciliation tick: pool death detection, config
@@ -428,6 +488,15 @@ func (cr *CityRuntime) tick(
 		traceDetail = "manual_reload"
 	}
 	trace := cr.beginTraceCycle(traceTrigger, traceDetail, sessionBeads)
+	// End the trace via defer so a panic recovered by safeTick still
+	// closes the cycle (aborted). completion flips to Completed at the
+	// normal end of the tick body below.
+	completion := TraceCompletionAborted
+	defer func() {
+		if trace != nil {
+			trace.end(completion, traceRecordPayload{"phase": "tick", "trigger": traceTrigger})
+		}
+	}()
 	// Detect pool instance deaths since last tick.
 	if len(cr.poolDeathHandlers) > 0 {
 		currentRunning, _ := cr.sp.ListRunning("")
@@ -538,9 +607,7 @@ func (cr *CityRuntime) tick(
 		}
 		cr.activeReload = nil
 	}
-	if trace != nil {
-		trace.end(TraceCompletionCompleted, traceRecordPayload{"phase": "tick", "trigger": traceTrigger})
-	}
+	completion = TraceCompletionCompleted
 }
 
 func (cr *CityRuntime) handleReloadRequest(req *reloadRequest) {
