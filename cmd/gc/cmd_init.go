@@ -804,7 +804,9 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 	applyBootstrapProfile(&cfg, wiz.bootstrapProfile)
 
 	// Write prompt files only for the agents declared by the init template.
-	logInitProgress(stdout, 3, "Writing default prompts")
+	// Wording matches the V2 layout: prompts scaffold under agents/<name>/
+	// prompt.template.md, not a root prompts/ directory.
+	logInitProgress(stdout, 3, "Scaffolding agent prompts")
 	if code := writeInitAgentPrompts(fs, cityPath, &cfg, stderr); code != 0 {
 		return code
 	}

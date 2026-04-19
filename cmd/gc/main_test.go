@@ -1923,6 +1923,48 @@ func TestDoInitWriteFails(t *testing.T) {
 	}
 }
 
+// Regression for gastownhall/gascity#603: gc init must not emit legacy
+// city-first scaffolding. Three seams were audited in the issue:
+//   - stdout says "Writing default prompts" — stale V1 wording; prompts now
+//     scaffold under agents/<name>/prompt.template.md, so the message should
+//     name that.
+//   - city.toml contains [[agent]] — agents now belong in pack.toml under
+//     the transitional v2 split.
+//   - hooks/claude.json is seeded at root on fresh installs — it should be
+//     absent; the gc-managed .gc/settings.json is what init writes.
+//
+// Two of the three seams are already fixed on main at the time of this
+// commit; the test locks them down and also drives the wording fix.
+func TestDoInit_Regression603_NoLegacySeams(t *testing.T) {
+	f := fsys.NewFake()
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/bright-lights", defaultWizardConfig(), "", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0; stderr=%q", code, stderr.String())
+	}
+
+	out := stdout.String()
+	if strings.Contains(out, "Writing default prompts") {
+		t.Errorf("stdout contains stale V1 wording %q:\n%s", "Writing default prompts", out)
+	}
+	if !strings.Contains(out, "Scaffolding agent prompts") {
+		t.Errorf("stdout missing V2 wording %q:\n%s", "Scaffolding agent prompts", out)
+	}
+
+	cityData, ok := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	if !ok {
+		t.Fatal("city.toml not written")
+	}
+	if strings.Contains(string(cityData), "[[agent]]") {
+		t.Errorf("city.toml contains legacy [[agent]] block; agents belong in pack.toml:\n%s", cityData)
+	}
+
+	hookPath := filepath.Join("/bright-lights", citylayout.ClaudeHookFile)
+	if _, present := f.Files[hookPath]; present {
+		t.Errorf("hooks/claude.json seeded on fresh install; fresh installs must leave it absent and rely on .gc/settings.json")
+	}
+}
+
 // --- settings.json ---
 
 func TestDoInitCreatesSettings(t *testing.T) {
