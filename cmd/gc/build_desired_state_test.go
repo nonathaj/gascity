@@ -1415,6 +1415,7 @@ func TestBuildDesiredState_StoreBackedPoolUsesQualifiedInstanceNameForBindings(t
 		Agents: []config.Agent{{
 			Name:              "worker",
 			BindingName:       "ops",
+			WorkDir:           ".gc/worktrees/{{.AgentBase}}",
 			MinActiveSessions: intPtr(0),
 			MaxActiveSessions: intPtr(2),
 			ScaleCheck:        "printf 1",
@@ -1444,6 +1445,108 @@ func TestBuildDesiredState_StoreBackedPoolUsesQualifiedInstanceNameForBindings(t
 	}
 	if got.Env["GC_AGENT"] != wantInstance {
 		t.Fatalf("GC_AGENT = %q, want %q", got.Env["GC_AGENT"], wantInstance)
+	}
+	wantWorkDir := filepath.Join(cityPath, ".gc", "worktrees", "ops.worker-1")
+	if got.WorkDir != wantWorkDir {
+		t.Fatalf("WorkDir = %q, want %q", got.WorkDir, wantWorkDir)
+	}
+}
+
+func TestBuildDesiredState_PendingCreatePoolSessionUsesConcreteBeadIdentity(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	workDir := filepath.Join(cityPath, ".gc", "worktrees", "demo", "ants", "ant-adhoc-abc123")
+	if _, err := store.Create(beads.Bead{
+		Title:  "adhoc ant",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:demo/ant"},
+		Metadata: map[string]string{
+			"template":              "demo/ant",
+			"session_name":          "ant-adhoc-abc123",
+			"session_name_explicit": boolMetadata(true),
+			"agent_name":            "demo/ant-adhoc-abc123",
+			"session_origin":        "manual",
+			"pending_create_claim":  boolMetadata(true),
+			"state":                 "creating",
+			"work_dir":              workDir,
+		},
+	}); err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	cfg := &config.City{
+		Rigs: []config.Rig{{Name: "demo", Path: filepath.Join(cityPath, "repos", "demo")}},
+		Agents: []config.Agent{{
+			Name:              "ant",
+			Dir:               "demo",
+			Provider:          "test-agent",
+			StartCommand:      "true",
+			WorkDir:           ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}",
+			MinActiveSessions: intPtr(0),
+			MaxActiveSessions: intPtr(4),
+		}},
+	}
+
+	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	got, ok := dsResult.State["ant-adhoc-abc123"]
+	if !ok {
+		t.Fatalf("desired state missing pending create session: keys=%v", mapKeys(dsResult.State))
+	}
+	if got.TemplateName != "demo/ant" {
+		t.Fatalf("TemplateName = %q, want %q", got.TemplateName, "demo/ant")
+	}
+	if got.InstanceName != "demo/ant-adhoc-abc123" {
+		t.Fatalf("InstanceName = %q, want %q", got.InstanceName, "demo/ant-adhoc-abc123")
+	}
+	if got.WorkDir != workDir {
+		t.Fatalf("WorkDir = %q, want %q", got.WorkDir, workDir)
+	}
+	if got.Env["GC_ALIAS"] != "demo/ant-adhoc-abc123" {
+		t.Fatalf("GC_ALIAS = %q, want %q", got.Env["GC_ALIAS"], "demo/ant-adhoc-abc123")
+	}
+}
+
+func TestBuildDesiredState_LegacyAliaslessEphemeralPoolSessionFallsBackToSessionNameIdentity(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	if _, err := store.Create(beads.Bead{
+		Title:  "legacy ant",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:demo/ant"},
+		Metadata: map[string]string{
+			"template":       "demo/ant",
+			"agent_name":     "demo/ant",
+			"session_name":   "s-gc-legacy",
+			"session_origin": "ephemeral",
+			"state":          "creating",
+			"work_dir":       filepath.Join(cityPath, ".gc", "worktrees", "demo", "ants", "ant"),
+		},
+	}); err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	cfg := &config.City{
+		Rigs: []config.Rig{{Name: "demo", Path: filepath.Join(cityPath, "repos", "demo")}},
+		Agents: []config.Agent{{
+			Name:              "ant",
+			Dir:               "demo",
+			Provider:          "test-agent",
+			StartCommand:      "true",
+			WorkDir:           ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}",
+			MinActiveSessions: intPtr(0),
+			MaxActiveSessions: intPtr(4),
+		}},
+	}
+
+	dsResult := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, io.Discard)
+	got, ok := dsResult.State["s-gc-legacy"]
+	if !ok {
+		t.Fatalf("desired state missing legacy session: keys=%v", mapKeys(dsResult.State))
+	}
+	if got.InstanceName != "demo/s-gc-legacy" {
+		t.Fatalf("InstanceName = %q, want %q", got.InstanceName, "demo/s-gc-legacy")
+	}
+	wantWorkDir := filepath.Join(cityPath, ".gc", "worktrees", "demo", "ants", "s-gc-legacy")
+	if got.WorkDir != wantWorkDir {
+		t.Fatalf("WorkDir = %q, want %q", got.WorkDir, wantWorkDir)
 	}
 }
 
@@ -2207,6 +2310,28 @@ func agentName(a *config.Agent) string {
 		return "<nil>"
 	}
 	return a.Name
+}
+
+func TestSessionBeadConfigAgent_UsesMultipleSessionShapeForMaxZero(t *testing.T) {
+	cfgAgent := &config.Agent{
+		Name:              "ant",
+		Dir:               "demo",
+		MaxActiveSessions: intPtr(0),
+	}
+
+	got := sessionBeadConfigAgent(cfgAgent, "demo/ant-adhoc-123")
+	if got == cfgAgent {
+		t.Fatal("sessionBeadConfigAgent returned base agent, want deep-copied instance agent")
+	}
+	if got == nil || got.Name != "ant-adhoc-123" {
+		t.Fatalf("agent.Name = %q, want %q", agentName(got), "ant-adhoc-123")
+	}
+	if got.PoolName != "demo/ant" {
+		t.Fatalf("agent.PoolName = %q, want %q", got.PoolName, "demo/ant")
+	}
+	if template := templateNameFor(got, "demo/ant-adhoc-123"); template != "demo/ant" {
+		t.Fatalf("templateNameFor(instance) = %q, want %q", template, "demo/ant")
+	}
 }
 
 // TestEnsureDependencyOnlyTemplate_StoreBackedUsesInstanceIdentity is a

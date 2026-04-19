@@ -21,6 +21,7 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/shellquote"
+	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 	"github.com/spf13/cobra"
 )
 
@@ -169,7 +170,16 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	alias, err = session.ValidateAlias(alias)
+	requestedAlias, err := session.ValidateAlias(alias)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	alias = requestedAlias
+	if alias != "" && found.SupportsMultipleSessions() {
+		alias = workdirutil.SessionQualifiedName(cityPath, found, cfg.Rigs, requestedAlias, "")
+	}
+	explicitName, err := sessionExplicitNameForNewSession(&found, alias)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -185,7 +195,13 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	mgr := newSessionManager(store, sp)
 
 	// Build the work directory.
-	workDir, err := resolveWorkDir(cityPath, cfg, &found)
+	sessionQualifiedName := workdirutil.SessionQualifiedName(cityPath, found, cfg.Rigs, requestedAlias, explicitName)
+	workDir, err := resolveWorkDirForQualifiedName(
+		cityPath,
+		cfg,
+		&found,
+		sessionQualifiedName,
+	)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -195,6 +211,11 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	// via findAgentByTemplate (which compares against QualifiedName()).
 	canonicalTemplate := found.QualifiedName()
 	configuredOwner := sessionNewAliasOwner(cfg, &found)
+	reservationIDs := []string{alias, explicitName}
+	reserveConcreteIdentity := found.SupportsMultipleSessions() && strings.TrimSpace(sessionQualifiedName) != ""
+	if reserveConcreteIdentity {
+		reservationIDs = append(reservationIDs, sessionQualifiedName)
+	}
 
 	// Resolve the workspace default provider for title generation. This
 	// mirrors api.Server.resolveTitleProvider: use an empty Agent so we
@@ -211,16 +232,27 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 		if pokeErr := pokeController(cityPath); pokeErr == nil {
 			// Controller is running — create bead only, let reconciler start it.
 			var info session.Info
-			err := session.WithCitySessionAliasLock(cityPath, alias, func() error {
+			err := session.WithCitySessionIdentifierLocks(cityPath, reservationIDs, func() error {
 				if err := session.EnsureAliasAvailableWithConfigForOwner(store, cfg, alias, "", configuredOwner); err != nil {
 					return err
 				}
+				if reserveConcreteIdentity && sessionQualifiedName != alias {
+					if err := session.EnsureAliasAvailableWithConfigForOwner(store, cfg, sessionQualifiedName, "", configuredOwner); err != nil {
+						return err
+					}
+				}
+				if err := session.EnsureSessionNameAvailableWithConfig(store, cfg, explicitName, ""); err != nil {
+					return err
+				}
 				var createErr error
-				kindMeta := map[string]string{"session_origin": "ephemeral"}
+				kindMeta := map[string]string{
+					"agent_name":     sessionQualifiedName,
+					"session_origin": "manual",
+				}
 				if resolved.Kind != "" && resolved.Kind != resolved.Name {
 					kindMeta["provider_kind"] = resolved.Kind
 				}
-				info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(alias, "", canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, session.ProviderResume{
+				info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(alias, explicitName, canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, session.ProviderResume{
 					ResumeFlag:    resolved.ResumeFlag,
 					ResumeStyle:   resolved.ResumeStyle,
 					ResumeCommand: resolved.ResumeCommand,
@@ -277,17 +309,28 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 		SessionIDFlag: resolved.SessionIDFlag,
 	}
 
-	kindMeta := map[string]string{"session_origin": "ephemeral"}
+	kindMeta := map[string]string{
+		"agent_name":     sessionQualifiedName,
+		"session_origin": "manual",
+	}
 	if resolved.Kind != "" && resolved.Kind != resolved.Name {
 		kindMeta["provider_kind"] = resolved.Kind
 	}
 	var info session.Info
-	err = session.WithCitySessionAliasLock(cityPath, alias, func() error {
+	err = session.WithCitySessionIdentifierLocks(cityPath, reservationIDs, func() error {
 		if err := session.EnsureAliasAvailableWithConfigForOwner(store, cfg, alias, "", configuredOwner); err != nil {
 			return err
 		}
+		if reserveConcreteIdentity && sessionQualifiedName != alias {
+			if err := session.EnsureAliasAvailableWithConfigForOwner(store, cfg, sessionQualifiedName, "", configuredOwner); err != nil {
+				return err
+			}
+		}
+		if err := session.EnsureSessionNameAvailableWithConfig(store, cfg, explicitName, ""); err != nil {
+			return err
+		}
 		var createErr error
-		info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(context.Background(), alias, "", canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints, kindMeta)
+		info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(context.Background(), alias, explicitName, canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints, kindMeta)
 		return createErr
 	})
 	if err != nil {
@@ -1380,6 +1423,10 @@ func cmdSessionNudge(args []string, delivery nudgeDeliveryMode, stdout, stderr i
 // resolveWorkDir determines the working directory for a session based on the
 // agent config. work_dir overrides dir, while dir still carries rig identity.
 func resolveWorkDir(cityPath string, cfg *config.City, agent *config.Agent) (string, error) {
+	return resolveWorkDirForQualifiedName(cityPath, cfg, agent, "")
+}
+
+func resolveWorkDirForQualifiedName(cityPath string, cfg *config.City, agent *config.Agent, qualifiedName string) (string, error) {
 	cityName := filepath.Base(cityPath)
 	if cfg != nil && cfg.Workspace.Name != "" {
 		cityName = cfg.Workspace.Name
@@ -1388,7 +1435,14 @@ func resolveWorkDir(cityPath string, cfg *config.City, agent *config.Agent) (str
 	if cfg != nil {
 		rigs = cfg.Rigs
 	}
-	return resolveConfiguredWorkDir(cityPath, cityName, agent, rigs)
+	return resolveConfiguredWorkDir(cityPath, cityName, qualifiedName, agent, rigs)
+}
+
+func sessionExplicitNameForNewSession(agent *config.Agent, alias string) (string, error) {
+	if agent == nil || !agent.SupportsMultipleSessions() || strings.TrimSpace(alias) != "" {
+		return "", nil
+	}
+	return session.GenerateAdhocExplicitName(agent.Name)
 }
 
 func shouldAttachNewSession(noAttach bool, transport string) bool {
