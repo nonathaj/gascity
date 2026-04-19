@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/test/tmuxtest"
@@ -377,14 +378,26 @@ func subprocessTestKillSet(procs map[int]procSnapshot, agentScript string) map[i
 // gc runs the gc binary with the given args. If dir is non-empty, it sets
 // the working directory. Returns combined stdout+stderr and any error.
 func gc(dir string, args ...string) (string, error) {
-	return runCommand(dir, commandEnvForDir(dir, false), integrationGCCommandTimeout, gcBinary, args...)
+	return runCommand(dir, commandEnvForDir(commandEnvLookupDir(dir, args), false), integrationGCCommandTimeout, gcBinary, args...)
 }
 
 // gcDolt runs the gc binary with the given args using the isolated integration
 // supervisor state, but without forcing GC_DOLT=skip. Use this for tests that
 // need the real bd+dolt-backed bead store.
 func gcDolt(dir string, args ...string) (string, error) {
-	return runCommand(dir, commandEnvForDir(dir, true), integrationGCDoltCommandTimeout, gcBinary, args...)
+	return runCommand(dir, commandEnvForDir(commandEnvLookupDir(dir, args), true), integrationGCDoltCommandTimeout, gcBinary, args...)
+}
+
+func commandEnvLookupDir(dir string, args []string) string {
+	if dir != "" {
+		return dir
+	}
+	for _, arg := range args {
+		if _, ok := cityCommandEnv.Load(arg); ok {
+			return arg
+		}
+	}
+	return ""
 }
 
 // bd runs the bd binary with the given args. If dir is non-empty, it sets
@@ -1091,6 +1104,108 @@ func TestCommandEnvForDirPrefersRegisteredCityEnv(t *testing.T) {
 	got := commandEnvForDir(cityDir, false)
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("commandEnvForDir(%q) = %v, want %v", cityDir, got, want)
+	}
+}
+
+func TestCommandEnvLookupDirUsesRegisteredPathArg(t *testing.T) {
+	cityDir := filepath.Join(t.TempDir(), "city")
+	registerCityCommandEnv(cityDir, []string{"GC_HOME=/tmp/isolated"})
+	t.Cleanup(func() { unregisterCityCommandEnv(cityDir) })
+
+	if got := commandEnvLookupDir("", []string{"start", cityDir}); got != cityDir {
+		t.Fatalf("commandEnvLookupDir with path arg = %q, want %q", got, cityDir)
+	}
+	if got := commandEnvLookupDir("/tmp/cwd", []string{"start", cityDir}); got != "/tmp/cwd" {
+		t.Fatalf("commandEnvLookupDir with cwd = %q, want cwd", got)
+	}
+}
+
+func TestRenderE2ETomlPlainAgentUsesNamedSessionWithoutSingletonCap(t *testing.T) {
+	toml := renderE2EToml(e2eCity{
+		Agents: []e2eAgent{{Name: "worker", StartCommand: "sleep 3600"}},
+	})
+	if !strings.Contains(toml, "[[named_session]]\ntemplate = \"worker\"\nmode = \"always\"") {
+		t.Fatalf("rendered TOML missing named session:\n%s", toml)
+	}
+	if strings.Contains(toml, "max_active_sessions = 1") {
+		t.Fatalf("plain E2E agent should not render singleton cap:\n%s", toml)
+	}
+}
+
+func TestRewriteE2ETomlPreservingNamedSessionsRestoresInlineAgent(t *testing.T) {
+	cityDir := t.TempDir()
+	initial := `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[named_session]]
+template = "worker"
+mode = "on_demand"
+
+[[named_session]]
+template = "worker"
+mode = "always"
+
+[[named_session]]
+template = "worker"
+name = "worker-extra"
+mode = "on_demand"
+`
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(initial), 0o644); err != nil {
+		t.Fatalf("writing city.toml: %v", err)
+	}
+
+	rewriteE2ETomlPreservingNamedSessions(t, cityDir, e2eCity{
+		Agents: []e2eAgent{{Name: "worker", StartCommand: "VERSION=v2 sleep 3600"}},
+	})
+
+	cityData, err := os.ReadFile(filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("reading city.toml: %v", err)
+	}
+	packData, err := os.ReadFile(filepath.Join(cityDir, "pack.toml"))
+	if err != nil {
+		t.Fatalf("reading pack.toml: %v", err)
+	}
+	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("loading city.toml: %v\ncity.toml:\n%s\npack.toml:\n%s", err, cityData, packData)
+	}
+	if cfg.Workspace.Name != "test-city" {
+		t.Fatalf("Workspace.Name = %q, want test-city", cfg.Workspace.Name)
+	}
+	if len(cfg.Agents) != 1 || cfg.Agents[0].Name != "worker" {
+		t.Fatalf("Agents = %+v, want restored worker", cfg.Agents)
+	}
+	if got := cfg.Agents[0].StartCommand; got != "VERSION=v2 sleep 3600" {
+		t.Fatalf("StartCommand = %q, want updated command", got)
+	}
+	if len(cfg.NamedSessions) != 2 {
+		t.Fatalf("len(NamedSessions) = %d, want 2\ncity.toml:\n%s\npack.toml:\n%s", len(cfg.NamedSessions), cityData, packData)
+	}
+	var workerSession config.NamedSession
+	for _, ns := range cfg.NamedSessions {
+		if ns.QualifiedName() == "worker" {
+			workerSession = ns
+			break
+		}
+	}
+	if workerSession.Template == "" {
+		t.Fatalf("worker named session not found\ncity.toml:\n%s\npack.toml:\n%s", cityData, packData)
+	}
+	if got := workerSession.Mode; got != "always" {
+		t.Fatalf("worker named session mode = %q, want always\ncity.toml:\n%s\npack.toml:\n%s", got, cityData, packData)
+	}
+	if got := strings.Count(string(cityData), "[[named_session]]"); got != 1 {
+		t.Fatalf("city.toml named_session blocks = %d, want 1\n%s", got, cityData)
+	}
+	if !strings.Contains(string(cityData), `name = "worker-extra"`) {
+		t.Fatalf("city.toml should preserve non-conflicting worker-extra named session:\n%s", cityData)
+	}
+	if got := strings.Count(string(packData), "[[named_session]]"); got != 1 {
+		t.Fatalf("pack.toml named_session blocks = %d, want 1\n%s", got, packData)
 	}
 }
 

@@ -346,15 +346,25 @@ func TestRegisterCityWithSupervisorRejectsStandaloneController(t *testing.T) {
 	}()
 
 	var stdout, stderr bytes.Buffer
-	code := registerCityWithSupervisor(cityPath, &stdout, &stderr, "gc register", true)
+	code := registerCityWithSupervisor(cityPath, &stdout, &stderr, "gc start", true)
 	if code != 1 {
 		t.Fatalf("registerCityWithSupervisor code = %d, want 1", code)
 	}
 	if !strings.Contains(stderr.String(), "standalone controller already running") {
 		t.Fatalf("stderr = %q, want standalone-controller error", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "for "+shellQuotePath(cityPath)) {
+		t.Fatalf("stderr = %q, want shell-quoted city path", stderr.String())
+	}
 	if !strings.Contains(stderr.String(), "PID 4242") {
 		t.Fatalf("stderr = %q, want controller PID", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Authority: standalone controller PID 4242") {
+		t.Fatalf("stderr = %q, want standalone-controller authority", stderr.String())
+	}
+	wantNext := "Next: gc stop " + shellQuotePath(cityPath) + " && gc start " + shellQuotePath(cityPath)
+	if !strings.Contains(stderr.String(), wantNext) {
+		t.Fatalf("stderr = %q, want next command %q", stderr.String(), wantNext)
 	}
 
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
@@ -364,6 +374,40 @@ func TestRegisterCityWithSupervisorRejectsStandaloneController(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected empty registry after standalone-controller rejection, got %v", entries)
+	}
+}
+
+func TestSupervisorRetryCommand(t *testing.T) {
+	cityPath := filepath.Join(t.TempDir(), "city with spaces")
+
+	tests := []struct {
+		name        string
+		commandName string
+		want        string
+	}{
+		{
+			name:        "start retries start",
+			commandName: "gc start",
+			want:        "gc start " + shellQuotePath(cityPath),
+		},
+		{
+			name:        "register retries register",
+			commandName: "gc register",
+			want:        "gc register " + shellQuotePath(cityPath),
+		},
+		{
+			name:        "init retries start",
+			commandName: "gc init",
+			want:        "gc start " + shellQuotePath(cityPath),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := supervisorRetryCommand(tt.commandName, cityPath); got != tt.want {
+				t.Fatalf("supervisorRetryCommand(%q, %q) = %q, want %q", tt.commandName, cityPath, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
@@ -216,9 +218,9 @@ func writeE2EAgentSections(b *strings.Builder, agents []e2eAgent) {
 			fmt.Fprintf(b, "nudge = %s\n", quote(a.Nudge))
 		}
 		if a.Pool == nil {
-			// E2E helpers expect a plain test agent to behave like a singleton
-			// session unless the test explicitly opts into pool semantics.
-			fmt.Fprintf(b, "max_active_sessions = 1\n")
+			// Plain E2E agents are kept resident by the named session below.
+			// Leave generic template capacity unbounded so config rewrites do
+			// not also carry legacy singleton-pool semantics.
 			if strings.TrimSpace(a.IdleTimeout) == "" {
 				fmt.Fprintf(b, "idle_timeout = %s\n", quote("1h"))
 			}
@@ -266,9 +268,98 @@ func writeE2EToml(t *testing.T, cityDir string, city e2eCity) {
 		t.Fatalf("writing pack.toml: %v", err)
 	}
 	tomlPath := filepath.Join(cityDir, "city.toml")
-	if err := os.WriteFile(tomlPath, []byte(renderE2ECityRuntimeToml(city)), 0o644); err != nil {
-		t.Fatalf("writing city.toml: %v", err)
+	writeFileAtomic(t, tomlPath, []byte(renderE2ECityRuntimeToml(city)))
+}
+
+func writeE2ETomlFile(t *testing.T, tomlPath string, city e2eCity) {
+	t.Helper()
+	writeFileAtomic(t, tomlPath, []byte(renderE2EToml(city)))
+}
+
+func rewriteE2ETomlPreservingNamedSessions(t *testing.T, cityDir string, city e2eCity) {
+	t.Helper()
+	tomlPath := filepath.Join(cityDir, "city.toml")
+	packPath := filepath.Join(cityDir, "pack.toml")
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("reading city.toml: %v", err)
 	}
+	current, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("parsing city.toml: %v", err)
+	}
+	if strings.TrimSpace(city.Workspace.Name) == "" {
+		city.Workspace.Name = current.Workspace.Name
+	}
+	if strings.TrimSpace(city.Workspace.Name) == "" {
+		city.Workspace.Name = filepath.Base(cityDir)
+	}
+	desiredCfg, err := config.Parse([]byte(renderE2EToml(city)))
+	if err != nil {
+		t.Fatalf("parsing rendered city.toml: %v", err)
+	}
+	nextRuntimeCfg, err := config.Parse([]byte(renderE2ECityRuntimeToml(city)))
+	if err != nil {
+		t.Fatalf("parsing rendered runtime city.toml: %v", err)
+	}
+	nextRuntimeCfg.NamedSessions = preservedLocalNamedSessions(current.NamedSessions, desiredCfg.NamedSessions)
+	nextRuntime, err := nextRuntimeCfg.Marshal()
+	if err != nil {
+		t.Fatalf("marshaling city.toml: %v", err)
+	}
+	writeFileAtomic(t, packPath, []byte(renderE2EPackToml(city)))
+	writeFileAtomic(t, tomlPath, nextRuntime)
+	if _, _, err := config.LoadWithIncludes(fsys.OSFS{}, tomlPath); err != nil {
+		t.Fatalf("loading rewritten city.toml: %v\n%s", err, nextRuntime)
+	}
+}
+
+func preservedLocalNamedSessions(existing, desired []config.NamedSession) []config.NamedSession {
+	preserved := make([]config.NamedSession, 0, len(existing))
+	seen := make(map[string]bool, len(desired))
+	for _, ns := range desired {
+		seen[namedSessionMergeKey(ns)] = true
+	}
+	for _, ns := range existing {
+		key := namedSessionMergeKey(ns)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		preserved = append(preserved, ns)
+	}
+	return preserved
+}
+
+func namedSessionMergeKey(ns config.NamedSession) string {
+	return ns.Dir + "\x00" + ns.IdentityName()
+}
+
+func writeFileAtomic(t *testing.T, path string, data []byte) {
+	t.Helper()
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		t.Fatalf("creating temp file for %s: %v", path, err)
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		t.Fatalf("writing temp file for %s: %v", path, err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("closing temp file for %s: %v", path, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		t.Fatalf("replacing %s: %v", path, err)
+	}
+	cleanup = false
 }
 
 // setupE2ECity initializes a city, writes config, starts agents, and
@@ -290,9 +381,7 @@ func setupE2ECity(t *testing.T, guard *tmuxtest.Guard, city e2eCity) string {
 	// to agent output), but keep it symmetric so future assertions don't
 	// regress on macOS's /var→/private/var symlink.
 	configPath := filepath.Join(canonicalTempDir(t), city.Workspace.Name+".toml")
-	if err := os.WriteFile(configPath, []byte(renderE2EToml(city)), 0o644); err != nil {
-		t.Fatalf("writing init config: %v", err)
-	}
+	writeE2ETomlFile(t, configPath, city)
 
 	// Stage scripts before the first controller launch so CopyFiles hashing is
 	// stable. If scripts appear only after init's startup, the second gc start
@@ -349,9 +438,7 @@ func setupE2ECityNoStart(t *testing.T, city e2eCity) string {
 
 	cityDir := filepath.Join(canonicalTempDir(t), city.Workspace.Name)
 	configPath := filepath.Join(canonicalTempDir(t), city.Workspace.Name+".toml")
-	if err := os.WriteFile(configPath, []byte(renderE2EToml(city)), 0o644); err != nil {
-		t.Fatalf("writing init config: %v", err)
-	}
+	writeE2ETomlFile(t, configPath, city)
 
 	// Pre-stage scripts so init's first launch fingerprints the final staged
 	// content instead of a missing scripts directory.
