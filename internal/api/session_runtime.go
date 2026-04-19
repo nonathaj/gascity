@@ -164,14 +164,14 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 	}
 	runtimeCfg, err := worker.NormalizeResolvedRuntime(worker.ResolvedRuntime{
 		Command:    command,
-		WorkDir:    firstNonEmptyString(workDir, info.WorkDir),
-		Provider:   firstNonEmptyString(resolved.Name, info.Provider),
+		WorkDir:    firstNonEmptyString(info.WorkDir, workDir),
+		Provider:   firstNonEmptyString(info.Provider, resolved.Name),
 		SessionEnv: resolved.Env,
 		Hints:      sessionResumeHints(resolved, firstNonEmptyString(workDir, info.WorkDir)),
 		Resume: session.ProviderResume{
-			ResumeFlag:    resolved.ResumeFlag,
-			ResumeStyle:   resolved.ResumeStyle,
-			ResumeCommand: resolved.ResumeCommand,
+			ResumeFlag:    firstNonEmptyString(info.ResumeFlag, resolved.ResumeFlag),
+			ResumeStyle:   firstNonEmptyString(info.ResumeStyle, resolved.ResumeStyle),
+			ResumeCommand: firstNonEmptyString(info.ResumeCommand, resolved.ResumeCommand),
 			SessionIDFlag: resolved.SessionIDFlag,
 		},
 	})
