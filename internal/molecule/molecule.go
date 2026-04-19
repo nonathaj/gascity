@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/formula"
@@ -482,6 +483,10 @@ func Instantiate(ctx context.Context, store beads.Store, recipe *formula.Recipe,
 				return nil, fmt.Errorf("step %q: bead title contains unresolved variable(s) %s — missing or misspelled --var(s)?", step.ID, strings.Join(residual, ", "))
 			}
 		}
+		if err := validateTimeoutMetadataVars(step.ID, b.Metadata); err != nil {
+			markFailed(store, createdIDs)
+			return nil, err
+		}
 
 		created, err := store.Create(b)
 		if err != nil {
@@ -652,6 +657,10 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 				return nil, fmt.Errorf("step %q: bead title contains unresolved variable(s) %s — missing or misspelled --var(s)?", step.ID, strings.Join(residual, ", "))
 			}
 		}
+		if err := validateTimeoutMetadataVars(step.ID, b.Metadata); err != nil {
+			markFailed(store, createdIDs)
+			return nil, err
+		}
 
 		created, err := store.Create(b)
 		if err != nil {
@@ -725,6 +734,26 @@ func stepToBead(step formula.RecipeStep, vars map[string]string, priorityOverrid
 	}
 
 	return b
+}
+
+func validateTimeoutMetadataVars(stepID string, metadata map[string]string) error {
+	for _, key := range []string{"gc.step_timeout", "gc.check_timeout"} {
+		raw := metadata[key]
+		if raw == "" {
+			continue
+		}
+		if residual := formula.CheckResidualTimeoutVars(raw); len(residual) > 0 {
+			return fmt.Errorf("step %q: metadata %s contains unresolved timeout variable(s) %s — missing or misspelled --var(s)?", stepID, key, strings.Join(residual, ", "))
+		}
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return fmt.Errorf("step %q: metadata %s has invalid timeout %q: %w", stepID, key, raw, err)
+		}
+		if parsed <= 0 {
+			return fmt.Errorf("step %q: metadata %s timeout must be positive, got %v", stepID, key, parsed)
+		}
+	}
+	return nil
 }
 
 func deferBeadRouting(b *beads.Bead) {

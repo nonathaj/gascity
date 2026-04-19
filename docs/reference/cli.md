@@ -422,7 +422,7 @@ gc converge create [flags]
 | `--formula` | string |  | Formula to use (required) |
 | `--gate` | string | `manual` | Gate mode: manual, condition, hybrid |
 | `--gate-condition` | string |  | Path to gate condition script |
-| `--gate-timeout` | string | `30s` | Gate execution timeout |
+| `--gate-timeout` | string | `5m0s` | Gate execution timeout |
 | `--gate-timeout-action` | string | `iterate` | Action on gate timeout: iterate, retry, manual, terminate |
 | `--max-iterations` | int | `5` | Maximum iterations |
 | `--target` | string |  | Target agent (required) |

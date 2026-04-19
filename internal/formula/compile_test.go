@@ -338,6 +338,104 @@ timeout = "30s"
 	assertLacksDep("ralph-demo", "ralph-demo.implement.check.1", "blocks")
 }
 
+func TestCompileExpansionFormulaSubstitutesTimeoutsFromFile(t *testing.T) {
+	dir := t.TempDir()
+	formulaContent := `
+formula = "exp-timeout"
+version = 1
+type = "expansion"
+
+[vars.step_timeout]
+default = "10m"
+
+[vars.check_timeout]
+default = "30s"
+
+[[template]]
+id = "{target}.check"
+title = "Check"
+timeout = "{step_timeout}"
+
+[template.check]
+max_attempts = 1
+
+[template.check.check]
+mode = "exec"
+path = "checks/pass.sh"
+timeout = "{check_timeout}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "exp-timeout.toml"), []byte(formulaContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	recipe, err := Compile(context.Background(), "exp-timeout", []string{dir}, nil)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	for _, step := range recipe.Steps {
+		if step.Metadata["gc.kind"] != "ralph" {
+			continue
+		}
+		if got := step.Metadata["gc.step_timeout"]; got != "10m" {
+			t.Fatalf("gc.step_timeout = %q, want 10m", got)
+		}
+		if got := step.Metadata["gc.check_timeout"]; got != "30s" {
+			t.Fatalf("gc.check_timeout = %q, want 30s", got)
+		}
+		return
+	}
+	t.Fatal("ralph control step not found")
+}
+
+func TestCompileExpansionFormulaAllowsUnresolvedTimeoutVars(t *testing.T) {
+	dir := t.TempDir()
+	formulaContent := `
+formula = "exp-timeout"
+version = 1
+type = "expansion"
+
+[[template]]
+id = "{target}.check"
+title = "Check"
+timeout = "{step_timeout}"
+
+[template.check]
+max_attempts = 1
+
+[template.check.check]
+mode = "exec"
+path = "checks/pass.sh"
+timeout = "{check_timeout}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "exp-timeout.toml"), []byte(formulaContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, vars := range []map[string]string{nil, {}} {
+		recipe, err := Compile(context.Background(), "exp-timeout", []string{dir}, vars)
+		if err != nil {
+			t.Fatalf("Compile with vars %#v: %v", vars, err)
+		}
+		found := false
+		for _, step := range recipe.Steps {
+			if step.Metadata["gc.kind"] != "ralph" {
+				continue
+			}
+			found = true
+			if got := step.Metadata["gc.step_timeout"]; got != "{step_timeout}" {
+				t.Fatalf("gc.step_timeout = %q, want unresolved placeholder", got)
+			}
+			if got := step.Metadata["gc.check_timeout"]; got != "{check_timeout}" {
+				t.Fatalf("gc.check_timeout = %q, want unresolved placeholder", got)
+			}
+		}
+		if !found {
+			t.Fatal("ralph control step not found")
+		}
+	}
+}
+
 func TestCompileVersion2UsesGraphWorkflowRootAndNoParentChild(t *testing.T) {
 	prev := IsFormulaV2Enabled()
 	SetFormulaV2Enabled(true)

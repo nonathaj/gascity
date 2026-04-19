@@ -1431,6 +1431,138 @@ func TestInstantiateRejectsResidualTitleVars(t *testing.T) {
 	})
 }
 
+func TestInstantiateRejectsResidualTimeoutVars(t *testing.T) {
+	makeRecipe := func(stepTimeout string) *formula.Recipe {
+		return &formula.Recipe{
+			Name: "timeout-vars",
+			Steps: []formula.RecipeStep{
+				{ID: "timeout-vars", Title: "Root", Type: "molecule", IsRoot: true},
+				{
+					ID:    "timeout-vars.check",
+					Title: "Check",
+					Type:  "task",
+					Metadata: map[string]string{
+						"gc.kind":          "ralph",
+						"gc.check_path":    "checks/pass.sh",
+						"gc.step_timeout":  stepTimeout,
+						"gc.check_timeout": "{{check_timeout}}",
+					},
+				},
+			},
+			Deps: []formula.RecipeDep{
+				{StepID: "timeout-vars.check", DependsOnID: "timeout-vars", Type: "parent-child"},
+			},
+			Vars: map[string]*formula.VarDef{
+				"check_timeout": {Description: "Check timeout"},
+				"step_timeout":  {Description: "Step timeout"},
+			},
+		}
+	}
+	recipe := makeRecipe("{step_timeout}")
+
+	_, err := Instantiate(context.Background(), beads.NewMemStore(), recipe, Options{
+		Vars: map[string]string{"check_timeout": "30s"},
+	})
+	if err == nil {
+		t.Fatal("Instantiate should reject unresolved single-brace timeout var")
+	}
+	if !strings.Contains(err.Error(), "gc.step_timeout") || !strings.Contains(err.Error(), "step_timeout") {
+		t.Fatalf("Instantiate error = %v, want gc.step_timeout unresolved step_timeout", err)
+	}
+
+	gaStore := &graphApplySpyStore{MemStore: beads.NewMemStore()}
+	prev := IsGraphApplyEnabled()
+	SetGraphApplyEnabled(true)
+	t.Cleanup(func() { SetGraphApplyEnabled(prev) })
+
+	_, err = Instantiate(context.Background(), gaStore, recipe, Options{
+		Vars: map[string]string{"check_timeout": "30s"},
+	})
+	if err == nil {
+		t.Fatal("graph-apply Instantiate should reject unresolved single-brace timeout var")
+	}
+	if !strings.Contains(err.Error(), "gc.step_timeout") || !strings.Contains(err.Error(), "step_timeout") {
+		t.Fatalf("graph-apply Instantiate error = %v, want gc.step_timeout unresolved step_timeout", err)
+	}
+}
+
+func TestInstantiateRejectsInvalidSubstitutedTimeoutVars(t *testing.T) {
+	makeRecipe := func(metadata map[string]string) *formula.Recipe {
+		return &formula.Recipe{
+			Name: "timeout-vars",
+			Steps: []formula.RecipeStep{
+				{ID: "timeout-vars", Title: "Root", Type: "molecule", IsRoot: true},
+				{
+					ID:       "timeout-vars.check",
+					Title:    "Check",
+					Type:     "task",
+					Metadata: metadata,
+				},
+			},
+			Deps: []formula.RecipeDep{
+				{StepID: "timeout-vars.check", DependsOnID: "timeout-vars", Type: "parent-child"},
+			},
+			Vars: map[string]*formula.VarDef{
+				"check_timeout": {Description: "Check timeout"},
+				"step_timeout":  {Description: "Step timeout"},
+			},
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		metadata map[string]string
+		vars     map[string]string
+		wantKey  string
+	}{
+		{
+			name: "step timeout",
+			metadata: map[string]string{
+				"gc.kind":          "ralph",
+				"gc.check_path":    "checks/pass.sh",
+				"gc.step_timeout":  "{{step_timeout}}",
+				"gc.check_timeout": "30s",
+			},
+			vars:    map[string]string{"step_timeout": "bogus"},
+			wantKey: "gc.step_timeout",
+		},
+		{
+			name: "check timeout",
+			metadata: map[string]string{
+				"gc.kind":          "ralph",
+				"gc.check_path":    "checks/pass.sh",
+				"gc.step_timeout":  "30s",
+				"gc.check_timeout": "{{check_timeout}}",
+			},
+			vars:    map[string]string{"check_timeout": "0s"},
+			wantKey: "gc.check_timeout",
+		},
+		{
+			name: "negative timeout",
+			metadata: map[string]string{
+				"gc.kind":          "ralph",
+				"gc.check_path":    "checks/pass.sh",
+				"gc.step_timeout":  "{{step_timeout}}",
+				"gc.check_timeout": "30s",
+			},
+			vars:    map[string]string{"step_timeout": "-1s"},
+			wantKey: "gc.step_timeout",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Instantiate(context.Background(), beads.NewMemStore(), makeRecipe(tc.metadata), Options{
+				Vars: tc.vars,
+			})
+			if err == nil {
+				t.Fatal("Instantiate should reject substituted timeout")
+			}
+			if !strings.Contains(err.Error(), tc.wantKey) {
+				t.Fatalf("Instantiate error = %v, want %s", err, tc.wantKey)
+			}
+		})
+	}
+}
+
 func TestInstantiateFragmentRejectsResidualTitleVars(t *testing.T) {
 	fragment := &formula.FragmentRecipe{
 		Name: "frag-residual",

@@ -279,10 +279,10 @@ type Step struct {
 	// work is emitted as first-class graph steps.
 	Retry *RetrySpec `json:"retry,omitempty" toml:"retry,omitempty"`
 
-	// Timeout is the maximum duration for this step's command execution.
-	// Applies to ralph check scripts and gate condition scripts.
+	// Timeout is the maximum duration for this step's Ralph check script.
+	// Gate condition scripts use gate.timeout instead.
 	// Format: Go duration string (e.g., "5m", "2m30s", "300s").
-	// Overrides the default gate timeout (5m) for this step.
+	// Overrides DefaultGateTimeout (5m) unless check.timeout is set.
 	Timeout string `json:"timeout,omitempty" toml:"timeout,omitempty"`
 
 	// Source tracing fields: track where this step came from.
@@ -391,6 +391,7 @@ type stepTOMLAlias struct {
 	Check           json.RawMessage   `json:"check,omitempty"`
 	Ralph           json.RawMessage   `json:"ralph,omitempty"`
 	Retry           *RetrySpec        `json:"retry,omitempty"`
+	Timeout         string            `json:"timeout,omitempty"`
 }
 
 type loopTOMLAlias struct {
@@ -464,6 +465,7 @@ func (a stepTOMLAlias) toStep() (Step, error) {
 		OnComplete:      a.OnComplete,
 		Ralph:           ralph,
 		Retry:           a.Retry,
+		Timeout:         a.Timeout,
 	}, nil
 }
 
@@ -922,11 +924,10 @@ func (f *Formula) Validate() error {
 		}
 
 		// Validate timeout format
-		if step.Timeout != "" {
-			if _, err := time.ParseDuration(step.Timeout); err != nil {
-				errs = append(errs, fmt.Sprintf("%s (%s): invalid timeout %q: %v", prefix, step.ID, step.Timeout, err))
-			}
+		if err := validateStepTimeout(prefix, step.ID, step.Timeout, step.Ralph != nil, nil, true); err != "" {
+			errs = append(errs, err)
 		}
+		validateLoopBodyTimeouts(step.Loop, &errs, fmt.Sprintf("%s (%s).loop", prefix, step.ID), nil, true)
 
 		if step.Ralph != nil {
 			validateRalph(step.Ralph, &errs, fmt.Sprintf("%s (%s)", prefix, step.ID), step)
@@ -1005,6 +1006,92 @@ func (f *Formula) Validate() error {
 	return nil
 }
 
+func validateStepTimeout(prefix, stepID, raw string, hasRalph bool, allowedLoopVars map[string]struct{}, allowUnresolvedVars bool) string {
+	if raw == "" {
+		return ""
+	}
+	if err := validatePositiveTimeout(fmt.Sprintf("%s (%s)", prefix, stepID), raw, allowedLoopVars, allowUnresolvedVars); err != "" {
+		return err
+	}
+	if !hasRalph {
+		return fmt.Sprintf("%s (%s): timeout requires check; convergence gate scripts use convergence.gate_timeout or --gate-timeout", prefix, stepID)
+	}
+	return ""
+}
+
+func validatePositiveTimeout(prefix, raw string, allowedLoopVars map[string]struct{}, allowUnresolvedVars bool) string {
+	if raw == "" {
+		return ""
+	}
+	parseRaw := substituteAllowedTimeoutLoopVars(raw, allowedLoopVars)
+	if allowUnresolvedVars && rangeVarPattern.MatchString(parseRaw) {
+		return ""
+	}
+	d, err := time.ParseDuration(parseRaw)
+	if err != nil {
+		return fmt.Sprintf("%s: invalid timeout %q: %v", prefix, raw, err)
+	}
+	if d <= 0 {
+		return fmt.Sprintf("%s: timeout must be positive, got %v", prefix, d)
+	}
+	return ""
+}
+
+func validateRalphCheckTimeout(prefix, raw string, allowedLoopVars map[string]struct{}, allowUnresolvedVars bool) string {
+	return validatePositiveTimeout(prefix, raw, allowedLoopVars, allowUnresolvedVars)
+}
+
+func substituteAllowedTimeoutLoopVars(raw string, allowedLoopVars map[string]struct{}) string {
+	if len(allowedLoopVars) == 0 {
+		return raw
+	}
+	return rangeVarPattern.ReplaceAllStringFunc(raw, func(match string) string {
+		name := match[1 : len(match)-1]
+		if _, ok := allowedLoopVars[name]; ok {
+			return "1"
+		}
+		return match
+	})
+}
+
+func validateLoopBodyTimeouts(loop *LoopSpec, errs *[]string, prefix string, allowedLoopVars map[string]struct{}, allowUnresolvedVars bool) {
+	if loop == nil {
+		return
+	}
+	validateNestedStepTimeoutsWithOptions(loop.Body, errs, prefix+".body", timeoutLoopVarsFor(loop, allowedLoopVars), allowUnresolvedVars)
+}
+
+func timeoutLoopVarsFor(loop *LoopSpec, parent map[string]struct{}) map[string]struct{} {
+	if loop == nil || loop.Var == "" {
+		return parent
+	}
+	vars := make(map[string]struct{}, len(parent)+1)
+	for k, v := range parent {
+		vars[k] = v
+	}
+	vars[loop.Var] = struct{}{}
+	return vars
+}
+
+func validateNestedStepTimeoutsWithOptions(steps []*Step, errs *[]string, prefix string, allowedLoopVars map[string]struct{}, allowUnresolvedVars bool) {
+	for i, step := range steps {
+		if step == nil {
+			continue
+		}
+		stepPrefix := fmt.Sprintf("%s[%d]", prefix, i)
+		if err := validateStepTimeout(stepPrefix, step.ID, step.Timeout, step.Ralph != nil, allowedLoopVars, allowUnresolvedVars); err != "" {
+			*errs = append(*errs, err)
+		}
+		if step.Ralph != nil && step.Ralph.Check != nil {
+			if err := validateRalphCheckTimeout(fmt.Sprintf("%s (%s).check.check", stepPrefix, step.ID), step.Ralph.Check.Timeout, allowedLoopVars, allowUnresolvedVars); err != "" {
+				*errs = append(*errs, err)
+			}
+		}
+		validateNestedStepTimeoutsWithOptions(step.Children, errs, stepPrefix+".children", allowedLoopVars, allowUnresolvedVars)
+		validateLoopBodyTimeouts(step.Loop, errs, fmt.Sprintf("%s (%s).loop", stepPrefix, step.ID), allowedLoopVars, allowUnresolvedVars)
+	}
+}
+
 // collectChildIDs recursively collects step IDs from children.
 // idLocations maps ID -> location where first defined (for better duplicate error messages).
 func collectChildIDs(children []*Step, idLocations map[string]string, errs *[]string, prefix string) {
@@ -1030,11 +1117,10 @@ func collectChildIDs(children []*Step, idLocations map[string]string, errs *[]st
 		}
 
 		// Validate timeout format for children
-		if child.Timeout != "" {
-			if _, err := time.ParseDuration(child.Timeout); err != nil {
-				*errs = append(*errs, fmt.Sprintf("%s (%s): invalid timeout %q: %v", childPrefix, child.ID, child.Timeout, err))
-			}
+		if err := validateStepTimeout(childPrefix, child.ID, child.Timeout, child.Ralph != nil, nil, true); err != "" {
+			*errs = append(*errs, err)
 		}
+		validateLoopBodyTimeouts(child.Loop, errs, fmt.Sprintf("%s (%s).loop", childPrefix, child.ID), nil, true)
 
 		if child.Ralph != nil {
 			validateRalph(child.Ralph, errs, fmt.Sprintf("%s (%s)", childPrefix, child.ID), child)
@@ -1173,6 +1259,9 @@ func validateRalph(spec *RalphSpec, errs *[]string, prefix string, step *Step) {
 		}
 		if spec.Check.Path == "" {
 			*errs = append(*errs, fmt.Sprintf("%s.check.check: path is required", prefix))
+		}
+		if err := validateRalphCheckTimeout(fmt.Sprintf("%s.check.check", prefix), spec.Check.Timeout, nil, true); err != "" {
+			*errs = append(*errs, err)
 		}
 	}
 
