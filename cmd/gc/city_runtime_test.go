@@ -1738,6 +1738,108 @@ func TestCityRuntimeReloadRestartsConfigWatcherWithNewPackTargets(t *testing.T) 
 	}
 }
 
+func TestCityRuntimeManualReloadPanicAfterReloadKeepsReloadReplyAndClears(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, prov, err := config.LoadWithIncludes(fsys.OSFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	configRev := config.Revision(fsys.OSFS{}, prov, cfg, cityPath)
+
+	doneCh := make(chan reloadControlReply, 1)
+	dirty := &atomic.Bool{}
+	dirty.Store(true)
+	sp := runtime.NewFake()
+	var stderr bytes.Buffer
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath:    cityPath,
+		CityName:    "test-city",
+		TomlPath:    tomlPath,
+		ConfigRev:   configRev,
+		ConfigDirty: dirty,
+		Cfg:         cfg,
+		SP:          sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			panic("manual reload boom")
+		},
+		Dops:   newDrainOps(sp),
+		Rec:    events.Discard,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+	})
+	cr.activeReload = &reloadRequest{doneCh: doneCh}
+	lastProviderName := "fake"
+	var prevPoolRunning map[string]bool
+
+	cr.safeTick(func() {
+		cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "poke")
+	}, "poke")
+
+	if cr.activeReload != nil {
+		t.Fatal("activeReload was not cleared after recovered panic")
+	}
+	select {
+	case reply := <-doneCh:
+		if reply.Outcome != reloadOutcomeNoChange {
+			t.Fatalf("reply.Outcome = %q, want %q", reply.Outcome, reloadOutcomeNoChange)
+		}
+	default:
+		t.Fatal("manual reload did not receive reload reply after recovered panic")
+	}
+	if !strings.Contains(stderr.String(), "manual reload boom") {
+		t.Fatalf("stderr = %q, want recovered panic log", stderr.String())
+	}
+}
+
+func TestCityRuntimeWatchReloadPanicRestoresDirty(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, prov, err := config.LoadWithIncludes(fsys.OSFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	configRev := config.Revision(fsys.OSFS{}, prov, cfg, cityPath)
+
+	dirty := &atomic.Bool{}
+	dirty.Store(true)
+	sp := runtime.NewFake()
+	var stderr bytes.Buffer
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath:    cityPath,
+		CityName:    "test-city",
+		TomlPath:    tomlPath,
+		ConfigRev:   configRev,
+		ConfigDirty: dirty,
+		Cfg:         cfg,
+		SP:          sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			panic("watch reload boom")
+		},
+		Dops:   newDrainOps(sp),
+		Rec:    events.Discard,
+		Stdout: io.Discard,
+		Stderr: &stderr,
+	})
+	lastProviderName := "fake"
+	var prevPoolRunning map[string]bool
+
+	cr.safeTick(func() {
+		cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "patrol")
+	}, "patrol")
+
+	if !dirty.Load() {
+		t.Fatal("dirty flag was not restored after recovered watch reload panic")
+	}
+	if !strings.Contains(stderr.String(), "watch reload boom") {
+		t.Fatalf("stderr = %q, want recovered panic log", stderr.String())
+	}
+}
+
 func TestCityRuntimeRunStopsBeforeStartedWhenCanceledDuringStartup(t *testing.T) {
 	cityPath := t.TempDir()
 	tomlPath := filepath.Join(cityPath, "city.toml")
@@ -1780,6 +1882,369 @@ func TestCityRuntimeRunStopsBeforeStartedWhenCanceledDuringStartup(t *testing.T)
 	}
 	if strings.Contains(stdout.String(), "City started.") {
 		t.Fatalf("stdout = %q, want no started banner after cancellation", stdout.String())
+	}
+}
+
+// safeTick must swallow panics so a transient failure in the reconciler
+// tick body (e.g. Dolt EOF triggering a downstream nil deref) does not
+// cascade through the supervisor's per-city panic recovery into
+// cityRuntime.shutdown() -> gracefulStopAll (issue #663).
+func TestCityRuntimeSafeTick_RecoversFromPanicAndLogsTrigger(t *testing.T) {
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityName:  "test-city",
+		logPrefix: "test-city",
+		stderr:    &stderr,
+	}
+
+	called := false
+	cr.safeTick(func() {
+		called = true
+		panic("simulated dolt eof cascade")
+	}, "patrol")
+
+	if !called {
+		t.Fatal("tick body was not invoked")
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "panicked") {
+		t.Errorf("stderr = %q, want to contain 'panicked'", got)
+	}
+	if !strings.Contains(got, "trigger=patrol") {
+		t.Errorf("stderr = %q, want to contain 'trigger=patrol'", got)
+	}
+	if !strings.Contains(got, "simulated dolt eof cascade") {
+		t.Errorf("stderr = %q, want to contain panic payload", got)
+	}
+	if !strings.Contains(got, "type=string") {
+		t.Errorf("stderr = %q, want to contain panic value type (helps distinguish errors from strings)", got)
+	}
+	if !strings.Contains(got, "goroutine ") {
+		t.Errorf("stderr = %q, want to contain a stack trace so latent bugs stay diagnosable", got)
+	}
+}
+
+// safeTick must forward normal (non-panicking) returns unchanged so the
+// wrapper is transparent in the common case.
+func TestCityRuntimeSafeTick_PassesThroughWhenNoPanic(t *testing.T) {
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityName:  "test-city",
+		logPrefix: "test-city",
+		stderr:    &stderr,
+	}
+	called := false
+	cr.safeTick(func() { called = true }, "poke")
+	if !called {
+		t.Fatal("tick body was not invoked")
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want empty on clean tick", stderr.String())
+	}
+}
+
+// A panic during startup reconciliation must NOT cause run() to exit
+// or call shutdown(): the supervisor loop must survive a transient
+// bead-store failure (or the nil deref it would trigger) without
+// restarting the whole city. Regression for #663.
+//
+// Sequence: first BuildFn call fires inside the startup safeTick
+// closure and panics — safeTick recovers, trace ends Aborted via
+// defer. Because configDirty is still true, the post-startup
+// startup-poke branch invokes cr.tick(), which calls BuildFn a second
+// time; that call cancels ctx and run() exits cleanly.
+func TestCityRuntimeRun_PanicInStartupDoesNotShutdownCity(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Daemon.PatrolInterval = "1ms"
+	sp := runtime.NewFake()
+	var stdout, stderr bytes.Buffer
+
+	var buildCalls atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			n := buildCalls.Add(1)
+			if n == 1 {
+				panic("simulated dolt eof nil deref")
+			}
+			cancel()
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops:   newDrainOps(sp),
+		Rec:    events.Discard,
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = beads.NewMemStore()
+	cr.setControllerState(cs)
+
+	// Prime configDirty so the post-startup startup-poke branch fires
+	// cr.tick() and drives a second BuildFn call that cancels ctx.
+	var dirty atomic.Bool
+	dirty.Store(true)
+	cr.configDirty = &dirty
+
+	done := make(chan struct{})
+	go func() {
+		cr.run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("run did not return within 5s after panic+cancel")
+	}
+
+	if buildCalls.Load() < 2 {
+		t.Fatalf("BuildFn invoked %d time(s), want >= 2 (startup panic + startup-poke recovery)", buildCalls.Load())
+	}
+	if !strings.Contains(stderr.String(), "panicked") {
+		t.Errorf("stderr = %q, want to contain 'panicked' (safeTick must log)", stderr.String())
+	}
+}
+
+func TestCityRuntimeRun_RetriesStartupAfterRecoveredPanicBeforeStarted(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Daemon.PatrolInterval = "1ms"
+	sp := runtime.NewFake()
+	var stdout, stderr bytes.Buffer
+
+	var buildCalls atomic.Int32
+	var started atomic.Bool
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			n := buildCalls.Add(1)
+			if n == 1 {
+				panic("simulated startup panic")
+			}
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops: newDrainOps(sp),
+		Rec:  events.Discard,
+		OnStarted: func() {
+			started.Store(true)
+			cancel()
+		},
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = beads.NewMemStore()
+	cr.setControllerState(cs)
+
+	done := make(chan struct{})
+	go func() {
+		cr.run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("run did not return within 5s after startup retry")
+	}
+
+	if buildCalls.Load() < 2 {
+		t.Fatalf("BuildFn invoked %d time(s), want startup retry after recovered panic", buildCalls.Load())
+	}
+	if !started.Load() {
+		t.Fatal("OnStarted was not called after successful startup retry")
+	}
+	if !strings.Contains(stdout.String(), "City started.") {
+		t.Fatalf("stdout = %q, want started banner after retry", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "simulated startup panic") {
+		t.Fatalf("stderr = %q, want recovered startup panic log", stderr.String())
+	}
+}
+
+type panicOnceConvergenceListStore struct {
+	beads.Store
+	panicked atomic.Bool
+}
+
+func (s *panicOnceConvergenceListStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.Type == "convergence" && !s.panicked.Swap(true) {
+		panic("convergence startup list boom")
+	}
+	return s.Store.List(query)
+}
+
+type errorConvergenceListStore struct {
+	beads.Store
+}
+
+func (s *errorConvergenceListStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.Type == "convergence" {
+		return nil, fmt.Errorf("convergence list unavailable")
+	}
+	return s.Store.List(query)
+}
+
+func TestCityRuntimeRun_ConvergenceStartupErrorDoesNotBlockStarted(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Daemon.PatrolInterval = "1ms"
+	sp := runtime.NewFake()
+	store := &errorConvergenceListStore{Store: beads.NewMemStore()}
+	var stderr bytes.Buffer
+	var started atomic.Bool
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops:             newDrainOps(sp),
+		Rec:              events.Discard,
+		ConvergenceReqCh: make(chan convergenceRequest, 1),
+		OnStarted: func() {
+			started.Store(true)
+			cancel()
+		},
+		Stdout: io.Discard,
+		Stderr: &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = store
+	cr.setControllerState(cs)
+
+	done := make(chan struct{})
+	go func() {
+		cr.run(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		cancel()
+		t.Fatal("run did not return after convergence startup list error")
+	}
+	if !started.Load() {
+		t.Fatal("OnStarted was not called after non-panic convergence startup error")
+	}
+	if !strings.Contains(stderr.String(), "convergence list unavailable") {
+		t.Fatalf("stderr = %q, want convergence list error", stderr.String())
+	}
+}
+
+func TestCityRuntimeRun_RetriesConvergenceStartupUntilIndexPopulated(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	cfg.Daemon.PatrolInterval = "1ms"
+	sp := runtime.NewFake()
+	store := &panicOnceConvergenceListStore{Store: beads.NewMemStore()}
+	var stderr bytes.Buffer
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops:             newDrainOps(sp),
+		Rec:              events.Discard,
+		ConvergenceReqCh: make(chan convergenceRequest, 1),
+		Stdout:           io.Discard,
+		Stderr:           &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = store
+	cr.setControllerState(cs)
+
+	done := make(chan struct{})
+	go func() {
+		cr.run(ctx)
+		close(done)
+	}()
+
+	deadline := time.After(5 * time.Second)
+	for {
+		if cr.convStoreAdapter != nil && cr.convStoreAdapter.activeIndex != nil {
+			cancel()
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatal("convergence active index was not populated after retry")
+		case <-time.After(time.Millisecond):
+		}
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not stop after convergence retry test cancellation")
+	}
+	if !store.panicked.Load() {
+		t.Fatal("test store did not inject convergence startup panic")
+	}
+	if !strings.Contains(stderr.String(), "convergence startup list boom") {
+		t.Fatalf("stderr = %q, want recovered convergence startup panic log", stderr.String())
 	}
 }
 
