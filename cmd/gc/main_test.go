@@ -1941,6 +1941,23 @@ func TestDoInitBootstrapPreservesPersistedName(t *testing.T) {
 	}
 }
 
+func TestDoInitBootstrapWarnsWhenPersistedNameCannotBeParsed(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files[filepath.Join("/target-basename", "city.toml")] = []byte("[workspace]\nname = [\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/target-basename", defaultWizardConfig(), "", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doInit = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning: parsing persisted workspace name") {
+		t.Errorf("stderr = %q, want parse warning", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"target-basename"`) {
+		t.Errorf("stdout = %q, want basename fallback", stdout.String())
+	}
+}
+
 func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 	f := fsys.NewFake()
 	f.Files[filepath.Join("/city", "city.toml")] = []byte("[workspace]\nname = \"old-name\"\n")
@@ -1952,6 +1969,28 @@ func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "new-name") {
 		t.Errorf("stdout = %q, want name override in output", stdout.String())
+	}
+	data := f.Files[filepath.Join("/city", "city.toml")]
+	cfg, err := config.Parse(data)
+	if err != nil {
+		t.Fatalf("parsing updated city.toml: %v", err)
+	}
+	if cfg.Workspace.Name != "new-name" {
+		t.Errorf("Workspace.Name = %q, want %q", cfg.Workspace.Name, "new-name")
+	}
+}
+
+func TestDoInitBootstrapTrimsNameOverride(t *testing.T) {
+	f := fsys.NewFake()
+	f.Files[filepath.Join("/city", "city.toml")] = []byte("[workspace]\nname = \"old-name\"\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doInit(f, "/city", defaultWizardConfig(), "  new-name  ", &stdout, &stderr)
+	if code != 0 {
+		t.Errorf("doInit = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "new-name") {
+		t.Errorf("stdout = %q, want trimmed name override in output", stdout.String())
 	}
 	data := f.Files[filepath.Join("/city", "city.toml")]
 	cfg, err := config.Parse(data)
@@ -2864,7 +2903,7 @@ session_live = ["echo live"]
 	}
 	packToml := string(packData)
 	for _, want := range []string{
-		`name = "bright-lights"`,
+		`name = "placeholder"`,
 		`version = "0.1.0"`,
 		`requires_gc = ">=0.16.0"`,
 		`includes = ["../shared"]`,

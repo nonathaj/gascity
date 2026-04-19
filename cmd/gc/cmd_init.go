@@ -771,8 +771,9 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 		if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 			return code
 		}
-		if nameOverride != "" {
-			if code := overrideCityName(fs, tomlPath, nameOverride, stderr); code != 0 {
+		trimmedNameOverride := strings.TrimSpace(nameOverride)
+		if trimmedNameOverride != "" {
+			if code := overrideCityName(fs, tomlPath, trimmedNameOverride, stderr); code != 0 {
 				return code
 			}
 		}
@@ -780,14 +781,18 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 		// was supplied, so the bootstrap message reports the real city
 		// name rather than the target dir basename.
 		var persistedName string
-		if nameOverride == "" {
-			if data, err := fs.ReadFile(tomlPath); err == nil {
+		if trimmedNameOverride == "" {
+			if data, err := fs.ReadFile(tomlPath); err != nil {
+				fmt.Fprintf(stderr, "gc init: warning: reading persisted workspace name from %q: %v\n", tomlPath, err) //nolint:errcheck // best-effort stderr
+			} else {
 				if existing, perr := config.Parse(data); perr == nil {
 					persistedName = existing.Workspace.Name
+				} else {
+					fmt.Fprintf(stderr, "gc init: warning: parsing persisted workspace name from %q: %v\n", tomlPath, perr) //nolint:errcheck // best-effort stderr
 				}
 			}
 		}
-		cityName := resolveCityName(nameOverride, persistedName, cityPath)
+		cityName := resolveCityName(trimmedNameOverride, persistedName, cityPath)
 		fmt.Fprintln(stdout, "Welcome to Gas City!")                              //nolint:errcheck // best-effort stdout
 		fmt.Fprintf(stdout, "Bootstrapped city %q runtime scaffold.\n", cityName) //nolint:errcheck // best-effort stdout
 		return 0
