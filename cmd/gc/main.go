@@ -704,6 +704,10 @@ func openExistingScopeLocalFileStore(scopeRoot string) (*beads.FileStore, error)
 }
 
 func openCompatibleFileStore(scopeRoot, cityPath string) (*beads.FileStore, error) {
+	scopeRoot = resolveStoreScopeRoot(cityPath, scopeRoot)
+	if !samePath(scopeRoot, cityPath) && scopeUsesFileStoreContract(scopeRoot) {
+		return openExistingScopeLocalFileStore(scopeRoot)
+	}
 	if fileStoreUsesScopedRoots(cityPath) {
 		return openExistingScopeLocalFileStore(scopeRoot)
 	}
@@ -716,7 +720,7 @@ func openStoreAtForCity(storePath, cityPath string) (beads.Store, error) {
 		runtimeCityPath = cityForStoreDir(storePath)
 	}
 	scopeRoot := resolveStoreScopeRoot(runtimeCityPath, storePath)
-	provider := rawBeadsProvider(runtimeCityPath)
+	provider := rawBeadsProviderForScope(scopeRoot, runtimeCityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		target, err := resolveConfiguredExecStoreTarget(runtimeCityPath, scopeRoot)
 		if err != nil {

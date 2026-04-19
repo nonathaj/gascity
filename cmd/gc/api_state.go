@@ -140,11 +140,11 @@ func wrapWithCachingStore(ctx context.Context, store beads.Store, ep events.Prov
 // Mail providers are NOT built here — all mail uses the city-level store.
 // Pure function of cfg — does not read or write cs fields (safe to call unlocked).
 func (cs *controllerState) buildStores(cfg *config.City) map[string]beads.Store {
-	provider := beadsProviderFor(cfg)
+	cityProvider := rawBeadsProviderForScope(cs.cityPath, cs.cityPath)
 	stores := make(map[string]beads.Store, len(cfg.Rigs))
 
 	var sharedLegacyFileStore beads.Store
-	if provider == "file" && !fileStoreUsesScopedRoots(cs.cityPath) {
+	if cityProvider == "file" && !fileStoreUsesScopedRoots(cs.cityPath) {
 		store, err := openCompatibleFileStore(cs.cityPath, cs.cityPath)
 		if err == nil {
 			sharedLegacyFileStore = store
@@ -160,25 +160,17 @@ func (cs *controllerState) buildStores(cfg *config.City) map[string]beads.Store 
 		if strings.TrimSpace(rig.Path) == "" {
 			continue
 		}
-		store := sharedLegacyFileStore
-		if store == nil {
-			store = cs.openRigStore(provider, rig.Name, rig.Path, rig.EffectivePrefix())
+		scopeRoot := resolveStoreScopeRoot(cs.cityPath, rig.Path)
+		scopeProvider := rawBeadsProviderForScope(scopeRoot, cs.cityPath)
+		store := beads.Store(nil)
+		if sharedLegacyFileStore != nil && scopeProvider == "file" && !scopeUsesFileStoreContract(scopeRoot) {
+			store = sharedLegacyFileStore
+		} else {
+			store = cs.openRigStore(scopeProvider, rig.Name, scopeRoot, rig.EffectivePrefix())
 		}
 		stores[rig.Name] = wrapWithCachingStore(cs.cacheCtx, store, cs.eventProv)
 	}
 	return stores
-}
-
-// beadsProviderFor returns the bead store provider name from the given config.
-// Pure function — does not read controllerState fields.
-func beadsProviderFor(cfg *config.City) string {
-	if v := os.Getenv("GC_BEADS"); v != "" {
-		return v
-	}
-	if cfg.Beads.Provider != "" {
-		return cfg.Beads.Provider
-	}
-	return "bd"
 }
 
 // openRigStore creates a bead store for a rig path using the given provider.
