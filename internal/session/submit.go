@@ -265,14 +265,21 @@ func (m *Manager) waitForInterruptBoundaryLocked(ctx context.Context, b beads.Be
 // (idle-wait-after-interrupt, soft-escape interrupt, default submit,
 // etc.) consume this helper so wrapped custom aliases inherit the
 // correct family behaviour without every call site re-deriving it.
-func providerKind(b beads.Bead) string {
-	if ancestor := strings.TrimSpace(b.Metadata["builtin_ancestor"]); ancestor != "" {
+func providerKindFromMetadata(meta map[string]string, fallback string) string {
+	if ancestor := strings.TrimSpace(meta["builtin_ancestor"]); ancestor != "" {
 		return ancestor
 	}
-	if kind := strings.TrimSpace(b.Metadata["provider_kind"]); kind != "" {
+	if kind := strings.TrimSpace(meta["provider_kind"]); kind != "" {
 		return kind
 	}
-	return strings.TrimSpace(b.Metadata["provider"])
+	if provider := strings.TrimSpace(meta["provider"]); provider != "" {
+		return provider
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func providerKind(b beads.Bead) string {
+	return providerKindFromMetadata(b.Metadata, "")
 }
 
 func usesSoftEscapeInterrupt(b beads.Bead) bool {

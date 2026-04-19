@@ -248,8 +248,8 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 					"agent_name":     sessionQualifiedName,
 					"session_origin": "manual",
 				}
-				if resolved.Kind != "" && resolved.Kind != resolved.Name {
-					kindMeta["provider_kind"] = resolved.Kind
+				if family := resolvedProviderFamilyMetadata(resolved); family != "" {
+					kindMeta["provider_kind"] = family
 				}
 				if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 					kindMeta["builtin_ancestor"] = resolved.BuiltinAncestor
@@ -315,8 +315,8 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 		"agent_name":     sessionQualifiedName,
 		"session_origin": "manual",
 	}
-	if resolved.Kind != "" && resolved.Kind != resolved.Name {
-		kindMeta["provider_kind"] = resolved.Kind
+	if family := resolvedProviderFamilyMetadata(resolved); family != "" {
+		kindMeta["provider_kind"] = family
 	}
 	if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 		kindMeta["builtin_ancestor"] = resolved.BuiltinAncestor
@@ -854,7 +854,8 @@ func buildResumeCommand(cityPath string, cfg *config.City, info session.Info, se
 		// continue so `gc session attach` still starts the agent. The strict
 		// path is resolveTemplate at reconciler time, which fails agent
 		// creation on projection errors.
-		sa, saErr := ensureClaudeSettingsArgs(fsys.OSFS{}, cityPath, resolved.Name, stderr)
+		providerFamily := resolvedProviderLaunchFamily(resolved)
+		sa, saErr := ensureClaudeSettingsArgs(fsys.OSFS{}, cityPath, providerFamily, stderr)
 		if saErr == nil && sa != "" {
 			command = command + " " + sa
 		} else if saErr != nil {
@@ -866,7 +867,7 @@ func buildResumeCommand(cityPath string, cfg *config.City, info session.Info, se
 			// with a malformed override, attach therefore launches without
 			// --settings; on an older city with a readable prior projection,
 			// attach uses that projection.
-			if probe := settingsArgsIfReadable(cityPath, resolved.Name); probe != "" {
+			if probe := settingsArgsIfReadable(cityPath, providerFamily); probe != "" {
 				command = command + " " + probe
 			}
 		}

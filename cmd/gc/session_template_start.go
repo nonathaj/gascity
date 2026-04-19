@@ -138,8 +138,8 @@ func materializeSessionForTemplateWithOptions(
 		for k, v := range opts.materializeMetadata {
 			extraMeta[k] = v
 		}
-		if resolved.Kind != "" && resolved.Kind != resolved.Name {
-			extraMeta["provider_kind"] = resolved.Kind
+		if family := resolvedProviderFamilyMetadata(resolved); family != "" {
+			extraMeta["provider_kind"] = family
 		}
 		// Stamp BuiltinAncestor so downstream family branches
 		// (idle-wait-after-interrupt, soft-escape, default submit) can

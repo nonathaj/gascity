@@ -13,6 +13,16 @@ func TestBuiltinFamily_DirectBuiltinReturnsItself(t *testing.T) {
 	}
 }
 
+func TestBuiltinFamily_ExplicitEmptyShadowedBuiltinHasNoFamily(t *testing.T) {
+	empty := ""
+	cityProviders := map[string]ProviderSpec{
+		"codex": {Base: &empty, Command: "codex"},
+	}
+	if got := BuiltinFamily("codex", cityProviders); got != "" {
+		t.Errorf("BuiltinFamily(shadowed codex base empty) = %q, want empty", got)
+	}
+}
+
 // TestBuiltinFamily_UnknownNameReturnsEmpty ensures truly unknown names
 // report "" rather than silently widening the match.
 func TestBuiltinFamily_UnknownNameReturnsEmpty(t *testing.T) {

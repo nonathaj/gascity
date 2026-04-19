@@ -459,7 +459,7 @@ resolved cache:
 - `/v0/config/explain`
   ([`handler_config.go:124`](../../internal/api/handler_config.go#L124))
 - Provider CRUD
-  ([`handler_provider_crud.go:10`](../../internal/api/handler_provider_crud.go#L10),
+  ([`huma_handlers_providers.go:131`](../../internal/api/huma_handlers_providers.go#L131),
   [`configedit.go:647`](../../internal/configedit/configedit.go#L647))
 - `/v0/config/explain` per-provider form (new: `--provider <name>`
   query parameter)

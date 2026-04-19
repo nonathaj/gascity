@@ -34,20 +34,18 @@ func BuildResolvedProviderCache(cfg *City) error {
 
 	// Build into a local map; assign atomically at the end.
 	next := make(map[string]ResolvedProvider, len(cfg.Providers))
-	var firstErr error
+	var errs []error
 	for name, spec := range cfg.Providers {
 		resolved, err := ResolveProviderChain(name, spec, cfg.Providers)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("resolving provider %q: %w", name, err)
-			}
+			errs = append(errs, fmt.Errorf("resolving provider %q: %w", name, err))
 			continue
 		}
 		next[name] = resolved
 	}
-	if firstErr != nil {
+	if len(errs) > 0 {
 		// Do not overwrite the existing cache on error.
-		return firstErr
+		return errors.Join(errs...)
 	}
 	cfg.ResolvedProviders = next
 	return nil

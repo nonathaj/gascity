@@ -5,29 +5,24 @@
 package hooks
 
 import (
+	"bytes"
 	"embed"
+	"errors"
 	"fmt"
+	iofs "io/fs"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/gastownhall/gascity/internal/bootstrap/packs/core"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/overlay"
 )
 
 //go:embed config/*
 var configFS embed.FS
-
-var resolveGCBinary = func() string {
-	if exe, err := os.Executable(); err == nil && exe != "" {
-		return exe
-	}
-	if path, err := exec.LookPath("gc"); err == nil && path != "" {
-		return path
-	}
-	return "gc"
-}
 
 // supported lists provider names that have hook support.
 var supported = []string{"claude", "codex", "gemini", "opencode", "copilot", "cursor", "pi", "omp"}
@@ -122,20 +117,8 @@ func InstallWithResolver(fs fsys.FS, cityDir, workDir string, providers []string
 		switch family {
 		case "claude":
 			err = installClaude(fs, cityDir)
-		case "codex":
-			err = installCodex(fs, workDir)
-		case "gemini":
-			err = installGemini(fs, workDir)
-		case "opencode":
-			err = installOpenCode(fs, workDir)
-		case "copilot":
-			err = installCopilot(fs, workDir)
-		case "cursor":
-			err = installCursor(fs, workDir)
-		case "pi":
-			err = installPi(fs, workDir)
-		case "omp":
-			err = installOmp(fs, workDir)
+		case "codex", "gemini", "opencode", "copilot", "cursor", "pi", "omp":
+			err = installOverlayManaged(fs, workDir, family)
 		default:
 			return fmt.Errorf("unsupported hook provider %q", p)
 		}
@@ -146,106 +129,71 @@ func InstallWithResolver(fs fsys.FS, cityDir, workDir string, providers []string
 	return nil
 }
 
-// installClaude writes both the source hook file (hooks/claude.json) and the
-// runtime settings file (.gc/settings.json) in the city directory.
+func installOverlayManaged(fs fsys.FS, workDir, provider string) error {
+	if strings.TrimSpace(workDir) == "" {
+		return nil
+	}
+	base := path.Join("overlay", "per-provider", provider)
+	if _, err := iofs.Stat(core.PackFS, base); err != nil {
+		return fmt.Errorf("provider overlay %q: %w", provider, err)
+	}
+	return iofs.WalkDir(core.PackFS, base, func(name string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if name == base || d.IsDir() {
+			return nil
+		}
+		rel := strings.TrimPrefix(name, base+"/")
+		data, err := iofs.ReadFile(core.PackFS, name)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", name, err)
+		}
+		dst := filepath.Join(workDir, filepath.FromSlash(rel))
+		return writeEmbeddedManaged(fs, dst, data, nil)
+	})
+}
+
+// installClaude writes the runtime settings file (.gc/settings.json) in the
+// city directory. The legacy hooks/claude.json file remains user-owned unless
+// gc can prove it is safe to update a stale generated copy.
 //
-// The session command path always points at .gc/settings.json, but older code
-// and tests still treat hooks/claude.json as the canonical source file. When
-// either file already exists, use its content to seed the missing counterpart
-// so existing custom hook settings are preserved.
+// Source precedence for user-authored Claude settings:
+//  1. <city>/.claude/settings.json
+//  2. <city>/hooks/claude.json
+//  3. <city>/.gc/settings.json
+//
+// The selected source is merged over embedded defaults so new default hooks
+// still land for users with custom settings.
 func installClaude(fs fsys.FS, cityDir string) error {
 	hookDst := filepath.Join(cityDir, citylayout.ClaudeHookFile)
 	runtimeDst := filepath.Join(cityDir, ".gc", "settings.json")
-	embedded, err := readEmbedded("config/claude.json")
+	data, sourceKind, err := desiredClaudeSettings(fs, cityDir)
 	if err != nil {
 		return err
 	}
 
+	if sourceKind == claudeSettingsSourceLegacyHook || isStaleHookFile(fs, hookDst) {
+		if err := writeManagedFile(fs, hookDst, data, preserveUnreadable); err != nil {
+			return err
+		}
+	}
+	return writeManagedFile(fs, runtimeDst, data, forceOverwrite)
+}
+
+type writeManagedFilePolicy int
+
+const (
+	preserveUnreadable writeManagedFilePolicy = iota
+	forceOverwrite
+)
+
+func isStaleHookFile(fs fsys.FS, hookDst string) bool {
 	data, err := fs.ReadFile(hookDst)
 	if err != nil {
-		data, err = fs.ReadFile(runtimeDst)
-		if err != nil {
-			data = embedded
-		} else if claudeFileNeedsUpgrade(data) {
-			data = embedded
-		}
-	} else if claudeFileNeedsUpgrade(data) {
-		data = embedded
+		return false
 	}
-
-	if err := writeEmbeddedManaged(fs, hookDst, data, claudeFileNeedsUpgrade); err != nil {
-		return err
-	}
-	return writeEmbeddedManaged(fs, runtimeDst, data, claudeFileNeedsUpgrade)
-}
-
-// installGemini writes .gemini/settings.json in the working directory.
-func installGemini(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".gemini", "settings.json")
-	data, err := readEmbedded("config/gemini.json")
-	if err != nil {
-		return err
-	}
-	data = []byte(strings.ReplaceAll(string(data), "{{GC_BIN}}", resolveGCBinary()))
-	return writeEmbeddedManaged(fs, dst, data, geminiFileNeedsUpgrade)
-}
-
-// installCodex writes .codex/hooks.json in the working directory.
-func installCodex(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".codex", "hooks.json")
-	return writeEmbedded(fs, "config/codex.json", dst)
-}
-
-// installOpenCode writes .opencode/plugins/gascity.js in the working directory.
-func installOpenCode(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".opencode", "plugins", "gascity.js")
-	data, err := readEmbedded("config/opencode.js")
-	if err != nil {
-		return err
-	}
-	return writeEmbeddedManaged(fs, dst, data, opencodeFileNeedsUpgrade)
-}
-
-// installCopilot writes executable Copilot hooks plus a markdown companion file.
-func installCopilot(fs fsys.FS, workDir string) error {
-	hooksPath := filepath.Join(workDir, ".github", "hooks", "gascity.json")
-	if err := writeEmbedded(fs, "config/copilot.json", hooksPath); err != nil {
-		return err
-	}
-	instructionsPath := filepath.Join(workDir, ".github", "copilot-instructions.md")
-	return writeEmbedded(fs, "config/copilot.md", instructionsPath)
-}
-
-// installCursor writes .cursor/hooks.json in the working directory.
-func installCursor(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".cursor", "hooks.json")
-	data, err := readEmbedded("config/cursor.json")
-	if err != nil {
-		return err
-	}
-	return writeEmbeddedManaged(fs, dst, data, cursorFileNeedsUpgrade)
-}
-
-// installPi writes .pi/extensions/gc-hooks.js in the working directory.
-func installPi(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".pi", "extensions", "gc-hooks.js")
-	return writeEmbedded(fs, "config/pi.js", dst)
-}
-
-// installOmp writes .omp/hooks/gc-hook.ts in the working directory.
-func installOmp(fs fsys.FS, workDir string) error {
-	dst := filepath.Join(workDir, ".omp", "hooks", "gc-hook.ts")
-	return writeEmbedded(fs, "config/omp.ts", dst)
-}
-
-// writeEmbedded reads an embedded file and writes it to dst, creating parent
-// directories as needed. Skips if dst already exists.
-func writeEmbedded(fs fsys.FS, embedPath, dst string) error {
-	data, err := readEmbedded(embedPath)
-	if err != nil {
-		return err
-	}
-	return writeEmbeddedManaged(fs, dst, data, nil)
+	return claudeFileNeedsUpgrade(data)
 }
 
 func readEmbedded(embedPath ...string) ([]byte, error) {
@@ -277,6 +225,129 @@ func writeEmbeddedManaged(fs fsys.FS, dst string, data []byte, needsUpgrade func
 
 	if err := fs.WriteFile(dst, data, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", dst, err)
+	}
+	return nil
+}
+
+type claudeSettingsSourceKind int
+
+const (
+	claudeSettingsSourceNone claudeSettingsSourceKind = iota
+	claudeSettingsSourceCityDotClaude
+	claudeSettingsSourceLegacyHook
+	claudeSettingsSourceLegacyRuntime
+)
+
+func desiredClaudeSettings(fs fsys.FS, cityDir string) ([]byte, claudeSettingsSourceKind, error) {
+	base, err := readEmbedded("config/claude.json")
+	if err != nil {
+		return nil, claudeSettingsSourceNone, err
+	}
+
+	overridePath, overrideData, sourceKind, err := readClaudeSettingsOverride(fs, cityDir, base)
+	if err != nil {
+		return nil, claudeSettingsSourceNone, err
+	}
+	if sourceKind == claudeSettingsSourceNone {
+		return base, claudeSettingsSourceNone, nil
+	}
+	if len(overrideData) == 0 {
+		if sourceKind == claudeSettingsSourceCityDotClaude {
+			return nil, claudeSettingsSourceNone, fmt.Errorf("empty Claude settings from %s (file present but zero bytes)", overridePath)
+		}
+		return base, claudeSettingsSourceNone, nil
+	}
+
+	merged, err := overlay.MergeSettingsJSON(base, overrideData)
+	if err != nil {
+		return nil, claudeSettingsSourceNone, fmt.Errorf("merging Claude settings from %s: %w", overridePath, err)
+	}
+	return merged, sourceKind, nil
+}
+
+func readClaudeSettingsOverride(fs fsys.FS, cityDir string, base []byte) (string, []byte, claudeSettingsSourceKind, error) {
+	preferredPath := citylayout.ClaudeSettingsPath(cityDir)
+	preferredState, preferredData, preferredErr := readClaudeSettingsCandidate(fs, preferredPath)
+	switch preferredState {
+	case candidateFound:
+		return preferredPath, preferredData, claudeSettingsSourceCityDotClaude, nil
+	case candidateUnreadable:
+		return "", nil, claudeSettingsSourceNone, fmt.Errorf("reading %s: %w", preferredPath, preferredErr)
+	}
+
+	hookPath := citylayout.ClaudeHookFilePath(cityDir)
+	runtimePath := filepath.Join(cityDir, ".gc", "settings.json")
+	hookState, hookData, _ := readClaudeSettingsCandidate(fs, hookPath)
+	runtimeState, runtimeData, _ := readClaudeSettingsCandidate(fs, runtimePath)
+
+	if hookState == candidateUnreadable {
+		return "", nil, claudeSettingsSourceNone, nil
+	}
+
+	hookExists := hookState == candidateFound
+	runtimeExists := runtimeState == candidateFound
+	if hookExists &&
+		(!runtimeExists || !bytes.Equal(hookData, runtimeData)) &&
+		!claudeFileNeedsUpgrade(hookData) {
+		return hookPath, hookData, claudeSettingsSourceLegacyHook, nil
+	}
+	if runtimeExists &&
+		!bytes.Equal(runtimeData, base) &&
+		!claudeFileNeedsUpgrade(runtimeData) {
+		return runtimePath, runtimeData, claudeSettingsSourceLegacyRuntime, nil
+	}
+	return "", nil, claudeSettingsSourceNone, nil
+}
+
+type claudeCandidateState int
+
+const (
+	candidateMissing claudeCandidateState = iota
+	candidateFound
+	candidateUnreadable
+)
+
+func readClaudeSettingsCandidate(fs fsys.FS, path string) (claudeCandidateState, []byte, error) {
+	data, err := fs.ReadFile(path)
+	if err == nil {
+		return candidateFound, data, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return candidateMissing, nil, nil
+	}
+	return candidateUnreadable, nil, err
+}
+
+func writeManagedFile(fs fsys.FS, dst string, data []byte, policy writeManagedFilePolicy) error {
+	existing, readErr := fs.ReadFile(dst)
+	if readErr == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	if readErr != nil {
+		if _, statErr := fs.Stat(dst); statErr == nil && policy == preserveUnreadable {
+			return nil
+		}
+	}
+
+	dir := filepath.Dir(dst)
+	if err := fs.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating %s: %w", dir, err)
+	}
+	if err := fs.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", dst, err)
+	}
+
+	if policy == forceOverwrite && readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		info, err := fs.Stat(dst)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", dst, err)
+		}
+		currentMode := info.Mode().Perm()
+		if currentMode&0o400 == 0 {
+			if err := fs.Chmod(dst, currentMode|0o400); err != nil {
+				return fmt.Errorf("chmod %s: %w", dst, err)
+			}
+		}
 	}
 	return nil
 }
@@ -327,7 +398,12 @@ func opencodeFileNeedsUpgrade(existing []byte) bool {
 }
 
 func claudeFileNeedsUpgrade(existing []byte) bool {
-	return matchesStaleManagedFile(existing, "config/claude.json")
+	current, err := readEmbedded("config/claude.json")
+	if err != nil {
+		return false
+	}
+	stale := strings.Replace(string(current), `gc handoff \"context cycle\"`, `gc prime --hook`, 1)
+	return string(existing) == stale
 }
 
 func cursorFileNeedsUpgrade(existing []byte) bool {

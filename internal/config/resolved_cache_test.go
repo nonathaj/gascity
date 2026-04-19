@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -68,6 +69,29 @@ func TestBuildResolvedProviderCache_CycleLeavesOldCache(t *testing.T) {
 	}
 	if _, ok := prior["sentinel"]; !ok {
 		t.Errorf("sentinel entry missing from preserved cache")
+	}
+}
+
+func TestBuildResolvedProviderCache_ReportsAllChainErrors(t *testing.T) {
+	aBase := "provider:b"
+	bBase := "provider:a"
+	missingBase := "provider:missing"
+	cfg := &City{
+		Providers: map[string]ProviderSpec{
+			"a":       {Base: &aBase, Command: "a"},
+			"b":       {Base: &bBase, Command: "b"},
+			"missing": {Base: &missingBase, Command: "missing"},
+		},
+	}
+	err := BuildResolvedProviderCache(cfg)
+	if err == nil {
+		t.Fatal("expected cache build error")
+	}
+	msg := err.Error()
+	for _, want := range []string{`resolving provider "a"`, `resolving provider "b"`, `resolving provider "missing"`} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q missing %q", msg, want)
+		}
 	}
 }
 

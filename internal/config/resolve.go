@@ -129,13 +129,16 @@ func lookupProvider(name string, cityProviders map[string]ProviderSpec, lookPath
 					return nil, fmt.Errorf("%w: provider %q command %q", ErrProviderNotInPATH, name, spec.pathCheckBinary())
 				}
 			}
-			// Phase 2+: if the spec has explicit Base declared (non-empty),
+			// Phase 2+: if the spec has explicit Base declared,
 			// resolve via the chain walker so inherited fields propagate.
 			// Wrapper providers (aimux-wrapped codex) rely on this path to
 			// pick up PermissionModes / OptionsSchema / ReadyDelayMs from
-			// the built-in ancestor. base = "" (explicit empty) is
-			// standalone opt-out — falls through to legacy branches.
-			if spec.Base != nil && strings.TrimSpace(*spec.Base) != "" {
+			// the built-in ancestor. base = "" is an explicit standalone
+			// opt-out and must not fall through to legacy auto-inheritance.
+			if spec.Base != nil {
+				if strings.TrimSpace(*spec.Base) == "" {
+					return &spec, nil
+				}
 				resolved, err := ResolveProviderChain(name, spec, cityProviders)
 				if err != nil {
 					return nil, err
@@ -190,9 +193,6 @@ func MergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 		// through the merge; we do not deep-copy the underlying string.
 		b := *city.Base
 		result.Base = &b
-	}
-	if city.ArgsAppend != nil {
-		result.ArgsAppend = city.ArgsAppend
 	}
 	if city.OptionsSchemaMerge != "" {
 		result.OptionsSchemaMerge = city.OptionsSchemaMerge
@@ -255,11 +255,21 @@ func MergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 	if city.Args != nil {
 		result.Args = city.Args
 	}
+	if city.ArgsAppend != nil {
+		result.ArgsAppend = append(append([]string(nil), base.ArgsAppend...), city.ArgsAppend...)
+		result.Args = append(append([]string(nil), result.Args...), city.ArgsAppend...)
+	}
 	if city.ProcessNames != nil {
 		result.ProcessNames = city.ProcessNames
 	}
+	pruneOptionDefaults := map[string]bool{}
 	if city.OptionsSchema != nil {
-		result.OptionsSchema = city.OptionsSchema
+		if city.OptionsSchemaMerge == "by_key" {
+			result.OptionsSchema, pruneOptionDefaults = mergeOptionsSchemaByKey(base.OptionsSchema, city.OptionsSchema)
+		} else {
+			result.OptionsSchema = city.OptionsSchema
+			pruneOptionDefaults = optionKeysRemovedByReplacement(base.OptionsSchema, city.OptionsSchema)
+		}
 	}
 	if city.PrintArgs != nil {
 		result.PrintArgs = city.PrintArgs
@@ -298,8 +308,76 @@ func MergeProviderOverBuiltin(base, city ProviderSpec) ProviderSpec {
 		}
 		result.OptionDefaults = merged
 	}
+	if len(pruneOptionDefaults) > 0 && result.OptionDefaults != nil {
+		merged := make(map[string]string, len(result.OptionDefaults))
+		for k, v := range result.OptionDefaults {
+			if !pruneOptionDefaults[k] {
+				merged[k] = v
+			}
+		}
+		result.OptionDefaults = merged
+	}
 
 	return result
+}
+
+func mergeOptionsSchemaByKey(base, city []ProviderOption) ([]ProviderOption, map[string]bool) {
+	out := make([]ProviderOption, 0, len(base)+len(city))
+	index := make(map[string]int, len(base)+len(city))
+	pruned := make(map[string]bool)
+	for _, opt := range base {
+		if opt.Key == "" {
+			out = append(out, opt)
+			continue
+		}
+		index[opt.Key] = len(out)
+		out = append(out, opt)
+	}
+	for _, opt := range city {
+		if opt.Omit {
+			if idx, ok := index[opt.Key]; ok {
+				out = append(out[:idx], out[idx+1:]...)
+				delete(index, opt.Key)
+				for k, v := range index {
+					if v > idx {
+						index[k] = v - 1
+					}
+				}
+			}
+			if opt.Key != "" {
+				pruned[opt.Key] = true
+			}
+			continue
+		}
+		if idx, ok := index[opt.Key]; ok && opt.Key != "" {
+			out[idx] = opt
+			continue
+		}
+		if opt.Key != "" {
+			index[opt.Key] = len(out)
+		}
+		out = append(out, opt)
+	}
+	return out, pruned
+}
+
+func optionKeysRemovedByReplacement(base, replacement []ProviderOption) map[string]bool {
+	if len(base) == 0 {
+		return nil
+	}
+	kept := make(map[string]bool, len(replacement))
+	for _, opt := range replacement {
+		if opt.Key != "" {
+			kept[opt.Key] = true
+		}
+	}
+	removed := make(map[string]bool)
+	for _, opt := range base {
+		if opt.Key != "" && !kept[opt.Key] {
+			removed[opt.Key] = true
+		}
+	}
+	return removed
 }
 
 // resolveProviderKind determines the canonical builtin provider name for a
@@ -342,35 +420,36 @@ func resolveProviderKind(name string, cityProviders map[string]ProviderSpec) str
 // be recognised as claude-family.
 func BuiltinFamily(name string, cityProviders map[string]ProviderSpec) string {
 	builtins := BuiltinProviders()
-	// Direct built-in match.
-	if _, ok := builtins[name]; ok {
-		return name
-	}
-	if cityProviders == nil {
-		return ""
-	}
-	spec, ok := cityProviders[name]
-	if !ok {
-		return ""
-	}
-	// Explicit inheritance declaration: walk the chain to find the
-	// nearest built-in hop (may be unreachable on cycles or unknown
-	// bases, in which case we report "" rather than guessing).
-	if spec.Base != nil {
-		resolved, err := ResolveProviderChain(name, spec, cityProviders)
-		if err != nil {
+	if cityProviders != nil {
+		if spec, ok := cityProviders[name]; ok {
+			// A city provider with an explicit base declaration owns its
+			// family identity, even when it shadows a built-in name.
+			if spec.Base != nil {
+				if strings.TrimSpace(*spec.Base) == "" {
+					return ""
+				}
+				resolved, err := ResolveProviderChain(name, spec, cityProviders)
+				if err != nil {
+					return ""
+				}
+				return resolved.BuiltinAncestor
+			}
+			// Phase A legacy auto-inheritance: no `base` declared. Same-name
+			// shadowing and command-match both retain the legacy built-in family.
+			if _, ok := builtins[name]; ok {
+				return name
+			}
+			if spec.Command != "" {
+				if _, ok := builtins[spec.Command]; ok {
+					return spec.Command
+				}
+			}
 			return ""
 		}
-		return resolved.BuiltinAncestor
 	}
-	// Phase A legacy auto-inheritance: no `base` declared — a same-name
-	// match is already covered above, so check command-match next. This
-	// keeps legacy [providers.fast] command = "claude" recognised as
-	// claude-family without requiring users to add base = "builtin:claude".
-	if spec.Command != "" {
-		if _, ok := builtins[spec.Command]; ok {
-			return spec.Command
-		}
+	// Direct built-in match when there is no city-level shadowing provider.
+	if _, ok := builtins[name]; ok {
+		return name
 	}
 	return ""
 }
@@ -589,18 +668,19 @@ func resolvedChainToSpec(r ResolvedProvider, leaf ProviderSpec) ProviderSpec {
 	if r.ProcessNames != nil {
 		out.ProcessNames = append([]string(nil), r.ProcessNames...)
 	}
-	// Tri-state *bool: preserve from leaf if set; else fold from resolved bool.
-	if leaf.EmitsPermissionWarning == nil && r.EmitsPermissionWarning {
-		t := true
-		out.EmitsPermissionWarning = &t
+	// Tri-state *bool: preserve from leaf if set; else fold from the
+	// resolved value only when some chain layer explicitly contributed it.
+	if leaf.EmitsPermissionWarning == nil && providerBoolFieldSet(r, "emits_permission_warning") {
+		v := r.EmitsPermissionWarning
+		out.EmitsPermissionWarning = &v
 	}
-	if leaf.SupportsACP == nil && r.SupportsACP {
-		t := true
-		out.SupportsACP = &t
+	if leaf.SupportsACP == nil && providerBoolFieldSet(r, "supports_acp") {
+		v := r.SupportsACP
+		out.SupportsACP = &v
 	}
-	if leaf.SupportsHooks == nil && r.SupportsHooks {
-		t := true
-		out.SupportsHooks = &t
+	if leaf.SupportsHooks == nil && providerBoolFieldSet(r, "supports_hooks") {
+		v := r.SupportsHooks
+		out.SupportsHooks = &v
 	}
 	if r.InstructionsFile != "" {
 		out.InstructionsFile = r.InstructionsFile
@@ -652,4 +732,12 @@ func resolvedChainToSpec(r ResolvedProvider, leaf ProviderSpec) ProviderSpec {
 		}
 	}
 	return out
+}
+
+func providerBoolFieldSet(r ResolvedProvider, field string) bool {
+	if r.Provenance.FieldLayer == nil {
+		return false
+	}
+	_, ok := r.Provenance.FieldLayer[field]
+	return ok
 }

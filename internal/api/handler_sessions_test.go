@@ -1268,6 +1268,53 @@ func TestMaterializeNamedSession_RebrandedSingletonKeepsTemplateWorkDirIdentity(
 	}
 }
 
+func TestMaterializeNamedSessionStampsProviderFamilyMetadata(t *testing.T) {
+	fs := newSessionFakeState(t)
+	base := "builtin:claude"
+	fs.cfg.Agents = []config.Agent{{
+		Name:              "worker",
+		Dir:               "myrig",
+		Provider:          "claude-max",
+		MaxActiveSessions: intPtr(1),
+	}}
+	fs.cfg.Providers = map[string]config.ProviderSpec{
+		"claude-max": {Base: &base},
+	}
+	srv := New(fs)
+
+	spec, ok, err := srv.findNamedSessionSpecForTarget(fs.cityBeadStore, "myrig/worker")
+	if err != nil {
+		t.Fatalf("findNamedSessionSpecForTarget: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected named session spec")
+	}
+	id, err := srv.materializeNamedSession(fs.cityBeadStore, spec)
+	if err != nil {
+		t.Fatalf("materializeNamedSession: %v", err)
+	}
+	bead, err := fs.cityBeadStore.Get(id)
+	if err != nil {
+		t.Fatalf("get bead: %v", err)
+	}
+	if got := bead.Metadata["provider"]; got != "claude-max" {
+		t.Fatalf("provider = %q, want claude-max", got)
+	}
+	if got := bead.Metadata["provider_kind"]; got != "claude" {
+		t.Fatalf("provider_kind = %q, want claude", got)
+	}
+	if got := bead.Metadata["builtin_ancestor"]; got != "claude" {
+		t.Fatalf("builtin_ancestor = %q, want claude", got)
+	}
+	cfg := fs.sp.LastStartConfig(bead.Metadata["session_name"])
+	if cfg == nil {
+		t.Fatalf("Start call not recorded: %#v", fs.sp.Calls)
+	}
+	if got := cfg.Env["GC_PROVIDER"]; got != "claude" {
+		t.Fatalf("GC_PROVIDER = %q, want claude", got)
+	}
+}
+
 func TestHandleProviderSessionCreateWithMessageUsesProviderDefaultNudge(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)

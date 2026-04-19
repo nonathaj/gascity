@@ -563,6 +563,29 @@ func TestLookupProviderBaseChainIntegration(t *testing.T) {
 	}
 }
 
+func TestLookupProviderExplicitEmptyBaseOptsOutOfLegacyMerge(t *testing.T) {
+	empty := ""
+	city := map[string]ProviderSpec{
+		"codex": {
+			Base:    &empty,
+			Command: "codex",
+		},
+	}
+	spec, err := lookupProvider("codex", city, lookPathAll)
+	if err != nil {
+		t.Fatalf("lookupProvider: %v", err)
+	}
+	if spec.Base == nil || *spec.Base != "" {
+		t.Fatalf("Base = %v, want explicit empty", spec.Base)
+	}
+	if len(spec.PermissionModes) != 0 {
+		t.Errorf("explicit base=\"\" should not inherit PermissionModes, got %v", spec.PermissionModes)
+	}
+	if len(spec.OptionsSchema) != 0 {
+		t.Errorf("explicit base=\"\" should not inherit OptionsSchema, got %v", spec.OptionsSchema)
+	}
+}
+
 // TestResolveProviderBaseChainEmitsDangerousBypass verifies that a
 // wrapped codex provider with base = "builtin:codex" produces a
 // ResolvedProvider whose ResolveDefaultArgs() includes
@@ -601,6 +624,75 @@ func TestResolveProviderBaseChainEmitsDangerousBypass(t *testing.T) {
 	if !found {
 		t.Errorf("ResolveDefaultArgs() = %v, missing %q — session would hang on first sandboxed command", args, want)
 	}
+}
+
+func TestResolveProviderChainArgsAppendAffectsResolvedArgs(t *testing.T) {
+	custom := map[string]ProviderSpec{
+		"codex": {
+			Base:          basePtr("builtin:codex"),
+			Command:       "aimux",
+			Args:          []string{"run", "codex", "--"},
+			ResumeCommand: "aimux run codex -- resume {{.SessionKey}}",
+		},
+		"codex-max": {
+			Base:       basePtr("codex"),
+			ArgsAppend: []string{"-m", "gpt-5.4"},
+		},
+	}
+	resolved, err := ResolveProviderChain("codex-max", custom["codex-max"], custom)
+	if err != nil {
+		t.Fatalf("ResolveProviderChain: %v", err)
+	}
+	want := []string{"run", "codex", "--", "-m", "gpt-5.4"}
+	if !reflect.DeepEqual(resolved.Args, want) {
+		t.Fatalf("Args = %v, want %v", resolved.Args, want)
+	}
+}
+
+func TestMergeProviderOverBuiltinOptionsSchemaByKeyAndOmit(t *testing.T) {
+	base := ProviderSpec{
+		OptionsSchema: []ProviderOption{
+			{Key: "model", Label: "Model", Default: "old"},
+			{Key: "permission_mode", Label: "Permission", Default: "plan"},
+		},
+		OptionDefaults: map[string]string{
+			"model":           "old",
+			"permission_mode": "plan",
+		},
+	}
+	city := ProviderSpec{
+		OptionsSchemaMerge: "by_key",
+		OptionsSchema: []ProviderOption{
+			{Key: "model", Label: "Model", Default: "new"},
+			{Key: "permission_mode", Omit: true},
+			{Key: "effort", Label: "Effort", Default: "high"},
+		},
+		OptionDefaults: map[string]string{
+			"model":  "new",
+			"effort": "high",
+		},
+	}
+	merged := MergeProviderOverBuiltin(base, city)
+	if got := optionKeys(merged.OptionsSchema); !reflect.DeepEqual(got, []string{"model", "effort"}) {
+		t.Fatalf("option keys = %v, want [model effort]", got)
+	}
+	if merged.OptionsSchema[0].Default != "new" {
+		t.Errorf("model default = %q, want new", merged.OptionsSchema[0].Default)
+	}
+	if _, ok := merged.OptionDefaults["permission_mode"]; ok {
+		t.Errorf("omitted option default survived: %v", merged.OptionDefaults)
+	}
+	if got := merged.OptionDefaults["effort"]; got != "high" {
+		t.Errorf("effort default = %q, want high", got)
+	}
+}
+
+func optionKeys(opts []ProviderOption) []string {
+	keys := make([]string, 0, len(opts))
+	for _, opt := range opts {
+		keys = append(keys, opt.Key)
+	}
+	return keys
 }
 
 func TestLookupProviderUnknown(t *testing.T) {

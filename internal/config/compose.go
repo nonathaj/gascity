@@ -475,9 +475,7 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	// cache cannot be built, emit a warning and leave the cache nil —
 	// callers can still fall back to ResolveProvider per lookup.
 	if err := BuildResolvedProviderCache(root); err != nil {
-		prov.Warnings = append(prov.Warnings, fmt.Sprintf(
-			"%s: provider cache build failed: %v (runtime will fall back to per-call resolution)",
-			path, err))
+		return nil, nil, fmt.Errorf("%s: provider cache build failed: %w", path, err)
 	}
 
 	// Load namepool files for pool agents.

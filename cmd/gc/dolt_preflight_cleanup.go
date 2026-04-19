@@ -15,6 +15,7 @@ import (
 )
 
 var managedDoltPreflightCleanupFn = preflightManagedDoltCleanup
+var fileOpenCheckTimeout = 10 * time.Second
 
 const managedDoltLsofTimeout = 500 * time.Millisecond
 

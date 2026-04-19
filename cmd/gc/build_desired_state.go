@@ -1205,7 +1205,7 @@ func installAgentSideEffects(bp *agentBuildParams, cfgAgent *config.Agent, tp Te
 	// filesystem write on every reconciler tick.
 	ih := config.ResolveInstallHooks(cfgAgent, bp.workspace)
 	if tp.ResolvedProvider != nil {
-		family := config.BuiltinFamily(tp.ResolvedProvider.Name, bp.providers)
+		family := resolvedProviderLaunchFamily(tp.ResolvedProvider)
 		if family == "claude" || tp.ResolvedProvider.Name == "claude" {
 			ih = hooksWithoutClaude(ih)
 		}

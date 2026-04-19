@@ -544,8 +544,9 @@ func TestCompileScopedWorkCarriesScopeAndCleanupMetadata(t *testing.T) {
 // the real tooling formula used by the bugflow workflow and asserts
 // the teardown retry control carries a blocks dep on its attempt.
 func TestCompileBugReportFlowV2(t *testing.T) {
-	FormulaV2Enabled = true
-	t.Cleanup(func() { FormulaV2Enabled = false })
+	prev := IsFormulaV2Enabled()
+	SetFormulaV2Enabled(true)
+	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
 
 	const toolingPath = "/home/ubuntu/tooling/formulas"
 	if _, err := os.Stat(filepath.Join(toolingPath, "mol-bug-report-flow-v2.formula.toml")); err != nil {
@@ -606,8 +607,9 @@ func TestCompileBugReportFlowV2(t *testing.T) {
 // another (later) step `needs = [...]`. A later rewrite step should
 // not strip the retry→attempt.1 edge on the teardown control.
 func TestCompileTeardownRetryWithDownstreamSibling(t *testing.T) {
-	FormulaV2Enabled = true
-	t.Cleanup(func() { FormulaV2Enabled = false })
+	prev := IsFormulaV2Enabled()
+	SetFormulaV2Enabled(true)
+	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
 
 	dir := t.TempDir()
 	formulaText := `
