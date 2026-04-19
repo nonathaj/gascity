@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -24,14 +26,19 @@ type fakeStore struct {
 	beads map[string]*fakeBeadRecord
 
 	// PourWispFunc can be set to simulate sling failures.
-	PourWispFunc func(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error)
-	GetBeadFunc  func(id string) (BeadInfo, error)
+	PourWispFunc             func(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error)
+	PourSpeculativeWispFunc  func(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error)
+	FindByIdempotencyKeyFunc func(key string) (string, bool, error)
+	ActivateWispFunc         func(id string) error
+	GetBeadFunc              func(id string) (BeadInfo, error)
 
 	pourCounter int // auto-increment for wisp IDs
 
 	// WriteLog records the key of every SetMetadata call in order,
 	// enabling tests to verify write ordering contracts.
 	WriteLog []string
+
+	ActivatedWispIDs []string
 }
 
 func newFakeStore() *fakeStore {
@@ -115,6 +122,28 @@ func (s *fakeStore) CloseBead(id string) error {
 	return nil
 }
 
+func (s *fakeStore) DeleteBead(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.beads[id]
+	if !ok {
+		return fmt.Errorf("bead %q: %w", id, beads.ErrNotFound)
+	}
+	if rec.info.ParentID != "" {
+		if parent, ok := s.beads[rec.info.ParentID]; ok {
+			filtered := parent.children[:0]
+			for _, childID := range parent.children {
+				if childID != id {
+					filtered = append(filtered, childID)
+				}
+			}
+			parent.children = filtered
+		}
+	}
+	delete(s.beads, id)
+	return nil
+}
+
 func (s *fakeStore) Children(parentID string) ([]BeadInfo, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -135,6 +164,17 @@ func (s *fakeStore) PourWisp(parentID, formula, idempotencyKey string, vars map[
 	if s.PourWispFunc != nil {
 		return s.PourWispFunc(parentID, formula, idempotencyKey, vars, evaluatePrompt)
 	}
+	return s.pourWisp(parentID, idempotencyKey)
+}
+
+func (s *fakeStore) PourSpeculativeWisp(parentID, formula, idempotencyKey string, vars map[string]string, evaluatePrompt string) (string, error) {
+	if s.PourSpeculativeWispFunc != nil {
+		return s.PourSpeculativeWispFunc(parentID, formula, idempotencyKey, vars, evaluatePrompt)
+	}
+	return s.pourWisp(parentID, idempotencyKey)
+}
+
+func (s *fakeStore) pourWisp(parentID, idempotencyKey string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -165,6 +205,9 @@ func (s *fakeStore) PourWisp(parentID, formula, idempotencyKey string, vars map[
 }
 
 func (s *fakeStore) FindByIdempotencyKey(key string) (string, bool, error) {
+	if s.FindByIdempotencyKeyFunc != nil {
+		return s.FindByIdempotencyKeyFunc(key)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, rec := range s.beads {
@@ -173,6 +216,19 @@ func (s *fakeStore) FindByIdempotencyKey(key string) (string, bool, error) {
 		}
 	}
 	return "", false, nil
+}
+
+func (s *fakeStore) ActivateWisp(id string) error {
+	if s.ActivateWispFunc != nil {
+		return s.ActivateWispFunc(id)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.beads[id]; !ok {
+		return fmt.Errorf("bead %q: %w", id, beads.ErrNotFound)
+	}
+	s.ActivatedWispIDs = append(s.ActivatedWispIDs, id)
+	return nil
 }
 
 func (s *fakeStore) CountActiveConvergenceLoops(targetAgent string) (int, error) {
@@ -621,8 +677,8 @@ func TestHandleWispClosed_SlingFailure_WaitingManual(t *testing.T) {
 	store.addBead("wisp-iter-1", "closed", "root-1",
 		IdempotencyKey("root-1", 1), nil)
 
-	// Simulate PourWisp failure.
-	store.PourWispFunc = func(_, _, _ string, _ map[string]string, _ string) (string, error) {
+	// Simulate speculative PourWisp failure on a nonterminal gate outcome.
+	store.PourSpeculativeWispFunc = func(_, _, _ string, _ map[string]string, _ string) (string, error) {
 		return "", fmt.Errorf("sling failure: connection refused")
 	}
 
@@ -775,8 +831,9 @@ func TestHandleWispClosed_WriteOrdering_TerminalReasonBeforeState(t *testing.T) 
 	}
 }
 
-func TestHandleWispClosed_WriteOrdering_IterateLastProcessedWispLast(t *testing.T) {
-	// Verify last_processed_wisp is the final write in the iterate path.
+func TestHandleWispClosed_WriteOrdering_IterateLastProcessedBeforePendingCleanup(t *testing.T) {
+	// Verify last_processed_wisp remains the final load-bearing write in the
+	// iterate path; pending_next_wisp cleanup is best-effort after commit.
 	store := newFakeStore()
 	emitter := &fakeEmitter{}
 
@@ -805,10 +862,15 @@ func TestHandleWispClosed_WriteOrdering_IterateLastProcessedWispLast(t *testing.
 		t.Fatalf("Action = %q, want %q", result.Action, ActionIterate)
 	}
 
-	// last_processed_wisp must be the very last write.
-	lastKey := store.WriteLog[len(store.WriteLog)-1]
-	if lastKey != FieldLastProcessedWisp {
-		t.Errorf("last write = %q, want %q (dedup marker must be last)", lastKey, FieldLastProcessedWisp)
+	commitKeys := extractCommitKeys(store.WriteLog)
+	if len(commitKeys) < 2 {
+		t.Fatalf("commit log too short: %v", commitKeys)
+	}
+	if commitKeys[len(commitKeys)-2] != FieldLastProcessedWisp {
+		t.Errorf("last_processed_wisp should precede pending cleanup, log=%v", commitKeys)
+	}
+	if commitKeys[len(commitKeys)-1] != FieldPendingNextWisp {
+		t.Errorf("pending_next_wisp cleanup should be last, log=%v", commitKeys)
 	}
 }
 
@@ -1120,7 +1182,60 @@ func TestHandleWispClosed_SpeculativePour_WispExistsBeforeGateEval(t *testing.T)
 	}
 }
 
-func TestHandleWispClosed_SpeculativePourBurnedOnTerminal(t *testing.T) {
+func TestHandleWispClosed_SpeculativePourFailureStillAllowsTerminalGate(t *testing.T) {
+	dir := t.TempDir()
+	gatePath := filepath.Join(dir, "pass.sh")
+	if err := os.WriteFile(gatePath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("writing gate script: %v", err)
+	}
+
+	handler, store, _ := setupBasicHandler(t, map[string]string{
+		FieldGateCondition: gatePath,
+	})
+	store.PourSpeculativeWispFunc = func(_, _, _ string, _ map[string]string, _ string) (string, error) {
+		return "", fmt.Errorf("transient speculative pour failure")
+	}
+
+	result, err := handler.HandleWispClosed(context.Background(), "root-1", "wisp-iter-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Action != ActionApproved {
+		t.Fatalf("Action = %q, want %q", result.Action, ActionApproved)
+	}
+
+	meta, _ := store.GetMetadata("root-1")
+	if meta[FieldState] != StateTerminated {
+		t.Fatalf("state = %q, want %q", meta[FieldState], StateTerminated)
+	}
+	if meta[FieldWaitingReason] == WaitSlingFailure {
+		t.Fatalf("waiting_reason = %q, should not enter sling failure when gate passes", meta[FieldWaitingReason])
+	}
+}
+
+func TestHandleWispClosed_InvalidConditionDoesNotBurnUnvalidatedPendingWisp(t *testing.T) {
+	handler, store, _ := setupBasicHandler(t, map[string]string{
+		FieldPendingNextWisp: "other-wisp",
+	})
+	store.addBead("other-root", "in_progress", "", "", nil)
+	store.addBead("other-wisp", "in_progress", "other-root",
+		IdempotencyKey("other-root", 2), nil)
+
+	_, err := handler.HandleWispClosed(context.Background(), "root-1", "wisp-iter-1")
+	if err == nil {
+		t.Fatal("expected missing condition error")
+	}
+	if _, err := store.GetBead("other-wisp"); err != nil {
+		t.Fatalf("stale pending wisp from another parent was deleted: %v", err)
+	}
+
+	meta, _ := store.GetMetadata("root-1")
+	if meta[FieldPendingNextWisp] != "" {
+		t.Fatalf("pending_next_wisp = %q, want cleared", meta[FieldPendingNextWisp])
+	}
+}
+
+func TestHandleWispClosed_SpeculativePourDeletedOnTerminal(t *testing.T) {
 	handler, store, _ := setupBasicHandler(t, map[string]string{
 		FieldGateOutcomeWisp: "wisp-iter-1",
 		FieldGateOutcome:     GatePass,
@@ -1135,16 +1250,9 @@ func TestHandleWispClosed_SpeculativePourBurnedOnTerminal(t *testing.T) {
 	}
 
 	iter2Key := IdempotencyKey("root-1", 2)
-	iter2ID, found, _ := store.FindByIdempotencyKey(iter2Key)
-	if !found {
-		t.Fatal("expected speculative wisp for iteration 2 to exist")
-	}
-	iter2Info, err := store.GetBead(iter2ID)
-	if err != nil {
-		t.Fatalf("reading speculative wisp: %v", err)
-	}
-	if iter2Info.Status != "closed" {
-		t.Errorf("speculative wisp status = %q, want %q (should be burned)", iter2Info.Status, "closed")
+	_, found, _ := store.FindByIdempotencyKey(iter2Key)
+	if found {
+		t.Fatal("speculative wisp for iteration 2 should be deleted")
 	}
 
 	meta, _ := store.GetMetadata("root-1")
@@ -1153,7 +1261,36 @@ func TestHandleWispClosed_SpeculativePourBurnedOnTerminal(t *testing.T) {
 	}
 }
 
-func TestHandleWispClosed_SpeculativePourBurnedOnWaitingManual(t *testing.T) {
+func TestHandleWispClosed_IterateActivatesSpeculativeWispBeforeCommit(t *testing.T) {
+	handler, store, _ := setupBasicHandler(t, map[string]string{
+		FieldGateOutcomeWisp: "wisp-iter-1",
+		FieldGateOutcome:     GateFail,
+	})
+
+	result, err := handler.HandleWispClosed(context.Background(), "root-1", "wisp-iter-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Action != ActionIterate {
+		t.Fatalf("Action = %q, want %q", result.Action, ActionIterate)
+	}
+	if len(store.ActivatedWispIDs) != 1 || store.ActivatedWispIDs[0] != result.NextWispID {
+		t.Fatalf("activated wisps = %v, want [%s]", store.ActivatedWispIDs, result.NextWispID)
+	}
+
+	commitLog := extractCommitKeys(store.WriteLog)
+	if len(commitLog) < 2 {
+		t.Fatalf("commit log too short: %v", commitLog)
+	}
+	if commitLog[len(commitLog)-2] != FieldLastProcessedWisp {
+		t.Fatalf("last_processed_wisp should be the final load-bearing commit write, log=%v", commitLog)
+	}
+	if commitLog[len(commitLog)-1] != FieldPendingNextWisp {
+		t.Fatalf("pending_next_wisp should clear only after last_processed_wisp, log=%v", commitLog)
+	}
+}
+
+func TestHandleWispClosed_NoSpeculativePourOnWaitingManual(t *testing.T) {
 	handler, store, _ := setupBasicHandler(t, map[string]string{
 		FieldGateMode: GateModeManual,
 	})
@@ -1167,16 +1304,38 @@ func TestHandleWispClosed_SpeculativePourBurnedOnWaitingManual(t *testing.T) {
 	}
 
 	iter2Key := IdempotencyKey("root-1", 2)
-	iter2ID, found, _ := store.FindByIdempotencyKey(iter2Key)
-	if !found {
-		t.Fatal("expected speculative wisp for iteration 2 to exist")
+	_, found, _ := store.FindByIdempotencyKey(iter2Key)
+	if found {
+		t.Fatal("manual gate should not pour a speculative wisp")
 	}
-	iter2Info, err := store.GetBead(iter2ID)
+}
+
+func TestHandleWispClosed_ManualThenIterateUsesNextSequentialIteration(t *testing.T) {
+	handler, store, _ := setupBasicHandler(t, map[string]string{
+		FieldGateMode: GateModeManual,
+	})
+
+	result, err := handler.HandleWispClosed(context.Background(), "root-1", "wisp-iter-1")
 	if err != nil {
-		t.Fatalf("reading speculative wisp: %v", err)
+		t.Fatalf("HandleWispClosed: %v", err)
 	}
-	if iter2Info.Status != "closed" {
-		t.Errorf("speculative wisp status = %q, want %q (should be burned)", iter2Info.Status, "closed")
+	if result.Action != ActionWaitingManual {
+		t.Fatalf("Action = %q, want %q", result.Action, ActionWaitingManual)
+	}
+
+	result, err = handler.IterateHandler(context.Background(), "root-1", "operator", "")
+	if err != nil {
+		t.Fatalf("IterateHandler: %v", err)
+	}
+	if result.Iteration != 2 {
+		t.Fatalf("Iteration = %d, want 2", result.Iteration)
+	}
+	iter2Info, err := store.GetBead(result.NextWispID)
+	if err != nil {
+		t.Fatalf("reading next wisp: %v", err)
+	}
+	if iter2Info.IdempotencyKey != IdempotencyKey("root-1", 2) {
+		t.Fatalf("next wisp key = %q, want %q", iter2Info.IdempotencyKey, IdempotencyKey("root-1", 2))
 	}
 }
 
@@ -1284,5 +1443,49 @@ func TestCrashAfterSpeculativePour_NoActiveWisp_ReconcilerAdoptsSpeculative(t *t
 	}
 	if meta[FieldState] != StateActive {
 		t.Errorf("state = %q, want %q", meta[FieldState], StateActive)
+	}
+}
+
+func TestCrashAfterSpeculativePour_ReconcilerUsesPendingNextWispBeforeLookup(t *testing.T) {
+	store := newFakeStore()
+	emitter := &fakeEmitter{}
+
+	rootMeta := map[string]string{
+		FieldState:             StateActive,
+		FieldIteration:         "1",
+		FieldMaxIterations:     "5",
+		FieldFormula:           "test-formula",
+		FieldTarget:            "test-agent",
+		FieldGateMode:          GateModeCondition,
+		FieldActiveWisp:        "",
+		FieldLastProcessedWisp: "wisp-iter-1",
+		FieldPendingNextWisp:   "wisp-iter-2",
+	}
+	store.addBead("root-1", "in_progress", "", "", rootMeta)
+	store.addBead("wisp-iter-1", "closed", "root-1",
+		IdempotencyKey("root-1", 1), nil)
+	store.addBead("wisp-iter-2", "in_progress", "root-1",
+		IdempotencyKey("root-1", 2), nil)
+	store.FindByIdempotencyKeyFunc = func(key string) (string, bool, error) {
+		return "", false, fmt.Errorf("FindByIdempotencyKey should not be called for valid pending %q", key)
+	}
+
+	handler := &Handler{Store: store, Emitter: emitter}
+	reconciler := &Reconciler{Handler: handler}
+
+	report, err := reconciler.ReconcileBeads(context.Background(), []string{"root-1"})
+	if err != nil {
+		t.Fatalf("reconciliation error: %v", err)
+	}
+	if report.Errors > 0 {
+		t.Fatalf("reconciliation had %d errors: %+v", report.Errors, report.Details)
+	}
+
+	meta, _ := store.GetMetadata("root-1")
+	if meta[FieldActiveWisp] != "wisp-iter-2" {
+		t.Fatalf("active_wisp = %q, want wisp-iter-2", meta[FieldActiveWisp])
+	}
+	if len(store.ActivatedWispIDs) != 1 || store.ActivatedWispIDs[0] != "wisp-iter-2" {
+		t.Fatalf("activated wisps = %v, want [wisp-iter-2]", store.ActivatedWispIDs)
 	}
 }
