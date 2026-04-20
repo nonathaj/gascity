@@ -378,6 +378,30 @@ func TestProviderDrainOpsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProviderDrainOpsReportsMetadataErrors(t *testing.T) {
+	sp := runtime.NewFailFake()
+	dops := newDrainOps(sp)
+
+	if _, err := dops.isDraining("worker"); err == nil {
+		t.Fatal("isDraining should return an error when metadata lookup fails")
+	}
+	if _, err := dops.isDrainAcked("worker"); err == nil {
+		t.Fatal("isDrainAcked should return an error when metadata lookup fails")
+	}
+	if _, err := dops.isRestartRequested("worker"); err == nil {
+		t.Fatal("isRestartRequested should return an error when metadata lookup fails")
+	}
+	if _, err := dops.isDriftRestart("worker"); err == nil {
+		t.Fatal("isDriftRestart should return an error when metadata lookup fails")
+	}
+	if err := dops.clearDrain("worker"); err == nil {
+		t.Fatal("clearDrain should return an error when metadata removal fails")
+	}
+	if err := dops.setDrainAck("worker"); err == nil {
+		t.Fatal("setDrainAck should return an error when metadata removal fails")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // doRuntimeRequestRestart tests
 // ---------------------------------------------------------------------------

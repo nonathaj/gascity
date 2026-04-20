@@ -72,7 +72,7 @@ func TestCmdStopWaitsForStandaloneControllerExit(t *testing.T) {
 		}
 	})
 
-	waitForController(t, dir)
+	waitForControllerAvailable(t, dir, &controllerStdout, &controllerStderr, 15*time.Second)
 	if err := sp.Start(context.Background(), seededSession, runtime.Config{}); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestCmdStopMarginExhaustion(t *testing.T) {
 		}
 	})
 
-	waitForController(t, dir)
+	waitForControllerAvailable(t, dir, &controllerStdout, &controllerStderr, 15*time.Second)
 
 	const sess = "margin-session"
 	if err := sp.Start(context.Background(), sess, runtime.Config{}); err != nil {
@@ -336,5 +336,22 @@ func TestCmdStopMarginExhaustion(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "City stopped.") {
 		t.Fatalf("stdout missing city stopped message: %q", stdout.String())
+	}
+}
+
+func waitForControllerAvailable(t *testing.T, dir string, stdout, stderr *bytes.Buffer, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if stdout != nil && strings.Contains(stdout.String(), "Controller started.") {
+			return
+		}
+		if controllerAlive(dir) != 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for controller socket to become available; stdout=%q stderr=%q", stdout.String(), stderr.String())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
