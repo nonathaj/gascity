@@ -9,11 +9,28 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/bootstrap"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
+
+func bootstrapPackNameForTest(t *testing.T) string {
+	t.Helper()
+	const name = "bootstrap-pack"
+	prev := append([]bootstrap.Entry(nil), bootstrap.BootstrapPacks...)
+	bootstrap.BootstrapPacks = []bootstrap.Entry{{
+		Name:   name,
+		Source: "github.com/example/" + name,
+	}}
+	t.Cleanup(func() { bootstrap.BootstrapPacks = prev })
+	return name
+}
+
+func globalRepoCachePathForTest(gcHome, source, commit string) string {
+	return config.GlobalRepoCachePath(gcHome, source, commit)
+}
 
 func TestMergeEnvEmptyMaps(t *testing.T) {
 	got := mergeEnv(map[string]string{}, map[string]string{})
@@ -495,7 +512,7 @@ func TestResolveTemplateFPExtra_StableAcrossBaseAndInstance(t *testing.T) {
 			cityPath:  cityPath,
 			workspace: &config.Workspace{Provider: "claude"},
 			providers: map[string]config.ProviderSpec{
-				"claude": {Command: "echo", PromptMode: "none", SupportsACP: true},
+				"claude": {Command: "echo", PromptMode: "none", SupportsACP: boolPtr(true)},
 			},
 			lookPath:        func(string) (string, error) { return "/bin/echo", nil },
 			fs:              fsys.OSFS{},
@@ -583,7 +600,7 @@ func TestAgentBuildParams_FPExtraStableAcrossCatalogTransients(t *testing.T) {
 			PackName:    "helper",
 		}},
 		Providers: map[string]config.ProviderSpec{
-			"claude": {Command: "echo", PromptMode: "none", SupportsACP: true},
+			"claude": {Command: "echo", PromptMode: "none", SupportsACP: boolPtr(true)},
 		},
 		Session: config.SessionConfig{Provider: "tmux"},
 	}
@@ -942,7 +959,7 @@ func TestResolveTemplateFPExtra_NotEmptyForPoolAgent(t *testing.T) {
 			cityPath:  cityPath,
 			workspace: &config.Workspace{Provider: "claude"},
 			providers: map[string]config.ProviderSpec{
-				"claude": {Command: "echo", PromptMode: "none", SupportsACP: true},
+				"claude": {Command: "echo", PromptMode: "none", SupportsACP: boolPtr(true)},
 			},
 			lookPath:        func(string) (string, error) { return "/bin/echo", nil },
 			fs:              fsys.OSFS{},
