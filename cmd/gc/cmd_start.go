@@ -970,7 +970,15 @@ func passthroughEnv() map[string]string {
 			m[key] = v
 		}
 	}
-	if m["LANG"] == "" {
+	if _, ok := m["LC_ALL"]; !ok {
+		m["LC_ALL"] = ""
+	}
+	if _, ok := m["LC_CTYPE"]; !ok {
+		m["LC_CTYPE"] = ""
+	}
+	if m["LANG"] == "" && m["LC_ALL"] == "" && m["LC_CTYPE"] == "" {
+		// This fallback targets launchd-managed macOS sessions; explicit
+		// city or agent env can still override it through later layers.
 		m["LANG"] = "en_US.UTF-8"
 	}
 	// XDG directories are needed for providers to locate config files

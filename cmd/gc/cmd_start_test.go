@@ -254,8 +254,9 @@ func TestPassthroughEnvClearsClaudeNestingUnconditionally(t *testing.T) {
 }
 
 func TestPassthroughEnvLANGFallback(t *testing.T) {
-	// When LANG is unset (e.g. launchd supervisor), fall back to en_US.UTF-8
-	// so TUI tools render UTF-8 glyphs correctly in managed sessions.
+	// When no locale is set (e.g. launchd supervisor), fall back to
+	// en_US.UTF-8 so TUI tools render UTF-8 glyphs correctly in managed
+	// sessions. Empty LC_* entries clear stale higher-precedence tmux env.
 	t.Setenv("LANG", "")
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_CTYPE", "")
@@ -265,16 +266,66 @@ func TestPassthroughEnvLANGFallback(t *testing.T) {
 	if got["LANG"] != "en_US.UTF-8" {
 		t.Errorf("LANG = %q, want %q (fallback for launchd)", got["LANG"], "en_US.UTF-8")
 	}
+	if got["LC_ALL"] != "" {
+		t.Errorf("LC_ALL = %q, want empty string to clear stale tmux env", got["LC_ALL"])
+	}
+	if got["LC_CTYPE"] != "" {
+		t.Errorf("LC_CTYPE = %q, want empty string to clear stale tmux env", got["LC_CTYPE"])
+	}
 }
 
 func TestPassthroughEnvLANGPassthrough(t *testing.T) {
 	// When LANG is set, pass it through as-is.
 	t.Setenv("LANG", "ja_JP.UTF-8")
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_CTYPE", "")
 
 	got := passthroughEnv()
 
 	if got["LANG"] != "ja_JP.UTF-8" {
 		t.Errorf("LANG = %q, want %q", got["LANG"], "ja_JP.UTF-8")
+	}
+	if got["LC_ALL"] != "" {
+		t.Errorf("LC_ALL = %q, want empty string to clear stale tmux env", got["LC_ALL"])
+	}
+	if got["LC_CTYPE"] != "" {
+		t.Errorf("LC_CTYPE = %q, want empty string to clear stale tmux env", got["LC_CTYPE"])
+	}
+}
+
+func TestPassthroughEnvLocalePassthrough(t *testing.T) {
+	t.Setenv("LANG", "en_GB.UTF-8")
+	t.Setenv("LC_ALL", "fr_FR.UTF-8")
+	t.Setenv("LC_CTYPE", "ja_JP.UTF-8")
+
+	got := passthroughEnv()
+
+	for key, want := range map[string]string{
+		"LANG":     "en_GB.UTF-8",
+		"LC_ALL":   "fr_FR.UTF-8",
+		"LC_CTYPE": "ja_JP.UTF-8",
+	} {
+		if got[key] != want {
+			t.Errorf("%s = %q, want %q", key, got[key], want)
+		}
+	}
+}
+
+func TestPassthroughEnvLCTypeSuppressesLANGFallback(t *testing.T) {
+	t.Setenv("LANG", "")
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_CTYPE", "ja_JP.UTF-8")
+
+	got := passthroughEnv()
+
+	if _, ok := got["LANG"]; ok {
+		t.Errorf("LANG present as %q, want omitted when LC_CTYPE provides locale", got["LANG"])
+	}
+	if got["LC_ALL"] != "" {
+		t.Errorf("LC_ALL = %q, want empty string to clear stale tmux env", got["LC_ALL"])
+	}
+	if got["LC_CTYPE"] != "ja_JP.UTF-8" {
+		t.Errorf("LC_CTYPE = %q, want %q", got["LC_CTYPE"], "ja_JP.UTF-8")
 	}
 }
 
