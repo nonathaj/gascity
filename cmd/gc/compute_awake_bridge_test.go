@@ -29,7 +29,6 @@ func TestBuildAwakeInputFromReconcilerUsesLifecycleProjectionForCompatibilitySta
 		nil,
 		nil,
 		nil,
-		nil,
 		now,
 	)
 
@@ -67,7 +66,6 @@ func TestBuildAwakeInputFromReconcilerPopulatesPendingInteractions(t *testing.T)
 		nil,
 		nil,
 		nil,
-		nil,
 		[]wakeTarget{{session: &session, alive: true}},
 		sp,
 		now,
@@ -80,38 +78,5 @@ func TestBuildAwakeInputFromReconcilerPopulatesPendingInteractions(t *testing.T)
 	got := decisions["s-worker"]
 	if !got.ShouldWake || got.Reason != "pending" {
 		t.Fatalf("decision = %+v, want pending wake", got)
-	}
-}
-
-func TestBuildAwakeInputFromReconcilerSkipsOnDemandNamedSessionsFromControllerDesired(t *testing.T) {
-	now := time.Now().UTC()
-	input := buildAwakeInputFromReconciler(
-		&config.City{},
-		nil,
-		map[string]TemplateParams{
-			"test-city--triage": {
-				SessionName:         "test-city--triage",
-				TemplateName:        "worker",
-				ConfiguredNamedMode: "on_demand",
-			},
-			"worker-1": {
-				SessionName:  "worker-1",
-				TemplateName: "worker",
-			},
-		},
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		runtime.NewFake(),
-		now,
-	)
-
-	if input.ControllerDesiredSessions["test-city--triage"] {
-		t.Fatal("on-demand named session should not be treated as controller-desired wake")
-	}
-	if !input.ControllerDesiredSessions["worker-1"] {
-		t.Fatal("ordinary desired session should be treated as controller-desired wake")
 	}
 }

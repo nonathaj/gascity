@@ -16,19 +16,18 @@ const defaultOnDemandIdleTimeout = 5 * time.Minute
 // should be awake. All external I/O (shell commands, tmux checks, store
 // queries) happens before this function is called.
 type AwakeInput struct {
-	Agents                    []AwakeAgent
-	NamedSessions             []AwakeNamedSession
-	SessionBeads              []AwakeSessionBead
-	WorkBeads                 []AwakeWorkBead
-	ControllerDesiredSessions map[string]bool // session name → desiredState wants this concrete session awake
-	ScaleCheckCounts          map[string]int  // agent template → desired count
-	WorkSet                   map[string]bool // agent template → work_query found pending work
-	RunningSessions           map[string]bool // session name → tmux exists
-	AttachedSessions          map[string]bool // session name → user attached
-	PendingSessions           map[string]bool // session name → pending interaction
-	ReadyWaitSet              map[string]bool // session bead ID → durable wait is ready
-	ChatIdleTimeout           time.Duration   // global idle timeout for manual/chat sessions (0 = disabled)
-	Now                       time.Time
+	Agents           []AwakeAgent
+	NamedSessions    []AwakeNamedSession
+	SessionBeads     []AwakeSessionBead
+	WorkBeads        []AwakeWorkBead
+	ScaleCheckCounts map[string]int  // agent template → desired count
+	WorkSet          map[string]bool // agent template → work_query found pending work
+	RunningSessions  map[string]bool // session name → tmux exists
+	AttachedSessions map[string]bool // session name → user attached
+	PendingSessions  map[string]bool // session name → pending interaction
+	ReadyWaitSet     map[string]bool // session bead ID → durable wait is ready
+	ChatIdleTimeout  time.Duration   // global idle timeout for manual/chat sessions (0 = disabled)
+	Now              time.Time
 }
 
 // AwakeAgent represents an [[agent]] config entry.
@@ -97,8 +96,8 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 
 	// Step 1: Build desired set.
 	// Drained beads are excluded from generic template demand, but explicit
-	// session-specific controller intent (pending create, current desiredState,
-	// named-always, assigned work, pins) may still reuse the same bead.
+	// compatible wake causes (pending create, named-always, assigned work) may
+	// still reuse the same bead.
 	desired := make(map[string]string) // sessionName → reason
 
 	// Newly created beads that still carry a controller create claim must be
@@ -109,19 +108,6 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 			continue
 		}
 		desired[bead.SessionName] = "pending-create"
-	}
-
-	for _, bead := range input.SessionBeads {
-		if bead.State == "closed" || bead.DependencyOnly || bead.ManualSession {
-			continue
-		}
-		if !input.ControllerDesiredSessions[bead.SessionName] {
-			continue
-		}
-		if _, already := desired[bead.SessionName]; already {
-			continue
-		}
-		desired[bead.SessionName] = "controller-desired"
 	}
 
 	// Named sessions
@@ -291,7 +277,7 @@ func ComputeAwakeSet(input AwakeInput) map[string]AwakeDecision {
 
 		// Durable pin override — wakes and keeps the session awake while
 		// still respecting hard blockers applied below.
-		pinBlockedByState := bead.State == "suspended" || bead.State == "closed"
+		pinBlockedByState := bead.State == "suspended" || bead.State == "closed" || bead.Drained
 		if !decision.ShouldWake && bead.Pinned && !pinBlockedByState && !bead.DependencyOnly && !bead.WaitHold {
 			if agent, ok := agentsByName[bead.Template]; ok && !agent.Suspended {
 				decision.ShouldWake = true

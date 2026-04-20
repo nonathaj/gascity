@@ -76,25 +76,6 @@ func TestNamedAlways_DrainedCompatibilityStateStillWakes(t *testing.T) {
 	assertReason(t, result, "deacon", "named-always")
 }
 
-func TestControllerDesiredSession_DrainedCompatibilityStateStillWakes(t *testing.T) {
-	result := ComputeAwakeSet(AwakeInput{
-		Agents: []AwakeAgent{{QualifiedName: "deacon"}},
-		ControllerDesiredSessions: map[string]bool{
-			"deacon": true,
-		},
-		SessionBeads: []AwakeSessionBead{{
-			ID:          "mc-1",
-			SessionName: "deacon",
-			Template:    "deacon",
-			State:       "asleep",
-			Drained:     true,
-		}},
-		Now: now,
-	})
-	assertAwake(t, result, "deacon")
-	assertReason(t, result, "deacon", "controller-desired")
-}
-
 func TestNamedAlways_ActiveStaysAwake(t *testing.T) {
 	result := ComputeAwakeSet(AwakeInput{
 		Agents:          []AwakeAgent{{QualifiedName: "deacon"}},
@@ -535,7 +516,7 @@ func TestDrained_WithAssignedWork_Wakes(t *testing.T) {
 	assertReason(t, result, "polecat-mc-1", "assigned-work")
 }
 
-func TestDrained_Pinned_Wakes(t *testing.T) {
+func TestDrained_PinnedStaysAsleepUntilUndrained(t *testing.T) {
 	result := ComputeAwakeSet(AwakeInput{
 		Agents: []AwakeAgent{{QualifiedName: "hello-world/polecat"}},
 		SessionBeads: []AwakeSessionBead{
@@ -543,8 +524,7 @@ func TestDrained_Pinned_Wakes(t *testing.T) {
 		},
 		Now: now,
 	})
-	assertAwake(t, result, "polecat-mc-1")
-	assertReason(t, result, "polecat-mc-1", "pin")
+	assertAsleep(t, result, "polecat-mc-1")
 }
 
 // ---------------------------------------------------------------------------

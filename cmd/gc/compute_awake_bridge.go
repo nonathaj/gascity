@@ -17,7 +17,6 @@ import (
 func buildAwakeInputFromReconciler(
 	cfg *config.City,
 	sessionBeads []beads.Bead,
-	desiredState map[string]TemplateParams,
 	poolDesired map[string]int,
 	workSet map[string]bool,
 	readyWaitSet map[string]bool,
@@ -27,15 +26,14 @@ func buildAwakeInputFromReconciler(
 	clk time.Time,
 ) AwakeInput {
 	input := AwakeInput{
-		ControllerDesiredSessions: make(map[string]bool),
-		ScaleCheckCounts:          poolDesired,
-		WorkSet:                   workSet,
-		ReadyWaitSet:              readyWaitSet,
-		RunningSessions:           make(map[string]bool),
-		AttachedSessions:          make(map[string]bool),
-		PendingSessions:           make(map[string]bool),
-		ChatIdleTimeout:           cfg.ChatSessions.IdleTimeoutDuration(),
-		Now:                       clk,
+		ScaleCheckCounts: poolDesired,
+		WorkSet:          workSet,
+		ReadyWaitSet:     readyWaitSet,
+		RunningSessions:  make(map[string]bool),
+		AttachedSessions: make(map[string]bool),
+		PendingSessions:  make(map[string]bool),
+		ChatIdleTimeout:  cfg.ChatSessions.IdleTimeoutDuration(),
+		Now:              clk,
 	}
 
 	// Agents
@@ -50,13 +48,6 @@ func buildAwakeInputFromReconciler(
 			agent.DependsOn = a.DependsOn
 		}
 		input.Agents = append(input.Agents, agent)
-	}
-
-	for sessionName, tp := range desiredState {
-		if strings.TrimSpace(tp.ConfiguredNamedMode) == "on_demand" {
-			continue
-		}
-		input.ControllerDesiredSessions[sessionName] = true
 	}
 
 	// Named sessions
@@ -158,7 +149,7 @@ func awakeSetToWakeEvals(decisions map[string]AwakeDecision, sessionBeads []Awak
 				reasons = []WakeReason{WakePin}
 			case "wait-ready":
 				reasons = []WakeReason{WakeWait}
-			case "work-query":
+			case "assigned-work", "work-query":
 				reasons = []WakeReason{WakeWork}
 			default:
 				reasons = []WakeReason{WakeConfig}

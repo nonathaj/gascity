@@ -1378,7 +1378,7 @@ func TestReconcileSessionBeads_AlwaysNamedSessionWakesFromDrainedCompatibilitySt
 	}
 }
 
-func TestReconcileSessionBeads_ControllerDesiredSessionWakesFromDrainedCompatibilityState(t *testing.T) {
+func TestReconcileSessionBeads_OrdinaryDesiredStateDoesNotWakeDrainedCompatibilityState(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{{Name: "worker", StartCommand: "true", MaxActiveSessions: intPtr(1)}},
@@ -1397,11 +1397,11 @@ func TestReconcileSessionBeads_ControllerDesiredSessionWakesFromDrainedCompatibi
 
 	woken := env.reconcile([]beads.Bead{session})
 
-	if woken != 1 {
-		t.Fatalf("woken = %d, want 1", woken)
+	if woken != 0 {
+		t.Fatalf("woken = %d, want 0", woken)
 	}
-	if !env.sp.IsRunning("worker") {
-		t.Fatal("controller-desired session should have been restarted from drained compatibility state")
+	if env.sp.IsRunning("worker") {
+		t.Fatal("ordinary desiredState presence must not restart a drained compatibility bead")
 	}
 }
 
