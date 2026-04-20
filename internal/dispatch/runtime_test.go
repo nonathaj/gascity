@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/formulatest"
 	"github.com/gastownhall/gascity/internal/molecule"
 )
 
@@ -1601,7 +1602,7 @@ func TestProcessRalphCheckRecoversRetryAttemptMissingFinalAssigneePass(t *testin
 }
 
 func TestProcessFanoutSpawnsFragmentsAndClosesOnSecondPass(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1729,7 +1730,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutResumesExistingFragmentsWithoutDuplicates(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1832,7 +1833,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutSequentialChainsFragments(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1935,7 +1936,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialResumeRestoresExternalDeps(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2052,7 +2053,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialChainSurvivesEmptyMiddleFragment(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2172,7 +2173,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutRecoversPartialFragmentInstance(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2271,7 +2272,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutRecoversIncompletelyWiredFragmentInstance(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2568,7 +2569,7 @@ func TestCanDiscardPartialFragmentBeadWaitsForDependents(t *testing.T) {
 }
 
 func TestProcessFanoutClosesScopeWhenLastMember(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `

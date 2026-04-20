@@ -168,7 +168,7 @@ func TestNamespaceSourceSpecStepPreservesNestedRef(t *testing.T) {
 }
 
 func TestCompileControlSpecBeadsAreNotWorkflowSinks(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	formulaContent := `

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/formulatest"
 )
 
 // TestBuildRecipeApplyPlanBugReportFlowV2 checks that the plan built
@@ -1244,7 +1245,7 @@ depends_on = ["implement"]
 }
 
 func TestCookEndToEndCheckSyntax(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 	dir := t.TempDir()
 	toml := `
 formula = "ralph-demo"
@@ -1393,7 +1394,7 @@ timeout = "2m"
 }
 
 func TestCookEndToEndScopedWorkflowStampsRootAndScopeMetadata(t *testing.T) {
-	formula.EnableV2ForTest(t)
+	formulatest.EnableV2ForTest(t)
 	dir := t.TempDir()
 	toml := `
 formula = "scoped-demo"

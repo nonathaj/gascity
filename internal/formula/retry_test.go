@@ -117,7 +117,7 @@ func TestApplyRetriesBasic(t *testing.T) {
 }
 
 func TestCompileRetryManagedStepBlocksWorkflowOnLogicalBead(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	formulaContent := `

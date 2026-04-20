@@ -9,7 +9,7 @@ import (
 )
 
 func TestCompileExpansionFragmentRunsInlineExpansionAndConditionFiltering(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 
@@ -118,7 +118,7 @@ func TestApplyFragmentRecipeGraphControlsAddsInheritedScopeChecks(t *testing.T) 
 }
 
 func TestCompileExpansionFragmentValidatesRequiredVars(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 

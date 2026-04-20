@@ -269,7 +269,7 @@ title = "Scan"
 }
 
 func TestCompileCheckSyntaxMarksWorkflowRootAndBlocksOnTopLevelSteps(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	formulaContent := `
@@ -338,7 +338,7 @@ timeout = "30s"
 }
 
 func TestCompileVersion2UsesGraphWorkflowRootAndNoParentChild(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	formulaContent := `
@@ -409,7 +409,7 @@ needs = ["setup"]
 }
 
 func TestCompileScopedWorkCarriesScopeAndCleanupMetadata(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -694,7 +694,7 @@ func formatDepsForCleanup(deps []RecipeDep, stepID string) string {
 }
 
 func TestCompileGraphWorkflowRejectsCycles(t *testing.T) {
-	EnableV2ForTest(t)
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	formulaText := `
@@ -723,9 +723,7 @@ needs = ["a"]
 }
 
 func TestCompileReviewWorkflowSkipGeminiFiltersExpansionLane(t *testing.T) {
-	prev := IsFormulaV2Enabled()
-	SetFormulaV2Enabled(true)
-	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	writeReviewWorkflowFixtures(t, dir)
@@ -763,9 +761,7 @@ func TestCompileReviewWorkflowSkipGeminiFiltersExpansionLane(t *testing.T) {
 }
 
 func TestCompileReviewWorkflowAnnotatesNestedReviewerRetries(t *testing.T) {
-	prev := IsFormulaV2Enabled()
-	SetFormulaV2Enabled(true)
-	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
+	enableV2ForTest(t)
 
 	dir := t.TempDir()
 	writeReviewWorkflowFixtures(t, dir)
