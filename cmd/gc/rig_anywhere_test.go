@@ -298,6 +298,36 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 		}
 	})
 
+	t.Run("gc_rig_env_only_fails_closed_on_binding_load_error", func(t *testing.T) {
+		resetFlags(t)
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		cityPath := setupCity(t, "env-good")
+		rigDir := filepath.Join(t.TempDir(), "envapp")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "env-good", "envapp", rigDir)
+
+		badCity := setupCity(t, "env-bad")
+		if err := os.WriteFile(config.SiteBindingPath(badCity), []byte("[[rig]\nname = \"broken\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, badCity, "env-bad")
+
+		t.Setenv("GC_RIG", "envapp")
+		setCwd(t, t.TempDir())
+
+		_, err := resolveContext()
+		if err == nil {
+			t.Fatal("resolveContext should fail closed for GC_RIG when registered bindings cannot load")
+		}
+		if !strings.Contains(err.Error(), "loading registered city rig bindings") {
+			t.Fatalf("error = %q, want registered binding load error", err)
+		}
+	})
+
 	t.Run("rig_index_cwd_lookup", func(t *testing.T) {
 		resetFlags(t)
 		gcHome := t.TempDir()
@@ -1223,6 +1253,59 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		assertSameTestPath(t, ctx.CityPath, cityPath)
 		if ctx.RigName != "path-rig" {
 			t.Errorf("RigName = %q, want %q", ctx.RigName, "path-rig")
+		}
+	})
+
+	t.Run("legacy_city_toml_path_is_not_registered_binding", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		cityPath := setupCity(t, "legacy-city")
+		rigDir := filepath.Join(t.TempDir(), "legacy-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		legacy := fmt.Sprintf("[workspace]\nname = \"legacy-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"legacy-rig\"\npath = %q\n", rigDir)
+		if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(legacy), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(config.SiteBindingPath(cityPath)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, cityPath, "legacy-city")
+
+		_, err := resolveRigToContext("legacy-rig")
+		if err == nil {
+			t.Fatal("resolveRigToContext should not treat legacy city.toml paths as registered bindings")
+		}
+		if !strings.Contains(err.Error(), "not registered") {
+			t.Fatalf("error = %q, want not registered", err)
+		}
+	})
+
+	t.Run("path_argument_fails_closed_on_binding_load_error", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		cityPath := setupCity(t, "path-good")
+		rigDir := filepath.Join(t.TempDir(), "path-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "path-good", "path-rig", rigDir)
+
+		badCity := setupCity(t, "path-bad")
+		if err := os.WriteFile(config.SiteBindingPath(badCity), []byte("[[rig]\nname = \"broken\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, badCity, "path-bad")
+
+		_, err := resolveContextFromPath(rigDir)
+		if err == nil {
+			t.Fatal("resolveContextFromPath should fail closed when registered bindings cannot load")
+		}
+		if !strings.Contains(err.Error(), "loading registered city rig bindings") {
+			t.Fatalf("error = %q, want registered binding load error", err)
 		}
 	})
 

@@ -370,9 +370,10 @@ func resolveContext() (resolvedContext, error) {
 	// Step 6: GC_RIG only
 	if gcRig != "" {
 		ctx, err := resolveRigToContext(gcRig)
-		if err == nil {
-			return ctx, nil
+		if err != nil {
+			return resolvedContext{}, err
 		}
+		return ctx, nil
 	}
 
 	// Step 7: GC_DIR-derived city path.
@@ -410,10 +411,11 @@ func resolveContextFromPath(path string) (resolvedContext, error) {
 	if err != nil {
 		return resolvedContext{}, err
 	}
-	if ctx, ok, err := resolveRigPathToContext(abs); ok {
-		if err != nil {
-			return resolvedContext{}, err
-		}
+	ctx, ok, err := resolveRigPathToContext(abs)
+	if err != nil {
+		return resolvedContext{}, err
+	}
+	if ok {
 		return ctx, nil
 	}
 	if cityPath, err := validateCityPath(abs); err == nil {
@@ -551,14 +553,33 @@ func registeredRigBindings(failOnLoadError bool, match func(registeredRigBinding
 			loadErrors = append(loadErrors, fmt.Sprintf("%s: %v", registeredCityLabel(c), err))
 			continue
 		}
-		for _, rig := range cfg.Rigs {
-			if strings.TrimSpace(rig.Name) == "" || strings.TrimSpace(rig.Path) == "" {
+		siteBinding, err := config.LoadSiteBinding(fsys.OSFS{}, c.Path)
+		if err != nil {
+			loadErrors = append(loadErrors, fmt.Sprintf("%s: %v", registeredCityLabel(c), err))
+			continue
+		}
+		siteRigPaths := make(map[string]string, len(siteBinding.Rigs))
+		for _, siteRig := range siteBinding.Rigs {
+			name := strings.TrimSpace(siteRig.Name)
+			path := strings.TrimSpace(siteRig.Path)
+			if name == "" || path == "" {
 				continue
 			}
+			siteRigPaths[name] = path
+		}
+		for _, rig := range cfg.Rigs {
+			if strings.TrimSpace(rig.Name) == "" {
+				continue
+			}
+			sitePath := strings.TrimSpace(siteRigPaths[rig.Name])
+			if sitePath == "" {
+				continue
+			}
+			rig.Path = sitePath
 			binding := registeredRigBinding{
 				City: c,
 				Rig:  rig,
-				Path: resolveStoreScopeRoot(c.Path, rig.Path),
+				Path: resolveStoreScopeRoot(c.Path, sitePath),
 			}
 			if match(binding) {
 				matched = append(matched, binding)
