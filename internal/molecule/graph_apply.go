@@ -178,6 +178,9 @@ func buildRecipeApplyPlan(recipe *formula.Recipe, opts Options) (*beads.GraphApp
 				return nil, false, "", fmt.Errorf("step %q: bead title contains unresolved variable(s) %s — missing or misspelled --var(s)?", step.ID, strings.Join(residual, ", "))
 			}
 		}
+		if err := validateTimeoutMetadataVars(step.ID, node.Metadata); err != nil {
+			return nil, false, "", err
+		}
 
 		plan.Nodes = append(plan.Nodes, node)
 	}
@@ -333,6 +336,9 @@ func buildFragmentApplyPlan(store beads.Store, recipe *formula.FragmentRecipe, o
 			if residual := formula.CheckResidualVars(node.Title); len(residual) > 0 {
 				return nil, fmt.Errorf("step %q: bead title contains unresolved variable(s) %s — missing or misspelled --var(s)?", step.ID, strings.Join(residual, ", "))
 			}
+		}
+		if err := validateTimeoutMetadataVars(step.ID, node.Metadata); err != nil {
+			return nil, err
 		}
 
 		plan.Nodes = append(plan.Nodes, node)

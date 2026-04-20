@@ -13,6 +13,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/molecule"
 )
@@ -2933,6 +2934,85 @@ func TestRunRalphCheckResolvesRelativeWorkDirAgainstCityPath(t *testing.T) {
 	}
 	if result.ExitCode == nil || *result.ExitCode != 0 {
 		t.Fatalf("result.ExitCode = %+v, want 0", result.ExitCode)
+	}
+}
+
+func TestRunRalphCheckRejectsNonPositiveMetadataTimeouts(t *testing.T) {
+	cityPath := t.TempDir()
+	checkPath := writeCheckScript(t, cityPath, "pass.sh", "#!/usr/bin/env bash\nexit 0\n")
+
+	tests := []struct {
+		name string
+		key  string
+		raw  string
+	}{
+		{name: "step zero", key: "gc.step_timeout", raw: "0s"},
+		{name: "step negative", key: "gc.step_timeout", raw: "-1s"},
+		{name: "check zero", key: "gc.check_timeout", raw: "0s"},
+		{name: "check negative", key: "gc.check_timeout", raw: "-1s"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := beads.NewMemStore()
+			check := beads.Bead{
+				ID:   "check-1",
+				Type: "task",
+				Metadata: map[string]string{
+					"gc.check_path": checkPath,
+					tt.key:          tt.raw,
+				},
+			}
+			subject := beads.Bead{ID: "run-1", Type: "task"}
+
+			_, err := runRalphCheck(store, check, subject, 1, ProcessOptions{CityPath: cityPath})
+			if err == nil {
+				t.Fatalf("runRalphCheck succeeded, want non-positive %s error", tt.key)
+			}
+			if !strings.Contains(err.Error(), "must be positive") {
+				t.Fatalf("runRalphCheck error = %v, want positive timeout error", err)
+			}
+		})
+	}
+}
+
+func TestRunRalphCheckTimeoutMetadataPrecedence(t *testing.T) {
+	cityPath := t.TempDir()
+	checkPath := writeCheckScript(t, cityPath, "sleep.sh", "#!/usr/bin/env bash\nsleep 0.05\nexit 0\n")
+	store := beads.NewMemStore()
+	subject := beads.Bead{ID: "run-1", Type: "task"}
+
+	stepOnly := beads.Bead{
+		ID:   "step-only",
+		Type: "task",
+		Metadata: map[string]string{
+			"gc.check_path":   checkPath,
+			"gc.step_timeout": "1ms",
+		},
+	}
+	stepResult, err := runRalphCheck(store, stepOnly, subject, 1, ProcessOptions{CityPath: cityPath})
+	if err != nil {
+		t.Fatalf("runRalphCheck step-only: %v", err)
+	}
+	if stepResult.Outcome != convergence.GateTimeout {
+		t.Fatalf("step-only outcome = %q, want timeout", stepResult.Outcome)
+	}
+
+	checkOverrides := beads.Bead{
+		ID:   "check-overrides",
+		Type: "task",
+		Metadata: map[string]string{
+			"gc.check_path":    checkPath,
+			"gc.step_timeout":  "1ms",
+			"gc.check_timeout": "30s",
+		},
+	}
+	checkResult, err := runRalphCheck(store, checkOverrides, subject, 1, ProcessOptions{CityPath: cityPath})
+	if err != nil {
+		t.Fatalf("runRalphCheck check-overrides: %v", err)
+	}
+	if checkResult.Outcome != convergence.GatePass {
+		t.Fatalf("check-overrides outcome = %q, want pass", checkResult.Outcome)
 	}
 }
 
