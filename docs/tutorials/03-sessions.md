@@ -244,7 +244,7 @@ conversation history:
 
 ```shell
 ~/my-city
-$ gc session logs mayor --tail 1
+$ gc session logs mayor --tail 2
 07:22:29 [USER] [my-city] mayor • 2026-04-08T00:22:24
 Check the status of mc-wisp-8t8
 
@@ -253,9 +253,9 @@ mc-wisp-8t8 is a review request for the auth module. I've routed it to
 my-project/reviewer.
 ```
 
-Note that `--tail` here counts compaction _segments_, not lines — `--tail 1`
-shows the most recent segment, `--tail 0` shows all of them. Follow live output
-with `-f`:
+`--tail N` prints the last N log entries (same convention as `tail -n`), so
+`--tail 2` above shows the most recent user prompt and the mayor's reply.
+Use `--tail 0` to print the whole conversation. Follow live output with `-f`:
 
 ```shell
 ~/my-city

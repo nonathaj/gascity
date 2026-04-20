@@ -79,11 +79,63 @@ func TestDoSessionLogsBasic(t *testing.T) {
 	}
 }
 
-func TestDoSessionLogsCompactBoundary(t *testing.T) {
+// TestDoSessionLogsTailReturnsLastNEntries verifies the user-facing `--tail N`
+// semantics: print the LAST N displayable log entries (matching Unix `tail -n`),
+// not the FIRST N, and regardless of compaction boundaries in the transcript.
+func TestDoSessionLogsTailReturnsLastNEntries(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
 
-	// Two compact boundaries so tail=1 returns only the last segment.
+	// Six distinct user/assistant entries with no compaction boundaries at all.
+	// This mirrors the Gas City 1.0 tutorial case where a fresh mayor session
+	// has no compactions yet. Prior behavior ("N compaction segments") returned
+	// every entry, printing the FIRST N visible on screen; the corrected
+	// semantics must return the LAST N.
+	writeTestSession(t, searchBase, workDir,
+		`{"uuid":"1","parentUuid":"","type":"user","message":{"role":"user","content":"first"},"timestamp":"2025-01-01T00:00:00Z"}`,
+		`{"uuid":"2","parentUuid":"1","type":"assistant","message":{"role":"assistant","content":"reply-1"},"timestamp":"2025-01-01T00:00:01Z"}`,
+		`{"uuid":"3","parentUuid":"2","type":"user","message":{"role":"user","content":"second"},"timestamp":"2025-01-01T00:00:02Z"}`,
+		`{"uuid":"4","parentUuid":"3","type":"assistant","message":{"role":"assistant","content":"reply-2"},"timestamp":"2025-01-01T00:00:03Z"}`,
+		`{"uuid":"5","parentUuid":"4","type":"user","message":{"role":"user","content":"third"},"timestamp":"2025-01-01T00:00:04Z"}`,
+		`{"uuid":"6","parentUuid":"5","type":"assistant","message":{"role":"assistant","content":"reply-3"},"timestamp":"2025-01-01T00:00:05Z"}`,
+	)
+
+	path := sessionlog.FindSessionFile([]string{searchBase}, workDir)
+	if path == "" {
+		t.Fatal("session file not found")
+	}
+
+	// --tail 2 must return the LAST 2 entries: "third" + "reply-3".
+	var stdout, stderr bytes.Buffer
+	code := doSessionLogs(path, "", false, 2, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "third") {
+		t.Errorf("tail=2 should include the penultimate entry 'third', got: %s", out)
+	}
+	if !strings.Contains(out, "reply-3") {
+		t.Errorf("tail=2 should include the last entry 'reply-3', got: %s", out)
+	}
+	// Everything before the last 2 must be absent. In particular, the FIRST
+	// entry must not leak through — that was the bug the user reported.
+	forbidden := []string{"first", "reply-1", "second", "reply-2"}
+	for _, s := range forbidden {
+		if strings.Contains(out, s) {
+			t.Errorf("tail=2 should not include earlier entry %q (would be 'first N' behavior), got: %s", s, out)
+		}
+	}
+}
+
+// TestDoSessionLogsTailIgnoresCompactBoundaries confirms that `--tail N` counts
+// displayable log entries, not compaction segments: a transcript with several
+// compact boundaries must still yield exactly N trailing entries.
+func TestDoSessionLogsTailIgnoresCompactBoundaries(t *testing.T) {
+	searchBase := t.TempDir()
+	workDir := t.TempDir()
+
 	writeTestSession(t, searchBase, workDir,
 		`{"uuid":"1","parentUuid":"","type":"user","message":{"role":"user","content":"first"},"timestamp":"2025-01-01T00:00:00Z"}`,
 		`{"uuid":"2","parentUuid":"1","type":"assistant","message":{"role":"assistant","content":"reply"},"timestamp":"2025-01-01T00:00:01Z"}`,
@@ -100,7 +152,8 @@ func TestDoSessionLogsCompactBoundary(t *testing.T) {
 		t.Fatal("session file not found")
 	}
 
-	// tail=1 should show only from the last compact boundary.
+	// --tail 1 should print exactly the last entry ("reply2"), not "the last
+	// compaction segment."
 	var stdout, stderr bytes.Buffer
 	code := doSessionLogs(path, "", false, 1, &stdout, &stderr)
 	if code != 0 {
@@ -108,14 +161,29 @@ func TestDoSessionLogsCompactBoundary(t *testing.T) {
 	}
 
 	out := stdout.String()
-	if strings.Contains(out, "first") {
-		t.Errorf("tail=1 should not include messages before compact boundary, got: %s", out)
+	if !strings.Contains(out, "reply2") {
+		t.Errorf("tail=1 should include final assistant 'reply2', got: %s", out)
 	}
-	if !strings.Contains(out, "context compacted") {
-		t.Errorf("output should contain compact divider, got: %s", out)
+	for _, forbidden := range []string{"first", "middle", "second"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("tail=1 should not include earlier entry %q, got: %s", forbidden, out)
+		}
 	}
-	if !strings.Contains(out, "second") {
-		t.Errorf("output should contain 'second', got: %s", out)
+
+	// --tail 0 should print everything, including the two compact boundary
+	// dividers.
+	stdout.Reset()
+	stderr.Reset()
+	code = doSessionLogs(path, "", false, 0, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("tail=0 code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	out = stdout.String()
+	if !strings.Contains(out, "first") || !strings.Contains(out, "second") {
+		t.Errorf("tail=0 should include all entries, got: %s", out)
+	}
+	if strings.Count(out, "context compacted") != 2 {
+		t.Errorf("tail=0 should render both compact dividers, got: %s", out)
 	}
 }
 
