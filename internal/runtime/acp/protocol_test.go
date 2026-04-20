@@ -146,14 +146,14 @@ func TestSessionPromptRequest_Structure(t *testing.T) {
 	if params.SessionID != "sess-1" {
 		t.Errorf("sessionId = %q, want %q", params.SessionID, "sess-1")
 	}
-	if len(params.Messages) != 1 {
-		t.Fatalf("messages len = %d, want 1", len(params.Messages))
+	if len(params.Prompt) != 1 {
+		t.Fatalf("prompt len = %d, want 1", len(params.Prompt))
 	}
-	if params.Messages[0].Role != "user" {
-		t.Errorf("role = %q, want %q", params.Messages[0].Role, "user")
+	if params.Prompt[0].Type != "text" {
+		t.Errorf("type = %q, want %q", params.Prompt[0].Type, "text")
 	}
-	if len(params.Messages[0].Content) != 1 || params.Messages[0].Content[0].Text != "hello world" {
-		t.Errorf("content text = %q, want %q", params.Messages[0].Content[0].Text, "hello world")
+	if params.Prompt[0].Text != "hello world" {
+		t.Errorf("text = %q, want %q", params.Prompt[0].Text, "hello world")
 	}
 }
 
@@ -170,14 +170,14 @@ func TestSessionPromptRequest_MultiBlock(t *testing.T) {
 	var params SessionPromptParams
 	_ = json.Unmarshal(decoded.Params, &params)
 
-	if len(params.Messages[0].Content) != 2 {
-		t.Fatalf("content blocks = %d, want 2", len(params.Messages[0].Content))
+	if len(params.Prompt) != 2 {
+		t.Fatalf("prompt blocks = %d, want 2", len(params.Prompt))
 	}
-	if params.Messages[0].Content[0].Text != "first" {
-		t.Errorf("block[0] = %q, want %q", params.Messages[0].Content[0].Text, "first")
+	if params.Prompt[0].Text != "first" {
+		t.Errorf("block[0] = %q, want %q", params.Prompt[0].Text, "first")
 	}
-	if params.Messages[0].Content[1].Text != "second" {
-		t.Errorf("block[1] = %q, want %q", params.Messages[0].Content[1].Text, "second")
+	if params.Prompt[1].Text != "second" {
+		t.Errorf("block[1] = %q, want %q", params.Prompt[1].Text, "second")
 	}
 }
 
@@ -199,10 +199,10 @@ func TestSessionPromptRequest_FilePath(t *testing.T) {
 	var params SessionPromptParams
 	_ = json.Unmarshal(decoded.Params, &params)
 
-	if len(params.Messages[0].Content) != 1 {
-		t.Fatalf("content blocks = %d, want 1", len(params.Messages[0].Content))
+	if len(params.Prompt) != 1 {
+		t.Fatalf("prompt blocks = %d, want 1", len(params.Prompt))
 	}
-	block := params.Messages[0].Content[0]
+	block := params.Prompt[0]
 	if block.Type != "text" {
 		t.Errorf("type = %q, want %q", block.Type, "text")
 	}
@@ -226,7 +226,7 @@ func TestSessionPromptRequest_FilePathError(t *testing.T) {
 	var params SessionPromptParams
 	_ = json.Unmarshal(decoded.Params, &params)
 
-	block := params.Messages[0].Content[0]
+	block := params.Prompt[0]
 	if !strings.Contains(block.Text, "Error reading") {
 		t.Errorf("block should contain error, got %q", block.Text)
 	}
@@ -267,5 +267,56 @@ func TestInitializeRequest_IncludesProtocolVersion(t *testing.T) {
 	}
 	if params.ProtocolVersion != 1 {
 		t.Errorf("protocolVersion = %d, want 1", params.ProtocolVersion)
+	}
+}
+
+func TestSessionNewRequest_IncludesCwdAndMcpServers(t *testing.T) {
+	msg, _ := newSessionNewRequest("/home/user/project")
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var decoded JSONRPCMessage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if decoded.Method != "session/new" {
+		t.Errorf("method = %q, want %q", decoded.Method, "session/new")
+	}
+
+	var params SessionNewParams
+	if err := json.Unmarshal(decoded.Params, &params); err != nil {
+		t.Fatalf("Unmarshal params: %v", err)
+	}
+	if params.Cwd != "/home/user/project" {
+		t.Errorf("cwd = %q, want %q", params.Cwd, "/home/user/project")
+	}
+	if params.McpServers == nil {
+		t.Fatal("mcpServers should be non-nil empty array")
+	}
+	if len(params.McpServers) != 0 {
+		t.Errorf("mcpServers len = %d, want 0", len(params.McpServers))
+	}
+	// Verify raw JSON has [] not null for mcpServers.
+	if !strings.Contains(string(data), `"mcpServers":[]`) {
+		t.Errorf("raw JSON should contain \"mcpServers\":[], got %s", data)
+	}
+}
+
+func TestSessionPromptRequest_UsesPromptFieldNotMessages(t *testing.T) {
+	msg, _ := newSessionPromptRequest("sess-1", runtime.TextContent("test"))
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	raw := string(data)
+	if !strings.Contains(raw, `"prompt":[`) {
+		t.Errorf("raw JSON should contain \"prompt\":[ field, got %s", raw)
+	}
+	if strings.Contains(raw, `"messages"`) {
+		t.Errorf("raw JSON should NOT contain \"messages\" field, got %s", raw)
 	}
 }

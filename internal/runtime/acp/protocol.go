@@ -75,6 +75,12 @@ type InitializeResult struct {
 	ServerInfo ServerInfo `json:"serverInfo"`
 }
 
+// SessionNewParams is the params for the "session/new" request.
+type SessionNewParams struct {
+	Cwd        string `json:"cwd"`
+	McpServers []any  `json:"mcpServers"`
+}
+
 // SessionNewResult is the result of the "session/new" request.
 type SessionNewResult struct {
 	SessionID string `json:"sessionId"`
@@ -82,14 +88,8 @@ type SessionNewResult struct {
 
 // SessionPromptParams is the params for the "session/prompt" request.
 type SessionPromptParams struct {
-	SessionID string          `json:"sessionId"`
-	Messages  []PromptMessage `json:"messages"`
-}
-
-// PromptMessage is a message within a session/prompt request.
-type PromptMessage struct {
-	Role    string         `json:"role"`
-	Content []ContentBlock `json:"content"`
+	SessionID string         `json:"sessionId"`
+	Prompt    []ContentBlock `json:"prompt"`
 }
 
 // SessionUpdateParams is the params for "session/update" notifications.
@@ -135,8 +135,11 @@ func newInitializedNotification() JSONRPCMessage {
 }
 
 // newSessionNewRequest creates a "session/new" request.
-func newSessionNewRequest() (JSONRPCMessage, int64) {
-	return newRequest("session/new", nil)
+func newSessionNewRequest(workDir string) (JSONRPCMessage, int64) {
+	return newRequest("session/new", SessionNewParams{
+		Cwd:        workDir,
+		McpServers: []any{},
+	})
 }
 
 // newSessionPromptRequest creates a "session/prompt" request from
@@ -159,12 +162,7 @@ func newSessionPromptRequest(sessionID string, content []runtime.ContentBlock) (
 	}
 	return newRequest("session/prompt", SessionPromptParams{
 		SessionID: sessionID,
-		Messages: []PromptMessage{
-			{
-				Role:    "user",
-				Content: blocks,
-			},
-		},
+		Prompt:    blocks,
 	})
 }
 

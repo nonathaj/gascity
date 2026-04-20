@@ -263,7 +263,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 	hsTimeoutCtx, hsTimeoutCancel := context.WithTimeout(hsCtx, p.cfg.handshakeTimeout())
 	defer hsTimeoutCancel()
 
-	if err := p.handshake(hsTimeoutCtx, sc); err != nil {
+	if err := p.handshake(hsTimeoutCtx, sc, cfg.WorkDir); err != nil {
 		// Handshake failed — kill the process. The monitor goroutine
 		// handles listener/socket cleanup when the process exits.
 		_ = stdinPipe.Close()
@@ -301,7 +301,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 }
 
 // handshake performs the ACP initialize → initialized → session/new sequence.
-func (p *Provider) handshake(ctx context.Context, sc *sessionConn) error {
+func (p *Provider) handshake(ctx context.Context, sc *sessionConn, workDir string) error {
 	// Step 1: Send "initialize" request.
 	initReq, _ := newInitializeRequest()
 	ch, err := sc.sendRequest(initReq)
@@ -328,7 +328,7 @@ func (p *Provider) handshake(ctx context.Context, sc *sessionConn) error {
 	}
 
 	// Step 3: Send "session/new" request.
-	newReq, _ := newSessionNewRequest()
+	newReq, _ := newSessionNewRequest(workDir)
 	ch, err = sc.sendRequest(newReq)
 	if err != nil {
 		return fmt.Errorf("sending session/new: %w", err)
