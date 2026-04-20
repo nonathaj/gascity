@@ -113,7 +113,7 @@ func TestTemplateParamsToConfigNoneModeUsesNudge(t *testing.T) {
 	}
 }
 
-func TestTemplateParamsToConfigNoneModeWithHooksSkipsStartupNudge(t *testing.T) {
+func TestTemplateParamsToConfigNoneModeWithHooksStillUsesStartupNudge(t *testing.T) {
 	tp := TemplateParams{
 		Command: "opencode",
 		Prompt:  "You are an agent. Do work.",
@@ -134,12 +134,13 @@ func TestTemplateParamsToConfigNoneModeWithHooksSkipsStartupNudge(t *testing.T) 
 	if cfg.PromptSuffix != "" {
 		t.Errorf("PromptSuffix should be empty for none mode, got %q", cfg.PromptSuffix)
 	}
-	if cfg.Nudge != "existing nudge" {
-		t.Errorf("Nudge = %q, want existing nudge only", cfg.Nudge)
+	want := "You are an agent. Do work.\n\n---\n\nexisting nudge"
+	if cfg.Nudge != want {
+		t.Errorf("Nudge = %q, want %q", cfg.Nudge, want)
 	}
 }
 
-func TestTemplateParamsToConfigHookEnabledProviderSkipsLaunchPrompt(t *testing.T) {
+func TestTemplateParamsToConfigHookEnabledProviderStillUsesLaunchPrompt(t *testing.T) {
 	tests := []struct {
 		name       string
 		promptMode string
@@ -169,11 +170,15 @@ func TestTemplateParamsToConfigHookEnabledProviderSkipsLaunchPrompt(t *testing.T
 
 			cfg := templateParamsToConfig(tp)
 
-			if cfg.PromptSuffix != "" {
-				t.Fatalf("PromptSuffix should be empty for hook-enabled startup, got %q", cfg.PromptSuffix)
+			if cfg.PromptSuffix == "" {
+				t.Fatalf("PromptSuffix should still carry the startup prompt when hooks are enabled")
 			}
-			if cfg.PromptFlag != "" {
-				t.Fatalf("PromptFlag should be empty for hook-enabled startup, got %q", cfg.PromptFlag)
+			if tt.promptMode == "flag" {
+				if cfg.PromptFlag != "--prompt" {
+					t.Fatalf("PromptFlag = %q, want %q", cfg.PromptFlag, "--prompt")
+				}
+			} else if cfg.PromptFlag != "" {
+				t.Fatalf("PromptFlag should be empty for arg mode, got %q", cfg.PromptFlag)
 			}
 			if cfg.Nudge != "existing nudge" {
 				t.Fatalf("Nudge = %q, want existing nudge only", cfg.Nudge)

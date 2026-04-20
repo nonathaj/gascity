@@ -31,8 +31,8 @@ func TestTutorial07Orders(t *testing.T) {
 	replaceInFile(
 		t,
 		cityToml,
-		fmt.Sprintf("name = %q\npath = %q\n", "my-api", myAPI),
-		fmt.Sprintf("name = %q\npath = %q\n\n[rigs.imports.dev_ops]\nsource = \"./packs/dev-ops\"\n", "my-api", myAPI),
+		fmt.Sprintf("name = %q\n", "my-api"),
+		fmt.Sprintf("name = %q\n\n[rigs.imports.dev_ops]\nsource = \"./packs/dev-ops\"\n", "my-api"),
 	)
 
 	writeFile(t, filepath.Join(myCity, "formulas", "review.toml"), `formula = "review"

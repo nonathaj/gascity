@@ -42,12 +42,7 @@ func TestMain(m *testing.M) {
 	// 1. ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN env var (CI mode)
 	// 2. GC_TIERC_FORCE=1 env var (local OAuth mode — user asserts Claude is authed)
 	// 3. Detect OAuth: check if ~/.claude/ exists with credentials
-	authToken := strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN"))
-	apiKey := firstNonEmpty(
-		strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
-		authToken,
-	)
-	hasEnvAuth := authToken != "" || apiKey != ""
+	apiKey, _, hasEnvAuth := tierCEnvAuth()
 	forceRun := os.Getenv("GC_TIERC_FORCE") == "1"
 	hasOAuth := oauthCredentialsExist()
 
@@ -104,7 +99,7 @@ func TestMain(m *testing.M) {
 	// leaving the on-disk token expired. A quick --print call forces the
 	// refresh and (in newer versions) persists it.
 	if refreshOut, err := exec.Command("claude", "--print", "ok").CombinedOutput(); err != nil {
-		if apiKey != "" {
+		if hasEnvAuth {
 			panic(fmt.Sprintf("acceptance-c: provider preflight failed: %v\n%s", err, refreshOut))
 		}
 		fmt.Fprintf(os.Stderr, "acceptance-c: OAuth preflight refresh failed: %v\n%s\n", err, refreshOut)
@@ -636,13 +631,11 @@ func oauthCredentialsExist() bool {
 	return false
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
+func tierCEnvAuth() (apiKey, authToken string, hasEnvAuth bool) {
+	apiKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	authToken = strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN"))
+	hasEnvAuth = apiKey != "" || authToken != ""
+	return apiKey, authToken, hasEnvAuth
 }
 
 func stageTierCAcceptanceProviders(binDir, apiKey string) error {
@@ -704,6 +697,16 @@ func tierCHostProviderShim(name string, unsetVars []string) (string, error) {
 
 func shellQuoteTierC(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
+}
+
+func TestTierCEnvAuthDoesNotMirrorAuthTokenIntoAPIKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-token")
+
+	apiKey, authToken, hasEnvAuth := tierCEnvAuth()
+	require.Empty(t, apiKey)
+	require.Equal(t, "synthetic-token", authToken)
+	require.True(t, hasEnvAuth)
 }
 
 func stageClaudeOAuth(realHome, gcHome string) error {

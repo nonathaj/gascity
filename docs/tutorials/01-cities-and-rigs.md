@@ -201,7 +201,7 @@ Rig added.
 ```
 
 Gas City derived the rig name from the directory basename (`my-project`) and set
-up work tracking in it. You can see the new entry in `city.toml`:
+up work tracking in it. The shared rig declaration lives in `city.toml`:
 
 ```shell
 
@@ -214,6 +214,13 @@ provider = "claude"
 ... # content elided
 
 [[rigs]]
+name = "my-project"
+```
+
+The machine-local path binding lives in `.gc/site.toml`:
+
+```toml
+[[rig]]
 name = "my-project"
 path = "/Users/csells/my-project"
 ```

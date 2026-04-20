@@ -24,6 +24,7 @@ var tutorialPageManifests = []pageManifest{
 			"cd ~/my-city",
 			"ls",
 			"cat city.toml",
+			"cat pack.toml",
 			"gc status",
 			"gc rig add ~/my-project",
 			"cat city.toml",
@@ -100,6 +101,7 @@ var tutorialPageManifests = []pageManifest{
 	{
 		path: "docs/tutorials/06-beads.md",
 		commands: []string{
+			"cat pack.toml",
 			"cat city.toml",
 			"cat agents/reviewer/agent.toml",
 			"bd list",

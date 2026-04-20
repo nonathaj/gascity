@@ -73,9 +73,10 @@ type TemplateParams struct {
 	// IsACP is true if session = "acp".
 	IsACP bool
 	// HookEnabled reports whether provider hooks are installed for this agent.
-	// Hook-enabled providers receive startup context via their hook path
-	// (for example gc prime --hook), so PromptMode=none should not also
-	// fall back to a delayed startup nudge.
+	// Hooks complement startup delivery but do not replace the initial
+	// user-turn prompt. SessionStart hooks can add context, persist session
+	// metadata, and start background helpers, but they do not initiate the
+	// first model turn on their own.
 	HookEnabled bool
 	// DependencyOnly marks a realized cold slot kept only so dependency wake
 	// has something concrete to wake even when pool check wants zero.
@@ -532,23 +533,20 @@ func templateParamsToConfig(tp TemplateParams) runtime.Config {
 	var promptSuffix string
 	var promptFlag string
 	nudge := tp.Hints.Nudge
-	deliverStartupViaHooks := tp.HookEnabled && tp.ResolvedProvider != nil && tp.ResolvedProvider.SupportsHooks
 	if tp.Prompt != "" {
-		// Hook-enabled providers prime themselves on SessionStart via
-		// gc prime --hook, so the rendered role prompt must not also be
-		// replayed as argv or a delayed startup nudge.
-		if !deliverStartupViaHooks {
-			if tp.ResolvedProvider != nil && tp.ResolvedProvider.PromptMode == "none" {
-				if nudge != "" {
-					nudge = tp.Prompt + "\n\n---\n\n" + nudge
-				} else {
-					nudge = tp.Prompt
-				}
+		// SessionStart hooks can enrich context, but the startup prompt still
+		// needs a first-turn delivery mechanism. Without argv/flag/nudge
+		// delivery, freshly spawned workers sit idle at the provider prompt.
+		if tp.ResolvedProvider != nil && tp.ResolvedProvider.PromptMode == "none" {
+			if nudge != "" {
+				nudge = tp.Prompt + "\n\n---\n\n" + nudge
 			} else {
-				promptSuffix = shellquote.Quote(tp.Prompt)
-				if tp.ResolvedProvider != nil && tp.ResolvedProvider.PromptMode == "flag" && tp.ResolvedProvider.PromptFlag != "" {
-					promptFlag = tp.ResolvedProvider.PromptFlag
-				}
+				nudge = tp.Prompt
+			}
+		} else {
+			promptSuffix = shellquote.Quote(tp.Prompt)
+			if tp.ResolvedProvider != nil && tp.ResolvedProvider.PromptMode == "flag" && tp.ResolvedProvider.PromptFlag != "" {
+				promptFlag = tp.ResolvedProvider.PromptFlag
 			}
 		}
 	}

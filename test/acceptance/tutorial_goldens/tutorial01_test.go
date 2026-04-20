@@ -170,8 +170,22 @@ func TestTutorial01Cities(t *testing.T) {
 			if !strings.Contains(out, `name = "my-project"`) {
 				t.Fatalf("city.toml missing rig entry:\n%s", out)
 			}
+			if strings.Contains(out, myProject) {
+				t.Fatalf("city.toml should not contain machine-local rig path %q:\n%s", myProject, out)
+			}
+		})
+
+		t.Run("read .gc/site.toml (with rig)", func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(myCity, ".gc", "site.toml"))
+			if err != nil {
+				t.Fatalf("read .gc/site.toml: %v", err)
+			}
+			out := string(data)
+			if !strings.Contains(out, `name = "my-project"`) {
+				t.Fatalf(".gc/site.toml missing rig entry:\n%s", out)
+			}
 			if !strings.Contains(out, myProject) {
-				t.Fatalf("city.toml missing rig path %q:\n%s", myProject, out)
+				t.Fatalf(".gc/site.toml missing rig path %q:\n%s", myProject, out)
 			}
 		})
 

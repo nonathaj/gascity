@@ -385,17 +385,26 @@ And your city applies that pack to two rigs:
 # city.toml
 [[rigs]]
 name = "my-api"
-path = "../my-api"
 
 [rigs.imports.dev_ops]
 source = "./packs/dev-ops"
 
 [[rigs]]
 name = "my-frontend"
-path = "../my-frontend"
 
 [rigs.imports.dev_ops]
 source = "./packs/dev-ops"
+```
+
+```toml
+# .gc/site.toml
+[[rig]]
+name = "my-api"
+path = "../my-api"
+
+[[rig]]
+name = "my-frontend"
+path = "../my-frontend"
 ```
 
 Now the city has the same order running independently for each rig:

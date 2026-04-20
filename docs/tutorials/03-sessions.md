@@ -37,12 +37,19 @@ provider = "claude"
 
 [[rigs]]
 name = "my-project"
-path = "/Users/csells/my-project"
 
 ~/my-city
 $ cat agents/reviewer/agent.toml
 dir = "my-project"
 provider = "codex"
+```
+
+The rig's machine-local path binding now lives in `.gc/site.toml` instead:
+
+```toml
+[[rig]]
+name = "my-project"
+path = "/Users/csells/my-project"
 ```
 
 The reviewer's prompt lives at `agents/reviewer/prompt.template.md`. This is the
