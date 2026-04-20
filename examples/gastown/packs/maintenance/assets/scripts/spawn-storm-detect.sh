@@ -64,9 +64,15 @@ Recommended actions:
 done
 
 # Step 4: Prune closed beads from ledger.
-CLOSED_IDS=$(bd list --status=closed --json --limit=0 2>/dev/null | jq -r '.[].id' 2>/dev/null) || true
-for cid in $CLOSED_IDS; do
-    COUNTS=$(echo "$COUNTS" | jq --arg id "$cid" 'del(.[$id])' 2>/dev/null) || true
+# Only check beads actually tracked in the ledger (avoids expensive full scan
+# of all closed beads via bd list --status=closed --limit=0).
+TRACKED_IDS=$(echo "$COUNTS" | jq -r 'keys[]' 2>/dev/null) || true
+for tid in $TRACKED_IDS; do
+    [ -z "$tid" ] && continue
+    BEAD_STATUS=$(bd show "$tid" --json 2>/dev/null | jq -r '.[0].status // "unknown"' 2>/dev/null) || true
+    if [ "$BEAD_STATUS" = "closed" ]; then
+        COUNTS=$(echo "$COUNTS" | jq --arg id "$tid" 'del(.[$id])' 2>/dev/null) || true
+    fi
 done
 
 # Step 5: Save updated ledger.

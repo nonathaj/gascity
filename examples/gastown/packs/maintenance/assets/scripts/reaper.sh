@@ -9,6 +9,11 @@
 set -euo pipefail
 
 CITY="${GC_CITY:-.}"
+# Source dolt runtime.sh to discover the actual port (GC_DOLT_* env vars are
+# stripped in exec order context — see internal/beads/exec/exec.go).
+GC_CITY_PATH="${GC_CITY_PATH:-$CITY}"
+_RUNTIME_SH="$GC_CITY_PATH/.gc/system/packs/dolt/assets/scripts/runtime.sh"
+if [ -f "$_RUNTIME_SH" ]; then set +u; . "$_RUNTIME_SH"; set -u; fi
 DOLT_PORT="${GC_DOLT_PORT:-3307}"
 
 # Configurable thresholds (defaults match the old formula).
