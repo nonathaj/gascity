@@ -274,7 +274,7 @@ func buildDesiredStateWithSessionBeads(
 				qualifiedInstance := cfg.Agents[pw.agentIdx].QualifiedInstanceName(name)
 				instanceAgent := deepCopyAgent(&cfg.Agents[pw.agentIdx], name, cfg.Agents[pw.agentIdx].Dir)
 				fpExtra := buildFingerprintExtra(&instanceAgent)
-				tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
+				tp, err := resolveTemplatePrepared(bp, &instanceAgent, qualifiedInstance, fpExtra)
 				if err != nil {
 					fmt.Fprintf(stderr, "buildDesiredState: pool instance %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
 					continue
@@ -363,7 +363,7 @@ func buildDesiredStateWithSessionBeads(
 			continue
 		}
 		fpExtra := buildFingerprintExtra(spec.Agent)
-		tp, err := resolveTemplate(bp, spec.Agent, identity, fpExtra)
+		tp, err := resolveTemplatePrepared(bp, spec.Agent, identity, fpExtra)
 		if err != nil {
 			fmt.Fprintf(stderr, "buildDesiredState: named session %q: %v (skipping)\n", identity, err) //nolint:errcheck
 			continue
@@ -786,7 +786,7 @@ func ensureDependencyOnlyTemplate(
 		qualifiedInstance := cfgAgent.QualifiedInstanceName(name)
 		instanceAgent := deepCopyAgent(cfgAgent, name, cfgAgent.Dir)
 		fpExtra := buildFingerprintExtra(&instanceAgent)
-		tp, err := resolveTemplate(bp, &instanceAgent, qualifiedInstance, fpExtra)
+		tp, err := resolveTemplatePrepared(bp, &instanceAgent, qualifiedInstance, fpExtra)
 		if err != nil {
 			fmt.Fprintf(stderr, "buildDesiredState: dependency floor %q: %v (skipping)\n", qualifiedInstance, err) //nolint:errcheck
 			return
@@ -920,7 +920,7 @@ func resolveTemplateForSessionBead(
 ) (TemplateParams, error) {
 	local := *bp
 	local.beadNames = map[string]string{qualifiedName: sessionBead.Metadata["session_name"]}
-	return resolveTemplate(&local, cfgAgent, qualifiedName, fpExtra)
+	return resolveTemplatePrepared(&local, cfgAgent, qualifiedName, fpExtra)
 }
 
 // canonicalSessionIdentity returns the agent and qualified name to use when
@@ -1184,6 +1184,35 @@ func namedSessionAllowsControllerWorkQuery(cityPath string, cfg *config.City, sp
 		return true
 	}
 	return configuredRigName(cityPath, spec.Agent, cfg.Rigs) != ""
+}
+
+// prepareTemplateResolution installs any hook-backed files that must exist
+// before resolveTemplate fingerprints CopyFiles. This keeps generated hook
+// files from looking like config drift on the next reconcile tick.
+func prepareTemplateResolution(bp *agentBuildParams, cfgAgent *config.Agent, qualifiedName string, stderr io.Writer) {
+	if bp == nil || cfgAgent == nil {
+		return
+	}
+	if ih := config.ResolveInstallHooks(cfgAgent, bp.workspace); len(ih) > 0 {
+		workDir, err := workdirutil.ResolveWorkDirPathStrict(bp.cityPath, bp.cityName, qualifiedName, *cfgAgent, bp.rigs)
+		if err != nil {
+			return
+		}
+		workDir, err = resolveAgentDir(bp.cityPath, workDir)
+		if err != nil {
+			fmt.Fprintf(stderr, "agent %q: workdir: %v\n", qualifiedName, err) //nolint:errcheck
+			return
+		}
+		resolver := func(name string) string { return config.BuiltinFamily(name, bp.providers) }
+		if hErr := hooks.InstallWithResolver(bp.fs, bp.cityPath, workDir, ih, resolver); hErr != nil {
+			fmt.Fprintf(stderr, "agent %q: hooks: %v\n", qualifiedName, hErr) //nolint:errcheck
+		}
+	}
+}
+
+func resolveTemplatePrepared(bp *agentBuildParams, cfgAgent *config.Agent, qualifiedName string, fpExtra map[string]string) (TemplateParams, error) {
+	prepareTemplateResolution(bp, cfgAgent, qualifiedName, bp.stderr)
+	return resolveTemplate(bp, cfgAgent, qualifiedName, fpExtra)
 }
 
 // installAgentSideEffects performs idempotent side effects for a resolved

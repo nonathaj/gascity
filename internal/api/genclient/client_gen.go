@@ -1725,8 +1725,14 @@ type ProviderCreateInputBody struct {
 	// Args Command arguments.
 	Args *[]string `json:"args,omitempty"`
 
-	// Command Provider command binary.
-	Command string `json:"command"`
+	// ArgsAppend Arguments appended after inherited/base args.
+	ArgsAppend *[]string `json:"args_append,omitempty"`
+
+	// Base Optional provider base for inheritance.
+	Base *string `json:"base,omitempty"`
+
+	// Command Provider command binary. Omit for base-only descendants.
+	Command *string `json:"command,omitempty"`
 
 	// DisplayName Human-readable display name.
 	DisplayName *string `json:"display_name,omitempty"`
@@ -1736,6 +1742,9 @@ type ProviderCreateInputBody struct {
 
 	// Name Provider name.
 	Name string `json:"name"`
+
+	// OptionsSchemaMerge Options schema merge mode across inheritance chain.
+	OptionsSchemaMerge *string `json:"options_schema_merge,omitempty"`
 
 	// PromptFlag Flag for prompt delivery.
 	PromptFlag *string `json:"prompt_flag,omitempty"`
@@ -1868,6 +1877,12 @@ type ProviderUpdateInputBody struct {
 	// Args Command arguments.
 	Args *[]string `json:"args,omitempty"`
 
+	// ArgsAppend Arguments appended after inherited/base args.
+	ArgsAppend *[]string `json:"args_append,omitempty"`
+
+	// Base Provider base for inheritance.
+	Base *string `json:"base,omitempty"`
+
 	// Command Provider command binary.
 	Command *string `json:"command,omitempty"`
 
@@ -1876,6 +1891,9 @@ type ProviderUpdateInputBody struct {
 
 	// Env Environment variables.
 	Env *map[string]string `json:"env,omitempty"`
+
+	// OptionsSchemaMerge Options schema merge mode across inheritance chain.
+	OptionsSchemaMerge *string `json:"options_schema_merge,omitempty"`
 
 	// PromptFlag Flag for prompt delivery.
 	PromptFlag *string `json:"prompt_flag,omitempty"`
