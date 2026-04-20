@@ -898,6 +898,33 @@ func TestAppendRalphRetryDefersAssigneesUntilDepsAreWired(t *testing.T) {
 	}
 }
 
+func TestAppendRalphRetryGraphEdgesSkipsParentChildDeps(t *testing.T) {
+	t.Parallel()
+
+	store := beads.NewMemStore()
+	parent := mustCreateWorkflowBead(t, store, beads.Bead{Title: "parent", Type: "task"})
+	child := mustCreateWorkflowBead(t, store, beads.Bead{Title: "child", Type: "task", ParentID: parent.ID})
+	blocker := mustCreateWorkflowBead(t, store, beads.Bead{Title: "blocker", Type: "task"})
+	mustDepAdd(t, store, child.ID, parent.ID, "parent-child")
+	mustDepAdd(t, store, child.ID, blocker.ID, "blocks")
+
+	plan := &beads.GraphApplyPlan{}
+	if err := appendRalphRetryGraphEdges(plan, store, child.ID, map[string]bool{
+		parent.ID:  true,
+		blocker.ID: true,
+	}); err != nil {
+		t.Fatalf("appendRalphRetryGraphEdges: %v", err)
+	}
+
+	if len(plan.Edges) != 1 {
+		t.Fatalf("edges = %+v, want only the blocking edge", plan.Edges)
+	}
+	edge := plan.Edges[0]
+	if edge.Type != "blocks" || edge.FromKey != child.ID || edge.ToKey != blocker.ID {
+		t.Fatalf("edge = %+v, want blocks edge to blocker", edge)
+	}
+}
+
 func TestAppendRalphRetryClearsPoolAssignee(t *testing.T) {
 	t.Parallel()
 

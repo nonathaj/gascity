@@ -542,6 +542,9 @@ func appendRalphRetryGraphEdges(plan *beads.GraphApplyPlan, store beads.Store, o
 		return err
 	}
 	for _, dep := range deps {
+		if dep.Type == "parent-child" {
+			continue
+		}
 		edge := beads.GraphApplyEdge{
 			FromKey: oldID,
 			Type:    dep.Type,

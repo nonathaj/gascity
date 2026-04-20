@@ -751,6 +751,12 @@ func (s *BdStore) Ready() ([]Bead, error) {
 
 // DepAdd records a dependency via bd dep add.
 func (s *BdStore) DepAdd(issueID, dependsOnID, depType string) error {
+	if depType == "parent-child" {
+		bead, err := s.Get(issueID)
+		if err == nil && bead.ParentID == dependsOnID {
+			return nil
+		}
+	}
 	_, err := s.runner(s.dir, "bd", "dep", "add", issueID, dependsOnID, "--type", depType)
 	if err != nil {
 		return fmt.Errorf("adding dep %s→%s: %w", issueID, dependsOnID, err)

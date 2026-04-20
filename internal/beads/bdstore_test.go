@@ -861,6 +861,28 @@ func TestBdStoreCreateWithParentID(t *testing.T) {
 	}
 }
 
+func TestBdStoreDepAddParentChildAlreadyParentedIsNoop(t *testing.T) {
+	calls := make([]string, 0, 1)
+	runner := func(_, name string, args ...string) ([]byte, error) {
+		call := name + " " + strings.Join(args, " ")
+		calls = append(calls, call)
+		switch call {
+		case "bd show --json bd-child":
+			return []byte(`[{"id":"bd-child","title":"child","status":"open","issue_type":"task","created_at":"2025-01-15T10:30:00Z","parent":"bd-parent"}]`), nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", call)
+		}
+	}
+	s := beads.NewBdStore("/city", runner)
+
+	if err := s.DepAdd("bd-child", "bd-parent", "parent-child"); err != nil {
+		t.Fatalf("DepAdd: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("calls = %v, want only bd show", calls)
+	}
+}
+
 func TestBdStoreCreateNoLabelsNoParent(t *testing.T) {
 	var gotArgs []string
 	runner := func(_, _ string, args ...string) ([]byte, error) {

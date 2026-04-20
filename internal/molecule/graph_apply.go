@@ -279,16 +279,11 @@ func buildFragmentApplyPlan(store beads.Store, recipe *formula.FragmentRecipe, o
 		priorityOverride = clonePriority(root.Priority)
 	}
 	vars := applyVarDefaults(opts.Vars, recipe.Vars)
-	externalDepsByStep := make(map[string][]ExternalDep)
-	for _, dep := range opts.ExternalDeps {
-		if dep.StepID == "" || dep.DependsOnID == "" {
-			continue
-		}
-		if dep.Type == "" {
-			dep.Type = "blocks"
-		}
-		externalDepsByStep[dep.StepID] = append(externalDepsByStep[dep.StepID], dep)
+	externalDepsByStep, err := groupExternalDeps(opts.ExternalDeps)
+	if err != nil {
+		return nil, err
 	}
+	recipeParentByStep := recipeParentDeps(recipe.Deps)
 
 	plan := &beads.GraphApplyPlan{
 		CommitMessage: fmt.Sprintf("gc: instantiate fragment into %s", opts.RootID),
@@ -322,6 +317,9 @@ func buildFragmentApplyPlan(store beads.Store, recipe *formula.FragmentRecipe, o
 			node.AssignAfterCreate = true
 		}
 		for _, dep := range externalDepsByStep[step.ID] {
+			if dep.Type == "parent-child" && recipeParentByStep[step.ID] != "" {
+				continue
+			}
 			if dep.Type == "parent-child" {
 				node.ParentID = dep.DependsOnID
 			}
@@ -394,6 +392,7 @@ func setNodeParentRef(nodes []beads.GraphApplyNode, stepID, parentKey, parentID 
 		}
 		if parentKey != "" {
 			nodes[i].ParentKey = parentKey
+			nodes[i].ParentID = ""
 		}
 		if parentID != "" {
 			nodes[i].ParentID = parentID
