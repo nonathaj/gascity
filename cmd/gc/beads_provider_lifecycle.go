@@ -305,6 +305,12 @@ func normalizeCanonicalBdScopeFilesForInit(cityPath, dir, prefix, doltDatabase s
 	if strings.TrimSpace(doltDatabase) == "" {
 		doltDatabase = canonicalScopeDoltDatabase(cityPath, dir, prefix)
 	}
+	if isReservedManagedDoltDatabase(doltDatabase) {
+		// Preserve legacy probe metadata during startup normalization so old
+		// scopes can still boot and migrate deliberately. New init paths still
+		// reject this reserved name when it is not already pinned in metadata.
+		return ensureCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase)
+	}
 	return enforceCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase)
 }
 
@@ -471,7 +477,11 @@ func finalizeCanonicalBdScopeInit(cityPath, dir, prefix, doltDatabase string) er
 	if strings.TrimSpace(doltDatabase) == "" {
 		doltDatabase = defaultScopeDoltDatabase(cityPath, dir, prefix)
 	}
-	if err := enforceCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase); err != nil {
+	if isReservedManagedDoltDatabase(doltDatabase) {
+		if err := ensureCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase); err != nil {
+			return err
+		}
+	} else if err := enforceCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase); err != nil {
 		return err
 	}
 	store, err := openStoreAtForCity(dir, cityPath)
@@ -874,6 +884,7 @@ func ensureCanonicalScopeMetadata(fs fsys.FS, scopeRoot, doltDatabase string, pr
 	return err
 }
 
+//nolint:unparam // keep fs seam for future testable FS injection
 func ensureCanonicalScopeMetadataForInit(fs fsys.FS, scopeRoot, doltDatabase string) error {
 	return ensureCanonicalScopeMetadata(fs, scopeRoot, doltDatabase, true)
 }

@@ -1590,8 +1590,18 @@ op_init() {
     local dir="$1"
     local prefix="$2"
     local dolt_database="${3:-}"
+    local metadata_path="$dir/.beads/metadata.json"
+    local existing_db=""
+    local allow_reserved_existing=false
     if [ -z "$dir" ] || [ -z "$prefix" ]; then
         die "usage: gc-beads-bd init <dir> <prefix> [dolt_database]"
+    fi
+
+    if [ -f "$metadata_path" ]; then
+        existing_db=$(read_existing_dolt_database "$metadata_path")
+        if [ -n "$existing_db" ] && is_reserved_dolt_database_name "$existing_db"; then
+            allow_reserved_existing=true
+        fi
     fi
 
     # Validate prefix before SQL interpolation (upstream 38f7b380).
@@ -1600,7 +1610,11 @@ op_init() {
     fi
     if [ -n "$dolt_database" ]; then
         if is_reserved_dolt_database_name "$dolt_database"; then
-            die "reserved dolt database name: $dolt_database (used internally by gc)"
+            if [ "$allow_reserved_existing" = true ]; then
+                dolt_database="$existing_db"
+            else
+                die "reserved dolt database name: $dolt_database (used internally by gc)"
+            fi
         fi
         if ! valid_sql_name "$dolt_database"; then
             die "invalid dolt database name: $dolt_database (must be alphanumeric, hyphens, underscores)"
@@ -1616,21 +1630,26 @@ op_init() {
     if [ -z "$dolt_database" ]; then
         # Compatibility fallback for direct gc-beads-bd invocations.
         # GC's canonical path passes dolt_database explicitly.
-        local existing_db
-        existing_db=$(read_existing_dolt_database "$dir/.beads/metadata.json")
         if [ -n "$existing_db" ]; then
             if is_reserved_dolt_database_name "$existing_db"; then
-                die "reserved dolt database name: $existing_db (used internally by gc)"
-            fi
-            if ! valid_sql_name "$existing_db"; then
+                if [ "$allow_reserved_existing" = true ]; then
+                    # Preserve legacy probe metadata for already-initialized
+                    # scopes so startup can recover them into the canonical
+                    # migration flow. Fresh init still rejects this name.
+                    dolt_database="$existing_db"
+                else
+                    die "reserved dolt database name: $existing_db (used internally by gc)"
+                fi
+            elif ! valid_sql_name "$existing_db"; then
                 die "invalid existing dolt database name: $existing_db"
+            else
+                dolt_database="$existing_db"
             fi
-            dolt_database="$existing_db"
         else
             dolt_database="$prefix"
         fi
     fi
-    if is_reserved_dolt_database_name "$dolt_database"; then
+    if is_reserved_dolt_database_name "$dolt_database" && [ "$allow_reserved_existing" != true ]; then
         die "reserved dolt database name: $dolt_database (used internally by gc)"
     fi
 

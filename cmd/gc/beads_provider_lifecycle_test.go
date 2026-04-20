@@ -201,6 +201,37 @@ func TestNormalizeCanonicalBdScopeFilesPreservesExistingManagedProbeDatabase(t *
 	}
 }
 
+func TestNormalizeCanonicalBdScopeFilesForInitPreservesExistingManagedProbeDatabase(t *testing.T) {
+	cityPath := t.TempDir()
+	metadataPath := filepath.Join(cityPath, ".beads", "metadata.json")
+	if err := os.MkdirAll(filepath.Dir(metadataPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := contract.EnsureCanonicalMetadata(fsys.OSFS{}, metadataPath, contract.MetadataState{
+		Database:     "dolt",
+		Backend:      "dolt",
+		DoltMode:     "server",
+		DoltDatabase: strings.ToUpper(managedDoltProbeDatabase),
+	}); err != nil {
+		t.Fatalf("EnsureCanonicalMetadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cityPath, ".beads", "config.yaml"), []byte("issue_prefix: gc\nissue-prefix: gc\ndolt.auto-start: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := normalizeCanonicalBdScopeFilesForInit(cityPath, cityPath, "gc", strings.ToUpper(managedDoltProbeDatabase)); err != nil {
+		t.Fatalf("normalizeCanonicalBdScopeFilesForInit: %v", err)
+	}
+
+	got, ok, err := contract.ReadDoltDatabase(fsys.OSFS{}, metadataPath)
+	if err != nil {
+		t.Fatalf("ReadDoltDatabase: %v", err)
+	}
+	if !ok || got != strings.ToUpper(managedDoltProbeDatabase) {
+		t.Fatalf("dolt_database = %q, ok=%v; want existing reserved name preserved", got, ok)
+	}
+}
+
 func TestGcBeadsBdCleanupStaleLocksBoundsLsof(t *testing.T) {
 	cityPath := t.TempDir()
 	if err := MaterializeBuiltinPacks(cityPath); err != nil {
@@ -4037,6 +4068,151 @@ esac
 	}
 	metaText := string(metaData)
 	if !strings.Contains(metaText, `"dolt_database": "gascity"`) || !strings.Contains(metaText, `"project_id": "backfilled-project-id"`) {
+		t.Fatalf("metadata = %s", metaText)
+	}
+}
+
+func TestGcBeadsBdInitFastPathPreservesExistingManagedProbeDatabase(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := contract.EnsureCanonicalMetadata(fsys.OSFS{}, filepath.Join(cityPath, ".beads", "metadata.json"), contract.MetadataState{
+		Database:     "dolt",
+		Backend:      "dolt",
+		DoltMode:     "server",
+		DoltDatabase: strings.ToUpper(managedDoltProbeDatabase),
+	}); err != nil {
+		t.Fatalf("EnsureCanonicalMetadata: %v", err)
+	}
+
+	if err := MaterializeBuiltinPacks(cityPath); err != nil {
+		t.Fatalf("MaterializeBuiltinPacks: %v", err)
+	}
+	script := gcBeadsBdScriptPath(cityPath)
+
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	captureDir := t.TempDir()
+	fakeBd := filepath.Join(binDir, "bd")
+	fakeBdScript := fmt.Sprintf(`#!/bin/sh
+set -eu
+capture_dir=%q
+record_db() {
+  python3 -c 'import json, pathlib, sys; meta = json.loads(pathlib.Path(sys.argv[1]).read_text()); log = pathlib.Path(sys.argv[2]); db = meta.get("dolt_database", ""); prefix = log.read_text() if log.exists() else ""; log.write_text(prefix + db + "\n")' "$1" "$2"
+}
+case "${1:-}" in
+  config)
+    record_db "$PWD/.beads/metadata.json" "$capture_dir/config-db.log"
+    exit 0
+    ;;
+  migrate)
+    record_db "$PWD/.beads/metadata.json" "$capture_dir/migrate-db.log"
+    python3 -c 'import json, pathlib, sys; path = pathlib.Path(sys.argv[1]); meta = json.loads(path.read_text()); meta["project_id"] = "backfilled-project-id"; path.write_text(json.dumps(meta, indent=2) + "\n")' "$PWD/.beads/metadata.json"
+    exit 0
+    ;;
+  list)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`, captureDir)
+	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeGC := filepath.Join(binDir, "gc-helper")
+	fakeGCScript := `#!/bin/sh
+set -eu
+subcmd="$1 $2"
+shift 2
+case "$subcmd" in
+  "dolt-config normalize-scope")
+    dir=""
+    database=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --city)
+          shift 2
+          ;;
+        --dir)
+          dir="$2"
+          shift 2
+          ;;
+        --prefix)
+          shift 2
+          ;;
+        --dolt-database)
+          database="$2"
+          shift 2
+          ;;
+        *)
+          exit 66
+          ;;
+      esac
+    done
+    python3 -c 'import json, pathlib, sys; meta_path = pathlib.Path(sys.argv[1]); database = sys.argv[2]; meta = json.loads(meta_path.read_text()); meta["database"] = "dolt"; meta["backend"] = "dolt"; meta["dolt_mode"] = "server"; meta["dolt_database"] = database; [meta.pop(key, None) for key in ["dolt_host", "dolt_user", "dolt_password", "dolt_server_host", "dolt_server_port", "dolt_server_user", "dolt_port"]]; meta_path.write_text(json.dumps(meta, indent=2) + "\n")' "$dir/.beads/metadata.json" "$database"
+    exit 0
+    ;;
+  "dolt-state ensure-project-id")
+    exit 0
+    ;;
+  *)
+    echo "unexpected gc helper args: $subcmd $*" >&2
+    exit 64
+    ;;
+esac
+`
+	if err := os.WriteFile(fakeGC, []byte(fakeGCScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fakeDolt := filepath.Join(binDir, "dolt")
+	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(script, "init", cityPath, "gc", strings.ToUpper(managedDoltProbeDatabase))
+	cmd.Env = sanitizedBaseEnv(
+		"GC_CITY_PATH="+cityPath,
+		"GC_BIN="+fakeGC,
+		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gc-beads-bd init failed: %v\n%s", err, out)
+	}
+
+	for _, name := range []string{"config-db.log", "migrate-db.log"} {
+		data, err := os.ReadFile(filepath.Join(captureDir, name))
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", name, err)
+		}
+		lines := strings.Fields(string(data))
+		if len(lines) == 0 {
+			t.Fatalf("%s empty", name)
+		}
+		for _, line := range lines {
+			if line != strings.ToUpper(managedDoltProbeDatabase) {
+				t.Fatalf("%s line = %q, want %s", name, line, strings.ToUpper(managedDoltProbeDatabase))
+			}
+		}
+	}
+
+	metaData, err := os.ReadFile(filepath.Join(cityPath, ".beads", "metadata.json"))
+	if err != nil {
+		t.Fatalf("read metadata: %v", err)
+	}
+	metaText := string(metaData)
+	if !strings.Contains(metaText, `"dolt_database": "`+strings.ToUpper(managedDoltProbeDatabase)+`"`) || !strings.Contains(metaText, `"project_id": "backfilled-project-id"`) {
 		t.Fatalf("metadata = %s", metaText)
 	}
 }
