@@ -375,6 +375,7 @@ func Instantiate(ctx context.Context, store beads.Store, recipe *formula.Recipe,
 
 	// Build the list of beads to create.
 	idMapping := make(map[string]string, len(recipe.Steps))
+	createdParentByStep := make(map[string]string, len(recipe.Steps))
 	var createdIDs []string
 	embeddedDeps := make(map[string]bool)
 	pendingAssignees := make(map[string]string)
@@ -491,6 +492,7 @@ func Instantiate(ctx context.Context, store beads.Store, recipe *formula.Recipe,
 		}
 
 		idMapping[step.ID] = created.ID
+		createdParentByStep[step.ID] = created.ParentID
 		createdIDs = append(createdIDs, created.ID)
 
 	}
@@ -505,6 +507,14 @@ func Instantiate(ctx context.Context, store beads.Store, recipe *formula.Recipe,
 			}
 			if embeddedDeps[dep.StepID+"|"+dep.DependsOnID+"|"+dep.Type] {
 				continue
+			}
+			if dep.Type == "parent-child" && createdParentByStep[dep.StepID] != toID {
+				parentID := toID
+				if err := store.Update(fromID, beads.UpdateOpts{ParentID: &parentID}); err != nil {
+					markFailed(store, createdIDs)
+					return nil, fmt.Errorf("setting parent for dep %s->%s: %w", dep.StepID, dep.DependsOnID, err)
+				}
+				createdParentByStep[dep.StepID] = toID
 			}
 			if err := store.DepAdd(fromID, toID, dep.Type); err != nil {
 				markFailed(store, createdIDs)
@@ -575,22 +585,18 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 	vars := applyVarDefaults(opts.Vars, recipe.Vars)
 	idMapping := make(map[string]string, len(recipe.Steps))
 	var createdIDs []string
+	createdParentByStep := make(map[string]string, len(recipe.Steps))
 	embeddedDeps := make(map[string]bool)
 	pendingAssignees := make(map[string]string)
 	existingLogicalBeadIDs, err := existingLogicalBeadIDIndex(store, opts.RootID)
 	if err != nil {
 		return nil, fmt.Errorf("indexing existing logical beads: %w", err)
 	}
-	externalDepsByStep := make(map[string][]ExternalDep)
-	for _, dep := range opts.ExternalDeps {
-		if dep.StepID == "" || dep.DependsOnID == "" {
-			continue
-		}
-		if dep.Type == "" {
-			dep.Type = "blocks"
-		}
-		externalDepsByStep[dep.StepID] = append(externalDepsByStep[dep.StepID], dep)
+	externalDepsByStep, err := groupExternalDeps(opts.ExternalDeps)
+	if err != nil {
+		return nil, err
 	}
+	recipeParentByStep := recipeParentDeps(recipe.Deps)
 
 	for _, step := range recipe.Steps {
 		b := stepToBead(step, vars, priorityOverride)
@@ -612,6 +618,9 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 			embeddedDeps[dep.StepID+"|"+dep.DependsOnID+"|"+dep.Type] = true
 		}
 		for _, dep := range externalDepsByStep[step.ID] {
+			if dep.Type == "parent-child" {
+				continue
+			}
 			if dep.Type == "blocks" {
 				b.Needs = append(b.Needs, dep.DependsOnID)
 			} else {
@@ -627,7 +636,7 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 			}
 		}
 		for _, dep := range externalDepsByStep[step.ID] {
-			if b.ParentID == "" && dep.Type == "parent-child" && dep.DependsOnID != "" {
+			if b.ParentID == "" && recipeParentByStep[step.ID] == "" && dep.Type == "parent-child" && dep.DependsOnID != "" {
 				b.ParentID = dep.DependsOnID
 				break
 			}
@@ -669,6 +678,7 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 			return nil, fmt.Errorf("creating fragment bead for step %q: %w", step.ID, err)
 		}
 		idMapping[step.ID] = created.ID
+		createdParentByStep[step.ID] = created.ParentID
 		createdIDs = append(createdIDs, created.ID)
 	}
 
@@ -681,9 +691,35 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 		if embeddedDeps[dep.StepID+"|"+dep.DependsOnID+"|"+dep.Type] {
 			continue
 		}
+		if dep.Type == "parent-child" && createdParentByStep[dep.StepID] != toID {
+			parentID := toID
+			if err := store.Update(fromID, beads.UpdateOpts{ParentID: &parentID}); err != nil {
+				markFailed(store, createdIDs)
+				return nil, fmt.Errorf("setting fragment parent for dep %s->%s: %w", dep.StepID, dep.DependsOnID, err)
+			}
+			createdParentByStep[dep.StepID] = toID
+		}
 		if err := store.DepAdd(fromID, toID, dep.Type); err != nil {
 			markFailed(store, createdIDs)
 			return nil, fmt.Errorf("wiring fragment dep %s->%s: %w", dep.StepID, dep.DependsOnID, err)
+		}
+	}
+	for stepID, deps := range externalDepsByStep {
+		if recipeParentByStep[stepID] != "" {
+			continue
+		}
+		fromID, fromOK := idMapping[stepID]
+		if !fromOK {
+			continue
+		}
+		for _, dep := range deps {
+			if dep.Type != "parent-child" {
+				continue
+			}
+			if err := store.DepAdd(fromID, dep.DependsOnID, dep.Type); err != nil {
+				markFailed(store, createdIDs)
+				return nil, fmt.Errorf("wiring external fragment dep %s->%s: %w", stepID, dep.DependsOnID, err)
+			}
 		}
 	}
 
@@ -705,6 +741,37 @@ func InstantiateFragment(ctx context.Context, store beads.Store, recipe *formula
 		IDMapping: idMapping,
 		Created:   len(createdIDs),
 	}, nil
+}
+
+func recipeParentDeps(deps []formula.RecipeDep) map[string]string {
+	parents := make(map[string]string)
+	for _, dep := range deps {
+		if dep.Type == "parent-child" && dep.StepID != "" && dep.DependsOnID != "" && parents[dep.StepID] == "" {
+			parents[dep.StepID] = dep.DependsOnID
+		}
+	}
+	return parents
+}
+
+func groupExternalDeps(deps []ExternalDep) (map[string][]ExternalDep, error) {
+	byStep := make(map[string][]ExternalDep)
+	parentByStep := make(map[string]string)
+	for _, dep := range deps {
+		if dep.StepID == "" || dep.DependsOnID == "" {
+			continue
+		}
+		if dep.Type == "" {
+			dep.Type = "blocks"
+		}
+		if dep.Type == "parent-child" {
+			if parentByStep[dep.StepID] != "" {
+				return nil, fmt.Errorf("step %q has multiple external parent-child deps", dep.StepID)
+			}
+			parentByStep[dep.StepID] = dep.DependsOnID
+		}
+		byStep[dep.StepID] = append(byStep[dep.StepID], dep)
+	}
+	return byStep, nil
 }
 
 // stepToBead converts a RecipeStep to a Bead with variable substitution.

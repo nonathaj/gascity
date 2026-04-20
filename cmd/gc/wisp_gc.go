@@ -56,23 +56,31 @@ func (m *memoryWispGC) runGC(store beads.Store, now time.Time) (int, error) {
 	}
 
 	cutoff := now.Add(-m.ttl)
-	purged := purgeExpiredBeads(store, entries, cutoff)
+	purged := purgeExpiredBeadClosures(store, entries, cutoff)
 
 	trackEntries, trackErr := store.List(beads.ListQuery{Status: "closed", Label: labelOrderTracking})
 	if trackErr == nil {
-		purged += purgeExpiredBeads(store, trackEntries, cutoff)
+		purged += purgeExpiredBeadRoots(store, trackEntries, cutoff)
 	}
 
 	return purged, nil
 }
 
-func purgeExpiredBeads(store beads.Store, entries []beads.Bead, cutoff time.Time) int {
+func purgeExpiredBeadClosures(store beads.Store, entries []beads.Bead, cutoff time.Time) int {
+	return purgeExpiredBeads(store, entries, cutoff, deleteExpiredBeadClosure)
+}
+
+func purgeExpiredBeadRoots(store beads.Store, entries []beads.Bead, cutoff time.Time) int {
+	return purgeExpiredBeads(store, entries, cutoff, deleteWorkflowBead)
+}
+
+func purgeExpiredBeads(store beads.Store, entries []beads.Bead, cutoff time.Time, deleteFn func(beads.Store, string) error) int {
 	purged := 0
 	for _, entry := range entries {
 		if entry.CreatedAt.IsZero() || !entry.CreatedAt.Before(cutoff) {
 			continue
 		}
-		if err := deleteExpiredBeadClosure(store, entry.ID); err != nil {
+		if err := deleteFn(store, entry.ID); err != nil {
 			continue
 		}
 		purged++
@@ -81,6 +89,9 @@ func purgeExpiredBeads(store beads.Store, entries []beads.Bead, cutoff time.Time
 }
 
 func deleteExpiredBeadClosure(store beads.Store, rootID string) error {
+	// deleteWorkflowBead removes every dependency attached to each closure
+	// member before deleting the bead. Only use the closure deleter for roots
+	// whose full ownership tree is safe to collect.
 	ids, err := collectExpiredBeadClosure(store, rootID)
 	if err != nil {
 		return err

@@ -1009,6 +1009,98 @@ func TestInstantiateFragmentPrefersRecipeParentOverExternalParent(t *testing.T) 
 	if child.ParentID != result.IDMapping["frag.scope"] {
 		t.Fatalf("child.ParentID = %q, want recipe parent %q", child.ParentID, result.IDMapping["frag.scope"])
 	}
+	deps, err := store.DepList(child.ID, "down")
+	if err != nil {
+		t.Fatalf("DepList(child): %v", err)
+	}
+	for _, dep := range deps {
+		if dep.Type == "parent-child" && dep.DependsOnID == externalParent.ID {
+			t.Fatalf("child has external parent-child dep %q despite recipe parent winning; deps=%v", externalParent.ID, deps)
+		}
+	}
+}
+
+func TestInstantiateFragmentPrefersRecipeParentWhenChildPrecedesParent(t *testing.T) {
+	store := beads.NewMemStore()
+	root, err := store.Create(beads.Bead{
+		Title:    "Workflow root",
+		Type:     "task",
+		Priority: priorityPtr(1),
+		Metadata: map[string]string{"gc.kind": "workflow"},
+	})
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+	externalParent, err := store.Create(beads.Bead{
+		Title: "External parent",
+		Type:  "task",
+	})
+	if err != nil {
+		t.Fatalf("create external parent: %v", err)
+	}
+
+	recipe := &formula.FragmentRecipe{
+		Steps: []formula.RecipeStep{
+			{ID: "frag.scope.child", Title: "Child", Type: "task"},
+			{ID: "frag.scope", Title: "Scope", Type: "task"},
+		},
+		Deps: []formula.RecipeDep{
+			{StepID: "frag.scope.child", DependsOnID: "frag.scope", Type: "parent-child"},
+		},
+	}
+
+	result, err := InstantiateFragment(context.Background(), store, recipe, FragmentOptions{
+		RootID: root.ID,
+		ExternalDeps: []ExternalDep{
+			{
+				StepID:      "frag.scope.child",
+				DependsOnID: externalParent.ID,
+				Type:        "parent-child",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("InstantiateFragment: %v", err)
+	}
+
+	child, err := store.Get(result.IDMapping["frag.scope.child"])
+	if err != nil {
+		t.Fatalf("Get(child): %v", err)
+	}
+	if child.ParentID != result.IDMapping["frag.scope"] {
+		t.Fatalf("child.ParentID = %q, want recipe parent %q", child.ParentID, result.IDMapping["frag.scope"])
+	}
+}
+
+func TestInstantiateFragmentRejectsDuplicateExternalParents(t *testing.T) {
+	store := beads.NewMemStore()
+	root, err := store.Create(beads.Bead{
+		Title: "Workflow root",
+		Type:  "task",
+	})
+	if err != nil {
+		t.Fatalf("create root: %v", err)
+	}
+
+	recipe := &formula.FragmentRecipe{
+		Steps: []formula.RecipeStep{
+			{ID: "frag.scope.child", Title: "Child", Type: "task"},
+		},
+	}
+
+	_, err = InstantiateFragment(context.Background(), store, recipe, FragmentOptions{
+		RootID: root.ID,
+		ExternalDeps: []ExternalDep{
+			{StepID: "frag.scope.child", DependsOnID: "external-1", Type: "parent-child"},
+			{StepID: "frag.scope.child", DependsOnID: "external-2", Type: "parent-child"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate external parent-child deps to fail")
+	}
+	if !strings.Contains(err.Error(), "multiple external parent-child") {
+		t.Fatalf("error = %q, want duplicate external parent-child message", err)
+	}
 }
 
 func TestInstantiateFragmentGraphApplyPrefersRecipeParentOverExternalParent(t *testing.T) {
@@ -1070,6 +1162,11 @@ func TestInstantiateFragmentGraphApplyPrefersRecipeParentOverExternalParent(t *t
 	}
 	if child.ParentID != "" {
 		t.Fatalf("child.ParentID = %q, want empty when recipe parent wins", child.ParentID)
+	}
+	for _, edge := range store.plan.Edges {
+		if edge.Type == "parent-child" && edge.FromKey == "frag.scope.child" && edge.ToID == externalParent.ID {
+			t.Fatalf("graph plan kept external parent-child edge despite recipe parent winning: %+v", edge)
+		}
 	}
 }
 

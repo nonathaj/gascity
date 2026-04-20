@@ -316,6 +316,7 @@ func TestWispGC_PartialChildDeleteRemainsRetryable(t *testing.T) {
 	if _, err := store.Get("mol-1.1"); err == nil {
 		t.Fatalf("expected an earlier child to be deleted before downstream failure")
 	}
+	assertDeletedIDs(t, store.deletedIDs, "mol-1.1.1", "mol-1.1")
 
 	delete(store.deleteErrors, "mol-1.2")
 	purged, err = wg.runGC(store, now)
@@ -350,6 +351,36 @@ func TestWispGC_PurgesExpiredTrackingBeads(t *testing.T) {
 		t.Fatalf("purged = %d, want 2", purged)
 	}
 	assertDeletedIDs(t, store.deletedIDs, "mol-1", "track-old")
+}
+
+func TestWispGC_TrackingBeadsDoNotDeleteParentChildDescendants(t *testing.T) {
+	now := time.Now()
+	store := newGCStore([]beads.Bead{
+		makeGCBeadWithLabels("track-old", now.Add(-3*time.Hour), "closed", "task", labelOrderTracking),
+		{
+			ID:        "track-child",
+			Status:    "open",
+			Type:      "task",
+			CreatedAt: now.Add(-3 * time.Hour),
+			ParentID:  "track-old",
+		},
+	})
+	if err := store.DepAdd("track-child", "track-old", "parent-child"); err != nil {
+		t.Fatalf("DepAdd(track-child->track-old): %v", err)
+	}
+
+	wg := newWispGC(5*time.Minute, time.Hour)
+	purged, err := wg.runGC(store, now)
+	if err != nil {
+		t.Fatalf("runGC: %v", err)
+	}
+	if purged != 1 {
+		t.Fatalf("purged = %d, want 1", purged)
+	}
+	assertDeletedIDs(t, store.deletedIDs, "track-old")
+	if _, err := store.Get("track-child"); err != nil {
+		t.Fatalf("tracking child was deleted: %v", err)
+	}
 }
 
 func TestWispGC_TrackingListErrorIsBestEffort(t *testing.T) {
