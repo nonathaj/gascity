@@ -323,7 +323,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 	}
 
 	command := strings.TrimSpace(info.Command)
-	if command == "" {
+	if !shouldPreserveStoredRuntimeCommand(command, resolved.CommandString()) {
 		launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, nil)
 		command = resolved.CommandString()
 		if err == nil {
@@ -349,12 +349,24 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 			EmitsPermissionWarning: resolved.EmitsPermissionWarning,
 		},
 		Resume: session.ProviderResume{
-			ResumeFlag:    firstNonEmptyGCString(info.ResumeFlag, resolved.ResumeFlag),
-			ResumeStyle:   firstNonEmptyGCString(info.ResumeStyle, resolved.ResumeStyle),
-			ResumeCommand: firstNonEmptyGCString(info.ResumeCommand, resolved.ResumeCommand),
+			ResumeFlag:    firstNonEmptyGCString(resolved.ResumeFlag, info.ResumeFlag),
+			ResumeStyle:   firstNonEmptyGCString(resolved.ResumeStyle, info.ResumeStyle),
+			ResumeCommand: firstNonEmptyGCString(resolved.ResumeCommand, info.ResumeCommand),
 			SessionIDFlag: resolved.SessionIDFlag,
 		},
 	}
+}
+
+func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) bool {
+	storedCommand = strings.TrimSpace(storedCommand)
+	if storedCommand == "" {
+		return false
+	}
+	resolvedCommand = strings.TrimSpace(resolvedCommand)
+	if resolvedCommand == "" {
+		return true
+	}
+	return storedCommand == resolvedCommand || strings.HasPrefix(storedCommand, resolvedCommand+" ")
 }
 
 func resolveWorkerRuntimeWithConfig(cfg *config.City, info session.Info, sessionKind string) *config.ResolvedProvider {

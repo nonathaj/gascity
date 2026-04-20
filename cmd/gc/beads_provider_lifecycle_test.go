@@ -24,6 +24,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func freeLoopbackPort(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer listener.Close()
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("listener addr = %T, want *net.TCPAddr", listener.Addr())
+	}
+	return strconv.Itoa(addr.Port)
+}
+
 // TestEnsureBeadsProvider_file verifies that file provider is a no-op.
 func TestEnsureBeadsProvider_file(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
@@ -4345,13 +4359,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -4827,13 +4846,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -4895,13 +4919,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -5492,13 +5521,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -5584,6 +5618,7 @@ func TestGcBeadsBdStartIsIdempotentWhenAlreadyRunning(t *testing.T) {
 
 	countFile := filepath.Join(t.TempDir(), "dolt-start-count")
 	fakeDolt := filepath.Join(binDir, "dolt")
+	port := freeLoopbackPort(t)
 	fakeScript := `#!/bin/sh
 set -eu
 count_file="` + countFile + `"
@@ -5617,13 +5652,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -5637,6 +5677,7 @@ esac
 
 	env := append(os.Environ(),
 		"GC_CITY_PATH="+cityPath,
+		"GC_DOLT_PORT="+port,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
 
@@ -5713,6 +5754,7 @@ func TestGcBeadsBdStartRestartsServerHoldingDeletedDataInodes(t *testing.T) {
 
 	countFile := filepath.Join(t.TempDir(), "dolt-start-count")
 	fakeDolt := filepath.Join(binDir, "dolt")
+	port := freeLoopbackPort(t)
 	fakeScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 count_file=%q
@@ -5758,13 +5800,18 @@ if count == 1:
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -5778,6 +5825,7 @@ esac
 
 	env := append(os.Environ(),
 		"GC_CITY_PATH="+cityPath,
+		"GC_DOLT_PORT="+port,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
 
@@ -5846,6 +5894,7 @@ func TestGcBeadsBdEnsureReadyDoesNotRestartAfterTransientTCPProbeFailure(t *test
 
 	countFile := filepath.Join(t.TempDir(), "dolt-start-count")
 	fakeDolt := filepath.Join(binDir, "dolt")
+	port := freeLoopbackPort(t)
 	fakeScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 count_file=%q
@@ -5879,13 +5928,18 @@ port = int(sys.argv[1])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("0.0.0.0", port))
-sock.listen(5)
+sock.listen(128)
+sock.settimeout(1.0)
 def _stop(*_args):
     raise SystemExit(0)
 signal.signal(signal.SIGTERM, _stop)
 signal.signal(signal.SIGINT, _stop)
 while True:
-    time.sleep(1)
+    try:
+        conn, _ = sock.accept()
+        conn.close()
+    except socket.timeout:
+        continue
 INNERPY
     ;;
   *)
@@ -5900,6 +5954,7 @@ esac
 	baseEnv := append(os.Environ(),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN=",
+		"GC_DOLT_PORT="+port,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
 
@@ -5955,6 +6010,7 @@ exec "$real_nc" "$@"
 	envWithShim := append(os.Environ(),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN=",
+		"GC_DOLT_PORT="+port,
 		"PATH="+strings.Join([]string{shimDir, binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
 

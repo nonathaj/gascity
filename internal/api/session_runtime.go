@@ -162,9 +162,6 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 	if err != nil {
 		return nil, err
 	}
-	if storedCommand := strings.TrimSpace(info.Command); storedCommand != "" {
-		command = storedCommand
-	}
 	runtimeCfg, err := worker.NormalizeResolvedRuntime(worker.ResolvedRuntime{
 		Command:    command,
 		WorkDir:    firstNonEmptyString(info.WorkDir, workDir),
@@ -172,9 +169,9 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 		SessionEnv: resolved.Env,
 		Hints:      sessionResumeHints(resolved, firstNonEmptyString(workDir, info.WorkDir)),
 		Resume: session.ProviderResume{
-			ResumeFlag:    firstNonEmptyString(info.ResumeFlag, resolved.ResumeFlag),
-			ResumeStyle:   firstNonEmptyString(info.ResumeStyle, resolved.ResumeStyle),
-			ResumeCommand: firstNonEmptyString(info.ResumeCommand, resolved.ResumeCommand),
+			ResumeFlag:    firstNonEmptyString(resolved.ResumeFlag, info.ResumeFlag),
+			ResumeStyle:   firstNonEmptyString(resolved.ResumeStyle, info.ResumeStyle),
+			ResumeCommand: firstNonEmptyString(resolved.ResumeCommand, info.ResumeCommand),
 			SessionIDFlag: resolved.SessionIDFlag,
 		},
 	})
