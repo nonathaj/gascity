@@ -9,12 +9,8 @@
 set -euo pipefail
 
 CITY="${GC_CITY:-.}"
-# Source dolt runtime.sh to discover the actual port (GC_DOLT_* env vars are
-# stripped in exec order context — see internal/beads/exec/exec.go).
-GC_CITY_PATH="${GC_CITY_PATH:-$CITY}"
-_RUNTIME_SH="$GC_CITY_PATH/.gc/system/packs/dolt/assets/scripts/runtime.sh"
-if [ -f "$_RUNTIME_SH" ]; then set +u; . "$_RUNTIME_SH"; set -u; fi
-DOLT_PORT="${GC_DOLT_PORT:-3307}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/dolt-target.sh"
 
 # Configurable thresholds (defaults match the old formula).
 MAX_AGE="${GC_REAPER_MAX_AGE:-24h}"
@@ -38,7 +34,7 @@ MAIL_AGE_H=$(duration_to_hours "$MAIL_DELETE_AGE")
 
 # Discover databases from Dolt server. Exclude Dolt/MySQL system schemas and
 # Gas City's internal health-probe database; remaining DBs are bead stores.
-DATABASES=$(dolt sql -P "$DOLT_PORT" -r csv -q "SHOW DATABASES" 2>/dev/null | tail -n +2 | grep -vi '^information_schema$\|^mysql$\|^dolt_cluster$\|^__gc_probe$' || true)
+DATABASES=$(dolt_sql -r csv -q "SHOW DATABASES" 2>/dev/null | tail -n +2 | grep -vi '^information_schema$\|^mysql$\|^dolt_cluster$\|^__gc_probe$' || true)
 if [ -z "$DATABASES" ]; then
     # No databases accessible — nothing to do.
     exit 0
@@ -52,7 +48,7 @@ ANOMALIES=""
 
 for DB in $DATABASES; do
     # Step 1: Reap — close open wisps past max_age with closed/missing parent.
-    REAP_COUNT=$(dolt sql -P "$DOLT_PORT" -r csv -q "
+    REAP_COUNT=$(dolt_sql -r csv -q "
         SELECT COUNT(*) FROM \`$DB\`.wisps w
         LEFT JOIN \`$DB\`.wisps parent ON w.parent_id = parent.id
         WHERE w.status IN ('open', 'hooked', 'in_progress')
@@ -61,7 +57,7 @@ for DB in $DATABASES; do
     " 2>/dev/null | tail -1 || echo "0")
 
     if [ "$REAP_COUNT" -gt 0 ] && [ -z "$DRY_RUN" ]; then
-        dolt sql -P "$DOLT_PORT" -q "
+        dolt_sql -q "
             UPDATE \`$DB\`.wisps SET status='closed', closed_at=NOW()
             WHERE status IN ('open', 'hooked', 'in_progress')
             AND created_at < DATE_SUB(NOW(), INTERVAL $MAX_AGE_H HOUR)
@@ -75,14 +71,14 @@ for DB in $DATABASES; do
     fi
 
     # Step 2: Purge — delete closed wisps past purge_age.
-    PURGE_COUNT=$(dolt sql -P "$DOLT_PORT" -r csv -q "
+    PURGE_COUNT=$(dolt_sql -r csv -q "
         SELECT COUNT(*) FROM \`$DB\`.wisps
         WHERE status = 'closed'
         AND closed_at < DATE_SUB(NOW(), INTERVAL $PURGE_AGE_H HOUR)
     " 2>/dev/null | tail -1 || echo "0")
 
     if [ "$PURGE_COUNT" -gt 0 ] && [ -z "$DRY_RUN" ]; then
-        dolt sql -P "$DOLT_PORT" -q "
+        dolt_sql -q "
             DELETE FROM \`$DB\`.wisps
             WHERE status = 'closed'
             AND closed_at < DATE_SUB(NOW(), INTERVAL $PURGE_AGE_H HOUR)
@@ -91,14 +87,14 @@ for DB in $DATABASES; do
     fi
 
     # Step 3: Purge closed mail past mail_delete_age.
-    MAIL_COUNT=$(dolt sql -P "$DOLT_PORT" -r csv -q "
+    MAIL_COUNT=$(dolt_sql -r csv -q "
         SELECT COUNT(*) FROM \`$DB\`.mail
         WHERE status = 'closed'
         AND closed_at < DATE_SUB(NOW(), INTERVAL $MAIL_AGE_H HOUR)
     " 2>/dev/null | tail -1 || echo "0")
 
     if [ "$MAIL_COUNT" -gt 0 ] && [ -z "$DRY_RUN" ]; then
-        dolt sql -P "$DOLT_PORT" -q "
+        dolt_sql -q "
             DELETE FROM \`$DB\`.mail
             WHERE status = 'closed'
             AND closed_at < DATE_SUB(NOW(), INTERVAL $MAIL_AGE_H HOUR)
@@ -107,7 +103,7 @@ for DB in $DATABASES; do
     fi
 
     # Step 4: Auto-close stale issues (exclude P0/P1, epics, active deps).
-    STALE_IDS=$(dolt sql -P "$DOLT_PORT" -r csv -q "
+    STALE_IDS=$(dolt_sql -r csv -q "
         SELECT id FROM \`$DB\`.issues
         WHERE status IN ('open', 'in_progress')
         AND updated_at < DATE_SUB(NOW(), INTERVAL $STALE_AGE_H HOUR)
@@ -133,7 +129,7 @@ for DB in $DATABASES; do
     fi
 
     # Step 5: Anomaly check — open wisp count.
-    OPEN_WISPS=$(dolt sql -P "$DOLT_PORT" -r csv -q "
+    OPEN_WISPS=$(dolt_sql -r csv -q "
         SELECT COUNT(*) FROM \`$DB\`.wisps
         WHERE status IN ('open', 'hooked', 'in_progress')
     " 2>/dev/null | tail -1 || echo "0")
@@ -144,7 +140,7 @@ for DB in $DATABASES; do
 
     # Commit Dolt changes.
     if [ -z "$DRY_RUN" ]; then
-        dolt sql -P "$DOLT_PORT" -q "
+        dolt_sql -q "
             SELECT DOLT_COMMIT('-Am', 'reaper: reaped=$REAP_COUNT purged=$PURGE_COUNT mail=$MAIL_COUNT stale=$TOTAL_ISSUES_CLOSED', '--author', 'reaper <reaper@gastown.local>')
         " 2>/dev/null || true
     fi
