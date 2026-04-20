@@ -173,8 +173,8 @@ func deletedDataInodeTargetsFromFormattedLsofOutput(output string) []string {
 		switch line[0] {
 		case 'f':
 			flush()
-		case 'l':
-			links := strings.TrimSpace(strings.TrimPrefix(line, "l"))
+		case 'k':
+			links := strings.TrimSpace(strings.TrimPrefix(line, "k"))
 			if links == "0" {
 				currentDeleted = true
 			}
@@ -294,7 +294,7 @@ func deletedDataInodeTargetsFromLsof(pid int) []string {
 }
 
 func deletedDataInodeTargetsFromFormattedLsof(pid int) []string {
-	out, err := lsofOutput(2*time.Second, "-p", strconv.Itoa(pid), "+L1", "-Fnl")
+	out, err := lsofOutput(2*time.Second, "-a", "-p", strconv.Itoa(pid), "+L1", "-Fnk")
 	if err != nil {
 		return nil
 	}

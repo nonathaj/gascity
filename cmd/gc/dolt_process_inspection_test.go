@@ -124,7 +124,7 @@ func TestDeletedDataInodeTargetsFromFormattedLsofIgnoresLiveNameRecords(t *testi
 }
 
 func TestDeletedDataInodeTargetsFromFormattedLsofUsesZeroLinkCount(t *testing.T) {
-	targets := deletedDataInodeTargetsFromFormattedLsofOutput("p123\nf4\nn/private/tmp/gc-city/.beads/dolt/held.db\nl0\n")
+	targets := deletedDataInodeTargetsFromFormattedLsofOutput("p123\nf4\nn/private/tmp/gc-city/.beads/dolt/held.db\nk0\n")
 	if len(targets) != 1 {
 		t.Fatalf("deletedDataInodeTargetsFromFormattedLsofOutput returned %d targets, want 1: %#v", len(targets), targets)
 	}

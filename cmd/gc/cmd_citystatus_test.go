@@ -476,18 +476,8 @@ func TestControllerStatusLine(t *testing.T) {
 	}
 }
 
-func TestControllerStatusForCityPrefersRegisteredSupervisorState(t *testing.T) {
-	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "gc-home"))
-
-	root := shortSocketTempDir(t, "gc-status-")
-	cityPath := filepath.Join(root, "bright-lights")
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := supervisor.NewRegistry(supervisor.RegistryPath()).Register(cityPath, "bright-lights"); err != nil {
-		t.Fatalf("register city: %v", err)
-	}
-
+func startFakeControllerSocket(t *testing.T, cityPath, response string) <-chan struct{} {
+	t.Helper()
 	sockPath := controllerSocketPath(cityPath)
 	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
 		t.Fatal(err)
@@ -500,16 +490,43 @@ func TestControllerStatusForCityPrefersRegisteredSupervisorState(t *testing.T) {
 		_ = lis.Close()
 		_ = os.Remove(sockPath)
 	})
+
 	accepted := make(chan struct{}, 1)
 	go func() {
-		conn, acceptErr := lis.Accept()
-		if acceptErr != nil {
-			return
+		for {
+			conn, acceptErr := lis.Accept()
+			if acceptErr != nil {
+				return
+			}
+			select {
+			case accepted <- struct{}{}:
+			default:
+			}
+			go func(conn net.Conn) {
+				defer conn.Close() //nolint:errcheck // test cleanup
+				_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				_, _ = conn.Read(make([]byte, 64))
+				_ = conn.SetReadDeadline(time.Time{})
+				_, _ = conn.Write([]byte(response))
+			}(conn)
 		}
-		accepted <- struct{}{}
-		defer conn.Close() //nolint:errcheck // test cleanup
-		_, _ = conn.Write([]byte("1234\n"))
 	}()
+	return accepted
+}
+
+func TestControllerStatusForCityPrefersRegisteredSupervisorState(t *testing.T) {
+	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "gc-home"))
+
+	root := shortSocketTempDir(t, "gc-status-")
+	cityPath := filepath.Join(root, "bright-lights")
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := supervisor.NewRegistry(supervisor.RegistryPath()).Register(cityPath, "bright-lights"); err != nil {
+		t.Fatalf("register city: %v", err)
+	}
+
+	accepted := startFakeControllerSocket(t, cityPath, "1234\n")
 
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
@@ -543,26 +560,7 @@ func TestControllerStatusForCityFallsBackToStandaloneWhenRegisteredSupervisorDow
 		t.Fatalf("register city: %v", err)
 	}
 
-	sockPath := controllerSocketPath(cityPath)
-	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	lis, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = lis.Close()
-		_ = os.Remove(sockPath)
-	})
-	go func() {
-		conn, acceptErr := lis.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close() //nolint:errcheck // test cleanup
-		_, _ = conn.Write([]byte("2468\n"))
-	}()
+	startFakeControllerSocket(t, cityPath, "2468\n")
 
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
@@ -633,26 +631,7 @@ func TestControllerStatusForCityFallsBackToStandaloneWhenSupervisorVanishesDurin
 		t.Fatalf("register city: %v", err)
 	}
 
-	sockPath := controllerSocketPath(cityPath)
-	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	lis, err := net.Listen("unix", sockPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = lis.Close()
-		_ = os.Remove(sockPath)
-	})
-	go func() {
-		conn, acceptErr := lis.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close() //nolint:errcheck // test cleanup
-		_, _ = conn.Write([]byte("2468\n"))
-	}()
+	startFakeControllerSocket(t, cityPath, "2468\n")
 
 	oldAlive := supervisorAliveHook
 	oldRunning := supervisorCityRunningHook
