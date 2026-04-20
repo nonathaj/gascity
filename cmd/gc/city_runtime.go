@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -1128,21 +1129,13 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	if sessionBeads == nil {
 		sessionBeads = cr.loadSessionBeadSnapshot()
 	}
+	rigStores := cr.rigBeadStores()
 	assignedWorkBeads := result.AssignedWorkBeads
-	if released := releaseOrphanedPoolAssignments(store, cr.cfg, sessionBeads.Open(), assignedWorkBeads); len(released) > 0 {
-		releasedSet := make(map[string]struct{}, len(released))
-		for _, id := range released {
-			releasedSet[id] = struct{}{}
-			fmt.Fprintf(cr.stderr, "released orphaned pool work: %s\n", id) //nolint:errcheck
+	if released := releaseOrphanedPoolAssignments(store, cr.cfg, sessionBeads.Open(), assignedWorkBeads, result.AssignedWorkStores); len(released) > 0 {
+		for _, r := range released {
+			fmt.Fprintf(cr.stderr, "released orphaned pool work: %s\n", r.ID) //nolint:errcheck
 		}
-		filtered := make([]beads.Bead, 0, len(assignedWorkBeads))
-		for _, wb := range assignedWorkBeads {
-			if _, ok := releasedSet[wb.ID]; ok {
-				continue
-			}
-			filtered = append(filtered, wb)
-		}
-		assignedWorkBeads = filtered
+		assignedWorkBeads = filterReleasedAssignedWorkBeads(assignedWorkBeads, released)
 	}
 	// poolDesired determines how many sessions should be AWAKE. Uses the
 	// same scale_check counts that buildDesiredState already computed (no
@@ -1171,7 +1164,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	}
 	if sweepUndesiredPoolSessionBeads(
 		store,
-		cr.rigBeadStores(),
+		rigStores,
 		sessionBeads,
 		desiredState,
 		cr.cfg,
@@ -1280,7 +1273,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	reconcileSessionBeadsTraced(
 		ctx, cr.cityPath, open, desiredState, cfgNames, cr.cfg, cr.sp, store,
 		cr.dops,
-		assignedWorkBeads, cr.rigBeadStores(), readyWaitSet, cr.sessionDrains, poolDesired,
+		assignedWorkBeads, rigStores, readyWaitSet, cr.sessionDrains, poolDesired,
 		result.StoreQueryPartial,
 		workSet, cityName,
 		cr.it, clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
@@ -1305,6 +1298,33 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	}
 
 	// Idle recovery: detect pool sessions stuck at the prompt after
+}
+
+func filterReleasedAssignedWorkBeads(assignedWorkBeads []beads.Bead, released []releasedPoolAssignment) []beads.Bead {
+	if len(assignedWorkBeads) == 0 || len(released) == 0 {
+		return assignedWorkBeads
+	}
+	releasedIndexes := make(map[int]struct{}, len(released))
+	for _, r := range released {
+		if r.Index >= 0 && r.Index < len(assignedWorkBeads) {
+			if assignedWorkBeads[r.Index].ID != r.ID {
+				log.Printf("filterReleasedAssignedWorkBeads: released index %d points at bead %q, want %q", r.Index, assignedWorkBeads[r.Index].ID, r.ID)
+				continue
+			}
+			releasedIndexes[r.Index] = struct{}{}
+		}
+	}
+	if len(releasedIndexes) == 0 {
+		return assignedWorkBeads
+	}
+	filtered := make([]beads.Bead, 0, len(assignedWorkBeads)-len(releasedIndexes))
+	for i, wb := range assignedWorkBeads {
+		if _, ok := releasedIndexes[i]; ok {
+			continue
+		}
+		filtered = append(filtered, wb)
+	}
+	return filtered
 }
 
 func (cr *CityRuntime) requestDeferredDrainFollowUpTick() {
