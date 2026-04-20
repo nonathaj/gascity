@@ -477,18 +477,9 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	}
 
 	// Materialize script symlinks before agent startup.
-	if len(cfg.ScriptLayers.City) > 0 {
-		if err := ResolveScripts(cityPath, cfg.ScriptLayers.City); err != nil {
-			fmt.Fprintf(stderr, "gc start: city scripts: %v\n", err) //nolint:errcheck // best-effort stderr
-		}
-	}
-	for _, r := range cfg.Rigs {
-		if layers, ok := cfg.ScriptLayers.Rigs[r.Name]; ok && len(layers) > 0 {
-			if err := ResolveScripts(r.Path, layers); err != nil {
-				fmt.Fprintf(stderr, "gc start: rig %q scripts: %v\n", r.Name, err) //nolint:errcheck // best-effort stderr
-			}
-		}
-	}
+	resolveConfiguredScripts(cityPath, cfg, func(scope string, err error) {
+		fmt.Fprintf(stderr, "gc start: %s scripts: %v\n", scope, err) //nolint:errcheck // best-effort stderr
+	})
 
 	// Validate agents.
 	if err := config.ValidateAgents(cfg.Agents); err != nil {

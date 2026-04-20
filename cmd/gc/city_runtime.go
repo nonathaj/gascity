@@ -917,18 +917,9 @@ func (cr *CityRuntime) reloadConfigTraced(
 	}
 
 	// Resolve script symlinks for newly activated packs.
-	if len(nextCfg.ScriptLayers.City) > 0 {
-		if err := ResolveScripts(cityRoot, nextCfg.ScriptLayers.City); err != nil {
-			appendWarning(fmt.Sprintf("config reload: city scripts: %v", err))
-		}
-	}
-	for _, r := range nextCfg.Rigs {
-		if layers, ok := nextCfg.ScriptLayers.Rigs[r.Name]; ok && len(layers) > 0 {
-			if err := ResolveScripts(r.Path, layers); err != nil {
-				appendWarning(fmt.Sprintf("config reload: rig %q scripts: %v", r.Name, err))
-			}
-		}
-	}
+	resolveConfiguredScripts(cityRoot, nextCfg, func(scope string, err error) {
+		appendWarning(fmt.Sprintf("config reload: %s scripts: %v", scope, err))
+	})
 
 	if providerChanged {
 		if running, lErr := cr.sp.ListRunning(""); lErr == nil && len(running) > 0 {

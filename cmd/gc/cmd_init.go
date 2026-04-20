@@ -1227,10 +1227,10 @@ func doInitFromDirWithOptionsFS(fs fsys.FS, srcDir, cityPath, nameOverride strin
 			fmt.Fprintf(stderr, "gc init: resolving formulas: %v\n", rfErr) //nolint:errcheck // best-effort stderr
 		}
 	}
-	if loadErr == nil && len(expandedCfg.ScriptLayers.City) > 0 {
-		if rsErr := ResolveScripts(cityPath, expandedCfg.ScriptLayers.City); rsErr != nil {
-			fmt.Fprintf(stderr, "gc init: resolving scripts: %v\n", rsErr) //nolint:errcheck // best-effort stderr
-		}
+	if loadErr == nil {
+		resolveConfiguredScripts(cityPath, expandedCfg, func(scope string, err error) {
+			fmt.Fprintf(stderr, "gc init: resolving %s scripts: %v\n", scope, err) //nolint:errcheck // best-effort stderr
+		})
 	}
 
 	fmt.Fprintln(stdout, "Welcome to Gas City!")                                           //nolint:errcheck // best-effort stdout
