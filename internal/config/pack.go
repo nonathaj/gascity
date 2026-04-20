@@ -1324,7 +1324,11 @@ func loadPackWithCacheOptions(fs fsys.FS, topoPath, topoDir, cityRoot, rigName s
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err
 	}
-	doctors = append(doctors, legacyPackDoctors(tc.Doctor, topoDir, tc.Pack.Name)...)
+	legacyDoctors, err := legacyPackDoctors(fs, tc.Doctor, topoDir, tc.Pack.Name)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, nil, err
+	}
+	doctors = append(doctors, legacyDoctors...)
 	skills, err := DiscoverPackSkills(fs, topoDir, tc.Pack.Name)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err
@@ -2044,7 +2048,7 @@ func legacyPackCommands(entries []PackCommandEntry, packDir, packName string) []
 	return out
 }
 
-func legacyPackDoctors(entries []PackDoctorEntry, packDir, packName string) []DiscoveredDoctor {
+func legacyPackDoctors(fs fsys.FS, entries []PackDoctorEntry, packDir, packName string) ([]DiscoveredDoctor, error) {
 	out := make([]DiscoveredDoctor, 0, len(entries))
 	for _, entry := range entries {
 		runScript := entry.Script
@@ -2053,8 +2057,15 @@ func legacyPackDoctors(entries []PackDoctorEntry, packDir, packName string) []Di
 		}
 
 		fixScript := entry.Fix
-		if fixScript != "" && !filepath.IsAbs(fixScript) {
-			fixScript = filepath.Join(packDir, fixScript)
+		if fixScript != "" {
+			resolved, err := resolveContainedDoctorFixPath(packDir, packDir, fixScript)
+			if err != nil {
+				return nil, fmt.Errorf("doctor %s fix: %w", entry.Name, err)
+			}
+			if _, err := fs.Stat(resolved); err != nil {
+				return nil, fmt.Errorf("doctor %s fix %q: %w", entry.Name, fixScript, err)
+			}
+			fixScript = resolved
 		}
 
 		out = append(out, DiscoveredDoctor{
@@ -2067,7 +2078,7 @@ func legacyPackDoctors(entries []PackDoctorEntry, packDir, packName string) []Di
 			PackName:    packName,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // applyPackGlobals appends [global].session_live commands from packs

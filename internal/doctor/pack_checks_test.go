@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -270,6 +271,34 @@ func TestPackScriptCheckFixFailure(t *testing.T) {
 	}
 	if !strings.Contains(msg, "remediation failed") {
 		t.Errorf("error missing captured output: %q", msg)
+	}
+}
+
+func TestDoctorRunPackScriptCheckReportsFixFailure(t *testing.T) {
+	dir := t.TempDir()
+	check := writeCheckScript(t, dir, "#!/bin/sh\necho 'marker missing'\nexit 2\n")
+	fix := writeFixScript(t, dir, "#!/bin/sh\necho 'cannot create marker'\nexit 5\n")
+	d := &Doctor{}
+	d.Register(&PackScriptCheck{
+		CheckName: "topo:fix-fail",
+		Script:    check,
+		FixScript: fix,
+		PackDir:   dir,
+		PackName:  "topo",
+	})
+
+	var buf bytes.Buffer
+	report := d.Run(&CheckContext{CityPath: t.TempDir()}, &buf, true)
+
+	if report.Fixed != 0 {
+		t.Errorf("Fixed = %d, want 0", report.Fixed)
+	}
+	if report.Failed != 1 {
+		t.Errorf("Failed = %d, want 1", report.Failed)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "fix failed: fix script exited with status 5: cannot create marker") {
+		t.Errorf("output missing fix script failure: %q", out)
 	}
 }
 

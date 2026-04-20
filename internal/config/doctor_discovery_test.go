@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -220,24 +221,18 @@ func TestDiscoverPackDoctors_FixScriptMissingOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	packDir := filepath.Join(dir, "mypk")
 
-	// fix declared but the fix script does not exist — fall back to
-	// diagnostic-only (FixScript empty) rather than failing discovery.
-	// Matches the pre-existing treatment of a missing run.sh file.
 	writeTestFile(t, packDir, "doctor/binaries/doctor.toml", `
 run = "check.sh"
 fix = "fix.sh"
 `)
 	writeTestFile(t, packDir, "doctor/binaries/check.sh", "#!/bin/sh\nexit 0\n")
 
-	got, err := DiscoverPackDoctors(fsys.OSFS{}, packDir, "mypk")
-	if err != nil {
-		t.Fatalf("DiscoverPackDoctors: %v", err)
+	_, err := DiscoverPackDoctors(fsys.OSFS{}, packDir, "mypk")
+	if err == nil {
+		t.Fatal("DiscoverPackDoctors error = nil, want missing fix script error")
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d checks, want 1", len(got))
-	}
-	if got[0].FixScript != "" {
-		t.Fatalf("FixScript = %q, want empty when file missing", got[0].FixScript)
+	if !strings.Contains(err.Error(), "doctor/binaries fix") {
+		t.Fatalf("DiscoverPackDoctors error = %v, want doctor fix context", err)
 	}
 }
 

@@ -3381,6 +3381,52 @@ script = "doctor/check2.sh"
 	}
 }
 
+func TestLegacyPackDoctorsRejectsEscapingFixPaths(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name string
+		fix  string
+	}{
+		{name: "absolute", fix: filepath.Join(dir, "outside.sh")},
+		{name: "relative escape", fix: "../../../outside.sh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := legacyPackDoctors(fsys.OSFS{}, []PackDoctorEntry{{
+				Name:   "check",
+				Script: "doctor/check.sh",
+				Fix:    tt.fix,
+			}}, filepath.Join(dir, "pack"), "pack")
+			if err == nil {
+				t.Fatal("legacyPackDoctors error = nil, want containment error")
+			}
+			if !strings.Contains(err.Error(), "doctor check fix") {
+				t.Fatalf("legacyPackDoctors error = %v, want check fix context", err)
+			}
+		})
+	}
+}
+
+func TestLegacyPackDoctorsRejectsMissingFixScript(t *testing.T) {
+	packDir := filepath.Join(t.TempDir(), "pack")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := legacyPackDoctors(fsys.OSFS{}, []PackDoctorEntry{{
+		Name:   "check",
+		Script: "doctor/check.sh",
+		Fix:    "doctor/missing-fix.sh",
+	}}, packDir, "pack")
+	if err == nil {
+		t.Fatal("legacyPackDoctors error = nil, want missing fix script error")
+	}
+	if !strings.Contains(err.Error(), "doctor check fix") {
+		t.Fatalf("legacyPackDoctors error = %v, want check fix context", err)
+	}
+}
+
 func TestPackDoctorEntriesDeduplicatesDirs(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "pack.toml", `
