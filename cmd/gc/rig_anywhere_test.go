@@ -101,6 +101,36 @@ func registryAt(t *testing.T, gcHome string) *supervisor.Registry {
 	return supervisor.NewRegistry(filepath.Join(gcHome, "cities.toml"))
 }
 
+func registerCityForRigResolution(t *testing.T, gcHome, cityPath, cityName string) {
+	t.Helper()
+	if err := registryAt(t, gcHome).Register(cityPath, cityName); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func bindRigForRigResolution(t *testing.T, cityPath, cityName, rigName, rigDir string) {
+	t.Helper()
+	toml := fmt.Sprintf("[workspace]\nname = %q\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = %q\npath = %q\n", cityName, rigName, rigDir)
+	writeRigAnywhereCityToml(t, cityPath, toml)
+}
+
+func registerRigBindingForResolution(t *testing.T, gcHome, cityPath, cityName, rigName, rigDir string) {
+	t.Helper()
+	bindRigForRigResolution(t, cityPath, cityName, rigName, rigDir)
+	registerCityForRigResolution(t, gcHome, cityPath, cityName)
+}
+
+func assertNoGlobalRigEntries(t *testing.T, gcHome string) {
+	t.Helper()
+	rigs, err := registryAt(t, gcHome).ListRigs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rigs) != 0 {
+		t.Fatalf("global cities.toml rig entries = %#v, want none", rigs)
+	}
+}
+
 // ===========================================================================
 // 1. resolveContext priority chain
 // ===========================================================================
@@ -182,11 +212,7 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Register the rig in the global index.
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "myapp", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "delta", "myapp", rigDir)
 
 		rigFlag = "myapp"
 		setCwd(t, t.TempDir()) // cwd somewhere unrelated
@@ -212,10 +238,7 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "myapp", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "epsilon", "myapp", rigDir)
 
 		rigFlag = rigDir // path, not name
 		setCwd(t, t.TempDir())
@@ -260,10 +283,7 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "envapp", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "eta", "envapp", rigDir)
 
 		t.Setenv("GC_RIG", "envapp")
 		setCwd(t, t.TempDir())
@@ -290,10 +310,7 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "indexed-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "theta", "indexed-rig", rigDir)
 
 		// cwd is deep inside the rig dir; should match via prefix.
 		setCwd(t, subDir)
@@ -391,20 +408,11 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			if err := os.MkdirAll(cp, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			toml := fmt.Sprintf("[workspace]\nname = %q\n\n[[agent]]\nname = \"a\"\n\n[[rigs]]\nname = \"shared-rig\"\npath = %q\n", filepath.Base(cp), rigDir)
-			writeRigAnywhereCityToml(t, cp, toml)
+			bindRigForRigResolution(t, cp, filepath.Base(cp), "shared-rig", rigDir)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(city1, "city1"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.Register(city2, "city2"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "shared-rig", ""); err != nil {
-			t.Fatal(err)
-		}
+		registerCityForRigResolution(t, gcHome, city1, "city1")
+		registerCityForRigResolution(t, gcHome, city2, "city2")
 
 		rigFlag = "shared-rig"
 		setCwd(t, t.TempDir())
@@ -418,7 +426,7 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 		}
 	})
 
-	t.Run("rig_index_cwd_ambiguous_falls_through", func(t *testing.T) {
+	t.Run("registered_rig_cwd_ambiguous_falls_through", func(t *testing.T) {
 		resetFlags(t)
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
@@ -430,15 +438,14 @@ func TestRigAnywhere_ResolveContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Register rig in global index with no default (ambiguous).
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "ambig", ""); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "lambda", "ambig", rigDir)
+		otherCity := setupCity(t, "lambda-other")
+		bindRigForRigResolution(t, otherCity, "lambda-other", "ambig", rigDir)
+		registerCityForRigResolution(t, gcHome, otherCity, "lambda-other")
 
 		setCwd(t, rigDir)
 
-		// Should fall through from rig index (ambiguous) to walk-up (finds city).
+		// Should fall through from ambiguous registered rig bindings to walk-up.
 		ctx, err := resolveContext()
 		if err != nil {
 			t.Fatalf("resolveContext() error: %v", err)
@@ -561,7 +568,7 @@ func TestRigAnywhere_RigAddName(t *testing.T) {
 		}
 	})
 
-	t.Run("name_conflict_global_uniqueness", func(t *testing.T) {
+	t.Run("same_name_allowed_in_different_cities", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 		t.Setenv("GC_DOLT", "skip")
@@ -580,15 +587,10 @@ func TestRigAnywhere_RigAddName(t *testing.T) {
 			t.Fatalf("first doRigAdd = %d, stderr: %s", code, stderr1.String())
 		}
 
-		// Verify it's in the global registry.
-		reg := registryAt(t, gcHome)
-		entry, ok := reg.LookupRigByName("shared-name")
-		if !ok {
-			t.Fatal("rig not found in global registry after first add")
-		}
-		assertSameTestPath(t, entry.Path, rigDir1)
+		assertNoGlobalRigEntries(t, gcHome)
 
-		// Second add with same name but different path should warn (global registry).
+		// Rig names are city-local in Phase A, so a second city can use the
+		// same name without creating a machine-global rig conflict.
 		city2 := setupCity(t, "city-two")
 		rigDir2 := filepath.Join(t.TempDir(), "rig2")
 		if err := os.MkdirAll(rigDir2, 0o755); err != nil {
@@ -596,23 +598,22 @@ func TestRigAnywhere_RigAddName(t *testing.T) {
 		}
 		var stdout2, stderr2 bytes.Buffer
 		code = doRigAdd(fsys.OSFS{}, city2, rigDir2, nil, "shared-name", "", false, false, &stdout2, &stderr2)
-		// The global registry conflict is a warning, not an error. The rig still
-		// gets added to city.toml. Check that the warning is emitted.
 		if code != 0 {
-			// If global registry rejects it, that's expected behavior too.
-			if !strings.Contains(stderr2.String(), "shared-name") {
-				t.Errorf("stderr should mention the conflicting name: %s", stderr2.String())
-			}
+			t.Fatalf("second doRigAdd = %d, stderr: %s", code, stderr2.String())
 		}
+		if strings.Contains(stderr2.String(), "global registry") {
+			t.Fatalf("doRigAdd should not warn about machine-wide rig registration: %s", stderr2.String())
+		}
+		assertNoGlobalRigEntries(t, gcHome)
 	})
 }
 
 // ===========================================================================
-// 3. gc rig add cities.toml sync
+// 3. gc rig add site binding sync
 // ===========================================================================
 
-func TestRigAnywhere_RigAddCitiesTomlSync(t *testing.T) {
-	t.Run("add_registers_in_cities_toml", func(t *testing.T) {
+func TestRigAnywhere_RigAddSiteBindingSync(t *testing.T) {
+	t.Run("add_writes_site_binding_not_cities_toml_rigs", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 		t.Setenv("GC_DOLT", "skip")
@@ -630,39 +631,18 @@ func TestRigAnywhere_RigAddCitiesTomlSync(t *testing.T) {
 			t.Fatalf("doRigAdd = %d, stderr: %s", code, stderr.String())
 		}
 
-		// Verify rig appears in cities.toml.
-		reg := registryAt(t, gcHome)
-		entry, ok := reg.LookupRigByName("sync-rig")
-		if !ok {
-			t.Fatal("rig not found in cities.toml after add")
-		}
-		assertSameTestPath(t, entry.Path, rigDir)
-	})
-
-	t.Run("first_add_auto_sets_default_city", func(t *testing.T) {
-		gcHome := t.TempDir()
-		t.Setenv("GC_HOME", gcHome)
-		t.Setenv("GC_DOLT", "skip")
-		t.Setenv("GC_BEADS", "file")
-
-		cityPath := setupCity(t, "default-city")
-		rigDir := filepath.Join(t.TempDir(), "auto-default")
-		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		assertNoGlobalRigEntries(t, gcHome)
+		binding, err := config.LoadSiteBinding(fsys.OSFS{}, cityPath)
+		if err != nil {
 			t.Fatal(err)
 		}
-
-		var stdout, stderr bytes.Buffer
-		code := doRigAdd(fsys.OSFS{}, cityPath, rigDir, nil, "", "", false, false, &stdout, &stderr)
-		if code != 0 {
-			t.Fatalf("doRigAdd = %d, stderr: %s", code, stderr.String())
+		if len(binding.Rigs) != 1 {
+			t.Fatalf("site binding rig count = %d, want 1", len(binding.Rigs))
 		}
-
-		reg := registryAt(t, gcHome)
-		entry, ok := reg.LookupRigByName("auto-default")
-		if !ok {
-			t.Fatal("rig not found in cities.toml")
+		if binding.Rigs[0].Name != "sync-rig" {
+			t.Fatalf("site binding rig name = %q, want sync-rig", binding.Rigs[0].Name)
 		}
-		assertSameTestPath(t, entry.DefaultCity, cityPath)
+		assertSameTestPath(t, binding.Rigs[0].Path, rigDir)
 	})
 
 	t.Run("re_add_same_city_idempotent", func(t *testing.T) {
@@ -694,20 +674,19 @@ func TestRigAnywhere_RigAddCitiesTomlSync(t *testing.T) {
 			t.Fatalf("re-add doRigAdd = %d, stderr: %s", code, stderr2.String())
 		}
 
-		// Verify only one entry in global registry.
-		reg := registryAt(t, gcHome)
-		rigs, err := reg.ListRigs()
+		assertNoGlobalRigEntries(t, gcHome)
+		binding, err := config.LoadSiteBinding(fsys.OSFS{}, cityPath)
 		if err != nil {
 			t.Fatal(err)
 		}
 		count := 0
-		for _, r := range rigs {
+		for _, r := range binding.Rigs {
 			if r.Name == "idem-rig" {
 				count++
 			}
 		}
 		if count != 1 {
-			t.Errorf("expected 1 rig entry, got %d", count)
+			t.Errorf("expected 1 site binding entry, got %d", count)
 		}
 	})
 }
@@ -812,13 +791,7 @@ func TestRigAnywhere_RigRemove(t *testing.T) {
 		toml := "[workspace]\nname = \"rm-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"rm-rig\"\npath = \"" + rigDir + "\"\n"
 		writeRigAnywhereCityToml(t, cityPath, toml)
 
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(cityPath, "rm-city"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "rm-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerCityForRigResolution(t, gcHome, cityPath, "rm-city")
 
 		cityFlag = cityPath
 		var stdout, stderr bytes.Buffer
@@ -839,7 +812,7 @@ func TestRigAnywhere_RigRemove(t *testing.T) {
 		}
 	})
 
-	t.Run("removes_from_cities_toml_when_no_other_city", func(t *testing.T) {
+	t.Run("removes_from_site_binding_without_cities_toml_rig_entries", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 		resetFlags(t)
@@ -853,14 +826,6 @@ func TestRigAnywhere_RigRemove(t *testing.T) {
 		toml := "[workspace]\nname = \"solo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"solo-rig\"\npath = \"" + rigDir + "\"\n"
 		writeRigAnywhereCityToml(t, cityPath, toml)
 
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(cityPath, "solo-city"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "solo-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
-
 		cityFlag = cityPath
 		var stdout, stderr bytes.Buffer
 		code := cmdRigRemove("solo-rig", &stdout, &stderr)
@@ -868,14 +833,17 @@ func TestRigAnywhere_RigRemove(t *testing.T) {
 			t.Fatalf("cmdRigRemove = %d, stderr: %s", code, stderr.String())
 		}
 
-		// Rig should be gone from global registry too.
-		_, ok := reg.LookupRigByName("solo-rig")
-		if ok {
-			t.Error("rig should be removed from cities.toml when no other city has it")
+		binding, err := config.LoadSiteBinding(fsys.OSFS{}, cityPath)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if len(binding.Rigs) != 0 {
+			t.Fatalf("site binding rigs = %#v, want none", binding.Rigs)
+		}
+		assertNoGlobalRigEntries(t, gcHome)
 	})
 
-	t.Run("does_not_emit_deprecated_order_warnings_from_unrelated_registered_city", func(t *testing.T) {
+	t.Run("does_not_scan_unrelated_registered_cities_on_remove", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 		resetFlags(t)
@@ -911,9 +879,6 @@ path = "packs/missing"
 		if err := reg.Register(unrelatedCity, "unrelated-noisy"); err != nil {
 			t.Fatal(err)
 		}
-		if err := reg.RegisterRig(rigDir, "quiet-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
 
 		var logs bytes.Buffer
 		oldWriter := log.Writer()
@@ -937,72 +902,16 @@ path = "packs/missing"
 		if strings.Contains(logs.String(), "deprecated order path") {
 			t.Fatalf("cmdRigRemove emitted unrelated order migration warning:\n%s", logs.String())
 		}
-		if !strings.Contains(logs.String(), "not found, skipping") {
-			t.Fatalf("cmdRigRemove suppressed non-order config diagnostics; logs:\n%s", logs.String())
+		if strings.Contains(logs.String(), "missing-pack") {
+			t.Fatalf("cmdRigRemove scanned unrelated registered city:\n%s", logs.String())
 		}
 		if !strings.Contains(stdout.String(), "Removed rig 'quiet-rig'") {
 			t.Fatalf("stdout = %q, want removal confirmation", stdout.String())
 		}
+		assertNoGlobalRigEntries(t, gcHome)
 	})
 
-	t.Run("does_not_emit_deprecated_order_warnings_from_new_default_city", func(t *testing.T) {
-		gcHome := t.TempDir()
-		t.Setenv("GC_HOME", gcHome)
-		resetFlags(t)
-
-		cityA := setupCity(t, "quiet-default-a")
-		cityB := setupCity(t, "quiet-default-b")
-		rigDir := filepath.Join(t.TempDir(), "quiet-default-rig")
-		if err := os.MkdirAll(rigDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for _, cp := range []string{cityA, cityB} {
-			toml := "[workspace]\nname = \"" + filepath.Base(cp) + "\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"quiet-default-rig\"\npath = \"" + rigDir + "\"\n"
-			writeRigAnywhereCityToml(t, cp, toml)
-		}
-		writeRigAnywhereLegacyOrderPack(t, cityB)
-
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(cityA, "quiet-default-a"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.Register(cityB, "quiet-default-b"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "quiet-default-rig", cityA); err != nil {
-			t.Fatal(err)
-		}
-
-		var logs bytes.Buffer
-		oldWriter := log.Writer()
-		oldFlags := log.Flags()
-		oldPrefix := log.Prefix()
-		log.SetOutput(&logs)
-		log.SetFlags(0)
-		log.SetPrefix("")
-		t.Cleanup(func() {
-			log.SetOutput(oldWriter)
-			log.SetFlags(oldFlags)
-			log.SetPrefix(oldPrefix)
-		})
-
-		cityFlag = cityA
-		var stdout, stderr bytes.Buffer
-		code := cmdRigRemove("quiet-default-rig", &stdout, &stderr)
-		if code != 0 {
-			t.Fatalf("cmdRigRemove = %d, stderr: %s", code, stderr.String())
-		}
-		if strings.Contains(logs.String(), "deprecated order path") {
-			t.Fatalf("cmdRigRemove emitted new default city order migration warning:\n%s", logs.String())
-		}
-		entry, ok := reg.LookupRigByName("quiet-default-rig")
-		if !ok {
-			t.Fatal("rig should remain registered in the new default city")
-		}
-		assertSameTestPath(t, entry.DefaultCity, cityB)
-	})
-
-	t.Run("clears_default_when_removed_city_was_default", func(t *testing.T) {
+	t.Run("shared_rig_remove_only_updates_current_city_site_binding", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 		resetFlags(t)
@@ -1020,18 +929,6 @@ path = "packs/missing"
 			writeRigAnywhereCityToml(t, cp, toml)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(cityA, "city-a"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.Register(cityB, "city-b"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "shared-rig", cityA); err != nil {
-			t.Fatal(err)
-		}
-
-		// Remove from city-a (the default).
 		cityFlag = cityA
 		var stdout, stderr bytes.Buffer
 		code := cmdRigRemove("shared-rig", &stdout, &stderr)
@@ -1039,62 +936,22 @@ path = "packs/missing"
 			t.Fatalf("cmdRigRemove = %d, stderr: %s", code, stderr.String())
 		}
 
-		// Rig should still exist in registry (city-b still has it).
-		entry, ok := reg.LookupRigByName("shared-rig")
-		if !ok {
-			t.Fatal("rig should still be in registry (city-b has it)")
-		}
-		// Since only 1 city remains, auto-set to that city.
-		assertSameTestPath(t, entry.DefaultCity, cityB)
-	})
-
-	t.Run("auto_sets_default_when_one_city_remains", func(t *testing.T) {
-		gcHome := t.TempDir()
-		t.Setenv("GC_HOME", gcHome)
-		resetFlags(t)
-
-		cityA := setupCity(t, "multi-a")
-		cityB := setupCity(t, "multi-b")
-		cityC := setupCity(t, "multi-c")
-		rigDir := filepath.Join(t.TempDir(), "multi-rig")
-		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		bindingA, err := config.LoadSiteBinding(fsys.OSFS{}, cityA)
+		if err != nil {
 			t.Fatal(err)
 		}
-
-		// Rig in all three cities, default is city-a.
-		for _, cp := range []string{cityA, cityB, cityC} {
-			name := filepath.Base(cp)
-			toml := "[workspace]\nname = \"" + name + "\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"multi-rig\"\npath = \"" + rigDir + "\"\n"
-			writeRigAnywhereCityToml(t, cp, toml)
+		if len(bindingA.Rigs) != 0 {
+			t.Fatalf("city A site binding rigs = %#v, want none", bindingA.Rigs)
 		}
-
-		reg := registryAt(t, gcHome)
-		for _, cp := range []string{cityA, cityB, cityC} {
-			if err := reg.Register(cp, filepath.Base(cp)); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if err := reg.RegisterRig(rigDir, "multi-rig", cityA); err != nil {
+		bindingB, err := config.LoadSiteBinding(fsys.OSFS{}, cityB)
+		if err != nil {
 			t.Fatal(err)
 		}
-
-		// Remove from city-a. Two cities remain, so default should be cleared
-		// (not auto-set, since there are still 2 remaining).
-		cityFlag = cityA
-		var stdout, stderr bytes.Buffer
-		code := cmdRigRemove("multi-rig", &stdout, &stderr)
-		if code != 0 {
-			t.Fatalf("cmdRigRemove = %d, stderr: %s", code, stderr.String())
+		if len(bindingB.Rigs) != 1 {
+			t.Fatalf("city B site binding rigs = %#v, want one", bindingB.Rigs)
 		}
-
-		entry, ok := reg.LookupRigByName("multi-rig")
-		if !ok {
-			t.Fatal("rig should still be in registry")
-		}
-		// With 2 remaining cities, default should be empty (ambiguous).
-		if entry.DefaultCity != "" {
-			t.Errorf("default_city = %q, want empty (2 cities remain)", entry.DefaultCity)
-		}
+		assertSameTestPath(t, bindingB.Rigs[0].Path, rigDir)
+		assertNoGlobalRigEntries(t, gcHome)
 	})
 }
 
@@ -1296,7 +1153,7 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		}
 	})
 
-	t.Run("rig_by_name_with_default", func(t *testing.T) {
+	t.Run("rig_by_name_with_single_binding", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 
@@ -1306,10 +1163,7 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "ctx-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "ctx-city", "ctx-rig", rigDir)
 
 		ctx, err := resolveRigToContext("ctx-rig")
 		if err != nil {
@@ -1321,7 +1175,7 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		}
 	})
 
-	t.Run("rig_by_path_with_default", func(t *testing.T) {
+	t.Run("rig_by_path_with_single_binding", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
 
@@ -1331,10 +1185,7 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "path-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "path-city", "path-rig", rigDir)
 
 		ctx, err := resolveRigToContext(rigDir)
 		if err != nil {
@@ -1362,20 +1213,11 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 			if err := os.MkdirAll(cp, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			toml := fmt.Sprintf("[workspace]\nname = %q\n\n[[agent]]\nname = \"a\"\n\n[[rigs]]\nname = \"ambig-rig\"\npath = %q\n", filepath.Base(cp), rigDir)
-			writeRigAnywhereCityToml(t, cp, toml)
+			bindRigForRigResolution(t, cp, filepath.Base(cp), "ambig-rig", rigDir)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.Register(city1, "city1"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.Register(city2, "city2"); err != nil {
-			t.Fatal(err)
-		}
-		if err := reg.RegisterRig(rigDir, "ambig-rig", ""); err != nil {
-			t.Fatal(err)
-		}
+		registerCityForRigResolution(t, gcHome, city1, "city1")
+		registerCityForRigResolution(t, gcHome, city2, "city2")
 
 		_, err := resolveRigToContext("ambig-rig")
 		if err == nil {
@@ -1406,10 +1248,7 @@ func TestRigAnywhere_LookupRigFromCwd(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "lookup-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "lookup-city", "lookup-rig", rigDir)
 
 		ctx, ok := lookupRigFromCwd(rigDir)
 		if !ok {
@@ -1432,10 +1271,7 @@ func TestRigAnywhere_LookupRigFromCwd(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "sub-rig", cityPath); err != nil {
-			t.Fatal(err)
-		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "sub-city", "sub-rig", rigDir)
 
 		ctx, ok := lookupRigFromCwd(subDir)
 		if !ok {
@@ -1464,14 +1300,16 @@ func TestRigAnywhere_LookupRigFromCwd(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		reg := registryAt(t, gcHome)
-		if err := reg.RegisterRig(rigDir, "ambig-cwd-rig", ""); err != nil {
-			t.Fatal(err)
-		}
+		cityA := setupCity(t, "ambig-cwd-a")
+		cityB := setupCity(t, "ambig-cwd-b")
+		bindRigForRigResolution(t, cityA, "ambig-cwd-a", "ambig-cwd-rig", rigDir)
+		bindRigForRigResolution(t, cityB, "ambig-cwd-b", "ambig-cwd-rig", rigDir)
+		registerCityForRigResolution(t, gcHome, cityA, "ambig-cwd-a")
+		registerCityForRigResolution(t, gcHome, cityB, "ambig-cwd-b")
 
 		_, ok := lookupRigFromCwd(rigDir)
 		if ok {
-			t.Error("expected false for ambiguous rig (no default)")
+			t.Error("expected false for ambiguous rig binding")
 		}
 	})
 }

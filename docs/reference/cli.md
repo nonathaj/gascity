@@ -1681,10 +1681,8 @@ gc rig list [flags]
 
 Remove a rig from the current city's configuration.
 
-Removes the rig entry from city.toml and updates the global rig index
-in cities.toml. If the rig no longer belongs to any city, it is removed
-from the global index entirely. If this city was the rig's default,
-the default is cleared.
+Removes the rig entry from city.toml and removes its machine-local path
+binding from .gc/site.toml.
 
 ```
 gc rig remove <name>

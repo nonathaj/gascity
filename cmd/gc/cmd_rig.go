@@ -15,7 +15,6 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
-	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/spf13/cobra"
 )
 
@@ -425,13 +424,6 @@ func doRigAdd(fs fsys.FS, cityPath, rigPath string, includes []string, nameOverr
 				fmt.Fprintf(stderr, "gc rig add: resolving formulas: %v\n", rfErr) //nolint:errcheck // best-effort stderr
 			}
 		}
-	}
-
-	reg := supervisor.NewRegistry(supervisor.RegistryPath())
-	if err := reg.RegisterRig(rigPath, name, cityPath); err != nil {
-		fmt.Fprintf(stderr, "gc rig add: warning: updating global registry: %v\n", err) //nolint:errcheck // best-effort stderr
-	} else {
-		w("  Registered in global rig index")
 	}
 
 	if err := writeBeadsEnvGTRoot(fs, rigPath, cityPath); err != nil {
@@ -856,10 +848,8 @@ func newRigRemoveCmd(stdout, stderr io.Writer) *cobra.Command {
 		Short: "Remove a rig from the city",
 		Long: `Remove a rig from the current city's configuration.
 
-Removes the rig entry from city.toml and updates the global rig index
-in cities.toml. If the rig no longer belongs to any city, it is removed
-from the global index entirely. If this city was the rig's default,
-the default is cleared.`,
+Removes the rig entry from city.toml and removes its machine-local path
+binding from .gc/site.toml.`,
 		Example: `  gc rig remove myrig`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -871,7 +861,7 @@ the default is cleared.`,
 	}
 }
 
-// cmdRigRemove removes a rig from the current city and updates the global registry.
+// cmdRigRemove removes a rig from the current city and its local site binding.
 func cmdRigRemove(rigName string, stdout, stderr io.Writer) int {
 	cityPath, err := resolveCity()
 	if err != nil {
@@ -887,16 +877,10 @@ func cmdRigRemove(rigName string, stdout, stderr io.Writer) int {
 	}
 
 	// Find and remove the rig from config.
-	var removedPath string
 	found := false
 	filtered := cfg.Rigs[:0]
 	for _, r := range cfg.Rigs {
 		if r.Name == rigName {
-			removedPath = r.Path
-			if !filepath.IsAbs(removedPath) {
-				removedPath = filepath.Join(cityPath, removedPath)
-			}
-			removedPath = filepath.Clean(removedPath)
 			found = true
 			continue
 		}
@@ -912,33 +896,6 @@ func cmdRigRemove(rigName string, stdout, stderr io.Writer) int {
 	if err := writeCityConfigForEditFS(fsys.OSFS{}, tomlPath, cfg); err != nil {
 		fmt.Fprintf(stderr, "gc rig remove: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
-	}
-
-	// Update global registry: check if rig is still in any other city.
-	reg := supervisor.NewRegistry(supervisor.RegistryPath())
-	remainingPaths := rigCityPaths(reg, removedPath)
-	if len(remainingPaths) == 0 {
-		// No other city has this rig — remove from global index.
-		_ = reg.UnregisterRig(removedPath)
-	} else {
-		// Still in other cities — update default if it pointed to this city.
-		if entry, ok := reg.LookupRigByName(rigName); ok && samePath(entry.DefaultCity, cityPath) {
-			var newDefault string
-			if len(remainingPaths) == 1 {
-				newDefault = remainingPaths[0]
-			}
-			_ = reg.SetRigDefault(removedPath, newDefault)
-
-			// Update .beads/.env and routes for the rig's new default city.
-			if newDefault != "" {
-				_ = writeBeadsEnvGTRoot(fsys.OSFS{}, removedPath, newDefault)
-				if newCfg, err := loadCityConfigSuppressDeprecatedOrderWarnings(newDefault, io.Discard); err == nil {
-					resolveRigPaths(newDefault, newCfg.Rigs)
-					newRigs := collectRigRoutes(newDefault, newCfg)
-					_ = writeAllRoutes(newRigs)
-				}
-			}
-		}
 	}
 
 	// Regenerate routes.
