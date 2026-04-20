@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 // isTestBinary reports whether the current process is a Go test binary.
@@ -146,7 +147,7 @@ func LoadConfig(path string) (Config, error) {
 // silent fallback to the user's real ~/.gc directory.
 func DefaultHome() string {
 	if v := os.Getenv("GC_HOME"); v != "" {
-		return v
+		return pathutil.NormalizePathForCompare(v)
 	}
 	if isTestBinary() {
 		panic("supervisor.DefaultHome: GC_HOME must be set during tests to prevent host supervisor interference")
@@ -168,7 +169,7 @@ func UsesIsolatedGCHomeOverride() bool {
 	if gcHome == "" {
 		return false
 	}
-	return filepath.Clean(gcHome) != filepath.Clean(builtinDefaultHome())
+	return pathutil.NormalizePathForCompare(gcHome) != pathutil.NormalizePathForCompare(builtinDefaultHome())
 }
 
 // RuntimeDir returns the directory for ephemeral runtime files (lock,

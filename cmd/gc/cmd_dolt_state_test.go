@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
 func parseDoltStateOutput(t *testing.T, out string) map[string]string {
@@ -156,6 +157,31 @@ func TestDoltStateAllocatePortCmdReusesLiveProviderState(t *testing.T) {
 	}
 	if got := strings.TrimSpace(stdout.String()); got != strconv.Itoa(port) {
 		t.Fatalf("allocate-port = %q, want %d", got, port)
+	}
+}
+
+func TestStartTCPListenerProcessInDirRegistersCleanup(t *testing.T) {
+	port := reserveRandomTCPPort(t)
+	dir := t.TempDir()
+	var proc *exec.Cmd
+
+	t.Run("listener", func(t *testing.T) {
+		proc = startTCPListenerProcessInDir(t, port, dir)
+		if !pidutil.Alive(proc.Process.Pid) {
+			t.Fatalf("listener pid %d is not alive after start", proc.Process.Pid)
+		}
+	})
+
+	if proc == nil {
+		t.Fatal("listener process handle was not captured")
+	}
+	if proc.ProcessState == nil {
+		t.Fatal("listener cleanup did not wait for process exit")
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("listener port is still reachable after cleanup")
 	}
 }
 

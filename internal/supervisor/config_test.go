@@ -111,6 +111,46 @@ func TestDefaultHomeWithEnv(t *testing.T) {
 	}
 }
 
+func TestDefaultHomeCanonicalizesSymlinkOverride(t *testing.T) {
+	homeDir := t.TempDir()
+	canonicalHome := filepath.Join(homeDir, "canonical-gc")
+	if err := os.MkdirAll(canonicalHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkHome := filepath.Join(homeDir, "gc-link")
+	if err := os.Symlink(canonicalHome, symlinkHome); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GC_HOME", symlinkHome)
+	if got := DefaultHome(); got != canonicalHome {
+		t.Fatalf("DefaultHome() = %q, want canonical %q", got, canonicalHome)
+	}
+}
+
+func TestDefaultHomeCanonicalizesRelativeOverride(t *testing.T) {
+	homeDir := t.TempDir()
+	canonicalHome := filepath.Join(homeDir, "relative-gc")
+	if err := os.MkdirAll(canonicalHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(homeDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+	t.Setenv("GC_HOME", "relative-gc")
+	if got := DefaultHome(); got != canonicalHome {
+		t.Fatalf("DefaultHome() = %q, want canonical %q", got, canonicalHome)
+	}
+}
+
 func TestRuntimeDirWithXDG(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
 	if got := RuntimeDir(); got != "/run/user/1000/gc" {
@@ -154,6 +194,48 @@ func TestUsesIsolatedGCHomeOverrideFalseForDefaultHome(t *testing.T) {
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	if UsesIsolatedGCHomeOverride() {
 		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false")
+	}
+}
+
+func TestUsesIsolatedGCHomeOverrideFalseForSymlinkedDefaultHome(t *testing.T) {
+	homeDir := t.TempDir()
+	defaultHome := filepath.Join(homeDir, ".gc")
+	if err := os.MkdirAll(defaultHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkHome := filepath.Join(homeDir, "default-home-link")
+	if err := os.Symlink(defaultHome, symlinkHome); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GC_HOME", symlinkHome)
+	if UsesIsolatedGCHomeOverride() {
+		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false for symlinked default home")
+	}
+}
+
+func TestUsesIsolatedGCHomeOverrideFalseForRelativeDefaultHome(t *testing.T) {
+	homeDir := t.TempDir()
+	defaultHome := filepath.Join(homeDir, ".gc")
+	if err := os.MkdirAll(defaultHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(homeDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(wd); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GC_HOME", ".gc")
+	if UsesIsolatedGCHomeOverride() {
+		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false for relative default home")
 	}
 }
 
