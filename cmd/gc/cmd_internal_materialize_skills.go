@@ -21,6 +21,7 @@ func newInternalCmd(stdout, stderr io.Writer) *cobra.Command {
 		Hidden: true,
 	}
 	cmd.AddCommand(newInternalMaterializeSkillsCmd(stdout, stderr))
+	cmd.AddCommand(newInternalProjectMCPCmd(stdout, stderr))
 	return cmd
 }
 
@@ -54,7 +55,7 @@ func newInternalMaterializeSkillsCmd(stdout, stderr io.Writer) *cobra.Command {
 				fmt.Fprintf(stderr, "gc internal materialize-skills: %v\n", err) //nolint:errcheck // best-effort stderr
 				return errExit
 			}
-			cfg, err := loadCityConfig(cityPath)
+			cfg, err := loadCityConfig(cityPath, stderr)
 			if err != nil {
 				fmt.Fprintf(stderr, "gc internal materialize-skills: %v\n", err) //nolint:errcheck // best-effort stderr
 				return errExit

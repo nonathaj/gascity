@@ -102,11 +102,12 @@ func cmdConvoyCreateWithOptions(args []string, opts convoyCreateOptions, stdout,
 		fmt.Fprintf(stderr, "gc convoy create: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	cfg, prov, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "gc convoy create: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	emitLoadCityConfigWarnings(stderr, prov)
 
 	issueIDs := []string(nil)
 	if len(args) > 1 {
@@ -261,8 +262,23 @@ func cmdConvoyList(stdout, stderr io.Writer) int {
 }
 
 func convoyStoreCandidates(cfg *config.City, cityPath, beadID string) []string {
-	if rawBeadsProvider(cityPath) == "file" && !fileStoreUsesScopedRoots(cityPath) {
-		return []string{cityPath}
+	if rawBeadsProviderForScope(cityPath, cityPath) == "file" && !fileStoreUsesScopedRoots(cityPath) {
+		legacyCityOnly := true
+		if cfg != nil {
+			for _, rig := range cfg.Rigs {
+				if strings.TrimSpace(rig.Path) == "" {
+					continue
+				}
+				scopeRoot := resolveStoreScopeRoot(cityPath, rig.Path)
+				if rawBeadsProviderForScope(scopeRoot, cityPath) != "file" || (!samePath(scopeRoot, cityPath) && scopeUsesFileStoreContract(scopeRoot)) {
+					legacyCityOnly = false
+					break
+				}
+			}
+		}
+		if legacyCityOnly {
+			return []string{cityPath}
+		}
 	}
 	capacity := 2
 	if cfg != nil {
@@ -359,11 +375,12 @@ func openAllConvoyStores(stderr io.Writer, cmdName string) ([]convoyStoreView, i
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
 		return nil, 1
 	}
-	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	cfg, prov, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
 		return nil, 1
 	}
+	emitLoadCityConfigWarnings(stderr, prov)
 	stores, err := openConvoyStores(cfg, cityPath, "", func(storeDir string) (beads.Store, error) {
 		return openStoreAtForCity(storeDir, cityPath)
 	})
@@ -406,11 +423,12 @@ func openConvoyStoreByID(convoyID string, stderr io.Writer, cmdName string) (bea
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
 		return nil, 1
 	}
-	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	cfg, prov, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", cmdName, err) //nolint:errcheck // best-effort stderr
 		return nil, 1
 	}
+	emitLoadCityConfigWarnings(stderr, prov)
 	store, err := resolveConvoyStore(convoyID, cfg, cityPath, func(storeDir string) (beads.Store, error) {
 		return openStoreAtForCity(storeDir, cityPath)
 	})

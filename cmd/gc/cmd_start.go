@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -261,6 +262,10 @@ Use "gc supervisor run" for foreground operation.`,
 }
 
 func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
+	return doStartWithNameOverride(args, controllerMode, stdout, stderr, "")
+}
+
+func doStartWithNameOverride(args []string, controllerMode bool, stdout, stderr io.Writer, nameOverride string) int {
 	if controllerMode || dryRunMode {
 		return doStartStandalone(args, controllerMode, stdout, stderr)
 	}
@@ -297,7 +302,7 @@ func doStart(args []string, controllerMode bool, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "gc start: install the missing dependencies, then try again") //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	if code := registerCityWithSupervisor(cityPath, stdout, stderr, "gc start", true); code != 0 {
+	if code := registerCityWithSupervisorNamed(cityPath, nameOverride, stdout, stderr, "gc start", true); code != 0 {
 		return code
 	}
 	fmt.Fprintln(stdout, "City started under supervisor.") //nolint:errcheck // best-effort stdout
@@ -394,9 +399,12 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 		return 1
 	}
 	applyFeatureFlags(cfg)
-	// Strict mode (default) promotes composition warnings to errors.
-	if strictMode && len(prov.Warnings) > 0 {
-		for _, w := range prov.Warnings {
+	// Strict mode keeps composition collisions and mixed canonical/compat
+	// default tables fatal. Alias-only, unsupported-key, and deprecation
+	// migration warnings remain soft so legacy compatibility paths still boot.
+	if fatalWarnings := strictFatalLoadConfigWarnings(prov.Warnings); strictMode && len(fatalWarnings) > 0 {
+		emitNonFatalLoadConfigWarnings(stderr, prov)
+		for _, w := range fatalWarnings {
 			fmt.Fprintf(stderr, "gc start: strict: %s\n", w) //nolint:errcheck // best-effort stderr
 		}
 		fmt.Fprintln(stderr, "gc start: use --no-strict to disable strict checking") //nolint:errcheck // best-effort stderr
@@ -508,6 +516,15 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	// itself; it never returns a non-nil error to its caller.
 	_ = runStage1SkillMaterialization(cityPath, cfg, stderr)
 
+	// Stage-1 MCP projection is a hard gate because it mutates the provider's
+	// active runtime config surface. Conflicting shared targets or projection
+	// write failures must block startup before sessions launch against stale or
+	// ambiguous MCP state.
+	if err := runStage1MCPProjection(cityPath, cfg, exec.LookPath, stderr); err != nil {
+		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+
 	// Validate install_agent_hooks (workspace + all agents).
 	if ih := cfg.Workspace.InstallAgentHooks; len(ih) > 0 {
 		if err := hooks.Validate(ih); err != nil {
@@ -566,10 +583,10 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	if controllerMode {
 		poolSessions := computePoolSessions(cfg, cityName, cityPath, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, cityPath, sp, stderr)
-		watchDirs := config.WatchDirs(prov, cfg, cityPath)
+		watchTargets := config.WatchTargets(prov, cfg, cityPath)
 		configRev := config.Revision(fsys.OSFS{}, prov, cfg, cityPath)
 		return runController(cityPath, tomlPath, cfg, configRev, buildAgents, buildAgentsWithSessionBeads, sp,
-			newDrainOps(sp), poolSessions, poolDeathHandlers, watchDirs, recorder, eventProv, stdout, stderr)
+			newDrainOps(sp), poolSessions, poolDeathHandlers, watchTargets, recorder, eventProv, stdout, stderr)
 	}
 
 	// One-shot reconciliation (default): no drain (kill is fine).
@@ -779,10 +796,31 @@ func stageHookFiles(copyFiles []runtime.CopyEntry, cityPath, workDir string) []r
 	// Compute the relative path from cityPath to workDir so that
 	// container-side RelDst places files under the agent's WorkingDir
 	// (/workspace/<relWorkDir>/), not always at /workspace/.
+	// When workDir == cityPath, relWorkDir is "." and path.Join collapses it.
 	relWorkDir := "."
 	if workDir != cityPath {
 		if r, err := filepath.Rel(cityPath, workDir); err == nil {
 			relWorkDir = r
+		}
+	}
+
+	// workDir-based hooks: gemini, codex, opencode, copilot, cursor, pi, omp.
+	for _, rel := range []string{
+		path.Join(".gemini", "settings.json"),
+		path.Join(".codex", "hooks.json"),
+		path.Join(".opencode", "plugins", "gascity.js"),
+		path.Join(".github", "hooks", "gascity.json"),
+		path.Join(".github", "copilot-instructions.md"),
+		path.Join(".cursor", "hooks.json"),
+		path.Join(".pi", "extensions", "gc-hooks.js"),
+		path.Join(".omp", "hooks", "gc-hook.ts"),
+	} {
+		abs := filepath.Join(workDir, rel)
+		if _, err := os.Stat(abs); err == nil {
+			copyFiles = append(copyFiles, runtime.CopyEntry{
+				Src: abs, RelDst: path.Join(relWorkDir, rel),
+				Probed: true, ContentHash: runtime.HashPathContent(abs),
+			})
 		}
 	}
 
@@ -1066,7 +1104,7 @@ func countRunningPoolInstances(agentName, agentDir string, sp0 scaleParams, a *c
 		count := 0
 		for _, qn := range instances {
 			sn := sessionName(nil, cityName, qn, sessionTemplate)
-			if sp.IsRunning(sn) {
+			if running, err := workerSessionTargetRunningWithConfig("", nil, sp, nil, sn); err == nil && running {
 				count++
 			}
 		}
@@ -1091,7 +1129,7 @@ func countRunningPoolInstances(agentName, agentDir string, sp0 scaleParams, a *c
 		// Fallback: individual IsRunning calls (original behavior).
 		count := 0
 		for sn := range expected {
-			if sp.IsRunning(sn) {
+			if running, err := workerSessionTargetRunningWithConfig("", nil, sp, nil, sn); err == nil && running {
 				count++
 			}
 		}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"path/filepath"
 	"strconv"
@@ -54,7 +55,7 @@ func standaloneControllerCityName(cfg *config.City, cityPath string) string {
 	if cfg != nil && cfg.Workspace.Name != "" {
 		return cfg.Workspace.Name
 	}
-	return resolveCityName("", cityPath)
+	return resolveCityName("", "", cityPath)
 }
 
 // resolveAgentForAPI resolves a bare agent name (e.g., "worker") to its
@@ -62,7 +63,7 @@ func standaloneControllerCityName(cfg *config.City, cityPath string) string {
 // the API server can find the agent. If already qualified or resolution
 // fails, the original name is returned.
 func resolveAgentForAPI(cityPath, name string) string {
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, io.Discard)
 	if err != nil {
 		return name
 	}

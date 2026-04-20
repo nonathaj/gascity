@@ -28,7 +28,7 @@ type nudgeFunc func(recipient string) error
 
 func newMailNudgeFunc(sender string) nudgeFunc {
 	return func(recipient string) error {
-		target, err := resolveNudgeTarget(recipient)
+		target, err := resolveNudgeTarget(recipient, io.Discard)
 		if err != nil {
 			return err
 		}
@@ -131,6 +131,7 @@ func doMailArchive(mp mail.Provider, rec events.Recorder, args []string, stdout,
 
 func newMailCheckCmd(stdout, stderr io.Writer) *cobra.Command {
 	var inject bool
+	var hookFormat string
 	cmd := &cobra.Command{
 		Use:   "check [session]",
 		Short: "Check for unread mail (use --inject for hook output)",
@@ -145,21 +146,21 @@ $GC_SESSION_ID, or "human".`,
   gc mail check mayor`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if cmdMailCheck(args, inject, stdout, stderr) != 0 {
+			if cmdMailCheckWithFormat(args, inject, hookFormat, stdout, stderr) != 0 {
 				return errExit
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&inject, "inject", false, "output <system-reminder> block for hook injection")
+	cmd.Flags().StringVar(&hookFormat, "hook-format", "", "format hook output for a provider")
 	return cmd
 }
 
-// cmdMailCheck is the CLI entry point for checking mail.
-func cmdMailCheck(args []string, inject bool, stdout, stderr io.Writer) int {
+func cmdMailCheckWithFormat(args []string, inject bool, hookFormat string, stdout, stderr io.Writer) int {
 	// Check city-level suspension before opening the store.
 	if cityPath, err := resolveCity(); err == nil {
-		if cfg, err := loadCityConfig(cityPath); err == nil {
+		if cfg, err := loadCityConfig(cityPath, stderr); err == nil {
 			if citySuspended(cfg) {
 				if inject {
 					return 0
@@ -186,7 +187,7 @@ func cmdMailCheck(args []string, inject bool, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	return doMailCheckTarget(mp, target, inject, stdout, stderr)
+	return doMailCheckTargetWithFormat(mp, target, inject, hookFormat, stdout, stderr)
 }
 
 // doMailCheck checks for unread messages. Without --inject, prints the count
@@ -197,6 +198,10 @@ func doMailCheck(mp mail.Provider, recipient string, inject bool, stdout, stderr
 }
 
 func doMailCheckTarget(mp mail.Provider, target resolvedMailTarget, inject bool, stdout, stderr io.Writer) int {
+	return doMailCheckTargetWithFormat(mp, target, inject, "", stdout, stderr)
+}
+
+func doMailCheckTargetWithFormat(mp mail.Provider, target resolvedMailTarget, inject bool, hookFormat string, stdout, stderr io.Writer) int {
 	messages, err := collectMailMessages(mp.Check, target.recipients)
 	if err != nil {
 		if inject {
@@ -209,7 +214,7 @@ func doMailCheckTarget(mp mail.Provider, target resolvedMailTarget, inject bool,
 
 	if inject {
 		if len(messages) > 0 {
-			fmt.Fprint(stdout, formatInjectOutput(messages)) //nolint:errcheck // best-effort stdout
+			_ = writeProviderHookContext(stdout, hookFormat, formatInjectOutput(messages))
 		}
 		return 0 // --inject always exits 0
 	}
@@ -409,7 +414,7 @@ func configuredMailboxAddress(identifier string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, io.Discard)
 	if err != nil {
 		return "", false
 	}
@@ -920,7 +925,7 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 	)
 	cityPath, err := resolveCity()
 	if err == nil {
-		cfg, _ = loadCityConfig(cityPath)
+		cfg, _ = loadCityConfig(cityPath, stderr)
 		store, err = openCityStoreAt(cityPath)
 	}
 	// Narrower than isStorelessMailProvider: exec: providers can legitimately
@@ -1229,7 +1234,7 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 				fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
 				return 1
 			}
-			cfg, _ := loadCityConfig(cityPath)
+			cfg, _ := loadCityConfig(cityPath, stderr)
 			resolved, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, stderr, "gc mail reply")
 			if !ok {
 				return 1

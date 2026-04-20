@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -177,6 +179,215 @@ func TestBuildDesiredState_UsesAgentHookOverride(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cityPath, ".gemini", "settings.json")); !os.IsNotExist(err) {
 		t.Fatalf("workspace gemini hook should not be installed for agent override: %v", err)
+	}
+}
+
+func TestBuildDesiredState_InstallsGeminiHooksBeforeFingerprinting(t *testing.T) {
+	cityPath := t.TempDir()
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city", Provider: "test"},
+		Providers: map[string]config.ProviderSpec{
+			"test": {Command: "echo", PromptMode: "none"},
+		},
+		Agents: []config.Agent{{
+			Name:              "probe",
+			StartCommand:      "true",
+			MaxActiveSessions: intPtr(1),
+			ScaleCheck:        "echo 1",
+			WorkDir:           "worker",
+			InstallAgentHooks: []string{"gemini"},
+		}},
+	}
+
+	first := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), nil, io.Discard)
+	if len(first.State) != 1 {
+		t.Fatalf("first desired state size = %d, want 1", len(first.State))
+	}
+	var firstTP TemplateParams
+	for _, tp := range first.State {
+		firstTP = tp
+	}
+
+	hookPath := filepath.Join(cityPath, "worker", ".gemini", "settings.json")
+	if _, err := os.Stat(hookPath); err != nil {
+		t.Fatalf("stat gemini hook %q: %v", hookPath, err)
+	}
+
+	firstCfg := templateParamsToConfig(firstTP)
+	wantRelDst := path.Join("worker", ".gemini", "settings.json")
+	foundHook := false
+	for _, entry := range firstCfg.CopyFiles {
+		if entry.RelDst != wantRelDst {
+			continue
+		}
+		foundHook = true
+		if entry.Src != hookPath {
+			t.Fatalf("CopyFiles hook src = %q, want %q", entry.Src, hookPath)
+		}
+	}
+	if !foundHook {
+		t.Fatalf("first fingerprint missing gemini hook copy file %q: %#v", wantRelDst, firstCfg.CopyFiles)
+	}
+
+	second := buildDesiredState("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), nil, io.Discard)
+	if len(second.State) != 1 {
+		t.Fatalf("second desired state size = %d, want 1", len(second.State))
+	}
+	var secondTP TemplateParams
+	for _, tp := range second.State {
+		secondTP = tp
+	}
+	secondCfg := templateParamsToConfig(secondTP)
+
+	if got, want := runtime.CoreFingerprint(secondCfg), runtime.CoreFingerprint(firstCfg); got != want {
+		t.Fatalf("core fingerprint changed after hook install: got %q want %q", got, want)
+	}
+}
+
+func TestBuildDesiredState_IncludesImportedAlwaysNamedSessions(t *testing.T) {
+	cityPath := t.TempDir()
+	rigPath := filepath.Join(cityPath, "repo")
+	for path, contents := range map[string]string{
+		filepath.Join(cityPath, "pack.toml"): `
+[pack]
+name = "import-regression"
+schema = 2
+
+[imports.gs]
+source = "./assets/sidecar"
+`,
+		filepath.Join(cityPath, "city.toml"): `
+[workspace]
+name = "import-regression"
+provider = "claude"
+
+[[rigs]]
+name = "repo"
+path = "./repo"
+
+[rigs.imports.gs]
+source = "./assets/sidecar"
+`,
+		filepath.Join(cityPath, "assets", "sidecar", "pack.toml"): `
+[pack]
+name = "sidecar"
+schema = 2
+
+[[named_session]]
+template = "captain"
+scope = "city"
+mode = "always"
+
+[[named_session]]
+template = "watcher"
+scope = "rig"
+mode = "always"
+`,
+		filepath.Join(cityPath, "assets", "sidecar", "agents", "captain", "agent.toml"): "scope = \"city\"\n",
+		filepath.Join(cityPath, "assets", "sidecar", "agents", "captain", "prompt.md"):  "You are the imported captain.\n",
+		filepath.Join(cityPath, "assets", "sidecar", "agents", "watcher", "agent.toml"): "scope = \"rig\"\n",
+		filepath.Join(cityPath, "assets", "sidecar", "agents", "watcher", "prompt.md"):  "You are the imported watcher.\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", path, err)
+		}
+	}
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", rigPath, err)
+	}
+
+	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	dsResult := buildDesiredState(cfg.EffectiveCityName(), cityPath, time.Now().UTC(), cfg, runtime.NewFake(), beads.NewMemStore(), io.Discard)
+
+	captain, ok := dsResult.State["gs__captain"]
+	if !ok {
+		t.Fatalf("desired state missing gs__captain; keys=%v", mapKeys(dsResult.State))
+	}
+	if captain.TemplateName != "gs.captain" {
+		t.Fatalf("gs__captain TemplateName = %q, want %q", captain.TemplateName, "gs.captain")
+	}
+	if captain.ConfiguredNamedIdentity != "gs.captain" {
+		t.Fatalf("gs__captain ConfiguredNamedIdentity = %q, want %q", captain.ConfiguredNamedIdentity, "gs.captain")
+	}
+
+	watcher, ok := dsResult.State["repo--gs__watcher"]
+	if !ok {
+		t.Fatalf("desired state missing repo--gs__watcher; keys=%v", mapKeys(dsResult.State))
+	}
+	if watcher.TemplateName != "repo/gs.watcher" {
+		t.Fatalf("repo--gs__watcher TemplateName = %q, want %q", watcher.TemplateName, "repo/gs.watcher")
+	}
+	if watcher.ConfiguredNamedIdentity != "repo/gs.watcher" {
+		t.Fatalf("repo--gs__watcher ConfiguredNamedIdentity = %q, want %q", watcher.ConfiguredNamedIdentity, "repo/gs.watcher")
+	}
+}
+
+func TestBuildDesiredState_TransitiveFalseSkipsNestedImportedNamedSessions(t *testing.T) {
+	cityPath := t.TempDir()
+	for path, contents := range map[string]string{
+		filepath.Join(cityPath, "city.toml"): `
+[workspace]
+name = "import-regression"
+provider = "claude"
+
+[imports.outer]
+source = "./assets/outer"
+transitive = false
+`,
+		filepath.Join(cityPath, "assets", "outer", "pack.toml"): `
+[pack]
+name = "outer"
+schema = 2
+
+[imports.inner]
+source = "../inner"
+
+[[named_session]]
+template = "captain"
+scope = "city"
+mode = "always"
+`,
+		filepath.Join(cityPath, "assets", "outer", "agents", "captain", "agent.toml"): "scope = \"city\"\n",
+		filepath.Join(cityPath, "assets", "outer", "agents", "captain", "prompt.md"):  "You are the outer captain.\n",
+		filepath.Join(cityPath, "assets", "inner", "pack.toml"): `
+[pack]
+name = "inner"
+schema = 2
+
+[[named_session]]
+template = "watcher"
+scope = "city"
+mode = "always"
+`,
+		filepath.Join(cityPath, "assets", "inner", "agents", "watcher", "agent.toml"): "scope = \"city\"\n",
+		filepath.Join(cityPath, "assets", "inner", "agents", "watcher", "prompt.md"):  "You are the inner watcher.\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("WriteFile(%q): %v", path, err)
+		}
+	}
+
+	cfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityPath, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	dsResult := buildDesiredState(cfg.EffectiveCityName(), cityPath, time.Now().UTC(), cfg, runtime.NewFake(), beads.NewMemStore(), io.Discard)
+	if _, ok := dsResult.State["outer__captain"]; !ok {
+		t.Fatalf("desired state missing outer__captain; keys=%v", mapKeys(dsResult.State))
+	}
+	if _, ok := dsResult.State["outer__watcher"]; ok {
+		t.Fatalf("desired state should not include nested named session when transitive=false; keys=%v", mapKeys(dsResult.State))
 	}
 }
 
@@ -989,6 +1200,53 @@ func TestBuildDesiredState_ManualZeroScaledPoolSessionStaysDesiredAndKeepsDepend
 	}
 	if dbSlots != 1 {
 		t.Fatalf("db desired slots = %d, want 1", dbSlots)
+	}
+}
+
+func TestRefreshDesiredStateWithSessionBeadsIncludesManualCreatedDuringBuild(t *testing.T) {
+	cityPath := t.TempDir()
+	store := beads.NewMemStore()
+	staleSnapshot, err := loadSessionBeadSnapshot(store)
+	if err != nil {
+		t.Fatalf("load stale snapshot: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Title:  "debug api",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel, "template:api"},
+		Metadata: map[string]string{
+			"template":       "api",
+			"session_name":   "s-gc-late",
+			"state":          "creating",
+			"manual_session": "true",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.City{
+		Agents: []config.Agent{{
+			Name:              "api",
+			StartCommand:      "echo",
+			MinActiveSessions: intPtr(0),
+			MaxActiveSessions: intPtr(0),
+		}},
+	}
+
+	result := buildDesiredStateWithSessionBeads("test-city", cityPath, time.Now().UTC(), cfg, runtime.NewFake(), store, nil, staleSnapshot, nil, io.Discard)
+	if _, ok := result.State["s-gc-late"]; ok {
+		t.Fatalf("stale session snapshot unexpectedly included late manual session")
+	}
+	latestSnapshot, err := loadSessionBeadSnapshot(store)
+	if err != nil {
+		t.Fatalf("load latest snapshot: %v", err)
+	}
+	refreshed := refreshDesiredStateWithSessionBeads(result, "test-city", cityPath, cfg, runtime.NewFake(), store, latestSnapshot, io.Discard)
+	tp, ok := refreshed.State["s-gc-late"]
+	if !ok {
+		t.Fatalf("expected refreshed desired state to include late manual session, got keys %v", mapKeys(refreshed.State))
+	}
+	if !tp.ManualSession {
+		t.Fatalf("refreshed manual session flag = false, want true")
 	}
 }
 

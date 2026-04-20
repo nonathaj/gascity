@@ -145,6 +145,7 @@ func newRootCmd(stdout, stderr io.Writer) *cobra.Command {
 	root.AddCommand(
 		newStartCmd(stdout, stderr),
 		newInitCmd(stdout, stderr),
+		newReloadCmd(stdout, stderr),
 		newStopCmd(stdout, stderr),
 		newRestartCmd(stdout, stderr),
 		newStatusCmd(stdout, stderr),
@@ -530,7 +531,7 @@ func rigFromCwd(cityPath string) string {
 
 // rigFromCwdDir matches cwd against registered rigs in a city's config.
 func rigFromCwdDir(cityPath, cwd string) string {
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, io.Discard)
 	if err != nil {
 		return ""
 	}
@@ -572,7 +573,7 @@ func rigCityEntries(reg *supervisor.Registry, rigPath string) []supervisor.CityE
 	}
 	var matched []supervisor.CityEntry
 	for _, c := range cities {
-		cfg, err := loadCityConfig(c.Path)
+		cfg, err := loadCityConfigSuppressDeprecatedOrderWarnings(c.Path, io.Discard)
 		if err != nil {
 			continue
 		}
@@ -703,6 +704,10 @@ func openExistingScopeLocalFileStore(scopeRoot string) (*beads.FileStore, error)
 }
 
 func openCompatibleFileStore(scopeRoot, cityPath string) (*beads.FileStore, error) {
+	scopeRoot = resolveStoreScopeRoot(cityPath, scopeRoot)
+	if !samePath(scopeRoot, cityPath) && scopeUsesFileStoreContract(scopeRoot) {
+		return openExistingScopeLocalFileStore(scopeRoot)
+	}
 	if fileStoreUsesScopedRoots(cityPath) {
 		return openExistingScopeLocalFileStore(scopeRoot)
 	}
@@ -715,7 +720,7 @@ func openStoreAtForCity(storePath, cityPath string) (beads.Store, error) {
 		runtimeCityPath = cityForStoreDir(storePath)
 	}
 	scopeRoot := resolveStoreScopeRoot(runtimeCityPath, storePath)
-	provider := rawBeadsProvider(runtimeCityPath)
+	provider := rawBeadsProviderForScope(scopeRoot, runtimeCityPath)
 	if strings.HasPrefix(provider, "exec:") {
 		target, err := resolveConfiguredExecStoreTarget(runtimeCityPath, scopeRoot)
 		if err != nil {
@@ -724,7 +729,7 @@ func openStoreAtForCity(storePath, cityPath string) (beads.Store, error) {
 		env := gcExecStoreEnv(runtimeCityPath, target, provider)
 		if execProviderNeedsScopedDoltStoreEnv(provider) {
 			if target.ScopeKind == "rig" {
-				cfg, err := loadCityConfig(runtimeCityPath)
+				cfg, err := loadCityConfig(runtimeCityPath, io.Discard)
 				if err != nil {
 					return nil, err
 				}
@@ -770,7 +775,7 @@ func openBdStoreAt(storePath, cityPath string) (beads.Store, error) {
 	if filepath.Clean(storePath) == filepath.Clean(cityPath) {
 		return bdStoreForCity(storePath, cityPath), nil
 	}
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, io.Discard)
 	if err != nil {
 		cfg = nil
 	}

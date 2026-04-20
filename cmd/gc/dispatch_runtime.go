@@ -139,7 +139,7 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 	if err != nil {
 		return err
 	}
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, stderr)
 	if err != nil {
 		return err
 	}
@@ -335,7 +335,7 @@ func nextWorkflowServeBeads(workQuery, dir string, env map[string]string) ([]hoo
 	if workQuery == "" {
 		return nil, nil
 	}
-	output, err := shellWorkQueryWithEnv(workQuery, dir, env)
+	output, err := shellWorkQueryWithEnv(workQuery, dir, mergeRuntimeEnv(os.Environ(), env))
 	if err != nil {
 		return nil, err
 	}

@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -551,6 +553,16 @@ type managedCity struct {
 	tombstoned atomic.Bool   // set before Remove() in shutdown paths for teardown safety
 }
 
+// deleteManagedCityIfCurrent prevents a stale city goroutine from removing
+// a replacement city that has already been published at the same path.
+func deleteManagedCityIfCurrent(cities map[string]*managedCity, path string, current *managedCity) bool {
+	if published, ok := cities[path]; ok && published == current {
+		delete(cities, path)
+		return true
+	}
+	return false
+}
+
 // managedCityStopTimeout returns the grace period for a city stop.
 // Only ShutdownTimeoutDuration is used — startup and drift-drain timeouts
 // are intentionally excluded because they govern unrelated lifecycle phases.
@@ -1086,19 +1098,20 @@ func reconcileCities(
 			}
 		}
 
-		// Load city config with provenance so WatchDirs covers included files.
+		// Load city config with provenance so WatchTargets covers included files.
 		// System packs are appended as extra includes for normal pack expansion.
 		cfg, prov, loadErr := config.LoadWithIncludes(fsys.OSFS{}, tomlPath, builtinPackIncludes(path)...)
 		if loadErr != nil {
 			recordInitFailure(name, loadErr.Error())
 			continue
 		}
+		emitSupervisorLoadCityConfigWarnings(stderr, path, prov)
 
-		// Use registered name as authoritative identity. Warn if live
-		// config has a different workspace.name (name drift).
+		// Use registered name as authoritative identity. city.toml may keep a
+		// different workspace.name because registration aliases are machine-local.
 		cityName := name // from entry.EffectiveName()
 		if liveName := cfg.Workspace.Name; liveName != "" && liveName != cityName {
-			fmt.Fprintf(stderr, "gc supervisor: city '%s': workspace.name changed to %q (re-register to update)\n", //nolint:errcheck
+			fmt.Fprintf(stderr, "gc supervisor: city '%s': using registered name; city.toml workspace.name is %q\n", //nolint:errcheck
 				cityName, liveName)
 		}
 
@@ -1206,10 +1219,11 @@ func reconcileCities(
 		dops := newDrainOps(sp)
 		poolSessions := computePoolSessions(cfg, cityName, path, sp)
 		poolDeathHandlers := computePoolDeathHandlers(cfg, cityName, path, sp, stderr)
-		watchDirs := config.WatchDirs(prov, cfg, path)
+		watchTargets := config.WatchTargets(prov, cfg, path)
 		configRev := config.Revision(fsys.OSFS{}, prov, cfg, path)
 		pokeCh := make(chan struct{}, 1)
 		configDirty := &atomic.Bool{}
+		reloadReqCh := make(chan reloadRequest)
 		cityCtx, cityCancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		mc := &managedCity{name: cityName, cancel: cityCancel, done: done, closer: fr}
@@ -1223,7 +1237,7 @@ func reconcileCities(
 				CityPath:                path,
 				CityName:                cityName,
 				TomlPath:                tomlPath,
-				WatchDirs:               watchDirs,
+				WatchTargets:            watchTargets,
 				ConfigRev:               configRev,
 				ConfigDirty:             configDirty,
 				Cfg:                     cfg,
@@ -1235,6 +1249,7 @@ func reconcileCities(
 				Rec:                     rec,
 				PoolSessions:            poolSessions,
 				PoolDeathHandlers:       poolDeathHandlers,
+				ReloadReqCh:             reloadReqCh,
 				ConvergenceReqCh:        convergenceReqCh,
 				PokeCh:                  pokeCh,
 				ControlDispatcherCh:     controlDispatcherCh,
@@ -1329,7 +1344,7 @@ func reconcileCities(
 		// Start controller socket AFTER the alreadyRunning check so we
 		// never destroy a live city's socket or leak a listener.
 		sockPath := filepath.Join(path, ".gc", "controller.sock")
-		lis, lisErr := startControllerSocket(path, cityCancel, configDirty, convergenceReqCh, pokeCh, controlDispatcherCh)
+		lis, lisErr := startControllerSocket(path, cityCancel, configDirty, reloadReqCh, convergenceReqCh, pokeCh, controlDispatcherCh)
 		if lisErr != nil {
 			fmt.Fprintf(stderr, "gc supervisor: city '%s': controller socket: %v\n", cityName, lisErr) //nolint:errcheck
 			lock.Close()                                                                               //nolint:errcheck // no socket to race with
@@ -1458,7 +1473,7 @@ func reconcileCities(
 						}
 						pr.backoff = time.Now().Add(delay)
 						fmt.Fprintf(stderr, "gc supervisor: city '%s' panic #%d, next retry in %s\n", n, pr.count, delay) //nolint:errcheck
-						delete(cities, p)
+						deleteManagedCityIfCurrent(cities, p, mc)
 					})
 				} else {
 					// Normal exit (context canceled) — reset panic counter
@@ -1470,7 +1485,7 @@ func reconcileCities(
 						panicHistory map[string]*panicRecord,
 					) {
 						delete(panicHistory, p)
-						delete(cities, p)
+						deleteManagedCityIfCurrent(cities, p, mc)
 					})
 				}
 				// Signal completion last — ensures all cleanup is done before
@@ -1508,6 +1523,29 @@ func reconcileCities(
 	reconcileRigIndex(reg, stderr)
 }
 
+var supervisorLoadWarningSeen sync.Map
+
+func emitSupervisorLoadCityConfigWarnings(w io.Writer, cityPath string, prov *config.Provenance) {
+	if w == nil || prov == nil || len(prov.Warnings) == 0 {
+		return
+	}
+	seen := make(map[string]struct{}, len(prov.Warnings))
+	for _, warning := range prov.Warnings {
+		if !shouldEmitLoadCityConfigWarning(warning) {
+			continue
+		}
+		if _, dup := seen[warning]; dup {
+			continue
+		}
+		seen[warning] = struct{}{}
+		key := filepath.Clean(cityPath) + "\x00" + warning
+		if _, loaded := supervisorLoadWarningSeen.LoadOrStore(key, struct{}{}); loaded {
+			continue
+		}
+		fmt.Fprintln(w, warning) //nolint:errcheck // best-effort warning emission
+	}
+}
+
 // reconcileRigIndex rebuilds the [[rigs]] section of cities.toml from the
 // rig definitions in each registered city's city.toml.
 func reconcileRigIndex(reg *supervisor.Registry, stderr io.Writer) {
@@ -1519,7 +1557,9 @@ func reconcileRigIndex(reg *supervisor.Registry, stderr io.Writer) {
 	var mappings []supervisor.RigCityMapping
 	var loadFailed bool
 	for _, c := range cities {
-		cfg, err := loadCityConfig(c.Path)
+		// Rig-index patrol runs continuously under the supervisor. Suppress
+		// migration warnings here so steady-state reconciles do not flood logs.
+		cfg, err := loadCityConfigSuppressDeprecatedOrderWarnings(c.Path, io.Discard)
 		if err != nil {
 			// Abort reconciliation if any city can't be loaded — a partial
 			// snapshot would cause ReconcileRigs to drop rigs from the
@@ -1689,6 +1729,12 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 	_ = runStep("materializing_skills", func() error {
 		return runStage1SkillMaterialization(cityPath, cfg, stderr)
 	})
+
+	if err := runStep("projecting_mcp", func() error {
+		return runStage1MCPProjection(cityPath, cfg, exec.LookPath, stderr)
+	}); err != nil {
+		return fmt.Errorf("project MCP: %w", err)
+	}
 
 	// Validate install_agent_hooks (workspace + all agents).
 	if err := runStep("validating_hooks", func() error {

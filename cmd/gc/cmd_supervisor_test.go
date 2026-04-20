@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/user"
@@ -168,6 +170,70 @@ func TestReloadSupervisorFallsBackToDefaultHomeSocket(t *testing.T) {
 	}
 }
 
+func TestReconcileRigIndexSuppressesDeprecatedOrderWarnings(t *testing.T) {
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	cityPath := setupCity(t, "quiet-supervisor")
+	rigDir := filepath.Join(t.TempDir(), "quiet-supervisor-rig")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toml := `[workspace]
+name = "quiet-supervisor"
+includes = ["missing-pack"]
+
+[[agent]]
+name = "mayor"
+
+[[rigs]]
+name = "quiet-supervisor-rig"
+path = "` + rigDir + `"
+
+[packs.missing-pack]
+source = "https://example.com/missing.git"
+ref = "main"
+path = "packs/missing"
+`
+	writeRigAnywhereCityToml(t, cityPath, toml)
+	writeRigAnywhereLegacyOrderPack(t, cityPath)
+
+	reg := registryAt(t, gcHome)
+	if err := reg.Register(cityPath, "quiet-supervisor"); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	oldPrefix := log.Prefix()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	t.Cleanup(func() {
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+		log.SetPrefix(oldPrefix)
+	})
+
+	var stderr bytes.Buffer
+	reconcileRigIndex(reg, &stderr)
+	if stderr.Len() != 0 {
+		t.Fatalf("reconcileRigIndex stderr = %q, want empty", stderr.String())
+	}
+	if strings.Contains(logs.String(), "deprecated order path") {
+		t.Fatalf("reconcileRigIndex emitted order migration warning:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "not found, skipping") {
+		t.Fatalf("reconcileRigIndex suppressed non-order config diagnostics; logs:\n%s", logs.String())
+	}
+	entry, ok := reg.LookupRigByName("quiet-supervisor-rig")
+	if !ok {
+		t.Fatal("reconcileRigIndex did not register quiet-supervisor-rig")
+	}
+	assertSameTestPath(t, entry.DefaultCity, cityPath)
+}
+
 func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 	data := &supervisorServiceData{
 		GCPath:        "/usr/local/bin/gc",
@@ -247,6 +313,80 @@ func TestBuildSupervisorServiceDataExpandsUserManagedPath(t *testing.T) {
 	}
 	if data.XDGRuntimeDir != "/tmp/gc-run" {
 		t.Fatalf("buildSupervisorServiceData XDGRuntimeDir = %q, want /tmp/gc-run", data.XDGRuntimeDir)
+	}
+}
+
+func TestReconcileRigIndexSuppressesMigrationWarnings(t *testing.T) {
+	gcHome := t.TempDir()
+	t.Setenv("GC_HOME", gcHome)
+
+	cityPath := filepath.Join(t.TempDir(), "city")
+	rigPath := filepath.Join(t.TempDir(), "rig")
+	if err := os.MkdirAll(cityPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(city): %v", err)
+	}
+	if err := os.MkdirAll(rigPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(rig): %v", err)
+	}
+	cityToml := fmt.Sprintf(`[workspace]
+name = "alpha"
+
+[agents]
+append_fragments = ["legacy.md"]
+
+[[rigs]]
+name = "alpha-rig"
+path = %q
+`, rigPath)
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+
+	reg := supervisor.NewRegistry(supervisor.RegistryPath())
+	if err := reg.Register(cityPath, "alpha"); err != nil {
+		t.Fatalf("Register(city): %v", err)
+	}
+
+	var stderr bytes.Buffer
+	reconcileRigIndex(reg, &stderr)
+
+	if strings.Contains(stderr.String(), "[agents] is a deprecated compatibility alias") {
+		t.Fatalf("stderr = %q, want migration warnings suppressed during rig reconcile", stderr.String())
+	}
+
+	rigs, err := reg.ListRigs()
+	if err != nil {
+		t.Fatalf("ListRigs(): %v", err)
+	}
+	if len(rigs) != 1 {
+		t.Fatalf("ListRigs() len = %d, want 1", len(rigs))
+	}
+	if rigs[0].Name != "alpha-rig" {
+		t.Fatalf("rig name = %q, want %q", rigs[0].Name, "alpha-rig")
+	}
+	if rigs[0].DefaultCity == "" {
+		t.Fatal("default city = empty, want reconciled default city")
+	}
+}
+
+func TestEmitSupervisorLoadCityConfigWarningsOncePerCity(t *testing.T) {
+	var stderr bytes.Buffer
+	prov := &config.Provenance{
+		Warnings: []string{
+			`/city/pack.toml: [agents] is a deprecated compatibility alias for [agent_defaults]; rewrite the table name to [agent_defaults]`,
+			`/city/pack.toml: [agents] is a deprecated compatibility alias for [agent_defaults]; rewrite the table name to [agent_defaults]`,
+		},
+	}
+	cityPath := filepath.Join(t.TempDir(), "city")
+	otherCityPath := filepath.Join(t.TempDir(), "other-city")
+
+	emitSupervisorLoadCityConfigWarnings(&stderr, cityPath, prov)
+	emitSupervisorLoadCityConfigWarnings(&stderr, cityPath, prov)
+	emitSupervisorLoadCityConfigWarnings(&stderr, otherCityPath, prov)
+
+	const want = "[agents] is a deprecated compatibility alias for [agent_defaults]"
+	if got := strings.Count(stderr.String(), want); got != 2 {
+		t.Fatalf("warning count = %d, want 2 (once per city); stderr=%q", got, stderr.String())
 	}
 }
 
@@ -684,6 +824,31 @@ func TestCityRegistryReportsRunningOnlyAfterStartup(t *testing.T) {
 	}
 	if got := reg.CityState("bright-lights"); got != cs {
 		t.Fatalf("CityState after startup = %#v, want controller state", got)
+	}
+}
+
+func TestDeleteManagedCityIfCurrentKeepsReplacementCity(t *testing.T) {
+	oldCity := &managedCity{name: "bright-lights"}
+	newCity := &managedCity{name: "bright-lights"}
+	cities := map[string]*managedCity{"/city": newCity}
+
+	if deleted := deleteManagedCityIfCurrent(cities, "/city", oldCity); deleted {
+		t.Fatal("deleteManagedCityIfCurrent returned true for stale city pointer")
+	}
+	if got := cities["/city"]; got != newCity {
+		t.Fatalf("city at /city = %#v, want replacement city %#v", got, newCity)
+	}
+}
+
+func TestDeleteManagedCityIfCurrentRemovesMatchingCity(t *testing.T) {
+	current := &managedCity{name: "bright-lights"}
+	cities := map[string]*managedCity{"/city": current}
+
+	if deleted := deleteManagedCityIfCurrent(cities, "/city", current); !deleted {
+		t.Fatal("deleteManagedCityIfCurrent returned false, want true")
+	}
+	if _, ok := cities["/city"]; ok {
+		t.Fatalf("cities still contains /city after delete: %#v", cities["/city"])
 	}
 }
 

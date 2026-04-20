@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/molecule"
@@ -132,6 +135,92 @@ func TestDoAgentResumePackDerivedError(t *testing.T) {
 	}
 	if !strings.Contains(errMsg, "[[patches]]") {
 		t.Errorf("stderr should mention patches: %s", errMsg)
+	}
+}
+
+func TestLoadCityConfigFSEmitsProvenanceWarnings(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`[workspace]
+name = "test-city"
+`)
+	fs.Files["/city/pack.toml"] = []byte(`[pack]
+name = "test-city"
+schema = 2
+
+[agents]
+append_fragments = ["footer"]
+`)
+
+	var stderr bytes.Buffer
+	cfg, err := loadCityConfigFS(fs, "/city/city.toml", &stderr)
+	if err != nil {
+		t.Fatalf("loadCityConfigFS: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("loadCityConfigFS returned nil config")
+	}
+	if !strings.Contains(stderr.String(), "[agents] is a deprecated compatibility alias for [agent_defaults]") {
+		t.Fatalf("expected [agents] alias warning, got %q", stderr.String())
+	}
+}
+
+func TestLoadCityConfigFSEmitsMigrationWarningsAcrossCalls(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`[workspace]
+name = "test-city"
+`)
+	fs.Files["/city/pack.toml"] = []byte(`[pack]
+name = "test-city"
+schema = 2
+
+[agents]
+append_fragments = ["footer"]
+`)
+
+	var stderr bytes.Buffer
+	for i := 0; i < 2; i++ {
+		cfg, err := loadCityConfigFS(fs, "/city/city.toml", &stderr)
+		if err != nil {
+			t.Fatalf("loadCityConfigFS call %d: %v", i+1, err)
+		}
+		if cfg == nil {
+			t.Fatalf("loadCityConfigFS call %d returned nil config", i+1)
+		}
+	}
+
+	const want = "[agents] is a deprecated compatibility alias for [agent_defaults]"
+	if got := strings.Count(stderr.String(), want); got != 2 {
+		t.Fatalf("warning count = %d, want 2; stderr=%q", got, stderr.String())
+	}
+}
+
+func TestEmitLoadCityConfigWarningsFiltersNonMigrationWarnings(t *testing.T) {
+	var stderr bytes.Buffer
+	emitLoadCityConfigWarnings(&stderr, &config.Provenance{
+		Warnings: []string{
+			`workspace.name redefined by "/city/defaults.toml"`,
+			`/city/pack.toml: [agents] is a deprecated compatibility alias for [agent_defaults]; rewrite the table name to [agent_defaults]`,
+			`/city/pack.toml: both [agent_defaults] and [agents] are present; [agent_defaults] wins on overlapping keys and [agents] only fills gaps`,
+			`/city/pack.toml: "agent_defaults.provider" is not supported in [agent_defaults]; keep using workspace.provider or set provider per agent in agents/<name>/agent.toml`,
+			`gc: warning: attachment-list fields (` + "`skills`, `mcp`, `skills_append`, `mcp_append`, `shared_skills`" + `) are deprecated as of v0.15.1 and ignored.`,
+		},
+	})
+
+	output := stderr.String()
+	if strings.Contains(output, `workspace.name redefined by "/city/defaults.toml"`) {
+		t.Fatalf("non-migration warning should be filtered, got %q", output)
+	}
+	if !strings.Contains(output, `[agents] is a deprecated compatibility alias for [agent_defaults]`) {
+		t.Fatalf("expected alias warning, got %q", output)
+	}
+	if !strings.Contains(output, `both [agent_defaults] and [agents] are present`) {
+		t.Fatalf("expected mixed-table warning, got %q", output)
+	}
+	if !strings.Contains(output, `"agent_defaults.provider" is not supported`) {
+		t.Fatalf("expected unsupported-key warning, got %q", output)
+	}
+	if !strings.Contains(output, "attachment-list fields") {
+		t.Fatalf("expected attachment deprecation warning, got %q", output)
 	}
 }
 
@@ -312,6 +401,52 @@ name = "mayor"
 	}
 }
 
+func TestStrictFatalLoadConfigWarningsKeepsMixedTableWarningsFatal(t *testing.T) {
+	warnings := []string{
+		`/city/pack.toml: [agents] is a deprecated compatibility alias for [agent_defaults]; rewrite the table name to [agent_defaults]`,
+		`/city/pack.toml: both [agent_defaults] and [agents] are present; [agent_defaults] wins on overlapping keys and [agents] only fills gaps`,
+		`/city/pack.toml: "agent_defaults.provider" is not supported in [agent_defaults]; keep using workspace.provider or set provider per agent in agents/<name>/agent.toml`,
+		`workspace.name redefined by "/city/defaults.toml"`,
+	}
+
+	got := strictFatalLoadConfigWarnings(warnings)
+	if len(got) != 2 {
+		t.Fatalf("strictFatalLoadConfigWarnings len = %d, want 2; got=%q", len(got), got)
+	}
+	if got[0] != `/city/pack.toml: both [agent_defaults] and [agents] are present; [agent_defaults] wins on overlapping keys and [agents] only fills gaps` {
+		t.Fatalf("strictFatalLoadConfigWarnings[0] = %q, want mixed-table warning", got[0])
+	}
+	if got[1] != `workspace.name redefined by "/city/defaults.toml"` {
+		t.Fatalf("strictFatalLoadConfigWarnings[1] = %q, want non-migration warning", got[1])
+	}
+}
+
+func TestNonTestLoadCityConfigCallersPassWarningWriter(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("Glob(*.go): %v", err)
+	}
+	bareCall := regexp.MustCompile(`\bloadCityConfig(FS)?\([^,\n)]*\)`)
+	var offenders []string
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") || file == "cmd_agent.go" {
+			continue
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("ReadFile(%q): %v", file, err)
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			if bareCall.MatchString(line) {
+				offenders = append(offenders, fmt.Sprintf("%s:%d: %s", file, i+1, strings.TrimSpace(line)))
+			}
+		}
+	}
+	if len(offenders) > 0 {
+		t.Fatalf("bare loadCityConfig callers found:\n%s", strings.Join(offenders, "\n"))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // doAgentAdd — v2 scaffold behavior
 // ---------------------------------------------------------------------------
@@ -453,6 +588,204 @@ func TestDoAgentAddDuplicateScaffold(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "already exists") {
 		t.Errorf("stderr = %q, want 'already exists'", stderr.String())
+	}
+}
+
+func TestDoAgentSuspendScaffoldedAgentWritesAgentToml(t *testing.T) {
+	fs := v2CityWithPack(t)
+	if err := fs.MkdirAll("/city/agents/worker", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	fs.Files["/city/agents/worker/prompt.template.md"] = []byte("You are the worker.\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentSuspend(fs, "/city", "worker", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %q", stderr.String())
+	}
+
+	agentToml, ok := fs.Files["/city/agents/worker/agent.toml"]
+	if !ok {
+		t.Fatal("agent.toml missing")
+	}
+	if !strings.Contains(string(agentToml), "suspended = true") {
+		t.Errorf("agent.toml = %q, want suspended = true", agentToml)
+	}
+	if strings.Contains(string(fs.Files["/city/city.toml"]), "[[patches.agent]]") {
+		t.Errorf("city.toml should not gain agent patch:\n%s", fs.Files["/city/city.toml"])
+	}
+
+	cfg, err := loadCityConfigFS(fs, "/city/city.toml")
+	if err != nil {
+		t.Fatalf("loadCityConfigFS: %v", err)
+	}
+	found := false
+	for _, a := range cfg.Agents {
+		if a.Name != "worker" {
+			continue
+		}
+		found = true
+		if !a.Suspended {
+			t.Error("Suspended = false, want true")
+		}
+	}
+	if !found {
+		t.Fatalf("cfg.Agents = %#v, want worker", cfg.Agents)
+	}
+}
+
+func TestDoAgentResumeScaffoldedAgentClearsAgentTomlSuspended(t *testing.T) {
+	fs := v2CityWithPack(t)
+	if err := fs.MkdirAll("/city/agents/worker", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	fs.Files["/city/agents/worker/prompt.template.md"] = []byte("You are the worker.\n")
+	fs.Files["/city/agents/worker/agent.toml"] = []byte("provider = \"codex\"\nsuspended = true\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentResume(fs, "/city", "worker", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %q", stderr.String())
+	}
+
+	agentToml, ok := fs.Files["/city/agents/worker/agent.toml"]
+	if !ok {
+		t.Fatal("agent.toml missing")
+	}
+	if !strings.Contains(string(agentToml), "provider = \"codex\"") {
+		t.Errorf("agent.toml = %q, want provider preserved", agentToml)
+	}
+	if strings.Contains(string(agentToml), "suspended") {
+		t.Errorf("agent.toml = %q, want suspended cleared", agentToml)
+	}
+	if strings.Contains(string(fs.Files["/city/city.toml"]), "[[patches.agent]]") {
+		t.Errorf("city.toml should not gain agent patch:\n%s", fs.Files["/city/city.toml"])
+	}
+
+	cfg, err := loadCityConfigFS(fs, "/city/city.toml")
+	if err != nil {
+		t.Fatalf("loadCityConfigFS: %v", err)
+	}
+	found := false
+	for _, a := range cfg.Agents {
+		if a.Name != "worker" {
+			continue
+		}
+		found = true
+		if a.Suspended {
+			t.Error("Suspended = true, want false")
+		}
+		if a.Provider != "codex" {
+			t.Errorf("Provider = %q, want codex", a.Provider)
+		}
+	}
+	if !found {
+		t.Fatalf("cfg.Agents = %#v, want worker", cfg.Agents)
+	}
+}
+
+// TestDoAgentSuspendPackDeclaredAgentEditsPackToml ensures the CLI
+// fallback (no API) edits the pack.toml [[agent]] entry directly when an
+// agent is declared there, even when a conventional prompt template
+// exists at agents/<name>/. The conventional prompt template must NOT
+// trigger the agent.toml write path because pack.toml takes precedence
+// during composition (see internal/configedit.LocalDiscoveredAgent).
+//
+// This validates the iter-1 finding (was-blocker): a SourceDir-based
+// heuristic would have routed the suspend write to a shadowed
+// agents/worker/agent.toml. Today the route is updateRootPackAgentSuspended
+// (added by #892) → write pack.toml, which is the correct durable
+// surface and is consistent with the API path.
+func TestDoAgentSuspendPackDeclaredAgentEditsPackToml(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`[workspace]
+name = "test-city"
+`)
+	fs.Files["/city/pack.toml"] = []byte(`[pack]
+name = "test-city"
+schema = 2
+
+[[agent]]
+name = "worker"
+provider = "claude"
+`)
+	if err := fs.MkdirAll("/city/agents/worker", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	fs.Files["/city/agents/worker/prompt.template.md"] = []byte("You are the worker.\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentSuspend(fs, "/city", "worker", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Suspended agent 'worker'") {
+		t.Errorf("stdout = %q, want 'Suspended agent worker'", stdout.String())
+	}
+	// agent.toml must NOT be created — pack.toml [[agent]] is the
+	// authoritative declaration and would shadow agent.toml on load.
+	if _, ok := fs.Files["/city/agents/worker/agent.toml"]; ok {
+		t.Errorf("agent.toml must not be created for pack-declared agent")
+	}
+	// pack.toml must now carry suspended = true.
+	pack := string(fs.Files["/city/pack.toml"])
+	if !strings.Contains(pack, "suspended = true") {
+		t.Errorf("pack.toml = %q, want suspended = true on the [[agent]] entry", pack)
+	}
+	// city.toml must NOT gain a [[patches.agent]].
+	city := string(fs.Files["/city/city.toml"])
+	if strings.Contains(city, "[[patches.agent]]") {
+		t.Errorf("city.toml should not gain a patch:\n%s", city)
+	}
+}
+
+// TestDoAgentResumeStripsLegacyPatchSuspended covers the CLI fallback's
+// migration behavior for cities whose city.toml has a stale
+// [[patches.agent]] suspended override left behind by older code.
+func TestDoAgentResumeStripsLegacyPatchSuspended(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files["/city/city.toml"] = []byte(`[workspace]
+name = "test-city"
+
+[[patches.agent]]
+dir = ""
+name = "worker"
+suspended = true
+`)
+	fs.Files["/city/pack.toml"] = []byte(`[pack]
+name = "test-city"
+schema = 2
+`)
+	if err := fs.MkdirAll("/city/agents/worker", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	fs.Files["/city/agents/worker/prompt.template.md"] = []byte("You are the worker.\n")
+	fs.Files["/city/agents/worker/agent.toml"] = []byte("suspended = true\n")
+
+	var stdout, stderr bytes.Buffer
+	code := doAgentResume(fs, "/city", "worker", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	cityToml := string(fs.Files["/city/city.toml"])
+	if strings.Contains(cityToml, "[[patches.agent]]") {
+		t.Errorf("legacy patch should be stripped; city.toml=\n%s", cityToml)
+	}
+
+	cfg, err := loadCityConfigFS(fs, "/city/city.toml")
+	if err != nil {
+		t.Fatalf("loadCityConfigFS: %v", err)
+	}
+	for _, a := range cfg.Agents {
+		if a.Name == "worker" && a.Suspended {
+			t.Error("worker should not be suspended after resume")
+		}
 	}
 }
 

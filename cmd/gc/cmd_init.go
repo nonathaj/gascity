@@ -29,30 +29,41 @@ const initPackSchemaVersion = 2
 const initExitAlreadyInitialized = 2
 
 type initPackMeta struct {
-	Name       string                   `toml:"name"`
-	Version    string                   `toml:"version,omitempty"`
-	Schema     int                      `toml:"schema"`
-	RequiresGC string                   `toml:"requires_gc,omitempty"`
-	Includes   []string                 `toml:"includes,omitempty"`
-	Requires   []config.PackRequirement `toml:"requires,omitempty"`
+	Name        string                   `toml:"name" jsonschema:"required"`
+	Version     string                   `toml:"version"`
+	Schema      int                      `toml:"schema" jsonschema:"required"`
+	Description string                   `toml:"description,omitempty"`
+	RequiresGC  string                   `toml:"requires_gc,omitempty"`
+	Includes    []string                 `toml:"includes,omitempty"`
+	Requires    []config.PackRequirement `toml:"requires,omitempty"`
+}
+
+type packDefaults struct {
+	Rig packRigDefaults `toml:"rig,omitempty"`
+}
+
+type packRigDefaults struct {
+	Imports map[string]config.Import `toml:"imports,omitempty"`
 }
 
 type initPackConfig struct {
 	// Keep this layout in lockstep with internal/config.packConfig so
 	// pack.toml write paths in cmd/gc can round-trip the canonical root
 	// pack shape without dropping supported fields.
-	Pack          initPackMeta                   `toml:"pack"`
-	Imports       map[string]config.Import       `toml:"imports,omitempty"`
-	AgentDefaults config.AgentDefaults           `toml:"agent_defaults,omitempty"`
-	Agents        []config.Agent                 `toml:"agent"`
-	NamedSessions []config.NamedSession          `toml:"named_session,omitempty"`
-	Services      []config.Service               `toml:"service,omitempty"`
-	Providers     map[string]config.ProviderSpec `toml:"providers,omitempty"`
-	Formulas      config.FormulasConfig          `toml:"formulas,omitempty"`
-	Patches       config.Patches                 `toml:"patches,omitempty"`
-	Doctor        []config.PackDoctorEntry       `toml:"doctor,omitempty"`
-	Commands      []config.PackCommandEntry      `toml:"commands,omitempty"`
-	Global        config.PackGlobal              `toml:"global,omitempty"`
+	Pack           initPackMeta                   `toml:"pack"`
+	Imports        map[string]config.Import       `toml:"imports,omitempty"`
+	AgentDefaults  config.AgentDefaults           `toml:"agent_defaults,omitempty"`
+	AgentsDefaults config.AgentDefaults           `toml:"agents,omitempty" jsonschema:"-"`
+	Defaults       packDefaults                   `toml:"defaults,omitempty"`
+	Agents         []config.Agent                 `toml:"agent"`
+	NamedSessions  []config.NamedSession          `toml:"named_session,omitempty"`
+	Services       []config.Service               `toml:"service,omitempty"`
+	Providers      map[string]config.ProviderSpec `toml:"providers,omitempty"`
+	Formulas       config.FormulasConfig          `toml:"formulas,omitempty"`
+	Patches        config.Patches                 `toml:"patches,omitempty"`
+	Doctor         []config.PackDoctorEntry       `toml:"doctor,omitempty"`
+	Commands       []config.PackCommandEntry      `toml:"commands,omitempty"`
+	Global         config.PackGlobal              `toml:"global,omitempty"`
 }
 
 var initConventionDirs = []string{
@@ -62,7 +73,7 @@ var initConventionDirs = []string{
 	citylayout.FormulasRoot,
 	citylayout.OrdersRoot,
 	"template-fragments",
-	"overlays",
+	"overlay",
 	"assets",
 }
 
@@ -215,7 +226,7 @@ func resolveAgentChoice(input string, order []string, builtins map[string]config
 	return ""
 }
 
-const initProgressSteps = 6
+const initProgressSteps = 8
 
 func logInitProgress(stdout io.Writer, step int, msg string) {
 	if stdout == nil {
@@ -270,7 +281,7 @@ non-interactively, or --file to initialize from an existing TOML config file.`,
 	}
 	cmd.Flags().StringVar(&fileFlag, "file", "", "path to a TOML file to use as city.toml")
 	cmd.Flags().StringVar(&fromFlag, "from", "", "path to an example city directory to copy")
-	cmd.Flags().StringVar(&nameFlag, "name", "", "workspace name (default: target directory basename)")
+	cmd.Flags().StringVar(&nameFlag, "name", "", "workspace name (default: source template's workspace.name if set, else target directory basename)")
 	cmd.Flags().StringVar(&providerFlag, "provider", "", "built-in workspace provider to use for the default mayor config")
 	cmd.Flags().StringVar(&bootstrapProfileFlag, "bootstrap-profile", "", "bootstrap profile to apply for hosted/container defaults")
 	cmd.Flags().BoolVar(&skipProviderReadiness, "skip-provider-readiness", false, "skip provider login/readiness checks during init and continue startup")
@@ -447,10 +458,20 @@ func writeInitPackToml(fs fsys.FS, cityPath string, packCfg initPackConfig) erro
 }
 
 func marshalInitPackConfig(cfg initPackConfig) ([]byte, error) {
+	type encodedInitPackMeta struct {
+		Name        string                   `toml:"name" jsonschema:"required"`
+		Version     string                   `toml:"version,omitempty"`
+		Schema      int                      `toml:"schema" jsonschema:"required"`
+		Description string                   `toml:"description,omitempty"`
+		RequiresGC  string                   `toml:"requires_gc,omitempty"`
+		Includes    []string                 `toml:"includes,omitempty"`
+		Requires    []config.PackRequirement `toml:"requires,omitempty"`
+	}
 	type encodedInitPackConfig struct {
-		Pack          initPackMeta                   `toml:"pack"`
+		Pack          encodedInitPackMeta            `toml:"pack"`
 		Imports       map[string]config.Import       `toml:"imports,omitempty"`
 		AgentDefaults *config.AgentDefaults          `toml:"agent_defaults,omitempty"`
+		Defaults      packDefaults                   `toml:"defaults,omitempty"`
 		Agents        []config.Agent                 `toml:"agent"`
 		NamedSessions []config.NamedSession          `toml:"named_session,omitempty"`
 		Services      []config.Service               `toml:"service,omitempty"`
@@ -463,8 +484,17 @@ func marshalInitPackConfig(cfg initPackConfig) ([]byte, error) {
 	}
 
 	encCfg := encodedInitPackConfig{
-		Pack:          cfg.Pack,
+		Pack: encodedInitPackMeta{
+			Name:        cfg.Pack.Name,
+			Version:     cfg.Pack.Version,
+			Schema:      cfg.Pack.Schema,
+			Description: cfg.Pack.Description,
+			RequiresGC:  cfg.Pack.RequiresGC,
+			Includes:    cfg.Pack.Includes,
+			Requires:    cfg.Pack.Requires,
+		},
 		Imports:       cfg.Imports,
+		Defaults:      cfg.Defaults,
 		Agents:        cfg.Agents,
 		NamedSessions: cfg.NamedSessions,
 		Services:      cfg.Services,
@@ -653,8 +683,9 @@ func cmdInitFromTOMLFileWithOptions(fs fsys.FS, tomlSrc, cityPath, nameOverride 
 		return 1
 	}
 
-	// --file creates a new city from a template; default to target dir name.
-	cityName := resolveCityName(nameOverride, cityPath)
+	// --file creates a new city from a template. Preserve the source's
+	// workspace.name if set; otherwise fall back to the target dir basename.
+	cityName := resolveCityName(nameOverride, cfg.Workspace.Name, cityPath)
 	templatePack, err := decodeInitPackTemplate(data, cityName)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -759,12 +790,28 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 		if code := installClaudeHooks(fs, cityPath, stderr); code != 0 {
 			return code
 		}
-		if nameOverride != "" {
-			if code := overrideCityName(fs, tomlPath, nameOverride, stderr); code != 0 {
+		trimmedNameOverride := strings.TrimSpace(nameOverride)
+		if trimmedNameOverride != "" {
+			if code := overrideCityName(fs, tomlPath, trimmedNameOverride, stderr); code != 0 {
 				return code
 			}
 		}
-		cityName := resolveCityName(nameOverride, cityPath)
+		// Preserve the persisted workspace.name when no --name override
+		// was supplied, so the bootstrap message reports the real city
+		// name rather than the target dir basename.
+		var persistedName string
+		if trimmedNameOverride == "" {
+			if data, err := fs.ReadFile(tomlPath); err != nil {
+				fmt.Fprintf(stderr, "gc init: warning: reading persisted workspace name from %q: %v\n", tomlPath, err) //nolint:errcheck // best-effort stderr
+			} else {
+				if existing, perr := config.Parse(data); perr == nil {
+					persistedName = existing.Workspace.Name
+				} else {
+					fmt.Fprintf(stderr, "gc init: warning: parsing persisted workspace name from %q: %v\n", tomlPath, perr) //nolint:errcheck // best-effort stderr
+				}
+			}
+		}
+		cityName := resolveCityName(trimmedNameOverride, persistedName, cityPath)
 		fmt.Fprintln(stdout, "Welcome to Gas City!")                              //nolint:errcheck // best-effort stdout
 		fmt.Fprintf(stdout, "Bootstrapped city %q runtime scaffold.\n", cityName) //nolint:errcheck // best-effort stdout
 		return 0
@@ -789,7 +836,7 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 	// Build the initial city shape before writing prompt scaffolds so init
 	// only creates convention-discoverable prompt files for the agents the
 	// chosen city template actually declares.
-	cityName := resolveCityName(nameOverride, cityPath)
+	cityName := resolveCityName(nameOverride, "", cityPath)
 	var cfg config.City
 	switch {
 	case wiz.configName == "custom":
@@ -804,7 +851,9 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 	applyBootstrapProfile(&cfg, wiz.bootstrapProfile)
 
 	// Write prompt files only for the agents declared by the init template.
-	logInitProgress(stdout, 3, "Writing default prompts")
+	// Wording matches the V2 layout: prompts scaffold under agents/<name>/
+	// prompt.template.md, not a root prompts/ directory.
+	logInitProgress(stdout, 3, "Scaffolding agent prompts")
 	if code := writeInitAgentPrompts(fs, cityPath, &cfg, stderr); code != 0 {
 		return code
 	}
@@ -820,12 +869,12 @@ func doInit(fs fsys.FS, cityPath string, wiz wizardConfig, nameOverride string, 
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	logInitProgress(stdout, 5, "Writing pack.toml")
+	logInitProgress(stdout, 4, "Writing pack.toml")
 	if err := writeInitPackToml(fs, cityPath, packCfg); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	logInitProgress(stdout, 6, "Writing city configuration")
+	logInitProgress(stdout, 5, "Writing city configuration")
 	if err := fs.WriteFile(tomlPath, content, 0o644); err != nil {
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -971,12 +1020,21 @@ func overrideCityName(f fsys.FS, tomlPath, name string, stderr io.Writer) int {
 }
 
 // resolveCityName returns the workspace name to use during init.
-// Priority: explicit --name flag > target directory basename.
-func resolveCityName(nameOverride, cityPath string) string {
-	if nameOverride != "" {
-		return nameOverride
+// Priority: explicit --name flag > name set on the source/template config > target directory basename.
+// sourceName is the workspace.name already present in a template TOML (for
+// `gc init --file` and `gc init --from`); pass "" at call sites that have no
+// such source, and the fallback becomes the target dir basename.
+// Matches runtime config.EffectiveCityName by trimming whitespace on all
+// inputs so a name with stray spaces resolves the same way at init time
+// and at runtime.
+func resolveCityName(nameOverride, sourceName, cityPath string) string {
+	if n := strings.TrimSpace(nameOverride); n != "" {
+		return n
 	}
-	return filepath.Base(cityPath)
+	if n := strings.TrimSpace(sourceName); n != "" {
+		return n
+	}
+	return strings.TrimSpace(filepath.Base(cityPath))
 }
 
 func cmdInitFromDirWithOptions(fromDir string, args []string, nameOverride string, stdout, stderr io.Writer, skipProviderReadiness bool) int {
@@ -1050,7 +1108,9 @@ func doInitFromDirWithOptions(srcDir, cityPath, nameOverride string, stdout, std
 		fmt.Fprintf(stderr, "gc init: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	cityName := resolveCityName(nameOverride, cityPath)
+	// --from copies a template city; preserve its workspace.name if set,
+	// otherwise fall back to the target dir basename.
+	cityName := resolveCityName(nameOverride, cfg.Workspace.Name, cityPath)
 	cfg.Workspace.Name = cityName
 	content, err := cfg.Marshal()
 	if err != nil {
@@ -1095,7 +1155,10 @@ func doInitFromDirWithOptions(srcDir, cityPath, nameOverride string, stdout, std
 	}
 
 	// Resolve formulas and scripts from pack layers.
-	expandedCfg, _, loadErr := config.LoadWithIncludes(fsys.OSFS{}, copiedToml)
+	expandedCfg, prov, loadErr := config.LoadWithIncludes(fsys.OSFS{}, copiedToml)
+	if loadErr == nil {
+		emitLoadCityConfigWarnings(stderr, prov)
+	}
 	if loadErr == nil && len(expandedCfg.FormulaLayers.City) > 0 {
 		if rfErr := ResolveFormulas(cityPath, expandedCfg.FormulaLayers.City); rfErr != nil {
 			fmt.Fprintf(stderr, "gc init: resolving formulas: %v\n", rfErr) //nolint:errcheck // best-effort stderr

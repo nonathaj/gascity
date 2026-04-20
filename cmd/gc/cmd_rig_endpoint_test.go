@@ -1068,7 +1068,14 @@ func TestVerifyExternalDoltEndpointRejectsEmptyExternalDoltDatabase(t *testing.T
 		t.Fatal(err)
 	}
 
-	scriptEnv := append(os.Environ(),
+	poisonRuntimeDir := filepath.Join(t.TempDir(), "poison-runtime")
+	poisonPackStateDir := filepath.Join(poisonRuntimeDir, "packs", "dolt")
+	poisonStateFile := filepath.Join(poisonPackStateDir, "dolt-provider-state.json")
+	t.Setenv("GC_CITY_RUNTIME_DIR", poisonRuntimeDir)
+	t.Setenv("GC_PACK_STATE_DIR", poisonPackStateDir)
+	t.Setenv("GC_DOLT_STATE_FILE", poisonStateFile)
+
+	scriptEnv := sanitizedBaseEnv(
 		"HOME="+homeDir,
 		"GIT_CONFIG_GLOBAL="+gitConfig,
 		"GC_CITY_PATH="+cityDir,
@@ -1092,6 +1099,9 @@ func TestVerifyExternalDoltEndpointRejectsEmptyExternalDoltDatabase(t *testing.T
 	})
 
 	runScript("start")
+	if _, err := os.Stat(poisonStateFile); !os.IsNotExist(err) {
+		t.Fatalf("start leaked ambient GC_* state to %q, stat err = %v", poisonStateFile, err)
+	}
 	if err := publishManagedDoltRuntimeState(cityDir); err != nil {
 		t.Fatalf("publishManagedDoltRuntimeState: %v", err)
 	}
@@ -1332,6 +1342,45 @@ func TestVerifyExternalDoltEndpointRejectsMissingLocalProjectID(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "missing project_id") {
 		t.Fatalf("verifyExternalDoltEndpoint() error = %v", err)
+	}
+}
+
+func TestDoRigSetEndpointAllowsBdRigUnderFileBackedCity(t *testing.T) {
+	t.Setenv("GC_BEADS", "")
+	t.Setenv("GC_BEADS_SCOPE_ROOT", "")
+
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(t.TempDir(), "frontend")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := fmt.Sprintf("[workspace]\nname = \"test-city\"\n\n[beads]\nprovider = \"file\"\n\n[[rigs]]\nname = \"frontend\"\npath = %q\nprefix = \"fe\"\n", rigDir)
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRigEndpointMetadata(t, rigDir, "fe")
+	writeRigEndpointRuntimeState(t, cityDir, 3311)
+	writeRigEndpointCanonicalConfig(t, rigDir, contract.ConfigState{
+		IssuePrefix:    "fe",
+		EndpointOrigin: contract.EndpointOriginExplicit,
+		EndpointStatus: contract.EndpointStatusVerified,
+		DoltHost:       "rig-db.example.com",
+		DoltPort:       "4406",
+		DoltUser:       "rig-user",
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := doRigSetEndpoint(fsys.OSFS{}, cityDir, "frontend", rigEndpointOptions{Inherit: true}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doRigSetEndpoint() = %d, stderr = %s", code, stderr.String())
+	}
+
+	state := readRigEndpointConfigState(t, rigDir)
+	if state.EndpointOrigin != contract.EndpointOriginInheritedCity {
+		t.Fatalf("EndpointOrigin = %q, want %q", state.EndpointOrigin, contract.EndpointOriginInheritedCity)
 	}
 }
 

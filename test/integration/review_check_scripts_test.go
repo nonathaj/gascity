@@ -214,6 +214,7 @@ func setupReviewCheckScriptCity(t *testing.T) string {
 		unregisterCityCommandEnv(cityDir)
 		runGCWithEnv(env, "", "stop", cityDir)                //nolint:errcheck
 		runGCWithEnv(env, "", "supervisor", "stop", "--wait") //nolint:errcheck
+		cleanupTestCityDir(cityDir)
 	})
 
 	return cityDir

@@ -97,19 +97,19 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 	// resolve to their bound path. A raw config.Load here would make
 	// every already-migrated rig look unbound and fail the new guard
 	// in resolveBdScopeTarget / bdRigScopeTarget.
-	cfg, err := loadCityConfig(cityPath)
+	cfg, err := loadCityConfig(cityPath, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc bd: loading config: %v\n", err) //nolint:errcheck // best-effort stderr
-		return 1
-	}
-	if !cityUsesBdStoreContract(cityPath) {
-		fmt.Fprintln(stderr, "gc bd: only supported for bd-backed beads providers") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
 	target, err := resolveBdScopeTarget(cfg, cityPath, rigName, bdArgs)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc bd: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	if !providerUsesBdStoreContract(rawBeadsProviderForScope(target.ScopeRoot, cityPath)) {
+		fmt.Fprintln(stderr, "gc bd: only supported for bd-backed beads providers") //nolint:errcheck // best-effort stderr
 		return 1
 	}
 
