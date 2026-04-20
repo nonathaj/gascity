@@ -83,7 +83,7 @@ func normalizeRegisteredCityPath(cityPath string) (string, error) {
 	if resolved, evalErr := filepath.EvalSymlinks(abs); evalErr == nil {
 		abs = resolved
 	}
-	return abs, nil
+	return normalizePathForCompare(abs), nil
 }
 
 func registeredCityEntry(cityPath string) (supervisor.CityEntry, bool, error) {
@@ -97,7 +97,7 @@ func registeredCityEntry(cityPath string) (supervisor.CityEntry, bool, error) {
 		return supervisor.CityEntry{}, false, err
 	}
 	for _, entry := range entries {
-		if entry.Path == normalized {
+		if samePath(entry.Path, normalized) {
 			return entry, true, nil
 		}
 	}

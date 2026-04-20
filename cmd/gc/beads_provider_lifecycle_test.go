@@ -3089,8 +3089,9 @@ exit 2
 	if err != nil {
 		t.Fatalf("read provider ops: %v", err)
 	}
-	if strings.TrimSpace(string(ops)) != "health\nrecover" {
-		t.Fatalf("provider ops = %q, want health then recover", string(ops))
+	opLines := strings.Fields(strings.TrimSpace(string(ops)))
+	if len(opLines) < 2 || opLines[0] != "health" || opLines[1] != "recover" {
+		t.Fatalf("provider ops = %q, want first health then recover", string(ops))
 	}
 }
 

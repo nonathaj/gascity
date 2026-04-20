@@ -43,9 +43,15 @@ func normalizeMissingPath(path string) (string, bool) {
 
 func canonicalizePlatformPathAlias(path string) string {
 	path = filepath.Clean(path)
-	// On macOS, temporary directories commonly appear as /var/... to callers
-	// while EvalSymlinks and lsof report the same location as /private/var/....
-	// Collapse that host alias so path equality stays stable across APIs.
+	// On macOS, /tmp and /var commonly appear to callers without /private
+	// while EvalSymlinks and lsof report the same location under /private.
+	// Collapse those host aliases so path equality stays stable across APIs.
+	if path == "/private/tmp" {
+		return "/tmp"
+	}
+	if strings.HasPrefix(path, "/private/tmp/") {
+		return "/tmp/" + strings.TrimPrefix(path, "/private/tmp/")
+	}
 	if path == "/private/var" {
 		return "/var"
 	}

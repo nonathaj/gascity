@@ -68,6 +68,14 @@ func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
 	}
 }
 
+func TestNormalizePathForCompareCollapsesDarwinPrivateTmpAlias(t *testing.T) {
+	got := NormalizePathForCompare("/private/tmp/gc-home")
+	want := filepath.Clean("/tmp/gc-home")
+	if got != want {
+		t.Fatalf("NormalizePathForCompare() = %q, want %q", got, want)
+	}
+}
+
 func TestSamePathDifferent(t *testing.T) {
 	a := t.TempDir()
 	b := t.TempDir()
