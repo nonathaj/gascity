@@ -243,3 +243,29 @@ func TestNewRequest_IncrementingIDs(t *testing.T) {
 		t.Errorf("IDs should be incrementing: %d, %d", id1, id2)
 	}
 }
+
+func TestInitializeRequest_IncludesProtocolVersion(t *testing.T) {
+	msg, _ := newInitializeRequest()
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	// Verify raw JSON contains protocolVersion (not omitted via omitempty).
+	if !strings.Contains(string(data), `"protocolVersion":1`) {
+		t.Errorf("raw JSON should contain \"protocolVersion\":1, got %s", data)
+	}
+
+	var decoded JSONRPCMessage
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	var params InitializeParams
+	if err := json.Unmarshal(decoded.Params, &params); err != nil {
+		t.Fatalf("Unmarshal params: %v", err)
+	}
+	if params.ProtocolVersion != 1 {
+		t.Errorf("protocolVersion = %d, want 1", params.ProtocolVersion)
+	}
+}
