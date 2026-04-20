@@ -77,6 +77,37 @@ func workerSessionCreateHints(resolved *config.ResolvedProvider) runtime.Config 
 	}
 }
 
+func newWorkerSessionHandleForResolvedRuntimeWithConfig(
+	cityPath string,
+	store beads.Store,
+	sp runtime.Provider,
+	cfg *config.City,
+	alias, explicitName, template, title, command, provider, workDir, transport string,
+	resolved *config.ResolvedProvider,
+	metadata map[string]string,
+) (worker.Handle, error) {
+	factory, err := workerFactoryWithConfig(cityPath, store, sp, cfg)
+	if err != nil {
+		return nil, err
+	}
+	sessionCfg, err := resolvedWorkerSessionConfigWithConfig(
+		command,
+		provider,
+		workDir,
+		alias,
+		explicitName,
+		template,
+		title,
+		transport,
+		resolved,
+		metadata,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return factory.SessionForResolvedRuntime(sessionCfg)
+}
+
 func resolvedWorkerSessionConfigWithConfig(
 	command string,
 	provider string,
