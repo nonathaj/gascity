@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -190,15 +191,36 @@ func TestFindAgentMappings_PropagatesReadErrors(t *testing.T) {
 	dir := t.TempDir()
 	parentPath, subDir := makeSessionDir(t, dir, "session-abc")
 
-	brokenTarget := filepath.Join(subDir, "missing-target.jsonl")
 	brokenPath := filepath.Join(subDir, "agent-broken.jsonl")
-	if err := os.Symlink(brokenTarget, brokenPath); err != nil {
-		t.Skipf("symlink not supported: %v", err)
+	writeTestFile(t, brokenPath, `{"uuid":"a1","type":"system"}`+"\n")
+	if err := os.Chmod(brokenPath, 0); err != nil {
+		t.Fatalf("chmod broken agent transcript: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(brokenPath, 0o644) })
 
 	_, err := FindAgentMappings(parentPath)
 	if err == nil {
 		t.Fatal("expected error when reading a broken agent transcript")
+	}
+	if !strings.Contains(err.Error(), `reading agent "broken" mapping`) {
+		t.Fatalf("FindAgentMappings error = %q, want agent context", err)
+	}
+	if !strings.Contains(err.Error(), "opening transcript") {
+		t.Fatalf("FindAgentMappings error = %q, want open context", err)
+	}
+}
+
+func TestExtractParentToolUseID_PropagatesScannerErrors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "agent-test.jsonl")
+	writeTestFile(t, path, strings.Repeat("x", agentMappingScannerMaxTokenSize+1)+"\n")
+
+	_, err := extractParentToolUseID(path)
+	if err == nil {
+		t.Fatal("expected scanner error for oversized transcript line")
+	}
+	if !strings.Contains(err.Error(), "scanning transcript") {
+		t.Fatalf("extractParentToolUseID error = %q, want scanner context", err)
 	}
 }
 
