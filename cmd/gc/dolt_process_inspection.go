@@ -156,19 +156,41 @@ func cwdFromPlainLsofOutput(output string) (string, bool) {
 
 func deletedDataInodeTargetsFromFormattedLsofOutput(output string) []string {
 	var targets []string
+	var currentName string
+	currentDeleted := false
+	flush := func() {
+		if currentName != "" && currentDeleted {
+			targets = append(targets, currentName)
+		}
+		currentName = ""
+		currentDeleted = false
+	}
+
 	for _, line := range strings.Split(output, "\n") {
-		if !strings.HasPrefix(line, "n") {
+		if line == "" {
 			continue
 		}
-		target := strings.TrimSpace(strings.TrimPrefix(line, "n"))
-		if !strings.Contains(target, " (deleted)") {
-			continue
-		}
-		target = strings.TrimSuffix(target, " (deleted)")
-		if target != "" {
-			targets = append(targets, target)
+		switch line[0] {
+		case 'f':
+			flush()
+		case 'l':
+			links := strings.TrimSpace(strings.TrimPrefix(line, "l"))
+			if links == "0" {
+				currentDeleted = true
+			}
+		case 'n':
+			if currentName != "" {
+				flush()
+			}
+			target := strings.TrimSpace(strings.TrimPrefix(line, "n"))
+			if strings.Contains(target, " (deleted)") {
+				currentDeleted = true
+				target = strings.TrimSuffix(target, " (deleted)")
+			}
+			currentName = target
 		}
 	}
+	flush()
 	return targets
 }
 
@@ -272,7 +294,7 @@ func deletedDataInodeTargetsFromLsof(pid int) []string {
 }
 
 func deletedDataInodeTargetsFromFormattedLsof(pid int) []string {
-	out, err := lsofOutput(2*time.Second, "-p", strconv.Itoa(pid), "+L1", "-Fn")
+	out, err := lsofOutput(2*time.Second, "-p", strconv.Itoa(pid), "+L1", "-Fnl")
 	if err != nil {
 		return nil
 	}

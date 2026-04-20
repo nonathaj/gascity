@@ -122,3 +122,13 @@ func TestDeletedDataInodeTargetsFromFormattedLsofIgnoresLiveNameRecords(t *testi
 		t.Fatalf("deletedDataInodeTargetsFromFormattedLsofOutput returned live targets: %#v", targets)
 	}
 }
+
+func TestDeletedDataInodeTargetsFromFormattedLsofUsesZeroLinkCount(t *testing.T) {
+	targets := deletedDataInodeTargetsFromFormattedLsofOutput("p123\nf4\nn/private/tmp/gc-city/.beads/dolt/held.db\nl0\n")
+	if len(targets) != 1 {
+		t.Fatalf("deletedDataInodeTargetsFromFormattedLsofOutput returned %d targets, want 1: %#v", len(targets), targets)
+	}
+	if !samePath(targets[0], "/tmp/gc-city/.beads/dolt/held.db") {
+		t.Fatalf("target = %q, want held.db", targets[0])
+	}
+}

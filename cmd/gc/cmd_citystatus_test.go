@@ -488,7 +488,10 @@ func TestControllerStatusForCityPrefersRegisteredSupervisorState(t *testing.T) {
 		t.Fatalf("register city: %v", err)
 	}
 
-	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
+	sockPath := controllerSocketPath(cityPath)
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatal(err)
@@ -540,7 +543,10 @@ func TestControllerStatusForCityFallsBackToStandaloneWhenRegisteredSupervisorDow
 		t.Fatalf("register city: %v", err)
 	}
 
-	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
+	sockPath := controllerSocketPath(cityPath)
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatal(err)
@@ -627,7 +633,10 @@ func TestControllerStatusForCityFallsBackToStandaloneWhenSupervisorVanishesDurin
 		t.Fatalf("register city: %v", err)
 	}
 
-	sockPath := filepath.Join(cityPath, ".gc", "controller.sock")
+	sockPath := controllerSocketPath(cityPath)
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatal(err)
