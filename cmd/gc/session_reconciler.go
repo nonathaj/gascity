@@ -855,7 +855,7 @@ func reconcileSessionBeadsTraced(
 
 	// Use ComputeAwakeSet for the wake/sleep decision.
 	awakeInput := buildAwakeInputFromReconciler(
-		cfg, ordered, poolDesired, workSet, readyWaitSet,
+		cfg, ordered, desiredState, poolDesired, workSet, readyWaitSet,
 		assignedWorkBeads, wakeTargets, sp, clk.Now(),
 	)
 	awakeDecisions := ComputeAwakeSet(awakeInput)
