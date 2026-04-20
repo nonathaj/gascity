@@ -1175,6 +1175,35 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		}
 	})
 
+	t.Run("rig_by_name_fails_closed_when_registered_city_binding_errors", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		goodCity := setupCity(t, "good-city")
+		rigDir := filepath.Join(t.TempDir(), "ctx-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, goodCity, "good-city", "ctx-rig", rigDir)
+
+		badCity := setupCity(t, "bad-city")
+		if err := os.WriteFile(config.SiteBindingPath(badCity), []byte("[[rig]\nname = \"broken\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, badCity, "bad-city")
+
+		_, err := resolveRigToContext("ctx-rig")
+		if err == nil {
+			t.Fatal("resolveRigToContext should fail when any registered city binding cannot load")
+		}
+		if !strings.Contains(err.Error(), "loading registered city rig bindings") {
+			t.Fatalf("error = %q, want registered city binding load error", err)
+		}
+		if !strings.Contains(err.Error(), "bad-city") {
+			t.Fatalf("error = %q, want bad city name", err)
+		}
+	})
+
 	t.Run("rig_by_path_with_single_binding", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
@@ -1310,6 +1339,29 @@ func TestRigAnywhere_LookupRigFromCwd(t *testing.T) {
 		_, ok := lookupRigFromCwd(rigDir)
 		if ok {
 			t.Error("expected false for ambiguous rig binding")
+		}
+	})
+
+	t.Run("load_error_with_match_returns_false", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		cityPath := setupCity(t, "lookup-good")
+		rigDir := filepath.Join(t.TempDir(), "lookup-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, cityPath, "lookup-good", "lookup-rig", rigDir)
+
+		badCity := setupCity(t, "lookup-bad")
+		if err := os.WriteFile(config.SiteBindingPath(badCity), []byte("[[rig]\nname = \"broken\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, badCity, "lookup-bad")
+
+		_, ok := lookupRigFromCwd(rigDir)
+		if ok {
+			t.Fatal("lookupRigFromCwd should not choose a match when another registered city cannot load")
 		}
 	})
 }

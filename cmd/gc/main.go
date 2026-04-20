@@ -447,7 +447,7 @@ func validateCityPath(p string) (string, error) {
 // resolveRigToContext resolves a rig name or path to a full context by scanning
 // registered cities and their machine-local .gc/site.toml rig bindings.
 func resolveRigToContext(nameOrPath string) (resolvedContext, error) {
-	if matches, err := registeredRigBindingsByName(nameOrPath); err != nil {
+	if matches, err := registeredRigBindingsByName(nameOrPath, true); err != nil {
 		return resolvedContext{}, err
 	} else if len(matches) > 0 {
 		return resolveRigBindingMatches(nameOrPath, matches)
@@ -457,7 +457,7 @@ func resolveRigToContext(nameOrPath string) (resolvedContext, error) {
 	if err != nil {
 		return resolvedContext{}, fmt.Errorf("rig %q: %w", nameOrPath, err)
 	}
-	if matches, err := registeredRigBindingsByPath(abs); err != nil {
+	if matches, err := registeredRigBindingsByPath(abs, true); err != nil {
 		return resolvedContext{}, err
 	} else if len(matches) > 0 {
 		return resolveRigBindingMatches(abs, matches)
@@ -467,7 +467,7 @@ func resolveRigToContext(nameOrPath string) (resolvedContext, error) {
 }
 
 func resolveRigPathToContext(dir string) (resolvedContext, bool, error) {
-	matches, err := registeredRigBindingsByPath(dir)
+	matches, err := registeredRigBindingsByPath(dir, true)
 	if err != nil {
 		return resolvedContext{}, false, err
 	}
@@ -484,7 +484,7 @@ func resolveRigPathToContext(dir string) (resolvedContext, bool, error) {
 // lookupRigFromCwd checks registered city site bindings for a rig matching cwd.
 // Ambiguous bindings deliberately fall through to the city walk-up fallback.
 func lookupRigFromCwd(cwd string) (resolvedContext, bool) {
-	matches, err := registeredRigBindingsByPath(cwd)
+	matches, err := registeredRigBindingsByPath(cwd, false)
 	if err != nil || len(matches) != 1 {
 		return resolvedContext{}, false
 	}
@@ -519,15 +519,15 @@ type registeredRigBinding struct {
 	Path string
 }
 
-func registeredRigBindingsByName(name string) ([]registeredRigBinding, error) {
-	return registeredRigBindings(func(binding registeredRigBinding) bool {
+func registeredRigBindingsByName(name string, failOnLoadError bool) ([]registeredRigBinding, error) {
+	return registeredRigBindings(failOnLoadError, func(binding registeredRigBinding) bool {
 		return binding.Rig.Name == name
 	})
 }
 
-func registeredRigBindingsByPath(dir string) ([]registeredRigBinding, error) {
+func registeredRigBindingsByPath(dir string, failOnLoadError bool) ([]registeredRigBinding, error) {
 	dir = normalizePathForCompare(dir)
-	matches, err := registeredRigBindings(func(binding registeredRigBinding) bool {
+	matches, err := registeredRigBindings(failOnLoadError, func(binding registeredRigBinding) bool {
 		rigPath := normalizePathForCompare(binding.Path)
 		return pathWithinScope(dir, rigPath)
 	})
@@ -537,16 +537,18 @@ func registeredRigBindingsByPath(dir string) ([]registeredRigBinding, error) {
 	return keepDeepestRigBindings(matches), nil
 }
 
-func registeredRigBindings(match func(registeredRigBinding) bool) ([]registeredRigBinding, error) {
+func registeredRigBindings(failOnLoadError bool, match func(registeredRigBinding) bool) ([]registeredRigBinding, error) {
 	reg := supervisor.NewRegistry(supervisor.RegistryPath())
 	cities, err := reg.List()
 	if err != nil {
 		return nil, err
 	}
 	var matched []registeredRigBinding
+	var loadErrors []string
 	for _, c := range cities {
 		cfg, err := loadCityConfigSuppressDeprecatedOrderWarnings(c.Path, io.Discard)
 		if err != nil {
+			loadErrors = append(loadErrors, fmt.Sprintf("%s: %v", registeredCityLabel(c), err))
 			continue
 		}
 		for _, rig := range cfg.Rigs {
@@ -562,6 +564,9 @@ func registeredRigBindings(match func(registeredRigBinding) bool) ([]registeredR
 				matched = append(matched, binding)
 			}
 		}
+	}
+	if len(loadErrors) > 0 && (failOnLoadError || len(matched) > 0) {
+		return nil, fmt.Errorf("loading registered city rig bindings: %s", strings.Join(loadErrors, "; "))
 	}
 	return matched, nil
 }
@@ -599,10 +604,7 @@ func registeredRigBindingCityNames(matches []registeredRigBinding) []string {
 	seen := make(map[string]struct{}, len(matches))
 	var names []string
 	for _, binding := range matches {
-		name := strings.TrimSpace(binding.City.EffectiveName())
-		if name == "" {
-			name = binding.City.Path
-		}
+		name := registeredCityLabel(binding.City)
 		if _, ok := seen[name]; ok {
 			continue
 		}
@@ -611,6 +613,14 @@ func registeredRigBindingCityNames(matches []registeredRigBinding) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func registeredCityLabel(city supervisor.CityEntry) string {
+	name := strings.TrimSpace(city.EffectiveName())
+	if name == "" {
+		name = city.Path
+	}
+	return name
 }
 
 // openCityRecorder returns a Recorder that appends to .gc/events.jsonl in the
