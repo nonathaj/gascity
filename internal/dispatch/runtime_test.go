@@ -15,6 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/formulatest"
 	"github.com/gastownhall/gascity/internal/molecule"
 )
 
@@ -1602,9 +1603,7 @@ func TestProcessRalphCheckRecoversRetryAttemptMissingFinalAssigneePass(t *testin
 }
 
 func TestProcessFanoutSpawnsFragmentsAndClosesOnSecondPass(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1732,9 +1731,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutResumesExistingFragmentsWithoutDuplicates(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1837,9 +1834,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutSequentialChainsFragments(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -1942,9 +1937,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialResumeRestoresExternalDeps(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2061,9 +2054,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutSequentialChainSurvivesEmptyMiddleFragment(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2183,9 +2174,7 @@ title = "Review {reviewer}"
 }
 
 func TestProcessFanoutRecoversPartialFragmentInstance(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2284,9 +2273,7 @@ needs = ["{target}.review"]
 }
 
 func TestProcessFanoutRecoversIncompletelyWiredFragmentInstance(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
@@ -2583,9 +2570,7 @@ func TestCanDiscardPartialFragmentBeadWaitsForDependents(t *testing.T) {
 }
 
 func TestProcessFanoutClosesScopeWhenLastMember(t *testing.T) {
-	prev := formula.IsFormulaV2Enabled()
-	formula.SetFormulaV2Enabled(true)
-	t.Cleanup(func() { formula.SetFormulaV2Enabled(prev) })
+	formulatest.EnableV2ForTest(t)
 
 	dir := t.TempDir()
 	expansion := `
