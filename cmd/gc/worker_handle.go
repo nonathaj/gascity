@@ -125,7 +125,11 @@ func resolvedWorkerSessionConfigWithConfig(
 	}
 	command = strings.TrimSpace(command)
 	if command == "" {
-		command = strings.TrimSpace(resolved.CommandString())
+		if transport == "acp" {
+			command = strings.TrimSpace(resolved.ACPCommandString())
+		} else {
+			command = strings.TrimSpace(resolved.CommandString())
+		}
 	}
 	providerName := strings.TrimSpace(resolved.Name)
 	if providerName == "" {
@@ -324,7 +328,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 
 	command := strings.TrimSpace(info.Command)
 	if !shouldPreserveStoredRuntimeCommand(command, resolved.CommandString()) {
-		launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, nil)
+		launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, nil, "")
 		command = resolved.CommandString()
 		if err == nil {
 			command = launchCommand.Command

@@ -134,7 +134,7 @@ func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider
 	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommand(command, resolved.CommandString()) {
 		return command, nil
 	}
-	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil)
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil, "")
 	if err != nil {
 		return "", fmt.Errorf("building provider launch command: %w", err)
 	}

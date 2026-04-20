@@ -285,7 +285,7 @@ func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store b
 	if err != nil {
 		return "", err
 	}
-	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil)
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil, transport)
 	if err != nil {
 		return "", err
 	}

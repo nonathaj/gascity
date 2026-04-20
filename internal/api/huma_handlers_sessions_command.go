@@ -234,7 +234,7 @@ func (s *Server) humaCreateProviderSession(ctx context.Context, store beads.Stor
 		return nil, humaSessionManagerError(err)
 	}
 
-	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, body.Options)
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, body.Options, "")
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

@@ -267,3 +267,76 @@ func TestCommandStringQuotesShellMetacharacters(t *testing.T) {
 		t.Errorf("CommandString() = %q, want %q", got, want)
 	}
 }
+
+func TestACPCommandString(t *testing.T) {
+	tests := []struct {
+		name string
+		rp   ResolvedProvider
+		want string
+	}{
+		{
+			name: "FullOverride",
+			rp: ResolvedProvider{
+				Command:    "opencode",
+				Args:       []string{"--verbose"},
+				ACPCommand: "opencode-acp",
+				ACPArgs:    []string{"--json-rpc"},
+			},
+			want: "opencode-acp --json-rpc",
+		},
+		{
+			name: "FallbackToCommand",
+			rp: ResolvedProvider{
+				Command: "opencode",
+				Args:    []string{"--verbose"},
+			},
+			want: "opencode --verbose",
+		},
+		{
+			name: "PartialOverride_CommandOnly",
+			rp: ResolvedProvider{
+				Command:    "opencode",
+				Args:       []string{"--verbose"},
+				ACPCommand: "opencode-acp",
+			},
+			want: "opencode-acp --verbose",
+		},
+		{
+			name: "PartialOverride_ArgsOnly",
+			rp: ResolvedProvider{
+				Command: "opencode",
+				Args:    []string{"--verbose"},
+				ACPArgs: []string{"--json-rpc"},
+			},
+			want: "opencode --json-rpc",
+		},
+		{
+			name: "EmptyACPArgs",
+			rp: ResolvedProvider{
+				Command:    "opencode",
+				Args:       []string{"--verbose"},
+				ACPCommand: "opencode-acp",
+				ACPArgs:    []string{},
+			},
+			want: "opencode-acp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.rp.ACPCommandString()
+			if got != tt.want {
+				t.Errorf("ACPCommandString() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	// Verify FallbackToCommand produces same result as CommandString().
+	t.Run("FallbackMatchesCommandString", func(t *testing.T) {
+		rp := &ResolvedProvider{Command: "opencode", Args: []string{"--verbose"}}
+		if rp.ACPCommandString() != rp.CommandString() {
+			t.Errorf("ACPCommandString() = %q, but CommandString() = %q — should match when no ACP overrides",
+				rp.ACPCommandString(), rp.CommandString())
+		}
+	})
+}

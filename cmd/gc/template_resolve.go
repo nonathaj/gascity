@@ -147,7 +147,12 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 
 	// Step 5: Build copy_files and command with settings args + schema defaults.
 	var copyFiles []runtime.CopyEntry
-	command := resolved.CommandString()
+	var command string
+	if cfgAgent.Session == "acp" {
+		command = resolved.ACPCommandString()
+	} else {
+		command = resolved.CommandString()
+	}
 	// Append schema-derived default args (e.g., --dangerously-skip-permissions
 	// from EffectiveDefaults["permission_mode"] = "unrestricted").
 	if defaultArgs := resolved.ResolveDefaultArgs(); len(defaultArgs) > 0 {

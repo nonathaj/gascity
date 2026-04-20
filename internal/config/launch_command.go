@@ -22,12 +22,19 @@ type ProviderLaunchCommand struct {
 // for session startup. It starts from the raw provider command, applies
 // schema-managed defaults plus any explicit option overrides, and appends a
 // provider-owned settings file when present.
-func BuildProviderLaunchCommand(cityPath string, resolved *ResolvedProvider, optionOverrides map[string]string) (ProviderLaunchCommand, error) {
+//
+// When transport is "acp", the ACP-specific command (ACPCommand/ACPArgs) is
+// used as the base instead of the default Command/Args. Pass "" for the
+// default (tmux) transport.
+func BuildProviderLaunchCommand(cityPath string, resolved *ResolvedProvider, optionOverrides map[string]string, transport string) (ProviderLaunchCommand, error) {
 	if resolved == nil {
 		return ProviderLaunchCommand{}, fmt.Errorf("resolved provider is nil")
 	}
 
 	command := resolved.CommandString()
+	if transport == "acp" {
+		command = resolved.ACPCommandString()
+	}
 	if len(resolved.OptionsSchema) > 0 {
 		mergedOptions := make(map[string]string, len(resolved.EffectiveDefaults)+len(optionOverrides))
 		for key, value := range resolved.EffectiveDefaults {

@@ -274,7 +274,7 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, body.Options)
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, body.Options, "")
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		if errors.Is(err, config.ErrUnknownOption) {

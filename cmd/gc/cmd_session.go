@@ -405,7 +405,7 @@ func resolvedSessionCommand(cityPath string, resolved *config.ResolvedProvider, 
 	if resolved == nil {
 		return "", fmt.Errorf("resolved provider is nil")
 	}
-	launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides)
+	launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, "")
 	if err != nil {
 		return "", fmt.Errorf("resolving provider launch command: %w", err)
 	}

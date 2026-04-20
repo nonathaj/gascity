@@ -127,6 +127,12 @@ type ProviderSpec struct {
 	// Defaults to the cheapest/fastest model for each provider.
 	// Examples: "haiku" (claude), "o4-mini" (codex), "gemini-2.5-flash" (gemini)
 	TitleModel string `toml:"title_model,omitempty"`
+	// ACPCommand overrides Command when the session transport is ACP.
+	// When empty, Command is used for both tmux and ACP transports.
+	ACPCommand string `toml:"acp_command,omitempty"`
+	// ACPArgs overrides Args when the session transport is ACP.
+	// When nil, Args is used for both tmux and ACP transports.
+	ACPArgs []string `toml:"acp_args,omitempty"`
 }
 
 // Reserved prefixes for the Base field.
@@ -187,6 +193,8 @@ type ResolvedProvider struct {
 	OptionsSchema          []ProviderOption
 	PrintArgs              []string
 	TitleModel             string
+	ACPCommand             string
+	ACPArgs                []string
 	// EffectiveDefaults is the fully-merged option default map.
 	// Computed from: schema Default -> provider OptionDefaults -> agent OptionDefaults.
 	// Used by ResolveDefaultArgs() to produce CLI flags and by the API to
@@ -200,6 +208,24 @@ func (rp *ResolvedProvider) CommandString() string {
 		return rp.Command
 	}
 	return rp.Command + " " + shellquote.Join(rp.Args)
+}
+
+// ACPCommandString returns the command line for ACP transport sessions.
+// Each field falls back independently: ACPCommand defaults to Command,
+// and ACPArgs defaults to Args, so partial overrides are supported.
+func (rp *ResolvedProvider) ACPCommandString() string {
+	cmd := rp.ACPCommand
+	args := rp.ACPArgs
+	if cmd == "" {
+		cmd = rp.Command
+	}
+	if args == nil {
+		args = rp.Args
+	}
+	if len(args) == 0 {
+		return cmd
+	}
+	return cmd + " " + shellquote.Join(args)
 }
 
 // TitleModelFlagArgs resolves the TitleModel key against the "model"
@@ -307,6 +333,8 @@ func providerSpecFromWorker(spec workerbuiltin.BuiltinProviderSpec) ProviderSpec
 		OptionsSchema:          providerOptionsFromWorker(spec.OptionsSchema),
 		PrintArgs:              cloneStrings(spec.PrintArgs),
 		TitleModel:             spec.TitleModel,
+		ACPCommand:             spec.ACPCommand,
+		ACPArgs:                cloneStrings(spec.ACPArgs),
 	}
 }
 

@@ -1559,6 +1559,7 @@ func deepCopyProviderSpec(in ProviderSpec) ProviderSpec {
 	out.OptionDefaults = deepCopyStringMap(in.OptionDefaults)
 	out.OptionsSchema = deepCopyProviderOptions(in.OptionsSchema)
 	out.PrintArgs = append([]string(nil), in.PrintArgs...)
+	out.ACPArgs = append([]string(nil), in.ACPArgs...)
 	out.Base = copyStringPtr(in.Base)
 	out.EmitsPermissionWarning = copyBoolPtr(in.EmitsPermissionWarning)
 	out.SupportsACP = copyBoolPtr(in.SupportsACP)

@@ -1693,6 +1693,17 @@
         "title_model": {
           "type": "string",
           "description": "TitleModel is the OptionsSchema model key used for title generation.\nResolved via the \"model\" option in OptionsSchema to get FlagArgs.\nDefaults to the cheapest/fastest model for each provider.\nExamples: \"haiku\" (claude), \"o4-mini\" (codex), \"gemini-2.5-flash\" (gemini)"
+        },
+        "acp_command": {
+          "type": "string",
+          "description": "ACPCommand overrides Command when the session transport is ACP.\nWhen empty, Command is used for both tmux and ACP transports."
+        },
+        "acp_args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "ACPArgs overrides Args when the session transport is ACP.\nWhen nil, Args is used for both tmux and ACP transports."
         }
       },
       "additionalProperties": false,

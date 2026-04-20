@@ -20,7 +20,7 @@ func TestBuildProviderLaunchCommandAddsDefaultsAndSettings(t *testing.T) {
 	spec := BuiltinProviders()["claude"]
 	rp := specToResolved("claude", &spec)
 
-	got, err := BuildProviderLaunchCommand(dir, rp, nil)
+	got, err := BuildProviderLaunchCommand(dir, rp, nil, "")
 	if err != nil {
 		t.Fatalf("BuildProviderLaunchCommand: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestBuildProviderLaunchCommandAppliesOptionOverrides(t *testing.T) {
 	got, err := BuildProviderLaunchCommand("", rp, map[string]string{
 		"permission_mode": "plan",
 		"effort":          "low",
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildProviderLaunchCommand: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestBuildProviderLaunchCommandIgnoresInitialMessageOverride(t *testing.T) {
 	got, err := BuildProviderLaunchCommand("", rp, map[string]string{
 		"initial_message": "hello",
 		"effort":          "low",
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildProviderLaunchCommand: %v", err)
 	}
@@ -74,4 +74,34 @@ func TestBuildProviderLaunchCommandIgnoresInitialMessageOverride(t *testing.T) {
 	if got.Command != want {
 		t.Fatalf("Command = %q, want %q", got.Command, want)
 	}
+}
+
+func TestBuildProviderLaunchCommandUsesACPCommand(t *testing.T) {
+	rp := &ResolvedProvider{
+		Command:    "opencode",
+		ACPCommand: "opencode",
+		ACPArgs:    []string{"acp"},
+	}
+
+	t.Run("acp transport uses ACPCommandString", func(t *testing.T) {
+		got, err := BuildProviderLaunchCommand("", rp, nil, "acp")
+		if err != nil {
+			t.Fatalf("BuildProviderLaunchCommand: %v", err)
+		}
+		want := "opencode acp"
+		if got.Command != want {
+			t.Fatalf("Command = %q, want %q", got.Command, want)
+		}
+	})
+
+	t.Run("default transport uses CommandString", func(t *testing.T) {
+		got, err := BuildProviderLaunchCommand("", rp, nil, "")
+		if err != nil {
+			t.Fatalf("BuildProviderLaunchCommand: %v", err)
+		}
+		want := "opencode"
+		if got.Command != want {
+			t.Fatalf("Command = %q, want %q", got.Command, want)
+		}
+	})
 }

@@ -17,6 +17,12 @@ func resolvedSessionConfigForProvider(
 	if resolved == nil {
 		return worker.ResolvedSessionConfig{}, fmt.Errorf("%w: resolved provider is required", worker.ErrHandleConfig)
 	}
+	// Use the ACP-specific command when the session uses ACP transport,
+	// falling back to the default command for tmux sessions.
+	resolvedCommand := resolved.CommandString()
+	if transport == "acp" {
+		resolvedCommand = resolved.ACPCommandString()
+	}
 	return worker.NormalizeResolvedSessionConfig(worker.ResolvedSessionConfig{
 		Alias:        alias,
 		ExplicitName: explicitName,
@@ -25,7 +31,7 @@ func resolvedSessionConfigForProvider(
 		Transport:    transport,
 		Metadata:     metadata,
 		Runtime: worker.ResolvedRuntime{
-			Command:    firstNonEmptyString(command, resolved.CommandString(), resolved.Name),
+			Command:    firstNonEmptyString(command, resolvedCommand, resolved.Name),
 			WorkDir:    workDir,
 			Provider:   resolved.Name,
 			SessionEnv: resolved.Env,
