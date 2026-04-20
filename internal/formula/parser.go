@@ -192,6 +192,7 @@ func (p *Parser) Resolve(formula *Formula) (*Formula, error) {
 		Formula:     formula.Formula,
 		Description: formula.Description,
 		Version:     formula.Version,
+		Contract:    formula.Contract,
 		Type:        formula.Type,
 		Source:      formula.Source,
 		Vars:        make(map[string]*VarDef),
@@ -210,6 +211,10 @@ func (p *Parser) Resolve(formula *Formula) (*Formula, error) {
 		parent, err = p.Resolve(parent)
 		if err != nil {
 			return nil, fmt.Errorf("resolve parent %s: %w", parentName, err)
+		}
+
+		if merged.Contract == "" {
+			merged.Contract = parent.Contract
 		}
 
 		// Merge parent vars (parent vars are inherited, child overrides)

@@ -68,10 +68,16 @@ type Formula struct {
 	// Description explains what this formula does.
 	Description string `json:"description,omitempty"`
 
-	// Version is the schema version.
-	// Version 1 uses the legacy hierarchy-first compilation model.
-	// Version 2 opts into graph-first workflow compilation.
+	// Version is the formula revision.
+	// It is intentionally not a graph.v2 opt-in: legacy molecule formulas use
+	// this field for their own revisions and must keep hierarchy-first
+	// molecule semantics unless they explicitly declare a graph contract or use
+	// graph-only step constructs.
 	Version int `json:"version"`
+
+	// Contract opts the formula into a specific runtime contract.
+	// "graph.v2" enables graph-first workflow compilation when formula_v2 is enabled.
+	Contract string `json:"contract,omitempty" toml:"contract,omitempty"`
 
 	// Type categorizes the formula: workflow, expansion, or aspect.
 	Type Type `json:"type"`
@@ -883,6 +889,10 @@ func (f *Formula) Validate() error {
 
 	if f.Version < 1 {
 		errs = append(errs, "version: must be >= 1")
+	}
+
+	if f.Contract != "" && f.Contract != "graph.v2" {
+		errs = append(errs, fmt.Sprintf("contract: invalid value %q (must be graph.v2)", f.Contract))
 	}
 
 	if f.Type != "" && !f.Type.IsValid() {

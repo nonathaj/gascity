@@ -268,7 +268,7 @@ title = "Scan"
 	}
 }
 
-func TestCompileCheckSyntaxMarksWorkflowRootAndBlocksOnTopLevelSteps(t *testing.T) {
+func TestCompileCheckSyntaxWithoutGraphContractKeepsMoleculeRoot(t *testing.T) {
 	enableV2ForTest(t)
 
 	dir := t.TempDir()
@@ -306,8 +306,61 @@ timeout = "30s"
 	if root == nil {
 		t.Fatal("root step missing")
 	}
+	if got := root.Metadata["gc.kind"]; got != "" {
+		t.Fatalf("root gc.kind = %q, want empty", got)
+	}
+	if got := root.Metadata["gc.formula_contract"]; got != "" {
+		t.Fatalf("root gc.formula_contract = %q, want empty", got)
+	}
+	if root.Type != "molecule" {
+		t.Fatalf("root type = %q, want molecule", root.Type)
+	}
+}
+
+func TestCompileCheckSyntaxWithGraphContractMarksWorkflowRoot(t *testing.T) {
+	enableV2ForTest(t)
+
+	dir := t.TempDir()
+	formulaContent := `
+formula = "ralph-demo"
+version = 1
+contract = "graph.v2"
+
+[[steps]]
+id = "design"
+title = "Design"
+
+[[steps]]
+id = "implement"
+title = "Implement"
+needs = ["design"]
+
+[steps.check]
+max_attempts = 2
+
+[steps.check.check]
+mode = "exec"
+path = ".gascity/checks/widget.sh"
+timeout = "30s"
+`
+	if err := os.WriteFile(filepath.Join(dir, "ralph-demo.toml"), []byte(formulaContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	recipe, err := Compile(context.Background(), "ralph-demo", []string{dir}, nil)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	root := recipe.RootStep()
+	if root == nil {
+		t.Fatal("root step missing")
+	}
 	if got := root.Metadata["gc.kind"]; got != "workflow" {
 		t.Fatalf("root gc.kind = %q, want workflow", got)
+	}
+	if got := root.Metadata["gc.formula_contract"]; got != "graph.v2" {
+		t.Fatalf("root gc.formula_contract = %q, want graph.v2", got)
 	}
 	if root.Type != "task" {
 		t.Fatalf("root type = %q, want task", root.Type)
@@ -331,13 +384,20 @@ timeout = "30s"
 		}
 	}
 
-	assertHasDep("ralph-demo", "ralph-demo.design", "blocks")
-	assertHasDep("ralph-demo", "ralph-demo.implement", "blocks")
+	if finalizer := recipe.StepByID("ralph-demo.workflow-finalize"); finalizer == nil {
+		t.Fatal("missing workflow finalizer")
+	}
+
+	assertHasDep("ralph-demo", "ralph-demo.workflow-finalize", "blocks")
+	assertLacksDep("ralph-demo", "ralph-demo.design", "blocks")
+	assertLacksDep("ralph-demo", "ralph-demo.implement", "blocks")
 	assertLacksDep("ralph-demo", "ralph-demo.implement.run.1", "blocks")
 	assertLacksDep("ralph-demo", "ralph-demo.implement.check.1", "blocks")
 }
 
 func TestCompileExpansionFormulaSubstitutesTimeoutsFromFile(t *testing.T) {
+	enableV2ForTest(t)
+
 	dir := t.TempDir()
 	formulaContent := `
 formula = "exp-timeout"
@@ -388,6 +448,8 @@ timeout = "{check_timeout}"
 }
 
 func TestCompileExpansionFormulaAllowsUnresolvedTimeoutVars(t *testing.T) {
+	enableV2ForTest(t)
+
 	dir := t.TempDir()
 	formulaContent := `
 formula = "exp-timeout"
@@ -442,6 +504,7 @@ func TestCompileVersion2UsesGraphWorkflowRootAndNoParentChild(t *testing.T) {
 	formulaContent := `
 formula = "graph-demo"
 version = 2
+contract = "graph.v2"
 
 [[steps]]
 id = "setup"
@@ -503,6 +566,39 @@ needs = ["setup"]
 	}
 	if !foundRootFinalize {
 		t.Fatal("missing root -> workflow-finalize blocks dep")
+	}
+}
+
+func TestCompileLegacyFormulaRevisionDoesNotUseGraphWorkflow(t *testing.T) {
+	enableV2ForTest(t)
+
+	dir := t.TempDir()
+	formulaContent := `
+formula = "legacy-revision"
+version = 8
+
+[[steps]]
+id = "work"
+title = "Work"
+`
+	if err := os.WriteFile(filepath.Join(dir, "legacy-revision.toml"), []byte(formulaContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	recipe, err := Compile(context.Background(), "legacy-revision", []string{dir}, nil)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	root := recipe.RootStep()
+	if root == nil {
+		t.Fatal("root step missing")
+	}
+	if root.Type != "molecule" {
+		t.Fatalf("root type = %q, want molecule", root.Type)
+	}
+	if got := root.Metadata["gc.formula_contract"]; got != "" {
+		t.Fatalf("root gc.formula_contract = %q, want empty", got)
 	}
 }
 
@@ -799,6 +895,7 @@ func TestCompileGraphWorkflowRejectsCycles(t *testing.T) {
 formula = "graph-cycle"
 phase = "liquid"
 version = 2
+contract = "graph.v2"
 
 [[steps]]
 id = "a"
@@ -928,6 +1025,7 @@ func TestCompileV2FormulaFailsWhenFormulaV2Disabled(t *testing.T) {
 		formulaContent := `
 formula = "needs-v2"
 version = 2
+contract = "graph.v2"
 
 [[steps]]
 id = "work"
@@ -946,25 +1044,25 @@ title = "Do work"
 		}
 	})
 
-	t.Run("version 8 formula errors", func(t *testing.T) {
+	t.Run("legacy revision formula stays on molecule contract", func(t *testing.T) {
 		formulaContent := `
-formula = "needs-v8"
+formula = "legacy-v8"
 version = 8
 
 [[steps]]
 id = "work"
 title = "Do work"
 `
-		if err := os.WriteFile(filepath.Join(dir, "needs-v8.formula.toml"), []byte(formulaContent), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "legacy-v8.formula.toml"), []byte(formulaContent), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		_, err := Compile(context.Background(), "needs-v8", []string{dir}, nil)
-		if err == nil {
-			t.Fatal("Compile(needs-v8) succeeded, want error for v8 formula with FormulaV2Enabled=false")
+		recipe, err := Compile(context.Background(), "legacy-v8", []string{dir}, nil)
+		if err != nil {
+			t.Fatalf("Compile(legacy-v8): %v", err)
 		}
-		if !strings.Contains(err.Error(), "formula_v2") {
-			t.Fatalf("error = %v, want message mentioning formula_v2", err)
+		if recipe.RootStep().Type != "molecule" {
+			t.Fatalf("root type = %q, want molecule", recipe.RootStep().Type)
 		}
 	})
 
@@ -984,6 +1082,39 @@ title = "Do work"
 		_, err := Compile(context.Background(), "still-v1", []string{dir}, nil)
 		if err != nil {
 			t.Fatalf("Compile(still-v1) = %v, want nil for v1 formula", err)
+		}
+	})
+
+	t.Run("check syntax without graph contract stays on molecule contract", func(t *testing.T) {
+		formulaContent := `
+formula = "legacy-check"
+version = 1
+
+[[steps]]
+id = "work"
+title = "Do work"
+
+[steps.check]
+max_attempts = 1
+
+[steps.check.check]
+mode = "exec"
+path = "check.sh"
+`
+		if err := os.WriteFile(filepath.Join(dir, "legacy-check.formula.toml"), []byte(formulaContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		recipe, err := Compile(context.Background(), "legacy-check", []string{dir}, nil)
+		if err != nil {
+			t.Fatalf("Compile(legacy-check): %v", err)
+		}
+		root := recipe.RootStep()
+		if root == nil {
+			t.Fatal("root step missing")
+		}
+		if root.Type != "molecule" || root.Metadata["gc.kind"] != "" {
+			t.Fatalf("root = %+v, want legacy molecule root", root)
 		}
 	})
 }

@@ -49,3 +49,40 @@ func TestFindPortHolderPIDUsesProcBeforeLsof(t *testing.T) {
 		t.Fatalf("findPortHolderPID took %s, want /proc path before lsof", elapsed)
 	}
 }
+
+func TestProcessCWDFromLsofParsesNameRecord(t *testing.T) {
+	binDir := t.TempDir()
+	lsofPath := filepath.Join(binDir, "lsof")
+	if err := os.WriteFile(lsofPath, []byte("#!/bin/sh\nprintf 'p123\\nfcwd\\nn/private/var/folders/example/.beads/dolt\\n'\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(lsof): %v", err)
+	}
+	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
+
+	cwd, ok := processCWDFromLsof(123)
+	if !ok {
+		t.Fatal("processCWDFromLsof did not find cwd")
+	}
+	if !samePath(cwd, "/var/folders/example/.beads/dolt") {
+		t.Fatalf("processCWDFromLsof = %q, want path equivalent to /var/folders/example/.beads/dolt", cwd)
+	}
+}
+
+func TestDeletedDataInodeTargetsFromLsofParsesNameRecords(t *testing.T) {
+	binDir := t.TempDir()
+	lsofPath := filepath.Join(binDir, "lsof")
+	if err := os.WriteFile(lsofPath, []byte("#!/bin/sh\nprintf 'p123\\nn/private/var/folders/example/.beads/dolt/held.db\\nn/private/var/folders/example/.beads/dolt/hq/.dolt/noms/LOCK\\n'\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(lsof): %v", err)
+	}
+	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
+
+	targets := deletedDataInodeTargetsFromLsof(123)
+	if len(targets) != 2 {
+		t.Fatalf("deletedDataInodeTargetsFromLsof returned %d targets, want 2: %#v", len(targets), targets)
+	}
+	if !pathWithinOrSame(targets[0], "/var/folders/example/.beads/dolt") {
+		t.Fatalf("target %q should be within canonical data dir", targets[0])
+	}
+	if !benignManagedDeletedInodeTarget(targets[1]) {
+		t.Fatalf("target %q should be treated as benign noms lock", targets[1])
+	}
+}

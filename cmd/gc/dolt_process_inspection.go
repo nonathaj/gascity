@@ -86,21 +86,7 @@ func findPortHolderPIDFromLsof(port string) int {
 	if _, err := exec.LookPath("lsof"); err != nil {
 		return 0
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "lsof", "-nP", "-iTCP:"+port, "-sTCP:LISTEN", "-t")
-	cmd.WaitDelay = 100 * time.Millisecond
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-			return err
-		}
-		return nil
-	}
-	out, err := cmd.Output()
+	out, err := lsofOutput(2*time.Second, "-nP", "-iTCP:"+port, "-sTCP:LISTEN", "-t")
 	if err != nil {
 		return 0
 	}
@@ -397,10 +383,30 @@ func extractFlagValue(args, flag string) string {
 
 func processCWDMatches(pid int, dataDir string) bool {
 	cwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
-	if err != nil {
-		return false
+	if err == nil {
+		return samePath(cwd, dataDir)
 	}
-	return samePath(cwd, dataDir)
+	cwd, ok := processCWDFromLsof(pid)
+	return ok && samePath(cwd, dataDir)
+}
+
+func processCWDFromLsof(pid int) (string, bool) {
+	if _, err := exec.LookPath("lsof"); err != nil {
+		return "", false
+	}
+	out, err := lsofOutput(processArgsPSTimeout, "-a", "-p", strconv.Itoa(pid), "-d", "cwd", "-Fn")
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "n") {
+			path := strings.TrimSpace(strings.TrimPrefix(line, "n"))
+			if path != "" {
+				return path, true
+			}
+		}
+	}
+	return "", false
 }
 
 func benignManagedDeletedInodeTarget(target string) bool {
@@ -415,7 +421,6 @@ func processHasDeletedDataInodes(pid int, dataDir string) bool {
 	if cwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd")); err == nil && strings.HasSuffix(cwd, " (deleted)") {
 		return true
 	}
-	root := filepath.Clean(dataDir) + string(filepath.Separator)
 	fdDir := filepath.Join("/proc", strconv.Itoa(pid), "fd")
 	entries, err := os.ReadDir(fdDir)
 	if err == nil {
@@ -425,7 +430,7 @@ func processHasDeletedDataInodes(pid int, dataDir string) bool {
 				continue
 			}
 			cleanTarget := strings.TrimSuffix(target, " (deleted)")
-			if samePath(cleanTarget, dataDir) || strings.HasPrefix(cleanTarget, root) {
+			if pathWithinOrSame(cleanTarget, dataDir) {
 				if benignManagedDeletedInodeTarget(cleanTarget) {
 					continue
 				}
@@ -434,26 +439,90 @@ func processHasDeletedDataInodes(pid int, dataDir string) bool {
 		}
 		return false
 	}
-	if _, err := exec.LookPath("lsof"); err == nil {
-		out, lsofErr := exec.Command("lsof", "-p", strconv.Itoa(pid)).Output()
-		if lsofErr == nil {
-			cleanDataDir := filepath.Clean(dataDir)
-			for _, line := range strings.Split(string(out), "\n") {
-				if !strings.Contains(line, " (deleted)") || !strings.Contains(line, cleanDataDir) {
-					continue
-				}
-				idx := strings.Index(line, cleanDataDir)
-				if idx >= 0 {
-					target := strings.TrimSpace(strings.TrimSuffix(line[idx:], " (deleted)"))
-					if benignManagedDeletedInodeTarget(target) {
-						continue
-					}
-				}
-				return true
+	for _, target := range deletedDataInodeTargetsFromLsof(pid) {
+		if pathWithinOrSame(target, dataDir) {
+			if benignManagedDeletedInodeTarget(target) {
+				continue
 			}
+			return true
 		}
 	}
 	return false
+}
+
+func pathWithinOrSame(path, root string) bool {
+	path = normalizePathForCompare(strings.TrimSpace(strings.TrimSuffix(path, " (deleted)")))
+	root = normalizePathForCompare(strings.TrimSpace(root))
+	if path == "" || root == "" {
+		return false
+	}
+	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
+}
+
+func deletedDataInodeTargetsFromLsof(pid int) []string {
+	if _, err := exec.LookPath("lsof"); err != nil {
+		return nil
+	}
+	targets := deletedDataInodeTargetsFromFormattedLsof(pid)
+	if len(targets) > 0 {
+		return targets
+	}
+	out, err := lsofOutput(2*time.Second, "-p", strconv.Itoa(pid))
+	if err != nil {
+		return nil
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, " (deleted)") {
+			continue
+		}
+		target := strings.TrimSpace(strings.TrimSuffix(line, " (deleted)"))
+		if fields := strings.Fields(target); len(fields) > 0 {
+			target = fields[len(fields)-1]
+		}
+		if target != "" {
+			targets = append(targets, target)
+		}
+	}
+	return targets
+}
+
+func deletedDataInodeTargetsFromFormattedLsof(pid int) []string {
+	out, err := lsofOutput(2*time.Second, "-p", strconv.Itoa(pid), "+L1", "-Fn")
+	if err != nil {
+		return nil
+	}
+	var targets []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "n") {
+			target := strings.TrimSpace(strings.TrimPrefix(line, "n"))
+			target = strings.TrimSuffix(target, " (deleted)")
+			if target != "" {
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets
+}
+
+func lsofOutput(timeout time.Duration, args ...string) ([]byte, error) {
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "lsof", args...)
+	cmd.WaitDelay = 100 * time.Millisecond
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return err
+		}
+		return nil
+	}
+	return cmd.Output()
 }
 
 func processHasDeletedDataInodesWithin(pid int, dataDir string, timeout time.Duration) bool {

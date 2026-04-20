@@ -60,6 +60,14 @@ func TestNormalizePathForCompareResolvesSymlinkAncestorForMissingLeaf(t *testing
 	}
 }
 
+func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
+	got := NormalizePathForCompare("/private/var/folders/example/gc-home")
+	want := filepath.Clean("/var/folders/example/gc-home")
+	if got != want {
+		t.Fatalf("NormalizePathForCompare() = %q, want %q", got, want)
+	}
+}
+
 func TestSamePathDifferent(t *testing.T) {
 	a := t.TempDir()
 	b := t.TempDir()

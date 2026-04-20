@@ -105,9 +105,15 @@ func CompileExpansionFragment(_ context.Context, name string, searchPaths []stri
 	}
 	resolved.Steps = ralphSteps
 
-	ApplyFragmentGraphControls(resolved)
+	graphWorkflow, err := isGraphWorkflow(resolved, IsFormulaV2Enabled())
+	if err != nil {
+		return nil, err
+	}
+	if graphWorkflow {
+		ApplyFragmentGraphControls(resolved)
+	}
 
-	recipe, err := toRecipe(resolved)
+	recipe, err := toRecipeWithGraph(resolved, graphWorkflow)
 	if err != nil {
 		return nil, fmt.Errorf("flattening expansion %q: %w", name, err)
 	}

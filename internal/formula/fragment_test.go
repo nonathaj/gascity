@@ -321,6 +321,7 @@ func TestCompileExpansionFragmentFailsWhenFormulaV2Disabled(t *testing.T) {
 formula = "needs-v2-fragment"
 type = "expansion"
 version = 2
+contract = "graph.v2"
 
 [[template]]
 id = "{target}.work"

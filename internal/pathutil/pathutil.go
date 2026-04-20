@@ -1,7 +1,10 @@
 // Package pathutil provides path normalization and comparison utilities.
 package pathutil
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"strings"
+)
 
 // NormalizePathForCompare resolves symlinks and makes a path absolute
 // for reliable comparison.
@@ -18,7 +21,7 @@ func NormalizePathForCompare(path string) string {
 	} else if resolved, ok := normalizeMissingPath(path); ok {
 		path = resolved
 	}
-	return filepath.Clean(path)
+	return canonicalizePlatformPathAlias(path)
 }
 
 func normalizeMissingPath(path string) (string, bool) {
@@ -36,6 +39,20 @@ func normalizeMissingPath(path string) (string, bool) {
 		}
 		missing = append(missing, filepath.Base(current))
 	}
+}
+
+func canonicalizePlatformPathAlias(path string) string {
+	path = filepath.Clean(path)
+	// On macOS, temporary directories commonly appear as /var/... to callers
+	// while EvalSymlinks and lsof report the same location as /private/var/....
+	// Collapse that host alias so path equality stays stable across APIs.
+	if path == "/private/var" {
+		return "/var"
+	}
+	if strings.HasPrefix(path, "/private/var/") {
+		return "/var/" + strings.TrimPrefix(path, "/private/var/")
+	}
+	return path
 }
 
 // SamePath reports whether two paths refer to the same location after
