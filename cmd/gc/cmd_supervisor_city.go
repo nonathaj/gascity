@@ -419,8 +419,8 @@ func unregisterCityFromSupervisor(cityPath string, stdout, stderr io.Writer, com
 	// (the unregister itself already succeeded; the supervisor's next
 	// reconcile will drop the dead city).
 	if _, statErr := os.Stat(cityPath); errors.Is(statErr, os.ErrNotExist) {
-		if supervisorAliveHook() != 0 {
-			_ = reloadSupervisorHook(stdout, stderr) // best-effort reconcile nudge; failure is benign since the city is gone
+		if supervisorAliveHook() != 0 && reloadSupervisorHook(stdout, stderr) != 0 {
+			return true, 1
 		}
 		return true, 0
 	}
