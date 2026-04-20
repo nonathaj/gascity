@@ -3343,6 +3343,88 @@ name = "worker"
 	if entries[1].Entry.Description != "" {
 		t.Errorf("second Entry.Description = %q, want empty", entries[1].Entry.Description)
 	}
+
+	// Fix field defaults to empty when not declared (diagnostic-only check).
+	if entries[0].Entry.Fix != "" {
+		t.Errorf("Entry.Fix = %q, want empty when not declared", entries[0].Entry.Fix)
+	}
+}
+
+func TestPackDoctorEntriesParsesFixField(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "pack.toml", `
+[pack]
+name = "fixable"
+schema = 1
+
+[[doctor]]
+name = "check-with-fix"
+script = "doctor/check.sh"
+fix = "doctor/fix.sh"
+description = "Check that opts into auto-remediation"
+
+[[doctor]]
+name = "check-no-fix"
+script = "doctor/check2.sh"
+`)
+
+	entries := LoadPackDoctorEntries(fsys.OSFS{}, []string{dir})
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+
+	if entries[0].Entry.Fix != "doctor/fix.sh" {
+		t.Errorf("Entry.Fix = %q, want %q", entries[0].Entry.Fix, "doctor/fix.sh")
+	}
+	if entries[1].Entry.Fix != "" {
+		t.Errorf("Entry.Fix without fix field = %q, want empty", entries[1].Entry.Fix)
+	}
+}
+
+func TestLegacyPackDoctorsRejectsEscapingFixPaths(t *testing.T) {
+	dir := t.TempDir()
+	tests := []struct {
+		name string
+		fix  string
+	}{
+		{name: "absolute", fix: filepath.Join(dir, "outside.sh")},
+		{name: "relative escape", fix: "../../../outside.sh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := legacyPackDoctors(fsys.OSFS{}, []PackDoctorEntry{{
+				Name:   "check",
+				Script: "doctor/check.sh",
+				Fix:    tt.fix,
+			}}, filepath.Join(dir, "pack"), "pack")
+			if err == nil {
+				t.Fatal("legacyPackDoctors error = nil, want containment error")
+			}
+			if !strings.Contains(err.Error(), "doctor check fix") {
+				t.Fatalf("legacyPackDoctors error = %v, want check fix context", err)
+			}
+		})
+	}
+}
+
+func TestLegacyPackDoctorsRejectsMissingFixScript(t *testing.T) {
+	packDir := filepath.Join(t.TempDir(), "pack")
+	if err := os.MkdirAll(packDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := legacyPackDoctors(fsys.OSFS{}, []PackDoctorEntry{{
+		Name:   "check",
+		Script: "doctor/check.sh",
+		Fix:    "doctor/missing-fix.sh",
+	}}, packDir, "pack")
+	if err == nil {
+		t.Fatal("legacyPackDoctors error = nil, want missing fix script error")
+	}
+	if !strings.Contains(err.Error(), "doctor check fix") {
+		t.Fatalf("legacyPackDoctors error = %v, want check fix context", err)
+	}
 }
 
 func TestPackDoctorEntriesDeduplicatesDirs(t *testing.T) {

@@ -190,7 +190,11 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 		if err != nil {
 			return nil, nil, fmt.Errorf("city pack.toml: %w", err)
 		}
-		packDoctors = append(packDoctors, legacyPackDoctors(pc.Doctor, cityRoot, pc.Pack.Name)...)
+		legacyDoctors, err := legacyPackDoctors(fs, pc.Doctor, cityRoot, pc.Pack.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("city pack.toml: %w", err)
+		}
+		packDoctors = append(packDoctors, legacyDoctors...)
 		if len(packDoctors) > 0 {
 			root.PackDoctors = appendDiscoveredDoctors(root.PackDoctors, packDoctors...)
 		}
