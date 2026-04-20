@@ -2904,34 +2904,34 @@ func TestReapStaleSessionBeads(t *testing.T) {
 			name: "multiple_stale_reaped",
 			beads: []beads.Bead{
 				{
-					Title:  "worker",
+					Title:  "session alpha",
 					Type:   sessionBeadType,
 					Labels: []string{sessionBeadLabel},
 					Metadata: map[string]string{
-						"session_name": "worker-1",
+						"session_name": "session-alpha",
 						"state":        "active",
 					},
 				},
 				{
-					Title:  "mayor",
+					Title:  "session beta",
 					Type:   sessionBeadType,
 					Labels: []string{sessionBeadLabel},
 					Metadata: map[string]string{
-						"session_name": "mayor",
+						"session_name": "session-beta",
 						"state":        "awake",
 					},
 				},
 				{
-					Title:  "polecat",
+					Title:  "session gamma",
 					Type:   sessionBeadType,
 					Labels: []string{sessionBeadLabel},
 					Metadata: map[string]string{
-						"session_name": "polecat-1",
+						"session_name": "session-gamma",
 						"state":        "active",
 					},
 				},
 			},
-			running:    []string{"polecat-1"}, // only polecat is alive
+			running:    []string{"session-gamma"}, // only gamma is alive
 			clock:      clockPastGrace,
 			wantReaped: 2,
 			wantOpen:   1,
