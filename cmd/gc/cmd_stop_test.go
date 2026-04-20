@@ -72,7 +72,7 @@ func TestCmdStopWaitsForStandaloneControllerExit(t *testing.T) {
 		}
 	})
 
-	waitForControllerAvailable(t, dir, &controllerStdout, &controllerStderr, 15*time.Second)
+	waitForControllerAvailable(t, dir, 15*time.Second)
 	if err := sp.Start(context.Background(), seededSession, runtime.Config{}); err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestCmdStopMarginExhaustion(t *testing.T) {
 		}
 	})
 
-	waitForControllerAvailable(t, dir, &controllerStdout, &controllerStderr, 15*time.Second)
+	waitForControllerAvailable(t, dir, 15*time.Second)
 
 	const sess = "margin-session"
 	if err := sp.Start(context.Background(), sess, runtime.Config{}); err != nil {
@@ -339,19 +339,33 @@ func TestCmdStopMarginExhaustion(t *testing.T) {
 	}
 }
 
-func waitForControllerAvailable(t *testing.T, dir string, stdout, stderr *bytes.Buffer, timeout time.Duration) {
+func waitForControllerAvailable(t *testing.T, dir string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
-		if stdout != nil && strings.Contains(stdout.String(), "Controller started.") {
-			return
-		}
-		if controllerAlive(dir) != 0 {
+		if controllerAcceptsPing(dir, 100*time.Millisecond) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for controller socket to become available; stdout=%q stderr=%q", stdout.String(), stderr.String())
+			t.Fatal("timed out waiting for controller socket to become available")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+func controllerAcceptsPing(dir string, timeout time.Duration) bool {
+	conn, err := net.DialTimeout("unix", controllerSocketPath(dir), timeout)
+	if err != nil {
+		return false
+	}
+	defer conn.Close() //nolint:errcheck // best-effort cleanup
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return false
+	}
+	if _, err := conn.Write([]byte("ping\n")); err != nil {
+		return false
+	}
+	buf := make([]byte, 64)
+	n, err := conn.Read(buf)
+	return err == nil && strings.TrimSpace(string(buf[:n])) != ""
 }

@@ -431,6 +431,11 @@ func TestControllerStatusLine(t *testing.T) {
 		want string
 	}{
 		{
+			name: "standalone running",
+			ctrl: ControllerJSON{Mode: "standalone", PID: 1234, Running: true},
+			want: "standalone-managed (PID 1234)",
+		},
+		{
 			name: "supervisor not running",
 			ctrl: ControllerJSON{Mode: "supervisor"},
 			want: "supervisor-managed (supervisor not running)",

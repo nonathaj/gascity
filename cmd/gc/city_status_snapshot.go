@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -57,18 +56,18 @@ func openCityStatusStore(cityPath string, stderr io.Writer) (beads.Store, int) {
 }
 
 func collectCityStatusSnapshot(sp runtime.Provider, cfg *config.City, cityPath string, store beads.Store, stderr io.Writer) cityStatusSnapshot {
+	suspended := os.Getenv("GC_SUSPENDED") == "1"
+	if cfg != nil {
+		suspended = citySuspended(cfg)
+	}
 	snapshot := cityStatusSnapshot{
 		CityPath:   cityPath,
 		Controller: controllerStatusForCity(cityPath),
-		Suspended:  citySuspended(cfg),
+		Suspended:  suspended,
 	}
+	snapshot.CityName = loadedCityName(cfg, cityPath)
 	if cfg == nil {
 		return snapshot
-	}
-
-	snapshot.CityName = cfg.Workspace.Name
-	if snapshot.CityName == "" {
-		snapshot.CityName = filepath.Base(cityPath)
 	}
 
 	suspendedRigs := make(map[string]bool, len(cfg.Rigs))
@@ -259,20 +258,18 @@ func collectCitySessionCounts(cityPath string, store beads.Store, sp runtime.Pro
 }
 
 func cityStatusJSONFromSnapshot(snapshot cityStatusSnapshot, summary StatusSummaryJSON) StatusJSON {
+	var agents []StatusAgentJSON
+	for _, row := range snapshot.Agents {
+		agents = append(agents, row.Agent)
+	}
 	return StatusJSON{
 		CityName:   snapshot.CityName,
 		CityPath:   snapshot.CityPath,
 		Controller: snapshot.Controller,
 		Suspended:  snapshot.Suspended,
-		Agents: func() []StatusAgentJSON {
-			agents := make([]StatusAgentJSON, 0, len(snapshot.Agents))
-			for _, row := range snapshot.Agents {
-				agents = append(agents, row.Agent)
-			}
-			return agents
-		}(),
-		Rigs:    snapshot.Rigs,
-		Summary: summary,
+		Agents:     agents,
+		Rigs:       snapshot.Rigs,
+		Summary:    summary,
 	}
 }
 

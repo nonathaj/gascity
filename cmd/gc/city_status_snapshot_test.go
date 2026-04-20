@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,6 +63,21 @@ func TestCityStatusNamedSessionsUseProvidedStore(t *testing.T) {
 	}
 	if !strings.Contains(out, "materialized (on_demand)") {
 		t.Fatalf("stdout = %q, want materialized named session status", out)
+	}
+}
+
+func TestCityStatusSnapshotNilConfigUsesCityPathName(t *testing.T) {
+	cityPath := filepath.Join(t.TempDir(), "city")
+	snapshot := collectCityStatusSnapshot(runtime.NewFake(), nil, cityPath, nil, io.Discard)
+	if snapshot.CityName != "city" {
+		t.Fatalf("CityName = %q, want city", snapshot.CityName)
+	}
+}
+
+func TestCityStatusJSONPreservesNilAgentsWhenEmpty(t *testing.T) {
+	status := cityStatusJSONFromSnapshot(cityStatusSnapshot{CityName: "city"}, StatusSummaryJSON{})
+	if status.Agents != nil {
+		t.Fatalf("Agents = %#v, want nil slice", status.Agents)
 	}
 }
 

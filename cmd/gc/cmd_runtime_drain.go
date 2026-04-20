@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -38,19 +39,13 @@ func (o *providerDrainOps) setDrain(sessionName string) error {
 }
 
 func (o *providerDrainOps) clearDrain(sessionName string) error {
-	if err := o.sp.RemoveMeta(sessionName, "GC_DRAIN_ACK"); err != nil {
-		return err
-	}
-	if err := o.sp.RemoveMeta(sessionName, reconcilerDrainAckSourceKey); err != nil {
-		return err
-	}
-	if err := o.sp.RemoveMeta(sessionName, reconcilerDrainAckReasonKey); err != nil {
-		return err
-	}
-	if err := o.sp.RemoveMeta(sessionName, reconcilerDrainAckGenerationKey); err != nil {
-		return err
-	}
-	return o.sp.RemoveMeta(sessionName, "GC_DRAIN")
+	return errors.Join(
+		o.sp.RemoveMeta(sessionName, "GC_DRAIN_ACK"),
+		o.sp.RemoveMeta(sessionName, reconcilerDrainAckSourceKey),
+		o.sp.RemoveMeta(sessionName, reconcilerDrainAckReasonKey),
+		o.sp.RemoveMeta(sessionName, reconcilerDrainAckGenerationKey),
+		o.sp.RemoveMeta(sessionName, "GC_DRAIN"),
+	)
 }
 
 func (o *providerDrainOps) isDraining(sessionName string) (bool, error) {
@@ -77,16 +72,12 @@ func (o *providerDrainOps) drainStartTime(sessionName string) (time.Time, error)
 }
 
 func (o *providerDrainOps) setDrainAck(sessionName string) error {
-	if err := o.sp.RemoveMeta(sessionName, reconcilerDrainAckReasonKey); err != nil {
-		return err
-	}
-	if err := o.sp.RemoveMeta(sessionName, reconcilerDrainAckGenerationKey); err != nil {
-		return err
-	}
-	if err := o.sp.SetMeta(sessionName, reconcilerDrainAckSourceKey, drainAckSourceAgentValue); err != nil {
-		return err
-	}
-	return o.sp.SetMeta(sessionName, "GC_DRAIN_ACK", "1")
+	return errors.Join(
+		o.sp.RemoveMeta(sessionName, reconcilerDrainAckReasonKey),
+		o.sp.RemoveMeta(sessionName, reconcilerDrainAckGenerationKey),
+		o.sp.SetMeta(sessionName, reconcilerDrainAckSourceKey, drainAckSourceAgentValue),
+		o.sp.SetMeta(sessionName, "GC_DRAIN_ACK", "1"),
+	)
 }
 
 func (o *providerDrainOps) isDrainAcked(sessionName string) (bool, error) {
