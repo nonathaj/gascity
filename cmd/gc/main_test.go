@@ -2167,6 +2167,10 @@ func TestDoInitWithProviderFlagAndBootstrapProfile(t *testing.T) {
 	if !cfg.API.AllowMutations {
 		t.Error("API.AllowMutations = false, want true")
 	}
+	binding := mustLoadSiteBinding(t, f, "/hosted-city")
+	if binding.WorkspaceName != "hosted-city" {
+		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "hosted-city")
+	}
 }
 
 func TestDoInitWithOpenCodeProviderInstallsWorkspaceHooks(t *testing.T) {
