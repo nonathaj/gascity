@@ -353,6 +353,118 @@ func TestResolveDefaultMailTargetsForCommand_FallsBackToGCAliasWhenSessionIDMiss
 	}
 }
 
+func TestResolveDefaultMailSenderForCommand_FallsBackToGCAliasWhenSessionIDMissing(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_MAIL", "")
+
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Setenv("GC_CITY", cityPath)
+
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "sky",
+			"session_name": "sky-gc-42",
+		},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cfg, _ := loadCityConfig(cityPath)
+
+	t.Setenv("GC_SESSION_ID", "gc-does-not-match")
+	t.Setenv("GC_ALIAS", "sky")
+	_ = os.Unsetenv("GC_AGENT")
+
+	var stderr bytes.Buffer
+	sender, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, &stderr, "gc mail send")
+	if !ok {
+		t.Fatalf("resolveDefaultMailSenderForCommand() = not ok; stderr=%q", stderr.String())
+	}
+	if sender != "sky" {
+		t.Fatalf("sender = %q, want sky", sender)
+	}
+}
+
+func TestCmdMailSendDefaultSenderFallsBackToGCAliasWhenSessionIDMissing(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_MAIL", "")
+
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Setenv("GC_CITY", cityPath)
+
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "sender",
+			"session_name": "sender-gc-42",
+		},
+	}); err != nil {
+		t.Fatalf("Create sender: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "recipient",
+			"session_name": "recipient-gc-42",
+		},
+	}); err != nil {
+		t.Fatalf("Create recipient: %v", err)
+	}
+
+	t.Setenv("GC_SESSION_ID", "gc-does-not-match")
+	t.Setenv("GC_ALIAS", "sender")
+	_ = os.Unsetenv("GC_AGENT")
+
+	var stdout, stderr bytes.Buffer
+	code := cmdMailSend([]string{"recipient", "hello"}, false, false, "", "", "", "", &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("cmdMailSend() = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	storeAfter, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt after send: %v", err)
+	}
+	all, err := storeAfter.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	var msg beads.Bead
+	found := false
+	for _, b := range all {
+		if b.Type == "message" {
+			msg = b
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("message bead not found; beads=%#v", all)
+	}
+	if msg.From != "sender" {
+		t.Fatalf("message From = %q, want sender", msg.From)
+	}
+	if msg.Assignee != "recipient" {
+		t.Fatalf("message Assignee = %q, want recipient", msg.Assignee)
+	}
+}
+
 func TestResolveDefaultMailTargetsForCommand_HumanDefaultWhenNoEnv(t *testing.T) {
 	t.Setenv("GC_MAIL", "fake")
 	_ = os.Unsetenv("GC_ALIAS")
