@@ -58,7 +58,7 @@ func configureIsolatedRuntimeEnv(t *testing.T) {
 	}
 }
 
-func mustLoadSiteBinding(t *testing.T, fs fsys.FS, cityPath string) *config.SiteBinding {
+func mustLoadTestSiteBinding(t *testing.T, fs fsys.FS, cityPath string) *config.SiteBinding {
 	t.Helper()
 	binding, err := config.LoadSiteBinding(fs, cityPath)
 	if err != nil {
@@ -2176,7 +2176,7 @@ func TestDoInitWithProviderFlagAndBootstrapProfile(t *testing.T) {
 	if !cfg.API.AllowMutations {
 		t.Error("API.AllowMutations = false, want true")
 	}
-	binding := mustLoadSiteBinding(t, f, "/hosted-city")
+	binding := mustLoadTestSiteBinding(t, f, "/hosted-city")
 	if binding.WorkspaceName != "hosted-city" {
 		t.Fatalf("binding.WorkspaceName = %q, want %q", binding.WorkspaceName, "hosted-city")
 	}

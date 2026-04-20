@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -1342,6 +1343,54 @@ func TestCityRuntimeTickRunsOnDeathWithCanonicalRigEnv(t *testing.T) {
 	}
 }
 
+func TestCityRuntimeTickSkipsOnDeathWhenSessionListingIsPartial(t *testing.T) {
+	cityPath := t.TempDir()
+	outFile := filepath.Join(cityPath, "on-death.txt")
+	sessionName := "worker-1"
+
+	prevPoolRunning := map[string]bool{sessionName: true}
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cityPath:  cityPath,
+		cityName:  "my-city",
+		logPrefix: "gc start",
+		cfg:       &config.City{},
+		sp: &partialListPoolProvider{
+			Fake:      runtime.NewFake(),
+			listNames: []string{},
+			listErr:   &runtime.PartialListError{Err: runtime.ErrSessionNotFound},
+		},
+		standaloneCityStore: beads.NewMemStore(),
+		sessionDrains:       newDrainTracker(),
+		poolDeathHandlers: map[string]poolDeathInfo{
+			sessionName: {
+				Command: "printf fired > " + shellQuotePath(outFile),
+				Dir:     cityPath,
+			},
+		},
+		rec:    events.Discard,
+		stdout: io.Discard,
+		stderr: &stderr,
+		buildFnWithSessionBeads: func(_ *config.City, _ runtime.Provider, _ beads.Store, _ map[string]beads.Store, _ *sessionBeadSnapshot, _ *sessionReconcilerTraceCycle) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+	}
+
+	dirty := &atomic.Bool{}
+	var lastProviderName string
+	cr.tick(context.Background(), dirty, &lastProviderName, cityPath, &prevPoolRunning, "test")
+
+	if _, err := os.Stat(outFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("on_death output err = %v, want no hook execution", err)
+	}
+	if !prevPoolRunning[sessionName] {
+		t.Fatalf("prevPoolRunning[%q] = false, want previous state preserved on partial list", sessionName)
+	}
+	if !strings.Contains(stderr.String(), "pool death check skipped due to partial session listing") {
+		t.Fatalf("stderr = %q, want partial-list warning", stderr.String())
+	}
+}
+
 func TestControlDispatcherOnlyConfig_IncludesRigScopedDispatchers(t *testing.T) {
 	cfg := &config.City{
 		Agents: []config.Agent{
@@ -1439,6 +1488,106 @@ func TestCityRuntimeReloadProviderSwapPreservesDrainTracker(t *testing.T) {
 	}
 	if cr.sessionDrains == nil {
 		t.Fatal("sessionDrains = nil after provider swap, want non-nil")
+	}
+}
+
+func TestCityRuntimeReloadProviderSwapFailsOnPartialSessionListing(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	sp := &partialListPoolProvider{
+		Fake:    runtime.NewFake(),
+		listErr: &runtime.PartialListError{Err: runtime.ErrSessionNotFound},
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops:   newDrainOps(sp),
+		Rec:    events.Discard,
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = beads.NewMemStore()
+	cr.setControllerState(cs)
+	cr.sessionDrains = newDrainTracker()
+
+	writeCityRuntimeConfig(t, tomlPath, "fail")
+	lastProviderName := "fake"
+	reply := cr.reloadConfigTraced(context.Background(), &lastProviderName, cityPath, nil, reloadSourceManual)
+
+	if reply.Outcome != reloadOutcomeFailed {
+		t.Fatalf("reply.Outcome = %q, want %q", reply.Outcome, reloadOutcomeFailed)
+	}
+	if lastProviderName != "fake" {
+		t.Fatalf("lastProviderName = %q, want fake", lastProviderName)
+	}
+	if strings.Contains(stdout.String(), "Session provider swapped") {
+		t.Fatalf("stdout = %q, want no provider swap message", stdout.String())
+	}
+}
+
+func TestCityRuntimeReloadProviderSwapFailsOnSessionListingError(t *testing.T) {
+	cityPath := t.TempDir()
+	tomlPath := filepath.Join(cityPath, "city.toml")
+	writeCityRuntimeConfig(t, tomlPath, "fake")
+
+	cfg, err := config.Load(osFS{}, tomlPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	sp := &partialListPoolProvider{
+		Fake:    runtime.NewFake(),
+		listErr: errors.New("backend unavailable"),
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cr := newCityRuntime(CityRuntimeParams{
+		CityPath: cityPath,
+		CityName: "test-city",
+		TomlPath: tomlPath,
+		Cfg:      cfg,
+		SP:       sp,
+		BuildFn: func(*config.City, runtime.Provider, beads.Store) DesiredStateResult {
+			return DesiredStateResult{State: map[string]TemplateParams{}}
+		},
+		Dops:   newDrainOps(sp),
+		Rec:    events.Discard,
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+
+	cs := newControllerState(context.Background(), cfg, sp, events.NewFake(), "test-city", cityPath)
+	cs.cityBeadStore = beads.NewMemStore()
+	cr.setControllerState(cs)
+	cr.sessionDrains = newDrainTracker()
+
+	writeCityRuntimeConfig(t, tomlPath, "fail")
+	lastProviderName := "fake"
+	reply := cr.reloadConfigTraced(context.Background(), &lastProviderName, cityPath, nil, reloadSourceManual)
+
+	if reply.Outcome != reloadOutcomeFailed {
+		t.Fatalf("reply.Outcome = %q, want %q", reply.Outcome, reloadOutcomeFailed)
+	}
+	if lastProviderName != "fake" {
+		t.Fatalf("lastProviderName = %q, want fake", lastProviderName)
+	}
+	if strings.Contains(stdout.String(), "Session provider swapped") {
+		t.Fatalf("stdout = %q, want no provider swap message", stdout.String())
 	}
 }
 
@@ -2626,6 +2775,46 @@ func TestCityRuntimeRunShutsDownSessionsOnContextCancel(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Stopped agent 'probe-session'") {
 		t.Fatalf("stdout = %q, want shutdown stop message", stdout.String())
+	}
+}
+
+func TestCityRuntimeShutdownWarnsWhenSessionListingIsPartial(t *testing.T) {
+	sp := &partialListPoolProvider{
+		Fake:      runtime.NewFake(),
+		listNames: []string{"visible"},
+		listErr:   &runtime.PartialListError{Err: runtime.ErrSessionNotFound},
+	}
+	if err := sp.Start(context.Background(), "visible", runtime.Config{}); err != nil {
+		t.Fatalf("start visible session: %v", err)
+	}
+	if err := sp.Start(context.Background(), "hidden", runtime.Config{}); err != nil {
+		t.Fatalf("start hidden session: %v", err)
+	}
+
+	cfg := &config.City{}
+	cfg.Daemon.ShutdownTimeout = "0s"
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cr := &CityRuntime{
+		cfg:       cfg,
+		sp:        sp,
+		rec:       events.Discard,
+		logPrefix: "gc start",
+		stdout:    &stdout,
+		stderr:    &stderr,
+	}
+
+	cr.shutdown()
+
+	if sp.IsRunning("visible") {
+		t.Fatal("visible session still running after shutdown")
+	}
+	if !sp.IsRunning("hidden") {
+		t.Fatal("hidden session unexpectedly stopped; partial listing should only stop visible sessions")
+	}
+	if !strings.Contains(stderr.String(), "shutdown session listing partially failed") {
+		t.Fatalf("stderr = %q, want partial-list shutdown warning", stderr.String())
 	}
 }
 

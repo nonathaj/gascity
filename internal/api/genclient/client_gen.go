@@ -1841,8 +1841,9 @@ type ProviderPublicResponse struct {
 
 // ProviderReadiness defines model for ProviderReadiness.
 type ProviderReadiness struct {
-	DisplayName string `json:"display_name"`
-	Status      string `json:"status"`
+	Detail      *string `json:"detail,omitempty"`
+	DisplayName string  `json:"display_name"`
+	Status      string  `json:"status"`
 }
 
 // ProviderReadinessResponse defines model for ProviderReadinessResponse.
@@ -1920,10 +1921,11 @@ type PublishReceipt struct {
 
 // ReadinessItem defines model for ReadinessItem.
 type ReadinessItem struct {
-	DisplayName string `json:"display_name"`
-	Kind        string `json:"kind"`
-	Name        string `json:"name"`
-	Status      string `json:"status"`
+	Detail      *string `json:"detail,omitempty"`
+	DisplayName string  `json:"display_name"`
+	Kind        string  `json:"kind"`
+	Name        string  `json:"name"`
+	Status      string  `json:"status"`
 }
 
 // ReadinessResponse defines model for ReadinessResponse.

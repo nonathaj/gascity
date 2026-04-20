@@ -910,6 +910,9 @@ func gracefulStopAll(
 
 func runningSessionSet(sp runtime.Provider, names []string) (map[string]bool, bool) {
 	running, err := sp.ListRunning("")
+	if runtime.IsPartialListError(err) {
+		return nil, false
+	}
 	if err != nil {
 		return nil, false
 	}

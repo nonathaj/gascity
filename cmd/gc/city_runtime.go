@@ -592,24 +592,32 @@ func (cr *CityRuntime) tick(
 	}()
 	// Detect pool instance deaths since last tick.
 	if len(cr.poolDeathHandlers) > 0 {
-		currentRunning, _ := cr.sp.ListRunning("")
-		currentSet := make(map[string]bool, len(currentRunning))
-		for _, name := range currentRunning {
-			currentSet[name] = true
-		}
-		if *prevPoolRunning != nil {
-			for sn, info := range cr.poolDeathHandlers {
-				if (*prevPoolRunning)[sn] && !currentSet[sn] {
-					if _, err := shellRunHook(info.Command, info.Dir, info.Env); err != nil {
-						fmt.Fprintf(cr.stderr, "on_death %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
+		currentRunning, listErr := cr.sp.ListRunning("")
+		if listErr != nil {
+			if runtime.IsPartialListError(listErr) {
+				fmt.Fprintf(cr.stderr, "%s: pool death check skipped due to partial session listing: %v\n", cr.logPrefix, listErr) //nolint:errcheck // best-effort stderr
+			} else {
+				fmt.Fprintf(cr.stderr, "%s: pool death check skipped while listing sessions: %v\n", cr.logPrefix, listErr) //nolint:errcheck // best-effort stderr
+			}
+		} else {
+			currentSet := make(map[string]bool, len(currentRunning))
+			for _, name := range currentRunning {
+				currentSet[name] = true
+			}
+			if *prevPoolRunning != nil {
+				for sn, info := range cr.poolDeathHandlers {
+					if (*prevPoolRunning)[sn] && !currentSet[sn] {
+						if _, err := shellRunHook(info.Command, info.Dir, info.Env); err != nil {
+							fmt.Fprintf(cr.stderr, "on_death %s: %v\n", sn, err) //nolint:errcheck // best-effort stderr
+						}
 					}
 				}
 			}
-		}
-		*prevPoolRunning = make(map[string]bool)
-		for sn := range cr.poolDeathHandlers {
-			if currentSet[sn] {
-				(*prevPoolRunning)[sn] = true
+			*prevPoolRunning = make(map[string]bool)
+			for sn := range cr.poolDeathHandlers {
+				if currentSet[sn] {
+					(*prevPoolRunning)[sn] = true
+				}
 			}
 		}
 	}
@@ -928,7 +936,24 @@ func (cr *CityRuntime) reloadConfigTraced(
 	})
 
 	if providerChanged {
-		if running, lErr := cr.sp.ListRunning(""); lErr == nil && len(running) > 0 {
+		running, lErr := cr.sp.ListRunning("")
+		if lErr != nil {
+			err := fmt.Errorf("config reload: listing sessions failed during provider swap: %w", lErr)
+			if runtime.IsPartialListError(lErr) {
+				err = fmt.Errorf("config reload: listing sessions partially failed during provider swap: %w", lErr)
+			}
+			fmt.Fprintf(cr.stderr, "%s: %v (keeping old config)\n", cr.logPrefix, err) //nolint:errcheck // best-effort stderr
+			telemetry.RecordConfigReload(ctx, "", string(source), string(reloadOutcomeFailed), len(warnings), err)
+			if trace != nil {
+				trace.RecordConfigReload(oldRevision, result.Revision, TraceOutcomeFailed, source, nil, nil, false, warnings, err)
+			}
+			return reloadControlReply{
+				Outcome:  reloadOutcomeFailed,
+				Error:    err.Error(),
+				Warnings: warnings,
+			}
+		}
+		if len(running) > 0 {
 			fmt.Fprintf(cr.stdout, "Provider changed (%s → %s), stopping %d agent(s)...\n", //nolint:errcheck
 				displayProviderName(*lastProviderName), displayProviderName(pendingProviderName), len(running))
 			gracefulStopAll(running, cr.sp, nextCfg.Daemon.ShutdownTimeoutDuration(), cr.rec, cr.cfg, cr.cityBeadStore(), cr.stdout, cr.stderr)
@@ -1735,7 +1760,14 @@ func (cr *CityRuntime) shutdown() {
 			}
 		}
 		timeout := cr.cfg.Daemon.ShutdownTimeoutDuration()
-		running, _ := cr.sp.ListRunning("")
+		running, listErr := cr.sp.ListRunning("")
+		if listErr != nil {
+			if runtime.IsPartialListError(listErr) {
+				fmt.Fprintf(cr.stderr, "%s: shutdown session listing partially failed; stopping %d visible agent(s): %v\n", cr.logPrefix, len(running), listErr) //nolint:errcheck // best-effort stderr
+			} else {
+				fmt.Fprintf(cr.stderr, "%s: shutdown session listing failed: %v\n", cr.logPrefix, listErr) //nolint:errcheck // best-effort stderr
+			}
+		}
 		gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.cfg, cr.cityBeadStore(), cr.stdout, cr.stderr)
 	})
 }
