@@ -3,8 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -1164,6 +1164,85 @@ func TestInstallSupervisorSystemdKeepsLegacyUnitWhenNewServiceFails(t *testing.T
 		if !strings.Contains(joined, want) {
 			t.Fatalf("systemctl calls = %v, want %q", calls, want)
 		}
+	}
+}
+
+func TestInstallSupervisorSystemdKeepsLegacyUnitWhenEarlySetupFails(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("systemd path only applies on linux")
+	}
+	for _, tc := range []struct {
+		name     string
+		failVerb string
+	}{
+		{name: "daemon-reload", failVerb: "daemon-reload"},
+		{name: "enable", failVerb: "enable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			gcHome := filepath.Join(t.TempDir(), "isolated-home")
+			t.Setenv("HOME", homeDir)
+			t.Setenv("GC_HOME", gcHome)
+
+			legacyPath := legacySupervisorSystemdServicePath()
+			if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(legacyPath, []byte("Environment=GC_HOME=\""+gcHome+"\"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			data := &supervisorServiceData{
+				GCPath:        "/tmp/gc-new",
+				LogPath:       filepath.Join(gcHome, "supervisor.log"),
+				GCHome:        gcHome,
+				XDGRuntimeDir: "",
+				LaunchdLabel:  supervisorLaunchdLabel(),
+				Path:          "/usr/local/bin:/usr/bin:/bin",
+			}
+
+			oldRun := supervisorSystemctlRun
+			oldActive := supervisorSystemctlActive
+			var calls []string
+			failed := false
+			supervisorSystemctlRun = func(args ...string) error {
+				call := strings.Join(args, " ")
+				calls = append(calls, call)
+				if !failed && len(args) >= 2 && args[1] == tc.failVerb {
+					failed = true
+					return errors.New("early setup failed")
+				}
+				return nil
+			}
+			supervisorSystemctlActive = func(_ string) bool {
+				return false
+			}
+			t.Cleanup(func() {
+				supervisorSystemctlRun = oldRun
+				supervisorSystemctlActive = oldActive
+			})
+
+			var stdout, stderr bytes.Buffer
+			if code := installSupervisorSystemd(data, &stdout, &stderr); code != 1 {
+				t.Fatalf("installSupervisorSystemd code = %d, want 1; stderr=%q", code, stderr.String())
+			}
+			currentPath := supervisorSystemdServicePath()
+			if _, err := os.Stat(currentPath); !os.IsNotExist(err) {
+				t.Fatalf("new systemd unit %q should be removed during rollback; err=%v", currentPath, err)
+			}
+			if _, err := os.Stat(legacyPath); err != nil {
+				t.Fatalf("legacy systemd unit %q should remain after failed install; err=%v", legacyPath, err)
+			}
+			joined := strings.Join(calls, "\n")
+			for _, notWant := range []string{
+				"--user stop " + defaultSupervisorSystemdUnit,
+				"--user start " + defaultSupervisorSystemdUnit,
+			} {
+				if strings.Contains(joined, notWant) {
+					t.Fatalf("systemctl calls = %v, did not want %q before legacy unload", calls, notWant)
+				}
+			}
+		})
 	}
 }
 

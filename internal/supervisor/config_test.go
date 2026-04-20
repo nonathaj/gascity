@@ -57,6 +57,24 @@ func TestLoadConfigSeedsIsolatedGCHomeConfig(t *testing.T) {
 	}
 }
 
+func TestShouldSeedIsolatedSupervisorConfigFalseForCanonicalDefaultUnderSymlinkedHome(t *testing.T) {
+	root := t.TempDir()
+	realHome := filepath.Join(root, "real-home")
+	if err := os.MkdirAll(realHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkHome := filepath.Join(root, "home-link")
+	if err := os.Symlink(realHome, linkHome); err != nil {
+		t.Skip("symlinks not supported")
+	}
+
+	t.Setenv("HOME", linkHome)
+	t.Setenv("GC_HOME", filepath.Join(realHome, ".gc"))
+	if shouldSeedIsolatedSupervisorConfig(ConfigPath()) {
+		t.Fatal("shouldSeedIsolatedSupervisorConfig() = true, want false for canonical default GC_HOME under symlinked HOME")
+	}
+}
+
 func TestLoadConfigExplicit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "supervisor.toml")

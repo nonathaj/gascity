@@ -243,14 +243,14 @@ func shouldSeedIsolatedSupervisorConfig(path string) bool {
 	if gcHome == "" {
 		return false
 	}
-	if !samePath(path, ConfigPath()) {
+	if !pathutil.SamePath(path, ConfigPath()) {
 		return false
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return true
 	}
-	return !samePath(gcHome, filepath.Join(home, ".gc"))
+	return !pathutil.SamePath(gcHome, filepath.Join(home, ".gc"))
 }
 
 func reserveLoopbackPort() (int, error) {
@@ -264,23 +264,4 @@ func reserveLoopbackPort() (int, error) {
 		return 0, fmt.Errorf("unexpected supervisor listener address %T", lis.Addr())
 	}
 	return addr.Port, nil
-}
-
-func samePath(a, b string) bool {
-	a = canonicalPath(a)
-	b = canonicalPath(b)
-	return a == b
-}
-
-func canonicalPath(p string) string {
-	if p == "" {
-		return ""
-	}
-	if abs, err := filepath.Abs(p); err == nil {
-		p = abs
-	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil {
-		p = resolved
-	}
-	return filepath.Clean(p)
 }
