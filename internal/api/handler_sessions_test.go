@@ -1774,6 +1774,41 @@ func TestHandleSessionCreatePreservesInitialMessageWithOptions(t *testing.T) {
 	}
 }
 
+func TestHandleSessionMessageMaterializedNamedSessionUsesLaunchCommandDefaults(t *testing.T) {
+	fs := newSessionFakeStateWithOptions(t)
+	srv := New(fs)
+	h := newTestCityHandlerWith(t, fs, srv)
+
+	req := newPostRequest(cityURL(fs, "/session/worker/messages"), strings.NewReader(`{"message":"hello"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	id := resp["id"]
+	if id == "" {
+		t.Fatal("response missing session id")
+	}
+
+	bead, err := fs.cityBeadStore.Get(id)
+	if err != nil {
+		t.Fatalf("Get(%q): %v", id, err)
+	}
+	cmd := bead.Metadata["command"]
+	if !strings.Contains(cmd, "--skip-permissions") {
+		t.Fatalf("command %q missing permission default", cmd)
+	}
+	if !strings.Contains(cmd, "--effort max") {
+		t.Fatalf("command %q missing effort default", cmd)
+	}
+}
+
 func TestHandleSessionMessageResumesSuspendedSessionUsingProviderDefaultNudge(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)

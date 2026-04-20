@@ -413,7 +413,9 @@ and updates every listed call site; Phase 4 tests cover each.
 - Session submit/interrupt ([`submit.go:192`](../../internal/session/submit.go#L192))
 - Named session creation ([`session_template_start.go:292`](../../cmd/gc/session_template_start.go#L292))
 - API session creation ([`session_resolution.go:215`](../../internal/api/session_resolution.go#L215))
-- Session chat handlers ([`handler_session_chat.go:381,521`](../../internal/api/handler_session_chat.go#L381))
+- Session message handlers
+  ([`handler_session_interaction.go`](../../internal/api/handler_session_interaction.go),
+  [`huma_handlers_sessions_command.go`](../../internal/api/huma_handlers_sessions_command.go))
 - Provider readiness init ([`init_provider_readiness.go:338`](../../cmd/gc/init_provider_readiness.go#L338))
 - Template resolve ([`template_resolve.go:251`](../../cmd/gc/template_resolve.go#L251))
 - Skill integration ([`skill_integration.go:172`](../../cmd/gc/skill_integration.go#L172))

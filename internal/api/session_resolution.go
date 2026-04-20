@@ -288,6 +288,10 @@ func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store b
 	if err != nil {
 		return "", err
 	}
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil)
+	if err != nil {
+		return "", err
+	}
 	resume := session.ProviderResume{
 		ResumeFlag:    resolved.ResumeFlag,
 		ResumeStyle:   resolved.ResumeStyle,
@@ -323,7 +327,7 @@ func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store b
 			spec.SessionName,
 			qualifiedTemplate,
 			spec.Identity,
-			resolved.CommandString(),
+			launchCommand.Command,
 			workDir,
 			resolved.Name,
 			transport,

@@ -282,9 +282,18 @@ func providerKind(b beads.Bead) string {
 	return providerKindFromMetadata(b.Metadata, "")
 }
 
+func wrappedProviderFamily(b beads.Bead, family string) bool {
+	ancestor := strings.TrimSpace(b.Metadata["builtin_ancestor"])
+	provider := strings.TrimSpace(b.Metadata["provider"])
+	return ancestor == family && provider != "" && provider != family
+}
+
 func usesSoftEscapeInterrupt(b beads.Bead) bool {
 	if transportFromMetadata(b) == "acp" {
 		return false
+	}
+	if wrappedProviderFamily(b, "gemini") {
+		return true
 	}
 	switch providerKind(b) {
 	case "codex":
@@ -296,6 +305,9 @@ func usesSoftEscapeInterrupt(b beads.Bead) bool {
 
 func waitsForIdleAfterInterrupt(b beads.Bead) bool {
 	if transportFromMetadata(b) == "acp" {
+		return false
+	}
+	if wrappedProviderFamily(b, "codex") || wrappedProviderFamily(b, "gemini") {
 		return false
 	}
 	switch providerKind(b) {

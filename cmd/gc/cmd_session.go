@@ -223,6 +223,11 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 	if err != nil {
 		titleProvider = nil
 	}
+	sessionCommand, err := resolvedSessionCommand(cityPath, resolved, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	// Try reconciler-first path only when this specific city is managed by a
 	// standalone controller or the machine-wide supervisor. A reachable
@@ -254,7 +259,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 				if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 					kindMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 				}
-				info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(alias, explicitName, canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, session.ProviderResume{
+				info, createErr = mgr.CreateAliasedBeadOnlyNamedWithMetadata(alias, explicitName, canonicalTemplate, title, sessionCommand, workDir, resolved.Name, found.Session, session.ProviderResume{
 					ResumeFlag:    resolved.ResumeFlag,
 					ResumeStyle:   resolved.ResumeStyle,
 					ResumeCommand: resolved.ResumeCommand,
@@ -335,7 +340,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach bool,
 			return err
 		}
 		var createErr error
-		info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(context.Background(), alias, explicitName, canonicalTemplate, title, resolved.CommandString(), workDir, resolved.Name, found.Session, resolved.Env, resume, hints, kindMeta)
+		info, createErr = mgr.CreateAliasedNamedWithTransportAndMetadata(context.Background(), alias, explicitName, canonicalTemplate, title, sessionCommand, workDir, resolved.Name, found.Session, resolved.Env, resume, hints, kindMeta)
 		return createErr
 	})
 	if err != nil {
@@ -372,6 +377,17 @@ func maybeAutoTitle(store beads.Store, beadID, userTitle, titleHint string, prov
 	return api.MaybeGenerateTitleAsync(store, beadID, userTitle, titleHint, provider, workDir, func(format string, args ...any) {
 		fmt.Fprintf(stderr, "session %s: "+format+"\n", append([]any{beadID}, args...)...) //nolint:errcheck // best-effort stderr
 	})
+}
+
+func resolvedSessionCommand(cityPath string, resolved *config.ResolvedProvider, optionOverrides map[string]string) (string, error) {
+	if resolved == nil {
+		return "", fmt.Errorf("resolved provider is nil")
+	}
+	launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides)
+	if err != nil {
+		return "", fmt.Errorf("resolving provider launch command: %w", err)
+	}
+	return launchCommand.Command, nil
 }
 
 func resolveSessionTemplate(cfg *config.City, input, currentRigDir string) (config.Agent, bool) {
@@ -622,15 +638,23 @@ func (p *attachmentCachingProvider) Respond(name string, response runtime.Intera
 	return runtime.ErrInteractionUnsupported
 }
 
-func buildAttachmentCache(sessions []session.Info) map[string]bool {
+func buildAttachmentCache(sessions []session.Info, observe ...func(session.Info) (bool, error)) map[string]bool {
 	cache := make(map[string]bool)
+	var observeFn func(session.Info) (bool, error)
+	if len(observe) > 0 {
+		observeFn = observe[0]
+	}
 	for _, s := range sessions {
-		// ListFull only populates Attached for active sessions. Leave other
-		// states uncached so reason evaluation can fall through to the provider.
-		if s.State != session.StateActive || s.SessionName == "" {
+		if s.State == "" || s.SessionName == "" {
 			continue
 		}
-		cache[s.SessionName] = s.Attached
+		attached := s.Attached
+		if observeFn != nil {
+			if observed, err := observeFn(s); err == nil {
+				attached = observed
+			}
+		}
+		cache[s.SessionName] = attached
 	}
 	return cache
 }

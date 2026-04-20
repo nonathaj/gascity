@@ -197,6 +197,9 @@ func buildDesiredStateWithSessionBeads(
 		}
 
 		sp := scaleParamsFor(&cfg.Agents[i])
+		// Expand {{.Rig}}/{{.AgentBase}} before the scale_check enters the
+		// controller probe pool so rig-scoped agents query their own rig.
+		sp.Check = expandAgentCommandTemplate(cityPath, cityName, &cfg.Agents[i], cfg.Rigs, "scale_check", sp.Check, stderr)
 
 		if !cfg.Agents[i].SupportsGenericEphemeralSessions() {
 			continue
@@ -338,6 +341,7 @@ func buildDesiredStateWithSessionBeads(
 		if wq == "" {
 			continue
 		}
+		wq = expandAgentCommandTemplate(cityPath, cityName, spec.Agent, cfg.Rigs, "work_query", wq, stderr)
 		dir := agentCommandDir(cityPath, spec.Agent, cfg.Rigs)
 		probeEnv := controllerQueryRuntimeEnv(cityPath, cfg, spec.Agent)
 		out, err := shellScaleCheck(prefixShellEnv(controllerQueryPrefixEnv(probeEnv), wq), dir, probeEnv)
