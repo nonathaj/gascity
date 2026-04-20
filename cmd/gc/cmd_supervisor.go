@@ -1653,6 +1653,14 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 		}
 	}
 
+	// Resolve script symlinks, including empty layer sets so stale links are pruned.
+	if progress != nil {
+		progress("resolving_scripts")
+	}
+	resolveConfiguredScripts(cityPath, cfg, func(scope string, err error) {
+		fmt.Fprintf(stderr, "gc supervisor: city '%s': %s scripts: %v\n", cityName, scope, err) //nolint:errcheck
+	})
+
 	// Validate agents.
 	if err := runStep("validating_agents", func() error {
 		return config.ValidateAgents(cfg.Agents)
