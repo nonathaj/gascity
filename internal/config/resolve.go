@@ -417,7 +417,7 @@ func resolveProviderKind(name string, cityProviders map[string]ProviderSpec) str
 // helper (or ResolvedProvider.BuiltinAncestor when available) instead
 // of comparing the raw provider name. This lets a wrapped custom
 // provider (e.g. [providers.my-fast-claude] base = "builtin:claude")
-// be recognised as claude-family.
+// be recognized as claude-family.
 func BuiltinFamily(name string, cityProviders map[string]ProviderSpec) string {
 	builtins := BuiltinProviders()
 	if cityProviders != nil {
@@ -566,7 +566,7 @@ func specToResolved(name string, spec *ProviderSpec) *ResolvedProvider {
 //
 // cityProviders is consulted via BuiltinFamily so a wrapped custom
 // provider (e.g. [providers.claude-max] base = "builtin:claude") is
-// recognised as claude-family and gets the same default behaviour as
+// recognized as claude-family and gets the same default behavior as
 // literal "claude". Passing nil falls back to raw name comparison and
 // is only correct when the caller is certain no wrapped alias is in
 // play.

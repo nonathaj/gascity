@@ -63,7 +63,7 @@ func TestBuiltinFamily_WrappedGeminiViaExplicitBase(t *testing.T) {
 
 // TestBuiltinFamily_LegacyCommandMatch covers the Phase A auto-
 // inheritance branch: no `base` declared, but the Command field matches
-// a built-in. This is the pre-inheritance v0.14 behaviour and must
+// a built-in. This is the pre-inheritance v0.14 behavior and must
 // continue to work so users don't need to retrofit base = "...".
 func TestBuiltinFamily_LegacyCommandMatch(t *testing.T) {
 	cityProviders := map[string]ProviderSpec{

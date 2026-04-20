@@ -64,7 +64,7 @@ func TestBuildResolvedProviderCache_CycleLeavesOldCache(t *testing.T) {
 		t.Fatal("expected cycle error")
 	}
 	// Cache must not be overwritten on error.
-	if &cfg.ResolvedProviders == nil || len(cfg.ResolvedProviders) != 1 {
+	if len(cfg.ResolvedProviders) != 1 {
 		t.Fatalf("cache was overwritten despite error: %+v", cfg.ResolvedProviders)
 	}
 	if _, ok := prior["sentinel"]; !ok {

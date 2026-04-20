@@ -158,7 +158,7 @@ type ResolvedProvider struct {
 	// from a builtin (e.g. "claude" even if Name is "my-fast-claude"). Empty
 	// when the provider is fully custom with no builtin base.
 	//
-	// DEPRECATED in favor of BuiltinAncestor. Kept during transition.
+	// Deprecated: use BuiltinAncestor. Kept during transition.
 	Kind string
 	// BuiltinAncestor is the nearest built-in provider in the resolved
 	// chain, derived from hop identity during the chain walk.

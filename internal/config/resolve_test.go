@@ -1064,7 +1064,7 @@ func TestAgentHasHooks_AgentLevelInstallHooks(t *testing.T) {
 
 // TestAgentHasHooks_WrappedClaudeRecognizedViaBuiltinFamily verifies
 // that a wrapped custom provider (e.g. claude-max with base = "builtin:claude")
-// is recognised as claude-family and gets hooks installed by default —
+// is recognized as claude-family and gets hooks installed by default —
 // matching what literal "claude" would get.
 func TestAgentHasHooks_WrappedClaudeRecognizedViaBuiltinFamily(t *testing.T) {
 	base := "builtin:claude"

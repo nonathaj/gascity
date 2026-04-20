@@ -68,9 +68,6 @@ func apiResolvedProviderFamilyMetadata(resolved *config.ResolvedProvider) string
 	if family := strings.TrimSpace(resolved.BuiltinAncestor); family != "" && family != name {
 		return family
 	}
-	if family := strings.TrimSpace(resolved.Kind); family != "" && family != name {
-		return family
-	}
 	return ""
 }
 

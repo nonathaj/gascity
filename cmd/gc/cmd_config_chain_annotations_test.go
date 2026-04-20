@@ -91,7 +91,7 @@ func TestRenderProviderChainAnnotations_SortedDeterministic(t *testing.T) {
 	ai := strings.Index(got, "alpha")
 	mi := strings.Index(got, "mid")
 	zi := strings.Index(got, "zebra")
-	if !(ai < mi && mi < zi) {
+	if ai >= mi || mi >= zi {
 		t.Errorf("expected alphabetical ordering, got: %q", got)
 	}
 }

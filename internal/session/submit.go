@@ -261,10 +261,10 @@ func (m *Manager) waitForInterruptBoundaryLocked(ctx context.Context, b beads.Be
 //     (legacy Phase A auto-inheritance path).
 //  3. provider — raw provider metadata value as a last-resort fallback.
 //
-// Callers that branch on Claude/Codex/Gemini-family behaviour
+// Callers that branch on Claude/Codex/Gemini-family behavior
 // (idle-wait-after-interrupt, soft-escape interrupt, default submit,
 // etc.) consume this helper so wrapped custom aliases inherit the
-// correct family behaviour without every call site re-deriving it.
+// correct family behavior without every call site re-deriving it.
 func providerKindFromMetadata(meta map[string]string, fallback string) string {
 	if ancestor := strings.TrimSpace(meta["builtin_ancestor"]); ancestor != "" {
 		return ancestor

@@ -416,7 +416,7 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		cfgAgent,
 		qualifiedName,
 		workDir,
-		resolved.Kind,
+		resolvedProviderLaunchFamily(resolved),
 	)
 	if err != nil {
 		return TemplateParams{}, fmt.Errorf("agent %q: %w", qualifiedName, err)
@@ -458,7 +458,7 @@ func resolveTemplate(p *agentBuildParams, cfgAgent *config.Agent, qualifiedName 
 		SessionSetup:           expandedSetup,
 		SessionSetupScript:     resolvedScript,
 		SessionLive:            expandedLive,
-		ProviderName:           resolved.Kind,
+		ProviderName:           resolvedProviderLaunchFamily(resolved),
 		InstallAgentHooks:      config.ResolveInstallHooks(cfgAgent, p.workspace),
 		PackOverlayDirs:        effectiveOverlayDirs(p.packOverlayDirs, p.rigOverlayDirs, rigName),
 		OverlayDir:             overlayDir,

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// ErrProviderChainCycle is returned when a provider's base chain contains a cycle.
+// ProviderChainError reports a provider base-chain resolution failure.
 type ProviderChainError struct {
 	Kind    string // "cycle" | "unknown_base" | "wrapper_resume_missing"
 	Leaf    string
@@ -22,7 +22,6 @@ type chainResolveContext struct {
 	chain      []HopIdentity
 	chainSpecs []ProviderSpec // raw spec per hop, parallel to chain
 	chainPath  []string       // human-readable chain names for error messages
-	warnings   []string
 }
 
 // ResolveProviderChain walks the base chain for a custom provider and

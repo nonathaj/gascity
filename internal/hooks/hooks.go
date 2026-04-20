@@ -352,69 +352,11 @@ func writeManagedFile(fs fsys.FS, dst string, data []byte, policy writeManagedFi
 	return nil
 }
 
-func geminiFileNeedsUpgrade(existing []byte) bool {
-	content := string(existing)
-	if !strings.Contains(content, `export PATH=`) {
-		return false
-	}
-	return strings.Contains(content, `gc prime --hook`) ||
-		strings.Contains(content, `gc nudge drain --inject`) ||
-		strings.Contains(content, `gc mail check --inject`) ||
-		strings.Contains(content, `gc hook --inject`)
-}
-
-func opencodeFileNeedsUpgrade(existing []byte) bool {
-	content := string(existing)
-	if strings.Contains(content, "module.exports = {") &&
-		strings.Contains(content, "gc prime --hook") &&
-		strings.Contains(content, "experimental.chat.system.transform") {
-		return true
-	}
-	if strings.Contains(content, "experimental.chat.system.transform") &&
-		strings.Contains(content, "gc prime --hook") &&
-		!strings.Contains(content, `"chat.message"`) {
-		return true
-	}
-	if strings.Contains(content, `const prime = await run(directory, "prime", "--hook");`) {
-		return true
-	}
-	if strings.Contains(content, "export default async function") &&
-		strings.Contains(content, `let cachedPrime = "";`) &&
-		strings.Contains(content, `cachedPrime === ""`) {
-		return true
-	}
-	if strings.Contains(content, "output.system[1] = prefix + \"\\n\\n\" + output.system[1]") {
-		return true
-	}
-	if strings.Contains(content, "export default async function") &&
-		strings.Contains(content, "gc prime --hook") &&
-		(!strings.Contains(content, `"session.deleted"`) ||
-			!strings.Contains(content, "gc hook --inject")) {
-		return true
-	}
-	return strings.Contains(content, "output.system.push(") &&
-		strings.Contains(content, "gc prime --hook") &&
-		strings.Contains(content, "experimental.chat.system.transform")
-}
-
 func claudeFileNeedsUpgrade(existing []byte) bool {
 	current, err := readEmbedded("config/claude.json")
 	if err != nil {
 		return false
 	}
 	stale := strings.Replace(string(current), `gc handoff \"context cycle\"`, `gc prime --hook`, 1)
-	return string(existing) == stale
-}
-
-func cursorFileNeedsUpgrade(existing []byte) bool {
-	return matchesStaleManagedFile(existing, "config/cursor.json")
-}
-
-func matchesStaleManagedFile(existing []byte, embedPath string) bool {
-	current, err := readEmbedded(embedPath)
-	if err != nil {
-		return false
-	}
-	stale := strings.Replace(string(current), `gc handoff "context cycle"`, `gc prime --hook`, 1)
 	return string(existing) == stale
 }

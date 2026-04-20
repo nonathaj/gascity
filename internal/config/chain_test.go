@@ -187,9 +187,9 @@ func TestResolveProviderChain_BuiltinAncestorFromHopIdentity(t *testing.T) {
 	// NOT reach the built-in (base = "provider:X"). BuiltinAncestor
 	// must be empty — name-matching would falsely match built-in codex.
 	custom := map[string]ProviderSpec{
-		"codex": {Base: basePtr("provider:my-root"), Command: "custom"},
+		"codex":   {Base: basePtr("provider:my-root"), Command: "custom"},
 		"my-root": {Command: "root"}, // no base
-		"leaf":  {Base: basePtr("provider:codex")},
+		"leaf":    {Base: basePtr("provider:codex")},
 	}
 	r, err := ResolveProviderChain("leaf", custom["leaf"], customs(custom))
 	if err != nil {
@@ -266,8 +266,10 @@ func TestResolveProviderChain_SharedAncestorDAG(t *testing.T) {
 	custom := map[string]ProviderSpec{
 		"A": {Base: basePtr("provider:C")},
 		"B": {Base: basePtr("provider:C")},
-		"C": {Base: basePtr("builtin:codex"), Command: "aimux", Args: []string{"run", "codex"},
-			ResumeCommand: "aimux run codex -- resume {{.SessionKey}}"},
+		"C": {
+			Base: basePtr("builtin:codex"), Command: "aimux", Args: []string{"run", "codex"},
+			ResumeCommand: "aimux run codex -- resume {{.SessionKey}}",
+		},
 	}
 	rA, err := ResolveProviderChain("A", custom["A"], customs(custom))
 	if err != nil {

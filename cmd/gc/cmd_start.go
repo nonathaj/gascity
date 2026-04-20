@@ -740,9 +740,6 @@ func resolvedProviderLaunchFamily(resolved *config.ResolvedProvider) string {
 	if family := strings.TrimSpace(resolved.BuiltinAncestor); family != "" {
 		return family
 	}
-	if family := strings.TrimSpace(resolved.Kind); family != "" {
-		return family
-	}
 	return strings.TrimSpace(resolved.Name)
 }
 
@@ -752,9 +749,6 @@ func resolvedProviderFamilyMetadata(resolved *config.ResolvedProvider) string {
 	}
 	name := strings.TrimSpace(resolved.Name)
 	if family := strings.TrimSpace(resolved.BuiltinAncestor); family != "" && family != name {
-		return family
-	}
-	if family := strings.TrimSpace(resolved.Kind); family != "" && family != name {
 		return family
 	}
 	return ""

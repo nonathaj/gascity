@@ -63,10 +63,10 @@ func TestInstallWithResolver_NilResolverIsIdentity(t *testing.T) {
 
 // TestInstallWithResolver_EmptyFamilyFallsBackToName ensures a resolver
 // returning "" (family undetermined) falls back to the raw name. A raw
-// name that is a built-in family is still honoured.
+// name that is a built-in family is still honored.
 func TestInstallWithResolver_EmptyFamilyFallsBackToName(t *testing.T) {
 	fs := fsys.NewFake()
-	resolver := func(name string) string { return "" } // always undetermined
+	resolver := func(_ string) string { return "" } // always undetermined
 	if err := InstallWithResolver(fs, "/city", "/work", []string{"codex"}, resolver); err != nil {
 		t.Fatalf("InstallWithResolver fallback to identity = %v, want nil", err)
 	}
@@ -81,7 +81,7 @@ func TestInstallWithResolver_EmptyFamilyFallsBackToName(t *testing.T) {
 // ancestor do not silently no-op.
 func TestInstallWithResolver_UnknownFamilyErrors(t *testing.T) {
 	fs := fsys.NewFake()
-	resolver := func(name string) string { return "bogus" }
+	resolver := func(_ string) string { return "bogus" }
 	err := InstallWithResolver(fs, "/city", "/work", []string{"my-alias"}, resolver)
 	if err == nil {
 		t.Fatal("InstallWithResolver(resolver→bogus) should error on unknown family")

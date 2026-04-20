@@ -10,7 +10,7 @@ import (
 // whose builtin_ancestor = "codex" (e.g. [providers.codex-mini] with
 // base = "builtin:codex") triggers the same soft-escape-interrupt branch
 // that a literal "codex" session does. Regression guard for Phase 4B:
-// wrapped codex aliases MUST be recognised as codex-family for the
+// wrapped codex aliases MUST be recognized as codex-family for the
 // interrupt semantics to match the ancestor.
 func TestUsesSoftEscapeInterrupt_WrappedCodex(t *testing.T) {
 	wrapped := beads.Bead{Metadata: map[string]string{
@@ -84,6 +84,6 @@ func TestUsesImmediateDefaultSubmit_WrappedGeminiDoesNot(t *testing.T) {
 		"provider":         "gemini-fast",
 	}}
 	if usesImmediateDefaultSubmit(wrapped) {
-		t.Error("wrapped gemini must NOT use immediate default submit (codex-only behaviour)")
+		t.Error("wrapped gemini must NOT use immediate default submit (codex-only behavior)")
 	}
 }
