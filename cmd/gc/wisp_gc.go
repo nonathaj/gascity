@@ -64,6 +64,8 @@ func (m *memoryWispGC) runGC(store beads.Store, now time.Time) (int, error) {
 		trackPurged, trackDeleteErr := purgeExpiredBeadRoots(store, trackEntries, cutoff)
 		purged += trackPurged
 		deleteErr = errors.Join(deleteErr, trackDeleteErr)
+	} else {
+		deleteErr = errors.Join(deleteErr, fmt.Errorf("listing closed order-tracking beads: %w", trackErr))
 	}
 
 	return purged, deleteErr
