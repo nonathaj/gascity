@@ -770,7 +770,16 @@ func TestFinalizeInitDoesNotRunBdProviderBeforeProviderReadinessBlock(t *testing
 	if err := os.WriteFile(spy, []byte(scriptBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GC_BEADS", "exec:"+spy)
+	t.Setenv("GC_BEADS", "")
+	cityConfigPath := filepath.Join(cityPath, "city.toml")
+	cityConfig, err := os.ReadFile(cityConfigPath)
+	if err != nil {
+		t.Fatalf("ReadFile(city.toml): %v", err)
+	}
+	cityConfig = append(cityConfig, []byte(fmt.Sprintf("\n[beads]\nprovider = %q\n", "exec:"+spy))...)
+	if err := os.WriteFile(cityConfigPath, cityConfig, 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
 
 	oldProbe := initProbeProvidersReadiness
 	initProbeProvidersReadiness = func(_ context.Context, _ []string, fresh bool) (map[string]api.ReadinessItem, error) {
