@@ -20,6 +20,7 @@ import (
 	"github.com/gastownhall/gascity/internal/convergence"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
+	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 	"github.com/gastownhall/gascity/internal/supervisor"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	"github.com/gastownhall/gascity/internal/workspacesvc"
@@ -1588,7 +1589,9 @@ func (cr *CityRuntime) loadDemandSnapshot(
 	if cr.demandSnapshot == nil {
 		return runtimeDemandSnapshot{}
 	}
-	return *cr.demandSnapshot
+	snapshot := *cr.demandSnapshot
+	cr.installDemandSnapshotSideEffects(snapshot.result)
+	return snapshot
 }
 
 func (cr *CityRuntime) shouldRefreshDemandSnapshot(
@@ -1612,7 +1615,32 @@ func (cr *CityRuntime) shouldRefreshDemandSnapshot(
 }
 
 func (cr *CityRuntime) demandSnapshotsEnabled() bool {
-	return cr.cs != nil && cr.cs.EventProvider() != nil
+	return cr.cs != nil && cr.cs.EventProvider() != nil && demandSnapshotDemandSourcesEventBacked(cr.cfg)
+}
+
+func demandSnapshotDemandSourcesEventBacked(cfg *config.City) bool {
+	if cfg == nil {
+		return false
+	}
+	for i := range cfg.Agents {
+		if strings.TrimSpace(cfg.Agents[i].ScaleCheck) != "" || strings.TrimSpace(cfg.Agents[i].WorkQuery) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func (cr *CityRuntime) installDemandSnapshotSideEffects(result DesiredStateResult) {
+	autoSP, ok := cr.sp.(*sessionauto.Provider)
+	if !ok {
+		return
+	}
+	for _, tp := range result.State {
+		if !tp.IsACP || strings.TrimSpace(tp.SessionName) == "" {
+			continue
+		}
+		autoSP.RouteACP(tp.SessionName)
+	}
 }
 
 func sessionBeadSnapshotFingerprint(snapshot *sessionBeadSnapshot) string {

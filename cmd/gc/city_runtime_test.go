@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
+	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
 )
 
 func TestSweepUndesiredPoolSessionBeads_KeepsRunningSessionsOpen(t *testing.T) {
@@ -155,6 +156,92 @@ func TestCityRuntimeDemandSnapshotReusesStablePatrolDemand(t *testing.T) {
 	_ = cr.loadDemandSnapshot(changedSessionBeads, nil, "poke", false)
 	if buildCalls != 3 {
 		t.Fatalf("buildDesiredState call count after poke = %d, want 3", buildCalls)
+	}
+}
+
+func TestCityRuntimeDemandSnapshotRefreshesWhenDemandCommandsAreCustom(t *testing.T) {
+	cases := []struct {
+		name  string
+		agent config.Agent
+	}{
+		{
+			name: "custom scale_check",
+			agent: config.Agent{
+				Name:       "worker",
+				ScaleCheck: "test -f external-queue && echo 1 || echo 0",
+			},
+		},
+		{
+			name: "custom work_query",
+			agent: config.Agent{
+				Name:      "worker",
+				WorkQuery: "gh issue list --json number --limit 1",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buildCalls := 0
+			cr := &CityRuntime{
+				cityName: "test-city",
+				cityPath: t.TempDir(),
+				cfg: &config.City{
+					Workspace: config.Workspace{Name: "test-city"},
+					Agents:    []config.Agent{tc.agent},
+				},
+				cs: &controllerState{
+					eventProv: events.NewFake(),
+				},
+				stderr: io.Discard,
+			}
+			cr.buildFnWithSessionBeads = func(*config.City, runtime.Provider, beads.Store, map[string]beads.Store, *sessionBeadSnapshot, *sessionReconcilerTraceCycle) DesiredStateResult {
+				buildCalls++
+				return DesiredStateResult{State: map[string]TemplateParams{}}
+			}
+
+			sessionBeads := newSessionBeadSnapshot(nil)
+			_ = cr.loadDemandSnapshot(sessionBeads, nil, "patrol", false)
+			_ = cr.loadDemandSnapshot(sessionBeads, nil, "patrol", false)
+
+			if buildCalls != 2 {
+				t.Fatalf("buildDesiredState call count = %d, want 2 when demand command is not event-backed", buildCalls)
+			}
+		})
+	}
+}
+
+func TestCityRuntimeDemandSnapshotReplaysACPRoutesOnCacheHit(t *testing.T) {
+	defaultSP := runtime.NewFake()
+	acpSP := runtime.NewFake()
+	sp := sessionauto.New(defaultSP, acpSP)
+	cr := &CityRuntime{
+		cityName: "test-city",
+		cityPath: t.TempDir(),
+		cfg: &config.City{
+			Workspace: config.Workspace{Name: "test-city"},
+		},
+		sp: sp,
+		cs: &controllerState{
+			eventProv: events.NewFake(),
+		},
+		demandSnapshot: &runtimeDemandSnapshot{
+			createdAt:          time.Now(),
+			sessionFingerprint: "",
+			result: DesiredStateResult{State: map[string]TemplateParams{
+				"headless-agent": {
+					SessionName: "headless-agent",
+					IsACP:       true,
+				},
+			}},
+		},
+		stderr: io.Discard,
+	}
+
+	_ = cr.loadDemandSnapshot(nil, nil, "patrol", false)
+
+	if err := sp.Attach("headless-agent"); err == nil || !strings.Contains(err.Error(), "ACP transport") {
+		t.Fatalf("Attach(headless-agent) error = %v, want ACP transport route", err)
 	}
 }
 
