@@ -1170,12 +1170,7 @@ func TestCmdStopSupervisorManagedCityReliesOnSupervisorCleanup(t *testing.T) {
 	}
 
 	ops := readOpLog(t, logFile)
-	if len(ops) != 1 {
-		t.Fatalf("expected bead provider stop, got %v", ops)
-	}
-	if !strings.HasPrefix(ops[0], "stop") {
-		t.Fatalf("unexpected bead provider op: %v", ops)
-	}
+	assertSingleStopWithBenignNoise(t, ops)
 }
 
 func TestReconcileCitiesNameDriftStopsBeadsProvider(t *testing.T) {
@@ -1233,12 +1228,7 @@ func TestReconcileCitiesNameDriftStopsBeadsProvider(t *testing.T) {
 	reconcileCities(reg, registry, supervisor.PublicationConfig{}, &stdout, &stderr)
 
 	ops := readOpLog(t, logFile)
-	if len(ops) != 1 {
-		t.Fatalf("expected bead provider stop during name-drift restart, got %v", ops)
-	}
-	if !strings.HasPrefix(ops[0], "stop") {
-		t.Fatalf("unexpected bead provider op: %v", ops)
-	}
+	assertSingleStopWithBenignNoise(t, ops)
 }
 
 func TestSupervisorCreatesControllerSocketForManagedCity(t *testing.T) {

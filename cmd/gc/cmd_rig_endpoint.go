@@ -300,7 +300,7 @@ func ensureCanonicalScopeMetadataIfPresent(fs fsys.FS, scopeRoot string) error {
 		Database:     "dolt",
 		Backend:      "dolt",
 		DoltMode:     "server",
-		DoltDatabase: strings.TrimSpace(doltDatabase),
+		DoltDatabase: doltDatabase,
 	})
 	return err
 }
