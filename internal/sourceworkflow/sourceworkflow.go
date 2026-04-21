@@ -344,9 +344,13 @@ func CloseWorkflowSubtree(store beads.Store, rootID string) (int, error) {
 		byID[bead.ID] = bead
 	}
 	depthMemo := make(map[string]int, len(matched))
+	const visitingDepth = -1
 	var depth func(string) int
 	depth = func(id string) int {
 		if d, ok := depthMemo[id]; ok {
+			if d == visitingDepth {
+				return 0
+			}
 			return d
 		}
 		bead, ok := byID[id]
@@ -363,6 +367,7 @@ func CloseWorkflowSubtree(store beads.Store, rootID string) (int, error) {
 			depthMemo[id] = 0
 			return 0
 		}
+		depthMemo[id] = visitingDepth
 		d := depth(parentID) + 1
 		depthMemo[id] = d
 		return d

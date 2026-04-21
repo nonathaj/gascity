@@ -461,8 +461,10 @@ func DecorateGraphWorkflowRecipe(recipe *formula.Recipe, routeVars map[string]st
 // non-root step so EffectiveWorkQuery tier-3 and pool scale_check can see
 // the work (fixes #796). Attached legacy formulas intentionally stay on the
 // molecule_id flow: only the source bead is routed, and the internal molecule
-// steps remain private instructions for the assignee. Returns early with no
-// effect when cfg is nil.
+// steps remain private instructions for the assignee. Pool demand for attached
+// legacy formulas comes from the already-routed source bead via the ready and
+// in_progress tiers; the molecule count is only for standalone routed roots.
+// Returns early with no effect when cfg is nil.
 func ApplyGraphRouting(recipe *formula.Recipe, a *config.Agent, routedTo string, vars map[string]string, sourceBeadID, scopeKind, scopeRef, storeRef string, store beads.Store, cityName string, cfg *config.City, deps Deps) error {
 	if recipe == nil || cfg == nil {
 		return nil

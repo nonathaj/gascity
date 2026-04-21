@@ -619,7 +619,7 @@ func TestControllerStatusForCityReusesSupervisorPIDWhenCityStateUnknown(t *testi
 	}
 }
 
-func TestControllerStatusForCityFallsBackToStandaloneWhenSupervisorVanishesDuringUnknownProbe(t *testing.T) {
+func TestControllerStatusForCityReturnsSupervisorModeWhenProbeSucceedsAfterUnknownRetry(t *testing.T) {
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "gc-home"))
 
 	root := shortSocketTempDir(t, "gc-status-")

@@ -133,7 +133,7 @@ func TestApplyGraphRouting_LegacyNilAgent(t *testing.T) {
 	}
 }
 
-func TestApplyGraphRouting_LegacyAttachmentDoesNotStampSteps(t *testing.T) {
+func TestApplyGraphRouting_LegacyAttachmentKeepsRoutingOnSourceBeadOnly(t *testing.T) {
 	r := &formula.Recipe{
 		Name: "mol-legacy",
 		Steps: []formula.RecipeStep{
@@ -147,7 +147,7 @@ func TestApplyGraphRouting_LegacyAttachmentDoesNotStampSteps(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, ok := r.Steps[1].Metadata["gc.routed_to"]; ok {
-		t.Errorf("attached legacy step gc.routed_to was stamped; v1 attachments should use source molecule_id flow")
+		t.Errorf("attached legacy step gc.routed_to was stamped; attached demand should stay on the routed source bead")
 	}
 }
 

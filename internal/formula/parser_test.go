@@ -802,6 +802,55 @@ func TestParseFile_AndResolve(t *testing.T) {
 	}
 }
 
+func TestResolve_InheritsGraphContractFromParent(t *testing.T) {
+	dir := t.TempDir()
+	formulaDir := filepath.Join(dir, ".beads", "formulas")
+	if err := os.MkdirAll(formulaDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	parent := `{
+  "formula": "graph-parent",
+  "version": 2,
+  "type": "workflow",
+  "contract": "graph.v2",
+  "steps": [
+    {"id": "init", "title": "Initialize"}
+  ]
+}`
+	if err := os.WriteFile(filepath.Join(formulaDir, "graph-parent.formula.json"), []byte(parent), 0o644); err != nil {
+		t.Fatalf("write parent: %v", err)
+	}
+
+	child := `{
+  "formula": "graph-child",
+  "version": 2,
+  "type": "workflow",
+  "extends": ["graph-parent"],
+  "steps": [
+    {"id": "follow-up", "title": "Follow up", "depends_on": ["init"]}
+  ]
+}`
+	childPath := filepath.Join(formulaDir, "graph-child.formula.json")
+	if err := os.WriteFile(childPath, []byte(child), 0o644); err != nil {
+		t.Fatalf("write child: %v", err)
+	}
+
+	p := NewParser(formulaDir)
+	formula, err := p.ParseFile(childPath)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+
+	resolved, err := p.Resolve(formula)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := resolved.Contract; got != "graph.v2" {
+		t.Fatalf("resolved.Contract = %q, want graph.v2", got)
+	}
+}
+
 func TestResolve_CircularExtends(t *testing.T) {
 	dir := t.TempDir()
 	formulaDir := filepath.Join(dir, ".beads", "formulas")
