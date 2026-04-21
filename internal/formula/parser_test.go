@@ -173,7 +173,7 @@ func TestValidate_InvalidPriority(t *testing.T) {
 	}
 }
 
-func TestValidate_Version2GraphRetryWorkflowRequiresContract(t *testing.T) {
+func TestValidate_GraphRetryWorkflowRequiresContract(t *testing.T) {
 	formula := &Formula{
 		Formula: "mol-implicit-v2",
 		Version: 2,
@@ -190,6 +190,29 @@ func TestValidate_Version2GraphRetryWorkflowRequiresContract(t *testing.T) {
 	err := formula.Validate()
 	if err == nil {
 		t.Fatal("Validate should reject graph-only v2 workflow without contract")
+	}
+	if !strings.Contains(err.Error(), `contract = "graph.v2"`) {
+		t.Fatalf("Validate error = %v, want explicit graph.v2 contract guidance", err)
+	}
+}
+
+func TestValidate_Version1DetachedGraphMetadataRequiresContract(t *testing.T) {
+	formula := &Formula{
+		Formula: "mol-detached-v1",
+		Version: 1,
+		Type:    TypeWorkflow,
+		Steps: []*Step{
+			{
+				ID:       "work",
+				Title:    "Do the work",
+				Metadata: map[string]string{"gc.kind": "retry"},
+			},
+		},
+	}
+
+	err := formula.Validate()
+	if err == nil {
+		t.Fatal("Validate should reject detached graph metadata without contract")
 	}
 	if !strings.Contains(err.Error(), `contract = "graph.v2"`) {
 		t.Fatalf("Validate error = %v, want explicit graph.v2 contract guidance", err)

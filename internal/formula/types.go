@@ -880,13 +880,41 @@ type AroundAdvice struct {
 }
 
 func requiresExplicitGraphContract(f *Formula) bool {
-	if f == nil || f.Version < 2 || strings.TrimSpace(f.Contract) != "" {
+	if f == nil || strings.TrimSpace(f.Contract) != "" {
 		return false
+	}
+	if f.Version < 2 {
+		if stepsRequireDetachedGraphContract(f.Steps) {
+			return true
+		}
+		return stepsRequireDetachedGraphContract(f.Template)
 	}
 	if stepsRequireGraphContract(f.Steps) {
 		return true
 	}
 	return stepsRequireGraphContract(f.Template)
+}
+
+func stepsRequireDetachedGraphContract(steps []*Step) bool {
+	for _, step := range steps {
+		if stepRequiresDetachedGraphContract(step) {
+			return true
+		}
+	}
+	return false
+}
+
+func stepRequiresDetachedGraphContract(step *Step) bool {
+	if step == nil {
+		return false
+	}
+	if metadataRequiresGraphContract(step.Metadata) {
+		return true
+	}
+	if step.Loop != nil && stepsRequireDetachedGraphContract(step.Loop.Body) {
+		return true
+	}
+	return stepsRequireDetachedGraphContract(step.Children)
 }
 
 func stepsRequireGraphContract(steps []*Step) bool {
@@ -940,11 +968,11 @@ func (f *Formula) Validate() error {
 		errs = append(errs, "version: must be >= 1")
 	}
 
-	if f.Contract != "" && f.Contract != "graph.v2" {
+	if contract := strings.TrimSpace(f.Contract); contract != "" && !strings.EqualFold(contract, "graph.v2") {
 		errs = append(errs, fmt.Sprintf("contract: invalid value %q (must be graph.v2)", f.Contract))
 	}
 	if requiresExplicitGraphContract(f) {
-		errs = append(errs, `contract: version >= 2 formulas that use graph-only retry/scope semantics must declare contract = "graph.v2" explicitly`)
+		errs = append(errs, `contract: formulas that use graph-only retry/scope semantics must declare contract = "graph.v2" explicitly`)
 	}
 
 	if f.Type != "" && !f.Type.IsValid() {

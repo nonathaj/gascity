@@ -875,7 +875,7 @@ max_attempts = 3
 	}
 }
 
-func TestCompileVersion2GraphRetryWorkflowRequiresExplicitGraphContract(t *testing.T) {
+func TestCompileGraphRetryWorkflowRequiresExplicitGraphContract(t *testing.T) {
 	prev := IsFormulaV2Enabled()
 	SetFormulaV2Enabled(true)
 	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
@@ -898,6 +898,35 @@ max_attempts = 2
 	}
 
 	_, err := Compile(context.Background(), "implicit-v2", []string{dir}, nil)
+	if err == nil {
+		t.Fatal("Compile succeeded, want explicit contract error")
+	}
+	if !strings.Contains(err.Error(), `contract = "graph.v2"`) {
+		t.Fatalf("Compile error = %v, want graph.v2 contract guidance", err)
+	}
+}
+
+func TestCompileVersion1DetachedGraphMetadataRequiresExplicitGraphContract(t *testing.T) {
+	prev := IsFormulaV2Enabled()
+	SetFormulaV2Enabled(true)
+	t.Cleanup(func() { SetFormulaV2Enabled(prev) })
+
+	dir := t.TempDir()
+	formulaText := `
+formula = "implicit-v1-detached"
+phase = "liquid"
+version = 1
+
+[[steps]]
+id = "work"
+title = "Do the work"
+metadata = { "gc.kind" = "retry" }
+`
+	if err := os.WriteFile(filepath.Join(dir, "implicit-v1-detached.toml"), []byte(formulaText), 0o644); err != nil {
+		t.Fatalf("write formula: %v", err)
+	}
+
+	_, err := Compile(context.Background(), "implicit-v1-detached", []string{dir}, nil)
 	if err == nil {
 		t.Fatal("Compile succeeded, want explicit contract error")
 	}
