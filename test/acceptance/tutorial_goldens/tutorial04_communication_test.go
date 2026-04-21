@@ -16,6 +16,7 @@ func TestTutorial04Communication(t *testing.T) {
 
 	myCity := expandHome(ws.home(), "~/my-city")
 	myProject := expandHome(ws.home(), "~/my-project")
+	var tutorialMailID string
 	mustMkdirAll(t, myProject)
 
 	out, err := ws.runShell("gc init ~/my-city --provider claude --skip-provider-readiness", "")
@@ -94,6 +95,11 @@ func TestTutorial04Communication(t *testing.T) {
 		if !strings.Contains(out, "Sent message") {
 			t.Fatalf("mail send output mismatch:\n%s", out)
 		}
+		fields := strings.Fields(out)
+		if len(fields) < 4 {
+			t.Fatalf("mail send output did not include a message ID:\n%s", out)
+		}
+		tutorialMailID = fields[2]
 	})
 
 	t.Run("gc mail check mayor", func(t *testing.T) {
@@ -145,11 +151,14 @@ func TestTutorial04Communication(t *testing.T) {
 		}
 	}
 	mayorMailConsumed := func() bool {
-		out, err := ws.runShell("gc mail count mayor", "")
+		if tutorialMailID == "" {
+			return false
+		}
+		out, err := ws.runShell("bd show "+tutorialMailID+" --json", "")
 		if err != nil {
 			return false
 		}
-		return strings.Contains(out, "1 total") && strings.Contains(out, "0 unread")
+		return strings.Contains(out, "\"read\"")
 	}
 
 	t.Run(`gc session nudge mayor "Check mail and hook status, then act accordingly"`, func(t *testing.T) {
@@ -173,6 +182,8 @@ func TestTutorial04Communication(t *testing.T) {
 		ok := waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible)
 		if !ok {
 			if mayorMailConsumed() {
+				// Once the exact tutorial mail bead is marked read, hook delivery is proven.
+				// The follow-up only exists to make that already-consumed request visible in peek.
 				ws.noteWarning("tutorial 04 runtime workaround: hooks already delivered and marked the mayor mail read, so the page driver submits an explicit follow-up that surfaces the already-consumed review request in peek output")
 				submitMayorFollowUp("submit follow-up after mayor consumed tutorial 04 mail")
 			} else {
