@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,16 @@ func TestTutorial04Communication(t *testing.T) {
 			t.Fatalf("mayor session did not become peekable %s:\n%s", context, out)
 		}
 	}
+	killMayor := func(context string) {
+		t.Helper()
+		out, err := ws.runShell("gc session kill mayor", "")
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", context, err, out)
+		}
+		if !strings.Contains(out, " killed.") {
+			t.Fatalf("%s output mismatch:\n%s", context, out)
+		}
+	}
 	restartCity := func(context string) {
 		ws.noteWarning("tutorial 04 runtime workaround: %s, so the page driver performs a hidden gc stop/gc start cycle before retrying the visible communication flow", context)
 		if out, err := ws.runShell("gc stop", ""); err != nil {
@@ -96,11 +107,10 @@ func TestTutorial04Communication(t *testing.T) {
 		if !strings.Contains(out, "Sent message") {
 			t.Fatalf("mail send output mismatch:\n%s", out)
 		}
-		fields := strings.Fields(out)
-		if len(fields) < 4 {
+		tutorialMailID = firstBeadID(out)
+		if tutorialMailID == "" {
 			t.Fatalf("mail send output did not include a message ID:\n%s", out)
 		}
-		tutorialMailID = fields[2]
 	})
 
 	t.Run("gc mail check mayor", func(t *testing.T) {
@@ -126,7 +136,7 @@ func TestTutorial04Communication(t *testing.T) {
 	})
 
 	communicationNudge := `Check mail and hook status, then act accordingly`
-	communicationFollowUp := `You already processed the earlier message. Continue the reviewer coordination from that prior request.`
+	communicationFollowUp := `Continue the earlier review-coordination request for the auth work in the my-project rig. Route it to the reviewer agent and show that coordination in the transcript.`
 	communicationPeekTimeout := 90 * time.Second
 	communicationRetryTimeout := 90 * time.Second
 	communicationSettleTimeout := 10 * time.Second
@@ -173,8 +183,14 @@ func TestTutorial04Communication(t *testing.T) {
 			}
 		}
 		countOut, countErr := ws.runShell("gc mail count mayor", "")
-		if countErr == nil && strings.Contains(countOut, "0 unread") {
-			return true
+		if countErr == nil {
+			fields := strings.Fields(strings.TrimSpace(countOut))
+			if len(fields) >= 4 {
+				unreadCount, err := strconv.Atoi(strings.TrimSuffix(fields[2], ","))
+				if err == nil && unreadCount == 0 && fields[3] == "unread" {
+					return true
+				}
+			}
 		}
 		return false
 	}
@@ -215,13 +231,15 @@ func TestTutorial04Communication(t *testing.T) {
 		if waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			return
 		}
+		ws.noteWarning("tutorial 04 runtime workaround: wake-only recovery can still leave mayor runtime state wedged, so the page driver force-kills just the mayor session and lets the named-session reconciler recreate it without restarting the whole city")
+		killMayor("kill mayor before final communication retry")
+		waitForMayorReady("after tutorial 04 session recycle")
 		if waitForMailConsumption() {
-			ws.noteWarning("tutorial 04 runtime workaround: after the wake retry the tutorial mail is already consumed, so the page driver submits one more explicit follow-up instead of restarting the city and losing the active communication context")
-			submitMayorFollowUp("submit follow-up after wake retry")
+			ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor the tutorial mail is already consumed, so the page driver submits one explicit follow-up to surface the already-completed review request in peek output")
+			submitMayorFollowUp("submit follow-up after mayor recycle")
 		} else {
-			ws.noteWarning("tutorial 04 runtime workaround: after the wake retry the tutorial mail is still unread, so the page driver performs one final wake and nudge instead of restarting the city mid-conversation")
-			wakeMayor("wake mayor before final communication retry")
-			nudgeMayor("re-nudge mayor before final communication retry")
+			ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor the tutorial mail is still unread, so the page driver requeues the same mail-driven nudge against the fresh runtime")
+			nudgeMayor("re-nudge mayor after final communication recycle")
 		}
 		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			t.Fatalf("peek mayor did not surface communication flow in time:\n%s", out)
