@@ -43,7 +43,7 @@ func TestTutorial04Communication(t *testing.T) {
 	wakeMayor := func(context string) {
 		t.Helper()
 		out, err := ws.runShell("gc session wake mayor", "")
-		if err != nil && !strings.Contains(out, " is awake") {
+		if err != nil {
 			t.Fatalf("%s: %v\n%s", context, err, out)
 		}
 	}
@@ -122,8 +122,8 @@ func TestTutorial04Communication(t *testing.T) {
 	communicationNudge := `Check mail and hook status, then act accordingly`
 	communicationPeekTimeout := 90 * time.Second
 	communicationRetryTimeout := 90 * time.Second
-	nudgeMayor := func(context string) {
-		out, err := ws.runShell(`gc session nudge mayor "`+communicationNudge+`"`, "")
+	nudgeMayor := func(target, context string) {
+		out, err := ws.runShell(`gc session nudge `+target+` "`+communicationNudge+`"`, "")
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", context, err, out)
 		}
@@ -131,22 +131,17 @@ func TestTutorial04Communication(t *testing.T) {
 			t.Fatalf("%s output mismatch:\n%s", context, out)
 		}
 	}
-	submitMayorTurn := func(context string) {
+	currentMayorSessionID := func(context string) string {
 		t.Helper()
-		out, err := ws.runShell(`gc session submit mayor "`+communicationNudge+`"`, "")
+		sessionID, err := ws.waitForSessionByTemplateOrTarget("mayor", "mayor", 30*time.Second, time.Second)
 		if err != nil {
-			t.Fatalf("%s: %v\n%s", context, err, out)
+			t.Fatalf("%s: %v", context, err)
 		}
-		if !strings.Contains(out, "Submitted to mayor") &&
-			!strings.Contains(out, "Queued follow-up for mayor") &&
-			!strings.Contains(out, "Submitted follow-up to mayor") &&
-			!strings.Contains(out, "Interrupted and submitted to mayor") {
-			t.Fatalf("%s output mismatch:\n%s", context, out)
-		}
+		return sessionID
 	}
 
 	t.Run(`gc session nudge mayor "Check mail and hook status, then act accordingly"`, func(t *testing.T) {
-		nudgeMayor("gc session nudge mayor")
+		nudgeMayor("mayor", "gc session nudge mayor")
 	})
 
 	t.Run("gc session peek mayor --lines 6", func(t *testing.T) {
@@ -159,19 +154,19 @@ func TestTutorial04Communication(t *testing.T) {
 			}
 			return strings.Contains(out, "Review needed") ||
 				strings.Contains(out, "auth module") ||
-				strings.Contains(out, "reviewer") ||
-				strings.Contains(out, "my-project/reviewer") ||
-				strings.Contains(out, "gc sling")
+				strings.Contains(out, "auth module changes in my-project") ||
+				strings.Contains(out, "Review the auth module changes") ||
+				(strings.Contains(out, "my-project/reviewer") && strings.Contains(out, "auth module"))
 		}
 		ok := waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible)
 		if !ok {
 			ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no rendered coordination step yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
 			wakeMayor("wake mayor before communication retry")
-			nudgeMayor("re-nudge mayor before communication retry")
+			nudgeMayor(currentMayorSessionID("resolve mayor session before communication retry"), "re-nudge mayor before communication retry")
 		}
 		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			restartCity("mayor still did not surface the communication flow after wake")
-			submitMayorTurn("submit mayor turn after hidden restart")
+			nudgeMayor(currentMayorSessionID("resolve mayor session after hidden restart"), "re-nudge mayor after hidden restart")
 		}
 		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			t.Fatalf("peek mayor did not surface communication flow in time:\n%s", out)
