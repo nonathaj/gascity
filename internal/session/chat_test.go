@@ -3,8 +3,6 @@ package session
 import (
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestSessionMutationLocksArePerSession(t *testing.T) {

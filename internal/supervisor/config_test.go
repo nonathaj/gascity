@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestLoadConfigMissing(t *testing.T) {

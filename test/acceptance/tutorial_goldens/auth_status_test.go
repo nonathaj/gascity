@@ -4,8 +4,6 @@ package tutorialgoldens
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestClaudeStatusOutputLoggedIn(t *testing.T) {

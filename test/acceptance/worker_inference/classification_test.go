@@ -16,7 +16,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/gastownhall/gascity/internal/testenv"
 	workerpkg "github.com/gastownhall/gascity/internal/worker"
 	"github.com/gastownhall/gascity/internal/worker/workertest"
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"

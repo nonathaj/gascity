@@ -3,8 +3,6 @@ package workertest
 import (
 	"reflect"
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestPhase2CatalogDataIsAuthoritative(t *testing.T) {

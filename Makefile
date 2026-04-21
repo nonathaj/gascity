@@ -132,6 +132,7 @@ GOPATH_VAL    := $(shell go env GOPATH)
 GOCACHE_VAL   := $(shell go env GOCACHE)
 GOMODCACHE_VAL := $(shell go env GOMODCACHE)
 GOTMPDIR_VAL  := $(shell go env GOTMPDIR)
+GOROOT_VAL    := $(shell go env GOROOT)
 TEST_ENV = env -i \
 	PATH="$$PATH" \
 	HOME="$$HOME" \
@@ -145,6 +146,19 @@ TEST_ENV = env -i \
 	GOCACHE="$(GOCACHE_VAL)" \
 	GOMODCACHE="$(GOMODCACHE_VAL)" \
 	GOTMPDIR="$(GOTMPDIR_VAL)" \
+	GOROOT="$${GOROOT:-$(GOROOT_VAL)}" \
+	GOENV="$${GOENV-}" \
+	GOFLAGS="$${GOFLAGS-}" \
+	GO111MODULE="$${GO111MODULE-}" \
+	GOEXPERIMENT="$${GOEXPERIMENT-}" \
+	GOPROXY="$${GOPROXY-}" \
+	GOPRIVATE="$${GOPRIVATE-}" \
+	GONOPROXY="$${GONOPROXY-}" \
+	GONOSUMDB="$${GONOSUMDB-}" \
+	GOSUMDB="$${GOSUMDB-}" \
+	GOINSECURE="$${GOINSECURE-}" \
+	GOVCS="$${GOVCS-}" \
+	GOWORK="$${GOWORK-}" \
 	$(EXTRA_TEST_ENV)
 
 ## test: run fast unit tests (skip integration-tagged and GC_FAST_UNIT-gated process tests)
@@ -157,25 +171,25 @@ test:
 ## test-cmd-gc-process: run the full non-short cmd/gc suite, including the
 ## process-backed lifecycle coverage routed out of the default fast loop
 test-cmd-gc-process:
-	GC_FAST_UNIT=0 go test ./cmd/gc
+	$(TEST_ENV) GC_FAST_UNIT=0 go test ./cmd/gc
 
 ## test-worker-core: run deterministic worker transcript and continuation conformance
 test-worker-core:
-	go test -count=1 ./internal/worker/workertest -run '^TestPhase1'
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 ./internal/worker/workertest -run '^TestPhase1'
 
 ## test-worker-core-phase2: run deterministic phase-2 worker conformance coverage
 test-worker-core-phase2:
-	go test -count=1 ./internal/worker/workertest -run '^TestPhase2'
-	go test -count=1 ./internal/runtime/tmux -run '^TestPhase2'
-	go test -count=1 ./cmd/gc -run '^TestPhase2(StartupMaterialization|InitialInputDelivery|InputResultFailureClassification)$$'
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 ./internal/worker/workertest -run '^TestPhase2'
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 ./internal/runtime/tmux -run '^TestPhase2'
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 ./cmd/gc -run '^TestPhase2(StartupMaterialization|InitialInputDelivery|InputResultFailureClassification)$$'
 
 ## test-worker-core-phase2-real-transport: run the live transport proof for phase 2
 test-worker-core-phase2-real-transport:
-	go test -count=1 ./cmd/gc -run '^TestPhase2WorkerCoreRealTransportProof$$'
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 -tags integration ./cmd/gc -run '^TestPhase2WorkerCoreRealTransportProof$$'
 
 ## test-worker-inference-phase3: run the live worker inference conformance package
 test-worker-inference-phase3:
-	go test -count=1 -tags acceptance_c -timeout 45m -v ./test/acceptance/worker_inference
+	$(TEST_ENV) PROFILE="$${PROFILE-}" GC_WORKER_REPORT_DIR="$${GC_WORKER_REPORT_DIR-}" go test -count=1 -tags acceptance_c -timeout 45m -v ./test/acceptance/worker_inference
 
 ## test-acceptance: run acceptance tests (Tier A — fast, <5 min, every PR).
 ## ACCEPTANCE_TIMEOUT overrides the go-test timeout (defaults to 5m on
@@ -183,26 +197,26 @@ test-worker-inference-phase3:
 ## noticeably slower than systemd).
 ACCEPTANCE_TIMEOUT ?= 5m
 test-acceptance:
-	go test -tags acceptance_a -timeout $(ACCEPTANCE_TIMEOUT) ./test/acceptance/...
+	$(TEST_ENV) go test -tags acceptance_a -timeout $(ACCEPTANCE_TIMEOUT) ./test/acceptance/...
 
 ## test-acceptance-b: run Tier B acceptance tests (lifecycle, ~5 min, nightly)
 test-acceptance-b:
-	go test -tags acceptance_b -timeout 10m -v ./test/acceptance/tier_b/...
+	$(TEST_ENV) go test -tags acceptance_b -timeout 10m -v ./test/acceptance/tier_b/...
 
 ## test-acceptance-c: run Tier C acceptance tests (real inference, ~30-40 min, manual/nightly)
 test-acceptance-c:
-	go test -tags acceptance_c -timeout 45m -v ./test/acceptance/tier_c/...
+	$(TEST_ENV) go test -tags acceptance_c -timeout 45m -v ./test/acceptance/tier_c/...
 
 ## test-acceptance-all: run all acceptance tiers
 test-acceptance-all: test-acceptance test-acceptance-b test-acceptance-c
 
 ## test-integration: run all tests including integration (tmux, etc.)
 test-integration:
-	go test -tags integration -timeout 30m ./...
+	$(TEST_ENV) go test -tags integration -timeout 30m ./...
 
 ## test-integration-huma: run just the Huma binary smoke test
 test-integration-huma:
-	go test -tags integration -timeout 2m -run TestHumaBinary ./test/integration/
+	$(TEST_ENV) go test -tags integration -timeout 2m -run TestHumaBinary ./test/integration/
 
 ## test-integration-shards: run the CI integration shards sequentially
 test-integration-shards: test-integration-packages test-integration-review-formulas test-integration-bdstore test-integration-rest-smoke test-integration-rest-full
@@ -306,13 +320,16 @@ test-integration-rest-cover:
 ## test-chaos-dolt: run the opt-in managed Dolt chaos integration test
 ## Set GC_DOLT_CHAOS_DURATION and GC_DOLT_CHAOS_SEED to control runtime and replay failures.
 test-chaos-dolt:
-	GC_DOLT_CHAOS_DURATION=$${GC_DOLT_CHAOS_DURATION:-2m} go test -tags 'integration chaos_dolt' -timeout 45m -run 'TestManagedDoltChaos_CityAndRigCallersRemainConsistent' -count=1 ./test/integration
+	$(TEST_ENV) \
+		GC_DOLT_CHAOS_DURATION=$${GC_DOLT_CHAOS_DURATION:-2m} \
+		GC_DOLT_CHAOS_SEED="$${GC_DOLT_CHAOS_SEED-}" \
+		go test -tags 'integration chaos_dolt' -timeout 45m -run 'TestManagedDoltChaos_CityAndRigCallersRemainConsistent' -count=1 ./test/integration
 
 
 ## test-tutorial-goldens: run tutorial golden acceptance tests (requires tmux, dolt, bd, claude auth)
 ## These exercise the published tutorial flow with real inference — run before each release.
 test-tutorial-goldens:
-	go test -tags acceptance_c -timeout 90m -v ./test/acceptance/tutorial_goldens/...
+	$(TEST_ENV) go test -tags acceptance_c -timeout 90m -v ./test/acceptance/tutorial_goldens/...
 
 ## test-tutorial: alias for tutorial goldens
 test-tutorial: test-tutorial-goldens
@@ -322,7 +339,7 @@ test-tutorial-regression: test-tutorial-goldens
 
 ## check-docs: verify docs sync tests
 check-docs:
-	go test ./test/docsync
+	$(TEST_ENV) go test ./test/docsync
 
 # Packages for coverage — exclude noise:
 #   session/tmux: integration-test-only, not meaningful for unit coverage
@@ -333,7 +350,7 @@ UNIT_COVER_PKGS := $(shell go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Im
 ## The skipped cmd/gc process-backed scenarios remain covered by
 ## `make test-cmd-gc-process` locally and the CI `test-integration-packages` shard.
 test-cover:
-	GC_FAST_UNIT=1 go test -timeout 8m -coverprofile=coverage.txt $(UNIT_COVER_PKGS)
+	$(TEST_ENV) GC_FAST_UNIT=1 go test -timeout 8m -coverprofile=coverage.txt $(UNIT_COVER_PKGS)
 
 ## cover: run tests and show coverage report
 cover: test-cover
@@ -366,7 +383,7 @@ install-buildx:
 
 ## test-mcp-mail: run mcp_agent_mail live conformance test (auto-starts server)
 test-mcp-mail:
-	GC_TEST_MCP_MAIL=1 go test ./internal/mail/exec/ -run TestMCPMailConformanceLive -v -count=1
+	$(TEST_ENV) GC_TEST_MCP_MAIL=1 go test ./internal/mail/exec/ -run TestMCPMailConformanceLive -v -count=1
 
 ## test-docker: run Docker session provider integration tests
 test-docker: check-docker
@@ -374,7 +391,7 @@ test-docker: check-docker
 
 ## test-k8s: run K8s session provider conformance tests
 test-k8s:
-	go test -tags integration ./test/integration/ -run TestK8sSessionConformance -v -count=1
+	$(TEST_ENV) go test -tags integration ./test/integration/ -run TestK8sSessionConformance -v -count=1
 
 ## setup: install tools and git hooks
 setup: install-tools
@@ -396,7 +413,7 @@ dashboard-dev:
 ## dashboard-check: typecheck + build the SPA, then go test the static handler
 dashboard-check: dashboard-build
 	cd cmd/gc/dashboard/web && npm run typecheck
-	go test ./cmd/gc/dashboard/...
+	$(TEST_ENV) go test ./cmd/gc/dashboard/...
 
 ## dashboard-ci: rebuild the SPA bundle and fail if the tracked dist/ is stale.
 ## Used by CI to enforce that cmd/gc/dashboard/web/dist/ matches the source.

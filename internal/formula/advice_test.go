@@ -2,8 +2,6 @@ package formula
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestMatchGlob(t *testing.T) {

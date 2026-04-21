@@ -2,8 +2,6 @@ package convergence
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestRequiresToken(t *testing.T) {

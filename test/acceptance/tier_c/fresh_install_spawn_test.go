@@ -17,7 +17,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/gastownhall/gascity/internal/testenv"
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"
 )
 

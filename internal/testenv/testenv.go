@@ -2,15 +2,24 @@
 // time so a leak from an agent session (e.g. GC_CITY pointing at a live city)
 // cannot reach test code and corrupt that city. See PR #746 for the incident.
 //
-// Every test package in this repo must blank-import this package:
+// Every real test directory in this repo must contain an untagged
+// `testenv_import_test.go` that blank-imports this package:
 //
 //	import _ "github.com/gastownhall/gascity/internal/testenv"
 //
-// TestRequiresTestenvImport in lint_test.go enforces the import.
+// TestRequiresDedicatedTestenvImportFile in lint_test.go enforces that exact
+// layout, rejects stale stubs, and rejects ad hoc imports elsewhere so
+// build-tagged files cannot silently satisfy the lint while being excluded
+// from the default test binary.
 //
-// The Makefile `test` target also wraps `go test` in `env -i` so the same
-// guarantee holds when you run `make test` / `make check`. This package
-// covers the direct-`go test` and IDE-runner paths.
+// The Makefile test targets and integration shard script also wrap `go test`
+// in `env -i` so the same guarantee holds there. This package covers the
+// direct-`go test` and IDE-runner paths at test-binary init time.
+//
+// Scope boundary: this scrub runs before test code, not before arbitrary
+// production-package init order. TestNoLeakVectorReadsAtPackageInit enforces
+// that non-test code does not read the leak-vector vars during package init or
+// top-level var initialization, which keeps the direct-`go test` path safe.
 //
 // Scope: only the named LeakVectorVars below are scrubbed. Test-gate vars
 // (GC_FAST_UNIT, GC_DOLT_REAL_BINARY, GC_*_HELPER, ...) flow through

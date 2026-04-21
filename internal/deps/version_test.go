@@ -2,8 +2,6 @@ package deps
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestCompareVersions(t *testing.T) {

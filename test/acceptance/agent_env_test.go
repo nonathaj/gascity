@@ -17,7 +17,6 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/gastownhall/gascity/internal/testenv"
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"
 )
 

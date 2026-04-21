@@ -7,8 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // TestInjectSupervisorURL verifies the meta-tag placeholder gets

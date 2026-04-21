@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestDiscoverRootPrefersFlatFiles(t *testing.T) {

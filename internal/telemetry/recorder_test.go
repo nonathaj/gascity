@@ -6,7 +6,6 @@ import (
 	"sync"
 	"testing"
 
-	_ "github.com/gastownhall/gascity/internal/testenv"
 	otellog "go.opentelemetry.io/otel/log"
 )
 

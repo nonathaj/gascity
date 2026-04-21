@@ -3,8 +3,6 @@ package beads
 import (
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestIsContainerType(t *testing.T) {

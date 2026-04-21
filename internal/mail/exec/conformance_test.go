@@ -7,7 +7,6 @@ import (
 
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/mailtest"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // statefulScript returns a shell script body that maintains message state

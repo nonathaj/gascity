@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestAliveTreatsZombieAsDead(t *testing.T) {

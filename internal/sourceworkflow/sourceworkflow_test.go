@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestWithLockHonorsContextWhileWaitingForLocalLock(t *testing.T) {

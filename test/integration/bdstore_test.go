@@ -18,7 +18,6 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/beads/beadstest"
 	"github.com/gastownhall/gascity/internal/doctor"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 const (

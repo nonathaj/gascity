@@ -2,8 +2,6 @@ package shellquote
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestQuote(t *testing.T) {

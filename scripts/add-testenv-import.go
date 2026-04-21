@@ -1,18 +1,22 @@
 //go:build ignore
 
-// add-testenv-import injects `_ "github.com/gastownhall/gascity/internal/testenv"`
-// into every test directory that does not already have it. Idempotent.
+// add-testenv-import normalizes internal/testenv wiring across the repo. It
+// writes a canonical untagged testenv_import_test.go into every real test
+// directory, removes stale generated files from directories that no longer
+// contain tests, and scrubs legacy direct imports from non-canonical test
+// files. Idempotent.
 //
 // Usage: go run scripts/add-testenv-import.go
 //
 // See PR #746 for context — this script wires every test binary into the
-// GC_* env scrub. Without the import, the lint test (TestRequiresTestenvImport)
-// fails for that directory.
+// GC_* env scrub via a dedicated file that is always present in the default
+// test build for that directory.
 package main
 
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -21,22 +25,23 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"golang.org/x/tools/go/ast/astutil"
 )
 
-const importPath = "github.com/gastownhall/gascity/internal/testenv"
+const (
+	importPath = "github.com/gastownhall/gascity/internal/testenv"
+	importFile = "testenv_import_test.go"
+)
 
 func main() {
 	root, err := repoRoot()
 	check(err)
 
-	type fileInfo struct {
-		path string
-		pkg  string
+	type dirInfo struct {
+		packages      map[string]bool
+		testFiles     []string
+		canonicalFile string
 	}
-	dirFiles := map[string][]fileInfo{}
-	dirHasImport := map[string]bool{}
+	dirInfos := map[string]*dirInfo{}
 
 	skipDirs := map[string]bool{"vendor": true, "node_modules": true, ".git": true}
 
@@ -58,63 +63,175 @@ func main() {
 			return nil
 		}
 		fset := token.NewFileSet()
-		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		f, err := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
-		dirFiles[rel] = append(dirFiles[rel], fileInfo{path: path, pkg: f.Name.Name})
-		for _, imp := range f.Imports {
-			if strings.Trim(imp.Path.Value, `"`) == importPath {
-				dirHasImport[rel] = true
-			}
+		info := dirInfos[rel]
+		if info == nil {
+			info = &dirInfo{packages: map[string]bool{}}
+			dirInfos[rel] = info
 		}
+		if filepath.Base(path) == importFile {
+			info.canonicalFile = path
+			return nil
+		}
+		info.packages[f.Name.Name] = true
+		info.testFiles = append(info.testFiles, path)
 		return nil
 	})
 	check(err)
 
-	dirs := make([]string, 0, len(dirFiles))
-	for d := range dirFiles {
+	dirs := make([]string, 0, len(dirInfos))
+	for d := range dirInfos {
 		dirs = append(dirs, d)
 	}
 	sort.Strings(dirs)
 
-	added := 0
+	written := 0
+	removed := 0
+	scrubbed := 0
+	unchanged := 0
 	for _, dir := range dirs {
-		if dirHasImport[dir] {
+		info := dirInfos[dir]
+		if len(info.testFiles) == 0 {
+			if info.canonicalFile != "" {
+				check(os.Remove(info.canonicalFile))
+				fmt.Printf("removed stale: %s\n", info.canonicalFile)
+				removed++
+			}
 			continue
 		}
-		files := dirFiles[dir]
-		sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
-		// Prefer the first non-xtest file; only fall back to xtest if that's
-		// all the directory has.
-		target := files[0]
-		for _, f := range files {
-			if !strings.HasSuffix(f.pkg, "_test") {
-				target = f
-				break
+		target := filepath.Join(root, dir, importFile)
+		content, err := renderImportFile(preferredPackage(info.packages))
+		check(err)
+
+		existing, err := os.ReadFile(target)
+		switch {
+		case err == nil:
+			if !bytes.Equal(existing, content) {
+				check(os.WriteFile(target, content, 0o644))
+				fmt.Printf("wrote: %s\n", target)
+				written++
+			}
+		case os.IsNotExist(err):
+			check(os.WriteFile(target, content, 0o644))
+			fmt.Printf("wrote: %s\n", target)
+			written++
+		default:
+			check(err)
+		}
+
+		dirChanged := false
+		for _, path := range info.testFiles {
+			changed, err := scrubLegacyImport(path)
+			check(err)
+			if changed {
+				fmt.Printf("scrubbed legacy import: %s\n", path)
+				scrubbed++
+				dirChanged = true
 			}
 		}
-		check(injectImport(target.path))
-		fmt.Printf("injected: %s\n", target.path)
-		added++
+		if !dirChanged && err == nil && bytes.Equal(existing, content) {
+			unchanged++
+		}
 	}
-	fmt.Printf("\n%d file(s) updated, %d directory already up-to-date.\n", added, len(dirs)-added)
+	fmt.Printf(
+		"\n%d file(s) written, %d stale file(s) removed, %d legacy import(s) scrubbed, %d directory already up-to-date.\n",
+		written,
+		removed,
+		scrubbed,
+		unchanged,
+	)
 }
 
-func injectImport(path string) error {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+func preferredPackage(packages map[string]bool) string {
+	names := make([]string, 0, len(packages))
+	for pkg := range packages {
+		names = append(names, pkg)
+	}
+	sort.Strings(names)
+	for _, pkg := range names {
+		if !strings.HasSuffix(pkg, "_test") {
+			return pkg
+		}
+	}
+	return names[0]
+}
+
+func renderImportFile(pkg string) ([]byte, error) {
+	src := fmt.Sprintf(`// Code generated by go run scripts/add-testenv-import.go; DO NOT EDIT.
+
+package %s
+
+import _ %q
+`, pkg, importPath)
+	return format.Source([]byte(src))
+}
+
+func scrubLegacyImport(path string) (bool, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return false, err
 	}
-	if !astutil.AddNamedImport(fset, f, "_", importPath) {
-		return nil // already present
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, data, parser.ParseComments)
+	if err != nil {
+		return false, err
 	}
+
+	changed := false
+	decls := make([]ast.Decl, 0, len(file.Decls))
+	imports := make([]*ast.ImportSpec, 0, len(file.Imports))
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT {
+			decls = append(decls, decl)
+			continue
+		}
+		specs := make([]ast.Spec, 0, len(gen.Specs))
+		for _, spec := range gen.Specs {
+			imp := spec.(*ast.ImportSpec)
+			if strings.Trim(imp.Path.Value, `"`) == importPath {
+				changed = true
+				continue
+			}
+			specs = append(specs, spec)
+			imports = append(imports, imp)
+		}
+		if len(specs) == 0 {
+			continue
+		}
+		if len(specs) != len(gen.Specs) {
+			gen.Specs = specs
+		}
+		decls = append(decls, gen)
+	}
+	if !changed {
+		return false, nil
+	}
+	file.Decls = decls
+	file.Imports = imports
+
+	out, err := formatNode(fset, file)
+	if err != nil {
+		return false, err
+	}
+	if bytes.Equal(out, data) {
+		return false, nil
+	}
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func formatNode(fset *token.FileSet, file *ast.File) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, f); err != nil {
-		return err
+	if err := format.Node(&buf, fset, file); err != nil {
+		return nil, err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644)
+	return buf.Bytes(), nil
 }
 
 func repoRoot() (string, error) {

@@ -15,7 +15,6 @@ import (
 	"github.com/gastownhall/gascity/internal/formulatest"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/sourceworkflow"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // --- Test helpers ---

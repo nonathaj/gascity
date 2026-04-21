@@ -3,8 +3,6 @@ package overlay
 import (
 	"encoding/json"
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestIsMergeablePath(t *testing.T) {

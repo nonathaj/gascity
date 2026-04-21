@@ -2,8 +2,6 @@ package mail
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestResolveRecipientHuman(t *testing.T) {

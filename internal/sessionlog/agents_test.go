@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // writeTestFile is a test helper that writes a file and fails the test on error.

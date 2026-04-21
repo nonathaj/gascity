@@ -7,7 +7,6 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestSessionSpecForResolvedRuntimeRequiresCommand(t *testing.T) {

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/runtime"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // shortTempDir returns a temp directory short enough for Unix socket paths

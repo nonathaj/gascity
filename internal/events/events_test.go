@@ -10,8 +10,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 // Compile-time interface checks.

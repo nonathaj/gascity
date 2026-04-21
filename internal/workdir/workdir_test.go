@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/config"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func intPtr(n int) *int { return &n }

@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestFormatBeaconAt_Basic(t *testing.T) {

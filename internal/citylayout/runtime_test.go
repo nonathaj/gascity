@@ -2,8 +2,6 @@ package citylayout
 
 import (
 	"testing"
-
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestPackRuntimeEnv(t *testing.T) {

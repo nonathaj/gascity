@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/config"
-	_ "github.com/gastownhall/gascity/internal/testenv"
 )
 
 func TestResolveSessionTemplateAgentAcceptsConfiguredTemplates(t *testing.T) {
