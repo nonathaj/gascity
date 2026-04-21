@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -181,49 +182,59 @@ func TestTutorial04Communication(t *testing.T) {
 
 	t.Run("gc session peek mayor --lines 6", func(t *testing.T) {
 		var out string
-		reviewerHandoffProved := false
-		mayorCommunicationVisible := func() bool {
+		peekShowsCommunication := func(lines int) bool {
 			var err error
-			out, err = ws.runShell("gc session peek mayor --lines 6", "")
-			if err == nil {
-				if strings.Contains(out, "Review needed") ||
-					strings.Contains(out, "auth module changes in my-project") ||
-					strings.Contains(out, "Review the auth module changes") ||
-					(strings.Contains(out, "my-project/reviewer") && strings.Contains(out, "auth module")) {
-					reviewerHandoffProved = false
-					return true
-				}
-			}
-			if reviewerHandoffExists() {
-				reviewerHandoffProved = true
-				return true
-			}
-			return false
-		}
-		waitForCommunication := func(timeout time.Duration) bool {
-			reviewerHandoffProved = false
-			if !waitForCondition(t, timeout, 2*time.Second, mayorCommunicationVisible) {
+			out, err = ws.runShell("gc session peek mayor --lines "+strconv.Itoa(lines), "")
+			if err != nil {
 				return false
 			}
-			if reviewerHandoffProved {
-				ws.noteWarning("tutorial 04 runtime workaround: the 6-line peek window did not retain the routing text, so the page driver accepts the routed reviewer bead itself as proof of the documented mayor-to-reviewer handoff")
+			return strings.Contains(out, "Review needed") ||
+				strings.Contains(out, "auth module changes in my-project") ||
+				strings.Contains(out, "Review the auth module changes") ||
+				(strings.Contains(out, "my-project/reviewer") && strings.Contains(out, "auth module"))
+		}
+		mayorCommunicationVisible := func() bool {
+			return peekShowsCommunication(6)
+		}
+		waitForRecordedCommunication := func(context string) bool {
+			t.Helper()
+			if !waitForCondition(t, 20*time.Second, 2*time.Second, func() bool {
+				if !reviewerHandoffExists() {
+					return false
+				}
+				return peekShowsCommunication(20)
+			}) {
+				return false
 			}
+			ws.noteWarning("tutorial 04 runtime workaround: the 6-line peek window slid past the routing text %s, so the page driver confirmed the same communication in a wider hidden peek window after proving the reviewer handoff bead existed", context)
 			return true
 		}
-		if waitForCommunication(communicationPeekTimeout) {
+		if waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible) {
+			return
+		}
+		if waitForRecordedCommunication("after initial peek timeout") {
 			return
 		}
 		ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no proven reviewer handoff yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
 		wakeMayor("wake mayor before communication retry")
 		nudgeMayor("re-nudge mayor before communication retry")
-		if waitForCommunication(communicationRetryTimeout) {
+		if waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
+			return
+		}
+		if waitForRecordedCommunication("after wake retry") {
 			return
 		}
 		ws.noteWarning("tutorial 04 runtime workaround: wake-only recovery can still leave mayor runtime state wedged, so the page driver force-kills just the mayor session and lets the named-session reconciler recreate it without restarting the whole city")
 		killMayor("kill mayor before final communication retry")
 		waitForMayorReady("after tutorial 04 session recycle")
 		nudgeMayor("re-nudge mayor after final communication recycle")
-		if !waitForCommunication(communicationRetryTimeout) {
+		if waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
+			return
+		}
+		if waitForRecordedCommunication("after final communication recycle") {
+			return
+		}
+		if !waitForCondition(t, 1*time.Second, 1*time.Second, mayorCommunicationVisible) {
 			t.Fatalf("peek mayor did not surface communication flow in time:\n%s", out)
 		}
 	})
