@@ -145,6 +145,7 @@ func TestTutorial04Communication(t *testing.T) {
 	communicationNudge := `Check mail and hook status, then act accordingly`
 	communicationPeekTimeout := 90 * time.Second
 	communicationRetryTimeout := 90 * time.Second
+	communicationRecordedLines := 100
 	nudgeMayor := func(context string) {
 		out, err := ws.runShell(`gc session nudge mayor "`+communicationNudge+`"`, "")
 		if err != nil {
@@ -202,11 +203,11 @@ func TestTutorial04Communication(t *testing.T) {
 				if !reviewerHandoffExists() {
 					return false
 				}
-				return peekShowsCommunication(20)
+				return peekShowsCommunication(communicationRecordedLines)
 			}) {
 				return false
 			}
-			ws.noteWarning("tutorial 04 runtime workaround: the 6-line peek window slid past the routing text %s, so the page driver confirmed the same communication in a wider hidden peek window after proving the reviewer handoff bead existed", context)
+			ws.noteWarning("tutorial 04 runtime workaround: the 6-line peek window slid past the routing text %s, so the page driver confirmed the same communication in a wider hidden %d-line peek window after proving the reviewer handoff bead existed", context, communicationRecordedLines)
 			return true
 		}
 		if waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible) {
