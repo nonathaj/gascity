@@ -48,6 +48,27 @@ read_runtime_state_string() (
   sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$state_file" 2>/dev/null | head -1 || true
 )
 
+pid_is_running() (
+  pid="$1"
+
+  case "$pid" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  if kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  if command -v ps >/dev/null 2>&1; then
+    ps_pid=$(ps -p "$pid" -o pid= 2>/dev/null | tr -d '[:space:]')
+    [ "$ps_pid" = "$pid" ] && return 0
+  fi
+
+  return 1
+)
+
 managed_runtime_listener_pid() (
   port="$1"
 
@@ -68,7 +89,7 @@ managed_runtime_listener_pid() (
             continue
             ;;
         esac
-        if kill -0 "$holder_pid" 2>/dev/null; then
+        if pid_is_running "$holder_pid"; then
           printf '%s\n' "$holder_pid"
           break
         fi
@@ -124,7 +145,7 @@ managed_runtime_port() (
   [ -n "$pid" ] || return 0
   [ -n "$port" ] || return 0
   [ "$data_dir" = "$expected_data_dir" ] || return 0
-  kill -0 "$pid" 2>/dev/null || return 0
+  pid_is_running "$pid" || return 0
 
   holder_pid=$(managed_runtime_listener_pid "$port" || true)
   if [ -n "$holder_pid" ]; then
