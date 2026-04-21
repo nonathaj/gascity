@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,10 +135,10 @@ func TestTutorial04Communication(t *testing.T) {
 	})
 
 	communicationNudge := `Check mail and hook status, then act accordingly`
-	communicationFollowUp := `Continue the earlier review-coordination request for the auth work in the my-project rig. Route it to the reviewer agent and show that coordination in the transcript.`
 	communicationPeekTimeout := 90 * time.Second
 	communicationRetryTimeout := 90 * time.Second
 	communicationSettleTimeout := 10 * time.Second
+	var reviewerWorkID string
 	nudgeMayor := func(context string) {
 		out, err := ws.runShell(`gc session nudge mayor "`+communicationNudge+`"`, "")
 		if err != nil {
@@ -149,9 +148,9 @@ func TestTutorial04Communication(t *testing.T) {
 			t.Fatalf("%s output mismatch:\n%s", context, out)
 		}
 	}
-	submitMayorFollowUp := func(context string) {
+	submitMayorFollowUp := func(context, message string) {
 		t.Helper()
-		out, err := ws.runShell(`gc session submit mayor "`+communicationFollowUp+`" --intent follow_up`, "")
+		out, err := ws.runShell(`gc session submit mayor "`+message+`" --intent follow_up`, "")
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", context, err, out)
 		}
@@ -160,42 +159,28 @@ func TestTutorial04Communication(t *testing.T) {
 			t.Fatalf("%s output mismatch:\n%s", context, out)
 		}
 	}
-	mayorMailConsumed := func() bool {
-		if tutorialMailID == "" {
+	reviewerHandoffExists := func() bool {
+		out, err := ws.runShell(`bd list --json --all --limit=5 --metadata-field gc.routed_to=my-project/reviewer --title "Review the auth module changes"`, "")
+		if err != nil {
 			return false
 		}
-		out, err := ws.runShell("bd show "+tutorialMailID+" --json", "")
-		if err == nil {
-			var beads []struct {
-				ID     string   `json:"id"`
-				Status string   `json:"status"`
-				Labels []string `json:"labels"`
-			}
-			if err := json.Unmarshal([]byte(out), &beads); err == nil && len(beads) == 1 && beads[0].ID == tutorialMailID {
-				if beads[0].Status != "" && beads[0].Status != "open" {
-					return true
-				}
-				for _, label := range beads[0].Labels {
-					if label == "read" {
-						return true
-					}
-				}
-			}
+		var beads []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
 		}
-		countOut, countErr := ws.runShell("gc mail count mayor", "")
-		if countErr == nil {
-			fields := strings.Fields(strings.TrimSpace(countOut))
-			if len(fields) >= 4 {
-				unreadCount, err := strconv.Atoi(strings.TrimSuffix(fields[2], ","))
-				if err == nil && unreadCount == 0 && fields[3] == "unread" {
-					return true
-				}
+		if err := json.Unmarshal([]byte(out), &beads); err != nil {
+			return false
+		}
+		for _, bead := range beads {
+			if bead.Title == "Review the auth module changes" {
+				reviewerWorkID = bead.ID
+				return true
 			}
 		}
 		return false
 	}
-	waitForMailConsumption := func() bool {
-		return waitForCondition(t, communicationSettleTimeout, 1*time.Second, mayorMailConsumed)
+	waitForReviewerHandoff := func() bool {
+		return waitForCondition(t, communicationSettleTimeout, 1*time.Second, reviewerHandoffExists)
 	}
 
 	t.Run(`gc session nudge mayor "Check mail and hook status, then act accordingly"`, func(t *testing.T) {
@@ -218,28 +203,40 @@ func TestTutorial04Communication(t *testing.T) {
 		if waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible) {
 			return
 		}
-		if waitForMailConsumption() {
-			// Once the exact tutorial mail bead is marked read or archived, hook delivery is proven.
-			// The follow-up only exists to make that already-consumed request visible in peek.
-			ws.noteWarning("tutorial 04 runtime workaround: hooks already consumed the tutorial mail, so the page driver submits an explicit follow-up that surfaces the completed review request in peek output")
-			submitMayorFollowUp("submit follow-up after mayor consumed tutorial 04 mail")
+		if waitForReviewerHandoff() {
+			ws.noteWarning("tutorial 04 runtime workaround: mayor already created the reviewer handoff bead, so the page driver submits a visibility-only follow-up that surfaces that existing coordination in peek output without creating new work")
+			submitMayorFollowUp(
+				"submit follow-up after reviewer handoff proof",
+				`The earlier auth-change review already produced reviewer work bead `+reviewerWorkID+`. Summarize that existing routing in the transcript without creating or routing any new work.`,
+			)
 		} else {
-			ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no rendered coordination step yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
+			ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no proven reviewer handoff yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
 			wakeMayor("wake mayor before communication retry")
 			nudgeMayor("re-nudge mayor before communication retry")
 		}
 		if waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			return
 		}
-		ws.noteWarning("tutorial 04 runtime workaround: wake-only recovery can still leave mayor runtime state wedged, so the page driver force-kills just the mayor session and lets the named-session reconciler recreate it without restarting the whole city")
-		killMayor("kill mayor before final communication retry")
-		waitForMayorReady("after tutorial 04 session recycle")
-		if waitForMailConsumption() {
-			ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor the tutorial mail is already consumed, so the page driver submits one explicit follow-up to surface the already-completed review request in peek output")
-			submitMayorFollowUp("submit follow-up after mayor recycle")
+		if waitForReviewerHandoff() {
+			ws.noteWarning("tutorial 04 runtime workaround: after the wake retry the reviewer handoff bead exists, so the page driver submits one visibility-only follow-up instead of asking mayor to route the same work again")
+			submitMayorFollowUp(
+				"submit follow-up after wake retry handoff proof",
+				`Reviewer work bead `+reviewerWorkID+` already covers the earlier auth-change review. Summarize that existing coordination in the transcript without creating new work.`,
+			)
 		} else {
-			ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor the tutorial mail is still unread, so the page driver requeues the same mail-driven nudge against the fresh runtime")
-			nudgeMayor("re-nudge mayor after final communication recycle")
+			ws.noteWarning("tutorial 04 runtime workaround: wake-only recovery can still leave mayor runtime state wedged, so the page driver force-kills just the mayor session and lets the named-session reconciler recreate it without restarting the whole city")
+			killMayor("kill mayor before final communication retry")
+			waitForMayorReady("after tutorial 04 session recycle")
+			if waitForReviewerHandoff() {
+				ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor the reviewer handoff bead already exists, so the page driver submits a visibility-only follow-up against that proven routing")
+				submitMayorFollowUp(
+					"submit follow-up after mayor recycle handoff proof",
+					`Reviewer work bead `+reviewerWorkID+` already captures the earlier auth-change review. Summarize that prior routing in the transcript without creating or routing new work.`,
+				)
+			} else {
+				ws.noteWarning("tutorial 04 runtime workaround: after recycling mayor there is still no proven reviewer handoff bead, so the page driver gives the fresh runtime one final mail-driven nudge and otherwise lets the tutorial fail closed")
+				nudgeMayor("re-nudge mayor after final communication recycle")
+			}
 		}
 		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			t.Fatalf("peek mayor did not surface communication flow in time:\n%s", out)
