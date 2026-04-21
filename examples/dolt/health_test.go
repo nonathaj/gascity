@@ -440,6 +440,50 @@ exit 1
 	}
 }
 
+func TestRuntimeScriptPortPrecedenceParsesManagedRuntimeStateWithPortableSed(t *testing.T) {
+	cityPath := t.TempDir()
+	fakeBin := t.TempDir()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	port := listener.Addr().(*net.TCPAddr).Port
+	managedPort := strconv.Itoa(port)
+
+	realSed, err := exec.LookPath("sed")
+	if err != nil {
+		t.Fatalf("LookPath(sed): %v", err)
+	}
+
+	writeManagedRuntimeStateForScript(t, cityPath, port)
+	writeExecutable(t, filepath.Join(fakeBin, "sed"), fmt.Sprintf(`#!/bin/sh
+case "$2" in
+  *'\\(true\\|false\\)'*)
+    exit 0
+    ;;
+esac
+exec %q "$@"
+`, realSed))
+
+	root := repoRoot(t)
+	cmd := exec.Command("sh", "-c", `. "$GC_PACK_DIR/assets/scripts/runtime.sh"; printf '%s\n' "$GC_DOLT_PORT"`)
+	cmd.Env = filteredEnv("GC_CITY_PATH", "GC_PACK_DIR", "GC_DOLT_PORT", "GC_DOLT_HOST", "PATH")
+	cmd.Env = append(cmd.Env,
+		"GC_CITY_PATH="+cityPath,
+		"GC_PACK_DIR="+root,
+		"PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("runtime.sh failed: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != managedPort {
+		t.Fatalf("GC_DOLT_PORT = %q, want %q", got, managedPort)
+	}
+}
+
 func TestHealthScriptReportsRunningWhenLsofIsInconclusive(t *testing.T) {
 	cityPath := t.TempDir()
 	fakeBin := t.TempDir()
