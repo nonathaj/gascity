@@ -1313,6 +1313,93 @@ func TestRunWorkflowServeFollowUsesSweepFallback(t *testing.T) {
 	}
 }
 
+func TestRunWorkflowServeFollowResetsBackoffForProcessedEventAndPending(t *testing.T) {
+	eventsDir := t.TempDir()
+	ep := newTestProvider(t, eventsDir)
+
+	prevList := workflowServeList
+	prevControl := controlDispatcherServe
+	prevProvider := workflowServeOpenEventsProvider
+	prevWait := workflowServeWaitForWake
+	prevInterval := workflowServeIdlePollInterval
+	prevAttempts := workflowServeIdlePollAttempts
+	t.Cleanup(func() {
+		workflowServeList = prevList
+		controlDispatcherServe = prevControl
+		workflowServeOpenEventsProvider = prevProvider
+		workflowServeWaitForWake = prevWait
+		workflowServeIdlePollInterval = prevInterval
+		workflowServeIdlePollAttempts = prevAttempts
+	})
+
+	workflowServeOpenEventsProvider = func(io.Writer) (events.Provider, error) {
+		return ep, nil
+	}
+	workflowServeIdlePollInterval = 0
+	workflowServeIdlePollAttempts = 0
+
+	type waitCall struct {
+		idleSweeps int
+		sleepDur   time.Duration
+	}
+	var waitCalls []waitCall
+	stopErr := fmt.Errorf("stop after sequence")
+	workflowServeWaitForWake = func(_ <-chan workflowWatchResult, sleepDur time.Duration, idleSweeps int) (bool, error) {
+		waitCalls = append(waitCalls, waitCall{idleSweeps: idleSweeps, sleepDur: sleepDur})
+		switch len(waitCalls) {
+		case 1, 2, 3, 5:
+			return false, nil
+		case 4:
+			return true, nil
+		case 6:
+			return false, stopErr
+		default:
+			t.Fatalf("unexpected wait call %d", len(waitCalls))
+			return false, stopErr
+		}
+	}
+
+	calls := 0
+	workflowServeList = func(_, _ string, _ map[string]string) ([]hookBead, error) {
+		calls++
+		switch calls {
+		case 1, 2, 4, 5, 7:
+			return nil, nil
+		case 3:
+			return []hookBead{{ID: "gc-ready", Metadata: map[string]string{"gc.kind": "scope-check"}}}, nil
+		case 6:
+			return []hookBead{{ID: "gc-pending", Metadata: map[string]string{"gc.kind": "retry-eval"}}}, nil
+		default:
+			t.Fatalf("unexpected drain cycle %d", calls)
+			return nil, nil
+		}
+	}
+	controlDispatcherServe = func(beadID string, _ io.Writer, _ io.Writer) error {
+		if beadID == "gc-pending" {
+			return dispatch.ErrControlPending
+		}
+		return nil
+	}
+
+	agent := config.Agent{Name: "control-dispatcher"}
+	err := runWorkflowServeFollow(agent, agent.EffectiveWorkQuery(), t.TempDir(), nil, io.Discard)
+	if err != stopErr {
+		t.Fatalf("runWorkflowServeFollow error = %v, want %v", err, stopErr)
+	}
+
+	want := []waitCall{
+		{idleSweeps: 0, sleepDur: 1 * time.Second},
+		{idleSweeps: 1, sleepDur: 2 * time.Second},
+		{idleSweeps: 0, sleepDur: 1 * time.Second},
+		{idleSweeps: 0, sleepDur: 1 * time.Second},
+		{idleSweeps: 0, sleepDur: 1 * time.Second},
+		{idleSweeps: 0, sleepDur: 1 * time.Second},
+	}
+	if !slices.Equal(waitCalls, want) {
+		t.Fatalf("wait calls = %#v, want %#v", waitCalls, want)
+	}
+}
+
 func TestWorkflowEventRelevantAcceptsBeadLifecycleEvents(t *testing.T) {
 	for _, evt := range []events.Event{
 		{Type: events.BeadCreated},
@@ -2308,6 +2395,30 @@ func TestWaitForRelevantWorkflowWakeReturnsWatcherErr(t *testing.T) {
 	}
 	if eventWake {
 		t.Fatal("eventWake = true on error path, want false")
+	}
+}
+
+func TestWaitForRelevantWorkflowWakeTraceIncludesBackoffState(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "workflow-trace.log")
+	t.Setenv("GC_WORKFLOW_TRACE", tracePath)
+
+	eventCh := make(chan workflowWatchResult) // never receives
+
+	eventWake, err := waitForRelevantWorkflowWakeWithTrace(eventCh, 5*time.Millisecond, 3)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if eventWake {
+		t.Fatal("eventWake = true, want false when timer expires")
+	}
+
+	traceBytes, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	trace := string(traceBytes)
+	if !strings.Contains(trace, "serve wake-sweep idle_sweeps=3 sleep=5ms") {
+		t.Fatalf("trace = %q, want wake-sweep line with idle_sweeps and sleep", trace)
 	}
 }
 

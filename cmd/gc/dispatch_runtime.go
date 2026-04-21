@@ -77,6 +77,7 @@ var (
 	workflowServeIdlePollAttempts  = 3
 	workflowServeWakeSweepInterval = 1 * time.Second
 	workflowServeMaxIdleSleep      = 30 * time.Second
+	workflowServeWaitForWake       = waitForRelevantWorkflowWakeWithTrace
 )
 
 // followSleepDuration returns the sleep interval the --follow loop should use
@@ -199,27 +200,33 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 	return runWorkflowServeFollow(agentCfg, workQuery, workDir, workEnv, stderr)
 }
 
+type workflowServeDrainResult struct {
+	processedAny bool
+	pendingAny   bool
+}
+
 // drainWorkflowServeWork runs the control-dispatcher drain loop to completion
-// for a single invocation. Returns processedAny=true when it advanced at least
-// one control bead, so the --follow caller can reset its idle backoff.
-func drainWorkflowServeWork(agentCfg config.Agent, workQuery string, workDir string, workEnv map[string]string, stderr io.Writer) (bool, error) {
-	processedAny := false
+// for a single invocation. Returns whether it advanced a control bead and
+// whether the queue still contains only pending work so the --follow caller
+// can distinguish blocked work from genuine idle.
+func drainWorkflowServeWork(agentCfg config.Agent, workQuery string, workDir string, workEnv map[string]string, stderr io.Writer) (workflowServeDrainResult, error) {
+	result := workflowServeDrainResult{}
 	idlePolls := 0
 	for {
 		queue, err := workflowServeList(workflowServeQuery(workQuery), workDir, workEnv)
 		if err != nil {
 			workflowTracef("serve query-error agent=%s err=%v", agentCfg.QualifiedName(), err)
-			return processedAny, fmt.Errorf("querying control work for %s: %w", agentCfg.QualifiedName(), err)
+			return result, fmt.Errorf("querying control work for %s: %w", agentCfg.QualifiedName(), err)
 		}
 		if len(queue) == 0 {
-			if processedAny && idlePolls < workflowServeIdlePollAttempts {
+			if result.processedAny && idlePolls < workflowServeIdlePollAttempts {
 				idlePolls++
 				workflowTracef("serve idle-retry agent=%s attempt=%d", agentCfg.QualifiedName(), idlePolls)
 				time.Sleep(workflowServeIdlePollInterval)
 				continue
 			}
 			workflowTracef("serve idle-exit agent=%s", agentCfg.QualifiedName())
-			return processedAny, nil
+			return result, nil
 		}
 		idlePolls = 0
 		processedThisCycle := false
@@ -229,7 +236,7 @@ func drainWorkflowServeWork(agentCfg config.Agent, workQuery string, workDir str
 			kind := strings.TrimSpace(candidate.Metadata["gc.kind"])
 			if !isControlDispatcherKind(kind) {
 				workflowTracef("serve unexpected-kind bead=%s kind=%s", beadID, kind)
-				return processedAny, fmt.Errorf("bead %s has unexpected non-control kind %q", beadID, kind)
+				return result, fmt.Errorf("bead %s has unexpected non-control kind %q", beadID, kind)
 			}
 			workflowTracef("serve process bead=%s kind=%s", beadID, kind)
 			// controlDispatcherServe currently returns nil both when it
@@ -244,14 +251,15 @@ func drainWorkflowServeWork(agentCfg config.Agent, workQuery string, workDir str
 			if err := controlDispatcherServe(beadID, io.Discard, stderr); err != nil {
 				if errors.Is(err, dispatch.ErrControlPending) {
 					pendingCount++
+					result.pendingAny = true
 					workflowTracef("serve pending bead=%s kind=%s", beadID, kind)
 					continue
 				}
 				workflowTracef("serve process-error bead=%s kind=%s err=%v", beadID, kind, err)
-				return processedAny, fmt.Errorf("processing control bead %s: %w", beadID, err)
+				return result, fmt.Errorf("processing control bead %s: %w", beadID, err)
 			}
 			workflowTracef("serve processed bead=%s kind=%s", beadID, kind)
-			processedAny = true
+			result.processedAny = true
 			processedThisCycle = true
 			break
 		}
@@ -260,7 +268,7 @@ func drainWorkflowServeWork(agentCfg config.Agent, workQuery string, workDir str
 		}
 		if pendingCount > 0 {
 			workflowTracef("serve pending-queue agent=%s count=%d", agentCfg.QualifiedName(), pendingCount)
-			return processedAny, nil
+			return result, nil
 		}
 	}
 }
@@ -289,20 +297,31 @@ func runWorkflowServeFollow(agentCfg config.Agent, workQuery string, workDir str
 
 	idleSweeps := 0
 	for {
-		processed, err := drainWorkflowServeWork(agentCfg, workQuery, workDir, workEnv, stderr)
+		drainResult, err := drainWorkflowServeWork(agentCfg, workQuery, workDir, workEnv, stderr)
 		if err != nil {
 			return err
 		}
-		if processed {
+		if drainResult.processedAny || drainResult.pendingAny {
 			idleSweeps = 0
 		}
-		eventWake, err := waitForRelevantWorkflowWake(eventCh, followSleepDuration(idleSweeps))
+		sleepDur := followSleepDuration(idleSweeps)
+		workflowTracef(
+			"serve wait agent=%s idle_sweeps=%d sleep=%s processed=%t pending=%t",
+			agentCfg.QualifiedName(),
+			idleSweeps,
+			sleepDur,
+			drainResult.processedAny,
+			drainResult.pendingAny,
+		)
+		eventWake, err := workflowServeWaitForWake(eventCh, sleepDur, idleSweeps)
 		if err != nil {
 			return err
 		}
 		if eventWake {
 			idleSweeps = 0
-		} else if !processed {
+		} else if drainResult.pendingAny {
+			idleSweeps = 0
+		} else if !drainResult.processedAny {
 			idleSweeps++
 		}
 	}
@@ -332,6 +351,10 @@ func pumpWorkflowEvents(done <-chan struct{}, watcher events.Watcher, eventCh ch
 // path (so the caller can reset any idle-backoff counter), false when the
 // timer fires.
 func waitForRelevantWorkflowWake(eventCh <-chan workflowWatchResult, sleepDur time.Duration) (bool, error) {
+	return waitForRelevantWorkflowWakeWithTrace(eventCh, sleepDur, -1)
+}
+
+func waitForRelevantWorkflowWakeWithTrace(eventCh <-chan workflowWatchResult, sleepDur time.Duration, idleSweeps int) (bool, error) {
 	timer := time.NewTimer(sleepDur)
 	defer timer.Stop()
 
@@ -342,12 +365,20 @@ func waitForRelevantWorkflowWake(eventCh <-chan workflowWatchResult, sleepDur ti
 				return false, res.err
 			}
 			if workflowEventRelevant(res.evt) {
-				workflowTracef("serve wake-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
+				if idleSweeps >= 0 {
+					workflowTracef("serve wake-event type=%s subject=%s idle_sweeps=%d sleep=%s", res.evt.Type, res.evt.Subject, idleSweeps, sleepDur)
+				} else {
+					workflowTracef("serve wake-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
+				}
 				return true, nil
 			}
 			workflowTracef("serve ignore-event type=%s subject=%s", res.evt.Type, res.evt.Subject)
 		case <-timer.C:
-			workflowTracef("serve wake-sweep")
+			if idleSweeps >= 0 {
+				workflowTracef("serve wake-sweep idle_sweeps=%d sleep=%s", idleSweeps, sleepDur)
+			} else {
+				workflowTracef("serve wake-sweep")
+			}
 			return false, nil
 		}
 	}
