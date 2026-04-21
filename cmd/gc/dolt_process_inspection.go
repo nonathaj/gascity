@@ -134,7 +134,7 @@ func pidFromPlainPortLsofOutput(output, port string) int {
 func cwdFromFormattedLsofOutput(output string) (string, bool) {
 	for _, line := range strings.Split(output, "\n") {
 		if strings.HasPrefix(line, "n") {
-			path := strings.TrimSpace(strings.TrimPrefix(line, "n"))
+			path := normalizeLsofReportedPath(strings.TrimPrefix(line, "n"))
 			if path != "" {
 				return path, true
 			}
@@ -190,7 +190,7 @@ func deletedDataInodeTargetsFromFormattedLsofOutput(output string) []string {
 				currentDeleted = true
 				target = strings.TrimSuffix(target, " (deleted)")
 			}
-			currentName = target
+			currentName = normalizeLsofReportedPath(target)
 		}
 	}
 	flush()
@@ -216,7 +216,23 @@ func plainLsofPath(fields []string) string {
 	if len(fields) < 9 {
 		return ""
 	}
-	return strings.TrimSpace(strings.Join(fields[8:], " "))
+	return normalizeLsofReportedPath(strings.Join(fields[8:], " "))
+}
+
+func normalizeLsofReportedPath(path string) string {
+	path = filepath.Clean(strings.TrimSpace(path))
+	switch {
+	case path == "/private/tmp":
+		return "/tmp"
+	case strings.HasPrefix(path, "/private/tmp/"):
+		return "/tmp/" + strings.TrimPrefix(path, "/private/tmp/")
+	case path == "/private/var":
+		return "/var"
+	case strings.HasPrefix(path, "/private/var/"):
+		return "/var/" + strings.TrimPrefix(path, "/private/var/")
+	default:
+		return path
+	}
 }
 
 func processCWDFromLsof(pid int) (string, bool) {
