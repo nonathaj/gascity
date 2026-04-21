@@ -1053,6 +1053,89 @@ condition = "{{mode}} == slow"
 	}
 }
 
+func TestCompileAllowsConditionallyExclusiveDuplicateComposeExpansionTemplateIDs(t *testing.T) {
+	dir := t.TempDir()
+
+	expansion := `{
+		"formula": "compose-conditional-duplicate",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.attempt", "title": "Fast attempt", "condition": "{{mode}} == fast"},
+			{"id": "{target}.attempt", "title": "Slow attempt", "condition": "{{mode}} == slow"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "compose-conditional-duplicate.formula.json"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion: %v", err)
+	}
+
+	formulaText := `{
+		"formula": "compose-conditional-parent",
+		"version": 1,
+		"steps": [
+			{"id": "release", "title": "Release"}
+		],
+		"compose": {
+			"expand": [
+				{"target": "release", "with": "compose-conditional-duplicate"}
+			]
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "compose-conditional-parent.formula.json"), []byte(formulaText), 0o644); err != nil {
+		t.Fatalf("write formula: %v", err)
+	}
+
+	recipe, err := Compile(context.Background(), "compose-conditional-parent", []string{dir}, map[string]string{"mode": "fast"})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(recipe.Steps) != 2 {
+		t.Fatalf("len(recipe.Steps) = %d, want 2", len(recipe.Steps))
+	}
+	if got := recipe.Steps[1].ID; got != "compose-conditional-parent.release.attempt" {
+		t.Fatalf("recipe.Steps[1].ID = %q, want compose-conditional-parent.release.attempt", got)
+	}
+}
+
+func TestCompileAllowsConditionallyExclusiveDuplicateInlineExpansionTemplateIDs(t *testing.T) {
+	dir := t.TempDir()
+
+	expansion := `{
+		"formula": "inline-conditional-duplicate",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.attempt", "title": "Fast attempt", "condition": "{{mode}} == fast"},
+			{"id": "{target}.attempt", "title": "Slow attempt", "condition": "{{mode}} == slow"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "inline-conditional-duplicate.formula.json"), []byte(expansion), 0o644); err != nil {
+		t.Fatalf("write expansion: %v", err)
+	}
+
+	formulaText := `{
+		"formula": "inline-conditional-parent",
+		"version": 1,
+		"steps": [
+			{"id": "work", "title": "Work", "expand": "inline-conditional-duplicate"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "inline-conditional-parent.formula.json"), []byte(formulaText), 0o644); err != nil {
+		t.Fatalf("write formula: %v", err)
+	}
+
+	recipe, err := Compile(context.Background(), "inline-conditional-parent", []string{dir}, map[string]string{"mode": "fast"})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(recipe.Steps) != 2 {
+		t.Fatalf("len(recipe.Steps) = %d, want 2", len(recipe.Steps))
+	}
+	if got := recipe.Steps[1].ID; got != "inline-conditional-parent.work.attempt" {
+		t.Fatalf("recipe.Steps[1].ID = %q, want inline-conditional-parent.work.attempt", got)
+	}
+}
+
 func formatDepsForCleanup(deps []RecipeDep, stepID string) string {
 	var lines []string
 	for _, d := range deps {

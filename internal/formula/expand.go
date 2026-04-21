@@ -149,8 +149,17 @@ func ApplyExpansionsWithVars(steps []*Step, compose *ComposeRules, parser *Parse
 		}
 	}
 
-	// Validate no duplicate step IDs after expansion
-	if dups := findDuplicateStepIDs(result); len(dups) > 0 {
+	validationSteps := result
+	if parentVars != nil {
+		filteredSteps, err := FilterStepsByCondition(result, parentVars)
+		if err != nil {
+			return nil, fmt.Errorf("filtering conditioned steps after expansion: %w", err)
+		}
+		validationSteps = filteredSteps
+	}
+
+	// Validate no duplicate step IDs after expansion.
+	if dups := findDuplicateStepIDs(validationSteps); len(dups) > 0 {
 		return nil, fmt.Errorf("duplicate step IDs after expansion: %v", dups)
 	}
 
@@ -574,16 +583,22 @@ func MaterializeExpansionForTarget(f *Formula, target *Step, vars map[string]str
 // Returns a new steps slice with inline expansions applied.
 // The original steps slice is not modified.
 func ApplyInlineExpansions(steps []*Step, parser *Parser) ([]*Step, error) {
+	return ApplyInlineExpansionsWithVars(steps, parser, nil)
+}
+
+// ApplyInlineExpansionsWithVars applies Step.Expand fields to inline expansions
+// using vars for condition filtering during expansion-time validation.
+func ApplyInlineExpansionsWithVars(steps []*Step, parser *Parser, vars map[string]string) ([]*Step, error) {
 	if parser == nil {
 		return steps, nil
 	}
 
-	return applyInlineExpansionsRecursive(steps, parser, 0)
+	return applyInlineExpansionsRecursive(steps, parser, vars, 0)
 }
 
 // applyInlineExpansionsRecursive handles inline expansions for a slice of steps.
 // depth tracks recursion to prevent infinite expansion loops.
-func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, depth int) ([]*Step, error) {
+func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, vars map[string]string, depth int) ([]*Step, error) {
 	if depth > DefaultMaxExpansionDepth {
 		return nil, fmt.Errorf("inline expansion depth limit exceeded: max %d levels", DefaultMaxExpansionDepth)
 	}
@@ -614,7 +629,7 @@ func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, depth int) ([
 			propagateTargetDeps(step, expandedSteps)
 
 			// Recursively process expanded steps for nested inline expansions
-			processedSteps, err := applyInlineExpansionsRecursive(expandedSteps, parser, depth+1)
+			processedSteps, err := applyInlineExpansionsRecursive(expandedSteps, parser, vars, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -625,7 +640,7 @@ func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, depth int) ([
 			clone := cloneStep(step)
 
 			if len(step.Children) > 0 {
-				processedChildren, err := applyInlineExpansionsRecursive(step.Children, parser, depth)
+				processedChildren, err := applyInlineExpansionsRecursive(step.Children, parser, vars, depth)
 				if err != nil {
 					return nil, err
 				}
@@ -636,7 +651,16 @@ func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, depth int) ([
 		}
 	}
 
-	if dups := findDuplicateStepIDs(result); len(dups) > 0 {
+	validationSteps := result
+	if vars != nil {
+		filteredSteps, err := FilterStepsByCondition(result, vars)
+		if err != nil {
+			return nil, fmt.Errorf("filtering conditioned steps after inline expansion: %w", err)
+		}
+		validationSteps = filteredSteps
+	}
+
+	if dups := findDuplicateStepIDs(validationSteps); len(dups) > 0 {
 		return nil, fmt.Errorf("duplicate step IDs after inline expansion: %v", dups)
 	}
 

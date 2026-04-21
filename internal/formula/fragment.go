@@ -62,14 +62,14 @@ func CompileExpansionFragment(_ context.Context, name string, searchPaths []stri
 		resolved.Steps = ApplyAdvice(resolved.Steps, resolved.Advice)
 	}
 
-	inlineExpandedSteps, err := ApplyInlineExpansions(resolved.Steps, parser)
+	inlineExpandedSteps, err := ApplyInlineExpansionsWithVars(resolved.Steps, parser, expansionVars)
 	if err != nil {
 		return nil, fmt.Errorf("applying inline expansions to expansion %q: %w", name, err)
 	}
 	resolved.Steps = inlineExpandedSteps
 
 	if resolved.Compose != nil && (len(resolved.Compose.Expand) > 0 || len(resolved.Compose.Map) > 0) {
-		expandedSteps, expandErr := ApplyExpansions(resolved.Steps, resolved.Compose, parser)
+		expandedSteps, expandErr := ApplyExpansionsWithVars(resolved.Steps, resolved.Compose, parser, expansionVars)
 		if expandErr != nil {
 			return nil, fmt.Errorf("applying expansions to expansion %q: %w", name, expandErr)
 		}

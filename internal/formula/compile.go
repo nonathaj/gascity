@@ -76,7 +76,7 @@ func Compile(_ context.Context, name string, searchPaths []string, vars map[stri
 	}
 
 	// Stage 5: Apply inline step expansions
-	inlineExpandedSteps, err := ApplyInlineExpansions(resolved.Steps, parser)
+	inlineExpandedSteps, err := ApplyInlineExpansionsWithVars(resolved.Steps, parser, compileVars)
 	if err != nil {
 		return nil, fmt.Errorf("applying inline expansions to %q: %w", name, err)
 	}

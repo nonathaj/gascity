@@ -600,6 +600,20 @@ func TestApplyExpansionsWithVars(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	conditionalDuplicateExpansion := `{
+		"formula": "conditional-duplicate-expand",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.attempt", "title": "Fast attempt", "condition": "{{mode}} == fast"},
+			{"id": "{target}.attempt", "title": "Slow attempt", "condition": "{{mode}} == slow"}
+		]
+	}`
+	err = os.WriteFile(filepath.Join(tmpDir, "conditional-duplicate-expand.formula.json"), []byte(conditionalDuplicateExpansion), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	parser := NewParser(tmpDir)
 
 	t.Run("expand with var overrides", func(t *testing.T) {
@@ -725,6 +739,32 @@ func TestApplyExpansionsWithVars(t *testing.T) {
 		}
 		if got := result[0].Condition; got != "!{{skip}}" {
 			t.Fatalf("condition = %q, want %q", got, "!{{skip}}")
+		}
+	})
+
+	t.Run("expand allows conditionally exclusive duplicate template ids", func(t *testing.T) {
+		steps := []*Step{{ID: "release", Title: "Release"}}
+		compose := &ComposeRules{
+			Expand: []*ExpandRule{
+				{Target: "release", With: "conditional-duplicate-expand"},
+			},
+		}
+		result, err := ApplyExpansionsWithVars(steps, compose, parser, map[string]string{"mode": "fast"})
+		if err != nil {
+			t.Fatalf("ApplyExpansionsWithVars failed: %v", err)
+		}
+		if len(result) != 2 {
+			t.Fatalf("len(result) = %d, want 2", len(result))
+		}
+		filtered, err := FilterStepsByCondition(result, map[string]string{"mode": "fast"})
+		if err != nil {
+			t.Fatalf("FilterStepsByCondition failed: %v", err)
+		}
+		if len(filtered) != 1 {
+			t.Fatalf("len(filtered) = %d, want 1", len(filtered))
+		}
+		if got := filtered[0].ID; got != "release.attempt" {
+			t.Fatalf("filtered[0].ID = %q, want release.attempt", got)
 		}
 	})
 
@@ -1309,6 +1349,46 @@ func TestApplyInlineExpansionsDetectsConflictingParentTemplateIDs(t *testing.T) 
 	}
 	if !strings.Contains(err.Error(), "duplicate step IDs after inline expansion") {
 		t.Fatalf("ApplyInlineExpansions error = %v, want duplicate step ID error", err)
+	}
+}
+
+func TestApplyInlineExpansionsWithVarsAllowsConditionallyExclusiveDuplicateTemplateIDs(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	expansion := `{
+		"formula": "inline-conditional-duplicate",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.attempt", "title": "Fast attempt", "condition": "{{mode}} == fast"},
+			{"id": "{target}.attempt", "title": "Slow attempt", "condition": "{{mode}} == slow"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "inline-conditional-duplicate.formula.json"), []byte(expansion), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := NewParser(tmpDir)
+	steps := []*Step{
+		{ID: "work", Title: "Work", Expand: "inline-conditional-duplicate"},
+	}
+
+	result, err := ApplyInlineExpansionsWithVars(steps, parser, map[string]string{"mode": "fast"})
+	if err != nil {
+		t.Fatalf("ApplyInlineExpansionsWithVars failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	filtered, err := FilterStepsByCondition(result, map[string]string{"mode": "fast"})
+	if err != nil {
+		t.Fatalf("FilterStepsByCondition failed: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("len(filtered) = %d, want 1", len(filtered))
+	}
+	if got := filtered[0].ID; got != "work.attempt" {
+		t.Fatalf("filtered[0].ID = %q, want work.attempt", got)
 	}
 }
 
