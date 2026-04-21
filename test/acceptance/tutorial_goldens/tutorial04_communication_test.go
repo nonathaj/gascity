@@ -3,6 +3,7 @@
 package tutorialgoldens
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,9 +126,10 @@ func TestTutorial04Communication(t *testing.T) {
 	})
 
 	communicationNudge := `Check mail and hook status, then act accordingly`
-	communicationFollowUp := `You already read the "Review needed" mail about auth module changes in my-project. Coordinate with the reviewer now.`
+	communicationFollowUp := `You already read the "Review needed" mail. Continue with the reviewer coordination it requested.`
 	communicationPeekTimeout := 90 * time.Second
 	communicationRetryTimeout := 90 * time.Second
+	communicationSettleTimeout := 10 * time.Second
 	nudgeMayor := func(context string) {
 		out, err := ws.runShell(`gc session nudge mayor "`+communicationNudge+`"`, "")
 		if err != nil {
@@ -139,14 +141,12 @@ func TestTutorial04Communication(t *testing.T) {
 	}
 	submitMayorFollowUp := func(context string) {
 		t.Helper()
-		out, err := ws.runShell(`gc session submit mayor "`+communicationFollowUp+`"`, "")
+		out, err := ws.runShell(`gc session submit mayor "`+communicationFollowUp+`" --intent follow_up`, "")
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", context, err, out)
 		}
-		if !strings.Contains(out, "Submitted to mayor") &&
-			!strings.Contains(out, "Queued follow-up for mayor") &&
-			!strings.Contains(out, "Submitted follow-up to mayor") &&
-			!strings.Contains(out, "Interrupted and submitted to mayor") {
+		if !strings.Contains(out, "Queued follow-up for mayor") &&
+			!strings.Contains(out, "Submitted follow-up to mayor") {
 			t.Fatalf("%s output mismatch:\n%s", context, out)
 		}
 	}
@@ -155,10 +155,30 @@ func TestTutorial04Communication(t *testing.T) {
 			return false
 		}
 		out, err := ws.runShell("bd show "+tutorialMailID+" --json", "")
-		if err != nil {
-			return false
+		if err == nil {
+			var bead struct {
+				Status string   `json:"status"`
+				Labels []string `json:"labels"`
+			}
+			if err := json.Unmarshal([]byte(out), &bead); err == nil {
+				if bead.Status != "" && bead.Status != "open" {
+					return true
+				}
+				for _, label := range bead.Labels {
+					if label == "read" {
+						return true
+					}
+				}
+			}
 		}
-		return strings.Contains(out, "\"read\"")
+		countOut, countErr := ws.runShell("gc mail count mayor", "")
+		if countErr == nil && strings.Contains(countOut, "0 unread") {
+			return true
+		}
+		return false
+	}
+	waitForMailConsumption := func() bool {
+		return waitForCondition(t, communicationSettleTimeout, 1*time.Second, mayorMailConsumed)
 	}
 
 	t.Run(`gc session nudge mayor "Check mail and hook status, then act accordingly"`, func(t *testing.T) {
@@ -174,31 +194,33 @@ func TestTutorial04Communication(t *testing.T) {
 				return false
 			}
 			return strings.Contains(out, "Review needed") ||
-				strings.Contains(out, "auth module") ||
 				strings.Contains(out, "auth module changes in my-project") ||
 				strings.Contains(out, "Review the auth module changes") ||
 				(strings.Contains(out, "my-project/reviewer") && strings.Contains(out, "auth module"))
 		}
-		ok := waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible)
-		if !ok {
-			if mayorMailConsumed() {
-				// Once the exact tutorial mail bead is marked read, hook delivery is proven.
-				// The follow-up only exists to make that already-consumed request visible in peek.
-				ws.noteWarning("tutorial 04 runtime workaround: hooks already delivered and marked the mayor mail read, so the page driver submits an explicit follow-up that surfaces the already-consumed review request in peek output")
-				submitMayorFollowUp("submit follow-up after mayor consumed tutorial 04 mail")
-			} else {
-				ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no rendered coordination step yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
-				wakeMayor("wake mayor before communication retry")
-				nudgeMayor("re-nudge mayor before communication retry")
-			}
+		if waitForCondition(t, communicationPeekTimeout, 2*time.Second, mayorCommunicationVisible) {
+			return
 		}
-		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
-			restartCity("mayor still did not surface the communication flow after wake")
-			if mayorMailConsumed() {
-				submitMayorFollowUp("submit follow-up after hidden restart")
-			} else {
-				nudgeMayor("re-nudge mayor after hidden restart")
-			}
+		if waitForMailConsumption() {
+			// Once the exact tutorial mail bead is marked read or archived, hook delivery is proven.
+			// The follow-up only exists to make that already-consumed request visible in peek.
+			ws.noteWarning("tutorial 04 runtime workaround: hooks already consumed the tutorial mail, so the page driver submits an explicit follow-up that surfaces the completed review request in peek output")
+			submitMayorFollowUp("submit follow-up after mayor consumed tutorial 04 mail")
+		} else {
+			ws.noteWarning("tutorial 04 runtime workaround: the visible nudge can leave mayor with injected mail but no rendered coordination step yet, so the page driver explicitly wakes mayor and requeues the same mail-driven nudge before retrying the visible peek step")
+			wakeMayor("wake mayor before communication retry")
+			nudgeMayor("re-nudge mayor before communication retry")
+		}
+		if waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
+			return
+		}
+		if waitForMailConsumption() {
+			ws.noteWarning("tutorial 04 runtime workaround: after the wake retry the tutorial mail is already consumed, so the page driver submits one more explicit follow-up instead of restarting the city and losing the active communication context")
+			submitMayorFollowUp("submit follow-up after wake retry")
+		} else {
+			ws.noteWarning("tutorial 04 runtime workaround: after the wake retry the tutorial mail is still unread, so the page driver performs one final wake and nudge instead of restarting the city mid-conversation")
+			wakeMayor("wake mayor before final communication retry")
+			nudgeMayor("re-nudge mayor before final communication retry")
 		}
 		if !waitForCondition(t, communicationRetryTimeout, 2*time.Second, mayorCommunicationVisible) {
 			t.Fatalf("peek mayor did not surface communication flow in time:\n%s", out)
@@ -210,6 +232,11 @@ func TestTutorial04Communication(t *testing.T) {
 	}
 	if mayorLogs, err := ws.runShell("gc session logs mayor --tail 5", ""); err == nil {
 		ws.noteDiagnostic("final mayor logs:\n%s", mayorLogs)
+	}
+	if tutorialMailID != "" {
+		if mailBead, err := ws.runShell("bd show "+tutorialMailID+" --json", ""); err == nil {
+			ws.noteDiagnostic("tutorial mail bead:\n%s", mailBead)
+		}
 	}
 	if data, err := os.ReadFile(filepath.Join(myCity, "city.toml")); err == nil {
 		ws.noteDiagnostic("final city.toml:\n%s", string(data))
