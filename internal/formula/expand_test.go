@@ -614,6 +614,19 @@ func TestApplyExpansionsWithVars(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	unresolvedConditionExpansion := `{
+		"formula": "unresolved-condition-expand",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.maybe", "title": "Maybe", "condition": "{{flag}}"}
+		]
+	}`
+	err = os.WriteFile(filepath.Join(tmpDir, "unresolved-condition-expand.formula.json"), []byte(unresolvedConditionExpansion), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	parser := NewParser(tmpDir)
 
 	t.Run("expand with var overrides", func(t *testing.T) {
@@ -742,7 +755,7 @@ func TestApplyExpansionsWithVars(t *testing.T) {
 		}
 	})
 
-	t.Run("expand materializes condition expressions with expansion defaults", func(t *testing.T) {
+	t.Run("expand preserves condition expressions without vars or defaults", func(t *testing.T) {
 		steps := []*Step{{ID: "release", Title: "Release"}}
 		compose := &ComposeRules{
 			Expand: []*ExpandRule{
@@ -753,8 +766,27 @@ func TestApplyExpansionsWithVars(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ApplyExpansions failed: %v", err)
 		}
-		if got := result[0].Condition; got != "" {
-			t.Fatalf("condition = %q, want empty after expansion-default materialization", got)
+		if got := result[0].Condition; got != "!{{skip}}" {
+			t.Fatalf("condition = %q, want !{{skip}} preserved when unresolved", got)
+		}
+	})
+
+	t.Run("expand preserves unresolved condition expressions for later filtering", func(t *testing.T) {
+		steps := []*Step{{ID: "release", Title: "Release"}}
+		compose := &ComposeRules{
+			Expand: []*ExpandRule{
+				{Target: "release", With: "unresolved-condition-expand"},
+			},
+		}
+		result, err := ApplyExpansionsWithVars(steps, compose, parser, map[string]string{"mode": "fast"})
+		if err != nil {
+			t.Fatalf("ApplyExpansionsWithVars failed: %v", err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("len(result) = %d, want 1", len(result))
+		}
+		if got := result[0].Condition; got != "{{flag}}" {
+			t.Fatalf("condition = %q, want unresolved condition preserved", got)
 		}
 	})
 
@@ -1397,6 +1429,57 @@ func TestApplyInlineExpansionsWithVarsAllowsConditionallyExclusiveDuplicateTempl
 	}
 	if got := result[0].Condition; got != "" {
 		t.Fatalf("result[0].Condition = %q, want empty after materialization", got)
+	}
+}
+
+func TestApplyInlineExpansionsWithVarsCarriesExpansionVarsIntoNestedInlineExpansions(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	inner := `{
+		"formula": "inner-nested-conditional",
+		"type": "expansion",
+		"version": 1,
+		"template": [
+			{"id": "{target}.attempt", "title": "Fast attempt", "condition": "{{mode}} == fast"},
+			{"id": "{target}.attempt", "title": "Slow attempt", "condition": "{{mode}} == slow"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "inner-nested-conditional.formula.json"), []byte(inner), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outer := `{
+		"formula": "outer-nested-conditional",
+		"type": "expansion",
+		"version": 1,
+		"vars": {
+			"mode": {"default": "fast"}
+		},
+		"template": [
+			{"id": "{target}.worker", "title": "Worker", "expand": "inner-nested-conditional"}
+		]
+	}`
+	if err := os.WriteFile(filepath.Join(tmpDir, "outer-nested-conditional.formula.json"), []byte(outer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parser := NewParser(tmpDir)
+	steps := []*Step{
+		{ID: "work", Title: "Work", Expand: "outer-nested-conditional"},
+	}
+
+	result, err := ApplyInlineExpansionsWithVars(steps, parser, nil)
+	if err != nil {
+		t.Fatalf("ApplyInlineExpansionsWithVars failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("len(result) = %d, want 1", len(result))
+	}
+	if got := result[0].ID; got != "work.worker.attempt" {
+		t.Fatalf("result[0].ID = %q, want work.worker.attempt", got)
+	}
+	if got := result[0].Condition; got != "" {
+		t.Fatalf("result[0].Condition = %q, want empty after nested materialization", got)
 	}
 }
 

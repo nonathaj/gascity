@@ -375,21 +375,60 @@ func materializeExpandedStepConditions(steps []*Step, vars map[string]string) ([
 		return steps, nil
 	}
 
-	filteredSteps, err := FilterStepsByCondition(steps, vars)
-	if err != nil {
-		return nil, fmt.Errorf("filtering conditioned expanded steps: %w", err)
+	result := make([]*Step, 0, len(steps))
+	for _, step := range steps {
+		resolvable, err := canResolveStepCondition(step.Condition, vars)
+		if err != nil {
+			return nil, fmt.Errorf("step %q: %w", step.ID, err)
+		}
+
+		if resolvable {
+			include, err := EvaluateStepCondition(step.Condition, vars)
+			if err != nil {
+				return nil, fmt.Errorf("step %q: %w", step.ID, err)
+			}
+			if !include {
+				continue
+			}
+		}
+
+		clone := cloneStep(step)
+		if resolvable {
+			clone.Condition = ""
+		}
+		if len(step.Children) > 0 {
+			children, err := materializeExpandedStepConditions(step.Children, vars)
+			if err != nil {
+				return nil, err
+			}
+			clone.Children = children
+		}
+		result = append(result, clone)
 	}
-	clearStepConditions(filteredSteps)
-	return filteredSteps, nil
+
+	return result, nil
 }
 
-func clearStepConditions(steps []*Step) {
-	for _, step := range steps {
-		step.Condition = ""
-		if len(step.Children) > 0 {
-			clearStepConditions(step.Children)
-		}
+func canResolveStepCondition(condition string, vars map[string]string) (bool, error) {
+	condition = strings.TrimSpace(condition)
+	if condition == "" {
+		return true, nil
 	}
+
+	if m := stepCondVarPattern.FindStringSubmatch(condition); m != nil {
+		_, ok := vars[m[1]]
+		return ok, nil
+	}
+	if m := stepCondNegatedVarPattern.FindStringSubmatch(condition); m != nil {
+		_, ok := vars[m[1]]
+		return ok, nil
+	}
+	if m := stepCondComparePattern.FindStringSubmatch(condition); m != nil {
+		_, ok := vars[m[1]]
+		return ok, nil
+	}
+
+	return false, fmt.Errorf("invalid step condition format: %q (expected {{var}} or {{var}} == value)", condition)
 }
 
 // substituteTargetPlaceholders replaces {target} and {target.*} placeholders.
@@ -666,7 +705,8 @@ func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, vars map[stri
 			if err != nil {
 				return nil, fmt.Errorf("inline expand on step %q: %w", step.ID, err)
 			}
-			expandedSteps, err = materializeExpandedStepConditions(expandedSteps, mergeConditionVars(vars, expansionVars))
+			conditionVars := mergeConditionVars(vars, expansionVars)
+			expandedSteps, err = materializeExpandedStepConditions(expandedSteps, conditionVars)
 			if err != nil {
 				return nil, fmt.Errorf("inline expand on step %q: %w", step.ID, err)
 			}
@@ -678,7 +718,7 @@ func applyInlineExpansionsRecursive(steps []*Step, parser *Parser, vars map[stri
 			propagateTargetDeps(step, expandedSteps)
 
 			// Recursively process expanded steps for nested inline expansions
-			processedSteps, err := applyInlineExpansionsRecursive(expandedSteps, parser, vars, depth+1)
+			processedSteps, err := applyInlineExpansionsRecursive(expandedSteps, parser, conditionVars, depth+1)
 			if err != nil {
 				return nil, err
 			}
