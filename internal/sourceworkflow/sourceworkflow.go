@@ -9,6 +9,7 @@
 package sourceworkflow
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -338,6 +339,40 @@ func CloseWorkflowSubtree(store beads.Store, rootID string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	byID := make(map[string]beads.Bead, len(matched))
+	for _, bead := range matched {
+		byID[bead.ID] = bead
+	}
+	depthMemo := make(map[string]int, len(matched))
+	var depth func(string) int
+	depth = func(id string) int {
+		if d, ok := depthMemo[id]; ok {
+			return d
+		}
+		bead, ok := byID[id]
+		if !ok {
+			return 0
+		}
+		parentID := strings.TrimSpace(bead.ParentID)
+		if parentID == "" || parentID == id {
+			depthMemo[id] = 0
+			return 0
+		}
+		parent, ok := byID[parentID]
+		if !ok || parent.ID == "" {
+			depthMemo[id] = 0
+			return 0
+		}
+		d := depth(parentID) + 1
+		depthMemo[id] = d
+		return d
+	}
+	slices.SortFunc(matched, func(a, b beads.Bead) int {
+		if da, db := depth(a.ID), depth(b.ID); da != db {
+			return cmp.Compare(db, da)
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
 	ids := make([]string, 0, len(matched))
 	for _, bead := range matched {
 		if bead.ID == "" || bead.Status == "closed" {
