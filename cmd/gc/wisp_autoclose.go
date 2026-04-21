@@ -6,8 +6,7 @@ import (
 	"os"
 
 	"github.com/gastownhall/gascity/internal/beads"
-	"github.com/gastownhall/gascity/internal/molecule"
-	"github.com/gastownhall/gascity/internal/sourceworkflow"
+	"github.com/gastownhall/gascity/internal/sling"
 	"github.com/spf13/cobra"
 )
 
@@ -75,8 +74,5 @@ func doWispAutocloseWith(store beads.Store, beadID string, stdout io.Writer) {
 }
 
 func closeAttachedWispSubtree(store beads.Store, attached beads.Bead) (int, error) {
-	if isWorkflowAttachment(attached) {
-		return sourceworkflow.CloseWorkflowSubtree(store, attached.ID)
-	}
-	return molecule.CloseSubtree(store, attached.ID)
+	return sling.CloseAttachedSubtree(store, attached)
 }

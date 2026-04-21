@@ -236,8 +236,16 @@ func TestTutorial01Cities(t *testing.T) {
 				data, err := os.ReadFile(filepath.Join(myProject, "hello.py"))
 				return err == nil && strings.TrimSpace(string(data)) != ""
 			}) {
-				ws.noteWarning("tutorial 01 runtime workaround: provider execution did not materialize hello.py in the acceptance timeout, so the page driver seeds the tutorial artifact after validating the visible sling/watch flow")
-				writeFile(t, filepath.Join(myProject, "hello.py"), "print(\"Hello, World!\")\n", 0o644)
+				ws.noteWarning("tutorial 01 provider failure: gc sling rendered the visible watch flow but did not create hello.py within the acceptance timeout")
+				data, readErr := os.ReadFile(filepath.Join(myProject, "hello.py"))
+				switch {
+				case readErr != nil:
+					t.Fatalf("provider did not create hello.py within 90s: %v", readErr)
+				case strings.TrimSpace(string(data)) == "":
+					t.Fatalf("provider created hello.py but left it empty after 90s")
+				default:
+					t.Fatalf("provider created hello.py after timeout window; file was not ready within 90s")
+				}
 			}
 		})
 

@@ -879,6 +879,52 @@ type AroundAdvice struct {
 	After []*AdviceStep `json:"after,omitempty"`
 }
 
+func requiresExplicitGraphContract(f *Formula) bool {
+	if f == nil || f.Version < 2 || strings.TrimSpace(f.Contract) != "" || f.Type == TypeExpansion {
+		return false
+	}
+	return stepsRequireGraphContract(f.Steps)
+}
+
+func stepsRequireGraphContract(steps []*Step) bool {
+	for _, step := range steps {
+		if stepRequiresGraphContract(step) {
+			return true
+		}
+	}
+	return false
+}
+
+func stepRequiresGraphContract(step *Step) bool {
+	if step == nil {
+		return false
+	}
+	if step.Ralph != nil || step.Retry != nil || metadataRequiresGraphContract(step.Metadata) {
+		return true
+	}
+	if step.Loop != nil && stepsRequireGraphContract(step.Loop.Body) {
+		return true
+	}
+	return stepsRequireGraphContract(step.Children)
+}
+
+func metadataRequiresGraphContract(metadata map[string]string) bool {
+	for rawKey, rawValue := range metadata {
+		key := strings.TrimSpace(rawKey)
+		value := strings.TrimSpace(rawValue)
+		switch key {
+		case "gc.kind":
+			switch value {
+			case "scope", "cleanup", "scope-check", "workflow-finalize", "retry", "retry-run", "retry-eval", "ralph", "run", "check":
+				return true
+			}
+		case "gc.scope_name", "gc.scope_role", "gc.scope_ref", "gc.continuation_group", "gc.on_fail":
+			return true
+		}
+	}
+	return false
+}
+
 // Validate checks the formula for structural errors.
 func (f *Formula) Validate() error {
 	var errs []string
@@ -893,6 +939,9 @@ func (f *Formula) Validate() error {
 
 	if f.Contract != "" && f.Contract != "graph.v2" {
 		errs = append(errs, fmt.Sprintf("contract: invalid value %q (must be graph.v2)", f.Contract))
+	}
+	if requiresExplicitGraphContract(f) {
+		errs = append(errs, `contract: version >= 2 formulas that use graph-only retry/scope semantics must declare contract = "graph.v2" explicitly`)
 	}
 
 	if f.Type != "" && !f.Type.IsValid() {

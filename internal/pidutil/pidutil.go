@@ -2,6 +2,7 @@
 package pidutil
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -9,7 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
+
+const psZombieTimeout = 100 * time.Millisecond
 
 // Alive reports whether a PID exists and is not a zombie.
 func Alive(pid int) bool {
@@ -33,7 +37,10 @@ func Alive(pid int) bool {
 }
 
 func psReportsZombie(pid int) bool {
-	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), psZombieTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return false
 	}

@@ -229,7 +229,7 @@ func controllerStatusForCity(cityPath string) ControllerJSON {
 	}
 	if supervisorWasAlive {
 		if pid := controllerAliveWithin(cityPath, controllerStatusStandaloneFallbackTimeout); pid != 0 {
-			return ControllerJSON{Running: true, PID: pid, Mode: "standalone"}
+			return ControllerJSON{Running: true, PID: pid, Mode: "supervisor"}
 		}
 	}
 	if pid := controllerAlive(cityPath); pid != 0 {

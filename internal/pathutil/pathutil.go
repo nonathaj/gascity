@@ -3,6 +3,7 @@ package pathutil
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -46,6 +47,9 @@ func canonicalizePlatformPathAlias(path string) string {
 	// On macOS, /tmp and /var commonly appear to callers without /private
 	// while EvalSymlinks and lsof report the same location under /private.
 	// Collapse those host aliases so path equality stays stable across APIs.
+	if runtime.GOOS != "darwin" {
+		return path
+	}
 	if path == "/private/tmp" {
 		return "/tmp"
 	}

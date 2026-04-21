@@ -96,6 +96,19 @@ dolt      123 user  cwd    DIR   1,4       96  42 /private/tmp/gc-city/.beads/do
 	}
 }
 
+func TestCWDFromPlainLsofOutputPreservesSpacesInPath(t *testing.T) {
+	output := `COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+dolt      123 user  cwd    DIR   1,4       96  42 /tmp/my city/.beads/dolt
+`
+	cwd, ok := cwdFromPlainLsofOutput(output)
+	if !ok {
+		t.Fatal("cwdFromPlainLsofOutput did not find cwd")
+	}
+	if cwd != "/tmp/my city/.beads/dolt" {
+		t.Fatalf("cwdFromPlainLsofOutput = %q, want full spaced path", cwd)
+	}
+}
+
 func TestDeletedDataInodeTargetsFromLsofParsesNameRecords(t *testing.T) {
 	binDir := t.TempDir()
 	lsofPath := filepath.Join(binDir, "lsof")
@@ -130,5 +143,19 @@ func TestDeletedDataInodeTargetsFromFormattedLsofUsesZeroLinkCount(t *testing.T)
 	}
 	if !samePath(targets[0], "/tmp/gc-city/.beads/dolt/held.db") {
 		t.Fatalf("target = %q, want held.db", targets[0])
+	}
+}
+
+func TestDeletedDataInodeTargetsFromPlainLsofOutputPreservesSpacesInPath(t *testing.T) {
+	output := `COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+dolt      123 user  cwd    DIR   1,4       96  42 /tmp/my city/.beads/dolt
+dolt      123 user    5u   REG   1,4     4096  99 /tmp/my city/.beads/dolt/held.db (deleted)
+`
+	targets := deletedDataInodeTargetsFromPlainLsofOutput(output)
+	if len(targets) != 1 {
+		t.Fatalf("deletedDataInodeTargetsFromPlainLsofOutput returned %d targets, want 1: %#v", len(targets), targets)
+	}
+	if targets[0] != "/tmp/my city/.beads/dolt/held.db" {
+		t.Fatalf("target = %q, want full spaced path", targets[0])
 	}
 }

@@ -149,7 +149,7 @@ func cwdFromPlainLsofOutput(output string) (string, bool) {
 		if len(fields) < 9 || fields[3] != "cwd" {
 			continue
 		}
-		path := strings.TrimSpace(fields[len(fields)-1])
+		path := plainLsofPath(fields)
 		if path != "" {
 			return path, true
 		}
@@ -203,15 +203,20 @@ func deletedDataInodeTargetsFromPlainLsofOutput(output string) []string {
 		if !strings.Contains(line, " (deleted)") {
 			continue
 		}
-		target := strings.TrimSpace(strings.TrimSuffix(line, " (deleted)"))
-		if fields := strings.Fields(target); len(fields) > 0 {
-			target = fields[len(fields)-1]
-		}
+		fields := strings.Fields(strings.TrimSuffix(line, " (deleted)"))
+		target := plainLsofPath(fields)
 		if target != "" {
 			targets = append(targets, target)
 		}
 	}
 	return targets
+}
+
+func plainLsofPath(fields []string) string {
+	if len(fields) < 9 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(fields[8:], " "))
 }
 
 func processCWDFromLsof(pid int) (string, bool) {

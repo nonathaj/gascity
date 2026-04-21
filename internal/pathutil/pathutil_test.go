@@ -3,6 +3,7 @@ package pathutil
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -62,7 +63,10 @@ func TestNormalizePathForCompareResolvesSymlinkAncestorForMissingLeaf(t *testing
 
 func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
 	got := NormalizePathForCompare("/private/var/folders/example/gc-home")
-	want := filepath.Clean("/var/folders/example/gc-home")
+	want := filepath.Clean("/private/var/folders/example/gc-home")
+	if runtime.GOOS == "darwin" {
+		want = filepath.Clean("/var/folders/example/gc-home")
+	}
 	if got != want {
 		t.Fatalf("NormalizePathForCompare() = %q, want %q", got, want)
 	}
@@ -70,7 +74,10 @@ func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
 
 func TestNormalizePathForCompareCollapsesDarwinPrivateTmpAlias(t *testing.T) {
 	got := NormalizePathForCompare("/private/tmp/gc-home")
-	want := filepath.Clean("/tmp/gc-home")
+	want := filepath.Clean("/private/tmp/gc-home")
+	if runtime.GOOS == "darwin" {
+		want = filepath.Clean("/tmp/gc-home")
+	}
 	if got != want {
 		t.Fatalf("NormalizePathForCompare() = %q, want %q", got, want)
 	}

@@ -650,8 +650,8 @@ func TestControllerStatusForCityFallsBackToStandaloneWhenSupervisorVanishesDurin
 	})
 
 	got := controllerStatusForCity(cityPath)
-	if got.Mode != "standalone" || !got.Running || got.PID != 2468 {
-		t.Fatalf("controllerStatusForCity = %+v, want running standalone PID 2468", got)
+	if got.Mode != "supervisor" || !got.Running || got.PID != 2468 {
+		t.Fatalf("controllerStatusForCity = %+v, want running supervisor-mode PID 2468", got)
 	}
 	if calls != 2 {
 		t.Fatalf("supervisorAliveHook calls = %d, want 2", calls)
