@@ -760,6 +760,22 @@ func reconcileSessionBeadsTraced(
 						}
 						runtime.LogCoreFingerprintDrift(stderr, name, storedBreakdown, agentCfg)
 						restartedInPlace := false
+						// Attached sessions never get config-drift restarts.
+						// The human will restart when ready; drift applies
+						// after detach. Checked before named/non-named paths
+						// because named session config drift is an immediate
+						// kill; a single transient IsAttached false negative
+						// would destroy conversation context irreversibly.
+						if sessionAttachedForConfigDrift(*session, sp, cityPath, store, cfg, name) {
+							if trace != nil {
+								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
+									"stored_hash":   storedHash,
+									"current_hash":  currentHash,
+									"active_reason": "attached",
+								}, nil, "")
+							}
+							continue
+						}
 						if isNamedSessionBead(*session) {
 							// Defer config-drift restart for named sessions
 							// that are actively in use (pending interaction,
@@ -1359,6 +1375,20 @@ func clearNamedSessionConfigDriftDeferral(session beads.Bead, store beads.Store)
 		namedSessionConfigDriftDeferredAtMetadata:  "",
 		namedSessionConfigDriftDeferredKeyMetadata: "",
 	})
+}
+
+// sessionAttachedForConfigDrift reports whether a session is currently
+// attached (a user terminal is connected) and should skip config-drift
+// handling. Uses both worker handle observation (session ID based) and
+// direct provider check (session name based) for robustness.
+func sessionAttachedForConfigDrift(session beads.Bead, sp runtime.Provider, cityPath string, store beads.Store, cfg *config.City, name string) bool {
+	if sp == nil {
+		return false
+	}
+	if attached, err := workerSessionTargetAttachedWithConfig(cityPath, store, sp, cfg, session.ID); err == nil && attached {
+		return true
+	}
+	return sp.IsAttached(name)
 }
 
 func namedSessionActiveUseReason(session beads.Bead, sp runtime.Provider, name string, clk clock.Clock) (string, bool) {
