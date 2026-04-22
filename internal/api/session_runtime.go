@@ -388,10 +388,12 @@ func storedSessionProvesACPTransport(resolved *config.ResolvedProvider, configur
 }
 
 func legacyResumeMetadataProvesACPTransport(metadata map[string]string) bool {
-	if metadata == nil || strings.TrimSpace(metadata["session_key"]) == "" {
+	if metadata == nil {
 		return false
 	}
-	return strings.TrimSpace(metadata["resume_command"]) != "" || strings.TrimSpace(metadata["resume_flag"]) != ""
+	return strings.TrimSpace(metadata["resume_command"]) != "" ||
+		strings.TrimSpace(metadata["resume_flag"]) != "" ||
+		strings.TrimSpace(metadata["session_key"]) != ""
 }
 
 func legacyACPTransportAmbiguous(resolved *config.ResolvedProvider, configuredTransport, storedCommand string, metadata map[string]string) bool {

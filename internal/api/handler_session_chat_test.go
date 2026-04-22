@@ -441,7 +441,6 @@ func TestResolvedSessionTransportUsesResumeMetadataForLegacyACPWithSameCommand(t
 	got := resolvedSessionTransport(session.Info{
 		Command: "/bin/echo",
 	}, resolved, "acp", map[string]string{
-		"session_key": "legacy-key",
 		"resume_flag": "--resume",
 	}, false)
 	if got != "acp" {
