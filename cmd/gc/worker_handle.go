@@ -179,9 +179,19 @@ func resumeRuntimeMCPServersWithConfig(
 	if err == nil {
 		return mcpServers, nil
 	}
+	runtimeSnapshot, loadErr := session.LoadRuntimeMCPServersSnapshot(cityPath, info.ID)
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	if len(runtimeSnapshot) > 0 {
+		return runtimeSnapshot, nil
+	}
 	stored, decodeErr := session.DecodeMCPServersSnapshot(resumeMeta[session.MCPServersSnapshotMetadataKey])
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decoding stored MCP snapshot: %w", decodeErr)
+	}
+	if session.StoredMCPSnapshotContainsRedactions(stored) {
+		return nil, nil
 	}
 	return stored, nil
 }

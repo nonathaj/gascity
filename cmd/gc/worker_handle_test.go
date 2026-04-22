@@ -1344,7 +1344,7 @@ command = [broken
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigFallsBackToRedactedStoredMCPServersWhenCatalogBreaks(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigFallsBackToRuntimeMCPServersSnapshotWhenCatalogBreaks(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -1378,7 +1378,7 @@ command = [broken
 	}
 
 	workDir := filepath.Join(cityDir, ".gc", "worktrees", "myrig", "ants", "ant")
-	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", []runtime.MCPServerConfig{{
+	servers := []runtime.MCPServerConfig{{
 		Name:      "identity",
 		Transport: runtime.MCPTransportHTTP,
 		Command:   "/bin/mcp",
@@ -1390,12 +1390,17 @@ command = [broken
 		Headers: map[string]string{
 			"Authorization": "Bearer secret",
 		},
-	}})
+	}}
+	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", servers)
 	if err != nil {
 		t.Fatalf("WithStoredMCPMetadata: %v", err)
 	}
+	if err := session.PersistRuntimeMCPServersSnapshot(cityDir, "sess-1", servers); err != nil {
+		t.Fatalf("PersistRuntimeMCPServersSnapshot: %v", err)
+	}
 
 	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, session.Info{
+		ID:        "sess-1",
 		Template:  "myrig/ant",
 		Alias:     "ant",
 		AgentName: "myrig/ant-adhoc-123",
@@ -1411,13 +1416,13 @@ command = [broken
 	if len(resolved.Hints.MCPServers) != 1 {
 		t.Fatalf("Hints.MCPServers len = %d, want 1", len(resolved.Hints.MCPServers))
 	}
-	if got, want := resolved.Hints.MCPServers[0].Args[1], "__redacted__"; got != want {
+	if got, want := resolved.Hints.MCPServers[0].Args[1], "super-secret"; got != want {
 		t.Fatalf("Args[1] = %q, want %q", got, want)
 	}
-	if got, want := resolved.Hints.MCPServers[0].Env["API_TOKEN"], "__redacted__"; got != want {
+	if got, want := resolved.Hints.MCPServers[0].Env["API_TOKEN"], "super-secret"; got != want {
 		t.Fatalf("Env[API_TOKEN] = %q, want %q", got, want)
 	}
-	if got, want := resolved.Hints.MCPServers[0].Headers["Authorization"], "__redacted__"; got != want {
+	if got, want := resolved.Hints.MCPServers[0].Headers["Authorization"], "Bearer secret"; got != want {
 		t.Fatalf("Headers[Authorization] = %q, want %q", got, want)
 	}
 }

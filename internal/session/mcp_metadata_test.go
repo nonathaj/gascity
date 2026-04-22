@@ -66,3 +66,40 @@ func TestEncodeMCPServersSnapshotRedactsSecrets(t *testing.T) {
 		t.Fatal("StoredMCPSnapshotContainsRedactions() = false, want true")
 	}
 }
+
+func TestRuntimeMCPServersSnapshotRoundTrip(t *testing.T) {
+	cityPath := t.TempDir()
+	servers := []runtime.MCPServerConfig{{
+		Name:      "remote",
+		Transport: runtime.MCPTransportHTTP,
+		Command:   "/bin/mcp",
+		Args:      []string{"--api-key", "super-secret"},
+		Env: map[string]string{
+			"API_TOKEN": "super-secret",
+		},
+		URL: "https://user:pass@example.invalid/mcp?token=abc123",
+		Headers: map[string]string{
+			"Authorization": "Bearer secret",
+		},
+	}}
+	if err := PersistRuntimeMCPServersSnapshot(cityPath, "sess-1", servers); err != nil {
+		t.Fatalf("PersistRuntimeMCPServersSnapshot: %v", err)
+	}
+
+	loaded, err := LoadRuntimeMCPServersSnapshot(cityPath, "sess-1")
+	if err != nil {
+		t.Fatalf("LoadRuntimeMCPServersSnapshot: %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("len(loaded) = %d, want 1", len(loaded))
+	}
+	if got, want := loaded[0].Args[1], "super-secret"; got != want {
+		t.Fatalf("Args[1] = %q, want %q", got, want)
+	}
+	if got, want := loaded[0].Env["API_TOKEN"], "super-secret"; got != want {
+		t.Fatalf("Env[API_TOKEN] = %q, want %q", got, want)
+	}
+	if got, want := loaded[0].Headers["Authorization"], "Bearer secret"; got != want {
+		t.Fatalf("Headers[Authorization] = %q, want %q", got, want)
+	}
+}

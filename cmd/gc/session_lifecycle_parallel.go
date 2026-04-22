@@ -699,6 +699,11 @@ func commitStartResultTraced(
 	if storedMCPSnapshot != "" || session.Metadata[sessionpkg.MCPServersSnapshotMetadataKey] != "" {
 		metadata[sessionpkg.MCPServersSnapshotMetadataKey] = storedMCPSnapshot
 	}
+	if err := sessionpkg.PersistRuntimeMCPServersSnapshot(result.prepared.cfg.Env["GC_CITY_PATH"], session.ID, result.prepared.cfg.MCPServers); err != nil {
+		fmt.Fprintf(stderr, "session reconciler: storing runtime MCP snapshot for %s: %v\n", name, err) //nolint:errcheck
+		logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, "runtime_mcp_snapshot_failed", result.started, result.finished, err)
+		return false
+	}
 	if result.prepared.candidate.tp.IsACP ||
 		session.Metadata[sessionpkg.MCPIdentityMetadataKey] != "" ||
 		session.Metadata[sessionpkg.MCPServersSnapshotMetadataKey] != "" {

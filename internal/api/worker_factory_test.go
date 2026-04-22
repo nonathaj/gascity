@@ -319,7 +319,7 @@ command = [broken
 	}
 }
 
-func TestResolveWorkerSessionRuntimeFallsBackToRedactedStoredMCPServersWhenCatalogBreaks(t *testing.T) {
+func TestResolveWorkerSessionRuntimeFallsBackToRuntimeMCPServersSnapshotWhenCatalogBreaks(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Agents = []config.Agent{{
 		Name:              "ant",
@@ -349,7 +349,7 @@ command = [broken
 		t.Fatalf("WriteFile(mcp): %v", err)
 	}
 
-	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", []runtime.MCPServerConfig{{
+	servers := []runtime.MCPServerConfig{{
 		Name:      "identity",
 		Transport: runtime.MCPTransportHTTP,
 		Command:   "/bin/mcp",
@@ -361,9 +361,13 @@ command = [broken
 		Headers: map[string]string{
 			"Authorization": "Bearer secret",
 		},
-	}})
+	}}
+	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", servers)
 	if err != nil {
 		t.Fatalf("WithStoredMCPMetadata: %v", err)
+	}
+	if err := session.PersistRuntimeMCPServersSnapshot(fs.cityPath, "sess-1", servers); err != nil {
+		t.Fatalf("PersistRuntimeMCPServersSnapshot: %v", err)
 	}
 
 	srv := New(fs)
@@ -386,13 +390,13 @@ command = [broken
 	if len(runtimeCfg.Hints.MCPServers) != 1 {
 		t.Fatalf("Hints.MCPServers len = %d, want 1", len(runtimeCfg.Hints.MCPServers))
 	}
-	if got, want := runtimeCfg.Hints.MCPServers[0].Args[1], "__redacted__"; got != want {
+	if got, want := runtimeCfg.Hints.MCPServers[0].Args[1], "super-secret"; got != want {
 		t.Fatalf("Args[1] = %q, want %q", got, want)
 	}
-	if got, want := runtimeCfg.Hints.MCPServers[0].Env["API_TOKEN"], "__redacted__"; got != want {
+	if got, want := runtimeCfg.Hints.MCPServers[0].Env["API_TOKEN"], "super-secret"; got != want {
 		t.Fatalf("Env[API_TOKEN] = %q, want %q", got, want)
 	}
-	if got, want := runtimeCfg.Hints.MCPServers[0].Headers["Authorization"], "__redacted__"; got != want {
+	if got, want := runtimeCfg.Hints.MCPServers[0].Headers["Authorization"], "Bearer secret"; got != want {
 		t.Fatalf("Headers[Authorization] = %q, want %q", got, want)
 	}
 }
