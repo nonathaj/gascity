@@ -60,7 +60,7 @@ func workerFactoryWithConfig(cityPath string, store beads.Store, sp runtime.Prov
 			if err != nil {
 				return ""
 			}
-			return strings.TrimSpace(resolved.DefaultSessionTransport())
+			return strings.TrimSpace(resolved.ProviderSessionCreateTransport())
 		}
 		searchPaths = worker.MergeSearchPaths(cfg.Daemon.ObservePaths)
 	}
@@ -459,16 +459,21 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 	}
 
 	command := strings.TrimSpace(info.Command)
+	optionOverrides, err := session.ParseTemplateOverrides(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("parsing template overrides: %w", err)
+	}
+	launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, transport)
+	if err != nil {
+		return nil, fmt.Errorf("building provider launch command: %w", err)
+	}
 	resolvedCommand := resolved.CommandString()
 	if transport == "acp" {
 		resolvedCommand = resolved.ACPCommandString()
 	}
-	if !shouldPreserveStoredRuntimeCommand(command, resolvedCommand) {
-		launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, nil, transport)
-		command = resolvedCommand
-		if err == nil {
-			command = launchCommand.Command
-		}
+	desiredCommand := firstNonEmptyGCString(launchCommand.Command, resolvedCommand, resolved.Name)
+	if !shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
+		command = desiredCommand
 	}
 	command = firstNonEmptyGCString(command, info.Provider, resolved.Name)
 
@@ -547,7 +552,7 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if err != nil {
 		return nil, ""
 	}
-	return resolved, firstNonEmptyWorkerString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.DefaultSessionTransport()))
+	return resolved, firstNonEmptyWorkerString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.ProviderSessionCreateTransport()))
 }
 
 func workerDeliveryIntentForSubmitIntent(intent session.SubmitIntent) worker.DeliveryIntent {

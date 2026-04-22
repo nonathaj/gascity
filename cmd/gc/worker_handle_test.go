@@ -414,7 +414,7 @@ acp_args = ["acp"]
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigUsesACPTransportForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -446,7 +446,7 @@ acp_args = ["acp"]
 	if resolved == nil {
 		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
 	}
-	if got, want := resolved.Command, "/bin/echo"; got != want {
+	if got, want := resolved.Command, "/bin/echo acp"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }
@@ -488,6 +488,49 @@ acp_args = ["acp"]
 		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
 	}
 	if got, want := resolved.Command, "/bin/echo acp"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+}
+
+func TestResolvedWorkerRuntimeWithConfigReplaysTemplateOverridesOnResume(t *testing.T) {
+	cityDir := t.TempDir()
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Dir:      "myrig",
+			Provider: "custom",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"custom": {
+				Command:   "/bin/echo",
+				PathCheck: "true",
+				OptionsSchema: []config.ProviderOption{{
+					Key:  "effort",
+					Type: "select",
+					Choices: []config.OptionChoice{{
+						Value:    "high",
+						FlagArgs: []string{"--effort", "high"},
+					}},
+				}},
+			},
+		},
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, session.Info{
+		Template: "myrig/worker",
+		Command:  "/bin/echo",
+		WorkDir:  cityDir,
+	}, "", map[string]string{
+		"template_overrides": `{"effort":"high","initial_message":"hello"}`,
+	})
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfigAndMetadata: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfigAndMetadata() = nil")
+	}
+	if got, want := resolved.Command, "/bin/echo --effort high"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }

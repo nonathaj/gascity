@@ -359,7 +359,7 @@ func TestConfiguredACPRouteNames_IncludeLegacyObservedACPProviderSessionsWithout
 	}
 }
 
-func TestConfiguredACPRouteNames_ExcludeLegacyObservedCustomACPProviderSessionsWithoutTransportMetadata(t *testing.T) {
+func TestConfiguredACPRouteNames_IncludeLegacyObservedCustomACPProviderSessionsWithoutTransportMetadata(t *testing.T) {
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
 		Providers: map[string]config.ProviderSpec{
@@ -383,8 +383,8 @@ func TestConfiguredACPRouteNames_ExcludeLegacyObservedCustomACPProviderSessionsW
 	}})
 
 	got := configuredACPRouteNames(snapshot, "test-city", cfg)
-	if len(got) != 0 {
-		t.Fatalf("configuredACPRouteNames() = %v, want no legacy ACP inference for custom provider", got)
+	if len(got) != 1 || got[0] != "provider-session" {
+		t.Fatalf("configuredACPRouteNames() = %v, want [provider-session]", got)
 	}
 }
 

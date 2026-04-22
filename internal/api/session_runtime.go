@@ -226,12 +226,13 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 	if resolved == nil {
 		return cmd, runtime.Config{WorkDir: info.WorkDir}, nil
 	}
-	mcpServers, err := s.resumeSessionMCPServers(info, s.sessionMetadata(info.ID), resolved, firstNonEmptyString(workDir, info.WorkDir), transport)
+	metadata := s.sessionMetadata(info.ID)
+	mcpServers, err := s.resumeSessionMCPServers(info, metadata, resolved, firstNonEmptyString(workDir, info.WorkDir), transport)
 	if err != nil {
 		return "", runtime.Config{}, err
 	}
 	resolvedInfo := info
-	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command); err == nil {
+	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata); err == nil {
 		resolvedInfo.Command = command
 	} else {
 		resolvedCommand := resolved.CommandString()
@@ -248,19 +249,24 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 	return session.BuildResumeCommand(resolvedInfo), sessionResumeHints(resolved, workDir, mcpServers), nil
 }
 
-func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string) (string, error) {
+func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string, metadata map[string]string) (string, error) {
+	optionOverrides, err := session.ParseTemplateOverrides(metadata)
+	if err != nil {
+		return "", fmt.Errorf("parsing template overrides: %w", err)
+	}
+	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, optionOverrides, transport)
+	if err != nil {
+		return "", fmt.Errorf("building provider launch command: %w", err)
+	}
 	resolvedCommand := resolved.CommandString()
 	if transport == "acp" {
 		resolvedCommand = resolved.ACPCommandString()
 	}
-	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommand(command, resolvedCommand) {
+	desiredCommand := firstNonEmptyString(launchCommand.Command, resolvedCommand, resolved.Name)
+	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
 		return command, nil
 	}
-	launchCommand, err := config.BuildProviderLaunchCommand(s.state.CityPath(), resolved, nil, transport)
-	if err != nil {
-		return "", fmt.Errorf("building provider launch command: %w", err)
-	}
-	return firstNonEmptyString(launchCommand.Command, resolvedCommand, resolved.Name), nil
+	return desiredCommand, nil
 }
 
 func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) bool {
@@ -297,7 +303,7 @@ func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ st
 	if err != nil {
 		return nil, err
 	}
-	command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command)
+	command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +346,7 @@ func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvi
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}
-	transport := firstNonEmptyString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.DefaultSessionTransport()))
+	transport := firstNonEmptyString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.ProviderSessionCreateTransport()))
 	return resolved, workDir, transport
 }
 

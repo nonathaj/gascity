@@ -315,7 +315,7 @@ func providerSessionCreateUsesACP(cfg *config.City, providerName string) bool {
 
 func providerLegacyDefaultsToACP(cfg *config.City, providerName string) bool {
 	resolved := resolveProviderForACPTransport(cfg, providerName)
-	return resolved != nil && resolved.DefaultSessionTransport() == "acp"
+	return resolved != nil && resolved.ProviderSessionCreateTransport() == "acp"
 }
 
 func observedACPSessionNames(snapshot *sessionBeadSnapshot, cfg *config.City) []string {

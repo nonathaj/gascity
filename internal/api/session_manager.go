@@ -55,5 +55,5 @@ func configuredSessionTransport(cfg *config.City, template, provider string) str
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(resolved.DefaultSessionTransport())
+	return strings.TrimSpace(resolved.ProviderSessionCreateTransport())
 }

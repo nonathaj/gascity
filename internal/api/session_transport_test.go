@@ -166,3 +166,33 @@ func TestBuildSessionResumeUsesProviderACPDefaultForLegacyTemplateSession(t *tes
 		t.Fatalf("resume command = %q, want %q", cmd, "/bin/echo acp")
 	}
 }
+
+func TestResolvedSessionRuntimeCommandReplaysTemplateOverrides(t *testing.T) {
+	fs := newSessionFakeState(t)
+	srv := New(fs)
+	resolved := &config.ResolvedProvider{
+		Name:    "custom",
+		Command: "/bin/echo",
+		OptionsSchema: []config.ProviderOption{{
+			Key:  "effort",
+			Type: "select",
+			Choices: []config.OptionChoice{{
+				Value:    "high",
+				FlagArgs: []string{"--effort", "high"},
+			}},
+		}},
+	}
+
+	command, err := srv.resolvedSessionRuntimeCommand(
+		resolved,
+		"",
+		"/bin/echo",
+		map[string]string{"template_overrides": `{"effort":"high","initial_message":"hello"}`},
+	)
+	if err != nil {
+		t.Fatalf("resolvedSessionRuntimeCommand: %v", err)
+	}
+	if command != "/bin/echo --effort high" {
+		t.Fatalf("command = %q, want %q", command, "/bin/echo --effort high")
+	}
+}
