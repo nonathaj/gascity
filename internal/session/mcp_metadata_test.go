@@ -103,3 +103,49 @@ func TestRuntimeMCPServersSnapshotRoundTrip(t *testing.T) {
 		t.Fatalf("Headers[Authorization] = %q, want %q", got, want)
 	}
 }
+
+func TestSanitizeStoredMCPSnapshotForResumePreservesNonSecretFields(t *testing.T) {
+	raw, err := EncodeMCPServersSnapshot([]runtime.MCPServerConfig{{
+		Name:      "remote",
+		Transport: runtime.MCPTransportHTTP,
+		Command:   "/bin/mcp",
+		Args: []string{
+			"--serve",
+			"--api-key",
+			"super-secret",
+			"--token=abc123",
+			"https://user:pass@example.invalid/mcp?token=abc123",
+		},
+		Env: map[string]string{
+			"API_TOKEN": "super-secret",
+		},
+		URL: "https://user:pass@example.invalid/mcp?token=abc123",
+		Headers: map[string]string{
+			"Authorization": "Bearer secret",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("EncodeMCPServersSnapshot: %v", err)
+	}
+	stored, err := DecodeMCPServersSnapshot(raw)
+	if err != nil {
+		t.Fatalf("DecodeMCPServersSnapshot: %v", err)
+	}
+
+	sanitized := SanitizeStoredMCPSnapshotForResume(stored)
+	if len(sanitized) != 1 {
+		t.Fatalf("len(sanitized) = %d, want 1", len(sanitized))
+	}
+	if got, want := sanitized[0].Args, []string{"--serve"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("Args = %#v, want %#v", got, want)
+	}
+	if len(sanitized[0].Env) != 0 {
+		t.Fatalf("Env = %#v, want empty", sanitized[0].Env)
+	}
+	if len(sanitized[0].Headers) != 0 {
+		t.Fatalf("Headers = %#v, want empty", sanitized[0].Headers)
+	}
+	if got, want := sanitized[0].URL, "https://example.invalid/mcp"; got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+}

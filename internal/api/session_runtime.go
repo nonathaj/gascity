@@ -84,10 +84,7 @@ func (s *Server) resumeSessionMCPServers(info session.Info, metadata map[string]
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decoding stored MCP snapshot: %w", decodeErr)
 	}
-	if session.StoredMCPSnapshotContainsRedactions(stored) {
-		return nil, nil
-	}
-	return stored, nil
+	return session.SanitizeStoredMCPSnapshotForResume(stored), nil
 }
 
 func (s *Server) providerSessionMCPServers(providerName, identity, workDir, transport string) ([]runtime.MCPServerConfig, error) {

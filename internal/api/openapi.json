@@ -4734,6 +4734,20 @@
       "ProviderPatchSetInputBody": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "description": "Override ACP transport command arguments.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "description": "Override ACP transport command binary.",
+            "type": "string"
+          },
           "args": {
             "description": "Override command arguments.",
             "items": {

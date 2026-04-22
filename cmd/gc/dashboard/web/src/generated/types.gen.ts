@@ -1843,6 +1843,14 @@ export type ProviderPatch = {
 
 export type ProviderPatchSetInputBody = {
     /**
+     * Override ACP transport command arguments.
+     */
+    acp_args?: Array<string> | null;
+    /**
+     * Override ACP transport command binary.
+     */
+    acp_command?: string;
+    /**
      * Override command arguments.
      */
     args?: Array<string> | null;

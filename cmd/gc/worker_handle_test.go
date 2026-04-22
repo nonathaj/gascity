@@ -1441,6 +1441,88 @@ command = [broken
 	}
 }
 
+func TestResolvedWorkerRuntimeWithConfigFallsBackToSanitizedStoredMCPServersWhenRuntimeSnapshotMissing(t *testing.T) {
+	cityDir := t.TempDir()
+	writePhase0InterfaceCity(t, cityDir, `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[agent]]
+name = "ant"
+dir = "myrig"
+provider = "stub"
+session = "acp"
+work_dir = ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}"
+min_active_sessions = 0
+max_active_sessions = 4
+
+[providers.stub]
+command = "/bin/echo"
+supports_acp = true
+acp_command = "/bin/echo"
+acp_args = ["acp"]
+`)
+	writeCatalogFile(t, cityDir, "mcp/identity.template.toml", `
+name = "identity"
+command = [broken
+`)
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+
+	workDir := filepath.Join(cityDir, ".gc", "worktrees", "myrig", "ants", "ant")
+	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", []runtime.MCPServerConfig{{
+		Name:      "identity",
+		Transport: runtime.MCPTransportHTTP,
+		Command:   "/bin/mcp",
+		Args:      []string{"--serve", "--api-key", "super-secret"},
+		Env: map[string]string{
+			"API_TOKEN": "super-secret",
+		},
+		URL: "https://user:pass@example.invalid/mcp?token=abc123",
+		Headers: map[string]string{
+			"Authorization": "Bearer secret",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("WithStoredMCPMetadata: %v", err)
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, session.Info{
+		ID:        "sess-1",
+		Template:  "myrig/ant",
+		Alias:     "ant",
+		AgentName: "myrig/ant-adhoc-123",
+		Transport: "acp",
+		WorkDir:   workDir,
+	}, "", metadata)
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfigAndMetadata: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfigAndMetadata() = nil")
+	}
+	if len(resolved.Hints.MCPServers) != 1 {
+		t.Fatalf("Hints.MCPServers len = %d, want 1", len(resolved.Hints.MCPServers))
+	}
+	if got, want := resolved.Hints.MCPServers[0].Args, []string{"--serve"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("Args = %#v, want %#v", got, want)
+	}
+	if len(resolved.Hints.MCPServers[0].Env) != 0 {
+		t.Fatalf("Env = %#v, want empty", resolved.Hints.MCPServers[0].Env)
+	}
+	if len(resolved.Hints.MCPServers[0].Headers) != 0 {
+		t.Fatalf("Headers = %#v, want empty", resolved.Hints.MCPServers[0].Headers)
+	}
+	if got, want := resolved.Hints.MCPServers[0].URL, "https://example.invalid/mcp"; got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+}
+
 func TestWorkerSessionRuntimeResolverWithConfigFallsBackToProviderNameWhenResolvedCommandMissing(t *testing.T) {
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},

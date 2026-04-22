@@ -190,10 +190,7 @@ func resumeRuntimeMCPServersWithConfig(
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decoding stored MCP snapshot: %w", decodeErr)
 	}
-	if session.StoredMCPSnapshotContainsRedactions(stored) {
-		return nil, nil
-	}
-	return stored, nil
+	return session.SanitizeStoredMCPSnapshotForResume(stored), nil
 }
 
 func newWorkerSessionHandleForResolvedRuntimeWithConfig(

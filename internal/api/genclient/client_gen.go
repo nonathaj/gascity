@@ -1839,6 +1839,12 @@ type ProviderPatch struct {
 
 // ProviderPatchSetInputBody defines model for ProviderPatchSetInputBody.
 type ProviderPatchSetInputBody struct {
+	// AcpArgs Override ACP transport command arguments.
+	AcpArgs *[]string `json:"acp_args,omitempty"`
+
+	// AcpCommand Override ACP transport command binary.
+	AcpCommand *string `json:"acp_command,omitempty"`
+
 	// Args Override command arguments.
 	Args *[]string `json:"args,omitempty"`
 

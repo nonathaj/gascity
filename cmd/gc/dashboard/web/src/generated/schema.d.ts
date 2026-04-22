@@ -3281,6 +3281,10 @@ export interface components {
             Replace: boolean;
         };
         ProviderPatchSetInputBody: {
+            /** @description Override ACP transport command arguments. */
+            acp_args?: string[] | null;
+            /** @description Override ACP transport command binary. */
+            acp_command?: string;
             /** @description Override command arguments. */
             args?: string[] | null;
             /** @description Override command binary. */

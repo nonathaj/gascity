@@ -63,6 +63,23 @@ func StoredMCPSnapshotContainsRedactions(servers []runtime.MCPServerConfig) bool
 	return false
 }
 
+// SanitizeStoredMCPSnapshotForResume strips redacted secret placeholders from
+// a stored MCP snapshot while preserving any non-secret fields that can still
+// help degraded resume reconstruct MCP hints.
+func SanitizeStoredMCPSnapshotForResume(servers []runtime.MCPServerConfig) []runtime.MCPServerConfig {
+	if len(servers) == 0 {
+		return nil
+	}
+	normalized := runtime.NormalizeMCPServerConfigs(servers)
+	for i := range normalized {
+		normalized[i].Args = sanitizeStoredMCPMetadataArgs(normalized[i].Args)
+		normalized[i].Env = sanitizeStoredMCPMetadataMap(normalized[i].Env)
+		normalized[i].URL = sanitizeStoredMCPMetadataURL(normalized[i].URL)
+		normalized[i].Headers = sanitizeStoredMCPMetadataMap(normalized[i].Headers)
+	}
+	return runtime.NormalizeMCPServerConfigs(normalized)
+}
+
 // WithStoredMCPMetadata returns a metadata map augmented with the stable MCP
 // identity and normalized ACP session/new snapshot for the session.
 func WithStoredMCPMetadata(meta map[string]string, identity string, servers []runtime.MCPServerConfig) (map[string]string, error) {
@@ -192,6 +209,91 @@ func snapshotArgsContainRedactions(args []string) bool {
 		}
 	}
 	return false
+}
+
+func sanitizeStoredMCPMetadataArgs(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		trimmed := strings.TrimSpace(arg)
+		if strings.HasPrefix(trimmed, "-") &&
+			isSensitiveMCPMetadataToken(trimmed) &&
+			i+1 < len(args) &&
+			strings.Contains(args[i+1], redactedMCPSnapshotValue) {
+			i++
+			continue
+		}
+		if !strings.Contains(arg, redactedMCPSnapshotValue) {
+			out = append(out, arg)
+			continue
+		}
+		if key, value, ok := strings.Cut(arg, "="); ok &&
+			isSensitiveMCPMetadataToken(key) &&
+			strings.Contains(value, redactedMCPSnapshotValue) {
+			continue
+		}
+		if sanitizedURL := sanitizeStoredMCPMetadataURL(arg); sanitizedURL != "" && sanitizedURL != arg {
+			out = append(out, sanitizedURL)
+		}
+	}
+	return out
+}
+
+func sanitizeStoredMCPMetadataMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string)
+	for key, value := range in {
+		if strings.Contains(value, redactedMCPSnapshotValue) {
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeStoredMCPMetadataURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, redactedMCPSnapshotValue) {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if parsed.User != nil && strings.Contains(parsed.User.String(), redactedMCPSnapshotValue) {
+		parsed.User = nil
+	}
+	if query := parsed.Query(); len(query) > 0 {
+		for key, values := range query {
+			filtered := values[:0]
+			for _, value := range values {
+				if !strings.Contains(value, redactedMCPSnapshotValue) {
+					filtered = append(filtered, value)
+				}
+			}
+			if len(filtered) == 0 {
+				query.Del(key)
+				continue
+			}
+			query[key] = filtered
+		}
+		parsed.RawQuery = query.Encode()
+	}
+	if strings.Contains(parsed.String(), redactedMCPSnapshotValue) {
+		return ""
+	}
+	return parsed.String()
 }
 
 func isSensitiveMCPMetadataToken(value string) bool {
