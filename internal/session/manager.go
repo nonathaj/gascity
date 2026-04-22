@@ -121,7 +121,7 @@ type Manager struct {
 	store             beads.Store
 	sp                runtime.Provider
 	cityPath          string
-	transportResolver func(template, provider string) string
+	transportResolver func(template, provider string) transportResolution
 }
 
 // PruneResult reports which sessions were pruned and which queued wait nudges
@@ -141,6 +141,11 @@ type transportDetector interface {
 	DetectTransport(name string) string
 }
 
+type transportResolution struct {
+	transport            string
+	allowStoppedFallback bool
+}
+
 func normalizeTransport(provider, transport string) string {
 	if transport != "" {
 		return transport
@@ -155,20 +160,27 @@ func transportFromMetadata(b beads.Bead) string {
 	return normalizeTransport(b.Metadata["provider"], b.Metadata["transport"])
 }
 
+func (m *Manager) resolveConfiguredTransport(template, provider string) (string, bool) {
+	if m.transportResolver == nil {
+		return "", false
+	}
+	resolution := m.transportResolver(strings.TrimSpace(template), strings.TrimSpace(provider))
+	return normalizeTransport(provider, resolution.transport), resolution.allowStoppedFallback
+}
+
 func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool) {
 	transport := transportFromMetadata(b)
 	if transport != "" {
 		return transport, false
 	}
+	if strings.TrimSpace(b.Metadata[MCPIdentityMetadataKey]) != "" ||
+		strings.TrimSpace(b.Metadata[MCPServersSnapshotMetadataKey]) != "" {
+		return "acp", false
+	}
 	if strings.TrimSpace(b.Metadata["pending_create_claim"]) == "true" {
-		if m.transportResolver != nil {
-			transport = normalizeTransport(
-				b.Metadata["provider"],
-				m.transportResolver(strings.TrimSpace(b.Metadata["template"]), strings.TrimSpace(b.Metadata["provider"])),
-			)
-			if transport != "" {
-				return transport, true
-			}
+		transport, _ = m.resolveConfiguredTransport(b.Metadata["template"], b.Metadata["provider"])
+		if transport != "" {
+			return transport, true
 		}
 		return "", false
 	}
@@ -180,6 +192,10 @@ func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool)
 	}
 	if m.sp != nil && m.sp.IsRunning(sessName) {
 		return "", false
+	}
+	transport, allowStoppedFallback := m.resolveConfiguredTransport(b.Metadata["template"], b.Metadata["provider"])
+	if transport != "" && allowStoppedFallback {
+		return transport, true
 	}
 	return "", false
 }
@@ -213,7 +229,16 @@ func NewManager(store beads.Store, sp runtime.Provider) *Manager {
 // transport from template or provider config when older beads do not have
 // transport metadata.
 func NewManagerWithTransportResolver(store beads.Store, sp runtime.Provider, resolver func(template, provider string) string) *Manager {
-	return &Manager{store: store, sp: sp, transportResolver: resolver}
+	return &Manager{
+		store: store,
+		sp:    sp,
+		transportResolver: func(template, provider string) transportResolution {
+			if resolver == nil {
+				return transportResolution{}
+			}
+			return transportResolution{transport: resolver(template, provider)}
+		},
+	}
 }
 
 // NewManagerWithCityPath creates a Manager that can persist deferred submits
@@ -226,7 +251,44 @@ func NewManagerWithCityPath(store beads.Store, sp runtime.Provider, cityPath str
 // session transport from template or provider config and persist deferred
 // submits into the city's nudge queue.
 func NewManagerWithTransportResolverAndCityPath(store beads.Store, sp runtime.Provider, cityPath string, resolver func(template, provider string) string) *Manager {
-	return &Manager{store: store, sp: sp, cityPath: cityPath, transportResolver: resolver}
+	return &Manager{
+		store:    store,
+		sp:       sp,
+		cityPath: cityPath,
+		transportResolver: func(template, provider string) transportResolution {
+			if resolver == nil {
+				return transportResolution{}
+			}
+			return transportResolution{transport: resolver(template, provider)}
+		},
+	}
+}
+
+// NewManagerWithTransportPolicyResolverAndCityPath creates a Manager that can
+// infer transport from config and, when the resolver marks it safe, continue
+// using that transport for stopped legacy sessions without persisted
+// transport metadata.
+func NewManagerWithTransportPolicyResolverAndCityPath(
+	store beads.Store,
+	sp runtime.Provider,
+	cityPath string,
+	resolver func(template, provider string) (string, bool),
+) *Manager {
+	return &Manager{
+		store:    store,
+		sp:       sp,
+		cityPath: cityPath,
+		transportResolver: func(template, provider string) transportResolution {
+			if resolver == nil {
+				return transportResolution{}
+			}
+			transport, allowStoppedFallback := resolver(template, provider)
+			return transportResolution{
+				transport:            transport,
+				allowStoppedFallback: allowStoppedFallback,
+			}
+		},
+	}
 }
 
 // Create creates a new chat session bead and starts the runtime session.

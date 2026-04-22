@@ -699,6 +699,18 @@ func commitStartResultTraced(
 	if storedMCPSnapshot != "" || session.Metadata[sessionpkg.MCPServersSnapshotMetadataKey] != "" {
 		metadata[sessionpkg.MCPServersSnapshotMetadataKey] = storedMCPSnapshot
 	}
+	if result.prepared.candidate.tp.IsACP ||
+		session.Metadata[sessionpkg.MCPIdentityMetadataKey] != "" ||
+		session.Metadata[sessionpkg.MCPServersSnapshotMetadataKey] != "" {
+		storedMCPIdentity := firstNonEmptyGCString(
+			session.Metadata[sessionpkg.MCPIdentityMetadataKey],
+			session.Metadata[sessionpkg.NamedSessionIdentityMetadata],
+			session.Metadata["agent_name"],
+		)
+		if storedMCPIdentity != "" || session.Metadata[sessionpkg.MCPIdentityMetadataKey] != "" {
+			metadata[sessionpkg.MCPIdentityMetadataKey] = storedMCPIdentity
+		}
+	}
 	if err := store.SetMetadataBatch(session.ID, metadata); err != nil {
 		fmt.Fprintf(stderr, "session reconciler: storing hashes for %s: %v\n", name, err) //nolint:errcheck
 		if trace != nil {

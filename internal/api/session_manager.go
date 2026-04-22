@@ -13,19 +13,24 @@ func (s *Server) sessionManager(store beads.Store) *session.Manager {
 	if cfg == nil {
 		return session.NewManagerWithCityPath(store, s.state.SessionProvider(), s.state.CityPath())
 	}
-	return session.NewManagerWithTransportResolverAndCityPath(
+	return session.NewManagerWithTransportPolicyResolverAndCityPath(
 		store,
 		s.state.SessionProvider(),
 		s.state.CityPath(),
-		func(template, provider string) string {
-			return configuredSessionTransport(cfg, template, provider)
+		func(template, provider string) (string, bool) {
+			return configuredSessionTransportResolution(cfg, template, provider)
 		},
 	)
 }
 
 func configuredSessionTransport(cfg *config.City, template, provider string) string {
+	transport, _ := configuredSessionTransportResolution(cfg, template, provider)
+	return transport
+}
+
+func configuredSessionTransportResolution(cfg *config.City, template, provider string) (string, bool) {
 	if cfg == nil {
-		return ""
+		return "", false
 	}
 	if agentCfg, ok := resolveSessionTemplateAgent(cfg, template); ok {
 		resolved, err := config.ResolveProvider(
@@ -35,16 +40,16 @@ func configuredSessionTransport(cfg *config.City, template, provider string) str
 			func(name string) (string, error) { return name, nil },
 		)
 		if err != nil {
-			return strings.TrimSpace(agentCfg.Session)
+			return strings.TrimSpace(agentCfg.Session), strings.TrimSpace(agentCfg.Session) != ""
 		}
-		return config.ResolveSessionCreateTransport(agentCfg.Session, resolved)
+		return config.ResolveSessionCreateTransport(agentCfg.Session, resolved), strings.TrimSpace(agentCfg.Session) != ""
 	}
 	provider = strings.TrimSpace(provider)
 	if provider == "" {
 		provider = strings.TrimSpace(template)
 	}
 	if provider == "" {
-		return ""
+		return "", false
 	}
 	resolved, err := config.ResolveProvider(
 		&config.Agent{Provider: provider},
@@ -53,7 +58,7 @@ func configuredSessionTransport(cfg *config.City, template, provider string) str
 		func(name string) (string, error) { return name, nil },
 	)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return strings.TrimSpace(resolved.ProviderSessionCreateTransport())
+	return strings.TrimSpace(resolved.ProviderSessionCreateTransport()), true
 }
