@@ -71,6 +71,7 @@ func sessionProviderContextForCity(cfg *config.City, cityPath, providerOverride 
 }
 
 var openSessionProviderStore = openCityStoreAt
+var buildSessionProviderByName = newSessionProviderByName
 
 // tmuxConfigFromSession converts a config.SessionConfig into a
 // sessiontmux.Config with resolved durations and defaults. If the
@@ -193,10 +194,14 @@ func newSessionProviderFromContextWithError(ctx sessionProviderContext, sessionB
 	// wrap in an auto provider that routes per-session.
 	// NOTE: agents comes from loadCityConfig which applies pack overrides,
 	// so the Session field from overrides is already resolved here.
+	requireACPWrapper := requiresACPProviderWrapper(sessionBeads, ctx.cfg)
 	if ctx.providerName != "acp" && needsACPProviderWrapper(sessionBeads, ctx.cfg) {
-		acpSP, acpErr := newSessionProviderByName("acp", ctx.sc, ctx.cityName, ctx.cityPath)
+		acpSP, acpErr := buildSessionProviderByName("acp", ctx.sc, ctx.cityName, ctx.cityPath)
 		if acpErr != nil {
-			return nil, fmt.Errorf("acp provider: %w", acpErr)
+			if requireACPWrapper {
+				return nil, fmt.Errorf("acp provider: %w", acpErr)
+			}
+			return sp, nil
 		}
 		autoSP := sessionauto.New(sp, acpSP)
 		for _, sessName := range configuredACPRouteNames(sessionBeads, ctx.cityName, ctx.cfg) {
@@ -238,13 +243,11 @@ func configuredACPSessionNames(snapshot *sessionBeadSnapshot, cityName, sessionT
 }
 
 func needsACPProviderWrapper(snapshot *sessionBeadSnapshot, cfg *config.City) bool {
-	if len(observedACPSessionNames(snapshot)) > 0 {
-		return true
-	}
-	if cfg == nil {
-		return false
-	}
-	return hasACPAgents(cfg.Agents) || hasACPProviderTargets(cfg)
+	return requiresACPProviderWrapper(snapshot, cfg) || (cfg != nil && hasACPProviderTargets(cfg))
+}
+
+func requiresACPProviderWrapper(snapshot *sessionBeadSnapshot, cfg *config.City) bool {
+	return len(observedACPSessionNames(snapshot)) > 0 || (cfg != nil && hasACPAgents(cfg.Agents))
 }
 
 func hasACPProviderTargets(cfg *config.City) bool {

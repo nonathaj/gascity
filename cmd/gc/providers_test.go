@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestTmuxConfigFromSessionDefaultsSocketToCityName(t *testing.T) {
@@ -404,6 +406,74 @@ func TestNewSessionProviderWrapsACPProvidersWithoutACPAgents(t *testing.T) {
 	sp := newSessionProviderFromContext(ctx, nil)
 	if _, ok := sp.(interface{ RouteACP(string) }); !ok {
 		t.Fatalf("provider = %T, want ACP-routing wrapper", sp)
+	}
+}
+
+func TestNewSessionProviderIgnoresACPInitFailureForUnusedACPProviders(t *testing.T) {
+	oldBuild := buildSessionProviderByName
+	t.Cleanup(func() { buildSessionProviderByName = oldBuild })
+	buildSessionProviderByName = func(name string, sc config.SessionConfig, cityName, cityPath string) (runtime.Provider, error) {
+		if name == "acp" {
+			return nil, errors.New("acp unavailable")
+		}
+		return oldBuild(name, sc, cityName, cityPath)
+	}
+
+	ctx := sessionProviderContextForCity(&config.City{
+		Workspace: config.Workspace{
+			Name:     "test-city",
+			Provider: "opencode",
+		},
+		Providers: map[string]config.ProviderSpec{
+			"opencode": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: boolPtr(true),
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}, t.TempDir(), "fake")
+
+	sp, err := newSessionProviderFromContextWithError(ctx, nil)
+	if err != nil {
+		t.Fatalf("newSessionProviderFromContextWithError: %v", err)
+	}
+	if _, ok := sp.(interface{ RouteACP(string) }); ok {
+		t.Fatalf("provider = %T, want plain provider fallback when ACP is unavailable", sp)
+	}
+}
+
+func TestNewSessionProviderRequiresACPInitForACPAgents(t *testing.T) {
+	oldBuild := buildSessionProviderByName
+	t.Cleanup(func() { buildSessionProviderByName = oldBuild })
+	buildSessionProviderByName = func(name string, sc config.SessionConfig, cityName, cityPath string) (runtime.Provider, error) {
+		if name == "acp" {
+			return nil, errors.New("acp unavailable")
+		}
+		return oldBuild(name, sc, cityName, cityPath)
+	}
+
+	ctx := sessionProviderContextForCity(&config.City{
+		Workspace: config.Workspace{
+			Name: "test-city",
+		},
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "opencode", Session: "acp"},
+		},
+		Providers: map[string]config.ProviderSpec{
+			"opencode": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: boolPtr(true),
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}, t.TempDir(), "fake")
+
+	if _, err := newSessionProviderFromContextWithError(ctx, nil); err == nil {
+		t.Fatal("newSessionProviderFromContextWithError() error = nil, want ACP init failure")
 	}
 }
 

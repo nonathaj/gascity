@@ -71,7 +71,10 @@ func TestBuildSessionResumeUsesResolvedProviderCommand(t *testing.T) {
 		WorkDir:  "/tmp/workdir",
 	}
 
-	cmd, hints := srv.buildSessionResume(info)
+	cmd, hints, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "aimux run gemini -- --approval-mode yolo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -111,7 +114,10 @@ func TestBuildSessionResumePreservesStoredResolvedCommand(t *testing.T) {
 		WorkDir:  "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "claude --dangerously-skip-permissions --settings /tmp/settings.json"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -161,7 +167,10 @@ func TestBuildSessionResumeRebuildsBareStoredCommandForPoolClaudeAgent(t *testin
 		ResumeFlag: "--resume",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if !strings.Contains(cmd, "--dangerously-skip-permissions") {
 		t.Fatalf("resume command missing default args:\n  got: %s", cmd)
 	}
@@ -204,7 +213,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 		WorkDir:   "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -236,7 +248,10 @@ func TestBuildSessionResumeKeepsDefaultCommandWithoutACPTransportProvider(t *tes
 		WorkDir:  "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "/bin/echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -272,7 +287,10 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyProviderSessionWithoutTra
 		WorkDir:  "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "/bin/echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -308,7 +326,10 @@ func TestBuildSessionResumeUsesStoredACPTransportForTemplateSession(t *testing.T
 		WorkDir:   "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
@@ -343,8 +364,55 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateSessionWithoutTra
 		WorkDir:  "/tmp/workdir",
 	}
 
-	cmd, _ := srv.buildSessionResume(info)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
 	if got, want := cmd, "/bin/echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSessionResumePropagatesMCPResolutionError(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "opencode", Session: "acp"},
+		},
+		Providers: map[string]config.ProviderSpec{
+			"opencode": {
+				DisplayName: "OpenCode",
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: &supportsACP,
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "filesystem.toml"), []byte(`
+name = "filesystem"
+command = [broken
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		ID:        "gc-1",
+		Template:  "worker",
+		Provider:  "opencode",
+		Transport: "acp",
+		WorkDir:   fs.cityPath,
+	}
+
+	if _, _, err := srv.buildSessionResume(info); err == nil {
+		t.Fatal("buildSessionResume() error = nil, want MCP resolution error")
 	}
 }

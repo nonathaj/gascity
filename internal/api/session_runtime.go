@@ -150,19 +150,22 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	return resolved, workDir, agentCfg.Session, agentCfg.QualifiedName(), nil
 }
 
-func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config) {
+func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, error) {
 	cmd := session.BuildResumeCommand(info)
 	resolved, workDir, transport := s.resolveSessionRuntime(info)
 	if resolved == nil {
-		return cmd, runtime.Config{WorkDir: info.WorkDir}
+		return cmd, runtime.Config{WorkDir: info.WorkDir}, nil
 	}
-	mcpServers, _ := s.sessionMCPServers(
+	mcpServers, err := s.sessionMCPServers(
 		info.Template,
 		firstNonEmptyString(info.Provider, resolved.Name),
 		info.Alias,
 		firstNonEmptyString(workDir, info.WorkDir),
 		s.sessionKind(info.ID),
 	)
+	if err != nil {
+		return "", runtime.Config{}, err
+	}
 	resolvedInfo := info
 	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command); err == nil {
 		resolvedInfo.Command = command
@@ -178,7 +181,7 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config) 
 	resolvedInfo.ResumeFlag = resolved.ResumeFlag
 	resolvedInfo.ResumeStyle = resolved.ResumeStyle
 	resolvedInfo.ResumeCommand = resolved.ResumeCommand
-	return session.BuildResumeCommand(resolvedInfo), sessionResumeHints(resolved, workDir, mcpServers)
+	return session.BuildResumeCommand(resolvedInfo), sessionResumeHints(resolved, workDir, mcpServers), nil
 }
 
 func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string) (string, error) {
