@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 // Session is the resolved view of a Claude JSONL session file.
@@ -456,13 +458,27 @@ func FindSessionFileByID(searchPaths []string, workDir, sessionID string) string
 	if fileName == "" {
 		return ""
 	}
-	for _, slug := range claudeProjectSlugCandidates(workDir) {
-		for _, base := range searchPaths {
+	return findSessionFileByIDForCandidates(searchPaths, claudeProjectSlugCandidates(workDir), fileName)
+}
+
+func findSessionFileByIDForCandidates(searchPaths, slugs []string, fileName string) string {
+	for _, base := range searchPaths {
+		var bestPath string
+		var bestTime int64
+		for _, slug := range slugs {
 			path := filepath.Join(base, slug, fileName)
 			info, err := os.Stat(path)
-			if err == nil && !info.IsDir() {
-				return path
+			if err != nil || info.IsDir() {
+				continue
 			}
+			mt := info.ModTime().UnixNano()
+			if mt > bestTime {
+				bestTime = mt
+				bestPath = path
+			}
+		}
+		if bestPath != "" {
+			return bestPath
 		}
 	}
 	return ""
@@ -472,13 +488,27 @@ func findClaudeLatestSessionFile(searchPaths []string, workDir string) string {
 	if workDir == "" {
 		return ""
 	}
-	for _, slug := range claudeProjectSlugCandidates(workDir) {
-		for _, base := range searchPaths {
+	return findClaudeLatestSessionFileForCandidates(searchPaths, claudeProjectSlugCandidates(workDir))
+}
+
+func findClaudeLatestSessionFileForCandidates(searchPaths, slugs []string) string {
+	for _, base := range searchPaths {
+		var bestPath string
+		var bestTime int64
+		for _, slug := range slugs {
 			path := filepath.Join(base, slug, "latest-session.jsonl")
 			info, err := os.Stat(path)
-			if err == nil && !info.IsDir() {
-				return path
+			if err != nil || info.IsDir() {
+				continue
 			}
+			mt := info.ModTime().UnixNano()
+			if mt > bestTime {
+				bestTime = mt
+				bestPath = path
+			}
+		}
+		if bestPath != "" {
+			return bestPath
 		}
 	}
 	return ""
@@ -493,13 +523,18 @@ func safeSessionLogFileName(sessionID string) string {
 }
 
 // findSlugSessionFile searches slug-organized search paths for the most
-// recently modified JSONL session file. Files are stored at
+// recently modified JSONL session file across all matching Claude
+// project slug candidates. Files are stored at
 // {searchPath}/{slug}/{sessionID}.jsonl where slug is the working
 // directory path with "/" and "." replaced by "-".
 func findSlugSessionFile(searchPaths []string, workDir string) string {
+	return findSlugSessionFileForCandidates(searchPaths, claudeProjectSlugCandidates(workDir))
+}
+
+func findSlugSessionFileForCandidates(searchPaths, slugs []string) string {
 	var globalBestPath string
 	var globalBestTime int64
-	for _, slug := range claudeProjectSlugCandidates(workDir) {
+	for _, slug := range slugs {
 		for _, base := range searchPaths {
 			dir := filepath.Join(base, slug)
 			entries, err := os.ReadDir(dir)
@@ -810,9 +845,7 @@ func claudeProjectSlugCandidates(workDir string) []string {
 	if abs, err := filepath.Abs(workDir); err == nil {
 		add(abs)
 	}
-	if resolved, err := filepath.EvalSymlinks(workDir); err == nil {
-		add(resolved)
-	}
+	add(pathutil.NormalizePathForCompare(workDir))
 
 	for _, path := range append([]string(nil), paths...) {
 		addDarwinClaudePathAliases(path, add)
