@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -455,12 +456,13 @@ func FindSessionFileByID(searchPaths []string, workDir, sessionID string) string
 	if fileName == "" {
 		return ""
 	}
-	slug := ProjectSlug(workDir)
-	for _, base := range searchPaths {
-		path := filepath.Join(base, slug, fileName)
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return path
+	for _, slug := range claudeProjectSlugCandidates(workDir) {
+		for _, base := range searchPaths {
+			path := filepath.Join(base, slug, fileName)
+			info, err := os.Stat(path)
+			if err == nil && !info.IsDir() {
+				return path
+			}
 		}
 	}
 	return ""
@@ -470,12 +472,13 @@ func findClaudeLatestSessionFile(searchPaths []string, workDir string) string {
 	if workDir == "" {
 		return ""
 	}
-	slug := ProjectSlug(workDir)
-	for _, base := range searchPaths {
-		path := filepath.Join(base, slug, "latest-session.jsonl")
-		info, err := os.Stat(path)
-		if err == nil && !info.IsDir() {
-			return path
+	for _, slug := range claudeProjectSlugCandidates(workDir) {
+		for _, base := range searchPaths {
+			path := filepath.Join(base, slug, "latest-session.jsonl")
+			info, err := os.Stat(path)
+			if err == nil && !info.IsDir() {
+				return path
+			}
 		}
 	}
 	return ""
@@ -494,27 +497,28 @@ func safeSessionLogFileName(sessionID string) string {
 // {searchPath}/{slug}/{sessionID}.jsonl where slug is the working
 // directory path with "/" and "." replaced by "-".
 func findSlugSessionFile(searchPaths []string, workDir string) string {
-	slug := ProjectSlug(workDir)
 	var globalBestPath string
 	var globalBestTime int64
-	for _, base := range searchPaths {
-		dir := filepath.Join(base, slug)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
-				continue
-			}
-			info, err := e.Info()
+	for _, slug := range claudeProjectSlugCandidates(workDir) {
+		for _, base := range searchPaths {
+			dir := filepath.Join(base, slug)
+			entries, err := os.ReadDir(dir)
 			if err != nil {
 				continue
 			}
-			mt := info.ModTime().UnixNano()
-			if mt > globalBestTime {
-				globalBestTime = mt
-				globalBestPath = filepath.Join(dir, e.Name())
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+					continue
+				}
+				info, err := e.Info()
+				if err != nil {
+					continue
+				}
+				mt := info.ModTime().UnixNano()
+				if mt > globalBestTime {
+					globalBestTime = mt
+					globalBestPath = filepath.Join(dir, e.Name())
+				}
 			}
 		}
 	}
@@ -778,6 +782,80 @@ func providerFamily(provider string) string {
 		return "gemini"
 	default:
 		return p
+	}
+}
+
+func claudeProjectSlugCandidates(workDir string) []string {
+	workDir = strings.TrimSpace(workDir)
+	if workDir == "" {
+		return nil
+	}
+
+	seenPaths := make(map[string]bool)
+	var paths []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		path = filepath.Clean(path)
+		if seenPaths[path] {
+			return
+		}
+		seenPaths[path] = true
+		paths = append(paths, path)
+	}
+
+	add(workDir)
+	if abs, err := filepath.Abs(workDir); err == nil {
+		add(abs)
+	}
+	if resolved, err := filepath.EvalSymlinks(workDir); err == nil {
+		add(resolved)
+	}
+
+	for _, path := range append([]string(nil), paths...) {
+		addDarwinClaudePathAliases(path, add)
+	}
+
+	seenSlugs := make(map[string]bool)
+	var slugs []string
+	for _, path := range paths {
+		slug := ProjectSlug(path)
+		if seenSlugs[slug] {
+			continue
+		}
+		seenSlugs[slug] = true
+		slugs = append(slugs, slug)
+	}
+	return slugs
+}
+
+func addDarwinClaudePathAliases(path string, add func(string)) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+
+	switch {
+	case path == "/tmp":
+		add("/private/tmp")
+	case strings.HasPrefix(path, "/tmp/"):
+		add("/private/tmp/" + strings.TrimPrefix(path, "/tmp/"))
+	case path == "/private/tmp":
+		add("/tmp")
+	case strings.HasPrefix(path, "/private/tmp/"):
+		add("/tmp/" + strings.TrimPrefix(path, "/private/tmp/"))
+	}
+
+	switch {
+	case path == "/var":
+		add("/private/var")
+	case strings.HasPrefix(path, "/var/"):
+		add("/private/var/" + strings.TrimPrefix(path, "/var/"))
+	case path == "/private/var":
+		add("/var")
+	case strings.HasPrefix(path, "/private/var/"):
+		add("/var/" + strings.TrimPrefix(path, "/private/var/"))
 	}
 }
 

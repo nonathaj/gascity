@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -677,6 +678,93 @@ func TestFindSessionFileByIDRejectsTraversalSessionID(t *testing.T) {
 	}
 }
 
+func TestFindSessionFileByIDUsesClaudeProjectPathAlias(t *testing.T) {
+	skipUnlessDarwinClaudePathAliases(t)
+
+	base := t.TempDir()
+	storedWorkDir := "/tmp/gcac/gctutenv-123/home/my-city"
+	providerWorkDir := "/private/tmp/gcac/gctutenv-123/home/my-city"
+	slugDir := filepath.Join(base, ProjectSlug(providerWorkDir))
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(slugDir, "session-123.jsonl")
+	if err := os.WriteFile(want, []byte(`{}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := FindSessionFileByID([]string{base}, storedWorkDir, "session-123"); got != want {
+		t.Fatalf("FindSessionFileByID() = %q, want %q", got, want)
+	}
+}
+
+func TestFindSessionFileByIDPrefersStoredWorkDirSpelling(t *testing.T) {
+	skipUnlessDarwinClaudePathAliases(t)
+
+	base := t.TempDir()
+	storedWorkDir := "/tmp/gcac/gctutenv-123/home/my-city"
+	providerWorkDir := "/private/tmp/gcac/gctutenv-123/home/my-city"
+	rawSlugDir := filepath.Join(base, ProjectSlug(storedWorkDir))
+	aliasSlugDir := filepath.Join(base, ProjectSlug(providerWorkDir))
+	for _, dir := range []string{rawSlugDir, aliasSlugDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := filepath.Join(rawSlugDir, "session-123.jsonl")
+	if err := os.WriteFile(want, []byte(`{}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	aliasPath := filepath.Join(aliasSlugDir, "session-123.jsonl")
+	if err := os.WriteFile(aliasPath, []byte(`{}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := FindSessionFileByID([]string{base}, storedWorkDir, "session-123"); got != want {
+		t.Fatalf("FindSessionFileByID() = %q, want stored spelling %q", got, want)
+	}
+}
+
+func TestFindSessionFileUsesClaudeProjectPathAlias(t *testing.T) {
+	skipUnlessDarwinClaudePathAliases(t)
+
+	base := t.TempDir()
+	storedWorkDir := "/tmp/gcac/gctutenv-123/home/my-city"
+	providerWorkDir := "/private/tmp/gcac/gctutenv-123/home/my-city"
+	slugDir := filepath.Join(base, ProjectSlug(providerWorkDir))
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(slugDir, "session-123.jsonl")
+	if err := os.WriteFile(want, []byte(`{}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := FindSessionFile([]string{base}, storedWorkDir); got != want {
+		t.Fatalf("FindSessionFile() = %q, want %q", got, want)
+	}
+}
+
+func TestFindClaudeLatestSessionFileUsesProjectPathAlias(t *testing.T) {
+	skipUnlessDarwinClaudePathAliases(t)
+
+	base := t.TempDir()
+	storedWorkDir := "/tmp/gcac/gctutenv-123/home/my-city"
+	providerWorkDir := "/private/tmp/gcac/gctutenv-123/home/my-city"
+	slugDir := filepath.Join(base, ProjectSlug(providerWorkDir))
+	if err := os.MkdirAll(slugDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(slugDir, "latest-session.jsonl")
+	if err := os.WriteFile(want, []byte(`{}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := findClaudeLatestSessionFile([]string{base}, storedWorkDir); got != want {
+		t.Fatalf("findClaudeLatestSessionFile() = %q, want %q", got, want)
+	}
+}
+
 func TestProjectSlug(t *testing.T) {
 	tests := []struct {
 		path string
@@ -1146,6 +1234,13 @@ func TestFindGeminiSessionFileUsesObservedRoots(t *testing.T) {
 	got := FindGeminiSessionFile([]string{root}, workDir)
 	if got != sessionFile {
 		t.Errorf("got %q, want %q", got, sessionFile)
+	}
+}
+
+func skipUnlessDarwinClaudePathAliases(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS-only /tmp <-> /private/tmp Claude project path alias")
 	}
 }
 
