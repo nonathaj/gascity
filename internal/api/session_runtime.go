@@ -222,11 +222,11 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 
 func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, error) {
 	cmd := session.BuildResumeCommand(info)
-	resolved, workDir, transport := s.resolveSessionRuntime(info)
+	metadata := s.sessionMetadata(info.ID)
+	resolved, workDir, transport := s.resolveSessionRuntimeWithMetadata(info, metadata)
 	if resolved == nil {
 		return cmd, runtime.Config{WorkDir: info.WorkDir}, nil
 	}
-	metadata := s.sessionMetadata(info.ID)
 	mcpServers, err := s.resumeSessionMCPServers(info, metadata, resolved, firstNonEmptyString(workDir, info.WorkDir), transport)
 	if err != nil {
 		return "", runtime.Config{}, err
@@ -321,7 +321,10 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, sessionKind stri
 }
 
 func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ string, metadata map[string]string) (*worker.ResolvedRuntime, error) {
-	resolved, workDir, transport := s.resolveSessionRuntime(info)
+	if metadata == nil {
+		metadata = s.sessionMetadata(info.ID)
+	}
+	resolved, workDir, transport := s.resolveSessionRuntimeWithMetadata(info, metadata)
 	if resolved == nil {
 		return nil, nil
 	}
@@ -352,7 +355,41 @@ func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ st
 	return &runtimeCfg, nil
 }
 
-func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvider, string, string) {
+func storedSessionProvesACPTransport(resolved *config.ResolvedProvider, storedCommand string, metadata map[string]string) bool {
+	if metadata != nil {
+		if strings.TrimSpace(metadata[session.MCPIdentityMetadataKey]) != "" ||
+			strings.TrimSpace(metadata[session.MCPServersSnapshotMetadataKey]) != "" {
+			return true
+		}
+	}
+	if resolved == nil {
+		return false
+	}
+	acpCommand := strings.TrimSpace(resolved.ACPCommandString())
+	defaultCommand := strings.TrimSpace(resolved.CommandString())
+	if acpCommand == "" || acpCommand == defaultCommand {
+		return false
+	}
+	return shouldPreserveStoredRuntimeCommand(storedCommand, acpCommand)
+}
+
+func resolvedSessionTransport(info session.Info, resolved *config.ResolvedProvider, configuredTransport string, metadata map[string]string) string {
+	if transport := strings.TrimSpace(info.Transport); transport != "" {
+		return transport
+	}
+	if strings.TrimSpace(info.Provider) == "acp" {
+		return "acp"
+	}
+	if storedSessionProvesACPTransport(resolved, info.Command, metadata) {
+		return "acp"
+	}
+	if strings.TrimSpace(info.Command) == "" {
+		return strings.TrimSpace(configuredTransport)
+	}
+	return ""
+}
+
+func (s *Server) resolveSessionRuntimeWithMetadata(info session.Info, metadata map[string]string) (*config.ResolvedProvider, string, string) {
 	kind := s.sessionKind(info.ID)
 	if kind != "provider" {
 		resolved, workDir, transport, _, err := s.resolveSessionTemplate(info.Template)
@@ -360,7 +397,7 @@ func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvi
 			if info.WorkDir != "" {
 				workDir = info.WorkDir
 			}
-			return resolved, workDir, firstNonEmptyString(strings.TrimSpace(info.Transport), strings.TrimSpace(transport))
+			return resolved, workDir, resolvedSessionTransport(info, resolved, transport, metadata)
 		}
 	}
 
@@ -372,7 +409,7 @@ func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvi
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}
-	transport := firstNonEmptyString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.ProviderSessionCreateTransport()))
+	transport := resolvedSessionTransport(info, resolved, resolved.ProviderSessionCreateTransport(), metadata)
 	return resolved, workDir, transport
 }
 

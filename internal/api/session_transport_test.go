@@ -131,7 +131,7 @@ func TestConfiguredSessionTransportUsesProviderACPDefaultForAgentTemplates(t *te
 	}
 }
 
-func TestBuildSessionResumeUsesProviderACPDefaultForLegacyTemplateSession(t *testing.T) {
+func TestBuildSessionResumeDoesNotInferProviderACPDefaultForStoppedLegacyTemplateSession(t *testing.T) {
 	fs := newSessionFakeState(t)
 	supportsACP := true
 	fs.cfg = &config.City{
@@ -162,8 +162,8 @@ func TestBuildSessionResumeUsesProviderACPDefaultForLegacyTemplateSession(t *tes
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if cmd != "/bin/echo acp" {
-		t.Fatalf("resume command = %q, want %q", cmd, "/bin/echo acp")
+	if cmd != "/bin/echo" {
+		t.Fatalf("resume command = %q, want %q", cmd, "/bin/echo")
 	}
 }
 

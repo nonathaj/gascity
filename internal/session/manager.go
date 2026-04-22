@@ -181,15 +181,6 @@ func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool)
 	if m.sp != nil && m.sp.IsRunning(sessName) {
 		return "", false
 	}
-	if m.transportResolver != nil {
-		transport = normalizeTransport(
-			b.Metadata["provider"],
-			m.transportResolver(strings.TrimSpace(b.Metadata["template"]), strings.TrimSpace(b.Metadata["provider"])),
-		)
-		if transport != "" {
-			return transport, true
-		}
-	}
 	return "", false
 }
 

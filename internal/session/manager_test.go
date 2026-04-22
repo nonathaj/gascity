@@ -2287,7 +2287,7 @@ func TestGetPrefersLiveTransportDetectionOverConfiguredTransportInference(t *tes
 	}
 }
 
-func TestGetInfersConfiguredTransportForStoppedLegacySession(t *testing.T) {
+func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T) {
 	store := beads.NewMemStore()
 	defaultSP := runtime.NewFake()
 	acpSP := runtime.NewFake()
@@ -2327,8 +2327,8 @@ func TestGetInfersConfiguredTransportForStoppedLegacySession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got := info.Transport; got != "acp" {
-		t.Fatalf("Transport = %q, want acp for stopped legacy session under current config", got)
+	if got := info.Transport; got != "" {
+		t.Fatalf("Transport = %q, want empty for stopped legacy session without stored transport", got)
 	}
 
 	updated, err := store.Get(legacy.ID)

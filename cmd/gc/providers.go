@@ -26,6 +26,7 @@ import (
 	sessionk8s "github.com/gastownhall/gascity/internal/runtime/k8s"
 	sessionsubprocess "github.com/gastownhall/gascity/internal/runtime/subprocess"
 	sessiontmux "github.com/gastownhall/gascity/internal/runtime/tmux"
+	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
@@ -347,10 +348,16 @@ func beadUsesACPTransport(bead beads.Bead, cfg *config.City) bool {
 	if providerName == "acp" {
 		return true
 	}
+	if strings.TrimSpace(bead.Metadata[session.MCPIdentityMetadataKey]) != "" ||
+		strings.TrimSpace(bead.Metadata[session.MCPServersSnapshotMetadataKey]) != "" {
+		return true
+	}
 	templateName := strings.TrimSpace(bead.Metadata["template"])
 	if cfg != nil {
 		if agentCfg, ok := resolveAgentIdentity(cfg, templateName, currentRigContext(cfg)); ok {
-			if strings.TrimSpace(agentCfg.Session) == "acp" {
+			if strings.TrimSpace(bead.Metadata["command"]) == "" &&
+				strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" &&
+				agentSessionCreateTransport(cfg, agentCfg) == "acp" {
 				return true
 			}
 			if providerName == "" {
@@ -360,7 +367,20 @@ func beadUsesACPTransport(bead beads.Bead, cfg *config.City) bool {
 		if providerName == "" {
 			providerName = templateName
 		}
-		return providerLegacyDefaultsToACP(cfg, providerName)
+		resolved := resolveProviderForACPTransport(cfg, providerName)
+		if resolved != nil {
+			acpCommand := strings.TrimSpace(resolved.ACPCommandString())
+			defaultCommand := strings.TrimSpace(resolved.CommandString())
+			storedCommand := strings.TrimSpace(bead.Metadata["command"])
+			if acpCommand != "" && acpCommand != defaultCommand &&
+				(storedCommand == acpCommand || strings.HasPrefix(storedCommand, acpCommand+" ")) {
+				return true
+			}
+		}
+		if strings.TrimSpace(bead.Metadata["command"]) == "" &&
+			strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" {
+			return providerLegacyDefaultsToACP(cfg, providerName)
+		}
 	}
 	return false
 }

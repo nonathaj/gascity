@@ -453,10 +453,11 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 	if cfg == nil {
 		return nil, nil
 	}
-	resolved, transport := resolveWorkerRuntimeProviderWithConfig(cfg, info, sessionKind)
+	resolved, configuredTransport := resolveWorkerRuntimeProviderWithConfig(cfg, info, sessionKind)
 	if resolved == nil {
 		return nil, nil
 	}
+	transport := resolvedWorkerRuntimeTransport(info, resolved, configuredTransport, metadata)
 
 	command := strings.TrimSpace(info.Command)
 	desiredCommand := fallbackResolvedWorkerRuntimeCommand(resolved, transport, command)
@@ -558,6 +559,40 @@ func fallbackResolvedWorkerRuntimeCommand(resolved *config.ResolvedProvider, tra
 	return firstNonEmptyGCString(storedCommand, resolvedCommand, resolved.Name)
 }
 
+func storedWorkerSessionProvesACPTransport(resolved *config.ResolvedProvider, storedCommand string, metadata map[string]string) bool {
+	if metadata != nil {
+		if strings.TrimSpace(metadata[session.MCPIdentityMetadataKey]) != "" ||
+			strings.TrimSpace(metadata[session.MCPServersSnapshotMetadataKey]) != "" {
+			return true
+		}
+	}
+	if resolved == nil {
+		return false
+	}
+	acpCommand := strings.TrimSpace(resolved.ACPCommandString())
+	defaultCommand := strings.TrimSpace(resolved.CommandString())
+	if acpCommand == "" || acpCommand == defaultCommand {
+		return false
+	}
+	return shouldPreserveStoredRuntimeCommand(storedCommand, acpCommand)
+}
+
+func resolvedWorkerRuntimeTransport(info session.Info, resolved *config.ResolvedProvider, configuredTransport string, metadata map[string]string) string {
+	if transport := strings.TrimSpace(info.Transport); transport != "" {
+		return transport
+	}
+	if strings.TrimSpace(info.Provider) == "acp" {
+		return "acp"
+	}
+	if storedWorkerSessionProvesACPTransport(resolved, info.Command, metadata) {
+		return "acp"
+	}
+	if strings.TrimSpace(info.Command) == "" {
+		return strings.TrimSpace(configuredTransport)
+	}
+	return ""
+}
+
 func firstNonEmptyWorkerString(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -574,7 +609,7 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if sessionKind != "provider" {
 		if found, ok := resolveAgentIdentity(cfg, info.Template, ""); ok {
 			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
-				return resolved, firstNonEmptyWorkerString(strings.TrimSpace(info.Transport), config.ResolveSessionCreateTransport(found.Session, resolved))
+				return resolved, config.ResolveSessionCreateTransport(found.Session, resolved)
 			}
 		}
 	}
@@ -582,7 +617,7 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if err != nil {
 		return nil, ""
 	}
-	return resolved, firstNonEmptyWorkerString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.ProviderSessionCreateTransport()))
+	return resolved, strings.TrimSpace(resolved.ProviderSessionCreateTransport())
 }
 
 func workerDeliveryIntentForSubmitIntent(intent session.SubmitIntent) worker.DeliveryIntent {

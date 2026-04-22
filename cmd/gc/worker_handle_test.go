@@ -414,7 +414,7 @@ acp_args = ["acp"]
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigUsesACPTransportForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigUsesStoredACPTransportForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -437,7 +437,7 @@ acp_args = ["acp"]
 
 	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
 		Template: "custom-acp",
-		Command:  "/bin/echo",
+		Command:  "/bin/echo acp",
 		WorkDir:  cityDir,
 	}, "provider")
 	if err != nil {
