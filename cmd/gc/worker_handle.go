@@ -183,6 +183,9 @@ func resumeRuntimeMCPServersWithConfig(
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decoding stored MCP snapshot: %w", decodeErr)
 	}
+	if session.StoredMCPSnapshotContainsRedactions(stored) {
+		return nil, fmt.Errorf("loading effective MCP: %w; stored snapshot contains redacted secrets", err)
+	}
 	return stored, nil
 }
 
@@ -460,6 +463,9 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 		return nil, nil
 	}
 	transport := resolvedWorkerRuntimeTransport(info, resolved, configuredTransport, metadata, allowConfiguredTransportFallback)
+	if transport == "" && legacyWorkerACPTransportAmbiguous(resolved, configuredTransport, info.Command, metadata) {
+		return nil, fmt.Errorf("legacy session transport is ambiguous: recreate the stopped session or resume it while ACP metadata can still be persisted")
+	}
 
 	command := strings.TrimSpace(info.Command)
 	desiredCommand := fallbackResolvedWorkerRuntimeCommand(resolved, transport, command)
@@ -561,10 +567,13 @@ func fallbackResolvedWorkerRuntimeCommand(resolved *config.ResolvedProvider, tra
 	return firstNonEmptyGCString(storedCommand, resolvedCommand, resolved.Name)
 }
 
-func storedWorkerSessionProvesACPTransport(resolved *config.ResolvedProvider, storedCommand string, metadata map[string]string) bool {
+func storedWorkerSessionProvesACPTransport(resolved *config.ResolvedProvider, configuredTransport, storedCommand string, metadata map[string]string) bool {
 	if metadata != nil {
 		if strings.TrimSpace(metadata[session.MCPIdentityMetadataKey]) != "" ||
 			strings.TrimSpace(metadata[session.MCPServersSnapshotMetadataKey]) != "" {
+			return true
+		}
+		if strings.TrimSpace(configuredTransport) == "acp" && legacyWorkerResumeMetadataProvesACPTransport(metadata) {
 			return true
 		}
 	}
@@ -579,6 +588,29 @@ func storedWorkerSessionProvesACPTransport(resolved *config.ResolvedProvider, st
 	return shouldPreserveStoredRuntimeCommand(storedCommand, acpCommand)
 }
 
+func legacyWorkerResumeMetadataProvesACPTransport(metadata map[string]string) bool {
+	if metadata == nil || strings.TrimSpace(metadata["session_key"]) == "" {
+		return false
+	}
+	return strings.TrimSpace(metadata["resume_command"]) != "" || strings.TrimSpace(metadata["resume_flag"]) != ""
+}
+
+func legacyWorkerACPTransportAmbiguous(resolved *config.ResolvedProvider, configuredTransport, storedCommand string, metadata map[string]string) bool {
+	if strings.TrimSpace(configuredTransport) != "acp" || resolved == nil {
+		return false
+	}
+	if storedWorkerSessionProvesACPTransport(resolved, configuredTransport, storedCommand, metadata) {
+		return false
+	}
+	acpCommand := strings.TrimSpace(resolved.ACPCommandString())
+	defaultCommand := strings.TrimSpace(resolved.CommandString())
+	if acpCommand == "" || acpCommand != defaultCommand {
+		return false
+	}
+	storedCommand = strings.TrimSpace(storedCommand)
+	return storedCommand == "" || sameRuntimeCommandExecutable(storedCommand, defaultCommand)
+}
+
 func resolvedWorkerRuntimeTransport(info session.Info, resolved *config.ResolvedProvider, configuredTransport string, metadata map[string]string, allowConfiguredTransportFallback bool) string {
 	if transport := strings.TrimSpace(info.Transport); transport != "" {
 		return transport
@@ -586,7 +618,7 @@ func resolvedWorkerRuntimeTransport(info session.Info, resolved *config.Resolved
 	if strings.TrimSpace(info.Provider) == "acp" {
 		return "acp"
 	}
-	if storedWorkerSessionProvesACPTransport(resolved, info.Command, metadata) {
+	if storedWorkerSessionProvesACPTransport(resolved, configuredTransport, info.Command, metadata) {
 		return "acp"
 	}
 	if allowConfiguredTransportFallback {

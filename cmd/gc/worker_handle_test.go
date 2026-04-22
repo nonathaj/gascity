@@ -299,6 +299,57 @@ acp_args = ["acp"]
 	}
 }
 
+func TestResolvedWorkerRuntimeTransportUsesResumeMetadataForLegacyACPWithSameCommand(t *testing.T) {
+	resolved := &config.ResolvedProvider{
+		Command:    "/bin/echo",
+		ACPCommand: "/bin/echo",
+	}
+
+	got := resolvedWorkerRuntimeTransport(session.Info{
+		Command: "/bin/echo",
+	}, resolved, "acp", map[string]string{
+		"session_key": "legacy-key",
+		"resume_flag": "--resume",
+	}, false)
+	if got != "acp" {
+		t.Fatalf("resolvedWorkerRuntimeTransport() = %q, want acp", got)
+	}
+}
+
+func TestResolvedWorkerRuntimeWithConfigErrorsForAmbiguousLegacyACPTransportWithSameCommand(t *testing.T) {
+	cityDir := t.TempDir()
+	writePhase0InterfaceCity(t, cityDir, `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[agent]]
+name = "worker"
+provider = "stub"
+session = "acp"
+
+[providers.stub]
+command = "/bin/echo"
+supports_acp = true
+acp_command = "/bin/echo"
+`)
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+
+	_, err = resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+		Template: "worker",
+		Command:  "/bin/echo",
+		WorkDir:  cityDir,
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "legacy session transport is ambiguous") {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig() error = %v, want ambiguous legacy ACP transport", err)
+	}
+}
+
 func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportWithoutExplicitACPTemplate(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]

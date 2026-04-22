@@ -432,6 +432,34 @@ func TestBuildSessionResumeDoesNotInferConfiguredACPTransportForTemplateSessionW
 	}
 }
 
+func TestResolvedSessionTransportUsesResumeMetadataForLegacyACPWithSameCommand(t *testing.T) {
+	resolved := &config.ResolvedProvider{
+		Command:    "/bin/echo",
+		ACPCommand: "/bin/echo",
+	}
+
+	got := resolvedSessionTransport(session.Info{
+		Command: "/bin/echo",
+	}, resolved, "acp", map[string]string{
+		"session_key": "legacy-key",
+		"resume_flag": "--resume",
+	}, false)
+	if got != "acp" {
+		t.Fatalf("resolvedSessionTransport() = %q, want acp", got)
+	}
+}
+
+func TestLegacyACPTransportAmbiguousWithSameCommand(t *testing.T) {
+	resolved := &config.ResolvedProvider{
+		Command:    "/bin/echo",
+		ACPCommand: "/bin/echo",
+	}
+
+	if !legacyACPTransportAmbiguous(resolved, "acp", "/bin/echo", nil) {
+		t.Fatal("legacyACPTransportAmbiguous() = false, want true")
+	}
+}
+
 func TestBuildSessionResumeUsesStoredACPCommandForLegacyTemplateSessionWithoutTransportMetadata(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
