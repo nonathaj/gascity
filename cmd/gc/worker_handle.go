@@ -463,28 +463,14 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 		return nil, nil
 	}
 	transport := resolvedWorkerRuntimeTransport(info, resolved, configuredTransport, metadata, allowConfiguredTransportFallback)
+	if transport == "" && startedConfigHashProvesWorkerACPTransport(cityPath, cfg, info, sessionKind, resolved, metadata, configuredTransport) {
+		transport = "acp"
+	}
 	if transport == "" && legacyWorkerACPTransportAmbiguous(resolved, configuredTransport, info.Command, metadata) {
 		return nil, fmt.Errorf("legacy session transport is ambiguous: recreate the stopped session or resume it while ACP metadata can still be persisted")
 	}
 
-	command := strings.TrimSpace(info.Command)
-	desiredCommand := fallbackResolvedWorkerRuntimeCommand(resolved, transport, command)
-	if optionOverrides, err := session.ParseTemplateOverrides(metadata); err == nil {
-		if launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, transport); err == nil {
-			resolvedCommand := resolved.CommandString()
-			if transport == "acp" {
-				resolvedCommand = resolved.ACPCommandString()
-			}
-			desiredCommand = firstNonEmptyGCString(launchCommand.Command, resolvedCommand, resolved.Name)
-			if shouldPreserveStoredRuntimeCommandForTransport(command, desiredCommand, transport, optionOverrides) {
-				desiredCommand = command
-			}
-		}
-	}
-	if !shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
-		command = desiredCommand
-	}
-	command = firstNonEmptyGCString(command, info.Provider, resolved.Name)
+	command := resolvedWorkerRuntimeCommandForTransport(cityPath, resolved, transport, info.Command, info.Provider, metadata)
 
 	workDir := strings.TrimSpace(info.WorkDir)
 	if workDir == "" {
@@ -514,6 +500,27 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 			SessionIDFlag: resolved.SessionIDFlag,
 		},
 	}, nil
+}
+
+func resolvedWorkerRuntimeCommandForTransport(cityPath string, resolved *config.ResolvedProvider, transport, storedCommand, fallbackProvider string, metadata map[string]string) string {
+	command := strings.TrimSpace(storedCommand)
+	desiredCommand := fallbackResolvedWorkerRuntimeCommand(resolved, transport, command)
+	if optionOverrides, err := session.ParseTemplateOverrides(metadata); err == nil {
+		if launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, transport); err == nil {
+			resolvedCommand := resolved.CommandString()
+			if transport == "acp" {
+				resolvedCommand = resolved.ACPCommandString()
+			}
+			desiredCommand = firstNonEmptyGCString(launchCommand.Command, resolvedCommand, resolved.Name)
+			if shouldPreserveStoredRuntimeCommandForTransport(command, desiredCommand, transport, optionOverrides) {
+				desiredCommand = command
+			}
+		}
+	}
+	if !shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
+		command = desiredCommand
+	}
+	return firstNonEmptyGCString(command, fallbackProvider, resolved.Name)
 }
 
 func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) bool {
@@ -611,6 +618,52 @@ func legacyWorkerACPTransportAmbiguous(resolved *config.ResolvedProvider, config
 	}
 	storedCommand = strings.TrimSpace(storedCommand)
 	return storedCommand == "" || sameRuntimeCommandExecutable(storedCommand, defaultCommand)
+}
+
+func startedConfigHashProvesWorkerACPTransport(
+	cityPath string,
+	cfg *config.City,
+	info session.Info,
+	sessionKind string,
+	resolved *config.ResolvedProvider,
+	metadata map[string]string,
+	configuredTransport string,
+) bool {
+	if cfg == nil || resolved == nil || metadata == nil || strings.TrimSpace(configuredTransport) != "acp" {
+		return false
+	}
+	startedHash := strings.TrimSpace(metadata["started_config_hash"])
+	if startedHash == "" {
+		return false
+	}
+	acpCommand := resolvedWorkerRuntimeCommandForTransport(cityPath, resolved, "acp", info.Command, info.Provider, metadata)
+	defaultCommand := resolvedWorkerRuntimeCommandForTransport(cityPath, resolved, "", info.Command, info.Provider, metadata)
+	mcpServers, err := resolvedRuntimeMCPServersWithConfig(
+		cityPath,
+		cfg,
+		info.Alias,
+		info.Template,
+		firstNonEmptyGCString(info.Provider, resolved.Name, info.Template),
+		firstNonEmptyGCString(info.WorkDir, cityPath),
+		"acp",
+		metadata,
+	)
+	if err != nil {
+		return false
+	}
+	acpHash := runtime.CoreFingerprint(runtime.Config{
+		Command:    acpCommand,
+		Env:        resolved.Env,
+		MCPServers: mcpServers,
+	})
+	defaultHash := runtime.CoreFingerprint(runtime.Config{
+		Command: defaultCommand,
+		Env:     resolved.Env,
+	})
+	if acpHash == defaultHash {
+		return false
+	}
+	return startedHash == acpHash
 }
 
 func resolvedWorkerRuntimeTransport(info session.Info, resolved *config.ResolvedProvider, configuredTransport string, metadata map[string]string, allowConfiguredTransportFallback bool) string {

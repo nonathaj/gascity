@@ -575,6 +575,39 @@ func TestNewSessionProviderRequiresACPInitForACPAgents(t *testing.T) {
 	}
 }
 
+func TestNewSessionProviderRequiresACPInitForImplicitACPTemplates(t *testing.T) {
+	oldBuild := buildSessionProviderByName
+	t.Cleanup(func() { buildSessionProviderByName = oldBuild })
+	buildSessionProviderByName = func(name string, sc config.SessionConfig, cityName, cityPath string) (runtime.Provider, error) {
+		if name == "acp" {
+			return nil, errors.New("acp unavailable")
+		}
+		return oldBuild(name, sc, cityName, cityPath)
+	}
+
+	ctx := sessionProviderContextForCity(&config.City{
+		Workspace: config.Workspace{
+			Name: "test-city",
+		},
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "custom-acp"},
+		},
+		Providers: map[string]config.ProviderSpec{
+			"custom-acp": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: boolPtr(true),
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}, t.TempDir(), "fake")
+
+	if _, err := newSessionProviderFromContextWithError(ctx, nil); err == nil {
+		t.Fatal("newSessionProviderFromContextWithError() error = nil, want ACP init failure")
+	}
+}
+
 func TestNewSessionProviderRoutesObservedACPProviderSessionsWithoutACPAgents(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_SESSION", "fake")

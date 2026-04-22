@@ -349,6 +349,77 @@ acp_command = "/bin/echo"
 	}
 }
 
+func TestResolvedWorkerRuntimeWithConfigUsesStartedConfigHashForLegacyProviderACPWithSameCommand(t *testing.T) {
+	cityDir := t.TempDir()
+	writePhase0InterfaceCity(t, cityDir, `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[providers.custom-acp]
+command = "/bin/echo"
+path_check = "true"
+supports_acp = true
+acp_command = "/bin/echo"
+`)
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+	cfg.PackMCPDir = filepath.Join(cityDir, "mcp")
+	if err := os.MkdirAll(cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	info := session.Info{
+		Template: "custom-acp",
+		Command:  "/bin/echo",
+		Provider: "custom-acp",
+		WorkDir:  cityDir,
+	}
+	resolved, _, _ := resolveWorkerRuntimeProviderWithConfig(cfg, info, "provider")
+	mcpServers, err := resolvedRuntimeMCPServersWithConfig(
+		cityDir,
+		cfg,
+		info.Alias,
+		info.Template,
+		info.Provider,
+		info.WorkDir,
+		"acp",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolvedRuntimeMCPServersWithConfig: %v", err)
+	}
+	startedHash := runtime.CoreFingerprint(runtime.Config{
+		Command:    resolved.ACPCommandString(),
+		Env:        resolved.Env,
+		MCPServers: mcpServers,
+	})
+
+	runtimeCfg, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, info, "provider", map[string]string{
+		"started_config_hash": startedHash,
+	})
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfigAndMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfigAndMetadata() = nil")
+	}
+	if len(runtimeCfg.Hints.MCPServers) != 1 {
+		t.Fatalf("len(runtimeCfg.Hints.MCPServers) = %d, want 1", len(runtimeCfg.Hints.MCPServers))
+	}
+}
+
 func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportWithoutExplicitACPTemplate(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]

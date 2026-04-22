@@ -412,6 +412,55 @@ func legacyACPTransportAmbiguous(resolved *config.ResolvedProvider, configuredTr
 	return storedCommand == "" || sameRuntimeCommandExecutable(storedCommand, defaultCommand)
 }
 
+func (s *Server) startedConfigHashProvesACPTransport(
+	info session.Info,
+	metadata map[string]string,
+	resolved *config.ResolvedProvider,
+	workDir,
+	configuredTransport,
+	sessionKind string,
+) bool {
+	if strings.TrimSpace(configuredTransport) != "acp" || resolved == nil || metadata == nil {
+		return false
+	}
+	startedHash := strings.TrimSpace(metadata["started_config_hash"])
+	if startedHash == "" {
+		return false
+	}
+	acpCommand, err := s.resolvedSessionRuntimeCommand(resolved, "acp", info.Command, metadata)
+	if err != nil {
+		acpCommand = fallbackSessionRuntimeCommand(resolved, "acp", info.Command)
+	}
+	defaultCommand, err := s.resolvedSessionRuntimeCommand(resolved, "", info.Command, metadata)
+	if err != nil {
+		defaultCommand = fallbackSessionRuntimeCommand(resolved, "", info.Command)
+	}
+	mcpServers, err := s.sessionMCPServers(
+		info.Template,
+		firstNonEmptyString(info.Provider, resolved.Name),
+		resumeSessionIdentity(info, metadata),
+		firstNonEmptyString(workDir, info.WorkDir),
+		"acp",
+		sessionKind,
+	)
+	if err != nil {
+		return false
+	}
+	acpHash := runtime.CoreFingerprint(runtime.Config{
+		Command:    acpCommand,
+		Env:        resolved.Env,
+		MCPServers: mcpServers,
+	})
+	defaultHash := runtime.CoreFingerprint(runtime.Config{
+		Command: defaultCommand,
+		Env:     resolved.Env,
+	})
+	if acpHash == defaultHash {
+		return false
+	}
+	return startedHash == acpHash
+}
+
 func resolvedSessionTransport(info session.Info, resolved *config.ResolvedProvider, configuredTransport string, metadata map[string]string, allowConfiguredTransportFallback bool) string {
 	if transport := strings.TrimSpace(info.Transport); transport != "" {
 		return transport
@@ -431,33 +480,43 @@ func resolvedSessionTransport(info session.Info, resolved *config.ResolvedProvid
 func (s *Server) resolveSessionRuntimeWithMetadata(info session.Info, metadata map[string]string) (*config.ResolvedProvider, string, string, bool) {
 	kind := s.sessionKind(info.ID)
 	cfg := s.state.Config()
+	var (
+		resolved            *config.ResolvedProvider
+		workDir             string
+		configuredTransport string
+	)
 	if kind != "provider" && cfg != nil {
 		if agentCfg, ok := resolveSessionTemplateAgent(cfg, info.Template); ok {
-			resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
+			candidate, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
 			if err == nil {
-				workDir, workDirErr := s.resolveSessionWorkDir(agentCfg, agentCfg.QualifiedName())
+				candidateWorkDir, workDirErr := s.resolveSessionWorkDir(agentCfg, agentCfg.QualifiedName())
 				if workDirErr == nil {
+					resolved = candidate
+					workDir = candidateWorkDir
 					if info.WorkDir != "" {
 						workDir = info.WorkDir
 					}
-					configuredTransport := config.ResolveSessionCreateTransport(agentCfg.Session, resolved)
-					transport := resolvedSessionTransport(info, resolved, configuredTransport, metadata, false)
-					return resolved, workDir, transport, transport == "" && legacyACPTransportAmbiguous(resolved, configuredTransport, info.Command, metadata)
+					configuredTransport = config.ResolveSessionCreateTransport(agentCfg.Session, resolved)
 				}
 			}
 		}
 	}
-
-	resolved, err := s.resolveBareProvider(info.Template)
-	if err != nil {
-		return nil, "", "", false
+	if resolved == nil {
+		candidate, err := s.resolveBareProvider(info.Template)
+		if err != nil {
+			return nil, "", "", false
+		}
+		resolved = candidate
+		workDir = info.WorkDir
+		if workDir == "" {
+			workDir = s.state.CityPath()
+		}
+		configuredTransport = resolved.ProviderSessionCreateTransport()
 	}
-	workDir := info.WorkDir
-	if workDir == "" {
-		workDir = s.state.CityPath()
-	}
-	configuredTransport := resolved.ProviderSessionCreateTransport()
 	transport := resolvedSessionTransport(info, resolved, configuredTransport, metadata, false)
+	if transport == "" && s.startedConfigHashProvesACPTransport(info, metadata, resolved, workDir, configuredTransport, kind) {
+		transport = "acp"
+	}
 	return resolved, workDir, transport, transport == "" && legacyACPTransportAmbiguous(resolved, configuredTransport, info.Command, metadata)
 }
 

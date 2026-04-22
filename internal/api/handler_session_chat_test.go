@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionauto "github.com/gastownhall/gascity/internal/runtime/auto"
@@ -456,6 +457,73 @@ func TestLegacyACPTransportAmbiguousWithSameCommand(t *testing.T) {
 
 	if !legacyACPTransportAmbiguous(resolved, "acp", "/bin/echo", nil) {
 		t.Fatal("legacyACPTransportAmbiguous() = false, want true")
+	}
+}
+
+func TestBuildSessionResumeUsesStartedConfigHashForLegacyProviderACPWithSameCommand(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Providers: map[string]config.ProviderSpec{
+			"custom-acp": {
+				DisplayName: "Custom ACP",
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: &supportsACP,
+				ACPCommand:  "/bin/echo",
+			},
+		},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	srv := New(fs)
+	resolved, err := srv.resolveBareProvider("custom-acp")
+	if err != nil {
+		t.Fatalf("resolveBareProvider: %v", err)
+	}
+	mcpServers, err := srv.sessionMCPServers("custom-acp", "custom-acp", "custom-acp", fs.cityPath, "acp", "provider")
+	if err != nil {
+		t.Fatalf("sessionMCPServers: %v", err)
+	}
+	startedHash := runtime.CoreFingerprint(runtime.Config{
+		Command:    resolved.ACPCommandString(),
+		Env:        resolved.Env,
+		MCPServers: mcpServers,
+	})
+	bead, err := fs.cityBeadStore.Create(beads.Bead{
+		Type: "session",
+		Metadata: map[string]string{
+			"mc_session_kind":     "provider",
+			"started_config_hash": startedHash,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create(session bead): %v", err)
+	}
+
+	_, hints, err := srv.buildSessionResume(session.Info{
+		ID:       bead.ID,
+		Template: "custom-acp",
+		Command:  "/bin/echo",
+		Provider: "custom-acp",
+		WorkDir:  fs.cityPath,
+	})
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if len(hints.MCPServers) != 1 {
+		t.Fatalf("len(hints.MCPServers) = %d, want 1", len(hints.MCPServers))
 	}
 }
 
