@@ -105,7 +105,7 @@ func (s *Server) humaHandleSessionCreate(ctx context.Context, input *SessionCrea
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	command := sessionCreateAgentCommand(resolved)
+	command := sessionCreateAgentCommand(resolved, transport)
 	extraMeta := sessionTemplateOverridesMetadata(body.Options, body.Message)
 
 	mgr := s.sessionManager(store)
@@ -243,7 +243,7 @@ func (s *Server) humaCreateProviderSession(ctx context.Context, store beads.Stor
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	command := launchCommand.Command
-	mcpServers, err := s.providerSessionMCPServers(resolved.Name, workDir)
+	mcpServers, err := s.providerSessionMCPServers(resolved.Name, workDir, transport)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

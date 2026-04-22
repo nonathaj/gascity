@@ -47,9 +47,9 @@ func sessionResumeHints(resolved *config.ResolvedProvider, workDir string, mcpSe
 	}
 }
 
-func (s *Server) providerSessionMCPServers(providerName, workDir string) ([]runtime.MCPServerConfig, error) {
+func (s *Server) providerSessionMCPServers(providerName, workDir, transport string) ([]runtime.MCPServerConfig, error) {
 	cfg := s.state.Config()
-	if cfg == nil || strings.TrimSpace(workDir) == "" {
+	if cfg == nil || strings.TrimSpace(workDir) == "" || strings.TrimSpace(transport) != "acp" {
 		return nil, nil
 	}
 	synthetic := &config.Agent{Provider: providerName}
@@ -60,9 +60,9 @@ func (s *Server) providerSessionMCPServers(providerName, workDir string) ([]runt
 	return materialize.RuntimeMCPServers(catalog.Servers), nil
 }
 
-func (s *Server) sessionMCPServers(template, providerName, identity, workDir, sessionKind string) ([]runtime.MCPServerConfig, error) {
+func (s *Server) sessionMCPServers(template, providerName, identity, workDir, transport, sessionKind string) ([]runtime.MCPServerConfig, error) {
 	cfg := s.state.Config()
-	if cfg == nil || strings.TrimSpace(workDir) == "" {
+	if cfg == nil || strings.TrimSpace(workDir) == "" || strings.TrimSpace(transport) != "acp" {
 		return nil, nil
 	}
 	if sessionKind != "provider" {
@@ -80,7 +80,7 @@ func (s *Server) sessionMCPServers(template, providerName, identity, workDir, se
 			return materialize.RuntimeMCPServers(catalog.Servers), nil
 		}
 	}
-	return s.providerSessionMCPServers(firstNonEmptyString(providerName, template), workDir)
+	return s.providerSessionMCPServers(firstNonEmptyString(providerName, template), workDir, transport)
 }
 
 func sessionExplicitNameForCreate(agentCfg config.Agent, alias string) (string, error) {
@@ -161,6 +161,7 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 		firstNonEmptyString(info.Provider, resolved.Name),
 		info.Alias,
 		firstNonEmptyString(workDir, info.WorkDir),
+		transport,
 		s.sessionKind(info.ID),
 	)
 	if err != nil {
@@ -230,6 +231,7 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 		firstNonEmptyString(info.Provider, resolved.Name),
 		info.Alias,
 		firstNonEmptyString(workDir, info.WorkDir),
+		transport,
 		s.sessionKind(info.ID),
 	)
 	if err != nil {

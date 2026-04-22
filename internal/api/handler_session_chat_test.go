@@ -416,3 +416,45 @@ command = [broken
 		t.Fatal("buildSessionResume() error = nil, want MCP resolution error")
 	}
 }
+
+func TestBuildSessionResumeIgnoresMCPResolutionErrorWithoutACPTransport(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{
+			{Name: "worker", Provider: "stub"},
+		},
+		Providers: map[string]config.ProviderSpec{
+			"stub": {
+				DisplayName: "Stub",
+				Command:     "/bin/echo",
+			},
+		},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "filesystem.toml"), []byte(`
+name = "filesystem"
+command = [broken
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		ID:       "gc-1",
+		Template: "worker",
+		Provider: "stub",
+		WorkDir:  fs.cityPath,
+	}
+
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if got, want := cmd, "/bin/echo"; got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+}

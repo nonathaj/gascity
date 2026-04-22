@@ -85,9 +85,10 @@ func resolvedRuntimeMCPServersWithConfig(
 	cityPath string,
 	cfg *config.City,
 	alias, template, provider, workDir string,
+	transport string,
 	metadata map[string]string,
 ) ([]runtime.MCPServerConfig, error) {
-	if cfg == nil || strings.TrimSpace(workDir) == "" {
+	if cfg == nil || strings.TrimSpace(workDir) == "" || strings.TrimSpace(transport) != "acp" {
 		return nil, nil
 	}
 	identity := strings.TrimSpace(metadata["agent_name"])
@@ -128,7 +129,7 @@ func newWorkerSessionHandleForResolvedRuntimeWithConfig(
 	if err != nil {
 		return nil, err
 	}
-	mcpServers, err := resolvedRuntimeMCPServersWithConfig(cityPath, cfg, alias, template, provider, workDir, metadata)
+	mcpServers, err := resolvedRuntimeMCPServersWithConfig(cityPath, cfg, alias, template, provider, workDir, transport, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -399,6 +400,7 @@ func resolvedWorkerRuntimeWithConfig(cityPath string, cfg *config.City, info ses
 		info.Template,
 		firstNonEmptyGCString(info.Provider, resolved.Name, info.Template),
 		workDir,
+		transport,
 		nil,
 	)
 	if err != nil {

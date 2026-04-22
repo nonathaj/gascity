@@ -127,14 +127,14 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mcpServers, err := s.sessionMCPServers(template, resolved.Name, firstNonEmptyString(alias, template), workDir, kind)
+	mcpServers, err := s.sessionMCPServers(template, resolved.Name, firstNonEmptyString(alias, template), workDir, transport, kind)
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
 
-	command := sessionCreateAgentCommand(resolved)
+	command := sessionCreateAgentCommand(resolved, transport)
 
 	// Build template_overrides metadata. Includes schema overrides AND
 	// the initial message (as "initial_message" key). The reconciler
@@ -298,7 +298,7 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	command := launchCommand.Command
-	mcpServers, err := s.providerSessionMCPServers(providerName, workDir)
+	mcpServers, err := s.providerSessionMCPServers(providerName, workDir, transport)
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
@@ -378,7 +378,10 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 	writeJSON(w, statusCode, resp)
 }
 
-func sessionCreateAgentCommand(resolved *config.ResolvedProvider) string {
+func sessionCreateAgentCommand(resolved *config.ResolvedProvider, transport string) string {
+	if strings.TrimSpace(transport) == "acp" {
+		return firstNonEmptyString(resolved.ACPCommandString(), resolved.Name)
+	}
 	return firstNonEmptyString(resolved.CommandString(), resolved.Name)
 }
 

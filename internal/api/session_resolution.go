@@ -308,7 +308,7 @@ func (s *Server) materializeNamedSessionWithContext(ctx context.Context, store b
 	if resolved.BuiltinAncestor != "" && resolved.BuiltinAncestor != resolved.Name {
 		extraMeta["builtin_ancestor"] = resolved.BuiltinAncestor
 	}
-	mcpServers, err := s.sessionMCPServers(qualifiedTemplate, resolved.Name, spec.Identity, workDir, "")
+	mcpServers, err := s.sessionMCPServers(qualifiedTemplate, resolved.Name, spec.Identity, workDir, transport, "")
 	if err != nil {
 		return "", err
 	}

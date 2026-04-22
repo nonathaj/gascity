@@ -776,6 +776,49 @@ command = [broken
 	}
 }
 
+func TestResolvedWorkerRuntimeWithConfigIgnoresMCPResolutionErrorWithoutACPTransport(t *testing.T) {
+	cityDir := t.TempDir()
+	writePhase0InterfaceCity(t, cityDir, `[workspace]
+name = "test-city"
+
+[beads]
+provider = "file"
+
+[[agent]]
+name = "worker"
+provider = "stub"
+
+[providers.stub]
+command = "/bin/echo"
+`)
+	writeCatalogFile(t, cityDir, "mcp/filesystem.toml", `
+name = "filesystem"
+command = [broken
+`)
+
+	cfg, err := loadCityConfig(cityDir)
+	if err != nil {
+		t.Fatalf("loadCityConfig: %v", err)
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+		Template: "worker",
+		WorkDir:  cityDir,
+	}, "")
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
+	}
+	if got, want := resolved.Command, "/bin/echo"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if len(resolved.Hints.MCPServers) != 0 {
+		t.Fatalf("Hints.MCPServers len = %d, want 0", len(resolved.Hints.MCPServers))
+	}
+}
+
 func TestWorkerSessionRuntimeResolverWithConfigFallsBackToProviderNameWhenResolvedCommandMissing(t *testing.T) {
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},

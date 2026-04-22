@@ -1144,6 +1144,110 @@ func TestHandleSessionCreate(t *testing.T) {
 	}
 }
 
+func TestHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents[0].Provider = "opencode"
+	fs.cfg.Agents[0].Session = "acp"
+	fs.cfg.Providers["opencode"] = config.ProviderSpec{
+		DisplayName: "OpenCode",
+		Command:     "/bin/echo",
+		PathCheck:   "true",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	srv := New(fs)
+	h := newTestCityHandlerWith(t, fs, srv)
+
+	req := newPostRequest(cityURL(fs, "/sessions"), strings.NewReader(`{"kind":"agent","name":"myrig/worker"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	bead, err := fs.cityBeadStore.Get(resp.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", resp.ID, err)
+	}
+	if got, want := bead.Metadata["command"], "/bin/echo acp"; got != want {
+		t.Fatalf("command metadata = %q, want %q", got, want)
+	}
+	if got, want := bead.Metadata["transport"], "acp"; got != want {
+		t.Fatalf("transport metadata = %q, want %q", got, want)
+	}
+}
+
+func TestHumaHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents[0].Provider = "opencode"
+	fs.cfg.Agents[0].Session = "acp"
+	fs.cfg.Providers["opencode"] = config.ProviderSpec{
+		DisplayName: "OpenCode",
+		Command:     "/bin/echo",
+		PathCheck:   "true",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	srv := New(fs)
+
+	out, err := srv.humaHandleSessionCreate(context.Background(), &SessionCreateInput{
+		Body: sessionCreateBody{
+			Kind: "agent",
+			Name: "myrig/worker",
+		},
+	})
+	if err != nil {
+		t.Fatalf("humaHandleSessionCreate: %v", err)
+	}
+	if got, want := out.Status, http.StatusAccepted; got != want {
+		t.Fatalf("status = %d, want %d", got, want)
+	}
+	bead, err := fs.cityBeadStore.Get(out.Body.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", out.Body.ID, err)
+	}
+	if got, want := bead.Metadata["command"], "/bin/echo acp"; got != want {
+		t.Fatalf("command metadata = %q, want %q", got, want)
+	}
+	if got, want := bead.Metadata["transport"], "acp"; got != want {
+		t.Fatalf("transport metadata = %q, want %q", got, want)
+	}
+}
+
+func TestHandleSessionCreateIgnoresBrokenMCPWithoutACPTransport(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "filesystem.toml"), []byte(`
+name = "filesystem"
+command = [broken
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	srv := New(fs)
+	h := newTestCityHandlerWith(t, fs, srv)
+
+	req := newPostRequest(cityURL(fs, "/sessions"), strings.NewReader(`{"kind":"agent","name":"myrig/worker"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+}
+
 func TestHandleSessionCreateAsync(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)
