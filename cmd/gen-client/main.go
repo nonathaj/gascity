@@ -11,6 +11,8 @@
 //     The routes we register ARE the routes we expose. Every schema and
 //     path in the generated client matches what the server publishes to
 //     external consumers — no hidden rename, no hidden path rewrite.
+//     skip-prune keeps documentation-only compatibility components
+//     available to in-tree callers that still deserialize those shapes.
 //  3. Write the generated client to internal/api/genclient/client_gen.go.
 //
 // Usage:
@@ -66,7 +68,7 @@ func run() error {
 
 	// Step 3: invoke oapi-codegen. Output goes to stdout — the caller
 	// redirects it to internal/api/genclient/client_gen.go.
-	cmd := exec.Command("oapi-codegen", "-generate", "types,client", "-package", "genclient", tmp.Name())
+	cmd := exec.Command("oapi-codegen", "-generate", "types,client,skip-prune", "-package", "genclient", tmp.Name())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

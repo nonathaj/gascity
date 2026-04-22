@@ -63,6 +63,20 @@ type StringIDSender func(msg StringIDMessage) error
 // to StreamFunc.
 type StringIDStreamFunc[I any] func(hctx huma.Context, input *I, send StringIDSender)
 
+type sseEventContract struct {
+	runtimeSample any
+	schemaSample  any
+}
+
+func (c sseEventContract) sseRuntimeSample() any { return c.runtimeSample }
+
+func (c sseEventContract) sseSchemaSample() any { return c.schemaSample }
+
+type sseSchemaOverride interface {
+	sseRuntimeSample() any
+	sseSchemaSample() any
+}
+
 // registerSSE registers an SSE operation like huma's sse.Register but with a
 // precheck hook that can return an HTTP error before the response is committed.
 //
@@ -243,8 +257,10 @@ func attachSSEResponseSchema(
 	typeToEvent := make(map[reflect.Type]string, len(eventTypeMap))
 	dataSchemas := make([]*huma.Schema, 0, len(eventTypeMap))
 	for k, v := range eventTypeMap {
-		vt := derefType(reflect.TypeOf(v))
-		typeToEvent[vt] = k
+		runtimeSample, schemaSample := sseContractSamples(v)
+		runtimeType := derefType(reflect.TypeOf(runtimeSample))
+		schemaType := derefType(reflect.TypeOf(schemaSample))
+		typeToEvent[runtimeType] = k
 		required := []string{"data"}
 		if k != "" && k != "message" {
 			required = append(required, "event")
@@ -264,7 +280,7 @@ func attachSSEResponseSchema(
 						"const": k,
 					},
 				},
-				"data": api.OpenAPI().Components.Schemas.Schema(vt, true, k),
+				"data": api.OpenAPI().Components.Schemas.Schema(schemaType, true, k),
 				"retry": {
 					Type:        huma.TypeInteger,
 					Description: "The retry time in milliseconds.",
@@ -293,6 +309,13 @@ func attachSSEResponseSchema(
 	}
 
 	return typeToEvent
+}
+
+func sseContractSamples(v any) (any, any) {
+	if override, ok := v.(sseSchemaOverride); ok {
+		return override.sseRuntimeSample(), override.sseSchemaSample()
+	}
+	return v, v
 }
 
 // beginSSEStream sets the standard SSE headers on the huma response and

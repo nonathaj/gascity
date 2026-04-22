@@ -312,7 +312,10 @@ func (sm *SupervisorMux) registerCityRoutes() {
 		Description: "Server-Sent Events stream of city events with optional workflow projections. " +
 			"Supports reconnection via Last-Event-ID header or after_seq query param.",
 	}, map[string]any{
-		"event":     eventStreamEnvelope{},
+		"event": sseEventContract{
+			runtimeSample: eventStreamEnvelope{},
+			schemaSample:  typedEventStreamEnvelopeSchema{},
+		},
 		"heartbeat": HeartbeatEvent{},
 	},
 		sseCityPrecheck(sm, (*Server).checkEventStream),

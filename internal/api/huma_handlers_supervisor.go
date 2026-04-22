@@ -174,6 +174,7 @@ func newSupervisorHumaAPI(mux *http.ServeMux, readOnly bool) huma.API {
 	// Force-register documentation-only union schemas so they appear in
 	// components.schemas even though no handler names them directly.
 	_ = SessionStreamCommonEvent{}.Schema(api.OpenAPI().Components.Schemas)
+	registerEventEnvelopeCompatibilitySchemas(api.OpenAPI().Components.Schemas)
 
 	api.UseMiddleware(humaCSRFMiddleware(api))
 	if readOnly {
@@ -233,8 +234,11 @@ func (sm *SupervisorMux) registerSupervisorRoutes() {
 		Path:        "/v0/events/stream",
 		Summary:     "Stream tagged events from all running cities.",
 	}, map[string]any{
-		"tagged_event": &taggedEventStreamEnvelope{},
-		"heartbeat":    HeartbeatEvent{},
+		"tagged_event": sseEventContract{
+			runtimeSample: &taggedEventStreamEnvelope{},
+			schemaSample:  typedTaggedEventStreamEnvelopeSchema{},
+		},
+		"heartbeat": HeartbeatEvent{},
 	}, sm.precheckGlobalEventStream, sm.streamGlobalEvents)
 }
 
