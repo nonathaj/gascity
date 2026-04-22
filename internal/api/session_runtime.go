@@ -77,9 +77,6 @@ func (s *Server) resumeSessionMCPServers(info session.Info, metadata map[string]
 	if decodeErr != nil {
 		return nil, fmt.Errorf("decoding stored MCP snapshot: %w", decodeErr)
 	}
-	if session.StoredMCPSnapshotContainsRedactions(stored) {
-		return nil, fmt.Errorf("loading effective MCP: %w; stored snapshot contains redacted secrets", err)
-	}
 	return stored, nil
 }
 

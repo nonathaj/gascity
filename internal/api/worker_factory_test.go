@@ -319,6 +319,84 @@ command = [broken
 	}
 }
 
+func TestResolveWorkerSessionRuntimeFallsBackToRedactedStoredMCPServersWhenCatalogBreaks(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents = []config.Agent{{
+		Name:              "ant",
+		Dir:               "myrig",
+		Provider:          "resolved-worker",
+		Session:           "acp",
+		WorkDir:           ".gc/worktrees/{{.Rig}}/ants/{{.AgentBase}}",
+		MinActiveSessions: intPtr(0),
+		MaxActiveSessions: intPtr(4),
+	}}
+	supportsACP := true
+	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
+		DisplayName: "Resolved Worker",
+		Command:     "/bin/echo",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = [broken
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+
+	metadata, err := session.WithStoredMCPMetadata(nil, "myrig/ant-adhoc-123", []runtime.MCPServerConfig{{
+		Name:      "identity",
+		Transport: runtime.MCPTransportHTTP,
+		Command:   "/bin/mcp",
+		Args:      []string{"--api-key", "super-secret"},
+		Env: map[string]string{
+			"API_TOKEN": "super-secret",
+		},
+		URL: "https://user:pass@example.invalid/mcp?token=abc123",
+		Headers: map[string]string{
+			"Authorization": "Bearer secret",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("WithStoredMCPMetadata: %v", err)
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		ID:        "sess-1",
+		Template:  "myrig/ant",
+		Alias:     "ant",
+		AgentName: "myrig/ant-adhoc-123",
+		Transport: "acp",
+		WorkDir:   filepath.Join(fs.cityPath, ".gc", "worktrees", "myrig", "ants", "ant"),
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntimeWithMetadata(info, "", metadata)
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntimeWithMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
+	}
+	if len(runtimeCfg.Hints.MCPServers) != 1 {
+		t.Fatalf("Hints.MCPServers len = %d, want 1", len(runtimeCfg.Hints.MCPServers))
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Args[1], "__redacted__"; got != want {
+		t.Fatalf("Args[1] = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Env["API_TOKEN"], "__redacted__"; got != want {
+		t.Fatalf("Env[API_TOKEN] = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.MCPServers[0].Headers["Authorization"], "__redacted__"; got != want {
+		t.Fatalf("Headers[Authorization] = %q, want %q", got, want)
+	}
+}
+
 func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{

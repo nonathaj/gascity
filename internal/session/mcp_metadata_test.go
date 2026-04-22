@@ -11,11 +11,18 @@ func TestEncodeMCPServersSnapshotRedactsSecrets(t *testing.T) {
 		Name:      "remote",
 		Transport: runtime.MCPTransportHTTP,
 		Command:   "/bin/mcp",
-		Args:      []string{"--serve"},
+		Args: []string{
+			"--serve",
+			"--api-key",
+			"super-secret",
+			"--token=abc123",
+			"Authorization: Bearer secret",
+			"https://user:pass@example.invalid/mcp?token=abc123",
+		},
 		Env: map[string]string{
 			"API_TOKEN": "super-secret",
 		},
-		URL: "https://example.invalid/mcp",
+		URL: "https://user:pass@example.invalid/mcp?token=abc123",
 		Headers: map[string]string{
 			"Authorization": "Bearer secret",
 		},
@@ -39,6 +46,21 @@ func TestEncodeMCPServersSnapshotRedactsSecrets(t *testing.T) {
 	}
 	if got, want := servers[0].Args[0], "--serve"; got != want {
 		t.Fatalf("Args[0] = %q, want %q", got, want)
+	}
+	if got, want := servers[0].Args[2], redactedMCPSnapshotValue; got != want {
+		t.Fatalf("Args[2] = %q, want %q", got, want)
+	}
+	if got, want := servers[0].Args[3], "--token="+redactedMCPSnapshotValue; got != want {
+		t.Fatalf("Args[3] = %q, want %q", got, want)
+	}
+	if got, want := servers[0].Args[4], redactedMCPSnapshotValue; got != want {
+		t.Fatalf("Args[4] = %q, want %q", got, want)
+	}
+	if got, want := servers[0].Args[5], "https://__redacted__:__redacted__@example.invalid/mcp?token="+redactedMCPSnapshotValue; got != want {
+		t.Fatalf("Args[5] = %q, want %q", got, want)
+	}
+	if got, want := servers[0].URL, "https://__redacted__:__redacted__@example.invalid/mcp?token="+redactedMCPSnapshotValue; got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
 	}
 	if !StoredMCPSnapshotContainsRedactions(servers) {
 		t.Fatal("StoredMCPSnapshotContainsRedactions() = false, want true")
