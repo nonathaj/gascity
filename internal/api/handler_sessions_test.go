@@ -1728,6 +1728,59 @@ func TestMaterializeNamedSessionRejectsACPTemplateWithoutACPRouting(t *testing.T
 	}
 }
 
+func TestMaterializeNamedSessionPersistsStoredMCPMetadata(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg.Agents[0].Provider = "opencode"
+	fs.cfg.Agents[0].Session = "acp"
+	fs.cfg.Providers["opencode"] = config.ProviderSpec{
+		DisplayName: "OpenCode",
+		Command:     "/bin/echo",
+		PathCheck:   "true",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
+	if err := os.MkdirAll(fs.cfg.PackMCPDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(mcp): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fs.cfg.PackMCPDir, "identity.template.toml"), []byte(`
+name = "identity"
+command = "/bin/mcp"
+args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(mcp): %v", err)
+	}
+	state := &stateWithSessionProvider{
+		fakeState: fs,
+		provider:  &transportCapableProvider{Fake: runtime.NewFake()},
+	}
+	srv := New(state)
+
+	spec, ok, err := srv.findNamedSessionSpecForTarget(fs.cityBeadStore, "worker")
+	if err != nil {
+		t.Fatalf("findNamedSessionSpecForTarget: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected named session spec")
+	}
+	id, err := srv.materializeNamedSession(fs.cityBeadStore, spec)
+	if err != nil {
+		t.Fatalf("materializeNamedSession: %v", err)
+	}
+	bead, err := fs.cityBeadStore.Get(id)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", id, err)
+	}
+	if got, want := bead.Metadata[session.MCPIdentityMetadataKey], spec.Identity; got != want {
+		t.Fatalf("mcp_identity = %q, want %q", got, want)
+	}
+	if got := bead.Metadata[session.MCPServersSnapshotMetadataKey]; got == "" {
+		t.Fatal("mcp_servers_snapshot = empty, want persisted snapshot")
+	}
+}
+
 func TestHandleProviderSessionCreateWithMessageUsesProviderDefaultNudge(t *testing.T) {
 	fs := newSessionFakeState(t)
 	srv := New(fs)

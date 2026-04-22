@@ -678,10 +678,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "acp_command": {
             "type": "string"
@@ -4886,10 +4883,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "acp_command": {
             "type": "string"
@@ -4949,10 +4943,7 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "acp_command": {
             "type": "string"

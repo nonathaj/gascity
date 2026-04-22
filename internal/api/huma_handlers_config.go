@@ -46,7 +46,7 @@ func (s *Server) humaHandleConfigGet(_ context.Context, _ *ConfigGetInput) (*Ind
 			Command:      spec.Command,
 			ACPCommand:   spec.ACPCommand,
 			Args:         spec.Args,
-			ACPArgs:      spec.ACPArgs,
+			ACPArgs:      optionalStringSlice(spec.ACPArgs),
 			PromptMode:   spec.PromptMode,
 			PromptFlag:   spec.PromptFlag,
 			ReadyDelayMs: spec.ReadyDelayMs,
@@ -133,7 +133,7 @@ func (s *Server) humaHandleConfigExplain(_ context.Context, _ *ConfigExplainInpu
 			Command:      spec.Command,
 			ACPCommand:   spec.ACPCommand,
 			Args:         spec.Args,
-			ACPArgs:      spec.ACPArgs,
+			ACPArgs:      optionalStringSlice(spec.ACPArgs),
 			PromptMode:   spec.PromptMode,
 			PromptFlag:   spec.PromptFlag,
 			ReadyDelayMs: spec.ReadyDelayMs,
@@ -149,7 +149,7 @@ func (s *Server) humaHandleConfigExplain(_ context.Context, _ *ConfigExplainInpu
 				Command:      spec.Command,
 				ACPCommand:   spec.ACPCommand,
 				Args:         spec.Args,
-				ACPArgs:      spec.ACPArgs,
+				ACPArgs:      optionalStringSlice(spec.ACPArgs),
 				PromptMode:   spec.PromptMode,
 				PromptFlag:   spec.PromptFlag,
 				ReadyDelayMs: spec.ReadyDelayMs,
@@ -228,7 +228,7 @@ type annotatedProviderResponse struct {
 	Command      string            `json:"command,omitempty"`
 	ACPCommand   string            `json:"acp_command,omitempty"`
 	Args         []string          `json:"args,omitempty"`
-	ACPArgs      []string          `json:"acp_args,omitempty"`
+	ACPArgs      *[]string         `json:"acp_args,omitempty"`
 	PromptMode   string            `json:"prompt_mode,omitempty"`
 	PromptFlag   string            `json:"prompt_flag,omitempty"`
 	ReadyDelayMs int               `json:"ready_delay_ms,omitempty"`

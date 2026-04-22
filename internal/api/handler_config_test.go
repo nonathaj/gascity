@@ -60,7 +60,7 @@ func TestHandleConfigGet(t *testing.T) {
 	if resp.Providers["custom"].ACPCommand != "custom-cli-acp" {
 		t.Errorf("providers.custom.acp_command = %q, want %q", resp.Providers["custom"].ACPCommand, "custom-cli-acp")
 	}
-	if len(resp.Providers["custom"].ACPArgs) != 2 || resp.Providers["custom"].ACPArgs[0] != "rpc" || resp.Providers["custom"].ACPArgs[1] != "--stdio" {
+	if resp.Providers["custom"].ACPArgs == nil || len(*resp.Providers["custom"].ACPArgs) != 2 || (*resp.Providers["custom"].ACPArgs)[0] != "rpc" || (*resp.Providers["custom"].ACPArgs)[1] != "--stdio" {
 		t.Errorf("providers.custom.acp_args = %#v, want [rpc --stdio]", resp.Providers["custom"].ACPArgs)
 	}
 }
@@ -94,6 +94,46 @@ func TestHandleConfigGet_UsesEffectiveWorkspaceIdentity(t *testing.T) {
 	}
 	if resp.Workspace.DeclaredPrefix != "dc" {
 		t.Errorf("workspace.declared_prefix = %q, want %q", resp.Workspace.DeclaredPrefix, "dc")
+	}
+}
+
+func TestHandleConfigGetPreservesExplicitEmptyACPArgs(t *testing.T) {
+	fs := newFakeState(t)
+	fs.cfg.Providers = map[string]config.ProviderSpec{
+		"custom": {
+			Command:    "custom-cli",
+			ACPCommand: "custom-cli-acp",
+			ACPArgs:    []string{},
+		},
+	}
+	h := newTestCityHandler(t, fs)
+
+	req := httptest.NewRequest("GET", cityURL(fs, "/config"), nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	providers, ok := resp["providers"].(map[string]any)
+	if !ok {
+		t.Fatal("expected providers map")
+	}
+	custom, ok := providers["custom"].(map[string]any)
+	if !ok {
+		t.Fatal("expected custom provider")
+	}
+	acpArgs, ok := custom["acp_args"].([]any)
+	if !ok {
+		t.Fatalf("acp_args = %#v, want empty array field", custom["acp_args"])
+	}
+	if len(acpArgs) != 0 {
+		t.Fatalf("acp_args len = %d, want 0", len(acpArgs))
 	}
 }
 

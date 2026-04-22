@@ -2050,7 +2050,7 @@ export interface components {
             suspended: boolean;
         };
         AnnotatedProviderResponse: {
-            acp_args?: string[] | null;
+            acp_args?: string[];
             acp_command?: string;
             args?: string[] | null;
             command?: string;
@@ -3333,7 +3333,7 @@ export interface components {
             };
         };
         ProviderResponse: {
-            acp_args?: string[] | null;
+            acp_args?: string[];
             acp_command?: string;
             args?: string[] | null;
             builtin: boolean;
@@ -3350,7 +3350,7 @@ export interface components {
             ready_delay_ms?: number;
         };
         ProviderSpecJSON: {
-            acp_args?: string[] | null;
+            acp_args?: string[];
             acp_command?: string;
             args?: string[] | null;
             command?: string;

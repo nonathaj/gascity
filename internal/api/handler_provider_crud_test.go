@@ -137,7 +137,37 @@ func TestHandleProviderGet_IncludesACPTransportOverrides(t *testing.T) {
 	if resp.ACPCommand != "custom-acp" {
 		t.Fatalf("ACPCommand = %q, want %q", resp.ACPCommand, "custom-acp")
 	}
-	if len(resp.ACPArgs) != 2 || resp.ACPArgs[0] != "rpc" || resp.ACPArgs[1] != "--stdio" {
+	if resp.ACPArgs == nil || len(*resp.ACPArgs) != 2 || (*resp.ACPArgs)[0] != "rpc" || (*resp.ACPArgs)[1] != "--stdio" {
 		t.Fatalf("ACPArgs = %#v, want [rpc --stdio]", resp.ACPArgs)
+	}
+}
+
+func TestHandleProviderGetPreservesExplicitEmptyACPArgs(t *testing.T) {
+	fs := newFakeState(t)
+	fs.cfg.Providers["custom"] = config.ProviderSpec{
+		Command:    "custom",
+		ACPCommand: "custom-acp",
+		ACPArgs:    []string{},
+	}
+	h := newTestCityHandler(t, fs)
+
+	req := httptest.NewRequest(http.MethodGet, cityURL(fs, "/provider/custom"), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	acpArgs, ok := resp["acp_args"].([]any)
+	if !ok {
+		t.Fatalf("acp_args = %#v, want empty array field", resp["acp_args"])
+	}
+	if len(acpArgs) != 0 {
+		t.Fatalf("acp_args len = %d, want 0", len(acpArgs))
 	}
 }

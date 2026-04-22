@@ -200,7 +200,7 @@ export type AnnotatedAgentResponse = {
 };
 
 export type AnnotatedProviderResponse = {
-    acp_args?: Array<string> | null;
+    acp_args?: Array<string>;
     acp_command?: string;
     args?: Array<string> | null;
     command?: string;
@@ -1913,7 +1913,7 @@ export type ProviderReadinessResponse = {
 };
 
 export type ProviderResponse = {
-    acp_args?: Array<string> | null;
+    acp_args?: Array<string>;
     acp_command?: string;
     args?: Array<string> | null;
     builtin: boolean;
@@ -1930,7 +1930,7 @@ export type ProviderResponse = {
 };
 
 export type ProviderSpecJson = {
-    acp_args?: Array<string> | null;
+    acp_args?: Array<string>;
     acp_command?: string;
     args?: Array<string> | null;
     command?: string;
