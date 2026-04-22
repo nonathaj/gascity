@@ -1311,8 +1311,10 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 
 	// Regression: gc stop (and other commands that scan registered rig
 	// bindings) must not abort when a sibling city's directory has been
-	// deleted out from under the registry. The stale entry is warned about
-	// and skipped; the healthy target city still resolves successfully.
+	// deleted out from under the registry. Resolution still succeeds on
+	// the healthy target and registeredRigBindingsByPath reports the
+	// stale entry as structured data so only explicit-rig-resolution
+	// callers (not opportunistic probes) need to warn about it.
 	t.Run("stale_sibling_directory_is_skipped_with_warning", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
@@ -1339,13 +1341,6 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Capture the warning that registeredRigBindings emits when it
-		// skips the stale entry.
-		var warnings bytes.Buffer
-		origStderr := registeredRigBindingsStderr
-		registeredRigBindingsStderr = &warnings
-		t.Cleanup(func() { registeredRigBindingsStderr = origStderr })
-
 		ctx, err := resolveContextFromPath(rigDir)
 		if err != nil {
 			t.Fatalf("resolveContextFromPath error: %v (want success with stale sibling skipped)", err)
@@ -1354,12 +1349,106 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		if ctx.RigName != "stale-sibling-rig" {
 			t.Errorf("RigName = %q, want %q", ctx.RigName, "stale-sibling-rig")
 		}
+
+		// registeredRigBindingsByPath returns stale entries as structured
+		// data; callers decide whether to emit a user-facing warning. This
+		// asserts the diagnostic is available without coupling the test to
+		// a particular stderr routing scheme.
+		_, stale, err := registeredRigBindingsByPath(rigDir, true)
+		if err != nil {
+			t.Fatalf("registeredRigBindingsByPath error: %v", err)
+		}
+		if len(stale) == 0 {
+			t.Fatal("expected a stale-registered-city entry, got none")
+		}
+		var found bool
+		for _, s := range stale {
+			if strings.Contains(s.Label, "stale-sibling-bad") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("stale = %+v, want an entry mentioning stale-sibling-bad", stale)
+		}
+
+		// The helper renders the structured list to a command's stderr.
+		var warnings bytes.Buffer
+		emitStaleRegisteredCityWarnings(&warnings, stale)
 		warn := warnings.String()
 		if !strings.Contains(warn, "stale-sibling-bad") {
 			t.Errorf("warning = %q, want it to mention the stale city name", warn)
 		}
 		if !strings.Contains(warn, "city.toml missing") {
 			t.Errorf("warning = %q, want it to explain city.toml is missing", warn)
+		}
+	})
+
+	// Regression: the stale-entry check runs on the actual config-load
+	// path, not a separate Stat pre-check. A registered city whose
+	// city.toml vanishes at load-read time must still be skipped rather
+	// than abort the resolver. (The prior Stat-then-load pattern had a
+	// TOCTOU window where the file could vanish between the two calls.)
+	t.Run("stale_sibling_city_toml_missing_hits_load_path", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		goodCity := setupCity(t, "load-path-good")
+		rigDir := filepath.Join(t.TempDir(), "load-path-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, goodCity, "load-path-good", "load-path-rig", rigDir)
+
+		// Register a second city whose directory exists but whose
+		// city.toml was never created. The load path (not a Stat
+		// pre-check) has to handle ENOENT here.
+		emptyDir := filepath.Join(t.TempDir(), "empty-city")
+		if err := os.MkdirAll(filepath.Join(emptyDir, ".gc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, emptyDir, "empty-city")
+
+		ctx, err := resolveContextFromPath(rigDir)
+		if err != nil {
+			t.Fatalf("resolveContextFromPath error: %v (want success with ENOENT on load path)", err)
+		}
+		assertSameTestPath(t, ctx.CityPath, goodCity)
+
+		_, stale, err := registeredRigBindingsByPath(rigDir, true)
+		if err != nil {
+			t.Fatalf("registeredRigBindingsByPath error: %v", err)
+		}
+		var found bool
+		for _, s := range stale {
+			if strings.Contains(s.Label, "empty-city") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("stale = %+v, want an entry mentioning empty-city", stale)
+		}
+	})
+
+	// Regression: emitStaleRegisteredCityWarnings dedupes by Label so a
+	// command that invokes registeredRigBindings twice (e.g.
+	// resolveRigToContext tries both name and path lookups) emits each
+	// stale entry at most once.
+	t.Run("emit_stale_warnings_deduplicates_by_label", func(t *testing.T) {
+		stale := []staleRegisteredCity{
+			{Label: "city-a", Path: "/tmp/a"},
+			{Label: "city-b", Path: "/tmp/b"},
+			{Label: "city-a", Path: "/tmp/a"}, // duplicate from a second scan
+		}
+		var out bytes.Buffer
+		emitStaleRegisteredCityWarnings(&out, stale)
+		got := out.String()
+		if strings.Count(got, "city-a") != 1 {
+			t.Errorf("city-a should appear once, got %d in %q", strings.Count(got, "city-a"), got)
+		}
+		if strings.Count(got, "city-b") != 1 {
+			t.Errorf("city-b should appear once, got %d in %q", strings.Count(got, "city-b"), got)
 		}
 	})
 
