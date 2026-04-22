@@ -217,7 +217,7 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	return resolved, workDir, agentCfg.Session, agentCfg.QualifiedName(), nil
+	return resolved, workDir, config.ResolveSessionCreateTransport(agentCfg.Session, resolved), agentCfg.QualifiedName(), nil
 }
 
 func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, error) {

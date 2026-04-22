@@ -5,6 +5,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/session"
 )
 
 type createTransportCapableProvider struct {
@@ -73,7 +74,7 @@ func TestResolveSessionTemplateForCreateUsesProviderACPDefault(t *testing.T) {
 	}
 }
 
-func TestResolveSessionTemplateKeepsLegacyRuntimeTransportDefault(t *testing.T) {
+func TestResolveSessionTemplateUsesProviderACPDefaultForLegacyRuntimeTransport(t *testing.T) {
 	fs := newSessionFakeState(t)
 	supportsACP := true
 	fs.cfg = &config.City{
@@ -99,8 +100,8 @@ func TestResolveSessionTemplateKeepsLegacyRuntimeTransportDefault(t *testing.T) 
 	if err != nil {
 		t.Fatalf("resolveSessionTemplate: %v", err)
 	}
-	if transport != "" {
-		t.Fatalf("transport = %q, want empty runtime default", transport)
+	if transport != "acp" {
+		t.Fatalf("transport = %q, want %q", transport, "acp")
 	}
 }
 
@@ -127,5 +128,41 @@ func TestConfiguredSessionTransportUsesProviderACPDefaultForAgentTemplates(t *te
 	transport := configuredSessionTransport(cfg, "myrig/worker", "")
 	if transport != "acp" {
 		t.Fatalf("configuredSessionTransport() = %q, want %q", transport, "acp")
+	}
+}
+
+func TestBuildSessionResumeUsesProviderACPDefaultForLegacyTemplateSession(t *testing.T) {
+	fs := newSessionFakeState(t)
+	supportsACP := true
+	fs.cfg = &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Dir:      "myrig",
+			Provider: "custom-acp",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"custom-acp": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: &supportsACP,
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}
+
+	srv := New(fs)
+	cmd, _, err := srv.buildSessionResume(session.Info{
+		ID:       "gc-1",
+		Template: "myrig/worker",
+		Command:  "/bin/echo",
+		WorkDir:  "/tmp/workdir",
+	})
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if cmd != "/bin/echo acp" {
+		t.Fatalf("resume command = %q, want %q", cmd, "/bin/echo acp")
 	}
 }
