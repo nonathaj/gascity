@@ -120,7 +120,7 @@ type Manager struct {
 	store             beads.Store
 	sp                runtime.Provider
 	cityPath          string
-	transportResolver func(template string) string
+	transportResolver func(template, provider string) string
 }
 
 // PruneResult reports which sessions were pruned and which queued wait nudges
@@ -161,7 +161,10 @@ func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool)
 	}
 	if strings.TrimSpace(b.Metadata["pending_create_claim"]) == "true" {
 		if m.transportResolver != nil {
-			transport = normalizeTransport(b.Metadata["provider"], m.transportResolver(strings.TrimSpace(b.Metadata["template"])))
+			transport = normalizeTransport(
+				b.Metadata["provider"],
+				m.transportResolver(strings.TrimSpace(b.Metadata["template"]), strings.TrimSpace(b.Metadata["provider"])),
+			)
 			if transport != "" {
 				return transport, true
 			}
@@ -177,9 +180,15 @@ func (m *Manager) transportForBead(b beads.Bead, sessName string) (string, bool)
 	if m.sp != nil && m.sp.IsRunning(sessName) {
 		return "", false
 	}
-	// Stopped legacy sessions without persisted transport metadata must keep
-	// their stored runtime semantics. Only pending-create beads use config
-	// inference because they have not materialized yet.
+	if m.transportResolver != nil {
+		transport = normalizeTransport(
+			b.Metadata["provider"],
+			m.transportResolver(strings.TrimSpace(b.Metadata["template"]), strings.TrimSpace(b.Metadata["provider"])),
+		)
+		if transport != "" {
+			return transport, true
+		}
+	}
 	return "", false
 }
 
@@ -209,8 +218,9 @@ func NewManager(store beads.Store, sp runtime.Provider) *Manager {
 }
 
 // NewManagerWithTransportResolver creates a Manager that can infer session
-// transport from template config when older beads do not have transport metadata.
-func NewManagerWithTransportResolver(store beads.Store, sp runtime.Provider, resolver func(template string) string) *Manager {
+// transport from template or provider config when older beads do not have
+// transport metadata.
+func NewManagerWithTransportResolver(store beads.Store, sp runtime.Provider, resolver func(template, provider string) string) *Manager {
 	return &Manager{store: store, sp: sp, transportResolver: resolver}
 }
 
@@ -221,9 +231,9 @@ func NewManagerWithCityPath(store beads.Store, sp runtime.Provider, cityPath str
 }
 
 // NewManagerWithTransportResolverAndCityPath creates a Manager that can infer
-// session transport from template config and persist deferred submits into the
-// city's nudge queue.
-func NewManagerWithTransportResolverAndCityPath(store beads.Store, sp runtime.Provider, cityPath string, resolver func(template string) string) *Manager {
+// session transport from template or provider config and persist deferred
+// submits into the city's nudge queue.
+func NewManagerWithTransportResolverAndCityPath(store beads.Store, sp runtime.Provider, cityPath string, resolver func(template, provider string) string) *Manager {
 	return &Manager{store: store, sp: sp, cityPath: cityPath, transportResolver: resolver}
 }
 

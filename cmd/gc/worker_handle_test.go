@@ -258,7 +258,7 @@ TOKEN = "abc"
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportWithoutStoredTemplateACPMetadata(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigUsesConfiguredTransportWithoutStoredTemplateACPMetadata(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -294,7 +294,7 @@ acp_args = ["acp"]
 	if resolved == nil {
 		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
 	}
-	if got, want := resolved.Command, "/bin/echo"; got != want {
+	if got, want := resolved.Command, "/bin/echo acp"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }
@@ -337,7 +337,7 @@ acp_args = ["acp"]
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportForLegacyProviderSessionWithoutMetadata(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigUsesConfiguredTransportForLegacyProviderSessionWithoutMetadata(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -369,7 +369,7 @@ acp_args = ["acp"]
 	if resolved == nil {
 		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
 	}
-	if got, want := resolved.Command, "/bin/echo"; got != want {
+	if got, want := resolved.Command, "/bin/echo acp"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }

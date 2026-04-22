@@ -215,6 +215,39 @@ func TestRuntimeMCPServersPreservesTransport(t *testing.T) {
 	}
 }
 
+func TestMCPTemplateDataUsesBackingTemplateName(t *testing.T) {
+	t.Parallel()
+
+	agent := &config.Agent{
+		Name: "worker",
+		Dir:  "rig-a",
+		Env:  map[string]string{"TOKEN": "abc"},
+	}
+	got := MCPTemplateData(&config.City{}, "/tmp/city", agent, "rig-a/worker-7", "/tmp/work")
+	if got["AgentName"] != "rig-a/worker-7" {
+		t.Fatalf("AgentName = %q, want %q", got["AgentName"], "rig-a/worker-7")
+	}
+	if got["TemplateName"] != "rig-a/worker" {
+		t.Fatalf("TemplateName = %q, want %q", got["TemplateName"], "rig-a/worker")
+	}
+	if got["TOKEN"] != "abc" {
+		t.Fatalf("TOKEN = %q, want abc", got["TOKEN"])
+	}
+}
+
+func TestMCPTemplateDataUsesPoolNameForPoolInstances(t *testing.T) {
+	t.Parallel()
+
+	agent := &config.Agent{
+		Name:     "worker-3",
+		PoolName: "worker",
+	}
+	got := MCPTemplateData(&config.City{}, "/tmp/city", agent, "worker-3", "/tmp/work")
+	if got["TemplateName"] != "worker" {
+		t.Fatalf("TemplateName = %q, want %q", got["TemplateName"], "worker")
+	}
+}
+
 func TestMCPPackSourcesForAgentOrdersAndDedupes(t *testing.T) {
 	t.Parallel()
 

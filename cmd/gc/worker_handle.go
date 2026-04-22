@@ -449,6 +449,15 @@ func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) b
 	return strings.HasPrefix(storedCommand, resolvedCommand+" ")
 }
 
+func firstNonEmptyWorkerString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info, sessionKind string) (*config.ResolvedProvider, string) {
 	if cfg == nil {
 		return nil, ""
@@ -456,7 +465,11 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if sessionKind != "provider" {
 		if found, ok := resolveAgentIdentity(cfg, info.Template, ""); ok {
 			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
-				return resolved, strings.TrimSpace(info.Transport)
+				return resolved, firstNonEmptyWorkerString(
+					strings.TrimSpace(info.Transport),
+					strings.TrimSpace(found.Session),
+					strings.TrimSpace(resolved.DefaultSessionTransport()),
+				)
 			}
 		}
 	}
@@ -464,7 +477,7 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if err != nil {
 		return nil, ""
 	}
-	return resolved, strings.TrimSpace(info.Transport)
+	return resolved, firstNonEmptyWorkerString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.DefaultSessionTransport()))
 }
 
 func workerDeliveryIntentForSubmitIntent(intent session.SubmitIntent) worker.DeliveryIntent {

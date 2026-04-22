@@ -54,12 +54,12 @@ func MCPTemplateData(
 	}
 	rigName := workdirutil.ConfiguredRigName(cityPath, *agent, rigs)
 	rigRoot := workdirutil.RigRootForName(rigName, rigs)
-	templateName := identity
+	templateName := agent.QualifiedName()
 	if agent.PoolName != "" {
 		templateName = agent.PoolName
 	}
 	if templateName == "" {
-		templateName = agent.QualifiedName()
+		templateName = identity
 	}
 	data := make(map[string]string, len(agent.Env)+11)
 	for key, value := range agent.Env {

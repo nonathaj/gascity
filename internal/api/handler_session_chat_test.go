@@ -257,7 +257,7 @@ func TestBuildSessionResumeKeepsDefaultCommandWithoutACPTransportProvider(t *tes
 	}
 }
 
-func TestBuildSessionResumeKeepsDefaultCommandForLegacyProviderSessionWithoutTransportMetadata(t *testing.T) {
+func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWithoutTransportMetadata(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -291,7 +291,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyProviderSessionWithoutTra
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -335,7 +335,7 @@ func TestBuildSessionResumeUsesStoredACPTransportForTemplateSession(t *testing.T
 	}
 }
 
-func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateSessionWithoutTransportMetadata(t *testing.T) {
+func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyTemplateSessionWithoutTransportMetadata(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -368,7 +368,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateSessionWithoutTra
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }

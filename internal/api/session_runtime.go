@@ -263,12 +263,16 @@ func (s *Server) resolveWorkerSessionRuntime(info session.Info, _ string) (*work
 func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvider, string, string) {
 	kind := s.sessionKind(info.ID)
 	if kind != "provider" {
-		resolved, workDir, _, _, err := s.resolveSessionTemplate(info.Template)
+		resolved, workDir, transport, _, err := s.resolveSessionTemplate(info.Template)
 		if err == nil {
 			if info.WorkDir != "" {
 				workDir = info.WorkDir
 			}
-			return resolved, workDir, strings.TrimSpace(info.Transport)
+			return resolved, workDir, firstNonEmptyString(
+				strings.TrimSpace(info.Transport),
+				strings.TrimSpace(transport),
+				strings.TrimSpace(resolved.DefaultSessionTransport()),
+			)
 		}
 	}
 
@@ -280,7 +284,7 @@ func (s *Server) resolveSessionRuntime(info session.Info) (*config.ResolvedProvi
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}
-	transport := strings.TrimSpace(info.Transport)
+	transport := firstNonEmptyString(strings.TrimSpace(info.Transport), strings.TrimSpace(resolved.DefaultSessionTransport()))
 	return resolved, workDir, transport
 }
 

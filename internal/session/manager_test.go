@@ -2089,7 +2089,7 @@ func TestSendBackfillsTransportForLegacyACPSession(t *testing.T) {
 		t.Fatalf("Start ACP session: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2147,7 +2147,7 @@ func TestGetDoesNotPersistGuessedTransportForLegacySession(t *testing.T) {
 		t.Fatalf("Create legacy bead: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2190,7 +2190,7 @@ func TestGetUsesConfiguredTransportForPendingCreateWithoutRuntimeProbe(t *testin
 		t.Fatalf("Create deferred bead: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, sp, func(template string) string {
+	mgr := NewManagerWithTransportResolver(store, sp, func(template, provider string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2241,7 +2241,7 @@ func TestGetPrefersLiveTransportDetectionOverConfiguredTransportInference(t *tes
 		t.Fatalf("Start default session: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2265,7 +2265,7 @@ func TestGetPrefersLiveTransportDetectionOverConfiguredTransportInference(t *tes
 	}
 }
 
-func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T) {
+func TestGetInfersConfiguredTransportForStoppedLegacySession(t *testing.T) {
 	store := beads.NewMemStore()
 	defaultSP := runtime.NewFake()
 	acpSP := runtime.NewFake()
@@ -2294,7 +2294,7 @@ func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T)
 		t.Fatalf("SetMetadata(session_name): %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2305,8 +2305,8 @@ func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got := info.Transport; got != "" {
-		t.Fatalf("Transport = %q, want empty for stopped legacy tmux session", got)
+	if got := info.Transport; got != "acp" {
+		t.Fatalf("Transport = %q, want acp for stopped legacy session under current config", got)
 	}
 
 	updated, err := store.Get(legacy.ID)
@@ -2314,7 +2314,7 @@ func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T)
 		t.Fatalf("Get updated bead: %v", err)
 	}
 	if got := updated.Metadata["transport"]; got != "" {
-		t.Fatalf("transport metadata = %q, want empty for stopped legacy tmux session", got)
+		t.Fatalf("transport metadata = %q, want empty for read-only lookup", got)
 	}
 }
 
