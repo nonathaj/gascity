@@ -60,5 +60,5 @@ func configuredSessionTransportResolution(cfg *config.City, template, provider s
 	if err != nil {
 		return "", false
 	}
-	return strings.TrimSpace(resolved.ProviderSessionCreateTransport()), true
+	return strings.TrimSpace(resolved.ProviderSessionCreateTransport()), false
 }

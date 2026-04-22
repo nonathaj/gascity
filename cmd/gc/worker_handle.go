@@ -619,7 +619,7 @@ func resolveWorkerRuntimeProviderWithConfig(cfg *config.City, info session.Info,
 	if err != nil {
 		return nil, "", false
 	}
-	return resolved, strings.TrimSpace(resolved.ProviderSessionCreateTransport()), true
+	return resolved, strings.TrimSpace(resolved.ProviderSessionCreateTransport()), false
 }
 
 func workerDeliveryIntentForSubmitIntent(intent session.SubmitIntent) worker.DeliveryIntent {

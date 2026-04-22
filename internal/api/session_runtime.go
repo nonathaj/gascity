@@ -416,7 +416,7 @@ func (s *Server) resolveSessionRuntimeWithMetadata(info session.Info, metadata m
 	if workDir == "" {
 		workDir = s.state.CityPath()
 	}
-	transport := resolvedSessionTransport(info, resolved, resolved.ProviderSessionCreateTransport(), metadata, true)
+	transport := resolvedSessionTransport(info, resolved, resolved.ProviderSessionCreateTransport(), metadata, false)
 	return resolved, workDir, transport
 }
 

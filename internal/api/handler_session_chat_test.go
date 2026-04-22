@@ -246,7 +246,7 @@ func TestBuildSessionResumeFallsBackToStoredCommandWhenTemplateOverridesInvalid(
 	}
 }
 
-func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWithoutTransportMetadataWithoutSessionAutoProvider(t *testing.T) {
+func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTransportMetadataWithoutSessionAutoProvider(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -267,7 +267,7 @@ func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWitho
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "opencode",
-		Command:  "/bin/echo",
+		Command:  "/bin/echo acp",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -281,7 +281,7 @@ func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWitho
 	}
 }
 
-func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWithoutTransportMetadata(t *testing.T) {
+func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTransportMetadata(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -306,7 +306,7 @@ func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWitho
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "opencode",
-		Command:  "/bin/echo",
+		Command:  "/bin/echo acp",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -320,7 +320,7 @@ func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWitho
 	}
 }
 
-func TestBuildSessionResumeUsesACPCommandForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
+func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionOnACPEnabledCustomProvider(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -341,7 +341,7 @@ func TestBuildSessionResumeUsesACPCommandForLegacyProviderSessionOnACPEnabledCus
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "custom-acp",
-		Command:  "/bin/echo",
+		Command:  "/bin/echo acp",
 		Provider: "custom-acp",
 		WorkDir:  "/tmp/workdir",
 	}

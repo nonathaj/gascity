@@ -377,7 +377,7 @@ acp_args = ["acp"]
 	}
 }
 
-func TestResolvedWorkerRuntimeWithConfigUsesConfiguredTransportForLegacyProviderSessionWithoutMetadata(t *testing.T) {
+func TestResolvedWorkerRuntimeWithConfigUsesStoredACPTransportForLegacyProviderSessionWithoutMetadata(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
 name = "test-city"
@@ -400,7 +400,7 @@ acp_args = ["acp"]
 
 	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
 		Template: "opencode",
-		Command:  "/bin/echo",
+		Command:  "/bin/echo acp",
 		WorkDir:  cityDir,
 	}, "provider")
 	if err != nil {

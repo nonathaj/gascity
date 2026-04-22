@@ -44,6 +44,6 @@ func newSessionManagerWithConfig(cityPath string, store beads.Store, sp runtime.
 		if err != nil {
 			return "", false
 		}
-		return strings.TrimSpace(resolved.ProviderSessionCreateTransport()), true
+		return strings.TrimSpace(resolved.ProviderSessionCreateTransport()), false
 	})
 }

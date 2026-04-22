@@ -353,10 +353,8 @@ func beadUsesACPTransport(bead beads.Bead, cfg *config.City) bool {
 		return true
 	}
 	templateName := strings.TrimSpace(bead.Metadata["template"])
-	providerScoped := true
 	if cfg != nil {
 		if agentCfg, ok := resolveAgentIdentity(cfg, templateName, currentRigContext(cfg)); ok {
-			providerScoped = false
 			if strings.TrimSpace(agentCfg.Session) != "" && agentSessionCreateTransport(cfg, agentCfg) == "acp" {
 				return true
 			}
@@ -381,9 +379,6 @@ func beadUsesACPTransport(bead beads.Bead, cfg *config.City) bool {
 				(storedCommand == acpCommand || strings.HasPrefix(storedCommand, acpCommand+" ")) {
 				return true
 			}
-		}
-		if providerScoped {
-			return providerLegacyDefaultsToACP(cfg, providerName)
 		}
 		if strings.TrimSpace(bead.Metadata["command"]) == "" &&
 			strings.TrimSpace(bead.Metadata["pending_create_claim"]) == "true" {
