@@ -40,12 +40,14 @@ func MCPTemplateData(
 	workDir string,
 ) map[string]string {
 	if agent == nil {
+		branch := defaultMCPBranch(workDir)
 		return map[string]string{
 			"CityRoot":      cityPath,
 			"AgentName":     identity,
 			"TemplateName":  identity,
 			"WorkDir":       workDir,
-			"DefaultBranch": defaultMCPBranch(workDir),
+			"Branch":        branch,
+			"DefaultBranch": branch,
 		}
 	}
 	var rigs []config.Rig
@@ -65,6 +67,7 @@ func MCPTemplateData(
 	for key, value := range agent.Env {
 		data[key] = value
 	}
+	branch := defaultMCPBranch(workDir)
 	data["CityRoot"] = cityPath
 	data["AgentName"] = identity
 	data["TemplateName"] = templateName
@@ -72,7 +75,8 @@ func MCPTemplateData(
 	data["RigRoot"] = rigRoot
 	data["WorkDir"] = workDir
 	data["IssuePrefix"] = mcpRigPrefix(rigName, rigs)
-	data["DefaultBranch"] = defaultMCPBranch(workDir)
+	data["Branch"] = branch
+	data["DefaultBranch"] = branch
 	data["WorkQuery"] = agent.EffectiveWorkQuery()
 	data["SlingQuery"] = agent.EffectiveSlingQuery()
 	return data

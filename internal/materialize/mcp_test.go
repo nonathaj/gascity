@@ -248,6 +248,19 @@ func TestMCPTemplateDataUsesPoolNameForPoolInstances(t *testing.T) {
 	}
 }
 
+func TestMCPTemplateDataPreservesBranchAlias(t *testing.T) {
+	t.Parallel()
+
+	agent := &config.Agent{Name: "worker"}
+	got := MCPTemplateData(&config.City{}, "/tmp/city", agent, "worker-1", "")
+	if got["Branch"] == "" {
+		t.Fatal("Branch = empty, want default branch alias")
+	}
+	if got["Branch"] != got["DefaultBranch"] {
+		t.Fatalf("Branch = %q, want %q", got["Branch"], got["DefaultBranch"])
+	}
+}
+
 func TestMCPPackSourcesForAgentOrdersAndDedupes(t *testing.T) {
 	t.Parallel()
 
