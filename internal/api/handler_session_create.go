@@ -127,6 +127,13 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mcpServers, err := s.sessionMCPServers(template, resolved.Name, firstNonEmptyString(alias, template), workDir, kind)
+	if err != nil {
+		s.idem.unreserve(idemKey)
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+
 	command := sessionCreateAgentCommand(resolved)
 
 	// Build template_overrides metadata. Includes schema overrides AND
@@ -143,7 +150,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	// starts the agent process on the next tick. This avoids blocking the
 	// HTTP response for 10-30s while the agent boots in tmux, and lets MC
 	// show the session in the sidebar immediately via optimistic UI.
-	resolvedCfg, err := resolvedSessionConfigForProvider(alias, "", template, title, transport, extraMeta, resolved, command, workDir, nil)
+	resolvedCfg, err := resolvedSessionConfigForProvider(alias, "", template, title, transport, extraMeta, resolved, command, workDir, mcpServers)
 	if err != nil {
 		s.idem.unreserve(idemKey)
 		writeSessionManagerError(w, err)

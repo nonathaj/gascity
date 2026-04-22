@@ -4,11 +4,17 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/runtime"
 )
 
 func TestResolvedSessionConfigForProviderBuildsNormalizedConfig(t *testing.T) {
 	metadata := map[string]string{"session_origin": "named"}
 	env := map[string]string{"API_TOKEN": "present"}
+	mcpServers := []runtime.MCPServerConfig{{
+		Name:    "filesystem",
+		Command: "/bin/mcp",
+		Args:    []string{"--stdio"},
+	}}
 	resolved := &config.ResolvedProvider{
 		Name:                   "stub",
 		Command:                "/bin/echo",
@@ -33,7 +39,7 @@ func TestResolvedSessionConfigForProviderBuildsNormalizedConfig(t *testing.T) {
 		resolved,
 		"",
 		"/tmp/workdir",
-		nil,
+		mcpServers,
 	)
 	if err != nil {
 		t.Fatalf("resolvedSessionConfigForProvider: %v", err)
@@ -53,6 +59,12 @@ func TestResolvedSessionConfigForProviderBuildsNormalizedConfig(t *testing.T) {
 	}
 	if got, want := cfg.Runtime.Hints.ReadyPromptPrefix, "stub-ready>"; got != want {
 		t.Fatalf("Runtime.Hints.ReadyPromptPrefix = %q, want %q", got, want)
+	}
+	if len(cfg.Runtime.Hints.MCPServers) != 1 {
+		t.Fatalf("Runtime.Hints.MCPServers len = %d, want 1", len(cfg.Runtime.Hints.MCPServers))
+	}
+	if got, want := cfg.Runtime.Hints.MCPServers[0].Name, "filesystem"; got != want {
+		t.Fatalf("Runtime.Hints.MCPServers[0].Name = %q, want %q", got, want)
 	}
 	if got, want := cfg.Runtime.Resume.SessionIDFlag, "--session-id"; got != want {
 		t.Fatalf("Runtime.Resume.SessionIDFlag = %q, want %q", got, want)

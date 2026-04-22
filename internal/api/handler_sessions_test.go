@@ -77,6 +77,14 @@ func (p *failNudgeProvider) Nudge(name string, content []runtime.ContentBlock) e
 	return nil
 }
 
+type transportCapableProvider struct {
+	*runtime.Fake
+}
+
+func (p *transportCapableProvider) SupportsTransport(transport string) bool {
+	return transport == "acp"
+}
+
 type stateWithSessionProvider struct {
 	*fakeState
 	provider runtime.Provider
@@ -1444,7 +1452,7 @@ func TestHandleProviderSessionCreateUsesACPTransportCommand(t *testing.T) {
 		ACPArgs:     []string{"acp"},
 	}
 	defaultSP := runtime.NewFake()
-	acpSP := runtime.NewFake()
+	acpSP := &transportCapableProvider{Fake: runtime.NewFake()}
 	state := &stateWithSessionProvider{
 		fakeState: fs,
 		provider:  sessionauto.New(defaultSP, acpSP),
@@ -1495,7 +1503,7 @@ func TestHumaCreateProviderSessionUsesACPTransportCommand(t *testing.T) {
 		ACPArgs:     []string{"acp"},
 	}
 	defaultSP := runtime.NewFake()
-	acpSP := runtime.NewFake()
+	acpSP := &transportCapableProvider{Fake: runtime.NewFake()}
 	state := &stateWithSessionProvider{
 		fakeState: fs,
 		provider:  sessionauto.New(defaultSP, acpSP),
@@ -1528,6 +1536,53 @@ func TestHumaCreateProviderSessionUsesACPTransportCommand(t *testing.T) {
 	}
 	if defaultSP.IsRunning(out.Body.SessionName) {
 		t.Fatalf("default backend should not own ACP session %q", out.Body.SessionName)
+	}
+}
+
+func TestHandleProviderSessionCreateUsesACPTransportCapabilityProvider(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["opencode"] = config.ProviderSpec{
+		DisplayName: "OpenCode",
+		Command:     "/bin/echo",
+		PathCheck:   "true",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+	provider := &transportCapableProvider{Fake: runtime.NewFake()}
+	state := &stateWithSessionProvider{
+		fakeState: fs,
+		provider:  provider,
+	}
+	srv := New(state)
+	h := newTestCityHandlerWith(t, state, srv)
+
+	req := newPostRequest(cityURL(fs, "/sessions"), strings.NewReader(`{"kind":"provider","name":"opencode"}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var resp sessionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	start := provider.LastStartConfig(resp.SessionName)
+	if start == nil {
+		t.Fatalf("LastStartConfig(%q) = nil", resp.SessionName)
+	}
+	if got, want := start.Command, "/bin/echo acp"; got != want {
+		t.Fatalf("start command = %q, want %q", got, want)
+	}
+	bead, err := fs.cityBeadStore.Get(resp.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", resp.ID, err)
+	}
+	if got, want := bead.Metadata["transport"], "acp"; got != want {
+		t.Fatalf("transport metadata = %q, want %q", got, want)
 	}
 }
 

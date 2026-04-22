@@ -67,8 +67,9 @@ type Provider struct {
 
 // Compile-time check.
 var (
-	_ runtime.Provider            = (*Provider)(nil)
-	_ runtime.InteractionProvider = (*Provider)(nil)
+	_ runtime.Provider                    = (*Provider)(nil)
+	_ runtime.InteractionProvider         = (*Provider)(nil)
+	_ runtime.TransportCapabilityProvider = (*Provider)(nil)
 )
 
 // NewProvider returns an ACP [Provider] that stores socket files in
@@ -94,6 +95,12 @@ func NewProviderWithDir(dir string, cfg Config) *Provider {
 		workDirs: make(map[string]string),
 		cfg:      cfg,
 	}
+}
+
+// SupportsTransport reports whether this provider can host the requested
+// session transport.
+func (p *Provider) SupportsTransport(transport string) bool {
+	return transport == "acp"
 }
 
 // Start spawns an ACP agent process, performs the JSON-RPC handshake, and
