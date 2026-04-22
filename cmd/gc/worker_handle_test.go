@@ -535,6 +535,41 @@ func TestResolvedWorkerRuntimeWithConfigReplaysTemplateOverridesOnResume(t *test
 	}
 }
 
+func TestResolvedWorkerRuntimeWithConfigFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
+	cityDir := t.TempDir()
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Dir:      "myrig",
+			Provider: "custom",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"custom": {
+				Command:   "/bin/echo",
+				PathCheck: "true",
+			},
+		},
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, session.Info{
+		Template: "myrig/worker",
+		Command:  "/bin/echo --stored",
+		WorkDir:  cityDir,
+	}, "", map[string]string{
+		"template_overrides": `{`,
+	})
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfigAndMetadata: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfigAndMetadata() = nil")
+	}
+	if got, want := resolved.Command, "/bin/echo --stored"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+}
+
 func TestWorkerHandleForSessionWithConfigUsesResolvedProviderOnResume(t *testing.T) {
 	skipSlowCmdGCTest(t, "waits through stale session-key detection; run make test-cmd-gc-process for full coverage")
 	cityDir := t.TempDir()

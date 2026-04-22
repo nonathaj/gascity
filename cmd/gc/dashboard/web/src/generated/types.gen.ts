@@ -200,6 +200,8 @@ export type AnnotatedAgentResponse = {
 };
 
 export type AnnotatedProviderResponse = {
+    acp_args?: Array<string> | null;
+    acp_command?: string;
     args?: Array<string> | null;
     command?: string;
     display_name?: string;
@@ -1746,6 +1748,14 @@ export type PoolOverride = {
 
 export type ProviderCreateInputBody = {
     /**
+     * ACP transport command arguments override.
+     */
+    acp_args?: Array<string> | null;
+    /**
+     * ACP transport command binary override.
+     */
+    acp_command?: string;
+    /**
      * Command arguments.
      */
     args?: Array<string> | null;
@@ -1903,6 +1913,8 @@ export type ProviderReadinessResponse = {
 };
 
 export type ProviderResponse = {
+    acp_args?: Array<string> | null;
+    acp_command?: string;
     args?: Array<string> | null;
     builtin: boolean;
     city_level: boolean;
@@ -1918,6 +1930,8 @@ export type ProviderResponse = {
 };
 
 export type ProviderSpecJson = {
+    acp_args?: Array<string> | null;
+    acp_command?: string;
     args?: Array<string> | null;
     command?: string;
     display_name?: string;
@@ -1930,6 +1944,14 @@ export type ProviderSpecJson = {
 };
 
 export type ProviderUpdateInputBody = {
+    /**
+     * ACP transport command arguments override.
+     */
+    acp_args?: Array<string> | null;
+    /**
+     * ACP transport command binary override.
+     */
+    acp_command?: string;
     /**
      * Command arguments.
      */

@@ -459,19 +459,19 @@ func resolvedWorkerRuntimeWithConfigAndMetadata(cityPath string, cfg *config.Cit
 	}
 
 	command := strings.TrimSpace(info.Command)
-	optionOverrides, err := session.ParseTemplateOverrides(metadata)
-	if err != nil {
-		return nil, fmt.Errorf("parsing template overrides: %w", err)
+	desiredCommand := fallbackResolvedWorkerRuntimeCommand(resolved, transport, command)
+	if optionOverrides, err := session.ParseTemplateOverrides(metadata); err == nil {
+		if launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, transport); err == nil {
+			resolvedCommand := resolved.CommandString()
+			if transport == "acp" {
+				resolvedCommand = resolved.ACPCommandString()
+			}
+			desiredCommand = firstNonEmptyGCString(launchCommand.Command, resolvedCommand, resolved.Name)
+			if shouldPreserveStoredRuntimeCommandForTransport(command, desiredCommand, transport, optionOverrides) {
+				desiredCommand = command
+			}
+		}
 	}
-	launchCommand, err := config.BuildProviderLaunchCommand(cityPath, resolved, optionOverrides, transport)
-	if err != nil {
-		return nil, fmt.Errorf("building provider launch command: %w", err)
-	}
-	resolvedCommand := resolved.CommandString()
-	if transport == "acp" {
-		resolvedCommand = resolved.ACPCommandString()
-	}
-	desiredCommand := firstNonEmptyGCString(launchCommand.Command, resolvedCommand, resolved.Name)
 	if !shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
 		command = desiredCommand
 	}
@@ -526,6 +526,36 @@ func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) b
 		return false
 	}
 	return strings.HasPrefix(storedCommand, resolvedCommand+" ")
+}
+
+func shouldPreserveStoredRuntimeCommandForTransport(storedCommand, resolvedCommand, transport string, optionOverrides map[string]string) bool {
+	if shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand) {
+		return true
+	}
+	if transport == "acp" || len(optionOverrides) != 0 {
+		return false
+	}
+	return sameRuntimeCommandExecutable(storedCommand, resolvedCommand)
+}
+
+func sameRuntimeCommandExecutable(storedCommand, resolvedCommand string) bool {
+	storedFields := strings.Fields(strings.TrimSpace(storedCommand))
+	resolvedFields := strings.Fields(strings.TrimSpace(resolvedCommand))
+	if len(storedFields) == 0 || len(resolvedFields) == 0 {
+		return false
+	}
+	return storedFields[0] == resolvedFields[0]
+}
+
+func fallbackResolvedWorkerRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string) string {
+	resolvedCommand := ""
+	if resolved != nil {
+		resolvedCommand = resolved.CommandString()
+		if transport == "acp" {
+			resolvedCommand = resolved.ACPCommandString()
+		}
+	}
+	return firstNonEmptyGCString(storedCommand, resolvedCommand, resolved.Name)
 }
 
 func firstNonEmptyWorkerString(values ...string) string {

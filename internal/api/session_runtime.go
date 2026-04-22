@@ -235,11 +235,7 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata); err == nil {
 		resolvedInfo.Command = command
 	} else {
-		resolvedCommand := resolved.CommandString()
-		if transport == "acp" {
-			resolvedCommand = resolved.ACPCommandString()
-		}
-		resolvedInfo.Command = firstNonEmptyString(info.Command, resolvedCommand, resolved.Name)
+		resolvedInfo.Command = fallbackSessionRuntimeCommand(resolved, transport, info.Command)
 	}
 	resolvedInfo.Provider = resolved.Name
 	resolvedInfo.Transport = transport
@@ -263,10 +259,21 @@ func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider
 		resolvedCommand = resolved.ACPCommandString()
 	}
 	desiredCommand := firstNonEmptyString(launchCommand.Command, resolvedCommand, resolved.Name)
-	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommand(command, desiredCommand) {
+	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommandForTransport(command, desiredCommand, transport, optionOverrides) {
 		return command, nil
 	}
 	return desiredCommand, nil
+}
+
+func fallbackSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string) string {
+	resolvedCommand := ""
+	if resolved != nil {
+		resolvedCommand = resolved.CommandString()
+		if transport == "acp" {
+			resolvedCommand = resolved.ACPCommandString()
+		}
+	}
+	return firstNonEmptyString(storedCommand, resolvedCommand, resolved.Name)
 }
 
 func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) bool {
@@ -290,6 +297,25 @@ func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) b
 	return strings.HasPrefix(storedCommand, resolvedCommand+" ")
 }
 
+func shouldPreserveStoredRuntimeCommandForTransport(storedCommand, resolvedCommand, transport string, optionOverrides map[string]string) bool {
+	if shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand) {
+		return true
+	}
+	if transport == "acp" || len(optionOverrides) != 0 {
+		return false
+	}
+	return sameRuntimeCommandExecutable(storedCommand, resolvedCommand)
+}
+
+func sameRuntimeCommandExecutable(storedCommand, resolvedCommand string) bool {
+	storedFields := strings.Fields(strings.TrimSpace(storedCommand))
+	resolvedFields := strings.Fields(strings.TrimSpace(resolvedCommand))
+	if len(storedFields) == 0 || len(resolvedFields) == 0 {
+		return false
+	}
+	return storedFields[0] == resolvedFields[0]
+}
+
 func (s *Server) resolveWorkerSessionRuntime(info session.Info, sessionKind string) (*worker.ResolvedRuntime, error) {
 	return s.resolveWorkerSessionRuntimeWithMetadata(info, sessionKind, nil)
 }
@@ -305,7 +331,7 @@ func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ st
 	}
 	command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata)
 	if err != nil {
-		return nil, err
+		command = fallbackSessionRuntimeCommand(resolved, transport, info.Command)
 	}
 	runtimeCfg, err := worker.NormalizeResolvedRuntime(worker.ResolvedRuntime{
 		Command:    command,

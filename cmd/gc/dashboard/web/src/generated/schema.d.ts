@@ -2050,6 +2050,8 @@ export interface components {
             suspended: boolean;
         };
         AnnotatedProviderResponse: {
+            acp_args?: string[] | null;
+            acp_command?: string;
             args?: string[] | null;
             command?: string;
             display_name?: string;
@@ -3211,6 +3213,10 @@ export interface components {
             OnDeath: string | null;
         };
         ProviderCreateInputBody: {
+            /** @description ACP transport command arguments override. */
+            acp_args?: string[] | null;
+            /** @description ACP transport command binary override. */
+            acp_command?: string;
             /** @description Command arguments. */
             args?: string[] | null;
             /** @description Arguments appended after inherited/base args. */
@@ -3327,6 +3333,8 @@ export interface components {
             };
         };
         ProviderResponse: {
+            acp_args?: string[] | null;
+            acp_command?: string;
             args?: string[] | null;
             builtin: boolean;
             city_level: boolean;
@@ -3342,6 +3350,8 @@ export interface components {
             ready_delay_ms?: number;
         };
         ProviderSpecJSON: {
+            acp_args?: string[] | null;
+            acp_command?: string;
             args?: string[] | null;
             command?: string;
             display_name?: string;
@@ -3354,6 +3364,10 @@ export interface components {
             ready_delay_ms?: number;
         };
         ProviderUpdateInputBody: {
+            /** @description ACP transport command arguments override. */
+            acp_args?: string[] | null;
+            /** @description ACP transport command binary override. */
+            acp_command?: string;
             /** @description Command arguments. */
             args?: string[] | null;
             /** @description Arguments appended after inherited/base args. */

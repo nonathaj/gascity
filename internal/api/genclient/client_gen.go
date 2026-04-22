@@ -372,6 +372,8 @@ type AnnotatedAgentResponse struct {
 
 // AnnotatedProviderResponse defines model for AnnotatedProviderResponse.
 type AnnotatedProviderResponse struct {
+	AcpArgs     *[]string          `json:"acp_args,omitempty"`
+	AcpCommand  *string            `json:"acp_command,omitempty"`
 	Args        *[]string          `json:"args,omitempty"`
 	Command     *string            `json:"command,omitempty"`
 	DisplayName *string            `json:"display_name,omitempty"`
@@ -1759,6 +1761,12 @@ type PoolOverride struct {
 
 // ProviderCreateInputBody defines model for ProviderCreateInputBody.
 type ProviderCreateInputBody struct {
+	// AcpArgs ACP transport command arguments override.
+	AcpArgs *[]string `json:"acp_args,omitempty"`
+
+	// AcpCommand ACP transport command binary override.
+	AcpCommand *string `json:"acp_command,omitempty"`
+
 	// Args Command arguments.
 	Args *[]string `json:"args,omitempty"`
 
@@ -1813,6 +1821,8 @@ type ProviderOptionDTO struct {
 
 // ProviderPatch defines model for ProviderPatch.
 type ProviderPatch struct {
+	ACPArgs            *[]string         `json:"ACPArgs"`
+	ACPCommand         *string           `json:"ACPCommand"`
 	Args               *[]string         `json:"Args"`
 	ArgsAppend         *[]string         `json:"ArgsAppend"`
 	Base               *string           `json:"Base"`
@@ -1887,6 +1897,8 @@ type ProviderReadinessResponse struct {
 
 // ProviderResponse defines model for ProviderResponse.
 type ProviderResponse struct {
+	AcpArgs      *[]string          `json:"acp_args,omitempty"`
+	AcpCommand   *string            `json:"acp_command,omitempty"`
 	Args         *[]string          `json:"args,omitempty"`
 	Builtin      bool               `json:"builtin"`
 	CityLevel    bool               `json:"city_level"`
@@ -1901,6 +1913,8 @@ type ProviderResponse struct {
 
 // ProviderSpecJSON defines model for ProviderSpecJSON.
 type ProviderSpecJSON struct {
+	AcpArgs      *[]string          `json:"acp_args,omitempty"`
+	AcpCommand   *string            `json:"acp_command,omitempty"`
 	Args         *[]string          `json:"args,omitempty"`
 	Command      *string            `json:"command,omitempty"`
 	DisplayName  *string            `json:"display_name,omitempty"`
@@ -1912,6 +1926,12 @@ type ProviderSpecJSON struct {
 
 // ProviderUpdateInputBody defines model for ProviderUpdateInputBody.
 type ProviderUpdateInputBody struct {
+	// AcpArgs ACP transport command arguments override.
+	AcpArgs *[]string `json:"acp_args,omitempty"`
+
+	// AcpCommand ACP transport command binary override.
+	AcpCommand *string `json:"acp_command,omitempty"`
+
 	// Args Command arguments.
 	Args *[]string `json:"args,omitempty"`
 

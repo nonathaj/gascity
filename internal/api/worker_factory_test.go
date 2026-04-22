@@ -319,6 +319,35 @@ command = [broken
 	}
 }
 
+func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
+		Command:   "/bin/echo",
+		PathCheck: "true",
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		ID:       "sess-1",
+		Template: "myrig/worker",
+		Command:  "/bin/echo --stored",
+		WorkDir:  t.TempDir(),
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntimeWithMetadata(info, "", map[string]string{
+		"template_overrides": `{`,
+	})
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntimeWithMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
+	}
+	if got, want := runtimeCfg.Command, "/bin/echo --stored"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+}
+
 func TestWorkerFactorySessionByIDUsesResolvedTemplateRuntime(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Agents[0].Provider = "resolved-worker"

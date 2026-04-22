@@ -674,6 +674,18 @@
       "AnnotatedProviderResponse": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "type": "string"
+          },
           "args": {
             "items": {
               "type": "string"
@@ -4473,6 +4485,20 @@
       "ProviderCreateInputBody": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "description": "ACP transport command arguments override.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "description": "ACP transport command binary override.",
+            "type": "string"
+          },
           "args": {
             "description": "Command arguments.",
             "items": {
@@ -4856,6 +4882,18 @@
       "ProviderResponse": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "type": "string"
+          },
           "args": {
             "items": {
               "type": "string"
@@ -4907,6 +4945,18 @@
       "ProviderSpecJSON": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "type": "string"
+          },
           "args": {
             "items": {
               "type": "string"
@@ -4944,6 +4994,20 @@
       "ProviderUpdateInputBody": {
         "additionalProperties": false,
         "properties": {
+          "acp_args": {
+            "description": "ACP transport command arguments override.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "acp_command": {
+            "description": "ACP transport command binary override.",
+            "type": "string"
+          },
           "args": {
             "description": "Command arguments.",
             "items": {

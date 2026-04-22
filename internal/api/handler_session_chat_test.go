@@ -222,6 +222,30 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 	}
 }
 
+func TestBuildSessionResumeFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
+		Command:   "/bin/echo",
+		PathCheck: "true",
+	}
+
+	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Chat")
+	info.Template = "myrig/worker"
+	info.Command = "/bin/echo --stored"
+	if err := fs.cityBeadStore.SetMetadata(info.ID, "template_overrides", "{"); err != nil {
+		t.Fatalf("SetMetadata(template_overrides): %v", err)
+	}
+
+	srv := New(fs)
+	cmd, _, err := srv.buildSessionResume(info)
+	if err != nil {
+		t.Fatalf("buildSessionResume: %v", err)
+	}
+	if got, want := cmd, "/bin/echo --stored"; got != want {
+		t.Fatalf("resume command = %q, want %q", got, want)
+	}
+}
+
 func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyProviderSessionWithoutTransportMetadataWithoutSessionAutoProvider(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
@@ -408,7 +432,7 @@ func TestBuildSessionResumeUsesConfiguredACPCommandForLegacyTemplateSessionWitho
 	}
 }
 
-func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitACPTransport(t *testing.T) {
+func TestBuildSessionResumeUsesACPCommandForLegacyTemplateWithoutExplicitTransport(t *testing.T) {
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg = &config.City{
@@ -441,7 +465,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitAC
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "/bin/echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
