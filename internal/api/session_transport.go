@@ -40,7 +40,7 @@ func providerSessionTransport(resolved *config.ResolvedProvider, sp runtime.Prov
 	if resolved == nil {
 		return "", nil
 	}
-	return validateSessionTransport(resolved, resolved.DefaultSessionTransport(), sp)
+	return validateSessionTransport(resolved, resolved.ProviderSessionCreateTransport(), sp)
 }
 
 func transportSupportsACP(sp runtime.Provider) bool {

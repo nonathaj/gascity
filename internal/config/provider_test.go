@@ -396,3 +396,53 @@ func TestDefaultSessionTransportSupportsACPDoesNotImplyACPDefault(t *testing.T) 
 		t.Fatalf("DefaultSessionTransport() = %q, want empty default transport", got)
 	}
 }
+
+func TestProviderSessionCreateTransportUsesExplicitACPOverrides(t *testing.T) {
+	tests := []struct {
+		name string
+		rp   ResolvedProvider
+	}{
+		{
+			name: "explicit acp command",
+			rp: ResolvedProvider{
+				Name:        "custom-acp",
+				SupportsACP: true,
+				ACPCommand:  "/bin/custom-acp",
+			},
+		},
+		{
+			name: "explicit acp args",
+			rp: ResolvedProvider{
+				Name:        "custom-acp",
+				SupportsACP: true,
+				ACPArgs:     []string{"acp"},
+			},
+		},
+		{
+			name: "opencode family remains acp",
+			rp: ResolvedProvider{
+				Name:            "custom-opencode",
+				BuiltinAncestor: "opencode",
+				SupportsACP:     true,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.rp.ProviderSessionCreateTransport(); got != "acp" {
+				t.Fatalf("ProviderSessionCreateTransport() = %q, want %q", got, "acp")
+			}
+		})
+	}
+}
+
+func TestProviderSessionCreateTransportSupportsACPAloneStaysDefault(t *testing.T) {
+	rp := &ResolvedProvider{
+		Name:        "custom-acp",
+		SupportsACP: true,
+	}
+	if got := rp.ProviderSessionCreateTransport(); got != "" {
+		t.Fatalf("ProviderSessionCreateTransport() = %q, want empty transport", got)
+	}
+}

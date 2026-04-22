@@ -269,16 +269,16 @@ func hasACPProviderTargets(cfg *config.City) bool {
 		add(agentCfg.Provider)
 	}
 	for name := range candidates {
-		if providerSupportsACP(cfg, name) {
+		if providerSessionCreateUsesACP(cfg, name) {
 			return true
 		}
 	}
 	return false
 }
 
-func providerSupportsACP(cfg *config.City, providerName string) bool {
+func resolveProviderForACPTransport(cfg *config.City, providerName string) *config.ResolvedProvider {
 	if cfg == nil || strings.TrimSpace(providerName) == "" {
-		return false
+		return nil
 	}
 	resolved, err := config.ResolveProvider(
 		&config.Agent{Provider: providerName},
@@ -287,9 +287,19 @@ func providerSupportsACP(cfg *config.City, providerName string) bool {
 		func(name string) (string, error) { return name, nil },
 	)
 	if err != nil {
-		return false
+		return nil
 	}
-	return resolved.DefaultSessionTransport() == "acp"
+	return resolved
+}
+
+func providerSessionCreateUsesACP(cfg *config.City, providerName string) bool {
+	resolved := resolveProviderForACPTransport(cfg, providerName)
+	return resolved != nil && resolved.ProviderSessionCreateTransport() == "acp"
+}
+
+func providerLegacyDefaultsToACP(cfg *config.City, providerName string) bool {
+	resolved := resolveProviderForACPTransport(cfg, providerName)
+	return resolved != nil && resolved.DefaultSessionTransport() == "acp"
 }
 
 func observedACPSessionNames(snapshot *sessionBeadSnapshot, cfg *config.City) []string {
@@ -334,7 +344,7 @@ func beadUsesACPTransport(bead beads.Bead, cfg *config.City) bool {
 		if providerName == "" {
 			providerName = templateName
 		}
-		return providerSupportsACP(cfg, providerName)
+		return providerLegacyDefaultsToACP(cfg, providerName)
 	}
 	return false
 }

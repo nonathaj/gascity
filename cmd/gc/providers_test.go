@@ -359,6 +359,35 @@ func TestConfiguredACPRouteNames_IncludeLegacyObservedACPProviderSessionsWithout
 	}
 }
 
+func TestConfiguredACPRouteNames_ExcludeLegacyObservedCustomACPProviderSessionsWithoutTransportMetadata(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Providers: map[string]config.ProviderSpec{
+			"custom-acp": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: boolPtr(true),
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}
+	snapshot := newSessionBeadSnapshot([]beads.Bead{{
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "custom-acp",
+			"provider":     "custom-acp",
+			"session_name": "provider-session",
+		},
+	}})
+
+	got := configuredACPRouteNames(snapshot, "test-city", cfg)
+	if len(got) != 0 {
+		t.Fatalf("configuredACPRouteNames() = %v, want no legacy ACP inference for custom provider", got)
+	}
+}
+
 func TestNewSessionProvider_PreregistersACPBeadAndLegacyNames(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_SESSION", "fake")
@@ -423,6 +452,29 @@ func TestNewSessionProviderWrapsACPProvidersWithoutACPAgents(t *testing.T) {
 		},
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
+				Command:     "/bin/echo",
+				PathCheck:   "true",
+				SupportsACP: boolPtr(true),
+				ACPCommand:  "/bin/echo",
+				ACPArgs:     []string{"acp"},
+			},
+		},
+	}, t.TempDir(), "fake")
+
+	sp := newSessionProviderFromContext(ctx, nil)
+	if _, ok := sp.(interface{ RouteACP(string) }); !ok {
+		t.Fatalf("provider = %T, want ACP-routing wrapper", sp)
+	}
+}
+
+func TestNewSessionProviderWrapsCustomACPProvidersWithExplicitACPConfig(t *testing.T) {
+	ctx := sessionProviderContextForCity(&config.City{
+		Workspace: config.Workspace{
+			Name:     "test-city",
+			Provider: "custom-acp",
+		},
+		Providers: map[string]config.ProviderSpec{
+			"custom-acp": {
 				Command:     "/bin/echo",
 				PathCheck:   "true",
 				SupportsACP: boolPtr(true),
