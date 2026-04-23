@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -638,11 +639,29 @@ func (cs *controllerState) DeleteProviderPatch(name string) error {
 }
 
 func (cs *controllerState) mutateAndPoke(mutate func() error) error {
+	var (
+		tomlPath string
+		previous []byte
+	)
+	if cs.cityPath != "" {
+		tomlPath = filepath.Join(cs.cityPath, "city.toml")
+		var err error
+		previous, err = os.ReadFile(tomlPath)
+		if err != nil {
+			return fmt.Errorf("reading current city config: %w", err)
+		}
+	}
 	if err := mutate(); err != nil {
 		return err
 	}
 	if err := cs.refreshConfigSnapshot(); err != nil {
-		return err
+		if tomlPath != "" {
+			if restoreErr := fsys.WriteFileAtomic(fsys.OSFS{}, tomlPath, previous, 0o644); restoreErr != nil {
+				restoreFailure := fmt.Errorf("restoring previous city config: %w", restoreErr)
+				return fmt.Errorf("refreshing updated city config: %w", errors.Join(err, restoreFailure))
+			}
+		}
+		return fmt.Errorf("refreshing updated city config: %w", err)
 	}
 	if cs.configDirty != nil {
 		cs.configDirty.Store(true)

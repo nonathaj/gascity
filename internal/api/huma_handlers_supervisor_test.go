@@ -150,8 +150,6 @@ func TestSupervisorCityCreateMapsInitializerErrors(t *testing.T) {
 		{name: "already initialized", err: cityinit.ErrAlreadyInitialized, want: http.StatusConflict},
 		{name: "invalid provider", err: cityinit.ErrInvalidProvider, want: http.StatusUnprocessableEntity},
 		{name: "invalid bootstrap", err: cityinit.ErrInvalidBootstrapProfile, want: http.StatusUnprocessableEntity},
-		{name: "missing dependency", err: cityinit.ErrMissingDependency, want: http.StatusServiceUnavailable},
-		{name: "provider not ready", err: cityinit.ErrProviderNotReady, want: http.StatusServiceUnavailable},
 		{name: "generic", err: errors.New("boom"), want: http.StatusInternalServerError},
 	}
 

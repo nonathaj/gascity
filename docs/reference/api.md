@@ -142,7 +142,9 @@ On the same `/v0/events/stream` the client will see (in order):
   `prepareCityForSupervisor` successfully. Matching event:
   `subject == name` and `type == "city.ready"`.
 - `city.init_failed` (`CityInitFailedPayload`) — the reconciler
-  gave up. The payload's `error` field describes why.
+  gave up. The payload's `error` field describes why, including
+  deferred dependency or provider-readiness blockers that the async
+  API does not fail synchronously.
 
 Exactly one of `city.ready` or `city.init_failed` lands per
 successful `POST`. Clients wait for either; no polling of

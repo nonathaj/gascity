@@ -62,6 +62,11 @@ func (c *CachingStore) nextReconcileDelay(now time.Time) time.Duration {
 
 func (c *CachingStore) runReconciliation() {
 	start := time.Now()
+
+	c.mu.RLock()
+	startSeq := c.mutationSeq
+	c.mu.RUnlock()
+
 	fresh, err := c.backing.List(ListQuery{AllowScan: true})
 	if err != nil {
 		c.mu.Lock()
@@ -86,6 +91,10 @@ func (c *CachingStore) runReconciliation() {
 	}
 
 	c.mu.Lock()
+	if c.mutationSeq != startSeq {
+		c.mu.Unlock()
+		return
+	}
 
 	var adds, removes, updates int64
 	notifications := make([]cacheNotification, 0, len(freshByID))

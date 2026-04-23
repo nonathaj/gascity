@@ -228,6 +228,46 @@ func TestCachingStoreParentListRefreshesCachedChildren(t *testing.T) {
 	}
 }
 
+func TestCachingStoreParentListRefreshesReparentedChildren(t *testing.T) {
+	mem := beads.NewMemStore()
+	oldParent, err := mem.Create(beads.Bead{Title: "old-parent"})
+	if err != nil {
+		t.Fatalf("Create(old parent): %v", err)
+	}
+	newParent, err := mem.Create(beads.Bead{Title: "new-parent"})
+	if err != nil {
+		t.Fatalf("Create(new parent): %v", err)
+	}
+	child, err := mem.Create(beads.Bead{Title: "child", ParentID: oldParent.ID, Labels: []string{"mc-live-contract"}})
+	if err != nil {
+		t.Fatalf("Create(child): %v", err)
+	}
+	cs := beads.NewCachingStoreForTest(mem, nil)
+	if err := cs.Prime(context.Background()); err != nil {
+		t.Fatalf("Prime: %v", err)
+	}
+
+	if err := mem.Update(child.ID, beads.UpdateOpts{ParentID: &newParent.ID}); err != nil {
+		t.Fatalf("backing Update(parent): %v", err)
+	}
+
+	children, err := cs.List(beads.ListQuery{ParentID: oldParent.ID})
+	if err != nil {
+		t.Fatalf("List(old parent): %v", err)
+	}
+	if len(children) != 0 {
+		t.Fatalf("old parent children = %#v, want empty after reparent", children)
+	}
+
+	labeled, err := cs.List(beads.ListQuery{Label: "mc-live-contract"})
+	if err != nil {
+		t.Fatalf("List(label): %v", err)
+	}
+	if len(labeled) != 1 || labeled[0].ParentID != newParent.ID {
+		t.Fatalf("cached label result = %#v, want parent %s", labeled, newParent.ID)
+	}
+}
+
 func TestCachingStoreUpdateReflectsWriteIntentWhenImmediateReadIsStale(t *testing.T) {
 	mem := beads.NewMemStore()
 	original, err := mem.Create(beads.Bead{

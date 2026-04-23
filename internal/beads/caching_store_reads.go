@@ -17,7 +17,7 @@ func (c *CachingStore) List(query ListQuery) ([]Bead, error) {
 	if query.Live || query.ParentID != "" {
 		items, err := c.backing.List(query)
 		if err == nil {
-			c.refreshCachedBeads(items)
+			c.refreshCachedBeads(query, items)
 		}
 		return items, err
 	}
@@ -80,8 +80,21 @@ func (c *CachingStore) List(query ListQuery) ([]Bead, error) {
 	return c.backing.List(query)
 }
 
-func (c *CachingStore) refreshCachedBeads(items []Bead) {
-	if len(items) == 0 {
+func (c *CachingStore) refreshCachedBeads(query ListQuery, items []Bead) {
+	refreshedParents := make(map[string]Bead)
+	removedParents := make(map[string]struct{})
+	for _, id := range c.staleParentCacheIDs(query.ParentID, items) {
+		fresh, err := c.backing.Get(id)
+		switch {
+		case err == nil:
+			refreshedParents[id] = cloneBead(fresh)
+		case errors.Is(err, ErrNotFound):
+			removedParents[id] = struct{}{}
+		default:
+			c.recordProblem("refresh parent cache during list", fmt.Errorf("%s: %w", id, err))
+		}
+	}
+	if len(items) == 0 && len(refreshedParents) == 0 && len(removedParents) == 0 {
 		return
 	}
 	c.mu.Lock()
@@ -94,8 +107,48 @@ func (c *CachingStore) refreshCachedBeads(items []Bead) {
 		delete(c.dirty, item.ID)
 		delete(c.deletedSeq, item.ID)
 	}
+	for id, bead := range refreshedParents {
+		c.beads[id] = bead
+		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
+	}
+	for id := range removedParents {
+		delete(c.beads, id)
+		delete(c.deps, id)
+		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
+	}
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
+}
+
+func (c *CachingStore) staleParentCacheIDs(parentID string, fresh []Bead) []string {
+	if parentID == "" {
+		return nil
+	}
+
+	freshIDs := make(map[string]struct{}, len(fresh))
+	for _, item := range fresh {
+		freshIDs[item.ID] = struct{}{}
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.state != cacheLive && c.state != cachePartial {
+		return nil
+	}
+
+	var stale []string
+	for id, bead := range c.beads {
+		if bead.ParentID != parentID {
+			continue
+		}
+		if _, ok := freshIDs[id]; ok {
+			continue
+		}
+		stale = append(stale, id)
+	}
+	return stale
 }
 
 // ListOpen returns all cached beads, optionally filtered by status.

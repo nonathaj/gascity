@@ -370,9 +370,9 @@ func (sm *SupervisorMux) humaHandleCityCreate(ctx context.Context, input *Superv
 		Dir:              dir,
 		Provider:         input.Body.Provider,
 		BootstrapProfile: input.Body.BootstrapProfile,
-		// API callers observe provider readiness through
-		// GET /v0/provider-readiness; finalize's preflight is
-		// CLI-only anyway.
+		// The async API defers dependency/provider blockers to the
+		// reconciler's terminal city.init_failed event instead of
+		// failing POST synchronously.
 		SkipProviderReadiness: true,
 	})
 	switch {
@@ -381,9 +381,6 @@ func (sm *SupervisorMux) humaHandleCityCreate(ctx context.Context, input *Superv
 	case errors.Is(err, cityinit.ErrInvalidProvider),
 		errors.Is(err, cityinit.ErrInvalidBootstrapProfile):
 		return nil, huma.Error422UnprocessableEntity(err.Error())
-	case errors.Is(err, cityinit.ErrMissingDependency),
-		errors.Is(err, cityinit.ErrProviderNotReady):
-		return nil, huma.Error503ServiceUnavailable(err.Error())
 	case err != nil:
 		return nil, huma.Error500InternalServerError(err.Error())
 	}

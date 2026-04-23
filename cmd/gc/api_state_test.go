@@ -167,6 +167,53 @@ func TestControllerStateCreateRigPokesReconciler(t *testing.T) {
 	}
 }
 
+func TestControllerStateMutationRollsBackWhenRefreshFails(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+
+	cityDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityDir, "broken.toml"), []byte("["), 0o644); err != nil {
+		t.Fatalf("write broken include: %v", err)
+	}
+
+	original := []byte("include = [\"broken.toml\"]\n\n[workspace]\nname = \"city1\"\n")
+	tomlPath := filepath.Join(cityDir, "city.toml")
+	if err := os.WriteFile(tomlPath, original, 0o644); err != nil {
+		t.Fatalf("write city.toml: %v", err)
+	}
+
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "city1"},
+	}
+	cs := newControllerState(context.Background(), cfg, runtime.NewFake(), events.NewFake(), "city1", cityDir)
+	cs.pokeCh = make(chan struct{}, 1)
+	cs.configDirty = &atomic.Bool{}
+
+	err := cs.CreateRig(config.Rig{Name: "rig1", Path: t.TempDir()})
+	if err == nil {
+		t.Fatal("CreateRig should fail when refreshing the updated snapshot fails")
+	}
+
+	restored, readErr := os.ReadFile(tomlPath)
+	if readErr != nil {
+		t.Fatalf("read restored city.toml: %v", readErr)
+	}
+	if string(restored) != string(original) {
+		t.Fatalf("city.toml = %q, want rollback to %q", restored, original)
+	}
+
+	select {
+	case <-cs.pokeCh:
+		t.Fatal("CreateRig should not poke the reconciler after rollback")
+	default:
+	}
+	if cs.configDirty.Load() {
+		t.Fatal("CreateRig should not mark config dirty after rollback")
+	}
+	if got := cs.Config(); got == nil || len(got.Rigs) != 0 {
+		t.Fatalf("Config() rigs = %+v, want rollback to preserve in-memory config", got.Rigs)
+	}
+}
+
 func TestControllerStateAppliesCacheReconcileBeadEventsToStores(t *testing.T) {
 	backing := beads.NewMemStore()
 	created, err := backing.Create(beads.Bead{Title: "root"})

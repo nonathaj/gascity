@@ -103,10 +103,11 @@ type InitRequest struct {
 	NameOverride string
 
 	// SkipProviderReadiness skips the provider-auth preflight when
-	// true. The HTTP handler defaults to true (API callers poll
-	// readiness separately via GET /v0/provider-readiness). The
-	// CLI defaults to false so first-time users see auth-needed
-	// errors immediately.
+	// true. The async HTTP create handler defaults to true and
+	// surfaces dependency/provider blockers later via the terminal
+	// city.init_failed event on /v0/events/stream. The CLI defaults
+	// to false so first-time users see auth-needed errors
+	// immediately.
 	SkipProviderReadiness bool
 
 	// ConfigName selects the scaffold template. One of "tutorial"
