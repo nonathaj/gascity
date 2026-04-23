@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
@@ -45,6 +46,7 @@ type controllerState struct {
 	startedAt     time.Time
 	ct            crashTracker  // nil if crash tracking disabled
 	pokeCh        chan struct{} // nil when poke is not available; triggers immediate reconciler tick
+	configDirty   *atomic.Bool  // optional dirty flag shared with the reconciler reload path
 	services      workspacesvc.Registry
 	extmsgSvc     *extmsg.Services
 	adapterReg    *extmsg.AdapterRegistry
@@ -639,7 +641,33 @@ func (cs *controllerState) mutateAndPoke(mutate func() error) error {
 	if err := mutate(); err != nil {
 		return err
 	}
+	if err := cs.refreshConfigSnapshot(); err != nil {
+		return err
+	}
+	if cs.configDirty != nil {
+		cs.configDirty.Store(true)
+	}
 	cs.Poke()
+	return nil
+}
+
+func (cs *controllerState) refreshConfigSnapshot() error {
+	if cs.cityPath == "" || cs.cfg == nil {
+		return nil
+	}
+
+	tomlPath := filepath.Join(cs.cityPath, "city.toml")
+	nextCfg, _, err := config.LoadWithIncludes(fsys.OSFS{}, tomlPath, extraConfigFiles...)
+	if err != nil {
+		return fmt.Errorf("loading updated city config: %w", err)
+	}
+	applyFeatureFlags(nextCfg)
+	applyRuntimeCityIdentity(nextCfg, cs.cityName)
+
+	cs.mu.RLock()
+	sp := cs.sp
+	cs.mu.RUnlock()
+	cs.update(nextCfg, sp)
 	return nil
 }
 

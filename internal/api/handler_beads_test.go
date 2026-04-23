@@ -95,6 +95,28 @@ func (s *prefixedAliasStore) Create(b beads.Bead) (beads.Bead, error) {
 	return s.beadToAlias(created), nil
 }
 
+type sparseCreateStore struct {
+	*beads.MemStore
+}
+
+func newSparseCreateStore() *sparseCreateStore {
+	return &sparseCreateStore{MemStore: beads.NewMemStore()}
+}
+
+func (s *sparseCreateStore) Create(b beads.Bead) (beads.Bead, error) {
+	created, err := s.MemStore.Create(b)
+	if err != nil {
+		return beads.Bead{}, err
+	}
+	return beads.Bead{
+		ID:        created.ID,
+		Title:     created.Title,
+		Type:      created.Type,
+		Status:    created.Status,
+		CreatedAt: created.CreatedAt,
+	}, nil
+}
+
 func (s *prefixedAliasStore) Get(id string) (beads.Bead, error) {
 	s.getCalls++
 	b, err := s.base.Get(s.aliasToBase(id))
@@ -629,6 +651,47 @@ func TestBeadCreatePersistsMetadataAndParent(t *testing.T) {
 	}
 	if got.Metadata["mc.contract.role"] != "child" || got.Metadata["mc.contract.run_id"] != "run-1" {
 		t.Fatalf("stored metadata = %#v, want MC metadata", got.Metadata)
+	}
+}
+
+func TestBeadCreateResponseUsesAuthoritativeStoredBead(t *testing.T) {
+	state := newFakeState(t)
+	store := newSparseCreateStore()
+	state.stores["myrig"] = store
+	parent, err := store.Create(beads.Bead{Title: "Parent"})
+	if err != nil {
+		t.Fatalf("Create(parent): %v", err)
+	}
+	h := newTestCityHandler(t, state)
+
+	body := `{
+		"rig":"myrig",
+		"title":"Child",
+		"type":"feature",
+		"parent":"` + parent.ID + `",
+		"labels":["urgent"],
+		"metadata":{"mc.contract.run_id":"run-1"}
+	}`
+	req := newPostRequest(cityURL(state, "/beads"), bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created beads.Bead
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created bead: %v", err)
+	}
+	if created.ParentID != parent.ID {
+		t.Fatalf("response parent = %q, want %q", created.ParentID, parent.ID)
+	}
+	if len(created.Labels) != 1 || created.Labels[0] != "urgent" {
+		t.Fatalf("response labels = %#v, want [urgent]", created.Labels)
+	}
+	if created.Metadata["mc.contract.run_id"] != "run-1" {
+		t.Fatalf("response metadata = %#v, want mc.contract.run_id=run-1", created.Metadata)
 	}
 }
 

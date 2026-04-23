@@ -347,9 +347,10 @@ mechanism.
 ```
 
 **Status mapping.** The bd CLI uses six statuses (open, in_progress,
-blocked, review, testing, closed). Gas City preserves those non-empty
-status values at the API boundary so clients can round-trip bd semantics.
-An empty status from a backend is normalized to the store default, open.
+blocked, review, testing, closed), but the `beads.Store` contract stays
+three-state: open, in_progress, closed. `BdStore` therefore maps bd's
+blocked/review/testing values to open. An empty status from a backend is
+also normalized to open.
 
 ## Code Map
 

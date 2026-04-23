@@ -296,10 +296,11 @@ Stdout: the root bead ID as plain text (e.g., `WP-42\n`).
 
 ### Status Mapping
 
-Gas City preserves backend status values at the API boundary. Providers
-should emit the native status string they support, such as bd's `open`,
-`in_progress`, `blocked`, `review`, `testing`, and `closed`. An empty
-status is treated as `open`.
+Gas City's `beads.Store` surface uses the SDK's three-state vocabulary:
+`open`, `in_progress`, and `closed`. Backends that expose a richer status
+set must map it onto those three values. The built-in `BdStore`, for
+example, maps bd's `blocked`, `review`, and `testing` states to `open`.
+An empty status is also treated as `open`.
 
 ## Implementation Plan
 

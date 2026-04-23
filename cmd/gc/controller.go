@@ -1135,6 +1135,7 @@ func runController(
 	cs := newControllerState(ctx, cfg, sp, eventProv, cityName, cityPath)
 	cs.ct = cr.crashTrack()
 	cs.pokeCh = pokeCh
+	cs.configDirty = configDirty
 	cs.services = cr.svc
 	cs.startBeadEventWatcher(ctx)
 	cr.setControllerState(cs)

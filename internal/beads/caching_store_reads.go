@@ -92,6 +92,7 @@ func (c *CachingStore) refreshCachedBeads(items []Bead) {
 	for _, item := range items {
 		c.beads[item.ID] = cloneBead(item)
 		delete(c.dirty, item.ID)
+		delete(c.deletedSeq, item.ID)
 	}
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
@@ -124,6 +125,7 @@ func (c *CachingStore) Get(id string) (Bead, error) {
 		c.mu.Lock()
 		c.beads[id] = cloneBead(fresh)
 		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
 		c.markFreshLocked(time.Now())
 		c.updateStatsLocked()
 		c.mu.Unlock()

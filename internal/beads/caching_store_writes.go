@@ -17,6 +17,7 @@ func (c *CachingStore) Create(b Bead) (Bead, error) {
 	c.mutationSeq++
 	c.beads[created.ID] = cloneBead(created)
 	delete(c.dirty, created.ID)
+	delete(c.deletedSeq, created.ID)
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 	c.mu.Unlock()
@@ -41,68 +42,17 @@ func (c *CachingStore) Update(id string, opts UpdateOpts) error {
 		return nil
 	}
 
-	fresh = applyUpdateOptsToBead(fresh, opts)
-
 	c.mu.Lock()
 	c.mutationSeq++
 	c.beads[id] = cloneBead(fresh)
 	delete(c.dirty, id)
+	delete(c.deletedSeq, id)
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 	c.mu.Unlock()
 
 	c.notifyChange("bead.updated", fresh)
 	return nil
-}
-
-func applyUpdateOptsToBead(b Bead, opts UpdateOpts) Bead {
-	b = cloneBead(b)
-	if opts.Title != nil {
-		b.Title = *opts.Title
-	}
-	if opts.Status != nil {
-		b.Status = *opts.Status
-	}
-	if opts.Type != nil {
-		b.Type = *opts.Type
-	}
-	if opts.Priority != nil {
-		b.Priority = cloneIntPtr(opts.Priority)
-	}
-	if opts.Description != nil {
-		b.Description = *opts.Description
-	}
-	if opts.ParentID != nil {
-		b.ParentID = *opts.ParentID
-	}
-	if opts.Assignee != nil {
-		b.Assignee = *opts.Assignee
-	}
-	if len(opts.Metadata) > 0 {
-		if b.Metadata == nil {
-			b.Metadata = make(map[string]string, len(opts.Metadata))
-		}
-		for k, v := range opts.Metadata {
-			b.Metadata[k] = v
-		}
-	}
-	if len(opts.Labels) > 0 {
-		b.Labels = append(b.Labels, opts.Labels...)
-	}
-	if len(opts.RemoveLabels) > 0 {
-		remove := make(map[string]bool, len(opts.RemoveLabels))
-		for _, label := range opts.RemoveLabels {
-			remove[label] = true
-		}
-		kept := b.Labels[:0]
-		for _, label := range b.Labels {
-			if !remove[label] {
-				kept = append(kept, label)
-			}
-		}
-		b.Labels = kept
-	}
-	return b
 }
 
 // Close marks a bead as closed in the backing store and cache.
@@ -127,6 +77,7 @@ func (c *CachingStore) Close(id string) error {
 		b.Status = "closed"
 		c.beads[id] = b
 		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
 		closed = cloneBead(b)
 		found = true
 		c.markFreshLocked(time.Now())
@@ -134,6 +85,7 @@ func (c *CachingStore) Close(id string) error {
 	} else if found {
 		c.beads[id] = cloneBead(closed)
 		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
 		c.markFreshLocked(time.Now())
 		c.updateStatsLocked()
 	}
@@ -182,6 +134,7 @@ func (c *CachingStore) CloseAll(ids []string, metadata map[string]string) (int, 
 		previous, hadPrevious := c.beads[item.id]
 		c.beads[item.id] = cloneBead(item.bead)
 		delete(c.dirty, item.id)
+		delete(c.deletedSeq, item.id)
 		if item.bead.Status == "closed" {
 			delete(c.deps, item.id)
 		}
@@ -214,6 +167,7 @@ func (c *CachingStore) SetMetadata(id, key, value string) error {
 		b.Metadata[key] = value
 		c.beads[id] = b
 		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
 	}
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
@@ -238,6 +192,7 @@ func (c *CachingStore) SetMetadataBatch(id string, kvs map[string]string) error 
 		}
 		c.beads[id] = b
 		delete(c.dirty, id)
+		delete(c.deletedSeq, id)
 	}
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
@@ -259,6 +214,7 @@ func (c *CachingStore) DepAdd(issueID, dependsOnID, depType string) error {
 			deps[i].Type = depType
 			c.deps[issueID] = deps
 			delete(c.dirty, issueID)
+			delete(c.deletedSeq, issueID)
 			c.markFreshLocked(time.Now())
 			c.updateStatsLocked()
 			c.mu.Unlock()
@@ -267,6 +223,7 @@ func (c *CachingStore) DepAdd(issueID, dependsOnID, depType string) error {
 	}
 	c.deps[issueID] = append(deps, Dep{IssueID: issueID, DependsOnID: dependsOnID, Type: depType})
 	delete(c.dirty, issueID)
+	delete(c.deletedSeq, issueID)
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 	c.mu.Unlock()
@@ -286,6 +243,7 @@ func (c *CachingStore) DepRemove(issueID, dependsOnID string) error {
 		if d.DependsOnID == dependsOnID {
 			c.deps[issueID] = append(deps[:i], deps[i+1:]...)
 			delete(c.dirty, issueID)
+			delete(c.deletedSeq, issueID)
 			break
 		}
 	}
@@ -306,6 +264,7 @@ func (c *CachingStore) Delete(id string) error {
 	delete(c.beads, id)
 	delete(c.deps, id)
 	delete(c.dirty, id)
+	c.deletedSeq[id] = c.mutationSeq
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 	c.mu.Unlock()

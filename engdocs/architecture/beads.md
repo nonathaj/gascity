@@ -180,10 +180,10 @@ enforced by the conformance suite in `internal/beads/beadstest/conformance.go`.
     `internal/beads/` (and `test/integration/`) directly invokes the bd
     binary.
 
-14. **BdStore preserves bd's status vocabulary.** bd uses open,
-    in_progress, blocked, review, testing, closed. Gas City preserves
-    non-empty status values at the API boundary and only normalizes an
-    empty backend status to open.
+14. **BdStore maps backend statuses onto Gas City's three-state contract.**
+    bd uses open, in_progress, blocked, review, testing, closed. Gas City
+    exposes open, in_progress, closed, so BdStore maps blocked/review/testing
+    to open and normalizes an empty backend status to open.
 
 15. **FileStore uses atomic writes.** Persistence writes go to a temp
     file first, then `os.Rename` to the target path -- never partial

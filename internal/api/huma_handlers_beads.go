@@ -312,6 +312,12 @@ func (s *Server) humaHandleBeadCreate(ctx context.Context, input *BeadCreateInpu
 		s.idem.unreserve(idemKey)
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
+
+	// Some stores return a minimal create envelope and require a follow-up
+	// read for the canonical persisted bead state.
+	if persisted, getErr := store.Get(b.ID); getErr == nil {
+		b = persisted
+	}
 	s.idem.storeResponse(idemKey, bodyHash, b)
 
 	return &IndexOutput[beads.Bead]{

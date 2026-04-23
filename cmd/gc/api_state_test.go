@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/api"
@@ -147,6 +148,7 @@ func TestControllerStateCreateRigPokesReconciler(t *testing.T) {
 	}
 	cs := newControllerState(context.Background(), cfg, runtime.NewFake(), events.NewFake(), "city1", cityDir)
 	cs.pokeCh = make(chan struct{}, 1)
+	cs.configDirty = &atomic.Bool{}
 
 	if err := cs.CreateRig(config.Rig{Name: "rig1", Path: t.TempDir()}); err != nil {
 		t.Fatalf("CreateRig: %v", err)
@@ -156,6 +158,12 @@ func TestControllerStateCreateRigPokesReconciler(t *testing.T) {
 	case <-cs.pokeCh:
 	default:
 		t.Fatal("CreateRig did not poke the reconciler")
+	}
+	if !cs.configDirty.Load() {
+		t.Fatal("CreateRig did not mark config dirty")
+	}
+	if got := cs.Config(); got == nil || len(got.Rigs) != 1 || got.Rigs[0].Name != "rig1" {
+		t.Fatalf("Config() rigs = %+v, want in-memory rig snapshot to include rig1", got.Rigs)
 	}
 }
 
@@ -985,6 +993,9 @@ func TestControllerStateMutationsPokeController(t *testing.T) {
 			default:
 				t.Fatal("expected controller mutation to poke reconciler")
 			}
+			if cs.configDirty == nil || !cs.configDirty.Load() {
+				t.Fatal("expected controller mutation to mark config dirty")
+			}
 
 			got, err := config.Load(fsys.OSFS{}, tomlPath)
 			if err != nil {
@@ -1074,8 +1085,9 @@ func newControllerStateMutationHarness(t *testing.T) (*controllerState, string) 
 	}
 
 	return &controllerState{
-		editor: configedit.NewEditor(fsys.OSFS{}, tomlPath),
-		pokeCh: make(chan struct{}, 1),
+		editor:      configedit.NewEditor(fsys.OSFS{}, tomlPath),
+		pokeCh:      make(chan struct{}, 1),
+		configDirty: &atomic.Bool{},
 	}, tomlPath
 }
 

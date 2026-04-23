@@ -34,17 +34,20 @@ func (c *CachingStore) ApplyEvent(eventType string, payload json.RawMessage) {
 		if _, exists := c.beads[b.ID]; !exists {
 			c.beads[b.ID] = cloneBead(b)
 			delete(c.dirty, b.ID)
+			delete(c.deletedSeq, b.ID)
 			c.updateStatsLocked()
 		}
 	case "bead.updated":
 		c.beads[b.ID] = cloneBead(b)
 		delete(c.dirty, b.ID)
+		delete(c.deletedSeq, b.ID)
 	case "bead.closed":
 		if _, exists := c.beads[b.ID]; !exists {
 			c.updateStatsLocked()
 		}
 		c.beads[b.ID] = cloneBead(b)
 		delete(c.dirty, b.ID)
+		delete(c.deletedSeq, b.ID)
 	default:
 		return
 	}
@@ -62,6 +65,7 @@ func (c *CachingStore) ApplyDepEvent(beadID string, deps []Dep) {
 	}
 	c.deps[beadID] = cloneDeps(deps)
 	delete(c.dirty, beadID)
+	delete(c.deletedSeq, beadID)
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 }

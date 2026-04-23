@@ -904,8 +904,11 @@ func reconcileCities(
 
 	for i, mc := range toStop {
 		path := toStopPaths[i]
-		name := filepath.Base(path)
-		fmt.Fprintf(stdout, "Unregistered city '%s', stopping...\n", name) //nolint:errcheck
+		cityName := mc.name
+		if cityName == "" {
+			cityName = filepath.Base(path)
+		}
+		fmt.Fprintf(stdout, "Unregistered city '%s', stopping...\n", cityName) //nolint:errcheck
 		stopErr := stopManagedCity(mc, path, stderr)
 		// Clear backoff so re-registering starts immediately.
 		cr.BatchUpdate(func(
@@ -927,19 +930,19 @@ func reconcileCities(
 		evType := events.CityUnregistered
 		var payload []byte
 		if stopErr == nil {
-			fmt.Fprintf(stdout, "City '%s' stopped.\n", name) //nolint:errcheck
-			p, _ := json.Marshal(api.CityUnregisteredPayload{Name: name, Path: path})
+			fmt.Fprintf(stdout, "City '%s' stopped.\n", cityName) //nolint:errcheck
+			p, _ := json.Marshal(api.CityUnregisteredPayload{Name: cityName, Path: path})
 			payload = p
 		} else {
 			evType = events.CityUnregisterFailed
-			p, _ := json.Marshal(api.CityUnregisterFailedPayload{Name: name, Path: path, Error: stopErr.Error()})
+			p, _ := json.Marshal(api.CityUnregisterFailedPayload{Name: cityName, Path: path, Error: stopErr.Error()})
 			payload = p
 		}
 		if fr, frErr := events.NewFileRecorder(filepath.Join(path, ".gc", "events.jsonl"), stderr); frErr == nil {
 			fr.Record(events.Event{
 				Type:    evType,
 				Actor:   "gc",
-				Subject: name,
+				Subject: cityName,
 				Payload: payload,
 			})
 			fr.Close() //nolint:errcheck // best-effort
@@ -1319,6 +1322,7 @@ func reconcileCities(
 		}
 		cs.ct = cityRuntime.crashTrack()
 		cs.pokeCh = pokeCh
+		cs.configDirty = configDirty
 		cs.services = cityRuntime.svc
 		cs.startBeadEventWatcher(cityCtx)
 		cityRuntime.setControllerState(cs)

@@ -980,8 +980,8 @@ func TestBdStoreCreateWithLabels(t *testing.T) {
 	if !strings.Contains(args, "--labels owned") {
 		t.Errorf("args = %q, want to contain '--labels owned'", args)
 	}
-	if len(created.Labels) != 1 || created.Labels[0] != "owned" {
-		t.Errorf("created.Labels = %#v, want [owned]", created.Labels)
+	if len(created.Labels) != 0 {
+		t.Errorf("created.Labels = %#v, want empty until backend confirms labels", created.Labels)
 	}
 }
 
@@ -1020,8 +1020,43 @@ func TestBdStoreCreateWithParentID(t *testing.T) {
 	if !strings.Contains(args, "--parent bd-parent-1") {
 		t.Errorf("args = %q, want to contain '--parent bd-parent-1'", args)
 	}
-	if created.ParentID != "bd-parent-1" {
-		t.Errorf("created.ParentID = %q, want bd-parent-1", created.ParentID)
+	if created.ParentID != "" {
+		t.Errorf("created.ParentID = %q, want empty until backend confirms parent", created.ParentID)
+	}
+}
+
+func TestBdStoreCreateDoesNotBackfillUnconfirmedFields(t *testing.T) {
+	runner := func(_, _ string, _ ...string) ([]byte, error) {
+		return []byte(`{"id":"bd-x","title":"test","status":"open","issue_type":"task","created_at":"2025-01-15T10:30:00Z","metadata":{"accepted":"true"}}`), nil
+	}
+	s := beads.NewBdStore("/city", runner)
+	created, err := s.Create(beads.Bead{
+		Title:       "test",
+		Description: "local description",
+		ParentID:    "bd-parent-1",
+		Labels:      []string{"owned"},
+		Needs:       []string{"bd-2"},
+		Metadata: map[string]string{
+			"local": "value",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Description != "" {
+		t.Fatalf("created.Description = %q, want empty until backend confirms it", created.Description)
+	}
+	if created.ParentID != "" {
+		t.Fatalf("created.ParentID = %q, want empty until backend confirms it", created.ParentID)
+	}
+	if len(created.Labels) != 0 {
+		t.Fatalf("created.Labels = %#v, want empty until backend confirms them", created.Labels)
+	}
+	if len(created.Needs) != 0 {
+		t.Fatalf("created.Needs = %#v, want empty until backend confirms them", created.Needs)
+	}
+	if len(created.Metadata) != 1 || created.Metadata["accepted"] != "true" {
+		t.Fatalf("created.Metadata = %#v, want backend metadata only", created.Metadata)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"path/filepath"
 	"sync"
@@ -237,13 +238,47 @@ func (r *cityRegistry) TransientCityEventProviders() map[string]events.Provider 
 	out := make(map[string]events.Provider, len(paths))
 	for name, path := range paths {
 		evPath := filepath.Join(path, ".gc", "events.jsonl")
-		fr, err := events.NewFileRecorder(evPath, io.Discard)
-		if err != nil {
-			continue
-		}
-		out[name] = fr
+		out[name] = transientCityEventProvider{path: evPath}
 	}
 	return out
+}
+
+type transientCityEventProvider struct {
+	path string
+}
+
+func (p transientCityEventProvider) Record(e events.Event) {
+	recorder, err := events.NewFileRecorder(p.path, io.Discard)
+	if err != nil {
+		return
+	}
+	recorder.Record(e)
+	recorder.Close() //nolint:errcheck // best-effort
+}
+
+func (p transientCityEventProvider) List(filter events.Filter) ([]events.Event, error) {
+	return events.ReadFiltered(p.path, filter)
+}
+
+func (p transientCityEventProvider) LatestSeq() (uint64, error) {
+	return events.ReadLatestSeq(p.path)
+}
+
+func (p transientCityEventProvider) Watch(ctx context.Context, afterSeq uint64) (events.Watcher, error) {
+	recorder, err := events.NewFileRecorder(p.path, io.Discard)
+	if err != nil {
+		return nil, err
+	}
+	watcher, err := recorder.Watch(ctx, afterSeq)
+	recorder.Close() //nolint:errcheck // watcher only needs the path
+	if err != nil {
+		return nil, err
+	}
+	return watcher, nil
+}
+
+func (transientCityEventProvider) Close() error {
+	return nil
 }
 
 // CityState returns the api.State for a named city, or nil if not found/not running.

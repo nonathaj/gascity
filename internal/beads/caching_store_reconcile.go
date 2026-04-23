@@ -136,6 +136,7 @@ func (c *CachingStore) runReconciliation() {
 	c.beads = freshByID
 	c.deps = nextDeps
 	c.dirty = make(map[string]struct{})
+	c.deletedSeq = make(map[string]uint64)
 	c.syncFailures = 0
 	if c.state == cacheDegraded {
 		c.state = cacheLive

@@ -273,6 +273,9 @@ func TestCityRegistryTransientCityEventProvidersIncludesRegisteredAndPendingCiti
 		t.Fatalf("running-city should be handled by running-city multiplexer path, not transient providers")
 	}
 	for name, provider := range providers {
+		if _, ok := provider.(*events.FileRecorder); ok {
+			t.Fatalf("provider %q should not retain a live file recorder", name)
+		}
 		list, err := provider.List(events.Filter{Type: events.CityCreated})
 		if err != nil {
 			t.Fatalf("List(%s): %v", name, err)

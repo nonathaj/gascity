@@ -105,6 +105,45 @@ func TestCachingStorePrimePreservesConcurrentUpdate(t *testing.T) {
 	}
 }
 
+func TestCachingStorePrimeDoesNotResurrectConcurrentDelete(t *testing.T) {
+	mem := beads.NewMemStore()
+	original, err := mem.Create(beads.Bead{Title: "before delete"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	backing := &primeRaceStore{
+		Store:   mem,
+		started: started,
+		release: release,
+		stale:   []beads.Bead{original},
+	}
+	cs := beads.NewCachingStoreForTest(backing, nil)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cs.Prime(context.Background())
+	}()
+
+	<-started
+	if err := cs.Delete(original.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("Prime: %v", err)
+	}
+
+	got, err := cs.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListOpen = %#v, want deleted bead to stay absent", got)
+	}
+}
+
 func TestCachingStoreGetRefreshesStaleCachedBead(t *testing.T) {
 	mem := beads.NewMemStore()
 	original, err := mem.Create(beads.Bead{Title: "before update"})
@@ -232,6 +271,42 @@ func TestCachingStoreUpdateReflectsWriteIntentWhenImmediateReadIsStale(t *testin
 	}
 	if !containsString(got.Labels, "verified") || containsString(got.Labels, "needs-update") {
 		t.Fatalf("labels = %#v, want verified without needs-update", got.Labels)
+	}
+}
+
+func TestCachingStoreUpdateDoesNotDuplicateAuthoritativeLabels(t *testing.T) {
+	mem := beads.NewMemStore()
+	original, err := mem.Create(beads.Bead{
+		Title:  "root",
+		Labels: []string{"root"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cs := beads.NewCachingStoreForTest(mem, nil)
+	if err := cs.Prime(context.Background()); err != nil {
+		t.Fatalf("Prime: %v", err)
+	}
+
+	if err := cs.Update(original.ID, beads.UpdateOpts{Labels: []string{"verified"}}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	got, err := cs.ListOpen()
+	if err != nil {
+		t.Fatalf("ListOpen: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListOpen returned %d beads, want 1", len(got))
+	}
+	verifiedCount := 0
+	for _, label := range got[0].Labels {
+		if label == "verified" {
+			verifiedCount++
+		}
+	}
+	if verifiedCount != 1 {
+		t.Fatalf("labels = %#v, want exactly one verified label", got[0].Labels)
 	}
 }
 

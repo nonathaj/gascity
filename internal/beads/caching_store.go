@@ -28,6 +28,7 @@ type CachingStore struct {
 	beads       map[string]Bead
 	deps        map[string][]Dep
 	dirty       map[string]struct{}
+	deletedSeq  map[string]uint64
 	state       cacheState
 	lastFreshAt time.Time
 	mutationSeq uint64
@@ -93,11 +94,12 @@ func NewCachingStoreForTest(backing Store, onChange func(eventType, beadID strin
 
 func newCachingStore(backing Store, onChange func(eventType, beadID string, payload json.RawMessage)) *CachingStore {
 	return &CachingStore{
-		backing:  backing,
-		beads:    make(map[string]Bead),
-		deps:     make(map[string][]Dep),
-		dirty:    make(map[string]struct{}),
-		onChange: onChange,
+		backing:    backing,
+		beads:      make(map[string]Bead),
+		deps:       make(map[string][]Dep),
+		dirty:      make(map[string]struct{}),
+		deletedSeq: make(map[string]uint64),
+		onChange:   onChange,
 		problemf: func(msg string) {
 			log.Printf("beads cache: %s", msg)
 		},
@@ -127,11 +129,15 @@ func (c *CachingStore) PrimeActive() error {
 	defer c.mu.Unlock()
 	for _, b := range all {
 		if c.mutationSeq != startSeq {
+			if c.deletedSeq[b.ID] > startSeq {
+				continue
+			}
 			if _, exists := c.beads[b.ID]; exists {
 				continue
 			}
 		}
 		c.beads[b.ID] = cloneBead(b)
+		delete(c.deletedSeq, b.ID)
 	}
 	if c.state == cacheUninitialized {
 		c.state = cachePartial
@@ -182,12 +188,17 @@ func (c *CachingStore) Prime(_ context.Context) error {
 		c.beads = beadMap
 		c.deps = depMap
 		c.dirty = make(map[string]struct{})
+		c.deletedSeq = make(map[string]uint64)
 	} else {
 		for id, b := range beadMap {
+			if c.deletedSeq[id] > startSeq {
+				continue
+			}
 			if _, exists := c.beads[id]; exists {
 				continue
 			}
 			c.beads[id] = b
+			delete(c.deletedSeq, id)
 			if deps, ok := depMap[id]; ok {
 				c.deps[id] = deps
 			}
