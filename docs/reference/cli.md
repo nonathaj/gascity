@@ -2315,7 +2315,7 @@ gc sling [target] <bead-or-formula-or-text> [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `-n`, `--dry-run` | bool |  | show what would be done without executing |
-| `--force` | bool |  | suppress warnings and allow cross-rig routing |
+| `--force` | bool |  | suppress warnings, allow cross-rig routing, allow graph workflow replacement, and for direct bead routes dispatch even if the bead does not resolve in the local store |
 | `-f`, `--formula` | bool |  | treat argument as formula name |
 | `--merge` | string |  | merge strategy: direct, mr, or local |
 | `--no-convoy` | bool |  | skip auto-convoy creation |
