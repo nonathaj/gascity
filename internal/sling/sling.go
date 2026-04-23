@@ -666,6 +666,10 @@ func InstantiateSlingFormula(ctx context.Context, formulaName string, searchPath
 		SlingTracef("instantiate compile-error formula=%s dur=%s err=%v", formulaName, time.Since(compileStart), err)
 		return nil, err
 	}
+	if err := molecule.ValidateRecipeRuntimeVars(recipe, opts); err != nil {
+		SlingTracef("instantiate validate-error formula=%s err=%v", formulaName, err)
+		return nil, err
+	}
 	SlingTracef("instantiate compiled formula=%s dur=%s steps=%d", formulaName, time.Since(compileStart), len(recipe.Steps))
 	if err := ApplyGraphRouting(recipe, &a, a.QualifiedName(), opts.Vars, sourceBeadID, scopeKind, scopeRef, deps.StoreRef, deps.Store, deps.CityName, deps.Cfg, deps); err != nil {
 		SlingTracef("instantiate decorate-error formula=%s err=%v", formulaName, err)

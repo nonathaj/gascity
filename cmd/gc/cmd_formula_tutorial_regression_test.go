@@ -137,6 +137,52 @@ title = "[{{epic}}] Implement: {{feature}}"
 	}
 }
 
+func TestFormulaShowHighlightsRequiredVars(t *testing.T) {
+	cityDir := writeTutorialFormulaCity(t, "required-vars", `
+formula = "required-vars"
+description = "Formula with required vars"
+
+[vars.epic]
+description = "Epic ticket ID"
+required = true
+
+[vars.feature]
+description = "Feature slug"
+required = true
+
+[vars.branch]
+description = "Target branch"
+default = "main"
+
+[[steps]]
+id = "implement"
+title = "[{{epic}}] Implement: {{feature}}"
+`)
+
+	t.Chdir(cityDir)
+
+	var stdout bytes.Buffer
+	cmd := newFormulaShowCmd(&stdout, &bytes.Buffer{})
+	cmd.SetArgs([]string{"required-vars"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("formula show should succeed without --var flags on required-var formulas: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Required vars:") {
+		t.Fatalf("formula show should surface a Required vars section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "{{epic}}: Epic ticket ID") || !strings.Contains(out, "{{feature}}: Feature slug") {
+		t.Fatalf("formula show should list each required var in the dedicated section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Optional vars:") {
+		t.Fatalf("formula show should keep optional vars distinct from required vars, got:\n%s", out)
+	}
+	if !strings.Contains(out, "{{branch}}: Target branch (default=main)") {
+		t.Fatalf("formula show should preserve optional var details, got:\n%s", out)
+	}
+}
+
 func writeTutorialFormulaCity(t *testing.T, formulaName, formulaBody string) string {
 	t.Helper()
 

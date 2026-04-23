@@ -481,6 +481,10 @@ func doOrderRun(aa []orders.Order, name, rig, cityPath string, store beads.Store
 		fmt.Fprintf(stderr, "gc order run: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	if err := molecule.ValidateRecipeRuntimeVars(recipe, molecule.Options{}); err != nil {
+		fmt.Fprintf(stderr, "gc order run: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	if a.Pool != "" && cfg != nil {
 		pool := qualifyPool(a.Pool, a.Rig)

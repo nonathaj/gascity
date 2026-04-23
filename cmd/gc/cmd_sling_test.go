@@ -2445,6 +2445,102 @@ func TestOnFormulaCookMissingFormula(t *testing.T) {
 	}
 }
 
+func TestFormulaSlingReportsAllMissingRequiredVarsAtOnce(t *testing.T) {
+	runner := newFakeRunner()
+	sp := runtime.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor", MaxActiveSessions: intPtr(1)}
+
+	dir := testFormulaDir(t)
+	cfg.FormulaLayers.City = []string{dir}
+	formulaBody := `
+formula = "repro-required-vars"
+version = 1
+
+[vars.target_id]
+description = "Bead being worked on"
+required = true
+
+[vars.workspace]
+description = "Workspace path"
+required = true
+
+[[steps]]
+id = "do-work"
+title = "Do work for {{target_id}}"
+description = "Target: {{target_id}}, workspace: {{workspace}}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "repro.formula.toml"), []byte(formulaBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deps, stdout, stderr := testDeps(cfg, sp, runner.run)
+	opts := testOpts(a, "repro")
+	opts.IsFormula = true
+	code := doSling(opts, deps, nil, stdout, stderr)
+
+	if code != 1 {
+		t.Fatalf("doSling returned %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	errText := stderr.String()
+	if !strings.Contains(errText, `variable "target_id" is required`) {
+		t.Fatalf("stderr = %q, want missing target_id reported", errText)
+	}
+	if !strings.Contains(errText, `variable "workspace" is required`) {
+		t.Fatalf("stderr = %q, want missing workspace reported", errText)
+	}
+	if strings.Contains(errText, "bead title contains unresolved variable(s)") {
+		t.Fatalf("stderr = %q, want consolidated required-var validation instead of title-only failure", errText)
+	}
+}
+
+func TestFormulaSlingReportsRequiredAndResidualTitleVarsWhenSomeVarsProvided(t *testing.T) {
+	runner := newFakeRunner()
+	sp := runtime.NewFake()
+	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}}
+	a := config.Agent{Name: "mayor", MaxActiveSessions: intPtr(1)}
+
+	dir := testFormulaDir(t)
+	cfg.FormulaLayers.City = []string{dir}
+	formulaBody := `
+formula = "repro-mixed-vars"
+version = 1
+
+[vars.target_id]
+description = "Bead being worked on"
+required = true
+
+[vars.workspace]
+description = "Workspace path"
+required = true
+
+[[steps]]
+id = "do-work"
+title = "Do work for {{title}}"
+description = "Target: {{target_id}}, workspace: {{workspace}}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "repro-mixed-vars.formula.toml"), []byte(formulaBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deps, stdout, stderr := testDeps(cfg, sp, runner.run)
+	opts := testOpts(a, "repro-mixed-vars")
+	opts.IsFormula = true
+	opts.Vars = []string{"target_id=BL-42"}
+	code := doSling(opts, deps, nil, stdout, stderr)
+
+	if code != 1 {
+		t.Fatalf("doSling returned %d, want 1; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	errText := stderr.String()
+	if !strings.Contains(errText, `variable "workspace" is required`) {
+		t.Fatalf("stderr = %q, want missing workspace reported", errText)
+	}
+	if !strings.Contains(errText, `step "repro-mixed-vars.do-work": bead title contains unresolved variable(s) title`) {
+		t.Fatalf("stderr = %q, want unresolved title variable reported", errText)
+	}
+}
+
 func TestOnFormulaExistingMoleculeErrors(t *testing.T) {
 	runner := newFakeRunner()
 	sp := runtime.NewFake()
