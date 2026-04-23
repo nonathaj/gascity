@@ -953,6 +953,133 @@ dir = "frontend"
 	}
 }
 
+// setupCmdSlingBeadExistsFixture writes a minimal city.toml with a single
+// rig + worker agent and positions the test CWD inside the city. Used by
+// the bead-existence tests below. Returns the city directory.
+func setupCmdSlingBeadExistsFixture(t *testing.T) string {
+	t.Helper()
+	configureIsolatedRuntimeEnv(t)
+	t.Setenv("GC_BEADS", "file")
+
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(cityDir, "frontend")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(rig): %v", err)
+	}
+	if err := ensureScopedFileStoreLayout(cityDir); err != nil {
+		t.Fatalf("ensureScopedFileStoreLayout: %v", err)
+	}
+	if err := ensurePersistedScopeLocalFileStore(cityDir); err != nil {
+		t.Fatalf("ensurePersistedScopeLocalFileStore(city): %v", err)
+	}
+	if err := ensurePersistedScopeLocalFileStore(rigDir); err != nil {
+		t.Fatalf("ensurePersistedScopeLocalFileStore(rig): %v", err)
+	}
+	cityToml := `[workspace]
+name = "demo"
+
+[[rigs]]
+name = "frontend"
+path = "frontend"
+prefix = "FE"
+
+[[agent]]
+name = "worker"
+dir = "frontend"
+`
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(cityToml), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Chdir(cityDir)
+	return cityDir
+}
+
+func TestCmdSlingRefusesMissingBead(t *testing.T) {
+	// A bead-ID-shaped argument that doesn't resolve in the store must
+	// cause sling to error out — otherwise a fabricated / typo'd ID
+	// would flow through and strand workers on a dead reference.
+	setupCmdSlingBeadExistsFixture(t)
+
+	var stdout, stderr bytes.Buffer
+	code := cmdSling(
+		[]string{"frontend/worker", "FE-ghost1"},
+		false, false, false, // isFormula, doNudge, force=false
+		"", nil, "",
+		true, false, "",
+		false, false, false,
+		"", "",
+		&stdout, &stderr,
+	)
+	if code == 0 {
+		t.Fatalf("cmdSling returned 0, want non-zero; stderr: %s", stderr.String())
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "FE-ghost1") {
+		t.Errorf("stderr missing bead ID; got: %s", got)
+	}
+	if !strings.Contains(got, "not found") {
+		t.Errorf("stderr missing 'not found' phrasing; got: %s", got)
+	}
+	if !strings.Contains(got, "--force") {
+		t.Errorf("stderr should mention --force as the escape hatch; got: %s", got)
+	}
+}
+
+func TestCmdSlingForceBypassesMissingBeadCheck(t *testing.T) {
+	// --force must bypass the bead-existence check. The call may still
+	// fail further downstream (we don't assert a success exit here), but
+	// stderr must not contain the "not found" guard message.
+	setupCmdSlingBeadExistsFixture(t)
+
+	var stdout, stderr bytes.Buffer
+	_ = cmdSling(
+		[]string{"frontend/worker", "FE-ghost1"},
+		false, false, true, // force=true
+		"", nil, "",
+		true, false, "",
+		false, false, false,
+		"", "",
+		&stdout, &stderr,
+	)
+	got := stderr.String()
+	if strings.Contains(got, "not found in store") {
+		t.Errorf("--force did not bypass bead-existence check; stderr: %s", got)
+	}
+}
+
+func TestCmdSlingAcceptsExistingBead(t *testing.T) {
+	// When a bead-ID-shaped argument IS present in the store, the new
+	// existence check must not fire. This test only asserts the check
+	// does not trip — it doesn't assert sling completes successfully,
+	// since downstream routing has its own gates (cross-rig, etc.)
+	// that are out of scope for this change.
+	cityDir := setupCmdSlingBeadExistsFixture(t)
+	rigDir := filepath.Join(cityDir, "frontend")
+
+	rigStore, err := openStoreAtForCity(rigDir, cityDir)
+	if err != nil {
+		t.Fatalf("openStoreAtForCity(rig): %v", err)
+	}
+	seeded, err := rigStore.Create(beads.Bead{Title: "real work", Type: "task"})
+	if err != nil {
+		t.Fatalf("seeding bead: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	_ = cmdSling(
+		[]string{"frontend/worker", seeded.ID},
+		false, false, false, // force=false; existence check should pass naturally
+		"", nil, "",
+		true, false, "",
+		false, false, false,
+		"", "",
+		&stdout, &stderr,
+	)
+	if strings.Contains(stderr.String(), "not found in store") {
+		t.Errorf("existence check incorrectly tripped on a real bead; stderr: %s", stderr.String())
+	}
+}
+
 func TestSlingStoreEnvUsesRigBdRuntimeForMixedProviderRig(t *testing.T) {
 	cityDir := t.TempDir()
 	wantPort := strconv.Itoa(writeReachableManagedDoltState(t, cityDir))

@@ -103,7 +103,7 @@ Examples:
 	}
 	cmd.Flags().BoolVarP(&formula, "formula", "f", false, "treat argument as formula name")
 	cmd.Flags().BoolVar(&nudge, "nudge", false, "nudge target after routing")
-	cmd.Flags().BoolVar(&force, "force", false, "suppress warnings and allow cross-rig routing")
+	cmd.Flags().BoolVar(&force, "force", false, "suppress warnings, allow cross-rig routing, and dispatch even if the bead does not resolve in the local store")
 	cmd.Flags().StringVarP(&title, "title", "t", "", "wisp root bead title (with --formula or --on)")
 	cmd.Flags().StringArrayVar(&vars, "var", nil, "variable substitution for formula (key=value, repeatable)")
 	cmd.Flags().StringVar(&merge, "merge", "", "merge strategy: direct, mr, or local")
@@ -269,6 +269,22 @@ func cmdSling(args []string, isFormula, doNudge, force bool, title string, vars 
 		}
 		fmt.Fprintf(stdout, "Created %s — %q\n", created.ID, beadOrFormula) //nolint:errcheck // best-effort stdout
 		beadOrFormula = created.ID
+	}
+
+	// Refuse to dispatch against a bead-shaped argument that doesn't
+	// resolve in the store. `looksLikeBeadID` was originally a routing
+	// heuristic (bead ID vs. session-template name) introduced for
+	// name-based session addressing, and the inline-text block above
+	// reused it for text-vs-ID disambiguation — neither ever validated
+	// existence. Without a check here a typo'd or fabricated bead ID
+	// silently flows through and strands workers on a dead reference.
+	// `resolveSessionID` already errors when its template-shaped
+	// argument doesn't resolve; this brings sling to parity.
+	// --force bypasses for timing-race cases where the bead exists in a
+	// remote store view not yet synced locally.
+	if !isFormula && looksLikeBeadID(beadOrFormula) && !beadExistsInStore(store, beadOrFormula) && !force {
+		fmt.Fprintf(stderr, "gc sling: bead %q not found in store %s\n  use --force to dispatch anyway (e.g. bead exists in a remote view not yet synced locally)\n", beadOrFormula, storeRef) //nolint:errcheck // best-effort stderr
+		return 1
 	}
 
 	opts := slingOpts{
