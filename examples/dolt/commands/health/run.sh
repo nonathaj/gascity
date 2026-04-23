@@ -83,7 +83,7 @@ server_reachable=false
 now_ms() {
   _raw=$(date +%s%N 2>/dev/null)
   case "$_raw" in
-    *[!0-9]*) printf '%s000' "$(date +%s)" ;;
+    ''|*[!0-9]*) printf '%s000' "$(date +%s 2>/dev/null)" ;;
     *)        printf '%s' "$_raw" | cut -c1-13 ;;
   esac
 }
