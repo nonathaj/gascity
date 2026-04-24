@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/examples/gastown/packs/maintenance"
 	"github.com/gastownhall/gascity/internal/bootstrap/packs/core"
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/orders"
 )
 
@@ -39,9 +39,10 @@ var builtinPacks = []builtinPack{
 }
 
 // MaterializeBuiltinPacks writes all embedded pack files to
-// .gc/system/packs/{name}/ in the city directory. Files are always
-// overwritten to stay in sync with the gc binary version. Shell scripts
-// get 0755; everything else 0644.
+// .gc/system/packs/{name}/ in the city directory. Files whose content and mode
+// already match are left in place; changed content or mode is repaired with an
+// atomic rename so readers never observe a truncated file. Shell scripts get
+// 0755; everything else 0644.
 // Idempotent: safe to call on every gc start and gc init.
 func MaterializeBuiltinPacks(cityPath string) error {
 	for _, bp := range builtinPacks {
@@ -161,45 +162,8 @@ func materializeFS(embedded fs.FS, root, dstDir string) error {
 		if isExecutableScriptFilename(path) {
 			perm = 0o755
 		}
-		return writeFileAtomic(dst, data, perm)
+		return fsys.WriteFileIfContentOrModeChangedAtomic(fsys.OSFS{}, dst, data, perm)
 	})
-}
-
-// writeFileAtomic replaces path without exposing a truncated file to readers.
-// System pack skills are watched by provider CLIs, so direct os.WriteFile can
-// surface transient invalid SKILL.md warnings during gc start/prime.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpName)
-		}
-	}()
-
-	if n, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	} else if n != len(data) {
-		_ = tmp.Close()
-		return io.ErrShortWrite
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
 }
 
 // isExecutableScriptFilename reports whether a materialized pack asset
