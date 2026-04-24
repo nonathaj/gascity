@@ -258,6 +258,26 @@ func TestLocalInitializerScaffoldPreservesExistingDirectoryWhenRegisterFails(t *
 	if string(data) != "keep" {
 		t.Fatalf("keep.txt = %q, want keep", string(data))
 	}
+	if _, statErr := os.Stat(filepath.Join(cityPath, "city.toml")); !os.IsNotExist(statErr) {
+		t.Fatalf("city.toml stat after failed registration = %v, want not exists", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(cityPath, ".gc")); !os.IsNotExist(statErr) {
+		t.Fatalf(".gc stat after failed registration = %v, want not exists", statErr)
+	}
+
+	newSupervisorRegistry = oldNewSupervisorRegistry
+	result, err := localInitializer{}.Scaffold(context.Background(), cityinit.InitRequest{
+		Dir:              cityPath,
+		Provider:         "codex",
+		BootstrapProfile: bootstrapProfileSingleHostCompat,
+		NameOverride:     "api-city",
+	})
+	if err != nil {
+		t.Fatalf("Scaffold retry: %v", err)
+	}
+	if result.CityName != "api-city" {
+		t.Fatalf("Scaffold retry city name = %q, want api-city", result.CityName)
+	}
 }
 
 func TestLocalInitializerInitScaffoldsAndFinalizes(t *testing.T) {

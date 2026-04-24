@@ -22,10 +22,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/cityinit"
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -68,6 +70,154 @@ func recordCityEvent(cityPath, eventType, subject string, payload any) {
 	})
 }
 
+type scaffoldRollbackEntry struct {
+	mode       os.FileMode
+	data       []byte
+	linkTarget string
+}
+
+type scaffoldRollbackState struct {
+	root    string
+	entries map[string]scaffoldRollbackEntry
+}
+
+func captureScaffoldRollbackState(root string) (*scaffoldRollbackState, error) {
+	state := &scaffoldRollbackState{
+		root:    root,
+		entries: make(map[string]scaffoldRollbackEntry),
+	}
+	for _, rel := range scaffoldManagedPaths() {
+		if err := state.capture(rel); err != nil {
+			return nil, err
+		}
+	}
+	return state, nil
+}
+
+func scaffoldManagedPaths() []string {
+	seen := make(map[string]struct{}, len(initConventionDirs)+5)
+	paths := make([]string, 0, len(initConventionDirs)+5)
+	add := func(rel string) {
+		if rel == "" {
+			return
+		}
+		if _, ok := seen[rel]; ok {
+			return
+		}
+		seen[rel] = struct{}{}
+		paths = append(paths, rel)
+	}
+
+	add(citylayout.RuntimeRoot)
+	add("hooks")
+	add(citylayout.CityConfigFile)
+	add("pack.toml")
+	add(".gitignore")
+	for _, rel := range initConventionDirs {
+		add(rel)
+	}
+	return paths
+}
+
+func (s *scaffoldRollbackState) capture(rel string) error {
+	abs := filepath.Join(s.root, rel)
+	_, err := os.Lstat(abs)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("snapshot %q: %w", abs, err)
+	}
+	return filepath.Walk(abs, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("snapshot %q: %w", path, walkErr)
+		}
+		relPath, err := filepath.Rel(s.root, path)
+		if err != nil {
+			return fmt.Errorf("relative path for %q: %w", path, err)
+		}
+		entry := scaffoldRollbackEntry{mode: info.Mode()}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("readlink %q: %w", path, err)
+			}
+			entry.linkTarget = target
+		} else if !info.IsDir() {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read %q: %w", path, err)
+			}
+			entry.data = data
+		}
+		s.entries[filepath.Clean(relPath)] = entry
+		return nil
+	})
+}
+
+func (s *scaffoldRollbackState) restore() error {
+	current, err := captureScaffoldRollbackState(s.root)
+	if err != nil {
+		return err
+	}
+
+	var toRemove []string
+	for rel, entry := range current.entries {
+		previous, ok := s.entries[rel]
+		if !ok || entry.mode.IsDir() != previous.mode.IsDir() || (entry.mode&os.ModeSymlink != 0) != (previous.mode&os.ModeSymlink != 0) {
+			toRemove = append(toRemove, rel)
+		}
+	}
+	sort.Slice(toRemove, func(i, j int) bool {
+		return len(toRemove[i]) > len(toRemove[j])
+	})
+
+	var errs []error
+	for _, rel := range toRemove {
+		if err := os.Remove(filepath.Join(s.root, rel)); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove %q: %w", filepath.Join(s.root, rel), err))
+		}
+	}
+
+	var rels []string
+	for rel := range s.entries {
+		rels = append(rels, rel)
+	}
+	sort.Strings(rels)
+
+	for _, rel := range rels {
+		entry := s.entries[rel]
+		abs := filepath.Join(s.root, rel)
+		switch {
+		case entry.mode.IsDir():
+			if err := os.MkdirAll(abs, entry.mode.Perm()); err != nil {
+				errs = append(errs, fmt.Errorf("restore dir %q: %w", abs, err))
+			}
+		case entry.mode&os.ModeSymlink != 0:
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				errs = append(errs, fmt.Errorf("restore parent dir for %q: %w", abs, err))
+				continue
+			}
+			if err := os.Symlink(entry.linkTarget, abs); err != nil && !os.IsExist(err) {
+				errs = append(errs, fmt.Errorf("restore symlink %q: %w", abs, err))
+			}
+		default:
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				errs = append(errs, fmt.Errorf("restore parent dir for %q: %w", abs, err))
+				continue
+			}
+			if err := os.WriteFile(abs, entry.data, entry.mode.Perm()); err != nil {
+				errs = append(errs, fmt.Errorf("restore file %q: %w", abs, err))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
+}
+
 // Scaffold runs the fast portion of city creation so the HTTP API
 // handler can return 202 Accepted without blocking on the slow
 // finalize work. Writes the on-disk shape (via doInit), then
@@ -81,8 +231,13 @@ func (localInitializer) Scaffold(_ context.Context, req cityinit.InitRequest) (*
 	}
 	dir := req.Dir
 	dirExisted := false
+	var rollbackState *scaffoldRollbackState
 	if _, err := os.Stat(dir); err == nil {
 		dirExisted = true
+		rollbackState, err = captureScaffoldRollbackState(dir)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot rollback state for %q: %w", dir, err)
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("stat directory %q: %w", dir, err)
 	}
@@ -139,10 +294,14 @@ func (localInitializer) Scaffold(_ context.Context, req cityinit.InitRequest) (*
 	// very blocking behavior the async POST /v0/city contract
 	// exists to avoid.
 	if err := registerCityForAPI(dir, req.NameOverride); err != nil {
-		if !dirExisted {
-			if cleanupErr := os.RemoveAll(dir); cleanupErr != nil {
-				return nil, errors.Join(fmt.Errorf("register with supervisor: %w", err), fmt.Errorf("cleaning scaffold after failed registration: %w", cleanupErr))
+		if dirExisted {
+			if rollbackState != nil {
+				if cleanupErr := rollbackState.restore(); cleanupErr != nil {
+					return nil, errors.Join(fmt.Errorf("register with supervisor: %w", err), fmt.Errorf("restoring existing directory after failed registration: %w", cleanupErr))
+				}
 			}
+		} else if cleanupErr := os.RemoveAll(dir); cleanupErr != nil {
+			return nil, errors.Join(fmt.Errorf("register with supervisor: %w", err), fmt.Errorf("cleaning scaffold after failed registration: %w", cleanupErr))
 		}
 		return nil, fmt.Errorf("register with supervisor: %w", err)
 	}
