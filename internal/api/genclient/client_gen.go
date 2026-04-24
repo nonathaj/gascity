@@ -2273,6 +2273,9 @@ type SlingInputBody struct {
 	// Bead Bead ID to sling.
 	Bead *string `json:"bead,omitempty"`
 
+	// Force Bypass cross-rig guards; for direct bead routes, also bypass missing-bead validation. Formula-backed graph routes may replace existing live workflow roots but still require the source bead to exist.
+	Force *bool `json:"force,omitempty"`
+
 	// Formula Formula name for workflow launch.
 	Formula *string `json:"formula,omitempty"`
 

@@ -1796,10 +1796,16 @@
             "default": "about:blank",
             "description": "A URI reference to human-readable documentation for the error.",
             "examples": [
-              "https://example.com/errors/example"
+              "https://example.com/errors/example",
+              "urn:gascity:error:sling-missing-bead",
+              "urn:gascity:error:sling-cross-rig"
             ],
             "format": "uri",
-            "type": "string"
+            "type": "string",
+            "x-gascity-problem-types": [
+              "urn:gascity:error:sling-missing-bead",
+              "urn:gascity:error:sling-cross-rig"
+            ]
           }
         },
         "type": "object"
@@ -5824,6 +5830,10 @@
           "bead": {
             "description": "Bead ID to sling.",
             "type": "string"
+          },
+          "force": {
+            "description": "Bypass cross-rig guards; for direct bead routes, also bypass missing-bead validation. Formula-backed graph routes may replace existing live workflow roots but still require the source bead to exist.",
+            "type": "boolean"
           },
           "formula": {
             "description": "Formula name for workflow launch.",

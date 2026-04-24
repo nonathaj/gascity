@@ -90,6 +90,7 @@ func NewSupervisorMux(resolver CityResolver, readOnly bool, version string, star
 	}
 	sm.registerSupervisorRoutes()
 	sm.registerCityRoutes()
+	documentProblemTypes(sm.humaAPI.OpenAPI())
 	// /svc/* workspace-service pass-through. This is the single remaining
 	// non-Huma registration on the supervisor — untyped by design (the
 	// proxy passes bodies through to external service processes, which
