@@ -316,12 +316,12 @@ func TestHumaBinary_CityCreateAsync(t *testing.T) {
 	}
 	port := reserveFreePort(t)
 	writeSupervisorConfig(t, gcHome, port)
+	if err := seedDoltIdentityForRoot(gcHome); err != nil {
+		t.Fatalf("seed dolt identity: %v", err)
+	}
 
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
-	env := append(os.Environ(),
-		"GC_HOME="+gcHome,
-		"XDG_RUNTIME_DIR="+runtimeDir,
-	)
+	env := integrationEnvFor(gcHome, runtimeDir, true)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -483,12 +483,12 @@ func TestHumaBinary_CityUnregisterAsync(t *testing.T) {
 	}
 	port := reserveFreePort(t)
 	writeSupervisorConfig(t, gcHome, port)
+	if err := seedDoltIdentityForRoot(gcHome); err != nil {
+		t.Fatalf("seed dolt identity: %v", err)
+	}
 
 	baseURL := "http://127.0.0.1:" + strconv.Itoa(port)
-	env := append(os.Environ(),
-		"GC_HOME="+gcHome,
-		"XDG_RUNTIME_DIR="+runtimeDir,
-	)
+	env := integrationEnvFor(gcHome, runtimeDir, true)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

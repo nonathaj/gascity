@@ -298,6 +298,7 @@ func TestLocalInitializerScaffoldPreservesExistingDirectoryWhenRegisterFails(t *
 }
 
 func TestLocalInitializerInitScaffoldsAndFinalizes(t *testing.T) {
+	configureTestDoltIdentityEnv(t)
 	cityPath := filepath.Join(t.TempDir(), "init-city")
 
 	result, err := localInitializer{}.Init(context.Background(), cityinit.InitRequest{
