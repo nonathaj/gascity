@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -160,8 +161,45 @@ func materializeFS(embedded fs.FS, root, dstDir string) error {
 		if isExecutableScriptFilename(path) {
 			perm = 0o755
 		}
-		return os.WriteFile(dst, data, perm)
+		return writeFileAtomic(dst, data, perm)
 	})
+}
+
+// writeFileAtomic replaces path without exposing a truncated file to readers.
+// System pack skills are watched by provider CLIs, so direct os.WriteFile can
+// surface transient invalid SKILL.md warnings during gc start/prime.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if n, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	} else if n != len(data) {
+		_ = tmp.Close()
+		return io.ErrShortWrite
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 // isExecutableScriptFilename reports whether a materialized pack asset
