@@ -164,25 +164,28 @@ func (c *CachingStore) ListOpen(status ...string) ([]Bead, error) {
 func (c *CachingStore) Get(id string) (Bead, error) {
 	c.mu.RLock()
 	if c.state == cacheLive || c.state == cachePartial {
-		cached, cachedOK := c.beads[id]
-		c.mu.RUnlock()
-
-		fresh, err := c.backing.Get(id)
-		if err != nil {
-			if cachedOK && !errors.Is(err, ErrNotFound) {
-				c.recordProblem("refresh bead during get", fmt.Errorf("%s: %w", id, err))
-				return cloneBead(cached), nil
+		if _, ok := c.dirty[id]; ok {
+			c.mu.RUnlock()
+			fresh, err := c.backing.Get(id)
+			if err != nil {
+				return Bead{}, err
 			}
-			return Bead{}, err
+			c.mu.Lock()
+			c.beads[id] = cloneBead(fresh)
+			delete(c.dirty, id)
+			delete(c.deletedSeq, id)
+			delete(c.beadSeq, id)
+			c.markFreshLocked(time.Now())
+			c.updateStatsLocked()
+			c.mu.Unlock()
+			return fresh, nil
 		}
-		c.mu.Lock()
-		c.beads[id] = cloneBead(fresh)
-		delete(c.dirty, id)
-		delete(c.deletedSeq, id)
-		c.markFreshLocked(time.Now())
-		c.updateStatsLocked()
-		c.mu.Unlock()
-		return fresh, nil
+		if b, ok := c.beads[id]; ok {
+			c.mu.RUnlock()
+			return cloneBead(b), nil
+		}
+		c.mu.RUnlock()
+		return c.backing.Get(id)
 	}
 	c.mu.RUnlock()
 	return c.backing.Get(id)

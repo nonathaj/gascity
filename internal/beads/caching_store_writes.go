@@ -13,8 +13,14 @@ func (c *CachingStore) Create(b Bead) (Bead, error) {
 		return created, err
 	}
 
+	if fresh, err := c.backing.Get(created.ID); err == nil {
+		created = fresh
+	} else if !errors.Is(err, ErrNotFound) {
+		c.recordProblem("refresh bead after create", fmt.Errorf("%s: %w", created.ID, err))
+	}
+
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(created.ID)
 	c.beads[created.ID] = cloneBead(created)
 	delete(c.dirty, created.ID)
 	delete(c.deletedSeq, created.ID)
@@ -41,9 +47,10 @@ func (c *CachingStore) Update(id string, opts UpdateOpts) error {
 		c.recordProblem("refresh bead after update", fmt.Errorf("%s: %w", id, err))
 		return nil
 	}
+	fresh = applyUpdateOptsToBead(fresh, opts)
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(id)
 	c.beads[id] = cloneBead(fresh)
 	delete(c.dirty, id)
 	delete(c.deletedSeq, id)
@@ -72,7 +79,7 @@ func (c *CachingStore) Close(id string) error {
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(id)
 	if b, ok := c.beads[id]; ok {
 		b.Status = "closed"
 		c.beads[id] = b
@@ -123,7 +130,7 @@ func (c *CachingStore) CloseAll(ids []string, metadata map[string]string) (int, 
 
 	notifications := make([]cacheNotification, 0, len(refreshed))
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(ids...)
 	if refreshErr != nil {
 		c.recordProblemLocked("close-all refresh", refreshErr)
 	}
@@ -159,7 +166,7 @@ func (c *CachingStore) SetMetadata(id, key, value string) error {
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(id)
 	if b, ok := c.beads[id]; ok {
 		if b.Metadata == nil {
 			b.Metadata = make(map[string]string)
@@ -182,7 +189,7 @@ func (c *CachingStore) SetMetadataBatch(id string, kvs map[string]string) error 
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(id)
 	if b, ok := c.beads[id]; ok {
 		if b.Metadata == nil {
 			b.Metadata = make(map[string]string, len(kvs))
@@ -207,7 +214,7 @@ func (c *CachingStore) DepAdd(issueID, dependsOnID, depType string) error {
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(issueID)
 	deps := c.deps[issueID]
 	for i, d := range deps {
 		if d.DependsOnID == dependsOnID {
@@ -237,7 +244,7 @@ func (c *CachingStore) DepRemove(issueID, dependsOnID string) error {
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	c.noteMutationLocked(issueID)
 	deps := c.deps[issueID]
 	for i, d := range deps {
 		if d.DependsOnID == dependsOnID {
@@ -260,13 +267,77 @@ func (c *CachingStore) Delete(id string) error {
 	}
 
 	c.mu.Lock()
-	c.mutationSeq++
+	seq := c.noteMutationLocked(id)
 	delete(c.beads, id)
 	delete(c.deps, id)
 	delete(c.dirty, id)
-	c.deletedSeq[id] = c.mutationSeq
+	delete(c.beadSeq, id)
+	c.deletedSeq[id] = seq
 	c.markFreshLocked(time.Now())
 	c.updateStatsLocked()
 	c.mu.Unlock()
 	return nil
+}
+
+func applyUpdateOptsToBead(bead Bead, opts UpdateOpts) Bead {
+	if opts.Title != nil {
+		bead.Title = *opts.Title
+	}
+	if opts.Status != nil {
+		bead.Status = *opts.Status
+	}
+	if opts.Type != nil {
+		bead.Type = *opts.Type
+	}
+	if opts.Priority != nil {
+		bead.Priority = cloneIntPtr(opts.Priority)
+	}
+	if opts.Description != nil {
+		bead.Description = *opts.Description
+	}
+	if opts.ParentID != nil {
+		bead.ParentID = *opts.ParentID
+	}
+	if opts.Assignee != nil {
+		bead.Assignee = *opts.Assignee
+	}
+	if len(opts.Metadata) > 0 {
+		if bead.Metadata == nil {
+			bead.Metadata = make(map[string]string, len(opts.Metadata))
+		}
+		for key, value := range opts.Metadata {
+			bead.Metadata[key] = value
+		}
+	}
+	if len(opts.Labels) > 0 || len(opts.RemoveLabels) > 0 {
+		remove := make(map[string]struct{}, len(opts.RemoveLabels))
+		for _, label := range opts.RemoveLabels {
+			remove[label] = struct{}{}
+		}
+
+		labels := make([]string, 0, len(bead.Labels)+len(opts.Labels))
+		seen := make(map[string]struct{}, len(bead.Labels)+len(opts.Labels))
+		for _, label := range bead.Labels {
+			if _, drop := remove[label]; drop {
+				continue
+			}
+			if _, exists := seen[label]; exists {
+				continue
+			}
+			labels = append(labels, label)
+			seen[label] = struct{}{}
+		}
+		for _, label := range opts.Labels {
+			if _, drop := remove[label]; drop {
+				continue
+			}
+			if _, exists := seen[label]; exists {
+				continue
+			}
+			labels = append(labels, label)
+			seen[label] = struct{}{}
+		}
+		bead.Labels = labels
+	}
+	return bead
 }

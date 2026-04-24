@@ -30,6 +30,16 @@ var (
 	supervisorCityErrorHook            = supervisorCityError
 )
 
+type supervisorRegistry interface {
+	List() ([]supervisor.CityEntry, error)
+	Register(cityPath, effectiveName string) error
+	Unregister(cityPath string) error
+}
+
+var newSupervisorRegistry = func() supervisorRegistry {
+	return supervisor.NewRegistry(supervisor.RegistryPath())
+}
+
 func supervisorCityStartTimeout(cityPath string) time.Duration {
 	timeout := supervisorCityReadyTimeout
 	cfg, err := loadCityConfig(cityPath, io.Discard)
@@ -251,15 +261,15 @@ func registerCityWithSupervisorNamed(cityPath, nameOverride string, stdout, stde
 // lifecycle, etc.) which is the exact behavior the async contract
 // was designed to avoid. The reconciler picks up the city on its
 // next tick; subscribers to /v0/events/stream see city.created
-// (written by Scaffold), then city.ready or city.init_failed when
-// the reconciler completes.
+// only after registration succeeds, then city.ready or
+// city.init_failed when the reconciler completes.
 func registerCityForAPI(cityPath, nameOverride string) error {
 	cityPath = normalizePathForCompare(cityPath)
 	name, err := registeredCityName(cityPath, nameOverride)
 	if err != nil {
 		return err
 	}
-	reg := supervisor.NewRegistry(supervisor.RegistryPath())
+	reg := newSupervisorRegistry()
 	if err := reg.Register(cityPath, name); err != nil {
 		return err
 	}

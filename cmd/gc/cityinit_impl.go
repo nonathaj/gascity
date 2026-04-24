@@ -43,6 +43,31 @@ func NewInitializer() cityinit.Initializer {
 	return localInitializer{}
 }
 
+func ensureCityEventLog(cityPath string) {
+	if fr, err := events.NewFileRecorder(filepath.Join(cityPath, ".gc", "events.jsonl"), io.Discard); err == nil {
+		fr.Close() //nolint:errcheck // best-effort
+	}
+}
+
+func recordCityEvent(cityPath, eventType, subject string, payload any) {
+	fr, err := events.NewFileRecorder(filepath.Join(cityPath, ".gc", "events.jsonl"), io.Discard)
+	if err != nil {
+		return
+	}
+	defer fr.Close() //nolint:errcheck // best-effort
+
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	fr.Record(events.Event{
+		Type:    eventType,
+		Actor:   "gc",
+		Subject: subject,
+		Payload: raw,
+	})
+}
+
 // Scaffold runs the fast portion of city creation so the HTTP API
 // handler can return 202 Accepted without blocking on the slow
 // finalize work. Writes the on-disk shape (via doInit), then
@@ -81,8 +106,7 @@ func (localInitializer) Scaffold(_ context.Context, req cityinit.InitRequest) (*
 
 	cityName := resolveCityName(req.NameOverride, "", dir)
 
-	// Create .gc/events.jsonl immediately and emit city.created before
-	// the supervisor reconciler picks up the city. Two reasons:
+	// Create .gc/events.jsonl immediately before registration. Two reasons:
 	//
 	// 1. The supervisor event multiplexer (see
 	//    internal/api/supervisor.go:buildMultiplexer) includes
@@ -98,21 +122,10 @@ func (localInitializer) Scaffold(_ context.Context, req cityinit.InitRequest) (*
 	//    POST /v0/city → subscribe works even when no other cities
 	//    exist yet (the fresh-supervisor scenario).
 	//
-	// Best-effort: a failure to open the recorder does not fail the
-	// Scaffold call — the reconciler creates its own recorder later
-	// and city.ready/city.init_failed will land there. The city is
-	// still usable, just without the leading city.created marker.
-	if fr, frErr := events.NewFileRecorder(filepath.Join(dir, ".gc", "events.jsonl"), io.Discard); frErr == nil {
-		if payload, mErr := json.Marshal(api.CityCreatedPayload{Name: cityName, Path: dir}); mErr == nil {
-			fr.Record(events.Event{
-				Type:    events.CityCreated,
-				Actor:   "gc",
-				Subject: cityName,
-				Payload: payload,
-			})
-		}
-		fr.Close() //nolint:errcheck // best-effort
-	}
+	// The file creation is best-effort. city.created itself is emitted
+	// only after registration succeeds so synchronous failures do not
+	// leak a "created" event for a city the supervisor never adopted.
+	ensureCityEventLog(dir)
 
 	// Register the city with the supervisor without blocking on the
 	// reconciler's tick. The standard registerCityWithSupervisor
@@ -124,6 +137,7 @@ func (localInitializer) Scaffold(_ context.Context, req cityinit.InitRequest) (*
 	if err := registerCityForAPI(dir, req.NameOverride); err != nil {
 		return nil, fmt.Errorf("register with supervisor: %w", err)
 	}
+	recordCityEvent(dir, events.CityCreated, cityName, api.CityCreatedPayload{Name: cityName, Path: dir})
 
 	return &cityinit.InitResult{
 		CityName:     cityName,
@@ -220,7 +234,7 @@ func (localInitializer) Unregister(_ context.Context, req cityinit.UnregisterReq
 		return nil, fmt.Errorf("%w: city_name is required", cityinit.ErrNotRegistered)
 	}
 
-	reg := supervisor.NewRegistry(supervisor.RegistryPath())
+	reg := newSupervisorRegistry()
 	entries, err := reg.List()
 	if err != nil {
 		return nil, fmt.Errorf("reading supervisor registry: %w", err)
@@ -238,22 +252,6 @@ func (localInitializer) Unregister(_ context.Context, req cityinit.UnregisterReq
 		return nil, fmt.Errorf("%w: %q", cityinit.ErrNotRegistered, name)
 	}
 
-	// Emit city.unregister_requested so subscribers that connected
-	// before the unregister call see the start of the teardown. The
-	// city's event file exists for any city that got far enough into
-	// Scaffold; best-effort if it's missing.
-	if fr, frErr := events.NewFileRecorder(filepath.Join(match.Path, ".gc", "events.jsonl"), io.Discard); frErr == nil {
-		if payload, mErr := json.Marshal(api.CityUnregisterRequestedPayload{Name: match.EffectiveName(), Path: match.Path}); mErr == nil {
-			fr.Record(events.Event{
-				Type:    events.CityUnregisterRequested,
-				Actor:   "gc",
-				Subject: match.EffectiveName(),
-				Payload: payload,
-			})
-		}
-		fr.Close() //nolint:errcheck // best-effort
-	}
-
 	if err := reg.Unregister(match.Path); err != nil {
 		// Should not happen — we just read this entry — but wrap to
 		// satisfy the ErrNotRegistered contract if it does.
@@ -262,6 +260,12 @@ func (localInitializer) Unregister(_ context.Context, req cityinit.UnregisterReq
 		}
 		return nil, fmt.Errorf("removing %q from supervisor registry: %w", name, err)
 	}
+	recordCityEvent(
+		match.Path,
+		events.CityUnregisterRequested,
+		match.EffectiveName(),
+		api.CityUnregisterRequestedPayload{Name: match.EffectiveName(), Path: match.Path},
+	)
 
 	// Wake the reconciler; same fire-and-forget signal the Scaffold
 	// path uses. If the supervisor isn't reachable the periodic

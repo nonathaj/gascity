@@ -53,6 +53,13 @@ type controllerState struct {
 	adapterReg    *extmsg.AdapterRegistry
 }
 
+type configMutationSnapshot struct {
+	cityPath   string
+	files      map[string][]byte
+	existed    map[string]bool
+	agentFiles map[string]struct{}
+}
+
 // newControllerState creates a controllerState with per-rig stores.
 // BdStores are wrapped with CachingStore for in-memory reads.
 func newControllerState(
@@ -638,25 +645,98 @@ func (cs *controllerState) DeleteProviderPatch(name string) error {
 	})
 }
 
+func captureConfigMutationSnapshot(cityPath string) (*configMutationSnapshot, error) {
+	snapshot := &configMutationSnapshot{
+		cityPath:   cityPath,
+		files:      make(map[string][]byte),
+		existed:    make(map[string]bool),
+		agentFiles: make(map[string]struct{}),
+	}
+
+	capture := func(path string) error {
+		data, err := os.ReadFile(path)
+		switch {
+		case err == nil:
+			snapshot.files[path] = data
+			snapshot.existed[path] = true
+		case os.IsNotExist(err):
+			snapshot.existed[path] = false
+		default:
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
+		return nil
+	}
+
+	for _, path := range []string{
+		filepath.Join(cityPath, "city.toml"),
+		filepath.Join(cityPath, ".gc", "site.toml"),
+	} {
+		if err := capture(path); err != nil {
+			return nil, err
+		}
+	}
+
+	agentFiles, err := filepath.Glob(filepath.Join(cityPath, "agents", "*", "agent.toml"))
+	if err != nil {
+		return nil, fmt.Errorf("listing agent overrides: %w", err)
+	}
+	for _, path := range agentFiles {
+		snapshot.agentFiles[path] = struct{}{}
+		if err := capture(path); err != nil {
+			return nil, err
+		}
+	}
+
+	return snapshot, nil
+}
+
+func (s *configMutationSnapshot) restore() error {
+	var restoreErr error
+
+	currentAgentFiles, err := filepath.Glob(filepath.Join(s.cityPath, "agents", "*", "agent.toml"))
+	if err != nil {
+		restoreErr = errors.Join(restoreErr, fmt.Errorf("listing current agent overrides: %w", err))
+	} else {
+		for _, path := range currentAgentFiles {
+			if _, existed := s.agentFiles[path]; existed {
+				continue
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				restoreErr = errors.Join(restoreErr, fmt.Errorf("removing %s: %w", path, err))
+			}
+		}
+	}
+
+	for path, existed := range s.existed {
+		if !existed {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				restoreErr = errors.Join(restoreErr, fmt.Errorf("removing %s: %w", path, err))
+			}
+			continue
+		}
+		if err := fsys.WriteFileAtomic(fsys.OSFS{}, path, s.files[path], 0o644); err != nil {
+			restoreErr = errors.Join(restoreErr, fmt.Errorf("restoring %s: %w", path, err))
+		}
+	}
+
+	return restoreErr
+}
+
 func (cs *controllerState) mutateAndPoke(mutate func() error) error {
-	var (
-		tomlPath string
-		previous []byte
-	)
+	var snapshot *configMutationSnapshot
 	if cs.cityPath != "" {
-		tomlPath = filepath.Join(cs.cityPath, "city.toml")
 		var err error
-		previous, err = os.ReadFile(tomlPath)
+		snapshot, err = captureConfigMutationSnapshot(cs.cityPath)
 		if err != nil {
-			return fmt.Errorf("reading current city config: %w", err)
+			return fmt.Errorf("snapshotting current city config: %w", err)
 		}
 	}
 	if err := mutate(); err != nil {
 		return err
 	}
 	if err := cs.refreshConfigSnapshot(); err != nil {
-		if tomlPath != "" {
-			if restoreErr := fsys.WriteFileAtomic(fsys.OSFS{}, tomlPath, previous, 0o644); restoreErr != nil {
+		if snapshot != nil {
+			if restoreErr := snapshot.restore(); restoreErr != nil {
 				restoreFailure := fmt.Errorf("restoring previous city config: %w", restoreErr)
 				return fmt.Errorf("refreshing updated city config: %w", errors.Join(err, restoreFailure))
 			}

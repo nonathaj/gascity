@@ -200,6 +200,9 @@ func TestControllerStateMutationRollsBackWhenRefreshFails(t *testing.T) {
 	if string(restored) != string(original) {
 		t.Fatalf("city.toml = %q, want rollback to %q", restored, original)
 	}
+	if _, err := os.Stat(filepath.Join(cityDir, ".gc", "site.toml")); !os.IsNotExist(err) {
+		t.Fatalf(".gc/site.toml stat err = %v, want file removed on rollback", err)
+	}
 
 	select {
 	case <-cs.pokeCh:
@@ -211,6 +214,56 @@ func TestControllerStateMutationRollsBackWhenRefreshFails(t *testing.T) {
 	}
 	if got := cs.Config(); got == nil || len(got.Rigs) != 0 {
 		t.Fatalf("Config() rigs = %+v, want rollback to preserve in-memory config", got.Rigs)
+	}
+}
+
+func TestControllerStateMutationRollsBackAgentOverrideWhenRefreshFails(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+
+	cityDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityDir, "broken.toml"), []byte("["), 0o644); err != nil {
+		t.Fatalf("write broken include: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cityDir, "pack.toml"), []byte("[pack]\nname = \"city1\"\nschema = 2\n"), 0o644); err != nil {
+		t.Fatalf("write pack.toml: %v", err)
+	}
+	agentDir := filepath.Join(cityDir, "agents", "worker")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("mkdir agent dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "prompt.template.md"), []byte("You are the worker.\n"), 0o644); err != nil {
+		t.Fatalf("write prompt template: %v", err)
+	}
+
+	original := []byte("include = [\"broken.toml\"]\n\n[workspace]\nname = \"city1\"\n")
+	tomlPath := filepath.Join(cityDir, "city.toml")
+	if err := os.WriteFile(tomlPath, original, 0o644); err != nil {
+		t.Fatalf("write city.toml: %v", err)
+	}
+
+	cs := newControllerState(context.Background(), &config.City{
+		Workspace: config.Workspace{Name: "city1"},
+	}, runtime.NewFake(), events.NewFake(), "city1", cityDir)
+	cs.pokeCh = make(chan struct{}, 1)
+	cs.configDirty = &atomic.Bool{}
+
+	err := cs.SuspendAgent("worker")
+	if err == nil {
+		t.Fatal("SuspendAgent should fail when refreshing the updated snapshot fails")
+	}
+
+	if _, err := os.Stat(filepath.Join(agentDir, "agent.toml")); !os.IsNotExist(err) {
+		t.Fatalf("agent.toml stat err = %v, want file removed on rollback", err)
+	}
+	restored, readErr := os.ReadFile(tomlPath)
+	if readErr != nil {
+		t.Fatalf("read restored city.toml: %v", readErr)
+	}
+	if string(restored) != string(original) {
+		t.Fatalf("city.toml = %q, want rollback to %q", restored, original)
+	}
+	if cs.configDirty.Load() {
+		t.Fatal("SuspendAgent should not mark config dirty after rollback")
 	}
 }
 

@@ -29,30 +29,39 @@ func (c *CachingStore) ApplyEvent(eventType string, payload json.RawMessage) {
 		return
 	}
 
+	mutated := false
 	switch eventType {
 	case "bead.created":
 		if _, exists := c.beads[b.ID]; !exists {
+			c.noteMutationLocked(b.ID)
 			c.beads[b.ID] = cloneBead(b)
 			delete(c.dirty, b.ID)
 			delete(c.deletedSeq, b.ID)
 			c.updateStatsLocked()
+			mutated = true
 		}
 	case "bead.updated":
+		c.noteMutationLocked(b.ID)
 		c.beads[b.ID] = cloneBead(b)
 		delete(c.dirty, b.ID)
 		delete(c.deletedSeq, b.ID)
+		mutated = true
 	case "bead.closed":
+		c.noteMutationLocked(b.ID)
 		if _, exists := c.beads[b.ID]; !exists {
 			c.updateStatsLocked()
 		}
 		c.beads[b.ID] = cloneBead(b)
 		delete(c.dirty, b.ID)
 		delete(c.deletedSeq, b.ID)
+		mutated = true
 	default:
 		return
 	}
 
-	c.markFreshLocked(time.Now())
+	if mutated {
+		c.markFreshLocked(time.Now())
+	}
 }
 
 // ApplyDepEvent updates the dep cache for a bead. Call after dep
@@ -63,6 +72,7 @@ func (c *CachingStore) ApplyDepEvent(beadID string, deps []Dep) {
 	if c.state != cacheLive {
 		return
 	}
+	c.noteMutationLocked(beadID)
 	c.deps[beadID] = cloneDeps(deps)
 	delete(c.dirty, beadID)
 	delete(c.deletedSeq, beadID)

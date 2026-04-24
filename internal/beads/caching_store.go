@@ -28,6 +28,7 @@ type CachingStore struct {
 	beads       map[string]Bead
 	deps        map[string][]Dep
 	dirty       map[string]struct{}
+	beadSeq     map[string]uint64
 	deletedSeq  map[string]uint64
 	state       cacheState
 	lastFreshAt time.Time
@@ -98,12 +99,25 @@ func newCachingStore(backing Store, onChange func(eventType, beadID string, payl
 		beads:      make(map[string]Bead),
 		deps:       make(map[string][]Dep),
 		dirty:      make(map[string]struct{}),
+		beadSeq:    make(map[string]uint64),
 		deletedSeq: make(map[string]uint64),
 		onChange:   onChange,
 		problemf: func(msg string) {
 			log.Printf("beads cache: %s", msg)
 		},
 	}
+}
+
+func (c *CachingStore) noteMutationLocked(ids ...string) uint64 {
+	c.mutationSeq++
+	seq := c.mutationSeq
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		c.beadSeq[id] = seq
+	}
+	return seq
 }
 
 // PrimeActive loads all non-closed beads (open + in_progress) into the
@@ -188,6 +202,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 		c.beads = beadMap
 		c.deps = depMap
 		c.dirty = make(map[string]struct{})
+		c.beadSeq = make(map[string]uint64)
 		c.deletedSeq = make(map[string]uint64)
 	} else {
 		for id, b := range beadMap {
@@ -199,6 +214,7 @@ func (c *CachingStore) Prime(_ context.Context) error {
 			}
 			c.beads[id] = b
 			delete(c.deletedSeq, id)
+			delete(c.beadSeq, id)
 			if deps, ok := depMap[id]; ok {
 				c.deps[id] = deps
 			}

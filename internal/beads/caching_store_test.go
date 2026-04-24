@@ -144,28 +144,30 @@ func TestCachingStorePrimeDoesNotResurrectConcurrentDelete(t *testing.T) {
 	}
 }
 
-func TestCachingStoreGetRefreshesStaleCachedBead(t *testing.T) {
-	mem := beads.NewMemStore()
-	original, err := mem.Create(beads.Bead{Title: "before update"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	cs := beads.NewCachingStoreForTest(mem, nil)
+func TestCachingStoreCreateRefreshesSparseBead(t *testing.T) {
+	backing := &sparseCreateStore{Store: beads.NewMemStore()}
+	cs := beads.NewCachingStoreForTest(backing, nil)
 	if err := cs.Prime(context.Background()); err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
 
-	status := "in_progress"
-	if err := mem.Update(original.ID, beads.UpdateOpts{Status: &status}); err != nil {
-		t.Fatalf("backing Update: %v", err)
-	}
-
-	got, err := cs.Get(original.ID)
+	created, err := cs.Create(beads.Bead{
+		Title:    "new task",
+		ParentID: "parent-1",
+		Labels:   []string{"urgent"},
+		Metadata: map[string]string{"k": "v"},
+	})
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
-	if got.Status != "in_progress" {
-		t.Fatalf("status = %q, want in_progress", got.Status)
+	if created.ParentID != "parent-1" {
+		t.Fatalf("ParentID = %q, want parent-1", created.ParentID)
+	}
+	if len(created.Labels) != 1 || created.Labels[0] != "urgent" {
+		t.Fatalf("Labels = %#v, want [urgent]", created.Labels)
+	}
+	if created.Metadata["k"] != "v" {
+		t.Fatalf("Metadata = %#v, want k=v", created.Metadata)
 	}
 }
 
@@ -355,6 +357,18 @@ type staleReadAfterUpdateStore struct {
 	mu        sync.Mutex
 	stale     beads.Bead
 	returnOld bool
+}
+
+type sparseCreateStore struct {
+	beads.Store
+}
+
+func (s *sparseCreateStore) Create(b beads.Bead) (beads.Bead, error) {
+	created, err := s.Store.Create(b)
+	if err != nil {
+		return beads.Bead{}, err
+	}
+	return beads.Bead{ID: created.ID, Title: created.Title}, nil
 }
 
 func (s *staleReadAfterUpdateStore) Update(id string, opts beads.UpdateOpts) error {

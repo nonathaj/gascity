@@ -15,6 +15,28 @@ import (
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
+type fakeSupervisorRegistry struct {
+	entries       []supervisor.CityEntry
+	listErr       error
+	registerErr   error
+	unregisterErr error
+}
+
+func (f *fakeSupervisorRegistry) List() ([]supervisor.CityEntry, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	return append([]supervisor.CityEntry(nil), f.entries...), nil
+}
+
+func (f *fakeSupervisorRegistry) Register(string, string) error {
+	return f.registerErr
+}
+
+func (f *fakeSupervisorRegistry) Unregister(string) error {
+	return f.unregisterErr
+}
+
 func TestValidateInitRequest(t *testing.T) {
 	absDir := filepath.Join(t.TempDir(), "city")
 	tests := []struct {
@@ -140,6 +162,37 @@ func TestLocalInitializerScaffoldCreatesCityRegistersAndEmitsCreated(t *testing.
 	}
 }
 
+func TestLocalInitializerScaffoldDoesNotEmitCreatedWhenRegisterFails(t *testing.T) {
+	t.Setenv("GC_HOME", t.TempDir())
+	cityPath := filepath.Join(t.TempDir(), "api-city")
+
+	oldNewSupervisorRegistry := newSupervisorRegistry
+	newSupervisorRegistry = func() supervisorRegistry {
+		return &fakeSupervisorRegistry{registerErr: errors.New("boom")}
+	}
+	t.Cleanup(func() {
+		newSupervisorRegistry = oldNewSupervisorRegistry
+	})
+
+	_, err := localInitializer{}.Scaffold(context.Background(), cityinit.InitRequest{
+		Dir:              cityPath,
+		Provider:         "codex",
+		BootstrapProfile: bootstrapProfileSingleHostCompat,
+		NameOverride:     "api-city",
+	})
+	if err == nil || !strings.Contains(err.Error(), "register with supervisor") {
+		t.Fatalf("Scaffold error = %v, want register with supervisor failure", err)
+	}
+
+	evts, readErr := events.ReadFiltered(filepath.Join(cityPath, ".gc", "events.jsonl"), events.Filter{Type: events.CityCreated})
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("ReadFiltered city.created: %v", readErr)
+	}
+	if len(evts) != 0 {
+		t.Fatalf("city.created events = %d, want 0: %+v", len(evts), evts)
+	}
+}
+
 func TestLocalInitializerInitScaffoldsAndFinalizes(t *testing.T) {
 	cityPath := filepath.Join(t.TempDir(), "init-city")
 
@@ -216,6 +269,43 @@ func TestLocalInitializerUnregisterRemovesRegistryAndEmitsEvent(t *testing.T) {
 		t.Fatalf("payload name = %q, want bright-lights", payload.Name)
 	}
 	assertSameTestPath(t, payload.Path, cityPath)
+}
+
+func TestLocalInitializerUnregisterDoesNotEmitEventWhenRegistryWriteFails(t *testing.T) {
+	t.Setenv("GC_HOME", t.TempDir())
+	cityPath := filepath.Join(t.TempDir(), "bright-lights")
+	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldNewSupervisorRegistry := newSupervisorRegistry
+	newSupervisorRegistry = func() supervisorRegistry {
+		return &fakeSupervisorRegistry{
+			entries: []supervisor.CityEntry{{
+				Path: cityPath,
+				Name: "bright-lights",
+			}},
+			unregisterErr: errors.New("boom"),
+		}
+	}
+	t.Cleanup(func() {
+		newSupervisorRegistry = oldNewSupervisorRegistry
+	})
+
+	_, err := localInitializer{}.Unregister(context.Background(), cityinit.UnregisterRequest{
+		CityName: "bright-lights",
+	})
+	if err == nil || !strings.Contains(err.Error(), "removing \"bright-lights\" from supervisor registry") {
+		t.Fatalf("Unregister error = %v, want registry removal failure", err)
+	}
+
+	evts, readErr := events.ReadFiltered(filepath.Join(cityPath, ".gc", "events.jsonl"), events.Filter{Type: events.CityUnregisterRequested})
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("ReadFiltered city.unregister_requested: %v", readErr)
+	}
+	if len(evts) != 0 {
+		t.Fatalf("city.unregister_requested events = %d, want 0: %+v", len(evts), evts)
+	}
 }
 
 func TestLocalInitializerUnregisterMissingCity(t *testing.T) {
