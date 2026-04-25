@@ -67,7 +67,13 @@ The tap formula installs prebuilt release assets, so users do not need Go or a s
 brew install gastownhall/gascity/gascity
 ```
 
-**This section will change when homebrew-core lands.** The tap update job can be disabled, the tap can be deprecated, and releases can flow only through the source-built formula in homebrew-core.
+The intended long-term user-facing Homebrew path is homebrew-core:
+
+```bash
+brew install gascity
+```
+
+Until the core formula lands, the tap is the public install path. After core lands, keep the tap available for emergency updates while normal releases flow through homebrew-core.
 
 ## Homebrew core (planned)
 

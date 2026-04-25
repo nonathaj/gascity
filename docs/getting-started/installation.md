@@ -44,6 +44,10 @@ This taps the `gastownhall/gascity` formula, downloads the matching `gc`
 release asset, and installs all six runtime dependencies (tmux, jq, git, dolt,
 flock, beads).
 
+Once Gas City is accepted into homebrew-core, the normal install path will be
+`brew install gascity`; the `gastownhall/gascity` tap remains available for
+emergency updates.
+
 Verify the installation:
 
 ```bash
