@@ -429,7 +429,7 @@ func ensureBeadsProvider(cityPath string) error {
 // For exec providers, fires "stop". For file providers, always available.
 func shutdownBeadsProvider(cityPath string) error {
 	if cityUsesBdStoreContract(cityPath) && strings.TrimSpace(os.Getenv("GC_DOLT")) == "skip" {
-		return nil
+		return clearManagedDoltRuntimeStateIfOwned(cityPath)
 	}
 	provider := beadsProvider(cityPath)
 	if strings.HasPrefix(provider, "exec:") {

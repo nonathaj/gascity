@@ -758,6 +758,31 @@ func TestShutdownBeadsProvider_bd_skip(t *testing.T) {
 	}
 }
 
+func TestShutdownBeadsProviderBdSkipClearsPublishedRuntimeState(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".gc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	MaterializeBuiltinPacks(dir) //nolint:errcheck
+	if err := writeDoltState(dir, doltRuntimeState{
+		Running:   true,
+		PID:       os.Getpid(),
+		Port:      33123,
+		DataDir:   filepath.Join(dir, ".beads", "dolt"),
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatalf("writeDoltState: %v", err)
+	}
+	t.Setenv("GC_BEADS", "bd")
+	t.Setenv("GC_DOLT", "skip")
+	if err := shutdownBeadsProvider(dir); err != nil {
+		t.Fatalf("shutdownBeadsProvider() error = %v", err)
+	}
+	if _, err := os.Stat(managedDoltStatePath(dir)); !os.IsNotExist(err) {
+		t.Fatalf("published dolt runtime state still present, stat err = %v", err)
+	}
+}
+
 func TestCurrentDoltPortPrefersRuntimeState(t *testing.T) {
 	cityDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityDir, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
