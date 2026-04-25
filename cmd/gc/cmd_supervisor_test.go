@@ -637,6 +637,57 @@ func TestInstallSupervisorSystemdRestartsWhenUnitChangesAndServiceActive(t *test
 	if strings.Contains(joined, "--user start gascity-supervisor.service") {
 		t.Fatalf("systemctl calls = %v, should restart instead of start when unit changes under an active service", calls)
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("systemd unit mode after warm upgrade = %03o, want 600", got)
+	}
+}
+
+func TestInstallSupervisorSystemdWritesPrivateUnitFile(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("systemd path only applies on linux")
+	}
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
+
+	data := &supervisorServiceData{
+		GCPath:  "/tmp/gc-new",
+		LogPath: "/tmp/gc-home/supervisor.log",
+		GCHome:  "/tmp/gc-home",
+		Path:    "/usr/local/bin:/usr/bin:/bin",
+		ExtraEnv: []supervisorServiceEnvVar{
+			{Name: "OPENAI_API_KEY", Value: "sk-openai-123"},
+		},
+	}
+
+	oldRun := supervisorSystemctlRun
+	oldActive := supervisorSystemctlActive
+	supervisorSystemctlRun = func(_ ...string) error {
+		return nil
+	}
+	supervisorSystemctlActive = func(_ string) bool {
+		return false
+	}
+	t.Cleanup(func() {
+		supervisorSystemctlRun = oldRun
+		supervisorSystemctlActive = oldActive
+	})
+
+	var stdout, stderr bytes.Buffer
+	if code := installSupervisorSystemd(data, &stdout, &stderr); code != 0 {
+		t.Fatalf("installSupervisorSystemd code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	info, err := os.Stat(supervisorSystemdServicePath())
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", supervisorSystemdServicePath(), err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("systemd unit mode = %03o, want 600", got)
+	}
 }
 
 func TestInstallSupervisorSystemdStartsInactiveService(t *testing.T) {
@@ -1252,6 +1303,13 @@ func TestInstallSupervisorSystemdRestoresPreviousCurrentUnitWhenUpdateFails(t *t
 	if !bytes.Equal(gotContent, oldContent) {
 		t.Fatalf("restored systemd unit = %q, want original %q", gotContent, oldContent)
 	}
+	info, err := os.Stat(currentPath)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", currentPath, err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("restored systemd unit mode = %03o, want 600", got)
+	}
 	if startCalls != 2 {
 		t.Fatalf("systemctl start call count = %d, want 2 (failed install + rollback restore); calls=%v", startCalls, calls)
 	}
@@ -1415,6 +1473,45 @@ func TestInstallSupervisorLaunchdRemovesMatchingLegacyDefaultPlistForIsolatedGCH
 		if !strings.Contains(joined, want) {
 			t.Fatalf("launchctl calls = %v, want %q", calls, want)
 		}
+	}
+}
+
+func TestInstallSupervisorLaunchdWritesPrivatePlist(t *testing.T) {
+	homeDir := t.TempDir()
+	gcHome := filepath.Join(t.TempDir(), "isolated-home")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GC_HOME", gcHome)
+
+	data := &supervisorServiceData{
+		GCPath:       "/tmp/gc-new",
+		LogPath:      filepath.Join(gcHome, "supervisor.log"),
+		GCHome:       gcHome,
+		LaunchdLabel: supervisorLaunchdLabel(),
+		Path:         "/usr/local/bin:/usr/bin:/bin",
+		ExtraEnv: []supervisorServiceEnvVar{
+			{Name: "OPENAI_API_KEY", Value: "sk-openai-123"},
+		},
+	}
+
+	oldRun := supervisorLaunchctlRun
+	supervisorLaunchctlRun = func(_ ...string) error {
+		return nil
+	}
+	t.Cleanup(func() {
+		supervisorLaunchctlRun = oldRun
+	})
+
+	var stdout, stderr bytes.Buffer
+	if code := installSupervisorLaunchd(data, &stdout, &stderr); code != 0 {
+		t.Fatalf("installSupervisorLaunchd code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	path := supervisorLaunchdPlistPath()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("launchd plist mode = %03o, want 600", got)
 	}
 }
 
@@ -1591,6 +1688,13 @@ func TestInstallSupervisorLaunchdRestoresPreviousCurrentPlistWhenUpdateFails(t *
 	}
 	if !bytes.Equal(gotContent, oldContent) {
 		t.Fatalf("restored launchd plist = %q, want original %q", gotContent, oldContent)
+	}
+	info, err := os.Stat(currentPath)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", currentPath, err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("restored launchd plist mode = %03o, want 600", got)
 	}
 	if loadCalls != 2 {
 		t.Fatalf("launchctl load call count = %d, want 2 (failed install + rollback restore); calls=%v", loadCalls, calls)

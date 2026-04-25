@@ -43,6 +43,8 @@ var (
 	}
 )
 
+const supervisorServiceFileMode os.FileMode = 0o600
+
 func newSupervisorRunCmd(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "run",
@@ -592,6 +594,20 @@ func renderSupervisorTemplate(tmplStr string, data *supervisorServiceData) (stri
 	return buf.String(), nil
 }
 
+func writeSupervisorServiceFile(path string, content []byte) error {
+	if _, err := os.Stat(path); err == nil {
+		if err := os.Chmod(path, supervisorServiceFileMode); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.WriteFile(path, content, supervisorServiceFileMode); err != nil {
+		return err
+	}
+	return os.Chmod(path, supervisorServiceFileMode)
+}
+
 func supervisorLaunchdPlistPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "LaunchAgents", supervisorLaunchdLabel()+".plist")
@@ -809,7 +825,7 @@ func rollbackNewSupervisorLaunchdInstall(path string, restoreLegacy bool) error 
 func restorePreviousSupervisorLaunchdInstall(path string, previousContent []byte) error {
 	var errs []error
 	_ = supervisorLaunchctlRun("unload", path)
-	if err := os.WriteFile(path, previousContent, 0o644); err != nil {
+	if err := writeSupervisorServiceFile(path, previousContent); err != nil {
 		errs = append(errs, fmt.Errorf("restoring previous plist %s: %w", path, err))
 	} else if err := supervisorLaunchctlRun("load", path); err != nil {
 		errs = append(errs, fmt.Errorf("reloading previous plist %s: %w", path, err))
@@ -840,7 +856,7 @@ func restorePreviousSupervisorSystemdInstall(path, service string, previousConte
 	if restart {
 		_ = supervisorSystemctlRun("--user", "stop", service)
 	}
-	if err := os.WriteFile(path, previousContent, 0o644); err != nil {
+	if err := writeSupervisorServiceFile(path, previousContent); err != nil {
 		errs = append(errs, fmt.Errorf("restoring previous unit %s: %w", path, err))
 		return errors.Join(errs...)
 	}
@@ -877,7 +893,7 @@ func installSupervisorLaunchd(data *supervisorServiceData, stdout, stderr io.Wri
 		fmt.Fprintf(stderr, "gc supervisor install: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := writeSupervisorServiceFile(path, []byte(content)); err != nil {
 		fmt.Fprintf(stderr, "gc supervisor install: writing plist: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
@@ -944,7 +960,7 @@ func installSupervisorSystemd(data *supervisorServiceData, stdout, stderr io.Wri
 		return 1
 	}
 	contentChanged := string(existing) != content
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := writeSupervisorServiceFile(path, []byte(content)); err != nil {
 		fmt.Fprintf(stderr, "gc supervisor install: writing unit: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
