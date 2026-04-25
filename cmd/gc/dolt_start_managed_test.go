@@ -1,6 +1,12 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestDoltServerEnv_AppendsDefaultWhenMissing(t *testing.T) {
 	parent := []string{"PATH=/usr/bin", "HOME=/home/test"}
@@ -60,5 +66,25 @@ func TestDoltServerEnv_RespectsEmptyUserValue(t *testing.T) {
 		if kv == "DOLT_GC_SCHEDULER=NONE" {
 			t.Fatalf("explicit empty-value override clobbered: %v", out)
 		}
+	}
+}
+
+func TestGCBeadsBDScript_RespectsEmptyUserValue(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
+	}
+	scriptPath := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "bd", "assets", "scripts", "gc-beads-bd.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", scriptPath, err)
+	}
+	script := string(data)
+
+	if !strings.Contains(script, `${DOLT_GC_SCHEDULER=NONE}`) {
+		t.Fatalf("gc-beads-bd.sh must default DOLT_GC_SCHEDULER only when unset")
+	}
+	if strings.Contains(script, `${DOLT_GC_SCHEDULER:=NONE}`) {
+		t.Fatalf("gc-beads-bd.sh must not clobber an explicitly empty DOLT_GC_SCHEDULER")
 	}
 }

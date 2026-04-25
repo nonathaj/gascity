@@ -1519,7 +1519,7 @@ op_start() {
         # config.yaml has no effect. See
         # https://github.com/dolthub/dolt/issues/10944. Users who
         # explicitly set DOLT_GC_SCHEDULER are respected.
-        : "${DOLT_GC_SCHEDULER:=NONE}"
+        : "${DOLT_GC_SCHEDULER=NONE}"
         export DOLT_GC_SCHEDULER
 
         # Start dolt sql-server with config file. Close the startup lock fd in
