@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	goruntime "runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -337,6 +338,12 @@ type supervisorServiceData struct {
 	LaunchdLabel  string
 	SafeName      string
 	Path          string
+	ExtraEnv      []supervisorServiceEnvVar
+}
+
+type supervisorServiceEnvVar struct {
+	Name  string
+	Value string
 }
 
 func buildSupervisorServiceData() (*supervisorServiceData, error) {
@@ -358,6 +365,7 @@ func buildSupervisorServiceData() (*supervisorServiceData, error) {
 		LaunchdLabel:  supervisorLaunchdLabel(),
 		SafeName:      sanitizeServiceName(filepath.Base(home)),
 		Path:          searchpath.ExpandPath(homeDir, goruntime.GOOS, os.Getenv("PATH")),
+		ExtraEnv:      supervisorServiceExtraEnv(),
 	}, nil
 }
 
@@ -366,6 +374,103 @@ func sanitizeServiceName(name string) string {
 	re := regexp.MustCompile(`[^a-z0-9]+`)
 	name = re.ReplaceAllString(name, "-")
 	return strings.Trim(name, "-")
+}
+
+var supervisorServiceEnvNameRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// Keep persistent service-file env narrow. Provider credentials and user
+// context need to survive launchd/systemd startup; arbitrary shell state can
+// be opted in with GC_SUPERVISOR_ENV.
+var supervisorServiceEnvKeys = map[string]bool{
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": true,
+	"CLAUDE_CODE_EFFORT_LEVEL":                 true,
+	"CLAUDE_CODE_OAUTH_TOKEN":                  true,
+	"CLAUDE_CODE_SUBAGENT_MODEL":               true,
+	"CLAUDE_CONFIG_DIR":                        true,
+	"HOME":                                     true,
+	"LANG":                                     true,
+	"LC_ALL":                                   true,
+	"LC_CTYPE":                                 true,
+	"LOGNAME":                                  true,
+	"SHELL":                                    true,
+	"USER":                                     true,
+	"XDG_CONFIG_HOME":                          true,
+	"XDG_STATE_HOME":                           true,
+}
+
+var providerCredentialEnvPrefixes = []string{
+	"ANTHROPIC_",
+	"GEMINI_",
+	"GOOGLE_",
+	"OPENAI_",
+}
+
+var supervisorServiceFixedEnvKeys = map[string]bool{
+	"GC_HOME":         true,
+	"PATH":            true,
+	"XDG_RUNTIME_DIR": true,
+}
+
+func supervisorServiceExtraEnv() []supervisorServiceEnvVar {
+	env := make(map[string]string)
+	for _, entry := range os.Environ() {
+		key, val, ok := strings.Cut(entry, "=")
+		if !ok || val == "" || !shouldPersistSupervisorEnv(key) {
+			continue
+		}
+		env[key] = val
+	}
+	for _, key := range supervisorServiceExplicitEnvKeys(os.Getenv("GC_SUPERVISOR_ENV")) {
+		if val := os.Getenv(key); val != "" {
+			env[key] = val
+		}
+	}
+
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]supervisorServiceEnvVar, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, supervisorServiceEnvVar{Name: key, Value: env[key]})
+	}
+	return out
+}
+
+func shouldPersistSupervisorEnv(key string) bool {
+	if !supervisorServiceEnvNameRE.MatchString(key) || supervisorServiceFixedEnvKeys[key] {
+		return false
+	}
+	if supervisorServiceEnvKeys[key] {
+		return true
+	}
+	return isProviderCredentialEnv(key)
+}
+
+func isProviderCredentialEnv(key string) bool {
+	for _, prefix := range providerCredentialEnvPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func supervisorServiceExplicitEnvKeys(raw string) []string {
+	fields := strings.Fields(strings.NewReplacer(",", " ", ";", " ").Replace(raw))
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		key := strings.TrimSpace(field)
+		if key == "" || seen[key] || !supervisorServiceEnvNameRE.MatchString(key) || supervisorServiceFixedEnvKeys[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 const (
@@ -436,6 +541,10 @@ const supervisorLaunchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
         {{end}}
         <key>PATH</key>
         <string>{{xmlesc .Path}}</string>
+        {{range .ExtraEnv}}
+        <key>{{xmlesc .Name}}</key>
+        <string>{{xmlesc .Value}}</string>
+        {{end}}
     </dict>
 </dict>
 </plist>
@@ -454,6 +563,8 @@ StandardError=append:{{.LogPath}}
 Environment=GC_HOME="{{.GCHome}}"
 {{if .XDGRuntimeDir}}Environment=XDG_RUNTIME_DIR="{{.XDGRuntimeDir}}"
 {{end}}Environment=PATH="{{.Path}}"
+{{range .ExtraEnv}}Environment={{systemdenv .Name .Value}}
+{{end}}
 
 [Install]
 WantedBy=default.target
@@ -464,8 +575,12 @@ func xmlEscape(s string) string {
 	return r.Replace(s)
 }
 
+func systemdEnv(name, value string) string {
+	return name + "=" + strconv.Quote(value)
+}
+
 func renderSupervisorTemplate(tmplStr string, data *supervisorServiceData) (string, error) {
-	funcMap := template.FuncMap{"xmlesc": xmlEscape}
+	funcMap := template.FuncMap{"xmlesc": xmlEscape, "systemdenv": systemdEnv}
 	tmpl, err := template.New("service").Funcs(funcMap).Parse(tmplStr)
 	if err != nil {
 		return "", err

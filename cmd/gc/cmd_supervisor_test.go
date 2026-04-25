@@ -203,6 +203,10 @@ func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 		XDGRuntimeDir: "/tmp/gc-run",
 		LaunchdLabel:  defaultSupervisorLaunchdLabel,
 		Path:          "/usr/local/bin:/usr/bin:/bin",
+		ExtraEnv: []supervisorServiceEnvVar{
+			{Name: "ANTHROPIC_API_KEY", Value: `sk-&<"'>`},
+			{Name: "OPENAI_API_KEY", Value: "sk-openai-123"},
+		},
 	}
 
 	content, err := renderSupervisorTemplate(supervisorLaunchdTemplate, data)
@@ -220,6 +224,10 @@ func TestRenderSupervisorLaunchdTemplate(t *testing.T) {
 		"XDG_RUNTIME_DIR",
 		"/tmp/gc-run",
 		"<key>PATH</key>",
+		"<key>ANTHROPIC_API_KEY</key>",
+		"<string>sk-&amp;&lt;&quot;&apos;&gt;</string>",
+		"<key>OPENAI_API_KEY</key>",
+		"<string>sk-openai-123</string>",
 	} {
 		if !strings.Contains(content, check) {
 			t.Fatalf("launchd template missing %q", check)
@@ -235,6 +243,10 @@ func TestRenderSupervisorSystemdTemplate(t *testing.T) {
 		XDGRuntimeDir: "/tmp/gc-run",
 		LaunchdLabel:  defaultSupervisorLaunchdLabel,
 		Path:          "/usr/local/bin:/usr/bin:/bin",
+		ExtraEnv: []supervisorServiceEnvVar{
+			{Name: "ANTHROPIC_API_KEY", Value: `sk-"ant"\value`},
+			{Name: "OPENAI_API_KEY", Value: "sk-openai-123"},
+		},
 	}
 
 	content, err := renderSupervisorTemplate(supervisorSystemdTemplate, data)
@@ -249,11 +261,64 @@ func TestRenderSupervisorSystemdTemplate(t *testing.T) {
 		`Environment=GC_HOME="/home/user/.gc"`,
 		`Environment=XDG_RUNTIME_DIR="/tmp/gc-run"`,
 		`Environment=PATH="/usr/local/bin:/usr/bin:/bin"`,
+		`Environment=ANTHROPIC_API_KEY="sk-\"ant\"\\value"`,
+		`Environment=OPENAI_API_KEY="sk-openai-123"`,
 	} {
 		if !strings.Contains(content, check) {
 			t.Fatalf("systemd template missing %q", check)
 		}
 	}
+}
+
+func TestBuildSupervisorServiceDataIncludesProviderEnv(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
+	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
+	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-123")
+	t.Setenv("ANTHROPIC_BASE_URL", "https://anthropic.example.test")
+	t.Setenv("OPENAI_API_KEY", "sk-openai-123")
+	t.Setenv("GEMINI_API_KEY", "gemini-123")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "gc-project")
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(homeDir, ".claude"))
+	t.Setenv("GC_SUPERVISOR_ENV", "CUSTOM_PROVIDER_TOKEN,IGNORED_EMPTY")
+	t.Setenv("CUSTOM_PROVIDER_TOKEN", "custom-token")
+	t.Setenv("IGNORED_EMPTY", "")
+	t.Setenv("UNRELATED_SECRET", "do-not-persist")
+
+	data, err := buildSupervisorServiceData()
+	if err != nil {
+		t.Fatalf("buildSupervisorServiceData: %v", err)
+	}
+
+	got := supervisorServiceEnvMap(data.ExtraEnv)
+	for key, want := range map[string]string{
+		"ANTHROPIC_API_KEY":     "sk-ant-123",
+		"ANTHROPIC_BASE_URL":    "https://anthropic.example.test",
+		"OPENAI_API_KEY":        "sk-openai-123",
+		"GEMINI_API_KEY":        "gemini-123",
+		"GOOGLE_CLOUD_PROJECT":  "gc-project",
+		"CLAUDE_CONFIG_DIR":     filepath.Join(homeDir, ".claude"),
+		"CUSTOM_PROVIDER_TOKEN": "custom-token",
+	} {
+		if got[key] != want {
+			t.Fatalf("ExtraEnv[%s] = %q, want %q (all env: %#v)", key, got[key], want, got)
+		}
+	}
+	for _, key := range []string{"GC_HOME", "PATH", "XDG_RUNTIME_DIR", "IGNORED_EMPTY", "UNRELATED_SECRET"} {
+		if _, ok := got[key]; ok {
+			t.Fatalf("ExtraEnv should not include %s: %#v", key, got)
+		}
+	}
+}
+
+func supervisorServiceEnvMap(vars []supervisorServiceEnvVar) map[string]string {
+	m := make(map[string]string, len(vars))
+	for _, item := range vars {
+		m[item.Name] = item.Value
+	}
+	return m
 }
 
 func TestBuildSupervisorServiceDataExpandsUserManagedPath(t *testing.T) {
