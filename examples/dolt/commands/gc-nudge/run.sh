@@ -1,13 +1,14 @@
 #!/bin/sh
 # gc dolt gc-nudge — periodic CALL DOLT_GC() to bound the Dolt commit graph.
 #
-# Why this exists: empirical evidence (beads perf harness, 2026-04) shows
-# Dolt's auto-GC does not fire under the beads-CLI fork-per-op workload even
-# with `auto_gc_behavior.enable: true`. Unbounded commit-graph growth causes
-# both disk bloat (~120 GB after a few days) and tail-latency degradation
-# (p99 at 143 MB of history → 16.9s, extrapolates to minutes at GB scale).
-# Manual CALL DOLT_GC() reclaims ~43% in seconds, so a periodic nudge is
-# both necessary and cheap.
+# Why this exists: Gas City's managed-Dolt launch path now forces
+# `DOLT_GC_SCHEDULER=NONE` to work around
+# https://github.com/dolthub/dolt/issues/10944, so threshold-triggered
+# auto-GC can fire again on multi-core hosts. We still keep an hourly
+# nudge because the bd workload can accumulate history quickly, and an
+# unconditional `CALL DOLT_GC()` remains a cheap belt-and-suspenders
+# backstop for reclaiming orphan chunks before they turn into disk bloat
+# and tail-latency spikes.
 #
 # Policy: fire CALL DOLT_GC() unconditionally on every cooldown tick
 # (default 1h). The GC is idempotent and near-free when there's nothing
