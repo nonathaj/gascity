@@ -323,7 +323,7 @@ func TestResolvedWorkerRuntimeTransportUsesResumeMetadataForLegacyACPWithSameCom
 		Command: "/bin/echo",
 	}, resolved, "acp", map[string]string{
 		"resume_flag": "--resume",
-	}, false)
+	})
 	if got != "acp" {
 		t.Fatalf("resolvedWorkerRuntimeTransport() = %q, want acp", got)
 	}
@@ -400,7 +400,7 @@ args = ["{{.AgentName}}"]
 		Provider: "custom-acp",
 		WorkDir:  cityDir,
 	}
-	resolved, _, _ := resolveWorkerRuntimeProviderWithConfig(cfg, info, "provider")
+	resolved, _ := resolveWorkerRuntimeProviderWithConfig(cfg, info, "provider")
 	mcpServers, err := resolvedRuntimeMCPServersWithConfig(
 		cityDir,
 		cfg,

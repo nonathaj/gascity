@@ -434,7 +434,9 @@ ProviderPatch modifies an existing provider identified by Name.
 | `name` | string | **yes** |  | Name is the targeting key (required). Must match an existing provider's name. |
 | `base` | string |  |  | Base overrides the provider's inheritance parent (presence-aware). Pointer to a pointer so the patch can distinguish "no change" (double-nil) from "clear to inherit default" (single-nil value in outer pointer) from "set to explicit empty opt-out" (value "" in inner pointer) from "set to &lt;name&gt;". Callers use:   nil          = patch does not touch Base   &(*string)(nil) = patch clears Base to absent   &(&"")       = patch sets Base = "" (explicit opt-out)   &(&"builtin:codex") = patch sets Base to that value |
 | `command` | string |  |  | Command overrides the provider command. |
+| `acp_command` | string |  |  | ACPCommand overrides the provider command for ACP transport sessions. |
 | `args` | []string |  |  | Args overrides the provider args. |
+| `acp_args` | []string |  |  | ACPArgs overrides the provider args for ACP transport sessions. |
 | `args_append` | []string |  |  | ArgsAppend overrides the provider args_append list. |
 | `options_schema_merge` | string |  |  | OptionsSchemaMerge overrides the options_schema merge mode. |
 | `prompt_mode` | string |  |  | PromptMode overrides prompt delivery mode. Enum: `arg`, `flag`, `none` |

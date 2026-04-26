@@ -39,7 +39,7 @@ func TestResolveWorkerSessionRuntimePreservesStoredResolvedCommandAndBackfillsCu
 		ResumeCommand: "persisted resume {{.SessionKey}}",
 	}
 
-	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info)
 	if err != nil {
 		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestResolveWorkerSessionRuntimeUsesResolvedCommandWhenPersistedCommandIsSta
 		ResumeCommand: "persisted resume {{.SessionKey}}",
 	}
 
-	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info)
 	if err != nil {
 		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
 	}
@@ -169,7 +169,7 @@ args = ["--stdio"]
 		WorkDir:   t.TempDir(),
 	}
 
-	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info)
 	if err != nil {
 		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
 	}
@@ -226,7 +226,7 @@ args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
 		WorkDir:   workDir,
 	}
 
-	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info, "")
+	runtimeCfg, err := srv.resolveWorkerSessionRuntime(info)
 	if err != nil {
 		t.Fatalf("resolveWorkerSessionRuntime: %v", err)
 	}
@@ -508,6 +508,114 @@ func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverride
 	}
 	if got, want := runtimeCfg.Command, "/bin/echo --stored"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
+	}
+}
+
+func TestResolveWorkerSessionRuntimeUsesProviderACPDefaultWithoutTemplateSessionOverride(t *testing.T) {
+	supportsACP := true
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
+		Command:     "/bin/echo",
+		PathCheck:   "true",
+		SupportsACP: &supportsACP,
+		ACPCommand:  "/bin/echo",
+		ACPArgs:     []string{"acp"},
+	}
+
+	srv := New(fs)
+	runtimeCfg, err := srv.resolveWorkerSessionRuntimeWithMetadata(session.Info{
+		Template: "myrig/worker",
+		WorkDir:  t.TempDir(),
+	}, "", nil)
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntimeWithMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
+	}
+	if got, want := runtimeCfg.Command, "/bin/echo acp"; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+}
+
+func TestResolveWorkerSessionRuntimeFallsBackToPersistedRuntimeOnIncompleteResolvedConfig(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
+		ReadyPromptPrefix: "resolved-ready>",
+		ReadyDelayMs:      321,
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		Template:      "myrig/worker",
+		Command:       "persisted-worker --dangerously-skip-permissions",
+		Provider:      "persisted-provider",
+		WorkDir:       "/tmp/persisted-workdir",
+		ResumeFlag:    "--resume-persisted",
+		ResumeStyle:   "subcommand",
+		ResumeCommand: "persisted resume {{.SessionKey}}",
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntimeWithMetadata(info, "", nil)
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntimeWithMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
+	}
+	if got, want := runtimeCfg.Command, info.Command; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Provider, info.Provider; got != want {
+		t.Fatalf("Provider = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.WorkDir, info.WorkDir; got != want {
+		t.Fatalf("WorkDir = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeFlag, info.ResumeFlag; got != want {
+		t.Fatalf("Resume.ResumeFlag = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeStyle, info.ResumeStyle; got != want {
+		t.Fatalf("Resume.ResumeStyle = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Resume.ResumeCommand, info.ResumeCommand; got != want {
+		t.Fatalf("Resume.ResumeCommand = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.WorkDir, info.WorkDir; got != want {
+		t.Fatalf("Hints.WorkDir = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.ReadyPromptPrefix, "resolved-ready>"; got != want {
+		t.Fatalf("Hints.ReadyPromptPrefix = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Hints.ReadyDelayMs, 321; got != want {
+		t.Fatalf("Hints.ReadyDelayMs = %d, want %d", got, want)
+	}
+}
+
+func TestResolveWorkerSessionRuntimeFallsBackToPersistedProviderWhenCommandMissing(t *testing.T) {
+	fs := newSessionFakeState(t)
+	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
+		ReadyPromptPrefix: "resolved-ready>",
+	}
+
+	srv := New(fs)
+	info := session.Info{
+		Template: "myrig/worker",
+		Provider: "persisted-provider",
+	}
+
+	runtimeCfg, err := srv.resolveWorkerSessionRuntimeWithMetadata(info, "", nil)
+	if err != nil {
+		t.Fatalf("resolveWorkerSessionRuntimeWithMetadata: %v", err)
+	}
+	if runtimeCfg == nil {
+		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
+	}
+	if got, want := runtimeCfg.Command, info.Provider; got != want {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if got, want := runtimeCfg.Provider, info.Provider; got != want {
+		t.Fatalf("Provider = %q, want %q", got, want)
 	}
 }
 

@@ -1800,6 +1800,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v0/city/{cityName}/unregister": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post v0 city by city name unregister */
+        post: operations["post-v0-city-by-city-name-unregister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v0/city/{cityName}/workflow/{workflow_id}": {
         parameters: {
             query?: never;
@@ -1936,6 +1953,7 @@ export interface components {
             turns: components["schemas"]["OutputTurn"][] | null;
         };
         AgentPatch: {
+            AppendFragments: string[] | null;
             Attach: boolean | null;
             DefaultSlingFormula: string | null;
             DependsOn: string[] | null;
@@ -2097,6 +2115,12 @@ export interface components {
             description?: string;
             /** @description Bead labels. */
             labels?: string[] | null;
+            /** @description Metadata key-value pairs to set at create time. */
+            metadata?: {
+                [key: string]: string;
+            };
+            /** @description Parent bead ID. */
+            parent?: string;
             /**
              * Format: int64
              * @description Bead priority.
@@ -2131,6 +2155,8 @@ export interface components {
             metadata?: {
                 [key: string]: string;
             };
+            /** @description Parent bead ID. Use null or an empty string to clear. */
+            parent?: string | null;
             /**
              * Format: int64
              * @description Bead priority.
@@ -2167,9 +2193,11 @@ export interface components {
             provider: string;
         };
         CityCreateResponse: {
-            /** @description True on success. */
+            /** @description Resolved city name as persisted in city.toml. Use this to filter the event stream for completion. */
+            name: string;
+            /** @description True when scaffolding + registration succeeded. Does not imply the city is ready yet; watch /v0/events/stream for city.ready. */
             ok: boolean;
-            /** @description Resolved absolute path of the created city. */
+            /** @description Resolved absolute path of the created city directory. */
             path: string;
         };
         CityGetResponse: {
@@ -2194,9 +2222,23 @@ export interface components {
             running: boolean;
             status?: string;
         };
+        CityLifecyclePayload: {
+            error?: string;
+            name: string;
+            path: string;
+            phases_completed?: string[] | null;
+        };
         CityPatchInputBody: {
             /** @description Whether the city is suspended. */
             suspended?: boolean;
+        };
+        CityUnregisterResponse: {
+            /** @description Resolved registry name. Filter the event stream by this to observe completion. */
+            name: string;
+            /** @description True when the registry entry was removed and the supervisor was signaled. Does not imply the city's controller has stopped yet; watch /v0/events/stream for city.unregistered. */
+            ok: boolean;
+            /** @description Resolved absolute city directory. The directory itself is not modified; unregister only affects the supervisor's registry. */
+            path: string;
         };
         ConfigAgentResponse: {
             dir?: string;
@@ -2421,6 +2463,8 @@ export interface components {
              * @description A URI reference to human-readable documentation for the error.
              * @default about:blank
              * @example https://example.com/errors/example
+             * @example urn:gascity:error:sling-missing-bead
+             * @example urn:gascity:error:sling-cross-rig
              */
             type: string;
         };
@@ -2441,7 +2485,7 @@ export interface components {
             /** @description Event type. */
             type: string;
         };
-        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
+        EventPayload: components["schemas"]["AdapterEventPayload"] | components["schemas"]["BeadEventPayload"] | components["schemas"]["BoundEventPayload"] | components["schemas"]["CityLifecyclePayload"] | components["schemas"]["GroupCreatedEventPayload"] | components["schemas"]["InboundEventPayload"] | components["schemas"]["MailEventPayload"] | components["schemas"]["NoPayload"] | components["schemas"]["OutboundEventPayload"] | components["schemas"]["UnboundEventPayload"] | components["schemas"]["WorkerOperationEventPayload"];
         EventStreamEnvelope: {
             actor: string;
             message?: string;
@@ -3715,6 +3759,8 @@ export interface components {
             attached_bead_id?: string;
             /** @description Bead ID to sling. */
             bead?: string;
+            /** @description Bypass cross-rig guards; for direct bead routes, also bypass missing-bead validation. Formula-backed graph routes may replace existing live workflow roots but still require the source bead to exist. */
+            force?: boolean;
             /** @description Formula name for workflow launch. */
             formula?: string;
             /** @description Rig name. */
@@ -3939,6 +3985,1521 @@ export interface components {
          * @enum {string}
          */
         TranscriptProvenance: "live" | "hydrated";
+        /**
+         * Typed city event stream envelope
+         * @description Discriminated union of city event stream envelopes. Each variant constrains the envelope type and payload schema together.
+         */
+        TypedEventStreamEnvelope: components["schemas"]["TypedEventStreamEnvelopeBeadClosed"] | components["schemas"]["TypedEventStreamEnvelopeBeadCreated"] | components["schemas"]["TypedEventStreamEnvelopeBeadUpdated"] | components["schemas"]["TypedEventStreamEnvelopeCityCreated"] | components["schemas"]["TypedEventStreamEnvelopeCityInitFailed"] | components["schemas"]["TypedEventStreamEnvelopeCityReady"] | components["schemas"]["TypedEventStreamEnvelopeCityResumed"] | components["schemas"]["TypedEventStreamEnvelopeCitySuspended"] | components["schemas"]["TypedEventStreamEnvelopeCityUnregisterFailed"] | components["schemas"]["TypedEventStreamEnvelopeCityUnregisterRequested"] | components["schemas"]["TypedEventStreamEnvelopeCityUnregistered"] | components["schemas"]["TypedEventStreamEnvelopeControllerStarted"] | components["schemas"]["TypedEventStreamEnvelopeControllerStopped"] | components["schemas"]["TypedEventStreamEnvelopeConvoyClosed"] | components["schemas"]["TypedEventStreamEnvelopeConvoyCreated"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgAdapterAdded"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgAdapterRemoved"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgBound"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgGroupCreated"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgInbound"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgOutbound"] | components["schemas"]["TypedEventStreamEnvelopeExtmsgUnbound"] | components["schemas"]["TypedEventStreamEnvelopeMailArchived"] | components["schemas"]["TypedEventStreamEnvelopeMailDeleted"] | components["schemas"]["TypedEventStreamEnvelopeMailMarkedRead"] | components["schemas"]["TypedEventStreamEnvelopeMailMarkedUnread"] | components["schemas"]["TypedEventStreamEnvelopeMailRead"] | components["schemas"]["TypedEventStreamEnvelopeMailReplied"] | components["schemas"]["TypedEventStreamEnvelopeMailSent"] | components["schemas"]["TypedEventStreamEnvelopeOrderCompleted"] | components["schemas"]["TypedEventStreamEnvelopeOrderFailed"] | components["schemas"]["TypedEventStreamEnvelopeOrderFired"] | components["schemas"]["TypedEventStreamEnvelopeProviderSwapped"] | components["schemas"]["TypedEventStreamEnvelopeSessionCrashed"] | components["schemas"]["TypedEventStreamEnvelopeSessionDraining"] | components["schemas"]["TypedEventStreamEnvelopeSessionIdleKilled"] | components["schemas"]["TypedEventStreamEnvelopeSessionQuarantined"] | components["schemas"]["TypedEventStreamEnvelopeSessionStopped"] | components["schemas"]["TypedEventStreamEnvelopeSessionSuspended"] | components["schemas"]["TypedEventStreamEnvelopeSessionUndrained"] | components["schemas"]["TypedEventStreamEnvelopeSessionUpdated"] | components["schemas"]["TypedEventStreamEnvelopeSessionWoke"] | components["schemas"]["TypedEventStreamEnvelopeWorkerOperation"];
+        /** TypedEventStreamEnvelope bead.closed */
+        TypedEventStreamEnvelopeBeadClosed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.closed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope bead.created */
+        TypedEventStreamEnvelopeBeadCreated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope bead.updated */
+        TypedEventStreamEnvelopeBeadUpdated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.updated";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.created */
+        TypedEventStreamEnvelopeCityCreated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.init_failed */
+        TypedEventStreamEnvelopeCityInitFailed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.init_failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.ready */
+        TypedEventStreamEnvelopeCityReady: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.ready";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.resumed */
+        TypedEventStreamEnvelopeCityResumed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.resumed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.suspended */
+        TypedEventStreamEnvelopeCitySuspended: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.suspended";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.unregister_failed */
+        TypedEventStreamEnvelopeCityUnregisterFailed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregister_failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.unregister_requested */
+        TypedEventStreamEnvelopeCityUnregisterRequested: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregister_requested";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope city.unregistered */
+        TypedEventStreamEnvelopeCityUnregistered: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregistered";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope controller.started */
+        TypedEventStreamEnvelopeControllerStarted: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller.started";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope controller.stopped */
+        TypedEventStreamEnvelopeControllerStopped: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller.stopped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope convoy.closed */
+        TypedEventStreamEnvelopeConvoyClosed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convoy.closed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope convoy.created */
+        TypedEventStreamEnvelopeConvoyCreated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convoy.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.adapter_added */
+        TypedEventStreamEnvelopeExtmsgAdapterAdded: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["AdapterEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.adapter_added";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.adapter_removed */
+        TypedEventStreamEnvelopeExtmsgAdapterRemoved: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["AdapterEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.adapter_removed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.bound */
+        TypedEventStreamEnvelopeExtmsgBound: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["BoundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.bound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.group_created */
+        TypedEventStreamEnvelopeExtmsgGroupCreated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["GroupCreatedEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.group_created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.inbound */
+        TypedEventStreamEnvelopeExtmsgInbound: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["InboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.inbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.outbound */
+        TypedEventStreamEnvelopeExtmsgOutbound: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["OutboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.outbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope extmsg.unbound */
+        TypedEventStreamEnvelopeExtmsgUnbound: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["UnboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.unbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.archived */
+        TypedEventStreamEnvelopeMailArchived: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.archived";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.deleted */
+        TypedEventStreamEnvelopeMailDeleted: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.deleted";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.marked_read */
+        TypedEventStreamEnvelopeMailMarkedRead: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.marked_read";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.marked_unread */
+        TypedEventStreamEnvelopeMailMarkedUnread: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.marked_unread";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.read */
+        TypedEventStreamEnvelopeMailRead: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.read";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.replied */
+        TypedEventStreamEnvelopeMailReplied: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.replied";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope mail.sent */
+        TypedEventStreamEnvelopeMailSent: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.sent";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope order.completed */
+        TypedEventStreamEnvelopeOrderCompleted: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.completed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope order.failed */
+        TypedEventStreamEnvelopeOrderFailed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope order.fired */
+        TypedEventStreamEnvelopeOrderFired: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.fired";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope provider.swapped */
+        TypedEventStreamEnvelopeProviderSwapped: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "provider.swapped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.crashed */
+        TypedEventStreamEnvelopeSessionCrashed: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.crashed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.draining */
+        TypedEventStreamEnvelopeSessionDraining: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.draining";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.idle_killed */
+        TypedEventStreamEnvelopeSessionIdleKilled: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.idle_killed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.quarantined */
+        TypedEventStreamEnvelopeSessionQuarantined: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.quarantined";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.stopped */
+        TypedEventStreamEnvelopeSessionStopped: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.stopped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.suspended */
+        TypedEventStreamEnvelopeSessionSuspended: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.suspended";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.undrained */
+        TypedEventStreamEnvelopeSessionUndrained: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.undrained";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.updated */
+        TypedEventStreamEnvelopeSessionUpdated: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.updated";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope session.woke */
+        TypedEventStreamEnvelopeSessionWoke: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.woke";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedEventStreamEnvelope worker.operation */
+        TypedEventStreamEnvelopeWorkerOperation: {
+            actor: string;
+            message?: string;
+            payload: components["schemas"]["WorkerOperationEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "worker.operation";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /**
+         * Typed supervisor event stream envelope
+         * @description Discriminated union of supervisor event stream envelopes. Each variant constrains the envelope type and payload schema together and includes the source city.
+         */
+        TypedTaggedEventStreamEnvelope: components["schemas"]["TypedTaggedEventStreamEnvelopeBeadClosed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeBeadCreated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeBeadUpdated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityCreated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityInitFailed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityReady"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityResumed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCitySuspended"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityUnregisterFailed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityUnregisterRequested"] | components["schemas"]["TypedTaggedEventStreamEnvelopeCityUnregistered"] | components["schemas"]["TypedTaggedEventStreamEnvelopeControllerStarted"] | components["schemas"]["TypedTaggedEventStreamEnvelopeControllerStopped"] | components["schemas"]["TypedTaggedEventStreamEnvelopeConvoyClosed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeConvoyCreated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgAdapterAdded"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgAdapterRemoved"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgBound"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgGroupCreated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgInbound"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgOutbound"] | components["schemas"]["TypedTaggedEventStreamEnvelopeExtmsgUnbound"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailArchived"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailDeleted"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailMarkedRead"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailMarkedUnread"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailRead"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailReplied"] | components["schemas"]["TypedTaggedEventStreamEnvelopeMailSent"] | components["schemas"]["TypedTaggedEventStreamEnvelopeOrderCompleted"] | components["schemas"]["TypedTaggedEventStreamEnvelopeOrderFailed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeOrderFired"] | components["schemas"]["TypedTaggedEventStreamEnvelopeProviderSwapped"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionCrashed"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionDraining"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionIdleKilled"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionQuarantined"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionStopped"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionSuspended"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionUndrained"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionUpdated"] | components["schemas"]["TypedTaggedEventStreamEnvelopeSessionWoke"] | components["schemas"]["TypedTaggedEventStreamEnvelopeWorkerOperation"];
+        /** TypedTaggedEventStreamEnvelope bead.closed */
+        TypedTaggedEventStreamEnvelopeBeadClosed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.closed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope bead.created */
+        TypedTaggedEventStreamEnvelopeBeadCreated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope bead.updated */
+        TypedTaggedEventStreamEnvelopeBeadUpdated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["BeadEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "bead.updated";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.created */
+        TypedTaggedEventStreamEnvelopeCityCreated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.init_failed */
+        TypedTaggedEventStreamEnvelopeCityInitFailed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.init_failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.ready */
+        TypedTaggedEventStreamEnvelopeCityReady: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.ready";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.resumed */
+        TypedTaggedEventStreamEnvelopeCityResumed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.resumed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.suspended */
+        TypedTaggedEventStreamEnvelopeCitySuspended: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.suspended";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.unregister_failed */
+        TypedTaggedEventStreamEnvelopeCityUnregisterFailed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregister_failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.unregister_requested */
+        TypedTaggedEventStreamEnvelopeCityUnregisterRequested: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregister_requested";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope city.unregistered */
+        TypedTaggedEventStreamEnvelopeCityUnregistered: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["CityLifecyclePayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "city.unregistered";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope controller.started */
+        TypedTaggedEventStreamEnvelopeControllerStarted: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller.started";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope controller.stopped */
+        TypedTaggedEventStreamEnvelopeControllerStopped: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "controller.stopped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope convoy.closed */
+        TypedTaggedEventStreamEnvelopeConvoyClosed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convoy.closed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope convoy.created */
+        TypedTaggedEventStreamEnvelopeConvoyCreated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convoy.created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.adapter_added */
+        TypedTaggedEventStreamEnvelopeExtmsgAdapterAdded: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["AdapterEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.adapter_added";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.adapter_removed */
+        TypedTaggedEventStreamEnvelopeExtmsgAdapterRemoved: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["AdapterEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.adapter_removed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.bound */
+        TypedTaggedEventStreamEnvelopeExtmsgBound: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["BoundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.bound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.group_created */
+        TypedTaggedEventStreamEnvelopeExtmsgGroupCreated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["GroupCreatedEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.group_created";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.inbound */
+        TypedTaggedEventStreamEnvelopeExtmsgInbound: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["InboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.inbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.outbound */
+        TypedTaggedEventStreamEnvelopeExtmsgOutbound: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["OutboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.outbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope extmsg.unbound */
+        TypedTaggedEventStreamEnvelopeExtmsgUnbound: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["UnboundEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "extmsg.unbound";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.archived */
+        TypedTaggedEventStreamEnvelopeMailArchived: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.archived";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.deleted */
+        TypedTaggedEventStreamEnvelopeMailDeleted: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.deleted";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.marked_read */
+        TypedTaggedEventStreamEnvelopeMailMarkedRead: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.marked_read";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.marked_unread */
+        TypedTaggedEventStreamEnvelopeMailMarkedUnread: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.marked_unread";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.read */
+        TypedTaggedEventStreamEnvelopeMailRead: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.read";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.replied */
+        TypedTaggedEventStreamEnvelopeMailReplied: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.replied";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope mail.sent */
+        TypedTaggedEventStreamEnvelopeMailSent: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["MailEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mail.sent";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope order.completed */
+        TypedTaggedEventStreamEnvelopeOrderCompleted: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.completed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope order.failed */
+        TypedTaggedEventStreamEnvelopeOrderFailed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.failed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope order.fired */
+        TypedTaggedEventStreamEnvelopeOrderFired: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "order.fired";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope provider.swapped */
+        TypedTaggedEventStreamEnvelopeProviderSwapped: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "provider.swapped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.crashed */
+        TypedTaggedEventStreamEnvelopeSessionCrashed: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.crashed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.draining */
+        TypedTaggedEventStreamEnvelopeSessionDraining: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.draining";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.idle_killed */
+        TypedTaggedEventStreamEnvelopeSessionIdleKilled: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.idle_killed";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.quarantined */
+        TypedTaggedEventStreamEnvelopeSessionQuarantined: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.quarantined";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.stopped */
+        TypedTaggedEventStreamEnvelopeSessionStopped: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.stopped";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.suspended */
+        TypedTaggedEventStreamEnvelopeSessionSuspended: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.suspended";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.undrained */
+        TypedTaggedEventStreamEnvelopeSessionUndrained: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.undrained";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.updated */
+        TypedTaggedEventStreamEnvelopeSessionUpdated: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.updated";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope session.woke */
+        TypedTaggedEventStreamEnvelopeSessionWoke: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["NoPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "session.woke";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
+        /** TypedTaggedEventStreamEnvelope worker.operation */
+        TypedTaggedEventStreamEnvelopeWorkerOperation: {
+            actor: string;
+            city: string;
+            message?: string;
+            payload: components["schemas"]["WorkerOperationEventPayload"];
+            /** Format: int64 */
+            seq: number;
+            subject?: string;
+            /** Format: date-time */
+            ts: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "worker.operation";
+            workflow?: components["schemas"]["WorkflowEventProjection"];
+        };
         UnboundEventPayload: {
             /** Format: int64 */
             count: number;
@@ -4084,7 +5645,10 @@ export interface components {
     responses: never;
     parameters: never;
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Opaque per-response identifier assigned by the server for log correlation. Every response carries this header. */
+        "X-GC-Request-Id": string;
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -4101,6 +5665,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4110,6 +5675,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4130,6 +5696,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4139,6 +5706,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4150,7 +5718,10 @@ export interface operations {
     "post-v0-city": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -4160,9 +5731,10 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Accepted */
+            202: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4172,6 +5744,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4195,6 +5768,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4204,6 +5778,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4215,7 +5790,10 @@ export interface operations {
     "patch-v0-city-by-city-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4231,6 +5809,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4240,6 +5819,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4266,6 +5846,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4275,6 +5856,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4286,7 +5868,10 @@ export interface operations {
     "delete-v0-city-by-city-name-agent-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4300,6 +5885,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4309,6 +5895,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4320,7 +5907,10 @@ export interface operations {
     "patch-v0-city-by-city-name-agent-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4338,6 +5928,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4347,6 +5938,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4358,7 +5950,7 @@ export interface operations {
     "get-v0-city-by-city-name-agent-by-base-output": {
         parameters: {
             query?: {
-                /** @description Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
+                /** @description Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
                 tail?: string;
                 /** @description Message UUID cursor for loading older messages. */
                 before?: string;
@@ -4377,6 +5969,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4386,6 +5979,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4411,6 +6005,9 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    /** @description Agent runtime status at the time streaming began. Emitted as "stopped" when the agent is not running (the stream then serves replayed transcript from the session log). */
+                    "GC-Agent-Status"?: string;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4442,6 +6039,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4453,7 +6051,10 @@ export interface operations {
     "post-v0-city-by-city-name-agent-by-base-by-action": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4469,6 +6070,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4478,6 +6080,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4506,6 +6109,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4515,6 +6119,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4526,7 +6131,10 @@ export interface operations {
     "delete-v0-city-by-city-name-agent-by-dir-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4542,6 +6150,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4551,6 +6160,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4562,7 +6172,10 @@ export interface operations {
     "patch-v0-city-by-city-name-agent-by-dir-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4582,6 +6195,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4591,6 +6205,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4602,7 +6217,7 @@ export interface operations {
     "get-v0-city-by-city-name-agent-by-dir-by-base-output": {
         parameters: {
             query?: {
-                /** @description Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
+                /** @description Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
                 tail?: string;
                 /** @description Message UUID cursor for loading older messages. */
                 before?: string;
@@ -4623,6 +6238,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4632,6 +6248,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4659,6 +6276,9 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    /** @description Agent runtime status at the time streaming began. Emitted as "stopped" when the agent is not running (the stream then serves replayed transcript from the session log). */
+                    "GC-Agent-Status"?: string;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4690,6 +6310,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4701,7 +6322,10 @@ export interface operations {
     "post-v0-city-by-city-name-agent-by-dir-by-base-by-action": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4719,6 +6343,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4728,6 +6353,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4765,6 +6391,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4774,6 +6401,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4785,7 +6413,10 @@ export interface operations {
     "create-agent": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4801,6 +6432,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4810,6 +6442,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4836,6 +6469,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4845,6 +6479,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4856,7 +6491,10 @@ export interface operations {
     "delete-v0-city-by-city-name-bead-by-id": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4870,6 +6508,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4879,6 +6518,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4890,7 +6530,10 @@ export interface operations {
     "patch-v0-city-by-city-name-bead-by-id": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4908,6 +6551,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4917,6 +6561,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4928,7 +6573,10 @@ export interface operations {
     "post-v0-city-by-city-name-bead-by-id-assign": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4947,6 +6595,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4958,6 +6607,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4969,7 +6619,10 @@ export interface operations {
     "post-v0-city-by-city-name-bead-by-id-close": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -4983,6 +6636,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -4992,6 +6646,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5018,6 +6673,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5027,6 +6683,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5038,7 +6695,10 @@ export interface operations {
     "post-v0-city-by-city-name-bead-by-id-reopen": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5052,6 +6712,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5061,6 +6722,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5072,7 +6734,10 @@ export interface operations {
     "post-v0-city-by-city-name-bead-by-id-update": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5090,6 +6755,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5099,6 +6765,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5142,6 +6809,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5151,6 +6819,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5162,7 +6831,9 @@ export interface operations {
     "create-bead": {
         parameters: {
             query?: never;
-            header?: {
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
                 /** @description Idempotency key for safe retries. */
                 "Idempotency-Key"?: string;
             };
@@ -5182,6 +6853,7 @@ export interface operations {
             201: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5191,6 +6863,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5217,6 +6890,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5226,6 +6900,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5255,6 +6930,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5264,6 +6940,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5288,6 +6965,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5297,6 +6975,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5321,6 +7000,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5330,6 +7010,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5353,6 +7034,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5362,6 +7044,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5388,6 +7071,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5397,6 +7081,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5408,7 +7093,10 @@ export interface operations {
     "delete-v0-city-by-city-name-convoy-by-id": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5422,6 +7110,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5431,6 +7120,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5442,7 +7132,10 @@ export interface operations {
     "post-v0-city-by-city-name-convoy-by-id-add": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5460,6 +7153,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5469,6 +7163,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5495,6 +7190,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5504,6 +7200,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5515,7 +7212,10 @@ export interface operations {
     "post-v0-city-by-city-name-convoy-by-id-close": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5529,6 +7229,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5538,6 +7239,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5549,7 +7251,10 @@ export interface operations {
     "post-v0-city-by-city-name-convoy-by-id-remove": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5567,6 +7272,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5576,6 +7282,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5609,6 +7316,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5618,6 +7326,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5629,7 +7338,10 @@ export interface operations {
     "create-convoy": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5646,6 +7358,7 @@ export interface operations {
             201: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5655,6 +7368,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5694,6 +7408,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5703,6 +7418,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5714,7 +7430,10 @@ export interface operations {
     "emit-event": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5730,6 +7449,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5739,6 +7459,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5768,11 +7489,12 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
                     "text/event-stream": ({
-                        data: components["schemas"]["EventStreamEnvelope"];
+                        data: components["schemas"]["TypedEventStreamEnvelope"];
                         /**
                          * @description The event name.
                          * @constant
@@ -5799,6 +7521,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5823,6 +7546,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5832,6 +7556,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5843,7 +7568,10 @@ export interface operations {
     "register-extmsg-adapter": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5859,6 +7587,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5868,6 +7597,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5879,7 +7609,10 @@ export interface operations {
     "delete-v0-city-by-city-name-extmsg-adapters": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5895,6 +7628,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5904,6 +7638,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5915,7 +7650,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-bind": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -5931,6 +7669,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5940,6 +7679,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5967,6 +7707,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -5976,6 +7717,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6010,6 +7752,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6019,6 +7762,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6030,7 +7774,10 @@ export interface operations {
     "ensure-extmsg-group": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6046,6 +7793,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6055,6 +7803,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6066,7 +7815,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-inbound": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6082,6 +7834,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6091,6 +7844,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6102,7 +7856,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-outbound": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6118,6 +7875,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6127,6 +7885,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6138,7 +7897,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-participants": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6154,6 +7916,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6163,6 +7926,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6174,7 +7938,10 @@ export interface operations {
     "delete-v0-city-by-city-name-extmsg-participants": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6190,6 +7957,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6199,6 +7967,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6236,6 +8005,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6245,6 +8015,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6256,7 +8027,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-transcript-ack": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6272,6 +8046,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6281,6 +8056,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6292,7 +8068,10 @@ export interface operations {
     "post-v0-city-by-city-name-extmsg-unbind": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6308,6 +8087,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6317,6 +8097,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6349,6 +8130,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6358,6 +8140,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6386,6 +8169,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6395,6 +8179,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6425,6 +8210,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6434,6 +8220,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6466,6 +8253,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6475,6 +8263,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6486,7 +8275,10 @@ export interface operations {
     "post-v0-city-by-city-name-formulas-by-name-preview": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6504,6 +8296,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6513,6 +8306,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6545,6 +8339,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6554,6 +8349,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6577,6 +8373,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6586,6 +8383,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6625,6 +8423,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6634,6 +8433,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6645,7 +8445,9 @@ export interface operations {
     "send-mail": {
         parameters: {
             query?: never;
-            header?: {
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
                 /** @description Idempotency key for safe retries. */
                 "Idempotency-Key"?: string;
             };
@@ -6665,6 +8467,7 @@ export interface operations {
             201: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6674,6 +8477,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6702,6 +8506,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6711,6 +8516,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6740,6 +8546,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6749,6 +8556,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6778,6 +8586,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6787,6 +8596,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6801,7 +8611,10 @@ export interface operations {
                 /** @description Rig hint. */
                 rig?: string;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6815,6 +8628,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6824,6 +8638,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6838,7 +8653,10 @@ export interface operations {
                 /** @description Rig hint. */
                 rig?: string;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6852,6 +8670,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6861,6 +8680,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6875,7 +8695,10 @@ export interface operations {
                 /** @description Rig hint. */
                 rig?: string;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6889,6 +8712,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6898,6 +8722,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6912,7 +8737,10 @@ export interface operations {
                 /** @description Rig hint. */
                 rig?: string;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6926,6 +8754,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6935,6 +8764,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6949,7 +8779,10 @@ export interface operations {
                 /** @description Rig hint. */
                 rig?: string;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -6968,6 +8801,7 @@ export interface operations {
             201: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -6977,6 +8811,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7005,6 +8840,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7014,6 +8850,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7039,6 +8876,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7048,6 +8886,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7059,7 +8898,10 @@ export interface operations {
     "post-v0-city-by-city-name-order-by-name-disable": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7073,6 +8915,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7082,6 +8925,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7093,7 +8937,10 @@ export interface operations {
     "post-v0-city-by-city-name-order-by-name-enable": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7107,6 +8954,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7116,6 +8964,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7139,6 +8988,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7148,6 +8998,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7171,6 +9022,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7180,6 +9032,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7210,6 +9063,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7219,6 +9073,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7249,6 +9104,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7258,6 +9114,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7281,6 +9138,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7290,6 +9148,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7316,6 +9175,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7325,6 +9185,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7336,7 +9197,10 @@ export interface operations {
     "delete-v0-city-by-city-name-patches-agent-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7350,6 +9214,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7359,6 +9224,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7387,6 +9253,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7396,6 +9263,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7407,7 +9275,10 @@ export interface operations {
     "delete-v0-city-by-city-name-patches-agent-by-dir-by-base": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7423,6 +9294,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7432,6 +9304,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7456,6 +9329,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7465,6 +9339,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7476,7 +9351,10 @@ export interface operations {
     "put-v0-city-by-city-name-patches-agents": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7492,6 +9370,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7501,6 +9380,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7527,6 +9407,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7536,6 +9417,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7547,7 +9429,10 @@ export interface operations {
     "delete-v0-city-by-city-name-patches-provider-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7561,6 +9446,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7570,6 +9456,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7594,6 +9481,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7603,6 +9491,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7614,7 +9503,10 @@ export interface operations {
     "put-v0-city-by-city-name-patches-providers": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7630,6 +9522,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7639,6 +9532,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7665,6 +9559,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7674,6 +9569,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7685,7 +9581,10 @@ export interface operations {
     "delete-v0-city-by-city-name-patches-rig-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7699,6 +9598,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7708,6 +9608,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7732,6 +9633,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7741,6 +9643,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7752,7 +9655,10 @@ export interface operations {
     "put-v0-city-by-city-name-patches-rigs": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7768,6 +9674,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7777,6 +9684,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7805,6 +9713,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7814,6 +9723,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7840,6 +9750,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7849,6 +9760,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7860,7 +9772,10 @@ export interface operations {
     "delete-v0-city-by-city-name-provider-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7874,6 +9789,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7883,6 +9799,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7894,7 +9811,10 @@ export interface operations {
     "patch-v0-city-by-city-name-provider-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7912,6 +9832,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7921,6 +9842,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7945,6 +9867,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7954,6 +9877,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7965,7 +9889,10 @@ export interface operations {
     "create-provider": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -7981,6 +9908,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -7990,6 +9918,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8014,6 +9943,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8023,6 +9953,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8051,6 +9982,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8060,6 +9992,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8089,6 +10022,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8098,6 +10032,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8109,7 +10044,10 @@ export interface operations {
     "delete-v0-city-by-city-name-rig-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8123,6 +10061,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8132,6 +10071,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8143,7 +10083,10 @@ export interface operations {
     "patch-v0-city-by-city-name-rig-by-name": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8161,6 +10104,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8170,6 +10114,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8181,7 +10126,10 @@ export interface operations {
     "post-v0-city-by-city-name-rig-by-name-by-action": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8197,6 +10145,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8206,6 +10155,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8237,6 +10187,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8246,6 +10197,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8257,7 +10209,10 @@ export interface operations {
     "create-rig": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8273,6 +10228,7 @@ export interface operations {
             /** @description Created */
             201: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8282,6 +10238,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8308,6 +10265,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8317,6 +10275,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8328,7 +10287,10 @@ export interface operations {
     "post-v0-city-by-city-name-service-by-name-restart": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8342,6 +10304,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8351,6 +10314,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8375,6 +10339,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8384,6 +10349,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8413,6 +10379,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8422,6 +10389,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8433,7 +10401,10 @@ export interface operations {
     "patch-v0-city-by-city-name-session-by-id": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8452,6 +10423,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8461,6 +10433,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8487,6 +10460,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8496,6 +10470,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8524,6 +10499,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8533,6 +10509,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8547,7 +10524,10 @@ export interface operations {
                 /** @description Permanently delete bead after closing. */
                 delete?: boolean;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8561,6 +10541,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8570,6 +10551,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8581,7 +10563,10 @@ export interface operations {
     "post-v0-city-by-city-name-session-by-id-kill": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8595,6 +10580,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8604,6 +10590,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8615,7 +10602,10 @@ export interface operations {
     "send-session-message": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8633,6 +10623,7 @@ export interface operations {
             /** @description Accepted */
             202: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8642,6 +10633,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8668,6 +10660,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8677,6 +10670,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8688,7 +10682,10 @@ export interface operations {
     "post-v0-city-by-city-name-session-by-id-rename": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8707,6 +10704,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8716,6 +10714,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8727,7 +10726,10 @@ export interface operations {
     "respond-session": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8745,6 +10747,7 @@ export interface operations {
             /** @description Accepted */
             202: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8754,6 +10757,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8765,7 +10769,10 @@ export interface operations {
     "post-v0-city-by-city-name-session-by-id-stop": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8779,6 +10786,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8788,6 +10796,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8816,6 +10825,11 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    /** @description Session state at the time streaming began (e.g. active, closed). */
+                    "GC-Session-State"?: string;
+                    /** @description Runtime status at the time streaming began. Emitted as "stopped" when the session's underlying process is not running. */
+                    "GC-Session-Status"?: string;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8880,6 +10894,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8891,7 +10906,10 @@ export interface operations {
     "submit-session": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8909,6 +10927,7 @@ export interface operations {
             /** @description Accepted */
             202: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8918,6 +10937,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8929,7 +10949,10 @@ export interface operations {
     "post-v0-city-by-city-name-session-by-id-suspend": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -8943,6 +10966,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8952,6 +10976,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8963,7 +10988,7 @@ export interface operations {
     "get-v0-city-by-city-name-session-by-id-transcript": {
         parameters: {
             query?: {
-                /** @description Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
+                /** @description Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N. */
                 tail?: string;
                 /** @description Transcript format: conversation (default) or raw. */
                 format?: string;
@@ -8985,6 +11010,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -8994,6 +11020,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9005,7 +11032,10 @@ export interface operations {
     "post-v0-city-by-city-name-session-by-id-wake": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -9019,6 +11049,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9028,6 +11059,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9063,6 +11095,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9072,6 +11105,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9083,7 +11117,10 @@ export interface operations {
     "create-session": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -9099,6 +11136,7 @@ export interface operations {
             /** @description Accepted */
             202: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9108,6 +11146,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9119,7 +11158,10 @@ export interface operations {
     "post-v0-city-by-city-name-sling": {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -9135,6 +11177,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9144,6 +11187,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9173,6 +11217,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9182,6 +11227,44 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "post-v0-city-by-city-name-unregister": {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
+            path: {
+                /** @description Supervisor-registered city name. */
+                cityName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CityUnregisterResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9213,6 +11296,7 @@ export interface operations {
             200: {
                 headers: {
                     "X-GC-Index"?: number;
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9222,6 +11306,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9240,7 +11325,10 @@ export interface operations {
                 /** @description Permanently delete beads from store. */
                 delete?: boolean;
             };
-            header?: never;
+            header: {
+                /** @description Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks. */
+                "X-GC-Request": string;
+            };
             path: {
                 /** @description City name. */
                 cityName: string;
@@ -9254,6 +11342,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9263,6 +11352,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9292,6 +11382,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9301,6 +11392,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9327,6 +11419,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9342,7 +11435,7 @@ export interface operations {
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
-                        data: components["schemas"]["TaggedEventStreamEnvelope"];
+                        data: components["schemas"]["TypedTaggedEventStreamEnvelope"];
                         /**
                          * @description The event name.
                          * @constant
@@ -9358,6 +11451,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9383,6 +11477,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9392,6 +11487,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9417,6 +11513,7 @@ export interface operations {
             /** @description OK */
             200: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -9426,6 +11523,7 @@ export interface operations {
             /** @description Error */
             default: {
                 headers: {
+                    "X-GC-Request-Id": components["headers"]["X-GC-Request-Id"];
                     [name: string]: unknown;
                 };
                 content: {

@@ -2140,7 +2140,7 @@ func TestSendBackfillsTransportForLegacyACPSession(t *testing.T) {
 		t.Fatalf("Start ACP session: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, _ string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2198,7 +2198,7 @@ func TestGetDoesNotPersistGuessedTransportForLegacySession(t *testing.T) {
 		t.Fatalf("Create legacy bead: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, _ string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2241,7 +2241,7 @@ func TestGetUsesConfiguredTransportForPendingCreateWithoutRuntimeProbe(t *testin
 		t.Fatalf("Create deferred bead: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, sp, func(template, provider string) string {
+	mgr := NewManagerWithTransportResolver(store, sp, func(template, _ string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2292,7 +2292,7 @@ func TestGetPrefersLiveTransportDetectionOverConfiguredTransportInference(t *tes
 		t.Fatalf("Start default session: %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, _ string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2345,7 +2345,7 @@ func TestGetDoesNotInferConfiguredTransportForStoppedLegacySession(t *testing.T)
 		t.Fatalf("SetMetadata(session_name): %v", err)
 	}
 
-	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, provider string) string {
+	mgr := NewManagerWithTransportResolver(store, autoSP, func(template, _ string) string {
 		if template == "helper" {
 			return "acp"
 		}
@@ -2398,7 +2398,7 @@ func TestGetDoesNotInferConfiguredTransportForStoppedLegacySessionWithPolicyFall
 		t.Fatalf("SetMetadata(session_name): %v", err)
 	}
 
-	mgr := NewManagerWithTransportPolicyResolverAndCityPath(store, autoSP, "", func(template, provider string) (string, bool) {
+	mgr := NewManagerWithTransportPolicyResolverAndCityPath(store, autoSP, "", func(template, _ string) (string, bool) {
 		if template == "helper" {
 			return "acp", true
 		}

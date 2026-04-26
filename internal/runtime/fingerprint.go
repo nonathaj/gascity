@@ -235,7 +235,7 @@ func hashMCPServers(h hash.Hash, servers []MCPServerConfig) {
 		}
 		h.Write([]byte{1}) //nolint:errcheck // sentinel between args/env
 		hashSortedMap(h, server.Env)
-		h.Write([]byte{1}) //nolint:errcheck // sentinel between env/url
+		h.Write([]byte{1})          //nolint:errcheck // sentinel between env/url
 		h.Write([]byte(server.URL)) //nolint:errcheck // hash.Write never errors
 		h.Write([]byte{0})          //nolint:errcheck // hash.Write never errors
 		hashSortedMap(h, server.Headers)

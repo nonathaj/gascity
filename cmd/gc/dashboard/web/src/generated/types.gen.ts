@@ -58,6 +58,7 @@ export type AgentOutputResponse = {
 };
 
 export type AgentPatch = {
+    AppendFragments: Array<string> | null;
     Attach: boolean | null;
     DefaultSlingFormula: string | null;
     DependsOn: Array<string> | null;
@@ -258,6 +259,16 @@ export type BeadCreateInputBody = {
      */
     labels?: Array<string> | null;
     /**
+     * Metadata key-value pairs to set at create time.
+     */
+    metadata?: {
+        [key: string]: string;
+    };
+    /**
+     * Parent bead ID.
+     */
+    parent?: string;
+    /**
      * Bead priority.
      */
     priority?: number;
@@ -309,6 +320,10 @@ export type BeadUpdateBody = {
         [key: string]: string;
     };
     /**
+     * Parent bead ID. Use null or an empty string to clear.
+     */
+    parent?: string | null;
+    /**
      * Bead priority.
      */
     priority?: number;
@@ -358,11 +373,15 @@ export type CityCreateRequest = {
 
 export type CityCreateResponse = {
     /**
-     * True on success.
+     * Resolved city name as persisted in city.toml. Use this to filter the event stream for completion.
+     */
+    name: string;
+    /**
+     * True when scaffolding + registration succeeded. Does not imply the city is ready yet; watch /v0/events/stream for city.ready.
      */
     ok: boolean;
     /**
-     * Resolved absolute path of the created city.
+     * Resolved absolute path of the created city directory.
      */
     path: string;
 };
@@ -388,11 +407,33 @@ export type CityInfo = {
     status?: string;
 };
 
+export type CityLifecyclePayload = {
+    error?: string;
+    name: string;
+    path: string;
+    phases_completed?: Array<string> | null;
+};
+
 export type CityPatchInputBody = {
     /**
      * Whether the city is suspended.
      */
     suspended?: boolean;
+};
+
+export type CityUnregisterResponse = {
+    /**
+     * Resolved registry name. Filter the event stream by this to observe completion.
+     */
+    name: string;
+    /**
+     * True when the registry entry was removed and the supervisor was signaled. Does not imply the city's controller has stopped yet; watch /v0/events/stream for city.unregistered.
+     */
+    ok: boolean;
+    /**
+     * Resolved absolute city directory. The directory itself is not modified; unregister only affects the supervisor's registry.
+     */
+    path: string;
 };
 
 export type ConfigAgentResponse = {
@@ -676,7 +717,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | UnboundEventPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BeadEventPayload | BoundEventPayload | CityLifecyclePayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | NoPayload | OutboundEventPayload | UnboundEventPayload | WorkerOperationEventPayload;
 
 export type EventStreamEnvelope = {
     actor: string;
@@ -2435,6 +2476,10 @@ export type SlingInputBody = {
      */
     bead?: string;
     /**
+     * Bypass cross-rig guards; for direct bead routes, also bypass missing-bead validation. Formula-backed graph routes may replace existing live workflow roots but still require the source bead to exist.
+     */
+    force?: boolean;
+    /**
      * Formula name for workflow launch.
      */
     formula?: string;
@@ -2693,6 +2738,1439 @@ export type TranscriptMessageKind = 'inbound' | 'outbound';
  */
 export type TranscriptProvenance = 'live' | 'hydrated';
 
+/**
+ * Typed city event stream envelope
+ *
+ * Discriminated union of city event stream envelopes. Each variant constrains the envelope type and payload schema together.
+ */
+export type TypedEventStreamEnvelope = ({
+    type: 'bead.closed';
+} & TypedEventStreamEnvelopeBeadClosed) | ({
+    type: 'bead.created';
+} & TypedEventStreamEnvelopeBeadCreated) | ({
+    type: 'bead.updated';
+} & TypedEventStreamEnvelopeBeadUpdated) | ({
+    type: 'city.created';
+} & TypedEventStreamEnvelopeCityCreated) | ({
+    type: 'city.init_failed';
+} & TypedEventStreamEnvelopeCityInitFailed) | ({
+    type: 'city.ready';
+} & TypedEventStreamEnvelopeCityReady) | ({
+    type: 'city.resumed';
+} & TypedEventStreamEnvelopeCityResumed) | ({
+    type: 'city.suspended';
+} & TypedEventStreamEnvelopeCitySuspended) | ({
+    type: 'city.unregister_failed';
+} & TypedEventStreamEnvelopeCityUnregisterFailed) | ({
+    type: 'city.unregister_requested';
+} & TypedEventStreamEnvelopeCityUnregisterRequested) | ({
+    type: 'city.unregistered';
+} & TypedEventStreamEnvelopeCityUnregistered) | ({
+    type: 'controller.started';
+} & TypedEventStreamEnvelopeControllerStarted) | ({
+    type: 'controller.stopped';
+} & TypedEventStreamEnvelopeControllerStopped) | ({
+    type: 'convoy.closed';
+} & TypedEventStreamEnvelopeConvoyClosed) | ({
+    type: 'convoy.created';
+} & TypedEventStreamEnvelopeConvoyCreated) | ({
+    type: 'extmsg.adapter_added';
+} & TypedEventStreamEnvelopeExtmsgAdapterAdded) | ({
+    type: 'extmsg.adapter_removed';
+} & TypedEventStreamEnvelopeExtmsgAdapterRemoved) | ({
+    type: 'extmsg.bound';
+} & TypedEventStreamEnvelopeExtmsgBound) | ({
+    type: 'extmsg.group_created';
+} & TypedEventStreamEnvelopeExtmsgGroupCreated) | ({
+    type: 'extmsg.inbound';
+} & TypedEventStreamEnvelopeExtmsgInbound) | ({
+    type: 'extmsg.outbound';
+} & TypedEventStreamEnvelopeExtmsgOutbound) | ({
+    type: 'extmsg.unbound';
+} & TypedEventStreamEnvelopeExtmsgUnbound) | ({
+    type: 'mail.archived';
+} & TypedEventStreamEnvelopeMailArchived) | ({
+    type: 'mail.deleted';
+} & TypedEventStreamEnvelopeMailDeleted) | ({
+    type: 'mail.marked_read';
+} & TypedEventStreamEnvelopeMailMarkedRead) | ({
+    type: 'mail.marked_unread';
+} & TypedEventStreamEnvelopeMailMarkedUnread) | ({
+    type: 'mail.read';
+} & TypedEventStreamEnvelopeMailRead) | ({
+    type: 'mail.replied';
+} & TypedEventStreamEnvelopeMailReplied) | ({
+    type: 'mail.sent';
+} & TypedEventStreamEnvelopeMailSent) | ({
+    type: 'order.completed';
+} & TypedEventStreamEnvelopeOrderCompleted) | ({
+    type: 'order.failed';
+} & TypedEventStreamEnvelopeOrderFailed) | ({
+    type: 'order.fired';
+} & TypedEventStreamEnvelopeOrderFired) | ({
+    type: 'provider.swapped';
+} & TypedEventStreamEnvelopeProviderSwapped) | ({
+    type: 'session.crashed';
+} & TypedEventStreamEnvelopeSessionCrashed) | ({
+    type: 'session.draining';
+} & TypedEventStreamEnvelopeSessionDraining) | ({
+    type: 'session.idle_killed';
+} & TypedEventStreamEnvelopeSessionIdleKilled) | ({
+    type: 'session.quarantined';
+} & TypedEventStreamEnvelopeSessionQuarantined) | ({
+    type: 'session.stopped';
+} & TypedEventStreamEnvelopeSessionStopped) | ({
+    type: 'session.suspended';
+} & TypedEventStreamEnvelopeSessionSuspended) | ({
+    type: 'session.undrained';
+} & TypedEventStreamEnvelopeSessionUndrained) | ({
+    type: 'session.updated';
+} & TypedEventStreamEnvelopeSessionUpdated) | ({
+    type: 'session.woke';
+} & TypedEventStreamEnvelopeSessionWoke) | ({
+    type: 'worker.operation';
+} & TypedEventStreamEnvelopeWorkerOperation);
+
+/**
+ * TypedEventStreamEnvelope bead.closed
+ */
+export type TypedEventStreamEnvelopeBeadClosed = {
+    actor: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.closed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope bead.created
+ */
+export type TypedEventStreamEnvelopeBeadCreated = {
+    actor: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope bead.updated
+ */
+export type TypedEventStreamEnvelopeBeadUpdated = {
+    actor: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.updated';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.created
+ */
+export type TypedEventStreamEnvelopeCityCreated = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.init_failed
+ */
+export type TypedEventStreamEnvelopeCityInitFailed = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.init_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.ready
+ */
+export type TypedEventStreamEnvelopeCityReady = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.ready';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.resumed
+ */
+export type TypedEventStreamEnvelopeCityResumed = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.resumed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.suspended
+ */
+export type TypedEventStreamEnvelopeCitySuspended = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.suspended';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.unregister_failed
+ */
+export type TypedEventStreamEnvelopeCityUnregisterFailed = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregister_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.unregister_requested
+ */
+export type TypedEventStreamEnvelopeCityUnregisterRequested = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregister_requested';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope city.unregistered
+ */
+export type TypedEventStreamEnvelopeCityUnregistered = {
+    actor: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregistered';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope controller.started
+ */
+export type TypedEventStreamEnvelopeControllerStarted = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'controller.started';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope controller.stopped
+ */
+export type TypedEventStreamEnvelopeControllerStopped = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'controller.stopped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope convoy.closed
+ */
+export type TypedEventStreamEnvelopeConvoyClosed = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'convoy.closed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope convoy.created
+ */
+export type TypedEventStreamEnvelopeConvoyCreated = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'convoy.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.adapter_added
+ */
+export type TypedEventStreamEnvelopeExtmsgAdapterAdded = {
+    actor: string;
+    message?: string;
+    payload: AdapterEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.adapter_added';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.adapter_removed
+ */
+export type TypedEventStreamEnvelopeExtmsgAdapterRemoved = {
+    actor: string;
+    message?: string;
+    payload: AdapterEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.adapter_removed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.bound
+ */
+export type TypedEventStreamEnvelopeExtmsgBound = {
+    actor: string;
+    message?: string;
+    payload: BoundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.bound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.group_created
+ */
+export type TypedEventStreamEnvelopeExtmsgGroupCreated = {
+    actor: string;
+    message?: string;
+    payload: GroupCreatedEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.group_created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.inbound
+ */
+export type TypedEventStreamEnvelopeExtmsgInbound = {
+    actor: string;
+    message?: string;
+    payload: InboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.inbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.outbound
+ */
+export type TypedEventStreamEnvelopeExtmsgOutbound = {
+    actor: string;
+    message?: string;
+    payload: OutboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.outbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope extmsg.unbound
+ */
+export type TypedEventStreamEnvelopeExtmsgUnbound = {
+    actor: string;
+    message?: string;
+    payload: UnboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.unbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.archived
+ */
+export type TypedEventStreamEnvelopeMailArchived = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.archived';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.deleted
+ */
+export type TypedEventStreamEnvelopeMailDeleted = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.deleted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.marked_read
+ */
+export type TypedEventStreamEnvelopeMailMarkedRead = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.marked_read';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.marked_unread
+ */
+export type TypedEventStreamEnvelopeMailMarkedUnread = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.marked_unread';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.read
+ */
+export type TypedEventStreamEnvelopeMailRead = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.read';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.replied
+ */
+export type TypedEventStreamEnvelopeMailReplied = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.replied';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope mail.sent
+ */
+export type TypedEventStreamEnvelopeMailSent = {
+    actor: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.sent';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope order.completed
+ */
+export type TypedEventStreamEnvelopeOrderCompleted = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.completed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope order.failed
+ */
+export type TypedEventStreamEnvelopeOrderFailed = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope order.fired
+ */
+export type TypedEventStreamEnvelopeOrderFired = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.fired';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope provider.swapped
+ */
+export type TypedEventStreamEnvelopeProviderSwapped = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'provider.swapped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.crashed
+ */
+export type TypedEventStreamEnvelopeSessionCrashed = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.crashed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.draining
+ */
+export type TypedEventStreamEnvelopeSessionDraining = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.draining';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.idle_killed
+ */
+export type TypedEventStreamEnvelopeSessionIdleKilled = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.idle_killed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.quarantined
+ */
+export type TypedEventStreamEnvelopeSessionQuarantined = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.quarantined';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.stopped
+ */
+export type TypedEventStreamEnvelopeSessionStopped = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.stopped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.suspended
+ */
+export type TypedEventStreamEnvelopeSessionSuspended = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.suspended';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.undrained
+ */
+export type TypedEventStreamEnvelopeSessionUndrained = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.undrained';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.updated
+ */
+export type TypedEventStreamEnvelopeSessionUpdated = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.updated';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope session.woke
+ */
+export type TypedEventStreamEnvelopeSessionWoke = {
+    actor: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.woke';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope worker.operation
+ */
+export type TypedEventStreamEnvelopeWorkerOperation = {
+    actor: string;
+    message?: string;
+    payload: WorkerOperationEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'worker.operation';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * Typed supervisor event stream envelope
+ *
+ * Discriminated union of supervisor event stream envelopes. Each variant constrains the envelope type and payload schema together and includes the source city.
+ */
+export type TypedTaggedEventStreamEnvelope = ({
+    type: 'bead.closed';
+} & TypedTaggedEventStreamEnvelopeBeadClosed) | ({
+    type: 'bead.created';
+} & TypedTaggedEventStreamEnvelopeBeadCreated) | ({
+    type: 'bead.updated';
+} & TypedTaggedEventStreamEnvelopeBeadUpdated) | ({
+    type: 'city.created';
+} & TypedTaggedEventStreamEnvelopeCityCreated) | ({
+    type: 'city.init_failed';
+} & TypedTaggedEventStreamEnvelopeCityInitFailed) | ({
+    type: 'city.ready';
+} & TypedTaggedEventStreamEnvelopeCityReady) | ({
+    type: 'city.resumed';
+} & TypedTaggedEventStreamEnvelopeCityResumed) | ({
+    type: 'city.suspended';
+} & TypedTaggedEventStreamEnvelopeCitySuspended) | ({
+    type: 'city.unregister_failed';
+} & TypedTaggedEventStreamEnvelopeCityUnregisterFailed) | ({
+    type: 'city.unregister_requested';
+} & TypedTaggedEventStreamEnvelopeCityUnregisterRequested) | ({
+    type: 'city.unregistered';
+} & TypedTaggedEventStreamEnvelopeCityUnregistered) | ({
+    type: 'controller.started';
+} & TypedTaggedEventStreamEnvelopeControllerStarted) | ({
+    type: 'controller.stopped';
+} & TypedTaggedEventStreamEnvelopeControllerStopped) | ({
+    type: 'convoy.closed';
+} & TypedTaggedEventStreamEnvelopeConvoyClosed) | ({
+    type: 'convoy.created';
+} & TypedTaggedEventStreamEnvelopeConvoyCreated) | ({
+    type: 'extmsg.adapter_added';
+} & TypedTaggedEventStreamEnvelopeExtmsgAdapterAdded) | ({
+    type: 'extmsg.adapter_removed';
+} & TypedTaggedEventStreamEnvelopeExtmsgAdapterRemoved) | ({
+    type: 'extmsg.bound';
+} & TypedTaggedEventStreamEnvelopeExtmsgBound) | ({
+    type: 'extmsg.group_created';
+} & TypedTaggedEventStreamEnvelopeExtmsgGroupCreated) | ({
+    type: 'extmsg.inbound';
+} & TypedTaggedEventStreamEnvelopeExtmsgInbound) | ({
+    type: 'extmsg.outbound';
+} & TypedTaggedEventStreamEnvelopeExtmsgOutbound) | ({
+    type: 'extmsg.unbound';
+} & TypedTaggedEventStreamEnvelopeExtmsgUnbound) | ({
+    type: 'mail.archived';
+} & TypedTaggedEventStreamEnvelopeMailArchived) | ({
+    type: 'mail.deleted';
+} & TypedTaggedEventStreamEnvelopeMailDeleted) | ({
+    type: 'mail.marked_read';
+} & TypedTaggedEventStreamEnvelopeMailMarkedRead) | ({
+    type: 'mail.marked_unread';
+} & TypedTaggedEventStreamEnvelopeMailMarkedUnread) | ({
+    type: 'mail.read';
+} & TypedTaggedEventStreamEnvelopeMailRead) | ({
+    type: 'mail.replied';
+} & TypedTaggedEventStreamEnvelopeMailReplied) | ({
+    type: 'mail.sent';
+} & TypedTaggedEventStreamEnvelopeMailSent) | ({
+    type: 'order.completed';
+} & TypedTaggedEventStreamEnvelopeOrderCompleted) | ({
+    type: 'order.failed';
+} & TypedTaggedEventStreamEnvelopeOrderFailed) | ({
+    type: 'order.fired';
+} & TypedTaggedEventStreamEnvelopeOrderFired) | ({
+    type: 'provider.swapped';
+} & TypedTaggedEventStreamEnvelopeProviderSwapped) | ({
+    type: 'session.crashed';
+} & TypedTaggedEventStreamEnvelopeSessionCrashed) | ({
+    type: 'session.draining';
+} & TypedTaggedEventStreamEnvelopeSessionDraining) | ({
+    type: 'session.idle_killed';
+} & TypedTaggedEventStreamEnvelopeSessionIdleKilled) | ({
+    type: 'session.quarantined';
+} & TypedTaggedEventStreamEnvelopeSessionQuarantined) | ({
+    type: 'session.stopped';
+} & TypedTaggedEventStreamEnvelopeSessionStopped) | ({
+    type: 'session.suspended';
+} & TypedTaggedEventStreamEnvelopeSessionSuspended) | ({
+    type: 'session.undrained';
+} & TypedTaggedEventStreamEnvelopeSessionUndrained) | ({
+    type: 'session.updated';
+} & TypedTaggedEventStreamEnvelopeSessionUpdated) | ({
+    type: 'session.woke';
+} & TypedTaggedEventStreamEnvelopeSessionWoke) | ({
+    type: 'worker.operation';
+} & TypedTaggedEventStreamEnvelopeWorkerOperation);
+
+/**
+ * TypedTaggedEventStreamEnvelope bead.closed
+ */
+export type TypedTaggedEventStreamEnvelopeBeadClosed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.closed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope bead.created
+ */
+export type TypedTaggedEventStreamEnvelopeBeadCreated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope bead.updated
+ */
+export type TypedTaggedEventStreamEnvelopeBeadUpdated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: BeadEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'bead.updated';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.created
+ */
+export type TypedTaggedEventStreamEnvelopeCityCreated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.init_failed
+ */
+export type TypedTaggedEventStreamEnvelopeCityInitFailed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.init_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.ready
+ */
+export type TypedTaggedEventStreamEnvelopeCityReady = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.ready';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.resumed
+ */
+export type TypedTaggedEventStreamEnvelopeCityResumed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.resumed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.suspended
+ */
+export type TypedTaggedEventStreamEnvelopeCitySuspended = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.suspended';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.unregister_failed
+ */
+export type TypedTaggedEventStreamEnvelopeCityUnregisterFailed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregister_failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.unregister_requested
+ */
+export type TypedTaggedEventStreamEnvelopeCityUnregisterRequested = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregister_requested';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope city.unregistered
+ */
+export type TypedTaggedEventStreamEnvelopeCityUnregistered = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: CityLifecyclePayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'city.unregistered';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope controller.started
+ */
+export type TypedTaggedEventStreamEnvelopeControllerStarted = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'controller.started';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope controller.stopped
+ */
+export type TypedTaggedEventStreamEnvelopeControllerStopped = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'controller.stopped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope convoy.closed
+ */
+export type TypedTaggedEventStreamEnvelopeConvoyClosed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'convoy.closed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope convoy.created
+ */
+export type TypedTaggedEventStreamEnvelopeConvoyCreated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'convoy.created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.adapter_added
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgAdapterAdded = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: AdapterEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.adapter_added';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.adapter_removed
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgAdapterRemoved = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: AdapterEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.adapter_removed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.bound
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgBound = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: BoundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.bound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.group_created
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgGroupCreated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: GroupCreatedEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.group_created';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.inbound
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgInbound = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: InboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.inbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.outbound
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgOutbound = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: OutboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.outbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope extmsg.unbound
+ */
+export type TypedTaggedEventStreamEnvelopeExtmsgUnbound = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: UnboundEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'extmsg.unbound';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.archived
+ */
+export type TypedTaggedEventStreamEnvelopeMailArchived = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.archived';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.deleted
+ */
+export type TypedTaggedEventStreamEnvelopeMailDeleted = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.deleted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.marked_read
+ */
+export type TypedTaggedEventStreamEnvelopeMailMarkedRead = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.marked_read';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.marked_unread
+ */
+export type TypedTaggedEventStreamEnvelopeMailMarkedUnread = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.marked_unread';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.read
+ */
+export type TypedTaggedEventStreamEnvelopeMailRead = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.read';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.replied
+ */
+export type TypedTaggedEventStreamEnvelopeMailReplied = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.replied';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope mail.sent
+ */
+export type TypedTaggedEventStreamEnvelopeMailSent = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: MailEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'mail.sent';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope order.completed
+ */
+export type TypedTaggedEventStreamEnvelopeOrderCompleted = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.completed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope order.failed
+ */
+export type TypedTaggedEventStreamEnvelopeOrderFailed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.failed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope order.fired
+ */
+export type TypedTaggedEventStreamEnvelopeOrderFired = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'order.fired';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope provider.swapped
+ */
+export type TypedTaggedEventStreamEnvelopeProviderSwapped = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'provider.swapped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.crashed
+ */
+export type TypedTaggedEventStreamEnvelopeSessionCrashed = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.crashed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.draining
+ */
+export type TypedTaggedEventStreamEnvelopeSessionDraining = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.draining';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.idle_killed
+ */
+export type TypedTaggedEventStreamEnvelopeSessionIdleKilled = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.idle_killed';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.quarantined
+ */
+export type TypedTaggedEventStreamEnvelopeSessionQuarantined = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.quarantined';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.stopped
+ */
+export type TypedTaggedEventStreamEnvelopeSessionStopped = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.stopped';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.suspended
+ */
+export type TypedTaggedEventStreamEnvelopeSessionSuspended = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.suspended';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.undrained
+ */
+export type TypedTaggedEventStreamEnvelopeSessionUndrained = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.undrained';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.updated
+ */
+export type TypedTaggedEventStreamEnvelopeSessionUpdated = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.updated';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope session.woke
+ */
+export type TypedTaggedEventStreamEnvelopeSessionWoke = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: NoPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'session.woke';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope worker.operation
+ */
+export type TypedTaggedEventStreamEnvelopeWorkerOperation = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: WorkerOperationEventPayload;
+    seq: number;
+    subject?: string;
+    ts: string;
+    type: 'worker.operation';
+    workflow?: WorkflowEventProjection;
+};
+
 export type UnboundEventPayload = {
     count: number;
     session_id: string;
@@ -2885,6 +4363,12 @@ export type GetV0CitiesResponse = GetV0CitiesResponses[keyof GetV0CitiesResponse
 
 export type PostV0CityData = {
     body: CityCreateRequest;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path?: never;
     query?: never;
     url: '/v0/city';
@@ -2901,9 +4385,9 @@ export type PostV0CityError = PostV0CityErrors[keyof PostV0CityErrors];
 
 export type PostV0CityResponses = {
     /**
-     * OK
+     * Accepted
      */
-    200: CityCreateResponse;
+    202: CityCreateResponse;
 };
 
 export type PostV0CityResponse = PostV0CityResponses[keyof PostV0CityResponses];
@@ -2940,6 +4424,12 @@ export type GetV0CityByCityNameResponse = GetV0CityByCityNameResponses[keyof Get
 
 export type PatchV0CityByCityNameData = {
     body: CityPatchInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -2970,6 +4460,12 @@ export type PatchV0CityByCityNameResponse = PatchV0CityByCityNameResponses[keyof
 
 export type DeleteV0CityByCityNameAgentByBaseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3038,6 +4534,12 @@ export type GetV0CityByCityNameAgentByBaseResponse = GetV0CityByCityNameAgentByB
 
 export type PatchV0CityByCityNameAgentByBaseData = {
     body: AgentUpdateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3084,7 +4586,7 @@ export type GetV0CityByCityNameAgentByBaseOutputData = {
     };
     query?: {
         /**
-         * Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
+         * Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
          */
         tail?: string;
         /**
@@ -3179,6 +4681,12 @@ export type StreamAgentOutputResponse = StreamAgentOutputResponses[keyof StreamA
 
 export type PostV0CityByCityNameAgentByBaseByActionData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3217,6 +4725,12 @@ export type PostV0CityByCityNameAgentByBaseByActionResponse = PostV0CityByCityNa
 
 export type DeleteV0CityByCityNameAgentByDirByBaseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3293,6 +4807,12 @@ export type GetV0CityByCityNameAgentByDirByBaseResponse = GetV0CityByCityNameAge
 
 export type PatchV0CityByCityNameAgentByDirByBaseData = {
     body: AgentUpdateQualifiedInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3347,7 +4867,7 @@ export type GetV0CityByCityNameAgentByDirByBaseOutputData = {
     };
     query?: {
         /**
-         * Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
+         * Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
          */
         tail?: string;
         /**
@@ -3446,6 +4966,12 @@ export type StreamAgentOutputQualifiedResponse = StreamAgentOutputQualifiedRespo
 
 export type PostV0CityByCityNameAgentByDirByBaseByActionData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3543,6 +5069,12 @@ export type GetV0CityByCityNameAgentsResponse = GetV0CityByCityNameAgentsRespons
 
 export type CreateAgentData = {
     body: AgentCreateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3573,6 +5105,12 @@ export type CreateAgentResponse = CreateAgentResponses[keyof CreateAgentResponse
 
 export type DeleteV0CityByCityNameBeadByIdData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3641,6 +5179,12 @@ export type GetV0CityByCityNameBeadByIdResponse = GetV0CityByCityNameBeadByIdRes
 
 export type PatchV0CityByCityNameBeadByIdData = {
     body: BeadUpdateBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3675,6 +5219,12 @@ export type PatchV0CityByCityNameBeadByIdResponse = PatchV0CityByCityNameBeadByI
 
 export type PostV0CityByCityNameBeadByIdAssignData = {
     body: BeadAssignInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3711,6 +5261,12 @@ export type PostV0CityByCityNameBeadByIdAssignResponse = PostV0CityByCityNameBea
 
 export type PostV0CityByCityNameBeadByIdCloseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3779,6 +5335,12 @@ export type GetV0CityByCityNameBeadByIdDepsResponse = GetV0CityByCityNameBeadByI
 
 export type PostV0CityByCityNameBeadByIdReopenData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3813,6 +5375,12 @@ export type PostV0CityByCityNameBeadByIdReopenResponse = PostV0CityByCityNameBea
 
 export type PostV0CityByCityNameBeadByIdUpdateData = {
     body: BeadUpdateBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -3914,7 +5482,11 @@ export type GetV0CityByCityNameBeadsResponse = GetV0CityByCityNameBeadsResponses
 
 export type CreateBeadData = {
     body: BeadCreateInputBody;
-    headers?: {
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
         /**
          * Idempotency key for safe retries.
          */
@@ -4113,6 +5685,12 @@ export type GetV0CityByCityNameConfigValidateResponse = GetV0CityByCityNameConfi
 
 export type DeleteV0CityByCityNameConvoyByIdData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4181,6 +5759,12 @@ export type GetV0CityByCityNameConvoyByIdResponse = GetV0CityByCityNameConvoyByI
 
 export type PostV0CityByCityNameConvoyByIdAddData = {
     body: ConvoyAddInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4249,6 +5833,12 @@ export type GetV0CityByCityNameConvoyByIdCheckResponse = GetV0CityByCityNameConv
 
 export type PostV0CityByCityNameConvoyByIdCloseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4283,6 +5873,12 @@ export type PostV0CityByCityNameConvoyByIdCloseResponse = PostV0CityByCityNameCo
 
 export type PostV0CityByCityNameConvoyByIdRemoveData = {
     body: ConvoyRemoveInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4364,6 +5960,12 @@ export type GetV0CityByCityNameConvoysResponse = GetV0CityByCityNameConvoysRespo
 
 export type CreateConvoyData = {
     body: ConvoyCreateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4453,6 +6055,12 @@ export type GetV0CityByCityNameEventsResponse = GetV0CityByCityNameEventsRespons
 
 export type EmitEventData = {
     body: EventEmitRequest;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4520,7 +6128,7 @@ export type StreamEventsResponses = {
      * Each oneOf object represents one possible SSE message.
      */
     200: Array<{
-        data: EventStreamEnvelope;
+        data: TypedEventStreamEnvelope;
         /**
          * The event name.
          */
@@ -4554,6 +6162,12 @@ export type StreamEventsResponse = StreamEventsResponses[keyof StreamEventsRespo
 
 export type DeleteV0CityByCityNameExtmsgAdaptersData = {
     body: ExtMsgAdapterUnregisterInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4614,6 +6228,12 @@ export type GetV0CityByCityNameExtmsgAdaptersResponse = GetV0CityByCityNameExtms
 
 export type RegisterExtmsgAdapterData = {
     body: ExtMsgAdapterRegisterInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4644,6 +6264,12 @@ export type RegisterExtmsgAdapterResponse = RegisterExtmsgAdapterResponses[keyof
 
 export type PostV0CityByCityNameExtmsgBindData = {
     body: ExtMsgBindInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4760,6 +6386,12 @@ export type GetV0CityByCityNameExtmsgGroupsResponse = GetV0CityByCityNameExtmsgG
 
 export type EnsureExtmsgGroupData = {
     body: ExtMsgGroupEnsureInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4790,6 +6422,12 @@ export type EnsureExtmsgGroupResponse = EnsureExtmsgGroupResponses[keyof EnsureE
 
 export type PostV0CityByCityNameExtmsgInboundData = {
     body: ExtMsgInboundInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4820,6 +6458,12 @@ export type PostV0CityByCityNameExtmsgInboundResponse = PostV0CityByCityNameExtm
 
 export type PostV0CityByCityNameExtmsgOutboundData = {
     body: ExtMsgOutboundInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4850,6 +6494,12 @@ export type PostV0CityByCityNameExtmsgOutboundResponse = PostV0CityByCityNameExt
 
 export type DeleteV0CityByCityNameExtmsgParticipantsData = {
     body: ExtMsgParticipantRemoveInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4880,6 +6530,12 @@ export type DeleteV0CityByCityNameExtmsgParticipantsResponse = DeleteV0CityByCit
 
 export type PostV0CityByCityNameExtmsgParticipantsData = {
     body: ExtMsgParticipantUpsertInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4965,6 +6621,12 @@ export type GetV0CityByCityNameExtmsgTranscriptResponse = GetV0CityByCityNameExt
 
 export type PostV0CityByCityNameExtmsgTranscriptAckData = {
     body: ExtMsgTranscriptAckInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -4995,6 +6657,12 @@ export type PostV0CityByCityNameExtmsgTranscriptAckResponse = PostV0CityByCityNa
 
 export type PostV0CityByCityNameExtmsgUnbindData = {
     body: ExtMsgUnbindInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5201,6 +6869,12 @@ export type GetV0CityByCityNameFormulasByNameResponse = GetV0CityByCityNameFormu
 
 export type PostV0CityByCityNameFormulasByNamePreviewData = {
     body: FormulaPreviewBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5371,7 +7045,11 @@ export type GetV0CityByCityNameMailResponse = GetV0CityByCityNameMailResponses[k
 
 export type SendMailData = {
     body: MailSendInputBody;
-    headers?: {
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
         /**
          * Idempotency key for safe retries.
          */
@@ -5485,6 +7163,12 @@ export type GetV0CityByCityNameMailThreadByIdResponse = GetV0CityByCityNameMailT
 
 export type DeleteV0CityByCityNameMailByIdData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5563,6 +7247,12 @@ export type GetV0CityByCityNameMailByIdResponse = GetV0CityByCityNameMailByIdRes
 
 export type PostV0CityByCityNameMailByIdArchiveData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5602,6 +7292,12 @@ export type PostV0CityByCityNameMailByIdArchiveResponse = PostV0CityByCityNameMa
 
 export type PostV0CityByCityNameMailByIdMarkUnreadData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5641,6 +7337,12 @@ export type PostV0CityByCityNameMailByIdMarkUnreadResponse = PostV0CityByCityNam
 
 export type PostV0CityByCityNameMailByIdReadData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5680,6 +7382,12 @@ export type PostV0CityByCityNameMailByIdReadResponse = PostV0CityByCityNameMailB
 
 export type ReplyMailData = {
     body: MailReplyInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5792,6 +7500,12 @@ export type GetV0CityByCityNameOrderByNameResponse = GetV0CityByCityNameOrderByN
 
 export type PostV0CityByCityNameOrderByNameDisableData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -5826,6 +7540,12 @@ export type PostV0CityByCityNameOrderByNameDisableResponse = PostV0CityByCityNam
 
 export type PostV0CityByCityNameOrderByNameEnableData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6036,6 +7756,12 @@ export type GetV0CityByCityNamePacksResponse = GetV0CityByCityNamePacksResponses
 
 export type DeleteV0CityByCityNamePatchesAgentByBaseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6104,6 +7830,12 @@ export type GetV0CityByCityNamePatchesAgentByBaseResponse = GetV0CityByCityNameP
 
 export type DeleteV0CityByCityNamePatchesAgentByDirByBaseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6210,6 +7942,12 @@ export type GetV0CityByCityNamePatchesAgentsResponse = GetV0CityByCityNamePatche
 
 export type PutV0CityByCityNamePatchesAgentsData = {
     body: AgentPatchSetInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6240,6 +7978,12 @@ export type PutV0CityByCityNamePatchesAgentsResponse = PutV0CityByCityNamePatche
 
 export type DeleteV0CityByCityNamePatchesProviderByNameData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6338,6 +8082,12 @@ export type GetV0CityByCityNamePatchesProvidersResponse = GetV0CityByCityNamePat
 
 export type PutV0CityByCityNamePatchesProvidersData = {
     body: ProviderPatchSetInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6368,6 +8118,12 @@ export type PutV0CityByCityNamePatchesProvidersResponse = PutV0CityByCityNamePat
 
 export type DeleteV0CityByCityNamePatchesRigByNameData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6466,6 +8222,12 @@ export type GetV0CityByCityNamePatchesRigsResponse = GetV0CityByCityNamePatchesR
 
 export type PutV0CityByCityNamePatchesRigsData = {
     body: RigPatchSetInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6535,6 +8297,12 @@ export type GetV0CityByCityNameProviderReadinessResponse = GetV0CityByCityNamePr
 
 export type DeleteV0CityByCityNameProviderByNameData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6603,6 +8371,12 @@ export type GetV0CityByCityNameProviderByNameResponse = GetV0CityByCityNameProvi
 
 export type PatchV0CityByCityNameProviderByNameData = {
     body: ProviderUpdateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6667,6 +8441,12 @@ export type GetV0CityByCityNameProvidersResponse = GetV0CityByCityNameProvidersR
 
 export type CreateProviderData = {
     body: ProviderCreateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6766,6 +8546,12 @@ export type GetV0CityByCityNameReadinessResponse = GetV0CityByCityNameReadinessR
 
 export type DeleteV0CityByCityNameRigByNameData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6839,6 +8625,12 @@ export type GetV0CityByCityNameRigByNameResponse = GetV0CityByCityNameRigByNameR
 
 export type PatchV0CityByCityNameRigByNameData = {
     body: RigUpdateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6873,6 +8665,12 @@ export type PatchV0CityByCityNameRigByNameResponse = PatchV0CityByCityNameRigByN
 
 export type PostV0CityByCityNameRigByNameByActionData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -6954,6 +8752,12 @@ export type GetV0CityByCityNameRigsResponse = GetV0CityByCityNameRigsResponses[k
 
 export type CreateRigData = {
     body: RigCreateInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7018,6 +8822,12 @@ export type GetV0CityByCityNameServiceByNameResponse = GetV0CityByCityNameServic
 
 export type PostV0CityByCityNameServiceByNameRestartData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7121,6 +8931,12 @@ export type GetV0CityByCityNameSessionByIdResponse = GetV0CityByCityNameSessionB
 
 export type PatchV0CityByCityNameSessionByIdData = {
     body: SessionPatchBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7227,6 +9043,12 @@ export type GetV0CityByCityNameSessionByIdAgentsByAgentIdResponse = GetV0CityByC
 
 export type PostV0CityByCityNameSessionByIdCloseData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7266,6 +9088,12 @@ export type PostV0CityByCityNameSessionByIdCloseResponse = PostV0CityByCityNameS
 
 export type PostV0CityByCityNameSessionByIdKillData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7300,6 +9128,12 @@ export type PostV0CityByCityNameSessionByIdKillResponse = PostV0CityByCityNameSe
 
 export type SendSessionMessageData = {
     body: SessionMessageInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7368,6 +9202,12 @@ export type GetV0CityByCityNameSessionByIdPendingResponse = GetV0CityByCityNameS
 
 export type PostV0CityByCityNameSessionByIdRenameData = {
     body: SessionRenameInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7402,6 +9242,12 @@ export type PostV0CityByCityNameSessionByIdRenameResponse = PostV0CityByCityName
 
 export type RespondSessionData = {
     body: SessionRespondInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7436,6 +9282,12 @@ export type RespondSessionResponse = RespondSessionResponses[keyof RespondSessio
 
 export type PostV0CityByCityNameSessionByIdStopData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7581,6 +9433,12 @@ export type StreamSessionResponse = StreamSessionResponses[keyof StreamSessionRe
 
 export type SubmitSessionData = {
     body: SessionSubmitInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7615,6 +9473,12 @@ export type SubmitSessionResponse = SubmitSessionResponses[keyof SubmitSessionRe
 
 export type PostV0CityByCityNameSessionByIdSuspendData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7661,7 +9525,7 @@ export type GetV0CityByCityNameSessionByIdTranscriptData = {
     };
     query?: {
         /**
-         * Number of recent compaction segments to return. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
+         * Number of recent compaction segments to return. This API parameter keeps compaction-segment semantics even though gc session logs --tail counts displayed transcript entries. Omit for the endpoint default (usually 1); 0 returns all segments; N>0 returns the last N.
          */
         tail?: string;
         /**
@@ -7696,6 +9560,12 @@ export type GetV0CityByCityNameSessionByIdTranscriptResponse = GetV0CityByCityNa
 
 export type PostV0CityByCityNameSessionByIdWakeData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7781,6 +9651,12 @@ export type GetV0CityByCityNameSessionsResponse = GetV0CityByCityNameSessionsRes
 
 export type CreateSessionData = {
     body: SessionCreateBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7811,6 +9687,12 @@ export type CreateSessionResponse = CreateSessionResponses[keyof CreateSessionRe
 
 export type PostV0CityByCityNameSlingData = {
     body: SlingInputBody;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -7878,8 +9760,50 @@ export type GetV0CityByCityNameStatusResponses = {
 
 export type GetV0CityByCityNameStatusResponse = GetV0CityByCityNameStatusResponses[keyof GetV0CityByCityNameStatusResponses];
 
+export type PostV0CityByCityNameUnregisterData = {
+    body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
+    path: {
+        /**
+         * Supervisor-registered city name.
+         */
+        cityName: string;
+    };
+    query?: never;
+    url: '/v0/city/{cityName}/unregister';
+};
+
+export type PostV0CityByCityNameUnregisterErrors = {
+    /**
+     * Error
+     */
+    default: ErrorModel;
+};
+
+export type PostV0CityByCityNameUnregisterError = PostV0CityByCityNameUnregisterErrors[keyof PostV0CityByCityNameUnregisterErrors];
+
+export type PostV0CityByCityNameUnregisterResponses = {
+    /**
+     * Accepted
+     */
+    202: CityUnregisterResponse;
+};
+
+export type PostV0CityByCityNameUnregisterResponse = PostV0CityByCityNameUnregisterResponses[keyof PostV0CityByCityNameUnregisterResponses];
+
 export type DeleteV0CityByCityNameWorkflowByWorkflowIdData = {
     body?: never;
+    headers: {
+        /**
+         * Anti-CSRF header required on mutation requests. Any non-empty value is accepted; the header's presence is what the server checks.
+         */
+        'X-GC-Request': string;
+    };
     path: {
         /**
          * City name.
@@ -8058,7 +9982,7 @@ export type StreamSupervisorEventsResponses = {
          */
         retry?: number;
     } | {
-        data: TaggedEventStreamEnvelope;
+        data: TypedTaggedEventStreamEnvelope;
         /**
          * The event name.
          */

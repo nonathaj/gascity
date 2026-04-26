@@ -71,8 +71,10 @@ func sessionProviderContextForCity(cfg *config.City, cityPath, providerOverride 
 	return ctx
 }
 
-var openSessionProviderStore = openCityStoreAt
-var buildSessionProviderByName = newSessionProviderByName
+var (
+	openSessionProviderStore   = openCityStoreAt
+	buildSessionProviderByName = newSessionProviderByName
+)
 
 // tmuxConfigFromSession converts a config.SessionConfig into a
 // sessiontmux.Config with resolved durations and defaults. If the
@@ -211,16 +213,6 @@ func newSessionProviderFromContextWithError(ctx sessionProviderContext, sessionB
 		return autoSP, nil
 	}
 	return sp, nil
-}
-
-// hasACPAgents reports whether any agent in the config uses session = "acp".
-func hasACPAgents(agents []config.Agent) bool {
-	for _, a := range agents {
-		if strings.TrimSpace(a.Session) == "acp" {
-			return true
-		}
-	}
-	return false
 }
 
 func agentSessionCreateTransport(cfg *config.City, agentCfg config.Agent) string {

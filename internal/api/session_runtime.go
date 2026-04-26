@@ -209,6 +209,7 @@ func (s *Server) resolveSessionTemplateForCreate(template string) (*config.Resol
 	return resolved, workDir, config.ResolveSessionCreateTransport(agentCfg.Session, resolved), agentCfg.QualifiedName(), nil
 }
 
+//nolint:unparam // kept as a focused test helper even though current call sites use one template shape.
 func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvider, string, string, string, error) {
 	cfg := s.state.Config()
 	if cfg == nil {
@@ -247,7 +248,7 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 	if command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata); err == nil {
 		resolvedInfo.Command = command
 	} else {
-		resolvedInfo.Command = fallbackSessionRuntimeCommand(resolved, transport, info.Command)
+		resolvedInfo.Command = fallbackSessionRuntimeCommand(resolved, transport, info.Command, info.Provider)
 	}
 	resolvedInfo.Provider = resolved.Name
 	resolvedInfo.Transport = transport
@@ -258,6 +259,13 @@ func (s *Server) buildSessionResume(info session.Info) (string, runtime.Config, 
 }
 
 func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string, metadata map[string]string) (string, error) {
+	configuredCommand := configuredSessionRuntimeCommand(resolved, transport)
+	if configuredCommand == "" {
+		if command := strings.TrimSpace(storedCommand); command != "" {
+			return command, nil
+		}
+		return "", fmt.Errorf("resolved provider %q has no launch command", resolved.Name)
+	}
 	optionOverrides, err := session.ParseTemplateOverrides(metadata)
 	if err != nil {
 		return "", fmt.Errorf("parsing template overrides: %w", err)
@@ -266,26 +274,29 @@ func (s *Server) resolvedSessionRuntimeCommand(resolved *config.ResolvedProvider
 	if err != nil {
 		return "", fmt.Errorf("building provider launch command: %w", err)
 	}
-	resolvedCommand := resolved.CommandString()
-	if transport == "acp" {
-		resolvedCommand = resolved.ACPCommandString()
-	}
-	desiredCommand := firstNonEmptyString(launchCommand.Command, resolvedCommand, resolved.Name)
+	desiredCommand := firstNonEmptyString(launchCommand.Command, configuredCommand, resolved.Name)
 	if command := strings.TrimSpace(storedCommand); shouldPreserveStoredRuntimeCommandForTransport(command, desiredCommand, transport, optionOverrides) {
 		return command, nil
 	}
 	return desiredCommand, nil
 }
 
-func fallbackSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand string) string {
-	resolvedCommand := ""
-	if resolved != nil {
-		resolvedCommand = resolved.CommandString()
-		if transport == "acp" {
-			resolvedCommand = resolved.ACPCommandString()
-		}
+func configuredSessionRuntimeCommand(resolved *config.ResolvedProvider, transport string) string {
+	if resolved == nil {
+		return ""
 	}
-	return firstNonEmptyString(storedCommand, resolvedCommand, resolved.Name)
+	if transport == "acp" && (strings.TrimSpace(resolved.ACPCommand) != "" || resolved.ACPArgs != nil) {
+		return strings.TrimSpace(resolved.ACPCommandString())
+	}
+	if strings.TrimSpace(resolved.Command) != "" {
+		return strings.TrimSpace(resolved.CommandString())
+	}
+	return ""
+}
+
+func fallbackSessionRuntimeCommand(resolved *config.ResolvedProvider, transport, storedCommand, fallbackProvider string) string {
+	resolvedCommand := configuredSessionRuntimeCommand(resolved, transport)
+	return firstNonEmptyString(storedCommand, resolvedCommand, fallbackProvider, resolved.Name)
 }
 
 func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) bool {
@@ -309,8 +320,11 @@ func shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand string) b
 	return strings.HasPrefix(storedCommand, resolvedCommand+" ")
 }
 
-func shouldPreserveStoredRuntimeCommandForTransport(storedCommand, resolvedCommand, transport string, optionOverrides map[string]string) bool {
+func shouldPreserveStoredRuntimeCommandForTransport(storedCommand, resolvedCommand, _ string, optionOverrides map[string]string) bool {
 	if shouldPreserveStoredRuntimeCommand(storedCommand, resolvedCommand) {
+		return true
+	}
+	if len(optionOverrides) == 0 && storedCommandHasSettingsArg(storedCommand) && sameRuntimeCommandExecutable(storedCommand, resolvedCommand) {
 		return true
 	}
 	return false
@@ -325,8 +339,12 @@ func sameRuntimeCommandExecutable(storedCommand, resolvedCommand string) bool {
 	return storedFields[0] == resolvedFields[0]
 }
 
-func (s *Server) resolveWorkerSessionRuntime(info session.Info, sessionKind string) (*worker.ResolvedRuntime, error) {
-	return s.resolveWorkerSessionRuntimeWithMetadata(info, sessionKind, nil)
+func storedCommandHasSettingsArg(command string) bool {
+	return strings.Contains(" "+strings.TrimSpace(command)+" ", " --settings ")
+}
+
+func (s *Server) resolveWorkerSessionRuntime(info session.Info) (*worker.ResolvedRuntime, error) {
+	return s.resolveWorkerSessionRuntimeWithMetadata(info, "", nil)
 }
 
 func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ string, metadata map[string]string) (*worker.ResolvedRuntime, error) {
@@ -346,7 +364,7 @@ func (s *Server) resolveWorkerSessionRuntimeWithMetadata(info session.Info, _ st
 	}
 	command, err := s.resolvedSessionRuntimeCommand(resolved, transport, info.Command, metadata)
 	if err != nil {
-		command = fallbackSessionRuntimeCommand(resolved, transport, info.Command)
+		command = fallbackSessionRuntimeCommand(resolved, transport, info.Command, info.Provider)
 	}
 	runtimeCfg, err := worker.NormalizeResolvedRuntime(worker.ResolvedRuntime{
 		Command:    command,
@@ -430,11 +448,11 @@ func (s *Server) startedConfigHashProvesACPTransport(
 	}
 	acpCommand, err := s.resolvedSessionRuntimeCommand(resolved, "acp", info.Command, metadata)
 	if err != nil {
-		acpCommand = fallbackSessionRuntimeCommand(resolved, "acp", info.Command)
+		acpCommand = fallbackSessionRuntimeCommand(resolved, "acp", info.Command, info.Provider)
 	}
 	defaultCommand, err := s.resolvedSessionRuntimeCommand(resolved, "", info.Command, metadata)
 	if err != nil {
-		defaultCommand = fallbackSessionRuntimeCommand(resolved, "", info.Command)
+		defaultCommand = fallbackSessionRuntimeCommand(resolved, "", info.Command, info.Provider)
 	}
 	mcpServers, err := s.sessionMCPServers(
 		info.Template,
@@ -471,6 +489,9 @@ func resolvedSessionTransport(info session.Info, resolved *config.ResolvedProvid
 	}
 	if storedSessionProvesACPTransport(resolved, configuredTransport, info.Command, metadata) {
 		return "acp"
+	}
+	if strings.TrimSpace(info.Command) == "" {
+		return strings.TrimSpace(configuredTransport)
 	}
 	if allowConfiguredTransportFallback {
 		return strings.TrimSpace(configuredTransport)
