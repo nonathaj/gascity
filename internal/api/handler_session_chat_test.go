@@ -1,6 +1,8 @@
 package api
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,6 +127,13 @@ func TestBuildSessionResumeRebuildsBareStoredCommandForPoolClaudeAgent(t *testin
 	fs := newSessionFakeState(t)
 	claude := config.BuiltinProviders()["claude"]
 	maxActive := 3
+	gcDir := filepath.Join(fs.cityPath, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gcDir, "settings.json"), []byte(`{"hooks":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	fs.cfg = &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
 		Agents: []config.Agent{
@@ -156,5 +165,8 @@ func TestBuildSessionResumeRebuildsBareStoredCommandForPoolClaudeAgent(t *testin
 	}
 	if !strings.Contains(cmd, "--resume abc-123") {
 		t.Fatalf("resume command missing resume flag:\n  got: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--settings") {
+		t.Fatalf("resume command missing settings arg:\n  got: %s", cmd)
 	}
 }
