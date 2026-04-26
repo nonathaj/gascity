@@ -55,6 +55,8 @@ type BuiltinProviderSpec struct {
 	OptionsSchema          []BuiltinProviderOption
 	PrintArgs              []string
 	TitleModel             string
+	ACPCommand             string
+	ACPArgs                []string
 }
 
 // ProfileIdentity captures the explicit production identity for a canonical
@@ -302,6 +304,7 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 		SupportsACP:      true,
 		SupportsHooks:    true,
 		InstructionsFile: "AGENTS.md",
+		ACPArgs:          []string{"acp"},
 	},
 	"auggie": {
 		DisplayName:      "Auggie CLI",
@@ -389,6 +392,7 @@ func cloneBuiltinProviderSpec(spec BuiltinProviderSpec) BuiltinProviderSpec {
 	spec.OptionDefaults = cloneStringMap(spec.OptionDefaults)
 	spec.PrintArgs = cloneStrings(spec.PrintArgs)
 	spec.OptionsSchema = cloneBuiltinOptions(spec.OptionsSchema)
+	spec.ACPArgs = cloneStrings(spec.ACPArgs)
 	return spec
 }
 

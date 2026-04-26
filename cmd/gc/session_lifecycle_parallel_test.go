@@ -2592,3 +2592,61 @@ func TestCommitStartResult_TransitionsCreatingToActive(t *testing.T) {
 		t.Errorf("started_config_hash = %q, want %q", got.Metadata["started_config_hash"], "core-abc")
 	}
 }
+
+func TestCommitStartResult_PersistsMCPIdentityForACPStart(t *testing.T) {
+	store := beads.NewMemStore()
+	session, err := store.Create(beads.Bead{
+		Title:  "worker-session",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"template":     "worker",
+			"agent_name":   "myrig/worker-adhoc-123",
+			"session_name": "worker-1",
+			"state":        "creating",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := startCandidate{
+		session: &session,
+		tp: TemplateParams{
+			TemplateName: "worker",
+			InstanceName: "worker-1",
+			IsACP:        true,
+		},
+	}
+	result := startResult{
+		prepared: preparedStart{
+			candidate: candidate,
+			cfg: runtime.Config{
+				MCPServers: []runtime.MCPServerConfig{{
+					Name:      "filesystem",
+					Transport: runtime.MCPTransportStdio,
+					Command:   "/bin/mcp",
+				}},
+			},
+			coreHash: "core-abc",
+			liveHash: "live-xyz",
+		},
+		outcome:  "success",
+		started:  time.Unix(100, 0),
+		finished: time.Unix(101, 0),
+	}
+	rec := events.NewFake()
+	ok := commitStartResult(result, store, &clock.Fake{Time: time.Unix(102, 0)}, rec, 0, ioDiscard{}, ioDiscard{})
+	if !ok {
+		t.Fatal("commitStartResult returned false for successful start")
+	}
+	got, err := store.Get(session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata[sessionpkg.MCPIdentityMetadataKey] != "myrig/worker-adhoc-123" {
+		t.Fatalf("mcp_identity = %q, want %q", got.Metadata[sessionpkg.MCPIdentityMetadataKey], "myrig/worker-adhoc-123")
+	}
+	if got.Metadata[sessionpkg.MCPServersSnapshotMetadataKey] == "" {
+		t.Fatal("mcp_servers_snapshot = empty, want persisted snapshot")
+	}
+}
