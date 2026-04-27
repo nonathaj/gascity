@@ -49,10 +49,11 @@ type DesiredStateResult struct {
 }
 
 type poolEvalWork struct {
-	agentIdx int
-	sp       scaleParams
-	poolDir  string
-	env      map[string]string
+	agentIdx  int
+	sp        scaleParams
+	poolDir   string
+	env       map[string]string
+	newDemand bool
 }
 
 func evaluatePendingPools(
@@ -80,12 +81,19 @@ func evaluatePendingPools(
 		template := cfg.Agents[pw.agentIdx].QualifiedName()
 		agentName := cfg.Agents[pw.agentIdx].Name
 		agentIndex := pw.agentIdx
-		go func(idx int, template, agentName string, agentIndex int, sp scaleParams, dir string) {
+		newDemand := pw.newDemand
+		go func(idx int, template, agentName string, agentIndex int, sp scaleParams, dir string, newDemand bool) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			started := time.Now()
-			d, err := evaluatePool(agentName, sp, dir, probeEnv, shellScaleCheck)
+			var d int
+			var err error
+			if newDemand {
+				d, err = evaluatePoolNewDemand(agentName, sp, dir, probeEnv, shellScaleCheck)
+			} else {
+				d, err = evaluatePool(agentName, sp, dir, probeEnv, shellScaleCheck)
+			}
 			evalResults[idx] = poolEvalResult{desired: d, err: err}
 			if trace != nil {
 				outcome := "success"
@@ -102,7 +110,7 @@ func evaluatePendingPools(
 					"agent_index":    agentIndex,
 				}, "")
 			}
-		}(j, template, agentName, agentIndex, sp, pw.poolDir)
+		}(j, template, agentName, agentIndex, sp, pw.poolDir, newDemand)
 	}
 	wg.Wait()
 
@@ -110,16 +118,21 @@ func evaluatePendingPools(
 	for j, pw := range pendingPools {
 		pr := evalResults[j]
 		if pr.err != nil {
-			fmt.Fprintf(stderr, "buildDesiredState: %v (using min=%d)\n", pr.err, pw.sp.Min) //nolint:errcheck
+			if pw.newDemand {
+				fmt.Fprintf(stderr, "buildDesiredState: %v (using new demand=0)\n", pr.err) //nolint:errcheck
+			} else {
+				fmt.Fprintf(stderr, "buildDesiredState: %v (using min=%d)\n", pr.err, pw.sp.Min) //nolint:errcheck
+			}
 		}
 		counts[j] = pr.desired
 	}
 	return counts
 }
 
-// evaluatePendingPoolsMap is like evaluatePendingPools but returns a map
-// from agent qualified name → desired count. Used to feed scale_check
-// results into ComputePoolDesiredStates.
+// evaluatePendingPoolsMap is like evaluatePendingPools but returns a map from
+// agent qualified name to scale_check count. In bead-backed reconciliation the
+// count is additive new demand; legacy no-store callers still use desired
+// counts.
 func evaluatePendingPoolsMap(
 	cfg *config.City,
 	pendingPools []poolEvalWork,
@@ -219,7 +232,7 @@ func buildDesiredStateWithSessionBeads(
 			// but generic scale_check/min demand for the backing template still
 			// creates ephemeral capacity through the pool pipeline.
 			poolDir := agentCommandDir(cityPath, &cfg.Agents[i], cfg.Rigs)
-			pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir})
+			pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir, newDemand: store != nil})
 			continue
 		}
 
@@ -227,11 +240,11 @@ func buildDesiredStateWithSessionBeads(
 		if rigName != "" && suspendedRigPaths[filepath.Clean(rigRootForName(rigName, cfg.Rigs))] {
 			continue
 		}
-		// Pool agent: collect scale-check inputs. Legacy no-store mode uses
-		// them directly; bead-backed mode falls back to them when work-bead
-		// listing fails so transient store errors do not collapse demand to 0.
+		// Pool agent: collect scale_check inputs. Legacy no-store mode uses
+		// them as desired counts; bead-backed mode uses them as authoritative
+		// new unassigned demand while assigned work drives resume requests.
 		poolDir := agentCommandDir(cityPath, &cfg.Agents[i], cfg.Rigs)
-		pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir, env: controllerQueryRuntimeEnv(cityPath, cfg, &cfg.Agents[i])})
+		pendingPools = append(pendingPools, poolEvalWork{agentIdx: i, sp: sp, poolDir: poolDir, env: controllerQueryRuntimeEnv(cityPath, cfg, &cfg.Agents[i]), newDemand: store != nil})
 	}
 
 	// scale_check runs in parallel for all pool agents — the authoritative

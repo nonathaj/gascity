@@ -1489,11 +1489,11 @@ func TestDefaultPoolCheckUsesBdReady(t *testing.T) {
 	if !strings.Contains(check, "bd ready") {
 		t.Errorf("EffectiveScaleCheck() = %q, want bd ready for blocker-aware counting", check)
 	}
-	if !strings.Contains(check, "--status=in_progress") {
-		t.Errorf("EffectiveScaleCheck() = %q, want --status=in_progress for active work", check)
-	}
 	if !strings.Contains(check, "--type=molecule") {
 		t.Errorf("EffectiveScaleCheck() = %q, want --type=molecule for formula-dispatched work", check)
+	}
+	if strings.Contains(check, "--status=in_progress") || strings.Contains(check, "${active:-0}") {
+		t.Errorf("EffectiveScaleCheck() = %q, should not count in-progress work as new demand", check)
 	}
 }
 
@@ -1587,21 +1587,21 @@ func TestEffectiveScaleCheckDefaults(t *testing.T) {
 		MinActiveSessions: ptrInt(0), MaxActiveSessions: ptrInt(1),
 	}
 	check := a.EffectiveScaleCheck()
-	// Default check uses bd ready (blocker-aware) + in_progress count + molecule count via gc.routed_to.
+	// Default check uses bd ready (blocker-aware) + molecule count via gc.routed_to.
 	if !strings.Contains(check, "gc.routed_to=refinery") {
 		t.Errorf("EffectiveScaleCheck = %q, want gc.routed_to=refinery", check)
 	}
-	if !strings.Contains(check, "--status=in_progress") {
-		t.Errorf("EffectiveScaleCheck = %q, want --status=in_progress for active work", check)
-	}
 	if !strings.Contains(check, "--no-assignee") {
-		t.Errorf("EffectiveScaleCheck = %q, want --no-assignee for active unassigned work", check)
+		t.Errorf("EffectiveScaleCheck = %q, want --no-assignee for new unassigned demand", check)
 	}
 	if !strings.Contains(check, "--type=molecule") {
 		t.Errorf("EffectiveScaleCheck = %q, want --type=molecule for formula-dispatched work", check)
 	}
 	if !strings.Contains(check, "${molecules:-0}") {
 		t.Errorf("EffectiveScaleCheck = %q, want ${molecules:-0} in arithmetic sum", check)
+	}
+	if strings.Contains(check, "--status=in_progress") || strings.Contains(check, "${active:-0}") {
+		t.Errorf("EffectiveScaleCheck = %q, should not count in-progress work as new demand", check)
 	}
 }
 
@@ -1616,14 +1616,14 @@ func TestEffectiveScaleCheckDefaultsQualified(t *testing.T) {
 	if !strings.Contains(check, "gc.routed_to=myproject/polecat") {
 		t.Errorf("EffectiveScaleCheck = %q, want gc.routed_to=myproject/polecat", check)
 	}
-	if !strings.Contains(check, "--status=in_progress") {
-		t.Errorf("EffectiveScaleCheck = %q, want --status=in_progress for active work", check)
-	}
 	if !strings.Contains(check, "--no-assignee") {
-		t.Errorf("EffectiveScaleCheck = %q, want --no-assignee for active unassigned work", check)
+		t.Errorf("EffectiveScaleCheck = %q, want --no-assignee for new unassigned demand", check)
 	}
 	if !strings.Contains(check, "--type=molecule") {
 		t.Errorf("EffectiveScaleCheck = %q, want --type=molecule for formula-dispatched work", check)
+	}
+	if strings.Contains(check, "--status=in_progress") || strings.Contains(check, "${active:-0}") {
+		t.Errorf("EffectiveScaleCheck = %q, should not count in-progress work as new demand", check)
 	}
 }
 
@@ -1637,23 +1637,20 @@ func TestEffectiveScaleCheckMoleculeQuery(t *testing.T) {
 	}
 	check := a.EffectiveScaleCheck()
 
-	// Must contain three separate queries summed together.
+	// Must contain blocker-aware ready demand and standalone molecule demand.
 	if !strings.Contains(check, "bd ready") {
 		t.Errorf("missing bd ready query for blocker-aware task counting")
-	}
-	if !strings.Contains(check, "--status=in_progress") {
-		t.Errorf("missing in_progress query for active work")
 	}
 	if !strings.Contains(check, "--status=open --type=molecule") {
 		t.Errorf("missing molecule query for formula-dispatched work (GH #505)")
 	}
+	if strings.Contains(check, "--status=in_progress") || strings.Contains(check, "${active:-0}") {
+		t.Errorf("EffectiveScaleCheck = %q, should not count in-progress work as new demand", check)
+	}
 
-	// All three variables must appear in the arithmetic sum.
+	// Both variables must appear in the arithmetic sum.
 	if !strings.Contains(check, "${ready:-0}") {
 		t.Errorf("missing ${ready:-0} in arithmetic sum")
-	}
-	if !strings.Contains(check, "${active:-0}") {
-		t.Errorf("missing ${active:-0} in arithmetic sum")
 	}
 	if !strings.Contains(check, "${molecules:-0}") {
 		t.Errorf("missing ${molecules:-0} in arithmetic sum")
