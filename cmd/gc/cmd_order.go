@@ -488,7 +488,11 @@ func doOrderRun(aa []orders.Order, name, rig, cityPath string, store beads.Store
 
 	var pool string
 	if a.Pool != "" {
-		pool = qualifyPool(a.Pool, a.Rig, cfg)
+		pool, err = qualifyOrderPool(a, cfg)
+		if err != nil {
+			fmt.Fprintf(stderr, "gc order run: %v\n", err) //nolint:errcheck // best-effort stderr
+			return 1
+		}
 	}
 
 	if a.Pool != "" && cfg != nil {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -327,7 +328,7 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 			Subject: scoped,
 			Message: err.Error(),
 		})
-		store.Update(trackingID, beads.UpdateOpts{Labels: []string{"wisp", "wisp-failed"}}) //nolint:errcheck // best-effort
+		m.markTrackingFailure(store, trackingID, scoped, a, headSeq)
 		return
 	}
 	if err := molecule.ValidateRecipeRuntimeVars(recipe, molecule.Options{}); err != nil {
@@ -337,13 +338,24 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 			Subject: scoped,
 			Message: err.Error(),
 		})
-		store.Update(trackingID, beads.UpdateOpts{Labels: []string{"wisp", "wisp-failed"}}) //nolint:errcheck // best-effort
+		m.markTrackingFailure(store, trackingID, scoped, a, headSeq)
 		return
 	}
 
 	var pool string
 	if a.Pool != "" {
-		pool = qualifyPool(a.Pool, a.Rig, m.cfg)
+		pool, err = qualifyOrderPool(a, m.cfg)
+		if err != nil {
+			logDispatchError(m.stderr, "gc: order %s: %v", scoped, err)
+			m.rec.Record(events.Event{
+				Type:    events.OrderFailed,
+				Actor:   "controller",
+				Subject: scoped,
+				Message: err.Error(),
+			})
+			m.markTrackingFailure(store, trackingID, scoped, a, headSeq)
+			return
+		}
 	}
 
 	// Decorate graph workflow recipes with routing metadata so child step
@@ -363,7 +375,7 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 			Subject: scoped,
 			Message: err.Error(),
 		})
-		store.Update(trackingID, beads.UpdateOpts{Labels: []string{"wisp", "wisp-failed"}}) //nolint:errcheck // best-effort
+		m.markTrackingFailure(store, trackingID, scoped, a, headSeq)
 		return
 	}
 	rootID := cookResult.RootID
@@ -390,7 +402,7 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 			Subject: scoped,
 			Message: fmt.Sprintf("wisp %s created but label failed: %v", rootID, err),
 		})
-		store.Update(trackingID, beads.UpdateOpts{Labels: []string{"wisp", "wisp-failed"}}) //nolint:errcheck // best-effort
+		m.markTrackingFailure(store, trackingID, scoped, a, headSeq)
 		return
 	}
 
@@ -412,11 +424,31 @@ func (m *memoryOrderDispatcher) orderRigSuspended(a orders.Order) bool {
 	if m.cfg == nil {
 		return false
 	}
-	qualified := qualifyPool(a.Pool, a.Rig, m.cfg)
+	qualified, err := qualifyOrderPool(a, m.cfg)
+	if err != nil {
+		return m.rigSuspendedByName(a.Rig)
+	}
 	rigName, _ := config.ParseQualifiedName(qualified)
 	if rigName == "" {
 		rigName = a.Rig
 	}
+	return m.rigSuspendedByName(rigName)
+}
+
+func (m *memoryOrderDispatcher) markTrackingFailure(store beads.Store, trackingID, scoped string, a orders.Order, headSeq uint64) {
+	labels := []string{"wisp", "wisp-failed"}
+	if a.Trigger == "event" && headSeq > 0 {
+		labels = append(labels,
+			fmt.Sprintf("order:%s", scoped),
+			fmt.Sprintf("seq:%d", headSeq),
+		)
+	}
+	if err := store.Update(trackingID, beads.UpdateOpts{Labels: labels}); err != nil {
+		logDispatchError(m.stderr, "gc: order %s: failed to mark tracking bead %s as failed: %v", scoped, trackingID, err)
+	}
+}
+
+func (m *memoryOrderDispatcher) rigSuspendedByName(rigName string) bool {
 	if rigName == "" {
 		return false
 	}
@@ -541,50 +573,111 @@ func rigExclusiveLayers(rigLayers, cityLayers []string) []string {
 // via gc.routed_to. Three layers of qualification stack:
 //
 //  1. If pool already contains "/" it is rig-qualified — pass through.
-//  2. If pool already contains "." it is binding-qualified — skip the
-//     binding lookup but still stack the rig prefix when present.
-//  3. Otherwise look up agents in cfg.Agents whose Dir matches rig
-//     (city orders use rig=="") and Name matches pool. If one or more
-//     matches are found and all of them share the same non-empty
-//     BindingName, swap pool for the binding-qualified form
-//     ("binding.name") before any rig prefixing. This handles V2 pack
-//     imports where the dispatched wisp must carry "binding.name" so the
-//     agent's default scale_check matches its own qualified name.
+//  2. If pool exactly matches a configured binding-qualified target
+//     ("binding.name"), preserve that target and still stack the rig prefix
+//     when present.
+//  3. If the order came from an imported pack, prefer same-source agents when
+//     resolving a bare pool name so pack-local orders stay pack-local even if
+//     other scopes also export the same bare agent name.
+//  4. Otherwise look up agents in cfg.Agents whose Dir matches rig
+//     (city orders use rig=="") and Name matches pool. If exactly one target
+//     resolves, swap pool for the binding-qualified form ("binding.name")
+//     before any rig prefixing. This handles V2 pack imports where the
+//     dispatched wisp must carry "binding.name" so the agent's default
+//     scale_check matches its own qualified name.
 //
-// Ambiguity (multiple matching agents with different bindings) falls back
-// to the unqualified pool to avoid silently picking by slice declaration
-// order. Duplicate matches with the same non-empty binding are treated as
-// equivalent and still qualify. nil cfg preserves the rig-only behavior so
-// call sites without a loaded city remain stable.
-func qualifyPool(pool, rig string, cfg *config.City) string {
+// Ambiguity is a hard failure: silently stamping the bare pool string would
+// recreate the exact route/scaler mismatch this helper exists to prevent.
+// nil cfg preserves the rig-only behavior so call sites without a loaded
+// city remain stable. Dotted values that do not match a configured bound
+// target are preserved for backward compatibility.
+func qualifyOrderPool(a orders.Order, cfg *config.City) (string, error) {
+	return qualifyPool(a.Pool, a.Rig, cfg, orderPoolSourceDirHint(a))
+}
+
+func orderPoolSourceDirHint(a orders.Order) string {
+	if a.FormulaLayer == "" {
+		return ""
+	}
+	return filepath.Clean(filepath.Dir(a.FormulaLayer))
+}
+
+func qualifyPool(pool, rig string, cfg *config.City, sourceDirHint string) (string, error) {
 	if strings.Contains(pool, "/") {
-		return pool
+		return pool, nil
+	}
+	if cfg == nil {
+		if rig == "" {
+			return pool, nil
+		}
+		return rig + "/" + pool, nil
 	}
 
 	qualified := pool
-	if !strings.Contains(pool, ".") && cfg != nil {
-		var match *config.Agent
-		ambiguous := false
-		for i := range cfg.Agents {
-			a := &cfg.Agents[i]
-			if a.Dir != rig || a.Name != pool {
-				continue
-			}
-			if match != nil && match.BindingName != a.BindingName {
-				ambiguous = true
-				break
-			}
-			match = a
+	scope := "city order"
+	if rig != "" {
+		scope = fmt.Sprintf("rig %q", rig)
+	}
+
+	var exactQualified []string
+	var sourceScopedMatches []string
+	var localBareMatches []string
+	var bareMatches []string
+	cleanHint := ""
+	if sourceDirHint != "" {
+		cleanHint = filepath.Clean(sourceDirHint)
+	}
+	for i := range cfg.Agents {
+		a := &cfg.Agents[i]
+		if a.Dir != rig {
+			continue
 		}
-		if !ambiguous && match != nil && match.BindingName != "" {
-			qualified = match.BindingQualifiedName()
+		switch {
+		case strings.Contains(pool, ".") && a.BindingQualifiedName() == pool:
+			exactQualified = appendUniquePoolTarget(exactQualified, a.BindingQualifiedName())
+		case a.Name == pool:
+			bareMatches = appendUniquePoolTarget(bareMatches, a.BindingQualifiedName())
+			if a.BindingName == "" {
+				localBareMatches = appendUniquePoolTarget(localBareMatches, a.BindingQualifiedName())
+			}
+			if cleanHint != "" && filepath.Clean(a.SourceDir) == cleanHint {
+				sourceScopedMatches = appendUniquePoolTarget(sourceScopedMatches, a.BindingQualifiedName())
+			}
 		}
 	}
 
-	if rig == "" {
-		return qualified
+	switch {
+	case len(exactQualified) == 1:
+		qualified = exactQualified[0]
+	case len(exactQualified) > 1:
+		return "", fmt.Errorf("ambiguous pool %q for %s: matches %s", pool, scope, strings.Join(exactQualified, ", "))
+	case len(sourceScopedMatches) == 1:
+		qualified = sourceScopedMatches[0]
+	case len(sourceScopedMatches) > 1:
+		return "", fmt.Errorf("ambiguous pool %q for %s: matches %s", pool, scope, strings.Join(sourceScopedMatches, ", "))
+	case len(localBareMatches) == 1:
+		qualified = localBareMatches[0]
+	case len(localBareMatches) > 1:
+		return "", fmt.Errorf("ambiguous pool %q for %s: matches %s", pool, scope, strings.Join(localBareMatches, ", "))
+	case len(bareMatches) == 1:
+		qualified = bareMatches[0]
+	case len(bareMatches) > 1:
+		return "", fmt.Errorf("ambiguous pool %q for %s: matches %s", pool, scope, strings.Join(bareMatches, ", "))
 	}
-	return rig + "/" + qualified
+
+	if rig == "" {
+		return qualified, nil
+	}
+	return rig + "/" + qualified, nil
+}
+
+func appendUniquePoolTarget(values []string, want string) []string {
+	for _, value := range values {
+		if value == want {
+			return values
+		}
+	}
+	return append(values, want)
 }
 
 // convertOverrides converts config.OrderOverride to orders.Override.
