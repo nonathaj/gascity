@@ -42,6 +42,18 @@ type selectiveUpdateFailStore struct {
 	beads.Store
 }
 
+type countingListStore struct {
+	beads.Store
+
+	includeClosedLists int
+}
+
+type createdAtOverrideStore struct {
+	beads.Store
+
+	createdAt map[string]time.Time
+}
+
 func (s selectiveUpdateFailStore) Update(id string, opts beads.UpdateOpts) error {
 	for _, label := range opts.Labels {
 		if strings.HasPrefix(label, "order-run:") {
@@ -49,6 +61,45 @@ func (s selectiveUpdateFailStore) Update(id string, opts beads.UpdateOpts) error
 		}
 	}
 	return s.Store.Update(id, opts)
+}
+
+func (s *countingListStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	if query.IncludeClosed || query.Status == "closed" {
+		s.includeClosedLists++
+	}
+	return s.Store.List(query)
+}
+
+func (s *countingListStore) reset() {
+	s.includeClosedLists = 0
+}
+
+func (s *createdAtOverrideStore) Create(b beads.Bead) (beads.Bead, error) {
+	created, err := s.Store.Create(b)
+	if err != nil {
+		return beads.Bead{}, err
+	}
+	if !b.CreatedAt.IsZero() {
+		if s.createdAt == nil {
+			s.createdAt = make(map[string]time.Time)
+		}
+		s.createdAt[created.ID] = b.CreatedAt
+		created.CreatedAt = b.CreatedAt
+	}
+	return created, nil
+}
+
+func (s *createdAtOverrideStore) List(query beads.ListQuery) ([]beads.Bead, error) {
+	results, err := s.Store.List(query)
+	if err != nil {
+		return nil, err
+	}
+	for i := range results {
+		if created, ok := s.createdAt[results[i].ID]; ok {
+			results[i].CreatedAt = created
+		}
+	}
+	return results, nil
 }
 
 func TestOrderDispatcherNil(t *testing.T) {
@@ -198,6 +249,129 @@ func TestOrderDispatchMultiple(t *testing.T) {
 	}
 	if trackingCount != 1 {
 		t.Errorf("expected 1 tracking bead for order-a, got %d", trackingCount)
+	}
+}
+
+func TestOrderDispatchCachesLastRunBetweenDispatches(t *testing.T) {
+	store := &countingListStore{Store: beads.NewMemStore()}
+
+	if _, err := store.Create(beads.Bead{
+		Title:  "recent run",
+		Labels: []string{"order-run:test-order"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	aa := []orders.Order{{
+		Name:     "test-order",
+		Trigger:  "cooldown",
+		Interval: "1h",
+		Formula:  "test-formula",
+	}}
+	ad := buildOrderDispatcherFromList(aa, store, nil)
+	if ad == nil {
+		t.Fatal("expected non-nil dispatcher")
+	}
+
+	cityPath := t.TempDir()
+	now := time.Now()
+	ad.dispatch(context.Background(), cityPath, now)
+	if store.includeClosedLists == 0 {
+		t.Fatal("first dispatch did not read persisted order history")
+	}
+
+	store.reset()
+	ad.dispatch(context.Background(), cityPath, now.Add(time.Second))
+	if store.includeClosedLists != 0 {
+		t.Fatalf("second dispatch performed %d closed-history reads, want cached last-run result", store.includeClosedLists)
+	}
+
+	all, _ := store.ListOpen()
+	if len(all) != 1 {
+		t.Errorf("expected only seed bead, got %d", len(all))
+	}
+}
+
+func TestOrderDispatchRefreshesCachedLastRunBeforeDueDispatch(t *testing.T) {
+	baseStore := &createdAtOverrideStore{Store: beads.NewMemStore()}
+	store := &countingListStore{Store: baseStore}
+	now := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+
+	if _, err := store.Create(beads.Bead{
+		Title:     "recent run",
+		Labels:    []string{"order-run:test-order"},
+		CreatedAt: now.Add(-30 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	aa := []orders.Order{{
+		Name:     "test-order",
+		Trigger:  "cooldown",
+		Interval: "1h",
+		Exec:     "true",
+	}}
+	ad := buildOrderDispatcherFromListExec(aa, store, nil, successfulExec, nil)
+	if ad == nil {
+		t.Fatal("expected non-nil dispatcher")
+	}
+
+	cityPath := t.TempDir()
+	ad.dispatch(context.Background(), cityPath, now)
+	if store.includeClosedLists == 0 {
+		t.Fatal("first dispatch did not read persisted order history")
+	}
+
+	store.reset()
+	if _, err := store.Create(beads.Bead{
+		Title:     "manual run",
+		Labels:    []string{"order-run:test-order"},
+		CreatedAt: now.Add(20 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	ad.dispatch(context.Background(), cityPath, now.Add(31*time.Minute))
+	if store.includeClosedLists == 0 {
+		t.Fatal("due cached dispatch did not refresh persisted order history")
+	}
+
+	all := trackingBeads(t, store, "order-run:test-order")
+	if len(all) != 2 {
+		t.Fatalf("order-run beads = %d, want only seed plus manual run", len(all))
+	}
+}
+
+func TestOrderDispatchCachesAutoTrackingBeadCreatedAt(t *testing.T) {
+	store := &countingListStore{Store: beads.NewMemStore()}
+	now := time.Now()
+
+	aa := []orders.Order{{
+		Name:     "test-order",
+		Trigger:  "cooldown",
+		Interval: "1h",
+		Exec:     "true",
+	}}
+	ad := buildOrderDispatcherFromListExec(aa, store, nil, successfulExec, nil)
+	if ad == nil {
+		t.Fatal("expected non-nil dispatcher")
+	}
+
+	cityPath := t.TempDir()
+	ad.dispatch(context.Background(), cityPath, now)
+	all := trackingBeads(t, store, "order-run:test-order")
+	if len(all) != 1 {
+		t.Fatalf("order-run beads after first dispatch = %d, want 1", len(all))
+	}
+
+	store.reset()
+	ad.dispatch(context.Background(), cityPath, now.Add(time.Second))
+	if store.includeClosedLists != 0 {
+		t.Fatalf("second dispatch performed %d closed-history reads, want cached tracking bead timestamp", store.includeClosedLists)
+	}
+	all = trackingBeads(t, store, "order-run:test-order")
+	if len(all) != 1 {
+		t.Fatalf("order-run beads after second dispatch = %d, want cached cooldown suppression", len(all))
 	}
 }
 
@@ -2173,6 +2347,11 @@ func TestOrderDispatchSkipsRigEventWhenLegacyCursorReadFails(t *testing.T) {
 }
 
 func TestOrderDispatchSkipsRigConditionWhenLegacyOpenWorkReadFails(t *testing.T) {
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(cityDir, "frontend")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	rigStore := beads.NewMemStore()
 	legacyStore := labelFailListStore{
 		Store:     beads.NewMemStore(),
@@ -2202,12 +2381,12 @@ func TestOrderDispatchSkipsRigConditionWhenLegacyOpenWorkReadFails(t *testing.T)
 		cfg: &config.City{
 			Rigs: []config.Rig{{
 				Name: "frontend",
-				Path: "frontend",
+				Path: rigDir,
 			}},
 		},
 	}
 
-	m.dispatch(context.Background(), t.TempDir(), time.Now())
+	m.dispatch(context.Background(), cityDir, time.Now())
 	time.Sleep(50 * time.Millisecond)
 
 	rigRuns := trackingBeads(t, rigStore, "order-run:rig-digest:rig:frontend")
@@ -2216,6 +2395,37 @@ func TestOrderDispatchSkipsRigConditionWhenLegacyOpenWorkReadFails(t *testing.T)
 	}
 	if !strings.Contains(stderr.String(), "open work") {
 		t.Fatalf("stderr missing open-work error:\n%s", stderr.String())
+	}
+}
+
+func TestOrderDispatchConditionUsesScopedEnv(t *testing.T) {
+	cityDir := t.TempDir()
+	store := beads.NewMemStore()
+	check := fmt.Sprintf(
+		`test "$GC_CITY_PATH" = '%s' && test "$GC_STORE_ROOT" = '%s' && test "$GC_STORE_SCOPE" = city && test "$(pwd)" = '%s'`,
+		cityDir,
+		cityDir,
+		cityDir,
+	)
+	ran := make(chan struct{}, 1)
+	fakeExec := func(_ context.Context, _, _ string, _ []string) ([]byte, error) {
+		ran <- struct{}{}
+		return nil, nil
+	}
+	aa := []orders.Order{{
+		Name:    "scoped-check",
+		Trigger: "condition",
+		Check:   check,
+		Exec:    "true",
+	}}
+	ad := buildOrderDispatcherFromListExec(aa, store, nil, fakeExec, nil)
+
+	ad.dispatch(context.Background(), cityDir, time.Now())
+
+	select {
+	case <-ran:
+	case <-time.After(2 * time.Second):
+		t.Fatal("condition order did not dispatch with scoped cwd/env")
 	}
 }
 
@@ -2602,6 +2812,39 @@ func TestOrderDispatchSkipsOpenWork(t *testing.T) {
 	all, _ := store.ListOpen()
 	if len(all) != 1 {
 		t.Errorf("expected 1 bead (seed only), got %d", len(all))
+	}
+}
+
+func TestOrderDispatchSkipsOpenTrackingBeadForConditionOrder(t *testing.T) {
+	store := beads.NewMemStore()
+
+	_, err := store.Create(beads.Bead{
+		Title:  "order:my-auto",
+		Labels: []string{"order-run:my-auto", labelOrderTracking},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ran := false
+	fakeExec := func(_ context.Context, _, _ string, _ []string) ([]byte, error) {
+		ran = true
+		return nil, nil
+	}
+
+	aa := []orders.Order{{
+		Name:    "my-auto",
+		Trigger: "condition",
+		Check:   "true",
+		Exec:    "scripts/run.sh",
+	}}
+	ad := buildOrderDispatcherFromListExec(aa, store, nil, fakeExec, nil)
+
+	ad.dispatch(context.Background(), t.TempDir(), time.Now())
+	time.Sleep(50 * time.Millisecond)
+
+	if ran {
+		t.Error("exec should not have run while an order-tracking bead is open")
 	}
 }
 

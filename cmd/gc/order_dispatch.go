@@ -7,6 +7,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
@@ -74,6 +75,9 @@ type memoryOrderDispatcher struct {
 	maxTimeout time.Duration
 	cfg        *config.City
 	cityName   string
+
+	cacheMu      sync.Mutex
+	lastRunCache map[string]time.Time
 }
 
 // buildOrderDispatcher scans formula layers for orders and returns a
@@ -164,12 +168,20 @@ func (m *memoryOrderDispatcher) dispatch(ctx context.Context, cityPath string, n
 		if legacyStore != nil {
 			storesForGate = append(storesForGate, legacyStore)
 		}
+		storeKeysForGate := []string{storeKey}
+		if legacyStore != nil {
+			storeKeysForGate = append(storeKeysForGate, orderStoreTargetKey(legacyOrderCityTarget(cityPath, m.cfg)))
+		}
 		baseLastRunFn := orders.LastRunAcrossStores(storesForGate...)
 		var lastRunErr error
+		var lastRunFromCache bool
 		lastRunFn := func(orderName string) (time.Time, error) {
-			last, err := baseLastRunFn(orderName)
+			last, fromCache, err := m.cachedLastRun(orderName, storeKeysForGate, baseLastRunFn)
 			if err != nil {
 				lastRunErr = err
+			}
+			if fromCache {
+				lastRunFromCache = true
 			}
 			return last, err
 		}
@@ -184,13 +196,31 @@ func (m *memoryOrderDispatcher) dispatch(ctx context.Context, cityPath string, n
 				return cursor
 			}
 		}
-		result := orders.CheckTrigger(a, now, lastRunFn, m.ep, cursorFn)
+		triggerOpts := orderTriggerOptionsForTarget(cityPath, m.cfg, target, a)
+		result := orders.CheckTriggerWithOptions(a, now, lastRunFn, m.ep, cursorFn, triggerOpts)
 		if lastRunErr != nil {
 			logDispatchError(m.stderr, "gc: order dispatch: reading last run for %s: %v", a.ScopedName(), lastRunErr)
 			continue
 		}
 		if !result.Due {
 			continue
+		}
+		if lastRunFromCache && orderTriggerUsesLastRun(a) {
+			refreshedLastRun, err := baseLastRunFn(a.ScopedName())
+			if err != nil {
+				logDispatchError(m.stderr, "gc: order dispatch: refreshing last run for %s: %v", a.ScopedName(), err)
+				continue
+			}
+			if refreshedLastRun.After(result.LastRun) {
+				m.rememberLastRun(a.ScopedName(), storeKeysForGate, refreshedLastRun)
+				refreshedLastRunFn := func(string) (time.Time, error) {
+					return refreshedLastRun, nil
+				}
+				result = orders.CheckTriggerWithOptions(a, now, refreshedLastRunFn, m.ep, cursorFn, triggerOpts)
+				if !result.Due {
+					continue
+				}
+			}
 		}
 
 		// Skip dispatch if previous work hasn't been processed yet.
@@ -214,6 +244,7 @@ func (m *memoryOrderDispatcher) dispatch(ctx context.Context, cityPath string, n
 			logDispatchError(m.stderr, "gc: order dispatch: creating tracking bead for %s: %v", scoped, err)
 			continue
 		}
+		m.rememberLastRun(scoped, storeKeysForGate, trackingBead.CreatedAt)
 
 		// Fire and forget with timeout.
 		a := a // capture loop variable
@@ -237,6 +268,45 @@ func (m *memoryOrderDispatcher) legacyCityStoreForTarget(cityPath string, target
 	}
 	stores[key] = store
 	return store, true
+}
+
+func (m *memoryOrderDispatcher) cachedLastRun(orderName string, storeKeys []string, read orders.LastRunFunc) (time.Time, bool, error) {
+	key := orderHistoryCacheKey(orderName, storeKeys)
+	m.cacheMu.Lock()
+	if m.lastRunCache != nil {
+		if last, ok := m.lastRunCache[key]; ok {
+			m.cacheMu.Unlock()
+			return last, true, nil
+		}
+	}
+	m.cacheMu.Unlock()
+
+	last, err := read(orderName)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	m.rememberLastRun(orderName, storeKeys, last)
+	return last, false, nil
+}
+
+func (m *memoryOrderDispatcher) rememberLastRun(orderName string, storeKeys []string, last time.Time) {
+	key := orderHistoryCacheKey(orderName, storeKeys)
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	if m.lastRunCache == nil {
+		m.lastRunCache = make(map[string]time.Time)
+	}
+	if existing, ok := m.lastRunCache[key]; !ok || existing.IsZero() || last.After(existing) {
+		m.lastRunCache[key] = last
+	}
+}
+
+func orderHistoryCacheKey(orderName string, storeKeys []string) string {
+	return orderName + "\x00" + strings.Join(storeKeys, "\x00")
+}
+
+func orderTriggerUsesLastRun(a orders.Order) bool {
+	return a.Trigger == "cooldown" || a.Trigger == "cron"
 }
 
 // dispatchOne runs a single order dispatch in its own goroutine.
@@ -425,9 +495,9 @@ func (m *memoryOrderDispatcher) orderRigSuspended(a orders.Order) bool {
 	return false
 }
 
-// hasOpenWorkStrict reports whether any non-closed work bead exists for this
-// order. Tracking beads (title "order:<name>") are excluded, so only actual
-// work (wisps, exec results) counts.
+// hasOpenWorkStrict reports whether any non-closed work or tracking bead
+// exists for this order. Open tracking beads represent in-flight dispatch and
+// must block condition/event orders that do not consult LastRun.
 func (m *memoryOrderDispatcher) hasOpenWorkStrict(store beads.Store, scopedName string) (bool, error) {
 	results, err := store.List(beads.ListQuery{
 		Label: "order-run:" + scopedName,
@@ -436,9 +506,8 @@ func (m *memoryOrderDispatcher) hasOpenWorkStrict(store beads.Store, scopedName 
 	if err != nil {
 		return false, fmt.Errorf("listing order work beads: %w", err)
 	}
-	trackingTitle := "order:" + scopedName
 	for _, b := range results {
-		if b.Status != "closed" && b.Title != trackingTitle {
+		if b.Status != "closed" {
 			return true, nil
 		}
 	}
