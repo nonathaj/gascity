@@ -341,10 +341,14 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 		return
 	}
 
+	var pool string
+	if a.Pool != "" {
+		pool = qualifyPool(a.Pool, a.Rig, m.cfg)
+	}
+
 	// Decorate graph workflow recipes with routing metadata so child step
 	// beads get gc.routed_to set before instantiation.
 	if a.Pool != "" {
-		pool := qualifyPool(a.Pool, a.Rig)
 		if err := applyGraphRouting(recipe, nil, pool, nil, "", "", "", "", store, m.cityName, cityPath, m.cfg); err != nil {
 			logDispatchError(m.stderr, "gc: order %s: routing decoration failed: %v", scoped, err)
 			// Non-fatal — molecule still works, just without step-level routing.
@@ -374,7 +378,6 @@ func (m *memoryOrderDispatcher) dispatchWisp(ctx context.Context, store beads.St
 		)
 	}
 	if a.Pool != "" {
-		pool := qualifyPool(a.Pool, a.Rig)
 		update.Metadata = map[string]string{"gc.routed_to": pool}
 	}
 	if err := store.Update(rootID, update); err != nil {
@@ -409,7 +412,7 @@ func (m *memoryOrderDispatcher) orderRigSuspended(a orders.Order) bool {
 	if m.cfg == nil {
 		return false
 	}
-	qualified := qualifyPool(a.Pool, a.Rig)
+	qualified := qualifyPool(a.Pool, a.Rig, m.cfg)
 	rigName, _ := config.ParseQualifiedName(qualified)
 	if rigName == "" {
 		rigName = a.Rig
@@ -533,14 +536,55 @@ func rigExclusiveLayers(rigLayers, cityLayers []string) []string {
 	return rigLayers[len(cityLayers):]
 }
 
-// qualifyPool prefixes an unqualified pool name with the rig name for
-// rig-scoped orders. Already-qualified names (containing "/") are
-// returned as-is. City orders (empty rig) are unchanged.
-func qualifyPool(pool, rig string) string {
-	if rig == "" || strings.Contains(pool, "/") {
+// qualifyPool resolves a raw pool name from an order TOML to the qualified
+// form used by Agent.QualifiedName() — the same string the scaler queries
+// via gc.routed_to. Three layers of qualification stack:
+//
+//  1. If pool already contains "/" it is rig-qualified — pass through.
+//  2. If pool already contains "." it is binding-qualified — skip the
+//     binding lookup but still stack the rig prefix when present.
+//  3. Otherwise look up agents in cfg.Agents whose Dir matches rig
+//     (city orders use rig=="") and Name matches pool. If one or more
+//     matches are found and all of them share the same non-empty
+//     BindingName, swap pool for the binding-qualified form
+//     ("binding.name") before any rig prefixing. This handles V2 pack
+//     imports where the dispatched wisp must carry "binding.name" so the
+//     agent's default scale_check matches its own qualified name.
+//
+// Ambiguity (multiple matching agents with different bindings) falls back
+// to the unqualified pool to avoid silently picking by slice declaration
+// order. Duplicate matches with the same non-empty binding are treated as
+// equivalent and still qualify. nil cfg preserves the rig-only behavior so
+// call sites without a loaded city remain stable.
+func qualifyPool(pool, rig string, cfg *config.City) string {
+	if strings.Contains(pool, "/") {
 		return pool
 	}
-	return rig + "/" + pool
+
+	qualified := pool
+	if !strings.Contains(pool, ".") && cfg != nil {
+		var match *config.Agent
+		ambiguous := false
+		for i := range cfg.Agents {
+			a := &cfg.Agents[i]
+			if a.Dir != rig || a.Name != pool {
+				continue
+			}
+			if match != nil && match.BindingName != a.BindingName {
+				ambiguous = true
+				break
+			}
+			match = a
+		}
+		if !ambiguous && match != nil && match.BindingName != "" {
+			qualified = match.BindingQualifiedName()
+		}
+	}
+
+	if rig == "" {
+		return qualified
+	}
+	return rig + "/" + qualified
 }
 
 // convertOverrides converts config.OrderOverride to orders.Override.

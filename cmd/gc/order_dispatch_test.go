@@ -125,6 +125,49 @@ func TestOrderDispatchCooldownDue(t *testing.T) {
 	}
 }
 
+// TestOrderDispatchResolvesPackBindingForPool reproduces issue #1268: a
+// pack-imported agent has BindingName set, so its qualified name is
+// "binding.name". A city-level order with pool="<name>" must resolve to the
+// binding-qualified value at dispatch so the wisp's gc.routed_to matches what
+// the scaler queries via Agent.QualifiedName().
+func TestOrderDispatchResolvesPackBindingForPool(t *testing.T) {
+	store := beads.NewMemStore()
+
+	cfg := &config.City{
+		Agents: []config.Agent{
+			{Name: "dog", BindingName: "maintenance"},
+		},
+	}
+
+	aa := []orders.Order{{
+		Name:         "mol-dog-doctor",
+		Trigger:      "cooldown",
+		Interval:     "5m",
+		Formula:      "test-formula",
+		Pool:         "dog",
+		FormulaLayer: sharedTestFormulaDir,
+	}}
+
+	m := &memoryOrderDispatcher{
+		aa: aa,
+		storeFn: func(_ execStoreTarget) (beads.Store, error) {
+			return store, nil
+		},
+		execRun: shellExecRunner,
+		rec:     events.Discard,
+		stderr:  &bytes.Buffer{},
+		cfg:     cfg,
+	}
+
+	m.dispatch(context.Background(), t.TempDir(), time.Now())
+	time.Sleep(50 * time.Millisecond)
+
+	work := workBeadByOrderLabel(t, store, "order-run:mol-dog-doctor")
+	if got := work.Metadata["gc.routed_to"]; got != "maintenance.dog" {
+		t.Errorf("gc.routed_to = %q, want %q (pack binding must qualify pool target)", got, "maintenance.dog")
+	}
+}
+
 func TestOrderDispatchCooldownNotDue(t *testing.T) {
 	store := beads.NewMemStore()
 
@@ -1860,18 +1903,63 @@ func TestRigExclusiveLayersNoCityPrefix(t *testing.T) {
 }
 
 func TestQualifyPool(t *testing.T) {
+	cityBindingCfg := &config.City{Agents: []config.Agent{
+		{Name: "dog", BindingName: "maintenance"},
+	}}
+	cityNoBindingCfg := &config.City{Agents: []config.Agent{
+		{Name: "dog"},
+	}}
+	rigBindingCfg := &config.City{Agents: []config.Agent{
+		{Name: "dog", BindingName: "foo", Dir: "api"},
+	}}
+	ambiguousCfg := &config.City{Agents: []config.Agent{
+		{Name: "dog", BindingName: "gastown"},
+		{Name: "dog", BindingName: "maintenance"},
+	}}
+	dirIsolatedCfg := &config.City{Agents: []config.Agent{
+		// City-level binding agent should NOT match a rig-scoped order.
+		{Name: "dog", BindingName: "maintenance"},
+	}}
+
 	tests := []struct {
-		pool, rig, want string
+		name      string
+		cfg       *config.City
+		pool, rig string
+		want      string
 	}{
-		{"polecat", "demo-repo", "demo-repo/polecat"},
-		{"demo-repo/polecat", "demo-repo", "demo-repo/polecat"}, // already qualified
-		{"dog", "", "dog"}, // city order
+		// Existing behavior preserved when cfg is nil (call sites that
+		// don't have a loaded city, e.g. TestOrderRun fixtures).
+		{"nil cfg city order", nil, "dog", "", "dog"},
+		{"nil cfg rig order", nil, "polecat", "demo-repo", "demo-repo/polecat"},
+		{"nil cfg pre-rig-qualified", nil, "demo-repo/polecat", "demo-repo", "demo-repo/polecat"},
+
+		// Already-qualified passthroughs.
+		{"already rig-qualified passthrough", cityBindingCfg, "demo-repo/dog", "", "demo-repo/dog"},
+		{"already binding-qualified passthrough", cityBindingCfg, "maintenance.dog", "", "maintenance.dog"},
+		{"binding-qualified gets rig prefix", cityBindingCfg, "maintenance.dog", "api", "api/maintenance.dog"},
+
+		// City-order binding lookup (the bug fix).
+		{"city order resolves binding", cityBindingCfg, "dog", "", "maintenance.dog"},
+		{"city order no binding agent", cityNoBindingCfg, "dog", "", "dog"},
+		{"city order miss falls through", cityBindingCfg, "wolf", "", "wolf"},
+
+		// Rig-order binding lookup.
+		{"rig order resolves binding", rigBindingCfg, "dog", "api", "api/foo.dog"},
+		{"rig order isolated from city agent", dirIsolatedCfg, "dog", "api", "api/dog"},
+
+		// Ambiguity falls back to unqualified to avoid silent picks.
+		{"ambiguous bindings fall through", ambiguousCfg, "dog", "", "dog"},
+
+		// Empty/edge cases.
+		{"empty cfg agents", &config.City{}, "dog", "", "dog"},
 	}
 	for _, tt := range tests {
-		got := qualifyPool(tt.pool, tt.rig)
-		if got != tt.want {
-			t.Errorf("qualifyPool(%q, %q) = %q, want %q", tt.pool, tt.rig, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := qualifyPool(tt.pool, tt.rig, tt.cfg)
+			if got != tt.want {
+				t.Errorf("qualifyPool(%q, %q, cfg) = %q, want %q", tt.pool, tt.rig, got, tt.want)
+			}
+		})
 	}
 }
 
