@@ -442,6 +442,55 @@ type resolvedMailTarget struct {
 	recipients []string
 }
 
+func mailSenderRouteMetadata(store beads.Store, sender string) (map[string]string, error) {
+	sender = strings.TrimSpace(sender)
+	if store == nil || sender == "" || sender == "human" {
+		return nil, nil
+	}
+	sessionID, err := resolveSessionID(store, sender)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) || errors.Is(err, session.ErrAmbiguous) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("resolving sender route %q: %w", sender, err)
+	}
+	b, err := store.Get(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("loading sender session %q: %w", sessionID, err)
+	}
+	display := mailSenderDisplayAddress(b, sender)
+	return map[string]string{
+		mail.FromSessionIDMetadataKey: sessionID,
+		mail.FromDisplayMetadataKey:   display,
+	}, nil
+}
+
+func mailSenderDisplayAddress(b beads.Bead, fallback string) string {
+	if alias := strings.TrimSpace(b.Metadata["alias"]); alias != "" {
+		return alias
+	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback != "" && fallback != b.ID {
+		return fallback
+	}
+	if name := strings.TrimSpace(b.Metadata["session_name"]); name != "" {
+		return name
+	}
+	if b.ID != "" {
+		return b.ID
+	}
+	return fallback
+}
+
+func mailSenderDisplayFromMetadata(fallback string, metadata map[string]string) string {
+	if metadata != nil {
+		if display := strings.TrimSpace(metadata[mail.FromDisplayMetadataKey]); display != "" {
+			return display
+		}
+	}
+	return strings.TrimSpace(fallback)
+}
+
 func resolveLiveConfiguredNamedMailTarget(store beads.Store, identifier string) (resolvedMailTarget, bool, error) {
 	identifier = normalizeNamedSessionTarget(identifier)
 	if store == nil || identifier == "" || identifier == "human" || strings.Contains(identifier, "/") {
@@ -687,6 +736,10 @@ func collectMailCounts(count func(string) (int, int, error), recipients []string
 		unread += recipientUnread
 	}
 	return total, unread, nil
+}
+
+type multiRecipientMailCounter interface {
+	CountRecipients([]string) (int, int, error)
 }
 
 func newMailSendCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -1021,7 +1074,7 @@ func doMailSend(mp mail.Provider, rec events.Recorder, validRecipients map[strin
 	}
 	rec.Record(events.Event{
 		Type:    events.MailSent,
-		Actor:   sender,
+		Actor:   m.From,
 		Subject: m.ID,
 		Message: to,
 		Payload: mailEventPayload(&m),
@@ -1076,7 +1129,7 @@ func doMailSendAll(mp mail.Provider, rec events.Recorder, validRecipients map[st
 		}
 		rec.Record(events.Event{
 			Type:    events.MailSent,
-			Actor:   sender,
+			Actor:   m.From,
 			Subject: m.ID,
 			Message: to,
 			Payload: mailEventPayload(&m),
@@ -1280,7 +1333,7 @@ func doMailReply(mp mail.Provider, rec events.Recorder, id, sender, subject, bod
 	}
 	rec.Record(events.Event{
 		Type:    events.MailReplied,
-		Actor:   sender,
+		Actor:   reply.From,
 		Subject: reply.ID,
 		Message: reply.To,
 		Payload: mailEventPayload(&reply),
@@ -1461,7 +1514,13 @@ func doMailCount(mp mail.Provider, recipient string, stdout, stderr io.Writer) i
 }
 
 func doMailCountTarget(mp mail.Provider, target resolvedMailTarget, stdout, stderr io.Writer) int {
-	total, unread, err := collectMailCounts(mp.Count, target.recipients)
+	var total, unread int
+	var err error
+	if counter, ok := mp.(multiRecipientMailCounter); ok {
+		total, unread, err = counter.CountRecipients(target.recipients)
+	} else {
+		total, unread, err = collectMailCounts(mp.Count, target.recipients)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail count: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1

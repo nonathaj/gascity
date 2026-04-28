@@ -354,6 +354,86 @@ func TestResolveDefaultMailTargetsForCommand_FallsBackToGCAliasWhenSessionIDMiss
 	}
 }
 
+func TestResolveDefaultMailSenderForCommand_UsesDisplayAliasBeforeSessionName(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_MAIL", "")
+
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Setenv("GC_CITY", cityPath)
+
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	b, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "gascity/workflows.codex-min-1",
+			"session_name": "workflows__codex-min-mc-abc123",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cfg, _ := loadCityConfig(cityPath)
+
+	t.Setenv("GC_SESSION_ID", b.ID)
+	t.Setenv("GC_ALIAS", "gascity/workflows.codex-min-1")
+	t.Setenv("GC_AGENT", "gascity/workflows.codex-min-1")
+
+	var stderr bytes.Buffer
+	sender, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, &stderr, "gc mail send")
+	if !ok {
+		t.Fatalf("resolveDefaultMailSenderForCommand() = not ok; stderr=%q", stderr.String())
+	}
+	if sender != "gascity/workflows.codex-min-1" {
+		t.Fatalf("sender = %q, want display alias", sender)
+	}
+}
+
+func TestResolveMailIdentityWithConfig_ExplicitAliasUsesDisplayAlias(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_MAIL", "")
+
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(city.toml): %v", err)
+	}
+	t.Setenv("GC_CITY", cityPath)
+
+	store, err := openCityStoreAt(cityPath)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	if _, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":        "gascity/workflows.codex-min-16",
+			"session_name": "workflows__codex-min-mc-explicit",
+		},
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cfg, _ := loadCityConfig(cityPath)
+
+	for _, from := range []string{"gascity/workflows.codex-min-16", "workflows.codex-min-16"} {
+		t.Run(from, func(t *testing.T) {
+			sender, err := resolveMailIdentityWithConfig(cityPath, cfg, store, from)
+			if err != nil {
+				t.Fatalf("resolveMailIdentityWithConfig(%q): %v", from, err)
+			}
+			if sender != "gascity/workflows.codex-min-16" {
+				t.Fatalf("sender = %q, want display alias", sender)
+			}
+		})
+	}
+}
+
 func TestResolveDefaultMailSenderForCommand_FallsBackToGCAliasWhenSessionIDMissing(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_MAIL", "")
@@ -408,14 +488,15 @@ func TestCmdMailSendDefaultSenderFallsBackToGCAliasWhenSessionIDMissing(t *testi
 	if err != nil {
 		t.Fatalf("openCityStoreAt: %v", err)
 	}
-	if _, err := store.Create(beads.Bead{
+	senderBead, err := store.Create(beads.Bead{
 		Type:   session.BeadType,
 		Labels: []string{session.LabelSession},
 		Metadata: map[string]string{
 			"alias":        "sender",
 			"session_name": "sender-gc-42",
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Create sender: %v", err)
 	}
 	if _, err := store.Create(beads.Bead{
@@ -460,6 +541,12 @@ func TestCmdMailSendDefaultSenderFallsBackToGCAliasWhenSessionIDMissing(t *testi
 	}
 	if msg.From != "sender" {
 		t.Fatalf("message From = %q, want sender", msg.From)
+	}
+	if msg.Metadata["mail.from_session_id"] != senderBead.ID {
+		t.Fatalf("mail.from_session_id = %q, want %q", msg.Metadata["mail.from_session_id"], senderBead.ID)
+	}
+	if msg.Metadata["mail.from_display"] != "sender" {
+		t.Fatalf("mail.from_display = %q, want sender", msg.Metadata["mail.from_display"])
 	}
 	if msg.Assignee != "recipient" {
 		t.Fatalf("message Assignee = %q, want recipient", msg.Assignee)
