@@ -1226,7 +1226,7 @@ func TestRetireDuplicateConfiguredNamedSessionBeads_DoesNotStopWinnerSharingSess
 	indexBySessionName := map[string]int{sessionName: 1}
 
 	retired := retireDuplicateConfiguredNamedSessionBeads(
-		store, sp, cfg, "test-city", openBeads, bySessionName, indexBySessionName, time.Now().UTC(), io.Discard,
+		store, nil, sp, cfg, "test-city", openBeads, bySessionName, indexBySessionName, time.Now().UTC(), io.Discard,
 	)
 
 	if !sp.IsRunning(sessionName) {
@@ -2924,21 +2924,38 @@ func TestReapStaleSessionBeads(t *testing.T) {
 			wantOpen:   0,
 		},
 		{
-			name: "pending_create_reaped",
+			name: "pending_create_creating_kept",
 			beads: []beads.Bead{{
 				Title:  "worker",
 				Type:   sessionBeadType,
 				Labels: []string{sessionBeadLabel},
 				Metadata: map[string]string{
 					"session_name":         "worker-1",
-					"state":                "stopped",
+					"state":                "creating",
 					"pending_create_claim": "true",
 				},
 			}},
 			running:    nil,
 			clock:      clockPastGrace,
-			wantReaped: 1,
-			wantOpen:   0,
+			wantReaped: 0,
+			wantOpen:   1,
+		},
+		{
+			name: "pending_create_active_kept",
+			beads: []beads.Bead{{
+				Title:  "worker",
+				Type:   sessionBeadType,
+				Labels: []string{sessionBeadLabel},
+				Metadata: map[string]string{
+					"session_name":         "worker-1",
+					"state":                "active",
+					"pending_create_claim": "true",
+				},
+			}},
+			running:    nil,
+			clock:      clockPastGrace,
+			wantReaped: 0,
+			wantOpen:   1,
 		},
 		{
 			name: "active_session_dead_tmux_kept",
@@ -3252,6 +3269,10 @@ func TestUnclaimResetsInProgressStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create work bead: %v", err)
 	}
+	inProgress := "in_progress"
+	if err := store.Update(work.ID, beads.UpdateOpts{Status: &inProgress}); err != nil {
+		t.Fatalf("mark work in_progress: %v", err)
+	}
 
 	// Open work also assigned: should also be cleared but stays "open".
 	openWork, err := store.Create(beads.Bead{
@@ -3265,7 +3286,7 @@ func TestUnclaimResetsInProgressStatus(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	unclaimWorkAssignedToRetiredSessionBead(store, sessionBead.ID, "myrig/codex-max", &stderr)
+	unclaimWorkAssignedToRetiredSessionBead(store, nil, sessionBead, "myrig/codex-max", &stderr)
 
 	gotInProgress, err := store.Get(work.ID)
 	if err != nil {
@@ -3290,11 +3311,11 @@ func TestUnclaimResetsInProgressStatus(t *testing.T) {
 	}
 }
 
-// TestCloseBeadRefusesWhenWorkAssigned verifies the belt-and-suspenders guard:
-// even if some caller bypasses the reaper's creating-state filter, closeBead
-// itself must refuse to close a session bead while work is assigned to it.
-// This protects the assignee link the reconciler uses for resume-after-restart.
-func TestCloseBeadRefusesWhenWorkAssigned(t *testing.T) {
+// closeBead is the low-level metadata+close helper. Ownership checks live in
+// closeSessionBeadIfUnassigned, which has the full multi-store, multi-identifier
+// view of assigned work. closeBead itself must stay dumb so it doesn't
+// introduce a narrower contract than the live-query helper.
+func TestCloseBeadDoesNotDuplicateOwnershipGuard(t *testing.T) {
 	store := beads.NewMemStore()
 
 	sessionBead, err := store.Create(beads.Bead{
@@ -3320,26 +3341,21 @@ func TestCloseBeadRefusesWhenWorkAssigned(t *testing.T) {
 
 	var stderr bytes.Buffer
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
-	if closeBead(store, sessionBead.ID, "stale-session", now, &stderr) {
-		t.Fatal("closeBead returned true; want false because non-session work is assigned")
+	if !closeBead(store, sessionBead.ID, "stale-session", now, &stderr) {
+		t.Fatalf("closeBead returned false; want true because ownership gating belongs to closeSessionBeadIfUnassigned: stderr=%s", stderr.String())
 	}
 	got, err := store.Get(sessionBead.ID)
 	if err != nil {
 		t.Fatalf("get session bead: %v", err)
 	}
-	if got.Status == "closed" {
-		t.Fatalf("session bead status = closed; want still open after refused close")
-	}
-	if !strings.Contains(stderr.String(), "refusing to close") {
-		t.Errorf("stderr = %q, want refusal message", stderr.String())
+	if got.Status != "closed" {
+		t.Fatalf("session bead status = %q, want closed", got.Status)
 	}
 }
 
-// TestCloseBeadAllowsWhenNoAssignedWork confirms the guard does not block
-// legitimate closes: a session bead with only session-internal beads (or no
-// beads) assigned should close normally.
-func TestCloseBeadAllowsWhenNoAssignedWork(t *testing.T) {
+func TestCloseSessionBeadIfUnassignedRefusesWhenRigStoreWorkAssignedBySessionName(t *testing.T) {
 	store := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
 
 	sessionBead, err := store.Create(beads.Bead{
 		Title:  "worker",
@@ -3347,23 +3363,229 @@ func TestCloseBeadAllowsWhenNoAssignedWork(t *testing.T) {
 		Labels: []string{sessionBeadLabel},
 		Metadata: map[string]string{
 			"session_name": "worker-1",
-			"state":        "creating",
+			"state":        "active",
 		},
 	})
 	if err != nil {
 		t.Fatalf("create session bead: %v", err)
 	}
 
+	if _, err := rigStore.Create(beads.Bead{
+		Title:    "rig work",
+		Status:   "open",
+		Assignee: "worker-1",
+	}); err != nil {
+		t.Fatalf("create rig work: %v", err)
+	}
+
 	var stderr bytes.Buffer
 	now := time.Date(2026, 4, 28, 12, 0, 0, 0, time.UTC)
-	if !closeBead(store, sessionBead.ID, "stale-session", now, &stderr) {
-		t.Fatalf("closeBead returned false; want true: stderr=%s", stderr.String())
+	if closeSessionBeadIfUnassigned(store, map[string]beads.Store{"demo": rigStore}, sessionBead, "stale-session", now, &stderr) {
+		t.Fatal("closeSessionBeadIfUnassigned returned true; want false because rig-store work is still assigned by session_name")
 	}
 	got, err := store.Get(sessionBead.ID)
 	if err != nil {
 		t.Fatalf("get session bead: %v", err)
 	}
-	if got.Status != "closed" {
-		t.Fatalf("session bead status = %q, want %q", got.Status, "closed")
+	if got.Status == "closed" {
+		t.Fatalf("session bead status = closed; want still open after helper refused close")
+	}
+}
+
+func TestUnclaimWorkAssignedToRetiredSessionBeadClearsRigStoreSessionIdentifiers(t *testing.T) {
+	store := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	sessionBead, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               "worker-1",
+			"state":                      "retired",
+			namedSessionIdentityMetadata: "frontend/worker",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+
+	bySessionName, err := rigStore.Create(beads.Bead{
+		Title:    "session-name work",
+		Status:   "open",
+		Assignee: "worker-1",
+	})
+	if err != nil {
+		t.Fatalf("create session-name work: %v", err)
+	}
+
+	byIdentity, err := rigStore.Create(beads.Bead{
+		Title:    "named-identity work",
+		Status:   "open",
+		Assignee: "frontend/worker",
+	})
+	if err != nil {
+		t.Fatalf("create named-identity work: %v", err)
+	}
+	inProgress := "in_progress"
+	if err := rigStore.Update(byIdentity.ID, beads.UpdateOpts{Status: &inProgress}); err != nil {
+		t.Fatalf("mark named-identity work in_progress: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	unclaimWorkAssignedToRetiredSessionBead(
+		store,
+		map[string]beads.Store{"frontend": rigStore},
+		sessionBead,
+		"frontend/codex-max",
+		&stderr,
+	)
+
+	gotBySessionName, err := rigStore.Get(bySessionName.ID)
+	if err != nil {
+		t.Fatalf("get session-name work: %v", err)
+	}
+	if gotBySessionName.Assignee != "" {
+		t.Fatalf("session-name assignee = %q, want empty", gotBySessionName.Assignee)
+	}
+	if gotBySessionName.Status != "open" {
+		t.Fatalf("session-name status = %q, want open", gotBySessionName.Status)
+	}
+
+	gotByIdentity, err := rigStore.Get(byIdentity.ID)
+	if err != nil {
+		t.Fatalf("get named-identity work: %v", err)
+	}
+	if gotByIdentity.Assignee != "" {
+		t.Fatalf("named-identity assignee = %q, want empty", gotByIdentity.Assignee)
+	}
+	if gotByIdentity.Status != "open" {
+		t.Fatalf("named-identity status = %q, want open after unclaim", gotByIdentity.Status)
+	}
+	if gotByIdentity.Metadata["gc.routed_to"] != "frontend/codex-max" {
+		t.Fatalf("named-identity gc.routed_to = %q, want frontend/codex-max", gotByIdentity.Metadata["gc.routed_to"])
+	}
+}
+
+func TestReassignWorkAssignedToRetiredSessionBeadReassignsRigStoreSessionIdentifiers(t *testing.T) {
+	store := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+
+	retired, err := store.Create(beads.Bead{
+		Title:  "old worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name":               "worker-1",
+			"state":                      "retired",
+			namedSessionIdentityMetadata: "frontend/worker",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create retired session bead: %v", err)
+	}
+	successor, err := store.Create(beads.Bead{
+		Title:  "new worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "worker-2",
+			"state":        "active",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create successor session bead: %v", err)
+	}
+
+	bySessionName, err := rigStore.Create(beads.Bead{
+		Title:    "session-name work",
+		Status:   "open",
+		Assignee: "worker-1",
+	})
+	if err != nil {
+		t.Fatalf("create session-name work: %v", err)
+	}
+	byIdentity, err := rigStore.Create(beads.Bead{
+		Title:    "named-identity work",
+		Status:   "open",
+		Assignee: "frontend/worker",
+	})
+	if err != nil {
+		t.Fatalf("create named-identity work: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	reassignWorkAssignedToRetiredSessionBead(
+		store,
+		map[string]beads.Store{"frontend": rigStore},
+		retired,
+		successor.ID,
+		&stderr,
+	)
+
+	gotBySessionName, err := rigStore.Get(bySessionName.ID)
+	if err != nil {
+		t.Fatalf("get session-name work: %v", err)
+	}
+	if gotBySessionName.Assignee != successor.ID {
+		t.Fatalf("session-name assignee = %q, want %q", gotBySessionName.Assignee, successor.ID)
+	}
+
+	gotByIdentity, err := rigStore.Get(byIdentity.ID)
+	if err != nil {
+		t.Fatalf("get named-identity work: %v", err)
+	}
+	if gotByIdentity.Assignee != successor.ID {
+		t.Fatalf("named-identity assignee = %q, want %q", gotByIdentity.Assignee, successor.ID)
+	}
+}
+
+func TestSyncSessionBeadsWithSnapshotAndRigStoresLeavesOrphanedSessionBeadOpenWhenRigStoreWorkAssigned(t *testing.T) {
+	store := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	sp := runtime.NewFake()
+	clk := &clock.Fake{}
+
+	sessionBead, err := store.Create(beads.Bead{
+		Title:  "worker",
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "worker-1",
+			"state":        "active",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session bead: %v", err)
+	}
+	if _, err := rigStore.Create(beads.Bead{
+		Title:    "rig work",
+		Status:   "open",
+		Assignee: "worker-1",
+	}); err != nil {
+		t.Fatalf("create rig work: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	syncSessionBeadsWithSnapshotAndRigStores(
+		"",
+		store,
+		map[string]beads.Store{"frontend": rigStore},
+		nil,
+		sp,
+		map[string]bool{},
+		nil,
+		clk,
+		&stderr,
+		false,
+		nil,
+	)
+
+	got, err := store.Get(sessionBead.ID)
+	if err != nil {
+		t.Fatalf("get session bead: %v", err)
+	}
+	if got.Status != "open" {
+		t.Fatalf("session bead status = %q, want open because rig-store work still owns it", got.Status)
 	}
 }

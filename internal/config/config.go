@@ -2024,14 +2024,26 @@ func (a *Agent) EffectiveOnDeath() string {
 	if a.OnDeath != "" {
 		return a.OnDeath
 	}
+	route := a.QualifiedName()
+	if a.PoolName != "" {
+		route = a.PoolName
+	}
 	// Reset both assignee and status: clearing assignee alone leaves the bead
 	// invisible to every work_query tier (Tier 1 needs assignee match, Tiers
 	// 2/3 only match "ready" status). The next worker re-claims via Tier 3
-	// (gc.routed_to + --unassigned).
+	// (gc.routed_to + --unassigned). If routed metadata is missing entirely,
+	// backfill the fallback route so reopened direct-assigned work does not
+	// stay invisible.
 	return `bd list --assignee=` + a.QualifiedName() +
 		` --status=in_progress --json 2>/dev/null | ` +
-		`jq -r '.[].id' 2>/dev/null | ` +
-		`xargs -rI{} bd update {} --assignee "" --status open 2>/dev/null`
+		`jq -r '.[] | [.id, (.metadata["gc.routed_to"] // "")] | @tsv' 2>/dev/null | ` +
+		`while IFS="$(printf '\t')" read -r id current_route; do ` +
+		`[ -z "$id" ] && continue; ` +
+		`if [ -n "$current_route" ]; then ` +
+		`bd update "$id" --assignee "" --status open 2>/dev/null; ` +
+		`else bd update "$id" --assignee "" --status open --set-metadata gc.routed_to=` + route + ` 2>/dev/null; ` +
+		`fi; ` +
+		`done`
 }
 
 // EffectiveOnBoot returns the on_boot command for this agent.
@@ -2045,11 +2057,10 @@ func (a *Agent) EffectiveOnBoot() string {
 	if a.PoolName != "" {
 		template = a.PoolName
 	}
-	// Reset both assignee and status; see EffectiveOnDeath for rationale.
 	return `bd list --metadata-field gc.routed_to=` + template +
-		` --status=in_progress --json 2>/dev/null | ` +
+		` --status=in_progress --no-assignee --json 2>/dev/null | ` +
 		`jq -r '.[].id' 2>/dev/null | ` +
-		`xargs -rI{} bd update {} --assignee "" --status open 2>/dev/null`
+		`xargs -rI{} bd update {} --status open 2>/dev/null`
 }
 
 // InjectImplicitAgents adds on-demand agents for each configured provider at
