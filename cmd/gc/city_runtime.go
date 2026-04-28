@@ -374,6 +374,11 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		return
 	}
 
+	cr.applyStartupConfigReload(ctx, dirty, &lastProviderName, cityRoot)
+	if ctx.Err() != nil {
+		return
+	}
+
 	// Session bead sync BEFORE reconciliation: ensures beads exist for
 	// the reconciler to read/write hashes. Uses ListByLabel (indexed,
 	// fast even before CachingStore is primed).
@@ -822,6 +827,24 @@ func (cr *CityRuntime) reloadConfig(
 	cr.reloadConfigTraced(ctx, lastProviderName, cityRoot, nil, reloadSourceWatch)
 }
 
+func (cr *CityRuntime) applyStartupConfigReload(
+	ctx context.Context,
+	dirty *atomic.Bool,
+	lastProviderName *string,
+	cityRoot string,
+) {
+	if cr.tomlPath == "" || cityRoot == "" || cr.configRev == "" || lastProviderName == nil || ctx.Err() != nil {
+		return
+	}
+	if dirty != nil {
+		dirty.Swap(false)
+	}
+	reply := cr.reloadConfigTraced(ctx, lastProviderName, cityRoot, nil, reloadSourceWatch)
+	if reply.Outcome == reloadOutcomeFailed && dirty != nil {
+		dirty.Store(true)
+	}
+}
+
 func (cr *CityRuntime) reloadConfigTraced(
 	ctx context.Context,
 	lastProviderName *string,
@@ -1040,7 +1063,7 @@ func (cr *CityRuntime) reloadConfigTraced(
 	cr.serviceStateMu.Unlock()
 
 	if cr.cs != nil {
-		cr.cs.update(nextCfg, nextSp)
+		cr.cs.updateFromRuntime(nextCfg, nextSp)
 	}
 	if cr.svc != nil {
 		if err := cr.svc.Reload(); err != nil {
@@ -1158,7 +1181,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	}
 	rigStores := cr.rigBeadStores()
 	assignedWorkBeads := result.AssignedWorkBeads
-	if released := releaseOrphanedPoolAssignments(store, cr.cfg, sessionBeads.Open(), assignedWorkBeads, result.AssignedWorkStores); len(released) > 0 {
+	if released := releaseOrphanedPoolAssignments(store, cr.cfg, sessionBeads.Open(), assignedWorkBeads, result.AssignedWorkStores, rigStores); len(released) > 0 {
 		for _, r := range released {
 			fmt.Fprintf(cr.stderr, "released orphaned pool work: %s\n", r.ID) //nolint:errcheck
 		}
@@ -1818,6 +1841,8 @@ func (cr *CityRuntime) shutdown() {
 				fmt.Fprintf(cr.stderr, "%s: shutdown session listing failed: %v\n", cr.logPrefix, listErr) //nolint:errcheck // best-effort stderr
 			}
 		}
-		gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.cfg, cr.cityBeadStore(), cr.stdout, cr.stderr)
+		store := cr.cityBeadStore()
+		markCityStopSessionSleepReason(store, cr.stderr)
+		gracefulStopAll(running, cr.sp, timeout, cr.rec, cr.cfg, store, cr.stdout, cr.stderr)
 	})
 }

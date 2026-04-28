@@ -358,6 +358,59 @@ func reconcileSessionBeadsTraced(
 				}
 				continue
 			default:
+				if dops != nil {
+					if acked, _ := dops.isDrainAcked(name); acked {
+						stopped := !providerAlive
+						if providerAlive {
+							if err := workerKillSessionTargetWithConfig("", store, sp, cfg, name); err != nil {
+								fmt.Fprintf(stderr, "session reconciler: stopping drain-acked %s: %v\n", name, err) //nolint:errcheck
+							} else {
+								stopped = true
+								fmt.Fprintf(stdout, "Stopped drain-acked session '%s'\n", name) //nolint:errcheck
+							}
+						}
+						if stopped {
+							template := normalizedSessionTemplate(*session, cfg)
+							if template == "" {
+								template = session.Metadata["template"]
+							}
+							rec.Record(events.Event{
+								Type:    events.SessionStopped,
+								Actor:   "gc",
+								Subject: template,
+								Message: "drain acknowledged by agent",
+							})
+							hasAssignedWork, assignedErr := sessionHasOpenAssignedWork(store, rigStores, *session)
+							if assignedErr != nil {
+								fmt.Fprintf(stderr, "session reconciler: checking assigned work for drain-acked %s: %v\n", name, assignedErr) //nolint:errcheck
+								hasAssignedWork = true
+							}
+							if hasAssignedWork {
+								batch := sessionpkg.CompleteDrainPatch(clk.Now().UTC(), "idle", session.Metadata["wake_mode"] == "fresh")
+								_ = store.SetMetadataBatch(session.ID, batch)
+								if session.Metadata == nil {
+									session.Metadata = make(map[string]string, len(batch))
+								}
+								for key, value := range batch {
+									session.Metadata[key] = value
+								}
+								_ = dops.clearDrain(name)
+								if dt != nil {
+									dt.clearIdleProbe(session.ID)
+									dt.remove(session.ID)
+								}
+								continue
+							}
+							_ = dops.clearDrain(name)
+							if dt != nil {
+								dt.clearIdleProbe(session.ID)
+								dt.remove(session.ID)
+							}
+							closeSessionBeadIfUnassigned(store, rigStores, *session, "drained", clk.Now().UTC(), stderr)
+						}
+						continue
+					}
+				}
 				if providerAlive {
 					// When a store query failed (partial results),
 					// skip drain — the session may have work that we
@@ -1043,6 +1096,7 @@ func reconcileSessionBeadsTraced(
 
 	plannedWakes := executePlannedStartsTraced(
 		ctx, startCandidates, cfg, desiredState, sp, store, cityName,
+		cityPath,
 		clk, rec, startupTimeout, stdout, stderr, trace,
 	)
 
