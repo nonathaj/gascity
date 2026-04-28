@@ -601,8 +601,14 @@ func TestCmdHandoffRemoteDefaultSenderFallsBackToGCAliasWhenSessionIDMissing(t *
 	if !found {
 		t.Fatalf("message bead not found; beads=%#v", all)
 	}
-	if msg.From != senderBead.ID {
-		t.Fatalf("message From = %q, want session bead ID %q", msg.From, senderBead.ID)
+	if msg.From != "sender" {
+		t.Fatalf("message From = %q, want sender", msg.From)
+	}
+	if msg.Metadata["mail.from_session_id"] != senderBead.ID {
+		t.Fatalf("mail.from_session_id = %q, want %q", msg.Metadata["mail.from_session_id"], senderBead.ID)
+	}
+	if msg.Metadata["mail.from_display"] != "sender" {
+		t.Fatalf("mail.from_display = %q, want sender", msg.Metadata["mail.from_display"])
 	}
 	if msg.Assignee != "recipient" {
 		t.Fatalf("message Assignee = %q, want recipient", msg.Assignee)

@@ -291,13 +291,6 @@ func sessionMailboxAddress(b beads.Bead) string {
 	return strings.TrimSpace(b.Metadata["session_name"])
 }
 
-func sessionMailboxSenderAddress(b beads.Bead) string {
-	if b.ID != "" {
-		return b.ID
-	}
-	return sessionMailboxAddress(b)
-}
-
 func sessionMailboxAddresses(b beads.Bead) []string {
 	seen := map[string]bool{}
 	var addresses []string
@@ -381,67 +374,6 @@ func resolveMailIdentityWithConfig(cityPath string, cfg *config.City, store bead
 	return resolveMailIdentity(store, identifier)
 }
 
-func resolveMailSenderIdentity(store beads.Store, identifier string) (string, error) {
-	if identifier == "" || identifier == "human" {
-		return "human", nil
-	}
-	sessionID, err := resolveSessionID(store, identifier)
-	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) {
-			if target, matched, targetErr := resolveLiveConfiguredNamedMailTarget(store, identifier); targetErr != nil {
-				return "", targetErr
-			} else if matched {
-				return target.senderAddress(), nil
-			}
-			if address, ok := configuredMailboxAddress(identifier); ok {
-				return address, nil
-			}
-		}
-		return "", err
-	}
-	b, err := store.Get(sessionID)
-	if err != nil {
-		return "", err
-	}
-	address := sessionMailboxSenderAddress(b)
-	if address == "" {
-		return "", fmt.Errorf("session %q has no mailbox identity", identifier)
-	}
-	return address, nil
-}
-
-func resolveMailSenderIdentityWithConfig(cityPath string, cfg *config.City, store beads.Store, identifier string) (string, error) {
-	if identifier == "" || identifier == "human" {
-		return "human", nil
-	}
-	if store != nil && cfg != nil {
-		sessionID, err := resolveSessionIDWithConfig(cityPath, cfg, store, identifier)
-		if err == nil {
-			b, err := store.Get(sessionID)
-			if err != nil {
-				return "", err
-			}
-			address := sessionMailboxSenderAddress(b)
-			if address == "" {
-				return "", fmt.Errorf("session %q has no mailbox identity", identifier)
-			}
-			return address, nil
-		}
-		if !errors.Is(err, session.ErrSessionNotFound) {
-			return "", err
-		}
-	}
-	if target, matched, targetErr := resolveLiveConfiguredNamedMailTarget(store, identifier); targetErr != nil {
-		return "", targetErr
-	} else if matched {
-		return target.senderAddress(), nil
-	}
-	if address, ok := configuredMailboxAddressWithConfig(cityPath, cfg, identifier); ok {
-		return address, nil
-	}
-	return resolveMailSenderIdentity(store, identifier)
-}
-
 func resolveMailRecipientIdentity(cityPath string, cfg *config.City, store beads.Store, identifier string) (string, error) {
 	if identifier == "" || identifier == "human" {
 		return "human", nil
@@ -508,14 +440,55 @@ func listLiveSessionMailboxes(store beads.Store) (map[string]bool, error) {
 type resolvedMailTarget struct {
 	display    string
 	recipients []string
-	sessionID  string
 }
 
-func (t resolvedMailTarget) senderAddress() string {
-	if strings.TrimSpace(t.sessionID) != "" {
-		return strings.TrimSpace(t.sessionID)
+func mailSenderRouteMetadata(store beads.Store, sender string) (map[string]string, error) {
+	sender = strings.TrimSpace(sender)
+	if store == nil || sender == "" || sender == "human" {
+		return nil, nil
 	}
-	return strings.TrimSpace(t.display)
+	sessionID, err := resolveSessionID(store, sender)
+	if err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) || errors.Is(err, session.ErrAmbiguous) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("resolving sender route %q: %w", sender, err)
+	}
+	b, err := store.Get(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("loading sender session %q: %w", sessionID, err)
+	}
+	display := mailSenderDisplayAddress(b, sender)
+	return map[string]string{
+		mail.FromSessionIDMetadataKey: sessionID,
+		mail.FromDisplayMetadataKey:   display,
+	}, nil
+}
+
+func mailSenderDisplayAddress(b beads.Bead, fallback string) string {
+	if alias := strings.TrimSpace(b.Metadata["alias"]); alias != "" {
+		return alias
+	}
+	fallback = strings.TrimSpace(fallback)
+	if fallback != "" && fallback != b.ID {
+		return fallback
+	}
+	if name := strings.TrimSpace(b.Metadata["session_name"]); name != "" {
+		return name
+	}
+	if b.ID != "" {
+		return b.ID
+	}
+	return fallback
+}
+
+func mailSenderDisplayFromMetadata(fallback string, metadata map[string]string) string {
+	if metadata != nil {
+		if display := strings.TrimSpace(metadata[mail.FromDisplayMetadataKey]); display != "" {
+			return display
+		}
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func resolveLiveConfiguredNamedMailTarget(store beads.Store, identifier string) (resolvedMailTarget, bool, error) {
@@ -554,7 +527,6 @@ func resolveLiveConfiguredNamedMailTarget(store beads.Store, identifier string) 
 		matches[display] = resolvedMailTarget{
 			display:    display,
 			recipients: addresses,
-			sessionID:  b.ID,
 		}
 		order = append(order, display)
 	}
@@ -653,7 +625,7 @@ func resolveDefaultMailTargetsForCommand(stderr io.Writer, cmdName string) (reso
 func resolveDefaultMailSenderForCommand(cityPath string, cfg *config.City, store beads.Store, stderr io.Writer, cmdName string) (string, bool) {
 	candidates := defaultMailIdentityCandidates()
 	for _, c := range candidates {
-		sender, err := resolveMailSenderIdentityWithConfig(cityPath, cfg, store, c)
+		sender, err := resolveMailIdentityWithConfig(cityPath, cfg, store, c)
 		if err == nil {
 			return sender, true
 		}
@@ -764,6 +736,10 @@ func collectMailCounts(count func(string) (int, int, error), recipients []string
 		unread += recipientUnread
 	}
 	return total, unread, nil
+}
+
+type multiRecipientMailCounter interface {
+	CountRecipients([]string) (int, int, error)
 }
 
 func newMailSendCmd(stdout, stderr io.Writer) *cobra.Command {
@@ -1010,7 +986,7 @@ func cmdMailSend(args []string, notify bool, all bool, from string, to string, s
 			sender = defaultMailIdentity()
 		}
 	} else if sender != "human" && store != nil {
-		sender, err = resolveMailSenderIdentityWithConfig(cityPath, cfg, store, sender)
+		sender, err = resolveMailIdentityWithConfig(cityPath, cfg, store, sender)
 		if err != nil {
 			fmt.Fprintf(stderr, "gc mail send: invalid sender %q: %v\n", sender, err) //nolint:errcheck // best-effort stderr
 			return 1
@@ -1093,7 +1069,7 @@ func doMailSend(mp mail.Provider, rec events.Recorder, validRecipients map[strin
 	}
 	rec.Record(events.Event{
 		Type:    events.MailSent,
-		Actor:   sender,
+		Actor:   m.From,
 		Subject: m.ID,
 		Message: to,
 		Payload: mailEventPayload(&m),
@@ -1148,7 +1124,7 @@ func doMailSendAll(mp mail.Provider, rec events.Recorder, validRecipients map[st
 		}
 		rec.Record(events.Event{
 			Type:    events.MailSent,
-			Actor:   sender,
+			Actor:   m.From,
 			Subject: m.ID,
 			Message: to,
 			Payload: mailEventPayload(&m),
@@ -1329,7 +1305,7 @@ func doMailReply(mp mail.Provider, rec events.Recorder, id, sender, subject, bod
 	}
 	rec.Record(events.Event{
 		Type:    events.MailReplied,
-		Actor:   sender,
+		Actor:   reply.From,
 		Subject: reply.ID,
 		Message: reply.To,
 		Payload: mailEventPayload(&reply),
@@ -1510,7 +1486,13 @@ func doMailCount(mp mail.Provider, recipient string, stdout, stderr io.Writer) i
 }
 
 func doMailCountTarget(mp mail.Provider, target resolvedMailTarget, stdout, stderr io.Writer) int {
-	total, unread, err := collectMailCounts(mp.Count, target.recipients)
+	var total, unread int
+	var err error
+	if counter, ok := mp.(multiRecipientMailCounter); ok {
+		total, unread, err = counter.CountRecipients(target.recipients)
+	} else {
+		total, unread, err = collectMailCounts(mp.Count, target.recipients)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "gc mail count: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
