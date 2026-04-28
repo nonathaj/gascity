@@ -95,6 +95,18 @@ func allDependenciesAliveForTemplate(
 	cityName string,
 	store beads.Store,
 ) bool {
+	return allDependenciesAliveForTemplateWithClock(template, cfg, desiredState, sp, cityName, store, clock.Real{})
+}
+
+func allDependenciesAliveForTemplateWithClock(
+	template string,
+	cfg *config.City,
+	desiredState map[string]TemplateParams,
+	sp runtime.Provider,
+	cityName string,
+	store beads.Store,
+	clk clock.Clock,
+) bool {
 	cfgAgent := findAgentByTemplate(cfg, template)
 	if cfgAgent == nil || len(cfgAgent.DependsOn) == 0 {
 		return true
@@ -104,7 +116,7 @@ func allDependenciesAliveForTemplate(
 		if depCfg == nil {
 			continue // dependency not in config — skip
 		}
-		if !dependencyTemplateAlive(dep, cfg, desiredState, sp, cityName, store) {
+		if !dependencyTemplateAlive(dep, cfg, desiredState, sp, cityName, store, clk) {
 			return false
 		}
 	}
@@ -122,7 +134,7 @@ func allDependenciesAlive(
 	cityName string,
 	store beads.Store,
 ) bool {
-	return allDependenciesAliveForTemplate(normalizedSessionTemplate(session, cfg), cfg, desiredState, sp, cityName, store)
+	return allDependenciesAliveForTemplateWithClock(normalizedSessionTemplate(session, cfg), cfg, desiredState, sp, cityName, store, clock.Real{})
 }
 
 func pendingCreateSessionStillLeased(session beads.Bead, cfg *config.City, clk clock.Clock) bool {
@@ -150,6 +162,9 @@ func pendingCreateStartInFlight(session beads.Bead, clk clock.Clock, startupTime
 		return false
 	}
 	if startupTimeout <= 0 {
+		// Disabling the provider Start() deadline must not disable stuck-bead
+		// recovery forever. Use the default lease window for in-flight detection
+		// while leaving the actual Start() context unwrapped.
 		startupTimeout = time.Minute
 	}
 	now := time.Now()
@@ -177,7 +192,7 @@ func pendingCreateStartInFlight(session beads.Bead, clk clock.Clock, startupTime
 // suspended agents). Used to distinguish "orphaned" (removed from config)
 // from "suspended" (still in config, not runnable) when closing beads.
 //
-// Returns the number of sessions woken this tick.
+// Returns the number of start attempts issued or enqueued this tick.
 //
 //nolint:unparam // compatibility wrapper retains the full production signature.
 func reconcileSessionBeads(
@@ -599,6 +614,7 @@ func reconcileSessionBeadsTraced(
 		policy := resolveSessionSleepPolicy(*session, cfg, sp)
 
 		// Heal advisory state metadata.
+		stateBeforeHeal := sessionpkg.State(strings.TrimSpace(session.Metadata["state"]))
 		healState(session, alive, store, clk)
 		if recoverPendingIdleSleep(session, store, running, clk) {
 			alive = false
@@ -627,6 +643,12 @@ func reconcileSessionBeadsTraced(
 			clearChurn(session, store)
 		}
 		if alive && shouldRollbackPendingCreate(session) {
+			if stateBeforeHeal == sessionpkg.StateCreating && pendingCreateStartInFlight(*session, clk, startupTimeout) {
+				if trace != nil {
+					trace.recordDecision("reconciler.session.pending_create", tp.TemplateName, name, "pending_create_recovery_in_flight", "deferred", nil, nil, "")
+				}
+				continue
+			}
 			if !recoverRunningPendingCreate(session, tp, cfg, store, clk, trace) {
 				fmt.Fprintf(stderr, "session reconciler: recovering pending create %s: metadata repair incomplete\n", name) //nolint:errcheck
 			}
@@ -732,6 +754,7 @@ func reconcileSessionBeadsTraced(
 							_ = json.Unmarshal([]byte(raw), &storedBreakdown)
 						}
 						runtime.LogCoreFingerprintDrift(stderr, name, storedBreakdown, agentCfg)
+						restartedInPlace := false
 						if isNamedSessionBead(*session) {
 							// Defer config-drift restart for named sessions
 							// that are actively in use (pending interaction,
@@ -765,83 +788,70 @@ func reconcileSessionBeadsTraced(
 								Subject: tp.DisplayName(),
 								Message: "config drift detected",
 							})
+							alive = false
+							restartedInPlace = true
+						}
+						if !restartedInPlace {
+							// Defer ordinary-session config-drift drain while a
+							// user is attached. Named-session config drift is
+							// deferred when actively in use (see above).
+							if pendingInteractionKeepsAwake(*session, sp, name, clk) {
+								drainCancelled := false
+								if dt != nil {
+									drainCancelled = cancelSessionDrainForPending(*session, sp, dt)
+								}
+								if trace != nil {
+									trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "pending", "deferred_pending", traceRecordPayload{
+										"stored_hash":    storedHash,
+										"current_hash":   currentHash,
+										"drain_canceled": drainCancelled,
+									}, nil, "")
+								}
+								continue
+							}
+							attached, err := workerSessionTargetAttachedWithConfig(cityPath, store, sp, cfg, session.ID)
+							if err == nil && attached {
+								if trace != nil {
+									trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
+										"stored_hash":  storedHash,
+										"current_hash": currentHash,
+									}, nil, "")
+								}
+								continue
+							}
+							// Defer ordinary-session config-drift drain while a
+							// user is attached. Named-session config drift is
+							// non-deferrable and is handled above.
+							if sp.IsAttached(name) {
+								if trace != nil {
+									trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
+										"stored_hash":  storedHash,
+										"current_hash": currentHash,
+									}, nil, "")
+								}
+								continue
+							}
+							ddt := driftDrainTimeout
+							if ddt <= 0 {
+								ddt = defaultDrainTimeout
+							}
+							if beginSessionDrain(*session, sp, dt, "config-drift", clk, ddt) {
+								fmt.Fprintf(stdout, "Draining session '%s': config-drift\n", name) //nolint:errcheck
+								if trace != nil {
+									trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "drain", traceRecordPayload{
+										"stored_hash":  storedHash,
+										"current_hash": currentHash,
+									}, nil, "")
+								}
+								rec.Record(events.Event{
+									Type:    events.SessionDraining,
+									Actor:   "gc",
+									Subject: tp.DisplayName(),
+									Message: "config drift detected",
+								})
+							}
 							continue
 						}
-						// Defer ordinary-session config-drift drain while a
-						// user is attached. Named-session config drift is
-						// deferred when actively in use (see above).
-						if pendingInteractionKeepsAwake(*session, sp, name, clk) {
-							drainCancelled := false
-							if dt != nil {
-								drainCancelled = cancelSessionDrainForPending(*session, sp, dt)
-							}
-							if trace != nil {
-								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "pending", "deferred_pending", traceRecordPayload{
-									"stored_hash":    storedHash,
-									"current_hash":   currentHash,
-									"drain_canceled": drainCancelled,
-								}, nil, "")
-							}
-							continue
-						}
-						attached, err := workerSessionTargetAttachedWithConfig(cityPath, store, sp, cfg, session.ID)
-						if err == nil && attached {
-							if trace != nil {
-								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
-									"stored_hash":  storedHash,
-									"current_hash": currentHash,
-								}, nil, "")
-							}
-							continue
-						}
-						if isNamedSessionBead(*session) {
-							resetConfiguredNamedSessionForConfigDrift(session, store, sp, name, alive, "creating", stderr)
-							if trace != nil {
-								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "restart_in_place", traceRecordPayload{
-									"stored_hash":  storedHash,
-									"current_hash": currentHash,
-								}, nil, "")
-							}
-							rec.Record(events.Event{
-								Type:    events.SessionDraining,
-								Actor:   "gc",
-								Subject: tp.DisplayName(),
-								Message: "config drift detected",
-							})
-							continue
-						}
-						// Defer ordinary-session config-drift drain while a
-						// user is attached. Named-session config drift is
-						// non-deferrable and is handled above.
-						if sp.IsAttached(name) {
-							if trace != nil {
-								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "deferred_attached", traceRecordPayload{
-									"stored_hash":  storedHash,
-									"current_hash": currentHash,
-								}, nil, "")
-							}
-							continue
-						}
-						ddt := driftDrainTimeout
-						if ddt <= 0 {
-							ddt = defaultDrainTimeout
-						}
-						if beginSessionDrain(*session, sp, dt, "config-drift", clk, ddt) {
-							fmt.Fprintf(stdout, "Draining session '%s': config-drift\n", name) //nolint:errcheck
-							if trace != nil {
-								trace.recordDecision("reconciler.session.config_drift", tp.TemplateName, name, "config_drift", "drain", traceRecordPayload{
-									"stored_hash":  storedHash,
-									"current_hash": currentHash,
-								}, nil, "")
-							}
-							rec.Record(events.Event{
-								Type:    events.SessionDraining,
-								Actor:   "gc",
-								Subject: tp.DisplayName(),
-								Message: "config drift detected",
-							})
-						}
-						continue
 					}
 
 					if isNamedSessionBead(*session) {
