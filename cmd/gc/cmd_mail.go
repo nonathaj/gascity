@@ -723,6 +723,8 @@ Use --all to broadcast to all live sessions (excluding sender and "human").`,
 		},
 	}
 	cmd.Flags().BoolVar(&notify, "notify", false, "nudge the recipient after sending")
+	cmd.Flags().BoolVar(&notify, "nudge", false, "alias for --notify")
+	_ = cmd.Flags().MarkHidden("nudge")
 	cmd.Flags().BoolVar(&all, "all", false, "broadcast to all live sessions (excludes sender and human)")
 	cmd.Flags().StringVar(&from, "from", "", "sender identity (default: $GC_SESSION_ID, $GC_ALIAS, $GC_AGENT, or \"human\")")
 	cmd.Flags().StringVar(&to, "to", "", "recipient address (alternative to positional argument)")
@@ -796,6 +798,7 @@ func newMailReplyCmd(stdout, stderr io.Writer) *cobra.Command {
 		Long: `Reply to a message. The reply is addressed to the original sender.
 
 Inherits the thread ID from the original message for conversation tracking.
+Use --notify to nudge the recipient after replying.
 Use -s/--subject for the reply subject and -m/--message for the reply body.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -1208,25 +1211,46 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 	rec := openCityRecorder(stderr)
 
 	sender := defaultMailIdentity()
+	providerName := mailProviderName()
 	var store beads.Store
-	if !isStorelessMailProvider() && (sender != "human" || notify) {
-		var storeCode int
-		store, storeCode = openCityStore(stderr, "gc mail reply")
-		if store == nil {
-			return storeCode
-		}
-		cityPath, err := resolveCity()
-		if err != nil {
-			fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
-			return 1
-		}
-		cfg, _ := loadCityConfig(cityPath, stderr)
-		if sender != "human" {
-			resolved, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, stderr, "gc mail reply")
-			if !ok {
+	var cityPath string
+	var cfg *config.City
+	var notifySetupErr error
+	if sender != "human" || notify {
+		switch {
+		case strings.HasPrefix(providerName, "exec:"):
+			var err error
+			cityPath, err = resolveCity()
+			if err == nil {
+				cfg, _ = loadCityConfig(cityPath, stderr)
+				store, err = openCityStoreAt(cityPath)
+			}
+			if err != nil {
+				notifySetupErr = err
+				store = nil
+			}
+		case !isStorelessMailProvider():
+			var storeCode int
+			store, storeCode = openCityStore(stderr, "gc mail reply")
+			if store == nil {
+				return storeCode
+			}
+			var err error
+			cityPath, err = resolveCity()
+			if err != nil {
+				fmt.Fprintf(stderr, "gc mail reply: %v\n", err) //nolint:errcheck // best-effort stderr
 				return 1
 			}
-			sender = resolved
+			cfg, _ = loadCityConfig(cityPath, stderr)
+		}
+		if sender != "human" {
+			if store != nil {
+				resolved, ok := resolveDefaultMailSenderForCommand(cityPath, cfg, store, stderr, "gc mail reply")
+				if !ok {
+					return 1
+				}
+				sender = resolved
+			}
 		}
 	}
 
@@ -1239,6 +1263,8 @@ func cmdMailReply(args []string, subject, message string, notify bool, stdout, s
 	var nf nudgeFunc
 	if notify && store != nil {
 		nf = newMailNudgeFunc(sender)
+	} else if notify && strings.HasPrefix(providerName, "exec:") && notifySetupErr != nil {
+		fmt.Fprintf(stderr, "gc mail reply: --notify requested but no city store available; nudge skipped: %v\n", notifySetupErr) //nolint:errcheck // best-effort stderr
 	}
 
 	return doMailReply(mp, rec, args[0], sender, subject, body, nf, stdout, stderr)
