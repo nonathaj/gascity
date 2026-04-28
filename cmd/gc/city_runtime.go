@@ -1554,9 +1554,10 @@ func (cr *CityRuntime) controlDispatcherTick(ctx context.Context) {
 	)
 	desiredState := wfcResult.State
 	cfgNames := configuredSessionNamesWithSnapshot(filteredCfg, cr.cityName, sessionBeads)
-	_, updated := syncSessionBeadsWithSnapshot(
+	_, updated := syncSessionBeadsWithSnapshotAndRigStores(
 		cr.cityPath,
 		store,
+		cr.rigBeadStores(),
 		desiredState,
 		cr.sp,
 		cfgNames,
@@ -1606,8 +1607,8 @@ func (cr *CityRuntime) controlDispatcherTick(ctx context.Context) {
 func (cr *CityRuntime) syncBeadsAndUpdateIndex(desiredState map[string]TemplateParams, sessionBeads *sessionBeadSnapshot) *sessionBeadSnapshot {
 	store := cr.cityBeadStore()
 	cfgNames := configuredSessionNamesWithSnapshot(cr.cfg, cr.cityName, sessionBeads)
-	_, updated := syncSessionBeadsWithSnapshot(
-		cr.cityPath, store, desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil, sessionBeads,
+	_, updated := syncSessionBeadsWithSnapshotAndRigStores(
+		cr.cityPath, store, cr.rigBeadStores(), desiredState, cr.sp, cfgNames, cr.cfg, clock.Real{}, cr.stderr, cr.sessionDrains != nil, sessionBeads,
 	)
 	return updated
 }

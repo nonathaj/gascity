@@ -272,7 +272,7 @@ func reconcileSessionBeadsTraced(
 			}
 		}
 		sessions = retireDuplicateConfiguredNamedSessionBeads(
-			store, sp, cfg, cityName, sessions, bySessionName, indexBySessionName, clk.Now().UTC(), stderr,
+			store, rigStores, sp, cfg, cityName, sessions, bySessionName, indexBySessionName, clk.Now().UTC(), stderr,
 		)
 	}
 
@@ -1181,11 +1181,7 @@ func sessionHasOpenAssignedWorkInStore(store beads.Store, session beads.Bead) (b
 	if store == nil {
 		return false, nil
 	}
-	identifiers := []string{
-		strings.TrimSpace(session.ID),
-		strings.TrimSpace(session.Metadata["session_name"]),
-		strings.TrimSpace(session.Metadata[namedSessionIdentityMetadata]),
-	}
+	identifiers := sessionAssignmentIdentifiers(session)
 	seen := make(map[string]struct{}, len(identifiers))
 	for _, status := range []string{"open", "in_progress"} {
 		for _, assignee := range identifiers {
