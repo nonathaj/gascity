@@ -554,7 +554,7 @@ func registeredRigBindingsByPath(dir string, failOnLoadError bool) (matches []re
 		return pathWithinScope(dir, rigPath)
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, stale, err
 	}
 	return keepDeepestRigBindings(matches), stale, nil
 }
@@ -599,11 +599,10 @@ func registeredRigBindings(failOnLoadError bool, match func(registeredRigBinding
 		cfg, err := loadCityConfigSuppressDeprecatedOrderWarnings(c.Path, io.Discard)
 		if err != nil {
 			// Tolerate stale registry entries whose city.toml has been
-			// deleted out from under the registry. Checking on the actual
-			// load path (instead of a Stat pre-check) closes the TOCTOU
-			// window where the file disappears between Stat and load.
-			if errors.Is(err, os.ErrNotExist) {
-				stale = append(stale, staleRegisteredCity{Label: registeredCityLabel(c), Path: c.Path})
+			// deleted out from under the registry, but keep missing includes
+			// or other config dependencies as load errors.
+			if cityTOML, ok := missingRootCityTOML(err, c.Path); ok {
+				stale = append(stale, staleRegisteredCity{Label: registeredCityLabel(c), Path: cityTOML})
 				continue
 			}
 			loadErrors = append(loadErrors, fmt.Sprintf("%s: %v", registeredCityLabel(c), err))
@@ -646,6 +645,18 @@ func registeredRigBindings(failOnLoadError bool, match func(registeredRigBinding
 		return nil, stale, fmt.Errorf("loading registered city rig bindings: %s", strings.Join(loadErrors, "; "))
 	}
 	return matched, stale, nil
+}
+
+func missingRootCityTOML(err error, cityPath string) (string, bool) {
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		return "", false
+	}
+	cityTOML := filepath.Clean(filepath.Join(cityPath, "city.toml"))
+	return cityTOML, samePath(pathErr.Path, cityTOML)
 }
 
 func keepDeepestRigBindings(matches []registeredRigBinding) []registeredRigBinding {

@@ -1382,13 +1382,14 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		if !strings.Contains(warn, "city.toml missing") {
 			t.Errorf("warning = %q, want it to explain city.toml is missing", warn)
 		}
+		if !strings.Contains(warn, filepath.Join(staleDir, "city.toml")) {
+			t.Errorf("warning = %q, want it to mention the missing city.toml path", warn)
+		}
 	})
 
-	// Regression: the stale-entry check runs on the actual config-load
-	// path, not a separate Stat pre-check. A registered city whose
-	// city.toml vanishes at load-read time must still be skipped rather
-	// than abort the resolver. (The prior Stat-then-load pattern had a
-	// TOCTOU window where the file could vanish between the two calls.)
+	// Regression: the stale-entry check handles ENOENT from the config-load
+	// path itself. A registered city whose directory exists but whose city.toml
+	// is missing must still be skipped rather than abort the resolver.
 	t.Run("stale_sibling_city_toml_missing_hits_load_path", func(t *testing.T) {
 		gcHome := t.TempDir()
 		t.Setenv("GC_HOME", gcHome)
@@ -1428,6 +1429,93 @@ func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("stale = %+v, want an entry mentioning empty-city", stale)
+		}
+	})
+
+	t.Run("registered_city_with_missing_include_fails_closed_not_stale", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		goodCity := setupCity(t, "missing-include-good")
+		rigDir := filepath.Join(t.TempDir(), "missing-include-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, goodCity, "missing-include-good", "missing-include-rig", rigDir)
+
+		brokenCity := setupCity(t, "missing-include-broken")
+		if err := os.WriteFile(filepath.Join(brokenCity, "city.toml"), []byte(`
+include = ["missing.toml"]
+
+[workspace]
+name = "missing-include-broken"
+
+[[agent]]
+name = "missing-include-agent"
+`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, brokenCity, "missing-include-broken")
+
+		_, stale, err := registeredRigBindingsByPath(rigDir, true)
+		if err == nil {
+			t.Fatal("registeredRigBindingsByPath should fail closed on missing include")
+		}
+		if !strings.Contains(err.Error(), "loading registered city rig bindings") {
+			t.Fatalf("error = %q, want registered binding load error", err)
+		}
+		if !strings.Contains(err.Error(), "missing.toml") {
+			t.Fatalf("error = %q, want missing include path", err)
+		}
+		for _, s := range stale {
+			if strings.Contains(s.Label, "missing-include-broken") {
+				t.Fatalf("stale = %+v, missing include must not be reported as stale", stale)
+			}
+		}
+	})
+
+	t.Run("path_lookup_error_preserves_stale_entries", func(t *testing.T) {
+		gcHome := t.TempDir()
+		t.Setenv("GC_HOME", gcHome)
+
+		goodCity := setupCity(t, "path-stale-error-good")
+		rigDir := filepath.Join(t.TempDir(), "path-stale-error-rig")
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registerRigBindingForResolution(t, gcHome, goodCity, "path-stale-error-good", "path-stale-error-rig", rigDir)
+
+		staleDir := filepath.Join(t.TempDir(), "path-stale-error-vanished")
+		if err := os.MkdirAll(filepath.Join(staleDir, ".gc"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(staleDir, "city.toml"), []byte("[workspace]\nname = \"path-stale-error-vanished\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, staleDir, "path-stale-error-vanished")
+		if err := os.RemoveAll(staleDir); err != nil {
+			t.Fatal(err)
+		}
+
+		badCity := setupCity(t, "path-stale-error-bad")
+		if err := os.WriteFile(config.SiteBindingPath(badCity), []byte("[[rig]\nname = \"broken\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		registerCityForRigResolution(t, gcHome, badCity, "path-stale-error-bad")
+
+		_, stale, err := registeredRigBindingsByPath(rigDir, true)
+		if err == nil {
+			t.Fatal("registeredRigBindingsByPath should fail closed on the malformed site binding")
+		}
+		var found bool
+		for _, s := range stale {
+			if strings.Contains(s.Label, "path-stale-error-vanished") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("stale = %+v, want vanished city preserved on error", stale)
 		}
 	})
 
