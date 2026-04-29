@@ -9,11 +9,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Detect which paths changed to gate conditional jobs.
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       mail: ${{ steps.filter.outputs.mail }}
       docker: ${{ steps.filter.outputs.docker }}
@@ -80,53 +84,60 @@ jobs:
               - 'internal/**'
               - 'examples/gastown/packs/**'
 
-  # Always runs: lint, fmt, vet, unit tests, docs, acceptance, coverage.
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    env:
-      # Pinned dependency versions — keep in sync with deps.env.
-      DOLT_VERSION: "1.86.6"
-      BD_VERSION: "v1.0.3"
-      # Make TestGeneratedClientInSync fatal on missing oapi-codegen so the
-      # spec→client drift check can never silently skip in CI.
-      GC_REQUIRE_OAPI_CODEGEN: "1"
+  preflight-lint:
+    name: Preflight / lint
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - name: Install tools
+        run: make install-tools
+      - name: Lint
+        run: make lint
 
+  preflight-format:
+    name: Preflight / format
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - name: Install tools
+        run: make install-tools
+      - name: Format
+        run: make fmt-check
+
+  preflight-vet:
+    name: Preflight / vet
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - name: Vet
+        run: make vet
+
+  preflight-unit-cover:
+    name: Preflight / unit cover
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    env:
+      DOLT_VERSION: "1.86.6"
+      BD_VERSION: "v1.0.3"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: ./.github/actions/setup-gascity-ubuntu
         with:
           dolt-version: ${{ env.DOLT_VERSION }}
           bd-version: ${{ env.BD_VERSION }}
-          install-claude-cli: "true"
-
+          install-claude-cli: "false"
       - name: Install tools
         run: make install-tools
-
-      - name: Lint
-        run: make lint
-
-      - name: Format
-        run: make fmt-check
-
-      - name: Vet
-        run: make vet
-
       - name: Test
         run: make test-cover
-
-      - name: Docs
-        run: make check-docs
-
-      - name: Acceptance tests (Tier A)
-        run: make test-acceptance
-
-      - name: Dashboard bundle drift check
-        run: make dashboard-ci
-
-      - name: OpenAPI spec + client drift check
-        run: make spec-ci
-
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
@@ -134,9 +145,108 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
+  preflight-docs:
+    name: Preflight / docs
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - name: Docs
+        run: make check-docs
+
+  preflight-acceptance:
+    name: Preflight / acceptance A
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    env:
+      DOLT_VERSION: "1.86.6"
+      BD_VERSION: "v1.0.3"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: ./.github/actions/setup-gascity-ubuntu
+        with:
+          dolt-version: ${{ env.DOLT_VERSION }}
+          bd-version: ${{ env.BD_VERSION }}
+          install-claude-cli: "true"
+      - name: Acceptance tests (Tier A)
+        run: make test-acceptance
+
+  preflight-dashboard:
+    name: Preflight / dashboard drift
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Dashboard bundle drift check
+        run: make dashboard-ci
+
+  preflight-spec:
+    name: Preflight / spec drift
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    env:
+      # Make TestGeneratedClientInSync fatal on missing oapi-codegen so the
+      # spec->client drift check can never silently skip in CI.
+      GC_REQUIRE_OAPI_CODEGEN: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
+      - name: OpenAPI spec + client drift check
+        run: make spec-ci
+
+  # Historical fan-in name. During the Blacksmith proof, branch protection can
+  # move to `CI / required`; this job keeps the old name meaningful.
+  check:
+    name: Check
+    needs:
+      - preflight-lint
+      - preflight-format
+      - preflight-vet
+      - preflight-unit-cover
+      - preflight-docs
+      - preflight-acceptance
+      - preflight-dashboard
+      - preflight-spec
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Summarize preflight result
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failures = {
+              job: meta.get("result", "unknown")
+              for job, meta in sorted(needs.items())
+              if meta.get("result") != "success"
+          }
+          summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(summary_path, "a", encoding="utf-8") as handle:
+              handle.write("## CI Preflight\n\n")
+              handle.write("| Job | Result |\n| --- | --- |\n")
+              for job, meta in sorted(needs.items()):
+                  handle.write(f"| {job} | {meta.get('result', 'unknown')} |\n")
+          if failures:
+              for job, result in failures.items():
+                  print(f"{job}: {result}", file=sys.stderr)
+              sys.exit(1)
+          PY
+
   release-config:
     name: Release config
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -150,7 +260,7 @@ jobs:
     name: cmd/gc process suite
     needs: changes
     if: needs.changes.outputs.cmd_gc_process == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 20
     env:
       DOLT_VERSION: "1.86.6"
@@ -167,11 +277,9 @@ jobs:
       - name: Run cmd/gc process suite
         run: make test-cmd-gc-process
 
-  # Runs always, but remains non-blocking while integration/provider paths are still stabilizing.
   integration-shards:
     name: Integration / ${{ matrix.shard_name }}
-    runs-on: ubuntu-latest
-    continue-on-error: true
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -180,15 +288,24 @@ jobs:
           - shard_name: packages
             timeout_minutes: 35
             command: make test-integration-packages
-          - shard_name: review-formulas
-            timeout_minutes: 45
-            command: make test-integration-review-formulas
+          - shard_name: review-formulas-basic
+            timeout_minutes: 20
+            command: make test-integration-review-formulas-basic
+          - shard_name: review-formulas-retries
+            timeout_minutes: 20
+            command: make test-integration-review-formulas-retries
+          - shard_name: review-formulas-recovery
+            timeout_minutes: 25
+            command: make test-integration-review-formulas-recovery
           - shard_name: bdstore
             timeout_minutes: 15
             command: make test-integration-bdstore
-          - shard_name: rest
-            timeout_minutes: 35
-            command: make test-integration-rest
+          - shard_name: rest-smoke
+            timeout_minutes: 20
+            command: make test-integration-rest-smoke
+          - shard_name: rest-full
+            timeout_minutes: 30
+            command: make test-integration-rest-full
     env:
       DOLT_VERSION: "1.86.6"
       BD_VERSION: "v1.0.3"
@@ -208,7 +325,7 @@ jobs:
     name: Worker core (Claude)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: claude/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-claude-reports
@@ -240,7 +357,7 @@ jobs:
     name: Worker core (Codex)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: codex/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-codex-reports
@@ -272,7 +389,7 @@ jobs:
     name: Worker core (Gemini)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: gemini/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-gemini-reports
@@ -308,7 +425,7 @@ jobs:
       - worker-core-codex
       - worker-core-gemini
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       WORKER_ROLLUP_DIR: /tmp/worker-core-summary-reports
       WORKER_ROLLUP_JSON: /tmp/worker-core-summary-reports/worker-core-summary.json
@@ -367,9 +484,9 @@ jobs:
         run: |
           CHANGES_RESULT='${{ needs.changes.result }}'
           CHANGED='${{ needs.changes.outputs.worker }}'
-          CLAUDE_RESULT='${{ needs.worker-core-claude.result }}'
-          CODEX_RESULT='${{ needs.worker-core-codex.result }}'
-          GEMINI_RESULT='${{ needs.worker-core-gemini.result }}'
+          CLAUDE_RESULT='${{ needs['worker-core-claude'].result }}'
+          CODEX_RESULT='${{ needs['worker-core-codex'].result }}'
+          GEMINI_RESULT='${{ needs['worker-core-gemini'].result }}'
           CLAUDE_DOWNLOAD='${{ steps.download_worker_core_claude.outcome }}'
           CODEX_DOWNLOAD='${{ steps.download_worker_core_codex.outcome }}'
           GEMINI_DOWNLOAD='${{ steps.download_worker_core_gemini.outcome }}'
@@ -412,7 +529,7 @@ jobs:
     name: Worker core phase 2 (Claude)
     needs: changes
     if: needs.changes.outputs.worker_phase2 == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: claude/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-phase2-claude-reports
@@ -448,7 +565,7 @@ jobs:
     name: Worker core phase 2 (Codex)
     needs: changes
     if: needs.changes.outputs.worker_phase2 == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: codex/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-phase2-codex-reports
@@ -484,7 +601,7 @@ jobs:
     name: Worker core phase 2 (Gemini)
     needs: changes
     if: needs.changes.outputs.worker_phase2 == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     env:
       PROFILE: gemini/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-core-phase2-gemini-reports
@@ -524,7 +641,7 @@ jobs:
       - worker-core-phase2-codex
       - worker-core-phase2-gemini
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       WORKER_ROLLUP_DIR: /tmp/worker-core-phase2-summary-reports
       WORKER_ROLLUP_JSON: /tmp/worker-core-phase2-summary-reports/worker-core-phase2-summary.json
@@ -583,9 +700,9 @@ jobs:
         run: |
           CHANGES_RESULT='${{ needs.changes.result }}'
           CHANGED='${{ needs.changes.outputs.worker_phase2 }}'
-          CLAUDE_RESULT='${{ needs.worker-core-phase2-claude.result }}'
-          CODEX_RESULT='${{ needs.worker-core-phase2-codex.result }}'
-          GEMINI_RESULT='${{ needs.worker-core-phase2-gemini.result }}'
+          CLAUDE_RESULT='${{ needs['worker-core-phase2-claude'].result }}'
+          CODEX_RESULT='${{ needs['worker-core-phase2-codex'].result }}'
+          GEMINI_RESULT='${{ needs['worker-core-phase2-gemini'].result }}'
           CLAUDE_DOWNLOAD='${{ steps.download_worker_core_phase2_claude.outcome }}'
           CODEX_DOWNLOAD='${{ steps.download_worker_core_phase2_codex.outcome }}'
           GEMINI_DOWNLOAD='${{ steps.download_worker_core_phase2_gemini.outcome }}'
@@ -628,7 +745,7 @@ jobs:
     name: Worker inference phase 3 (Claude)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       PROFILE: claude/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-inference-phase3-claude-reports
@@ -653,7 +770,7 @@ jobs:
     name: Worker inference phase 3 (Codex)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       PROFILE: codex/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-inference-phase3-codex-reports
@@ -678,7 +795,7 @@ jobs:
     name: Worker inference phase 3 (Gemini)
     needs: changes
     if: needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       PROFILE: gemini/tmux-cli
       WORKER_REPORT_DIR: /tmp/worker-inference-phase3-gemini-reports
@@ -707,7 +824,7 @@ jobs:
       - worker-inference-phase3-codex
       - worker-inference-phase3-gemini
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     env:
       WORKER_ROLLUP_DIR: /tmp/worker-inference-phase3-summary-reports
       WORKER_ROLLUP_JSON: /tmp/worker-inference-phase3-summary-reports/worker-inference-phase3-summary.json
@@ -766,9 +883,9 @@ jobs:
         run: |
           CHANGES_RESULT='${{ needs.changes.result }}'
           CHANGED='${{ needs.changes.outputs.worker }}'
-          CLAUDE_RESULT='${{ needs.worker-inference-phase3-claude.result }}'
-          CODEX_RESULT='${{ needs.worker-inference-phase3-codex.result }}'
-          GEMINI_RESULT='${{ needs.worker-inference-phase3-gemini.result }}'
+          CLAUDE_RESULT='${{ needs['worker-inference-phase3-claude'].result }}'
+          CODEX_RESULT='${{ needs['worker-inference-phase3-codex'].result }}'
+          GEMINI_RESULT='${{ needs['worker-inference-phase3-gemini'].result }}'
           CLAUDE_DOWNLOAD='${{ steps.download_worker_inference_phase3_claude.outcome }}'
           CODEX_DOWNLOAD='${{ steps.download_worker_inference_phase3_codex.outcome }}'
           GEMINI_DOWNLOAD='${{ steps.download_worker_inference_phase3_gemini.outcome }}'
@@ -815,7 +932,7 @@ jobs:
     name: Pack compatibility gate
     needs: [changes, check]
     if: needs.changes.outputs.packs == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: ./.github/actions/setup-gascity-ubuntu
@@ -839,9 +956,12 @@ jobs:
   # load-bearing discipline step.
   dashboard:
     name: Dashboard SPA
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: "1.25.8"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
@@ -871,7 +991,7 @@ jobs:
     name: MCP mail conformance
     needs: changes
     if: needs.changes.outputs.mail == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     continue-on-error: true  # upstream mcp_agent_mail API may drift
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -898,7 +1018,7 @@ jobs:
     name: Docker session
     needs: changes
     if: needs.changes.outputs.docker == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -924,7 +1044,7 @@ jobs:
     name: K8s session
     needs: changes
     if: needs.changes.outputs.k8s == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -940,3 +1060,115 @@ jobs:
         env:
           GC_K8S_AVAILABLE: ${{ secrets.GC_K8S_AVAILABLE }}
         run: make test-k8s
+
+  ci-preflight:
+    name: CI / preflight
+    needs:
+      - check
+      - release-config
+      - dashboard
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Summarize preflight gates
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failed = {
+              job: meta.get("result", "unknown")
+              for job, meta in sorted(needs.items())
+              if meta.get("result") != "success"
+          }
+          if failed:
+              for job, result in failed.items():
+                  print(f"{job}: {result}", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  ci-integration:
+    name: CI / integration
+    needs:
+      - integration-shards
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Summarize integration gates
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          failed = {
+              job: meta.get("result", "unknown")
+              for job, meta in sorted(needs.items())
+              if meta.get("result") != "success"
+          }
+          if failed:
+              for job, result in failed.items():
+                  print(f"{job}: {result}", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  ci-required:
+    name: CI / required
+    needs:
+      - changes
+      - ci-preflight
+      - ci-integration
+      - cmd-gc-process
+      - worker-core-summary
+      - worker-core-phase2-summary
+      - worker-inference-phase3-summary
+      - pack-gate
+      - docker-session
+      - k8s-session
+    if: ${{ always() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+      - name: Summarize required gates
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          allow_skipped = {
+              "cmd-gc-process",
+              "pack-gate",
+              "docker-session",
+              "k8s-session",
+          }
+          failed = {}
+          for job, meta in sorted(needs.items()):
+              result = meta.get("result", "unknown")
+              if result == "success":
+                  continue
+              if result == "skipped" and job in allow_skipped:
+                  continue
+              failed[job] = result
+
+          summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(summary_path, "a", encoding="utf-8") as handle:
+              handle.write("## CI Required\n\n")
+              handle.write("| Job | Result |\n| --- | --- |\n")
+              for job, meta in sorted(needs.items()):
+                  handle.write(f"| {job} | {meta.get('result', 'unknown')} |\n")
+
+          if failed:
+              for job, result in failed.items():
+                  print(f"{job}: {result}", file=sys.stderr)
+              sys.exit(1)
+          PY

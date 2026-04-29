@@ -55,11 +55,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -91,11 +87,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -119,11 +111,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -156,11 +144,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 25
     outputs:
       outcome: ${{ steps.cover.outcome }}
@@ -206,11 +190,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 60
     outputs:
       outcome: ${{ steps.shard.outcome }}
@@ -248,11 +228,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 60
     outputs:
       outcome: ${{ steps.shard.outcome }}
@@ -290,11 +266,7 @@ jobs:
         !github.event.pull_request.draft &&
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 60
     outputs:
       outcome: ${{ steps.shard.outcome }}
@@ -327,11 +299,7 @@ jobs:
     if: >-
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.suite == 'full')
-    runs-on:
-      - self-hosted
-      - macOS
-      - ARM64
-      - macstadium
+    runs-on: blacksmith-12vcpu-macos-15
     timeout-minutes: 90
     outputs:
       outcome: ${{ steps.shard.outcome }}
@@ -387,7 +355,7 @@ jobs:
       - mac-integration-bdstore
       - mac-integration-rest
       - mac-integration-review-formulas
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Summarize
         env:

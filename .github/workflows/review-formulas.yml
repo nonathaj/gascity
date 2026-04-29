@@ -32,7 +32,7 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.action != 'labeled' ||
       github.event.label.name == 'needs-review-formulas'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       run_shard: ${{ steps.gate.outputs.run_shard }}
       reason: ${{ steps.gate.outputs.reason }}
@@ -102,7 +102,7 @@ jobs:
     name: Integration / review-formulas (${{ matrix.label }})
     needs: gate
     if: needs.gate.outputs.run_shard == 'true'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -168,7 +168,7 @@ jobs:
         github.event.action != 'labeled' ||
         github.event.label.name == 'needs-review-formulas'
       )
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Finalize review-formulas result
         env:
