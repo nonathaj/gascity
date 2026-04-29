@@ -355,6 +355,26 @@ bd_runtime_schema_ready() {
     server_sql "USE \`$db\`; SELECT 1 FROM config LIMIT 1" >/dev/null 2>&1
 }
 
+wait_for_bd_runtime_schema() {
+    local db="$1"
+    local attempt backoff_ms
+    [ -n "$db" ] || return 1
+    valid_sql_name "$db" || return 1
+
+    backoff_ms=100
+    for attempt in 1 2 3 4 5; do
+        if bd_runtime_schema_ready "$db"; then
+            return 0
+        fi
+        if [ "$attempt" -lt 5 ]; then
+            sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
+            backoff_ms=$((backoff_ms * 2))
+        fi
+    done
+
+    return 1
+}
+
 # --- Robustness Helpers ---
 
 # save_state writes the private provider runtime state atomically (no jq dependency).
@@ -1708,6 +1728,22 @@ run_bd_pinned() {
     )
 }
 
+run_bd_init_pinned() {
+    local dir="$1"
+    local prefix="$2"
+    local dolt_database="$3"
+    local host="$4"
+    local force_init="${5:-false}"
+    if [ "$force_init" = "true" ]; then
+        run_bd_pinned "$dir" init --force --quiet --server -p "$prefix" --database "$dolt_database" --skip-hooks --skip-agents \
+            --server-host "$host" --server-port "$DOLT_PORT" "$dir" || die "bd init failed for $dir"
+        return 0
+    fi
+
+    run_bd_pinned "$dir" init --quiet --server -p "$prefix" --database "$dolt_database" --skip-hooks --skip-agents \
+        --server-host "$host" --server-port "$DOLT_PORT" "$dir" || die "bd init failed for $dir"
+}
+
 ensure_beads_dir_permissions() {
     local dir="$1"
     local beads_dir="$dir/.beads"
@@ -1843,39 +1879,35 @@ op_init() {
     # server is running, always go through SQL rather than dolt init on disk.
     ensure_database_registered "$dolt_database" || true
 
-    local init_prefix="$prefix"
-    if [ "$dolt_database" != "$prefix" ]; then
-        # When the pinned Dolt database differs from the routing prefix
-        # (for example city prefix gc -> database hq), initialize bd against
-        # the actual database name and then rewrite issue_prefix afterward.
-        # Otherwise bd seeds schema into <prefix> and leaves the pinned
-        # database empty.
-        init_prefix="$dolt_database"
-    fi
-
     # Run bd init in server mode through the pinned wrapper so the fallback
     # path uses the same authenticated Dolt target as the rest of init.
     # Metadata-only scopes already look initialized to bd, so schema-repair
     # fallback must force reinit to seed the missing tables into the pinned DB.
-    if [ -n "$bd_init_force" ]; then
-        run_bd_pinned "$dir" init --force --quiet --server -p "$init_prefix" --skip-hooks --skip-agents \
-            --server-host "$host" --server-port "$DOLT_PORT" "$dir" || die "bd init failed for $dir"
-    else
-        run_bd_pinned "$dir" init --quiet --server -p "$init_prefix" --skip-hooks --skip-agents \
-            --server-host "$host" --server-port "$DOLT_PORT" "$dir" || die "bd init failed for $dir"
-    fi
+    # Always pass the pinned server database explicitly; `-p` controls the
+    # visible issue prefix, while `--database` tells bd which existing Dolt
+    # database to initialize. Without `--database`, bd can seed beads_<prefix>
+    # and leave the pinned database schema-less.
+    run_bd_init_pinned "$dir" "$prefix" "$dolt_database" "$host" "${bd_init_force:+true}"
 
-    # Drop orphan database created by bd init (upstream gt-sv1h).
-    # bd init --prefix creates beads_<prefix> on the Dolt server, but we
-    # use <prefix> as the database name. Without cleanup, orphans accumulate.
-    local orphan_db="beads_${init_prefix}"
-    if [ "$orphan_db" != "$init_prefix" ]; then
-        server_sql "DROP DATABASE IF EXISTS \`$orphan_db\`" >/dev/null 2>&1 || true
-    fi
+    ensure_database_registered "$dolt_database" || true
 
     # GC owns canonical metadata/config normalization after this backend
     # bridge returns. Keep bd-specific config/migration here only.
     ensure_beads_dir_permissions "$dir"
+    if ! wait_for_bd_runtime_schema "$dolt_database"; then
+        if [ "${GC_BD_INIT_RETRY:-0}" != "1" ]; then
+            if [ -n "$bd_init_force" ]; then
+                # Metadata-only scopes can still confuse bd's first forced server init.
+                # Drop the preseeded metadata and retry through a fresh top-level
+                # invocation, matching the successful manual recovery path.
+                rm -f "$dir/.beads/metadata.json"
+            fi
+            echo "warning: bd schema for '$dolt_database' not visible after init; retrying init" >&2
+            GC_BD_INIT_RETRY=1 exec "$0" init "$dir" "$prefix" "$dolt_database"
+            die "failed to re-exec init for $dir"
+        fi
+        die "bd schema not visible for $dolt_database after init"
+    fi
 
     # Configure custom bead types (required since beads v0.46.0).
     run_bd_pinned "$dir" config set types.custom "$custom_types" 2>/dev/null || true
@@ -1889,6 +1921,15 @@ op_init() {
     # Fresh bd init already writes project_id on current upstream; only pay the
     # migration cost when metadata still lacks it.
     backfill_project_id_if_missing "$dir"
+
+    # Drop orphan database created by bd init (upstream gt-sv1h) only after
+    # the pinned database schema is visible. Some bd builds appear to stage
+    # schema work before the pinned catalog entry is fully adopted; deleting
+    # beads_<prefix> too early can discard the only initialized schema.
+    local orphan_db="beads_${prefix}"
+    if [ "$orphan_db" != "$dolt_database" ]; then
+        server_sql "DROP DATABASE IF EXISTS \`$orphan_db\`" >/dev/null 2>&1 || true
+    fi
 
     normalize_scope_after_init "$dir" "$prefix" "$dolt_database"
 }
