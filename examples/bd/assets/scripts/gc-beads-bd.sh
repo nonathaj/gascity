@@ -166,6 +166,8 @@ is_retryable_error() {
         *"lock wait timeout"*) return 0 ;;
         *"try restarting transaction"*) return 0 ;;
         *"Unknown database"*) return 0 ;;
+        *"table not found"*) return 0 ;;
+        *"Unknown table"*) return 0 ;;
     esac
     return 1
 }
@@ -297,6 +299,19 @@ backfill_project_id_if_missing() {
     fi
     host=$(connect_host)
     "$gc_bin" dolt-state ensure-project-id         --metadata "$meta_file"         --host "$host"         --port "$DOLT_PORT"         --user "$DOLT_USER"         --database "$dolt_database" >/dev/null || die "failed to ensure project identity for $dir"
+}
+
+ensure_bd_runtime_issue_prefix() {
+    local db="$1"
+    local prefix="$2"
+    [ -n "$db" ] || return 0
+    [ -n "$prefix" ] || return 0
+    valid_sql_name "$db" || die "invalid dolt database name: $db"
+    valid_sql_name "$prefix" || die "invalid beads prefix: $prefix"
+
+    # bd v1.0.3 rejects `bd config set issue_prefix`; GC still needs raw
+    # bd commands to see the city prefix in the DB-backed config table.
+    server_sql_retry "USE \`$db\`; INSERT INTO config (\`key\`, value) VALUES ('issue_prefix', '$prefix') ON DUPLICATE KEY UPDATE value = VALUES(value)" >/dev/null || die "failed to set bd runtime issue_prefix for $db"
 }
 
 # --- Robustness Helpers ---
@@ -1290,6 +1305,20 @@ clean_stale_sockets() {
     done
 }
 
+# ensure_beads_role ensures beads.role is set in global git config.
+# bd exits non-zero with "beads.role not configured" (gastownhall/beads#2950)
+# when this key is absent. That non-zero exit causes the `run_bd_pinned … ||
+# true` calls in op_init to fail silently, leaving issue_prefix and
+# types.custom unset in the Dolt database and making every subsequent
+# bd-create call fail with "database not initialized". Defaulting to
+# "maintainer" matches the role that gc-managed agents use to create beads.
+ensure_beads_role() {
+    if git config --global beads.role >/dev/null 2>&1; then
+        return 0
+    fi
+    git config --global beads.role maintainer || die "failed to set git config beads.role"
+}
+
 # ensure_dolt_identity ensures dolt has user.name and user.email configured.
 ensure_dolt_identity() {
     # Check if already configured.
@@ -1703,6 +1732,7 @@ op_init() {
     unset BEADS_DIR
     export BEADS_DIR="$beads_dir"
     ensure_beads_dir_permissions "$dir"
+    ensure_beads_role
 
     if [ -z "$dolt_database" ]; then
         # Compatibility fallback for direct gc-beads-bd invocations.
@@ -1746,8 +1776,8 @@ op_init() {
             # and bd-specific bootstrap only.
             ensure_beads_dir_permissions "$dir"
             normalize_scope_after_init "$dir" "$prefix" "$dolt_database"
-            run_bd_pinned "$dir" config set issue_prefix "$prefix" 2>/dev/null || true
             run_bd_pinned "$dir" config set types.custom "$custom_types" 2>/dev/null || true
+            ensure_bd_runtime_issue_prefix "$dolt_database" "$prefix"
             backfill_project_id_if_missing "$dir"
             exit 0
         fi
@@ -1789,12 +1819,12 @@ op_init() {
     # bridge returns. Keep bd-specific config/migration here only.
     ensure_beads_dir_permissions "$dir"
 
-    # Keep bd's runtime config in sync with GC's canonical prefix. This is
-    # compatibility state for raw bd operations, not a second GC authority.
-    run_bd_pinned "$dir" config set issue_prefix "$prefix" 2>/dev/null || true
-
     # Configure custom bead types (required since beads v0.46.0).
     run_bd_pinned "$dir" config set types.custom "$custom_types" 2>/dev/null || true
+
+    # Keep bd's runtime config in sync with GC's canonical prefix. This is
+    # compatibility state for raw bd operations, not a second GC authority.
+    ensure_bd_runtime_issue_prefix "$dolt_database" "$prefix"
 
     # Ensure database has repository fingerprint (upstream GH #25).
     # Fresh bd init already writes project_id on current upstream; only pay the
