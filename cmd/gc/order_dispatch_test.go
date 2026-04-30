@@ -2844,7 +2844,7 @@ func TestOrderDispatchConditionUsesScopedEnv(t *testing.T) {
 	cityDir := t.TempDir()
 	store := beads.NewMemStore()
 	check := fmt.Sprintf(
-		`test "$GC_CITY_PATH" = '%s' && test "$GC_STORE_ROOT" = '%s' && test "$GC_STORE_SCOPE" = city && test "$(pwd)" = '%s'`,
+		`test "$GC_CITY_PATH" = '%s' && test "$GC_STORE_ROOT" = '%s' && test "$GC_STORE_SCOPE" = city && test "$(pwd -P)" = "$(cd '%s' && pwd -P)"`,
 		cityDir,
 		cityDir,
 		cityDir,

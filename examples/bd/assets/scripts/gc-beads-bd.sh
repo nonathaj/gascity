@@ -131,6 +131,30 @@ lsof_reports_open() {
     esac
 }
 
+canonical_dir() {
+    local dir="$1"
+    (cd "$dir" 2>/dev/null && pwd -P) || printf '%s\n' "$dir"
+}
+
+same_dir_path() {
+    local left="$1" right="$2" abs_left abs_right
+    [ "$left" = "$right" ] && return 0
+    abs_left=$(canonical_dir "$left")
+    abs_right=$(canonical_dir "$right")
+    [ "$abs_left" = "$abs_right" ]
+}
+
+path_under_data_dir() {
+    local path="$1" abs_data
+    abs_data=$(canonical_dir "$DATA_DIR")
+    case "$path" in
+        "$DATA_DIR"|"$DATA_DIR"/*|"$abs_data"|"$abs_data"/*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 # do_query_probe runs a SELECT active_branch() query against the dolt server.
 # active_branch() is lightweight and won't block behind queued queries,
 # unlike SELECT 1 which goes through the full query executor (per Tim Sehn, Dolt CEO).
@@ -170,6 +194,18 @@ is_retryable_error() {
     return 1
 }
 
+sleep_ms() {
+    local ms="$1"
+    local seconds remainder
+    seconds=$((ms / 1000))
+    remainder=$((ms % 1000))
+    if [ "$remainder" -eq 0 ]; then
+        sleep "$seconds"
+    else
+        sleep "$seconds.$(printf '%03d' "$remainder")"
+    fi
+}
+
 # server_sql_retry wraps server_sql with exponential backoff on transient errors.
 # 5 attempts, backoff 500ms→1s→2s→4s→8s (capped at 15s).
 server_sql_retry() {
@@ -189,7 +225,7 @@ server_sql_retry() {
         fi
 
         if [ "$attempt" -lt "$max_attempts" ]; then
-            sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
+            sleep_ms "$backoff_ms" 2>/dev/null || sleep 1
             backoff_ms=$((backoff_ms * 2))
             if [ "$backoff_ms" -gt "$max_backoff_ms" ]; then
                 backoff_ms=$max_backoff_ms
@@ -239,7 +275,7 @@ ensure_database_registered() {
         if server_sql "USE \`$db\`" >/dev/null 2>&1; then
             return 0
         fi
-        sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
+        sleep_ms "$backoff_ms" 2>/dev/null || sleep 1
         backoff_ms=$((backoff_ms * 2))
     done
 
@@ -362,13 +398,18 @@ wait_for_bd_runtime_schema() {
     valid_sql_name "$db" || return 1
 
     backoff_ms=100
-    for attempt in 1 2 3 4 5; do
+    for attempt in 1 2 3 4 5 6 7 8; do
         if bd_runtime_schema_ready "$db"; then
             return 0
         fi
-        if [ "$attempt" -lt 5 ]; then
-            sleep "$(awk "BEGIN{printf \"%.3f\", $backoff_ms/1000}")" 2>/dev/null || sleep 1
-            backoff_ms=$((backoff_ms * 2))
+        if [ "$attempt" -lt 8 ]; then
+            sleep_ms "$backoff_ms" 2>/dev/null || sleep 1
+            if [ "$backoff_ms" -lt 1000 ]; then
+                backoff_ms=$((backoff_ms * 2))
+                if [ "$backoff_ms" -gt 1000 ]; then
+                    backoff_ms=1000
+                fi
+            fi
         fi
     done
 
@@ -628,7 +669,7 @@ verify_our_server() {
     # Layer 1: State file data-dir comparison.
     local state_dir
     state_dir=$(load_state_field data_dir)
-    if [ -n "$state_dir" ] && [ "$state_dir" != "$DATA_DIR" ]; then
+    if [ -n "$state_dir" ] && ! same_dir_path "$state_dir" "$DATA_DIR"; then
         return 1
     fi
 
@@ -647,11 +688,7 @@ verify_our_server() {
             local proc_dir
             proc_dir=$(echo "$proc_args" | sed -n 's/.*--data-dir[= ]*\([^ ]*\).*/\1/p')
             if [ -n "$proc_dir" ]; then
-                # Resolve to absolute paths for comparison.
-                local abs_proc abs_ours
-                abs_proc=$(cd "$proc_dir" 2>/dev/null && pwd) || abs_proc="$proc_dir"
-                abs_ours=$(cd "$DATA_DIR" 2>/dev/null && pwd) || abs_ours="$DATA_DIR"
-                if [ "$abs_proc" = "$abs_ours" ]; then
+                if same_dir_path "$proc_dir" "$DATA_DIR"; then
                     return 0
                 fi
                 return 1
@@ -663,13 +700,13 @@ verify_our_server() {
     if [ -d "/proc/$pid" ]; then
         local cwd
         cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || true
-        if [ -n "$cwd" ] && [ "$cwd" = "$DATA_DIR" ]; then
+        if [ -n "$cwd" ] && same_dir_path "$cwd" "$DATA_DIR"; then
             return 0
         fi
     fi
 
     # State file said it's ours (or no state file) and we couldn't disprove it.
-    if [ -n "$state_dir" ] && [ "$state_dir" = "$DATA_DIR" ]; then
+    if [ -n "$state_dir" ] && same_dir_path "$state_dir" "$DATA_DIR"; then
         return 0
     fi
 
@@ -701,11 +738,10 @@ has_deleted_data_inodes() {
             target=$(readlink "$fd" 2>/dev/null) || continue
             case "$target" in
                 *" (deleted)")
-                    case "$target" in
-                        "$DATA_DIR"/*|"$DATA_DIR"*)
-                            return 0
-                            ;;
-                    esac
+                    target=${target% (deleted)}
+                    if path_under_data_dir "$target"; then
+                        return 0
+                    fi
                     ;;
             esac
         done
@@ -716,7 +752,9 @@ has_deleted_data_inodes() {
     fi
 
     if command -v lsof >/dev/null 2>&1; then
-        if run_lsof -p "$pid" 2>/dev/null | grep ' (deleted)' | grep -F -- "$DATA_DIR" >/dev/null 2>&1; then
+        local abs_data
+        abs_data=$(canonical_dir "$DATA_DIR")
+        if run_lsof -p "$pid" 2>/dev/null | grep ' (deleted)' | grep -F -e "$DATA_DIR" -e "$abs_data" >/dev/null 2>&1; then
             return 0
         fi
     fi
@@ -1047,7 +1085,7 @@ EOF
 }
 
 wait_for_concurrent_start_ready() {
-    local existing_pid="" existing_port="" holder="" timeout_ms deadline_ms now_ms remaining_ms sleep_ms
+    local existing_pid="" existing_port="" holder="" timeout_ms deadline_ms now_ms remaining_ms wait_ms
     timeout_ms="$CONCURRENT_START_READY_TIMEOUT_MS"
     case "$timeout_ms" in
         ''|*[!0-9]*)
@@ -1103,18 +1141,14 @@ wait_for_concurrent_start_ready() {
         if [ "$remaining_ms" -le 0 ]; then
             return 1
         fi
-        sleep_ms=500
-        if [ "$remaining_ms" -lt "$sleep_ms" ]; then
-            sleep_ms="$remaining_ms"
+        wait_ms=500
+        if [ "$remaining_ms" -lt "$wait_ms" ]; then
+            wait_ms="$remaining_ms"
         fi
-        if [ "$sleep_ms" -le 0 ]; then
+        if [ "$wait_ms" -le 0 ]; then
             return 1
         fi
-        if [ "$sleep_ms" -lt 500 ]; then
-            sleep "0.$(printf '%03d' "$sleep_ms")" 2>/dev/null || sleep 1
-        else
-            sleep 0.5 2>/dev/null || sleep 1
-        fi
+        sleep_ms "$wait_ms" 2>/dev/null || sleep 1
     done
 }
 

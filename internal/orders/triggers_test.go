@@ -102,7 +102,7 @@ func TestCheckTriggerConditionUsesOptions(t *testing.T) {
 	a := Order{
 		Name:    "check",
 		Trigger: "condition",
-		Check:   `test "$GC_CITY_PATH" = "$EXPECT_CITY" && test "$(pwd)" = "$EXPECT_CITY"`,
+		Check:   `test "$GC_CITY_PATH" = "$EXPECT_CITY" && test "$(pwd -P)" = "$(cd "$EXPECT_CITY" && pwd -P)"`,
 	}
 	now := time.Date(2026, 2, 27, 12, 0, 0, 0, time.UTC)
 	result := CheckTriggerWithOptions(a, now, neverRan, nil, nil, TriggerOptions{
