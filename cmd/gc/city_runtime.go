@@ -382,6 +382,16 @@ func (cr *CityRuntime) run(ctx context.Context) {
 		return
 	}
 
+	// Dispatch due orders before startup session reconciliation. A cold-start
+	// reconcile can take minutes when it has stale or config-drifted sessions;
+	// due event/condition formulas should not wait behind that maintenance work.
+	cr.safeTick(func() {
+		cr.dispatchOrders(ctx, cityRoot)
+	}, "startup-orders")
+	if ctx.Err() != nil {
+		return
+	}
+
 	// Session bead sync BEFORE reconciliation: ensures beads exist for
 	// the reconciler to read/write hashes. Uses ListByLabel (indexed,
 	// fast even before CachingStore is primed).
@@ -765,6 +775,9 @@ func (cr *CityRuntime) tick(
 }
 
 func (cr *CityRuntime) dispatchOrders(ctx context.Context, cityRoot string) {
+	if ctx.Err() != nil {
+		return
+	}
 	if cr.od != nil {
 		cr.od.dispatch(ctx, cityRoot, time.Now())
 	}
