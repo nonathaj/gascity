@@ -214,8 +214,13 @@ func TestE2E_ConfigDrift(t *testing.T) {
 	city.Agents[0].StartCommand = "CUSTOM_VERSION=v2 " + e2eReportScript()
 	rewriteE2ETomlPreservingNamedSessions(t, cityDir, city)
 
-	// The controller is already running. Writing city.toml should trigger a
-	// config reload and reconcile via the watcher/patrol loop.
+	out, err := gc(cityDir, "reload", "--timeout", "45s")
+	if err != nil {
+		t.Fatalf("gc reload after config drift failed: %v\noutput: %s", err, out)
+	}
+
+	// The controller is already running. Reloading city.toml should reconcile
+	// and restart the drifted session.
 	report2 := waitForReport(t, cityDir, "drifter", e2eDefaultTimeout())
 	if !report2.has("CUSTOM_VERSION", "v2") {
 		t.Errorf("post-drift CUSTOM_VERSION: got %v, want [v2]", report2.getAll("CUSTOM_VERSION"))
