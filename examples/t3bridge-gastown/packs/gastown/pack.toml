@@ -16,13 +16,3 @@ mode = "always"
 template = "refinery"
 scope = "rig"
 mode = "on_demand"
-
-[[named_session]]
-template = "crew"
-scope = "rig"
-mode = "always"
-
-[[named_session]]
-template = "convoymaster"
-scope = "rig"
-mode = "on_demand"

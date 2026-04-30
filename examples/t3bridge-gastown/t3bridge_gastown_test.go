@@ -31,12 +31,12 @@ func TestT3BridgeGastownExampleParses(t *testing.T) {
 	if _, ok := cfg.Imports["gastown"]; !ok {
 		t.Fatalf("missing gastown import")
 	}
-	for _, want := range []string{"polecat", "witness", "refinery", "crew", "convoymaster"} {
+	for _, want := range []string{"polecat", "witness", "refinery"} {
 		if !slices.ContainsFunc(cfg.Agents, func(a config.Agent) bool { return a.Name == want }) {
 			t.Fatalf("missing imported agent %q; agents=%v", want, agentNames(cfg.Agents))
 		}
 	}
-	for _, want := range []string{"example/gastown.witness", "example/gastown.refinery", "example/gastown.crew", "example/gastown.convoymaster"} {
+	for _, want := range []string{"example/gastown.witness", "example/gastown.refinery"} {
 		if !slices.ContainsFunc(cfg.NamedSessions, func(s config.NamedSession) bool { return s.QualifiedName() == want }) {
 			t.Fatalf("missing named session %q; sessions=%v", want, namedSessionNames(cfg.NamedSessions))
 		}
