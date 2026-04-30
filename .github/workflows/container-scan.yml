@@ -199,20 +199,6 @@ jobs:
               "$image"
           done
 
-      - name: Upload image SARIF
-        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
-        with:
-          sarif_file: trivy-results
-
-      - name: Upload image scan artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: trivy-image-results
-          path: trivy-results/
-          retention-days: 5
-
       - name: Enforce image vulnerability policy
         run: |
           set -euo pipefail
@@ -233,3 +219,39 @@ jobs:
               --format table \
               "$image"
           done
+
+      - name: Upload base image SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: trivy-results/gc-agent-base.sarif
+          category: trivy-image/gc-agent-base
+
+      - name: Upload agent image SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: trivy-results/gc-agent.sarif
+          category: trivy-image/gc-agent
+
+      - name: Upload controller image SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: trivy-results/gc-controller.sarif
+          category: trivy-image/gc-controller
+
+      - name: Upload MCP mail image SARIF
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: trivy-results/gc-mcp-mail.sarif
+          category: trivy-image/gc-mcp-mail
+
+      - name: Upload image scan artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-image-results
+          path: trivy-results/
+          retention-days: 5
