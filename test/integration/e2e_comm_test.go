@@ -220,8 +220,10 @@ func TestE2E_ConfigDrift(t *testing.T) {
 	}
 
 	// The controller is already running. Reloading city.toml should reconcile
-	// and restart the drifted session.
-	report2 := waitForReport(t, cityDir, "drifter", e2eDefaultTimeout())
+	// and restart the drifted session. Named sessions can defer config drift
+	// while recent activity cannot be ruled out, so allow the bounded deferral
+	// window to expire on slower providers.
+	report2 := waitForReport(t, cityDir, "drifter", 3*time.Minute)
 	if !report2.has("CUSTOM_VERSION", "v2") {
 		t.Errorf("post-drift CUSTOM_VERSION: got %v, want [v2]", report2.getAll("CUSTOM_VERSION"))
 	}
