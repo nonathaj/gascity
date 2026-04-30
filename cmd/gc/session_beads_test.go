@@ -2791,7 +2791,7 @@ func TestLoadSessionBeadSnapshotUsesActiveOnlyQuery(t *testing.T) {
 	if _, ok := snapshot.FindByID(open.ID); !ok {
 		t.Fatalf("snapshot missing open session bead %s", open.ID)
 	}
-	if _, ok := snapshot.findByIDIncludingClosed(closed.ID); ok {
+	if _, ok := snapshot.FindByID(closed.ID); ok {
 		t.Fatalf("snapshot retained closed session bead %s", closed.ID)
 	}
 }

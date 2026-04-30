@@ -368,6 +368,10 @@ func (c *CachingStore) DepList(id, direction string) ([]Dep, error) {
 	c.mu.RLock()
 	if c.state == cacheLive {
 		if direction == "down" || direction == "" {
+			if !c.depsComplete {
+				c.mu.RUnlock()
+				return c.backing.DepList(id, direction)
+			}
 			if deps, ok := c.deps[id]; ok {
 				c.mu.RUnlock()
 				return cloneDeps(deps), nil

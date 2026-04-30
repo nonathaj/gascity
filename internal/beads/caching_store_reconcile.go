@@ -156,7 +156,7 @@ func (c *CachingStore) runReconciliation() {
 		}
 
 		c.syncFailures = 0
-		c.depsComplete = c.depsComplete && useFreshDeps
+		c.depsComplete = useFreshDeps
 		if c.state == cacheDegraded {
 			c.state = cacheLive
 		}

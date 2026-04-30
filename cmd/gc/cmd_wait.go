@@ -589,7 +589,7 @@ func prepareWaitWakeStateForCityWithSnapshot(cityPath string, store beads.Store,
 		if !ok {
 			if wait.Metadata["registered_epoch"] != "" {
 				var found bool
-				sessionBead, found, err = lookupSessionBeadIncludingClosed(store, sessionBeads, sessionID)
+				sessionBead, found, err = lookupSessionBeadByID(store, sessionID)
 				if err != nil {
 					return nil, err
 				}
@@ -677,12 +677,7 @@ func prepareWaitWakeStateForCityWithSnapshot(cityPath string, store beads.Store,
 	return readyWaitSet, nil
 }
 
-func lookupSessionBeadIncludingClosed(store beads.Store, sessionBeads *sessionBeadSnapshot, id string) (beads.Bead, bool, error) {
-	if sessionBeads != nil {
-		if bead, ok := sessionBeads.findByIDIncludingClosed(id); ok {
-			return bead, true, nil
-		}
-	}
+func lookupSessionBeadByID(store beads.Store, id string) (beads.Bead, bool, error) {
 	if store == nil || strings.TrimSpace(id) == "" {
 		return beads.Bead{}, false, nil
 	}

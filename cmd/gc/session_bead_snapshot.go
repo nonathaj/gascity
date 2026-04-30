@@ -15,7 +15,6 @@ import (
 // explicitly.
 type sessionBeadSnapshot struct {
 	open                      []beads.Bead
-	recordByID                map[string]beads.Bead
 	sessionNameByAgentName    map[string]string
 	sessionNameByTemplateHint map[string]string
 }
@@ -41,14 +40,10 @@ func loadSessionBeadSnapshot(store beads.Store) (*sessionBeadSnapshot, error) {
 
 func newSessionBeadSnapshot(beadsIn []beads.Bead) *sessionBeadSnapshot {
 	filtered := make([]beads.Bead, 0, len(beadsIn))
-	byID := make(map[string]beads.Bead)
 	sessionNameByAgentName := make(map[string]string)
 	sessionNameByTemplateHint := make(map[string]string)
 
 	for _, b := range beadsIn {
-		if b.ID != "" {
-			byID[b.ID] = b
-		}
 		if b.Status == "closed" {
 			continue
 		}
@@ -90,7 +85,6 @@ func newSessionBeadSnapshot(beadsIn []beads.Bead) *sessionBeadSnapshot {
 
 	return &sessionBeadSnapshot{
 		open:                      filtered,
-		recordByID:                byID,
 		sessionNameByAgentName:    sessionNameByAgentName,
 		sessionNameByTemplateHint: sessionNameByTemplateHint,
 	}
@@ -103,7 +97,6 @@ func (s *sessionBeadSnapshot) replaceOpen(open []beads.Bead) {
 	rebuilt := newSessionBeadSnapshot(open)
 	if rebuilt == nil {
 		s.open = nil
-		s.recordByID = nil
 		s.sessionNameByAgentName = nil
 		s.sessionNameByTemplateHint = nil
 		return
@@ -149,17 +142,6 @@ func (s *sessionBeadSnapshot) FindByID(id string) (beads.Bead, bool) {
 		}
 	}
 	return beads.Bead{}, false
-}
-
-func (s *sessionBeadSnapshot) findByIDIncludingClosed(id string) (beads.Bead, bool) {
-	if s == nil || strings.TrimSpace(id) == "" {
-		return beads.Bead{}, false
-	}
-	bead, ok := s.recordByID[id]
-	if !ok {
-		return beads.Bead{}, false
-	}
-	return bead, true
 }
 
 func (s *sessionBeadSnapshot) FindSessionNameByNamedIdentity(identity string) string {
