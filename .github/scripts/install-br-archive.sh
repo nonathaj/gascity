@@ -110,7 +110,10 @@ install_binary() {
 install_binary_with_sudo_fallback() {
   local src="$1"
   local dst="$2"
-  if [[ -w "$(dirname "$dst")" ]]; then
+  local dst_dir
+  dst_dir="$(dirname "$dst")"
+  mkdir -p "$dst_dir"
+  if [[ -w "$dst_dir" ]]; then
     install_binary "$src" "$dst"
   elif command -v sudo >/dev/null 2>&1; then
     sudo install -m 0755 "$src" "$dst"
