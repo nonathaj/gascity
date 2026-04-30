@@ -108,12 +108,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: review-formulas-basic
-            label: basic
-            coverprofile: coverage.integration-review-formulas-basic.txt
-          - shard: review-formulas-retries
-            label: retries
-            coverprofile: coverage.integration-review-formulas-retries.txt
+          - shard: review-formulas-basic-1-of-2
+            label: basic-1-of-2
+            coverprofile: coverage.integration-review-formulas-basic-1.txt
+          - shard: review-formulas-basic-2-of-2
+            label: basic-2-of-2
+            coverprofile: coverage.integration-review-formulas-basic-2.txt
+          - shard: review-formulas-retries-1-of-2
+            label: retries-1-of-2
+            coverprofile: coverage.integration-review-formulas-retries-1.txt
+          - shard: review-formulas-retries-2-of-2
+            label: retries-2-of-2
+            coverprofile: coverage.integration-review-formulas-retries-2.txt
           - shard: review-formulas-recovery
             label: recovery
             coverprofile: coverage.integration-review-formulas-recovery.txt

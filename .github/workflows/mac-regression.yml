@@ -169,18 +169,11 @@ jobs:
           path: coverage.txt
           if-no-files-found: ignore
 
-  # Integration shards. Linux runs these with continue-on-error today while
-  # stabilizing; we mirror that until Mac parity is proven. These three
-  # shards run on `needs-mac` label, nightly, or manual dispatch. The
-  # long-running review-formulas shard lives in a separate job below so
-  # it can gate on nightly / full-dispatch only.
-  # Integration shards. Linux runs these with continue-on-error today
-  # while stabilizing; we mirror that until Mac parity is proven. Split
-  # into discrete jobs (rather than a matrix) so each shard publishes
-  # its own `outputs.outcome` — matrix-job outputs are last-writer-wins
-  # and would mask a per-shard failure in the summary row.
+  # Integration shards. Packages and REST are matrix jobs whose aggregate
+  # result now gates the summary directly. The long-running review-formulas
+  # shard stays separate so it can gate on nightly / full-dispatch only.
   mac-integration-packages:
-    name: Mac / integration (packages)
+    name: Mac / integration packages / ${{ matrix.shard_name }}
     if: >-
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.suite == 'full') ||
@@ -191,9 +184,37 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
     runs-on: blacksmith-12vcpu-macos-15
-    timeout-minutes: 60
-    outputs:
-      outcome: ${{ steps.shard.outcome }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_name: core-1-of-4
+            shard: packages-core-1-of-4
+          - shard_name: core-2-of-4
+            shard: packages-core-2-of-4
+          - shard_name: core-3-of-4
+            shard: packages-core-3-of-4
+          - shard_name: core-4-of-4
+            shard: packages-core-4-of-4
+          - shard_name: cmd-gc-1-of-6
+            shard: packages-cmd-gc-1-of-6
+          - shard_name: cmd-gc-2-of-6
+            shard: packages-cmd-gc-2-of-6
+          - shard_name: cmd-gc-3-of-6
+            shard: packages-cmd-gc-3-of-6
+          - shard_name: cmd-gc-4-of-6
+            shard: packages-cmd-gc-4-of-6
+          - shard_name: cmd-gc-5-of-6
+            shard: packages-cmd-gc-5-of-6
+          - shard_name: cmd-gc-6-of-6
+            shard: packages-cmd-gc-6-of-6
+          - shard_name: tmux-1-of-3
+            shard: packages-runtime-tmux-1-of-3
+          - shard_name: tmux-2-of-3
+            shard: packages-runtime-tmux-2-of-3
+          - shard_name: tmux-3-of-3
+            shard: packages-runtime-tmux-3-of-3
     env:
       ANTHROPIC_BASE_URL: https://api.synthetic.new/anthropic
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.SYNTHETIC_API_KEY }}
@@ -214,8 +235,7 @@ jobs:
         run: make install-tools
       - name: Run integration shard
         id: shard
-        continue-on-error: true
-        run: make test-integration-packages
+        run: ./scripts/test-integration-shard ${{ matrix.shard }}
 
   mac-integration-bdstore:
     name: Mac / integration (bdstore)
@@ -256,7 +276,7 @@ jobs:
         run: make test-integration-bdstore
 
   mac-integration-rest:
-    name: Mac / integration (rest)
+    name: Mac / integration rest / ${{ matrix.shard_name }}
     if: >-
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.suite == 'full') ||
@@ -267,9 +287,31 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'needs-mac')
       )
     runs-on: blacksmith-12vcpu-macos-15
-    timeout-minutes: 60
-    outputs:
-      outcome: ${{ steps.shard.outcome }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_name: smoke-1-of-2
+            shard: rest-smoke-1-of-2
+          - shard_name: smoke-2-of-2
+            shard: rest-smoke-2-of-2
+          - shard_name: full-1-of-8
+            shard: rest-full-1-of-8
+          - shard_name: full-2-of-8
+            shard: rest-full-2-of-8
+          - shard_name: full-3-of-8
+            shard: rest-full-3-of-8
+          - shard_name: full-4-of-8
+            shard: rest-full-4-of-8
+          - shard_name: full-5-of-8
+            shard: rest-full-5-of-8
+          - shard_name: full-6-of-8
+            shard: rest-full-6-of-8
+          - shard_name: full-7-of-8
+            shard: rest-full-7-of-8
+          - shard_name: full-8-of-8
+            shard: rest-full-8-of-8
     env:
       ANTHROPIC_BASE_URL: https://api.synthetic.new/anthropic
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.SYNTHETIC_API_KEY }}
@@ -290,8 +332,7 @@ jobs:
         run: make install-tools
       - name: Run integration shard
         id: shard
-        continue-on-error: true
-        run: make test-integration-rest
+        run: ./scripts/test-integration-shard ${{ matrix.shard }}
 
   # Long-running review-formulas shard — nightly / full dispatch only.
   mac-integration-review-formulas:
@@ -329,10 +370,9 @@ jobs:
   # Aggregate summary so a single check reports Mac parity status on the
   # PR. Gated on the same trigger set as the parity jobs so it doesn't
   # post a misleading green check on PRs that never ran Mac at all. The
-  # best-effort jobs (cover, integration, review-formulas) keep their
-  # failures visible here via job outputs that capture the real
-  # step outcome — needs.<job>.result masks it as success because the
-  # failing steps are continue-on-error.
+  # best-effort jobs keep their failures visible here via job outputs that
+  # capture the real step outcome — needs.<job>.result masks it as success
+  # because the failing steps are continue-on-error.
   mac-regression-summary:
     name: Mac regression summary
     if: >-
@@ -362,13 +402,11 @@ jobs:
           QUALITY: ${{ needs.mac-quality.result }}
           UNIT: ${{ needs.mac-unit.result }}
           ACCEPTANCE: ${{ needs.mac-acceptance.result }}
-          # Best-effort jobs: use outputs.outcome (not needs.*.result)
-          # because their test step is continue-on-error, which forces
-          # needs.*.result to "success" even on failure.
+          # Best-effort jobs: use outputs.outcome (not needs.*.result).
           COVER: ${{ needs.mac-cover.outputs.outcome || needs.mac-cover.result }}
-          INT_PACKAGES: ${{ needs.mac-integration-packages.outputs.outcome || needs.mac-integration-packages.result }}
+          INT_PACKAGES: ${{ needs.mac-integration-packages.result }}
           INT_BDSTORE: ${{ needs.mac-integration-bdstore.outputs.outcome || needs.mac-integration-bdstore.result }}
-          INT_REST: ${{ needs.mac-integration-rest.outputs.outcome || needs.mac-integration-rest.result }}
+          INT_REST: ${{ needs.mac-integration-rest.result }}
           REVIEW_FORMULAS: ${{ needs.mac-integration-review-formulas.outputs.outcome || needs.mac-integration-review-formulas.result }}
         run: |
           cat >>"$GITHUB_STEP_SUMMARY" <<EOF
@@ -380,14 +418,14 @@ jobs:
           | Mac / make test | ${UNIT} |
           | Mac / acceptance (Tier A) | ${ACCEPTANCE} |
           | Mac / test-cover (best-effort) | ${COVER} |
-          | Mac / integration packages (best-effort) | ${INT_PACKAGES} |
+          | Mac / integration packages | ${INT_PACKAGES} |
           | Mac / integration bdstore (best-effort) | ${INT_BDSTORE} |
-          | Mac / integration rest (best-effort) | ${INT_REST} |
+          | Mac / integration rest | ${INT_REST} |
           | Mac / integration review-formulas (best-effort) | ${REVIEW_FORMULAS} |
           EOF
 
           fail=0
-          for result in "$QUALITY" "$UNIT" "$ACCEPTANCE"; do
+          for result in "$QUALITY" "$UNIT" "$ACCEPTANCE" "$INT_PACKAGES" "$INT_REST"; do
             # Skipped is acceptable (e.g. when run outside the needs-mac trigger set)
             case "$result" in
               success|skipped|"") ;;
