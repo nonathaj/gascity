@@ -1266,6 +1266,11 @@ func TestCollectReparentedGroupMembers(t *testing.T) {
 		}
 		// Each reparented PID should have PPID == 1
 		ppid := getParentPID(rpid)
+		if ppid == "" && runtime.GOOS != "windows" {
+			if err := exec.Command("kill", "-0", rpid).Run(); err != nil {
+				continue
+			}
+		}
 		if ppid != "1" {
 			t.Errorf("collectReparentedGroupMembers returned PID %s with PPID %s (expected 1)", rpid, ppid)
 		}
