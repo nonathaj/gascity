@@ -223,6 +223,7 @@ func TestAdoptPRFormulaRetriesTransientReviewerStep(t *testing.T) {
 
 	steps := listWorkflowSteps(t, cityDir, workflowID)
 	if !hasStepWithSuffix(steps, "review-pipeline.review-codex.attempt.2") {
+		dumpWorkflowState(t, cityDir, workflowID)
 		t.Fatalf("missing retry attempt for codex reviewer; got: %v", steps)
 	}
 
@@ -259,6 +260,7 @@ func TestAdoptPRFormulaSoftFailsGeminiAfterTransientRetries(t *testing.T) {
 		"review-pipeline.review-gemini.attempt.3",
 	} {
 		if !hasStepWithSuffix(steps, suffix) {
+			dumpWorkflowState(t, cityDir, workflowID)
 			t.Fatalf("missing Gemini retry attempt %q; got: %v", suffix, steps)
 		}
 	}

@@ -398,13 +398,18 @@ wait_for_bd_runtime_schema() {
     valid_sql_name "$db" || return 1
 
     backoff_ms=100
-    for attempt in 1 2 3 4 5; do
+    for attempt in 1 2 3 4 5 6 7 8; do
         if bd_runtime_schema_ready "$db"; then
             return 0
         fi
-        if [ "$attempt" -lt 5 ]; then
+        if [ "$attempt" -lt 8 ]; then
             sleep_ms "$backoff_ms" 2>/dev/null || sleep 1
-            backoff_ms=$((backoff_ms * 2))
+            if [ "$backoff_ms" -lt 1000 ]; then
+                backoff_ms=$((backoff_ms * 2))
+                if [ "$backoff_ms" -gt 1000 ]; then
+                    backoff_ms=1000
+                fi
+            fi
         fi
     done
 

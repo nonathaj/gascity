@@ -27,6 +27,19 @@ trace() {
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$TRACE_FILE"
 }
 
+if ! command -v timeout >/dev/null 2>&1; then
+    if command -v gtimeout >/dev/null 2>&1; then
+        timeout() {
+            gtimeout "$@"
+        }
+    else
+        timeout() {
+            shift
+            "$@"
+        }
+    fi
+fi
+
 current_port_file() {
     if [ -f "$GC_CITY/.beads/dolt-server.port" ]; then
         tr -d '\n' < "$GC_CITY/.beads/dolt-server.port"

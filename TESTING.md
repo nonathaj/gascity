@@ -44,6 +44,54 @@ fast unit-only baseline; the integration contribution comes from the
 shard-specific `coverage.integration-*.txt` profiles and their matching
 Codecov flags.
 
+#### Sharded local runners
+
+For broad local runs, prefer the repo's sharded wrappers over raw `go test`
+commands. They use the same buckets as CI, run under a scrubbed environment,
+and split single-package bottlenecks such as `cmd/gc` across multiple
+processes.
+
+Use these as the default entry points:
+
+```bash
+# Fast unit baseline, with cmd/gc split into shards.
+make test-fast-parallel
+
+# Full process-backed cmd/gc suite, sharded.
+make test-cmd-gc-process-parallel
+
+# CI integration buckets, sharded.
+make test-integration-shards-parallel
+
+# Fast + process-backed cmd/gc + integration shards.
+make test-local-full-parallel
+```
+
+On large local machines, tune parallelism explicitly:
+
+```bash
+LOCAL_TEST_JOBS=48 CMD_GC_PROCESS_TOTAL=12 make test-local-full-parallel
+```
+
+For one package, shard top-level Go tests directly:
+
+```bash
+GO_TEST_COUNT=1 GO_TEST_TIMEOUT=20m ./scripts/test-go-test-shard ./cmd/gc 1 6
+GO_TEST_TAGS=acceptance_b GO_TEST_TIMEOUT=10m ./scripts/test-go-test-shard ./test/acceptance/tier_b 2 3
+```
+
+For integration buckets, use the named shard runner:
+
+```bash
+./scripts/test-integration-shard packages-cmd-gc-3-of-6
+./scripts/test-integration-shard review-formulas-retries-1-of-2
+./scripts/test-integration-shard rest-full-4-of-8
+```
+
+Raw `go test` is still appropriate for a focused package or a single failing
+test. Do not use it as the default for full local sweeps when a sharded target
+exists.
+
 ### 2. Testscript (`.txtar` files in `cmd/gc/testdata/`)
 
 Test what the USER sees. Run the real `gc` binary, assert on stdout/stderr.
