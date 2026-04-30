@@ -265,7 +265,7 @@ test-local-full-parallel:
 test-integration-shards-cover: test-integration-packages-cover test-integration-review-formulas-cover test-integration-bdstore-cover test-integration-rest-smoke-cover test-integration-rest-full-cover
 
 ## test-integration-packages: run all integration-tagged packages except ./test/integration
-## This shard is also the required non-short CI path for the slow cmd/gc process suite.
+## cmd/gc package shards default to GC_FAST_UNIT=1; use test-cmd-gc-process for the slow process suite.
 test-integration-packages:
 	./scripts/test-integration-shard packages
 

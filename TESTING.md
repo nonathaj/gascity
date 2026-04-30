@@ -37,7 +37,10 @@ scripts, and the large `gc-beads-bd` provider suite are routed out of the
 default path so local `make check` and CI `Check` stay focused on quick
 feedback. If you need that full `cmd/gc` scenario coverage locally, run
 `make test-cmd-gc-process`. In CI, the required non-short path is the
-`test-integration-packages` shard. If you need the heavier package
+dedicated Linux `cmd/gc process` job. The generic integration package
+shards keep `GC_FAST_UNIT=1` for `cmd/gc` unless explicitly overridden,
+so they exercise the fast package sweep without duplicating the slow
+process-backed suite. If you need the heavier package
 coverage sweep locally, use `make test-integration-packages-cover` or
 `make test-integration-shards-cover`. As a result, `coverage.txt` is the
 fast unit-only baseline; the integration contribution comes from the
@@ -86,6 +89,13 @@ For integration buckets, use the named shard runner:
 ./scripts/test-integration-shard packages-cmd-gc-3-of-6
 ./scripts/test-integration-shard review-formulas-retries-1-of-2
 ./scripts/test-integration-shard rest-full-4-of-8
+```
+
+To force the process-backed `cmd/gc` tests through the package shard for
+diagnostics, override the default explicitly:
+
+```bash
+GC_FAST_UNIT=0 ./scripts/test-integration-shard packages-cmd-gc-3-of-6
 ```
 
 Raw `go test` is still appropriate for a focused package or a single failing

@@ -226,7 +226,10 @@ run_packages_cmd_gc_shard() {
   local shard_index="$1"
   local shard_total="$2"
   validate_modulo_shard "$shard_index" "$shard_total"
-  GO_TEST_TAGS=integration GO_TEST_TIMEOUT="$timeout" "$repo_root/scripts/test-go-test-shard" ./cmd/gc "$shard_index" "$shard_total"
+  # The package integration bucket should stay a fast package sweep. The
+  # slow process-backed cmd/gc scenarios run through make test-cmd-gc-process
+  # locally and the dedicated CI cmd/gc process job on Linux.
+  GC_FAST_UNIT="${GC_FAST_UNIT:-1}" GO_TEST_TAGS=integration GO_TEST_TIMEOUT="$timeout" "$repo_root/scripts/test-go-test-shard" ./cmd/gc "$shard_index" "$shard_total"
 }
 
 run_packages_runtime_tmux_shard() {

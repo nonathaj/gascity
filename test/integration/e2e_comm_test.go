@@ -203,16 +203,16 @@ func TestE2E_ConfigDrift(t *testing.T) {
 		t.Fatalf("initial CUSTOM_VERSION: got %v, want [v1]", report.getAll("CUSTOM_VERSION"))
 	}
 
+	// Remove old report so we can detect a new one.
+	reportPath := strings.ReplaceAll("drifter", "/", "__")
+	reportDir := cityDir + "/.gc-reports"
+	_ = removeFile(reportDir + "/" + reportPath + ".report")
+
 	// Change config by mutating the fingerprinted start_command. Custom env
 	// keys are intentionally ignored by the runtime fingerprint, so changing
 	// Env alone should not imply restart.
 	city.Agents[0].StartCommand = "CUSTOM_VERSION=v2 " + e2eReportScript()
 	rewriteE2ETomlPreservingNamedSessions(t, cityDir, city)
-
-	// Remove old report so we can detect a new one.
-	reportPath := strings.ReplaceAll("drifter", "/", "__")
-	reportDir := cityDir + "/.gc-reports"
-	_ = removeFile(reportDir + "/" + reportPath + ".report")
 
 	// The controller is already running. Writing city.toml should trigger a
 	// config reload and reconcile via the watcher/patrol loop.
