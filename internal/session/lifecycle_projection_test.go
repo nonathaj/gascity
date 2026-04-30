@@ -462,6 +462,21 @@ func TestProjectLifecycleRuntimeLivenessProjection(t *testing.T) {
 			wantRuntime:         RuntimeProjectionStartRequested,
 			wantReconciledState: StateCreating,
 		},
+		{
+			name: "non-creating pending_create_claim remains start requested",
+			input: LifecycleInput{
+				Status: "open",
+				Metadata: map[string]string{
+					"state":                "active",
+					"session_name":         "s-worker",
+					"pending_create_claim": "true",
+				},
+				Runtime: RuntimeFacts{Observed: true, Alive: false},
+				Now:     now,
+			},
+			wantRuntime:         RuntimeProjectionStartRequested,
+			wantReconciledState: StateCreating,
+		},
 	}
 
 	for _, tt := range tests {
