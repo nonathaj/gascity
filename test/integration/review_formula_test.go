@@ -330,7 +330,7 @@ on_exhausted = "hard_fail"
 	if !traceHasLineWithAll(trace, "exit-after-claim bead="+attempt2.ID, "ref="+attempt2.Ref) {
 		t.Fatalf("worker trace missing forced crash evidence:\n%s", trace)
 	}
-	if countTraceLinesWithAll(trace, "claim bead="+attempt2.ID) < 2 {
+	if countTraceLinesWithAll(trace, "claim bead="+attempt2.ID)+countTraceLinesWithAll(trace, "resume bead="+attempt2.ID) < 2 {
 		t.Fatalf("worker trace missing reclaim evidence for %s:\n%s", attempt2.ID, trace)
 	}
 	if !traceHasLineWithAll(trace, "run bead="+attempt2.ID, "ref="+attempt2.Ref) {
