@@ -58,8 +58,7 @@ func IsSessionGone(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "session not found") ||
 		strings.Contains(msg, "not running") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "no tmux server running")
+		strings.Contains(msg, "not found")
 }
 
 // ContentBlock represents a content element in a message.
