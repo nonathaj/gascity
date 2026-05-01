@@ -34,7 +34,7 @@ gc [flags]
 | [gc events](#gc-events) | Show events from the GC API |
 | [gc formula](#gc-formula) | Manage and inspect formulas |
 | [gc graph](#gc-graph) | Show dependency graph for beads |
-| [gc handoff](#gc-handoff) | Send handoff mail and restart this session |
+| [gc handoff](#gc-handoff) | Send handoff mail and restart controller-managed sessions |
 | [gc help](#gc-help) | Help about any command |
 | [gc hook](#gc-hook) | Check for available work (use --inject for Stop hook output) |
 | [gc import](#gc-import) | Manage pack imports |
@@ -1081,8 +1081,13 @@ gc graph gc-42               # expand convoy children
 
 Convenience command for context handoff.
 
-Self-handoff (default): sends mail to self and blocks until controller
-restarts the session. Equivalent to:
+Self-handoff (default): sends mail to self. If the current session is
+controller-restartable, requests a restart and blocks until the controller
+stops the session. For on-demand configured named sessions, sends mail and
+returns without requesting restart because the controller cannot restart the
+user-attended process.
+
+For controller-restartable sessions, equivalent to:
 
   gc mail send $GC_ALIAS &lt;subject&gt; [message]
   gc runtime request-restart
@@ -1091,14 +1096,19 @@ Auto handoff (--auto): sends mail to self and returns without requesting a
 restart. This is for PreCompact hooks, where the provider is already managing
 the context compaction lifecycle.
 
-Remote handoff (--target): sends mail to a target session and kills it so the
-reconciler restarts it with the handoff mail waiting. Equivalent to:
+Remote handoff (--target): sends mail to a target session. If the target is
+controller-restartable, kills it so the reconciler restarts it with the handoff
+mail waiting. For on-demand configured named targets, sends mail and returns
+without killing the session.
+
+For controller-restartable targets, equivalent to:
 
   gc mail send &lt;target&gt; &lt;subject&gt; [message]
   gc session kill &lt;target&gt;
 
 Self-handoff requires session context (GC_ALIAS or GC_SESSION_ID, plus
-GC_SESSION_NAME and city context env). Remote handoff accepts a session alias or ID.
+GC_SESSION_NAME and city context env). Remote handoff accepts a session alias
+or ID. Subject is required unless --auto is set.
 
 ```
 gc handoff [subject] [message] [flags]
@@ -1107,7 +1117,7 @@ gc handoff [subject] [message] [flags]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--auto` | bool |  | Send handoff mail without requesting restart (for PreCompact hooks) |
-| `--target` | string |  | Remote session alias or ID to handoff (sends mail + kills session) |
+| `--target` | string |  | Remote session alias or ID to handoff (kills only controller-restartable sessions) |
 
 ## gc help
 
@@ -1985,6 +1995,11 @@ Sets GC_RESTART_REQUESTED metadata on the session, then blocks forever.
 The controller will stop the session on its next reconcile tick and
 restart it fresh. The blocking prevents the agent from consuming more
 context while waiting.
+
+For on-demand configured named sessions, the controller cannot restart the
+user-attended process. In that case this command reports that restart was
+skipped and returns without blocking. No session.draining event is emitted
+when restart is skipped.
 
 This command is designed to be called from within a session context.
 It emits a session.draining event before blocking.
