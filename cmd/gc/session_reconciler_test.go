@@ -220,10 +220,14 @@ func (e *reconcilerTestEnv) reconcile(sessions []beads.Bead) int {
 }
 
 func (e *reconcilerTestEnv) reconcileWithPoolDesired(sessions []beads.Bead, poolDesired map[string]int) int {
+	return e.reconcileWithPoolDesiredAndDrainOps(sessions, poolDesired, nil)
+}
+
+func (e *reconcilerTestEnv) reconcileWithPoolDesiredAndDrainOps(sessions []beads.Bead, poolDesired map[string]int, dops drainOps) int {
 	cfgNames := configuredSessionNames(e.cfg, "", e.store)
 	return reconcileSessionBeads(
 		context.Background(), sessions, e.desiredState, cfgNames, e.cfg, e.sp,
-		e.store, nil, nil, nil, e.dt, poolDesired, false, nil, "",
+		e.store, dops, nil, nil, e.dt, poolDesired, false, nil, "",
 		nil, e.clk, e.rec, 0, 0, &e.stdout, &e.stderr,
 	)
 }
@@ -3129,6 +3133,81 @@ func TestReconcileSessionBeads_ConfigDriftAppliesAfterDetach(t *testing.T) {
 	}
 	if ds.reason != "config-drift" {
 		t.Errorf("drain reason = %q, want %q", ds.reason, "config-drift")
+	}
+}
+
+func TestReconcileSessionBeads_AttachedSessionCancelsQueuedConfigDriftDrain(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	env.addRunningWorkerDesiredWithNewConfig()
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash": runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+	})
+
+	env.reconcile([]beads.Bead{session})
+	if ds := env.dt.get(session.ID); ds == nil || ds.reason != "config-drift" {
+		t.Fatalf("detached config drift should queue a config-drift drain, got %+v", ds)
+	}
+	if ack, _ := env.sp.GetMeta("worker", "GC_DRAIN_ACK"); ack != "1" {
+		t.Fatalf("GC_DRAIN_ACK after queued drain = %q, want 1", ack)
+	}
+
+	env.sp.SetAttached("worker", true)
+	env.clk.Time = env.clk.Now().Add(defaultDrainTimeout + time.Second)
+	got, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	env.reconcile([]beads.Bead{got})
+
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("attached session should cancel queued config-drift drain, got %+v", ds)
+	}
+	if ack, _ := env.sp.GetMeta("worker", "GC_DRAIN_ACK"); ack != "" {
+		t.Fatalf("GC_DRAIN_ACK after attach cancellation = %q, want empty", ack)
+	}
+	if !env.sp.IsRunning("worker") {
+		t.Fatal("attached session should remain running after queued drain advances")
+	}
+}
+
+func TestReconcileSessionBeads_AttachedSessionCancelsQueuedConfigDriftDrainBeforeDrainAckStop(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{Agents: []config.Agent{{Name: "worker"}}}
+	env.addRunningWorkerDesiredWithNewConfig()
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+	env.setSessionMetadata(&session, map[string]string{
+		"started_config_hash": runtime.CoreFingerprint(runtime.Config{Command: "test-cmd"}),
+	})
+	dops := newDrainOps(env.sp)
+
+	env.reconcileWithPoolDesiredAndDrainOps([]beads.Bead{session}, map[string]int{"worker": 1}, dops)
+	if ds := env.dt.get(session.ID); ds == nil || ds.reason != "config-drift" {
+		t.Fatalf("detached config drift should queue a config-drift drain, got %+v", ds)
+	}
+	if ack, _ := env.sp.GetMeta("worker", "GC_DRAIN_ACK"); ack != "1" {
+		t.Fatalf("GC_DRAIN_ACK after queued drain = %q, want 1", ack)
+	}
+
+	env.sp.SetAttached("worker", true)
+	env.clk.Time = env.clk.Now().Add(defaultDrainTimeout + time.Second)
+	got, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	env.reconcileWithPoolDesiredAndDrainOps([]beads.Bead{got}, map[string]int{"worker": 1}, dops)
+
+	if ds := env.dt.get(session.ID); ds != nil {
+		t.Fatalf("attached session should cancel queued config-drift drain before drain-ack stop, got %+v", ds)
+	}
+	if ack, _ := env.sp.GetMeta("worker", "GC_DRAIN_ACK"); ack != "" {
+		t.Fatalf("GC_DRAIN_ACK after attach cancellation = %q, want empty", ack)
+	}
+	if !env.sp.IsRunning("worker") {
+		t.Fatal("attached session should remain running after reconciler-owned drain ack is canceled")
 	}
 }
 
