@@ -195,6 +195,58 @@ func (p *Provider) Delete(id string) error {
 	return p.Archive(id)
 }
 
+// ArchiveMany archives a batch of messages, preserving per-id error
+// reporting that matches [Provider.Archive]: [mail.ErrAlreadyArchived] for
+// beads that were already closed, a wrapped store error for unknown ids,
+// and a non-message error for beads of the wrong type. Ids that need an
+// actual state transition are closed in a single [beads.Store.CloseAll]
+// round-trip; on batch failure the open subset falls back to per-id
+// [beads.Store.Close].
+func (p *Provider) ArchiveMany(ids []string) ([]mail.ArchiveResult, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	results := make([]mail.ArchiveResult, len(ids))
+	openIdx := make([]int, 0, len(ids))
+	openIDs := make([]string, 0, len(ids))
+	for i, id := range ids {
+		results[i].ID = id
+		b, err := p.store.Get(id)
+		if err != nil {
+			results[i].Err = fmt.Errorf("beadmail archive: %w", err)
+			continue
+		}
+		if b.Type != "message" {
+			results[i].Err = fmt.Errorf("beadmail archive: bead %s is not a message", id)
+			continue
+		}
+		if b.Status == "closed" {
+			results[i].Err = mail.ErrAlreadyArchived
+			continue
+		}
+		openIdx = append(openIdx, i)
+		openIDs = append(openIDs, id)
+	}
+	if len(openIDs) == 0 {
+		return results, nil
+	}
+	if _, err := p.store.CloseAll(openIDs, nil); err != nil {
+		for k, id := range openIDs {
+			if closeErr := p.store.Close(id); closeErr != nil {
+				results[openIdx[k]].Err = fmt.Errorf("beadmail archive: %w", closeErr)
+			}
+		}
+	}
+	return results, nil
+}
+
+// DeleteMany deletes a batch of messages by closing message beads. Beadmail
+// delete and archive have the same storage semantics, so this preserves the
+// batched [beads.Store.CloseAll] path from [Provider.ArchiveMany].
+func (p *Provider) DeleteMany(ids []string) ([]mail.ArchiveResult, error) {
+	return p.ArchiveMany(ids)
+}
+
 // All returns all open messages (read and unread) for the recipient.
 func (p *Provider) All(recipient string) ([]mail.Message, error) {
 	return p.filterMessages(recipient, true)
