@@ -69,7 +69,7 @@ type CityRuntime struct {
 
 	// Bead-driven reconciler state (Phase 2f).
 	sessionDrains     *drainTracker // in-memory drain tracker; nil when bead reconciler disabled
-	asyncStartLimiter chan struct{}
+	asyncStartLimiter *asyncStartLimiter
 	asyncStarts       asyncStartTracker
 	demandSnapshot    *runtimeDemandSnapshot
 
@@ -206,7 +206,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 		poolSessions:            p.PoolSessions,
 		poolDeathHandlers:       p.PoolDeathHandlers,
 		suspendedNames:          suspendedNames,
-		asyncStartLimiter:       make(chan struct{}, defaultMaxParallelStartsPerWave),
+		asyncStartLimiter:       newAsyncStartLimiter(maxParallelStartsPerTick(p.Cfg)),
 		convergenceReqCh:        p.ConvergenceReqCh,
 		reloadReqCh: func() chan reloadRequest {
 			if p.ReloadReqCh != nil {
@@ -1420,9 +1420,12 @@ func (cr *CityRuntime) requestDeferredDrainFollowUpTick() {
 	}
 }
 
-func (cr *CityRuntime) ensureAsyncStartLimiter() chan struct{} {
+func (cr *CityRuntime) ensureAsyncStartLimiter() *asyncStartLimiter {
+	capacity := maxParallelStartsPerTick(cr.cfg)
 	if cr.asyncStartLimiter == nil {
-		cr.asyncStartLimiter = make(chan struct{}, defaultMaxParallelStartsPerWave)
+		cr.asyncStartLimiter = newAsyncStartLimiter(capacity)
+	} else {
+		cr.asyncStartLimiter.resize(capacity)
 	}
 	return cr.asyncStartLimiter
 }
