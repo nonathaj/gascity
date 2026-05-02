@@ -755,12 +755,12 @@ func TestReconcileSessionBeads_CloseGateLiveStoreErrorKeepsSlot(t *testing.T) {
 	}
 }
 
-// TestReconcileSessionBeads_CloseGateRespectsCrossStoreAssignedWork
-// verifies that the close gate's live ownership check looks across the
-// primary store AND any attached rig stores. A city-stored asleep+idle
-// pool session with work assigned to it in a rig store must NOT get
-// its slot freed — the rig-stored work would be orphaned.
-func TestReconcileSessionBeads_CloseGateRespectsCrossStoreAssignedWork(t *testing.T) {
+// TestReconcileSessionBeads_CloseGateIgnoresUnreachableRigAssignedWork
+// verifies that the close gate's live ownership check only considers the
+// store scope the session's configured agent can query and claim from. A
+// city-scoped pool session must not be retained by unrelated rig-store work
+// that happens to share one of its assignment identifiers.
+func TestReconcileSessionBeads_CloseGateIgnoresUnreachableRigAssignedWork(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
 		Agents: []config.Agent{{Name: "worker"}},
@@ -773,11 +773,11 @@ func TestReconcileSessionBeads_CloseGateRespectsCrossStoreAssignedWork(t *testin
 		poolManagedMetadataKey: boolMetadata(true),
 	})
 
-	// Work assigned to the session lives in a rig store, not the city
-	// store. The live cross-store query must find it and veto the close.
+	// Work assigned to the session lives in a rig store, not the city store.
+	// This city-scoped session cannot claim it, so it must not veto close.
 	rigStore := beads.NewMemStore()
 	if _, err := rigStore.Create(beads.Bead{
-		Title:    "cross-store work",
+		Title:    "unreachable rig work",
 		Type:     "task",
 		Status:   "open",
 		Assignee: session.ID,
@@ -817,8 +817,120 @@ func TestReconcileSessionBeads_CloseGateRespectsCrossStoreAssignedWork(t *testin
 	if err != nil {
 		t.Fatalf("Get(%s): %v", session.ID, err)
 	}
-	if got.Status == "closed" {
-		t.Fatalf("status = %q, want open — close gate must honor cross-store assigned work and leave the pool slot for the rig-stored work to drain", got.Status)
+	if got.Status != "closed" {
+		t.Fatalf("status = %q, want closed — unreachable rig-store assigned work must not retain a city-scoped pool slot", got.Status)
+	}
+}
+
+func TestReconcileSessionBeads_DrainAckedOrphanCloseIgnoresUnreachableRigAssignedWork(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{
+		Agents: []config.Agent{{Name: "worker"}},
+	}
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+
+	rigStore := beads.NewMemStore()
+	if _, err := rigStore.Create(beads.Bead{
+		Title:    "unreachable rig work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: session.ID,
+	}); err != nil {
+		t.Fatalf("Create rig work bead: %v", err)
+	}
+	dops := newFakeDrainOps()
+	if err := dops.setDrainAck("worker"); err != nil {
+		t.Fatalf("setDrainAck: %v", err)
+	}
+
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{session},
+		env.desiredState,
+		nil,
+		env.cfg,
+		env.sp,
+		env.store,
+		dops,
+		nil,
+		map[string]beads.Store{"some-rig": rigStore},
+		nil,
+		env.dt,
+		nil,
+		false,
+		nil,
+		"",
+		nil,
+		env.clk,
+		env.rec,
+		0,
+		0,
+		&env.stdout,
+		&env.stderr,
+	)
+
+	got, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	if got.Status != "closed" {
+		t.Fatalf("status = %q, want closed — drain-acked close must ignore work in stores the session cannot reach", got.Status)
+	}
+}
+
+func TestReconcileSessionBeads_SuspendedCloseIgnoresUnreachableRigAssignedWork(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{
+		Agents: []config.Agent{{Name: "worker"}},
+	}
+	session := env.createSessionBead("worker", "worker")
+	env.markSessionActive(&session)
+
+	rigStore := beads.NewMemStore()
+	if _, err := rigStore.Create(beads.Bead{
+		Title:    "unreachable rig work",
+		Type:     "task",
+		Status:   "open",
+		Assignee: session.ID,
+	}); err != nil {
+		t.Fatalf("Create rig work bead: %v", err)
+	}
+
+	reconcileSessionBeadsAtPath(
+		context.Background(),
+		"",
+		[]beads.Bead{session},
+		env.desiredState,
+		map[string]bool{"worker": true},
+		env.cfg,
+		env.sp,
+		env.store,
+		newFakeDrainOps(),
+		nil,
+		map[string]beads.Store{"some-rig": rigStore},
+		nil,
+		env.dt,
+		nil,
+		false,
+		nil,
+		"",
+		nil,
+		env.clk,
+		env.rec,
+		0,
+		0,
+		&env.stdout,
+		&env.stderr,
+	)
+
+	got, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	if got.Status != "closed" {
+		t.Fatalf("status = %q, want closed — suspended close must ignore work in stores the session cannot reach", got.Status)
 	}
 }
 
