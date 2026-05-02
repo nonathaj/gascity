@@ -2295,9 +2295,14 @@ while True:
 	for {
 		data, err := os.ReadFile(readyPath)
 		if err == nil {
-			port, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			trimmed := strings.TrimSpace(string(data))
+			if trimmed == "" {
+				time.Sleep(25 * time.Millisecond)
+				continue
+			}
+			port, parseErr := strconv.Atoi(trimmed)
 			if parseErr != nil {
-				t.Fatalf("parse listener port %q: %v", strings.TrimSpace(string(data)), parseErr)
+				t.Fatalf("parse listener port %q: %v", trimmed, parseErr)
 			}
 			conn, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
 			if dialErr == nil {
