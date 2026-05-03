@@ -395,6 +395,77 @@ func (p *staleIsRunningAfterInterruptProvider) IsRunning(name string) bool {
 	return p.Fake.IsRunning(name)
 }
 
+type exitedArtifactAfterInterruptProvider struct {
+	*runtime.Fake
+	mu                     sync.Mutex
+	exited                 map[string]bool
+	stopCalls              map[string]int
+	keepRunningOnInterrupt map[string]bool
+	listExited             bool
+	listErr                error
+}
+
+func newExitedArtifactAfterInterruptProvider() *exitedArtifactAfterInterruptProvider {
+	return &exitedArtifactAfterInterruptProvider{
+		Fake:                   runtime.NewFake(),
+		exited:                 make(map[string]bool),
+		stopCalls:              make(map[string]int),
+		keepRunningOnInterrupt: make(map[string]bool),
+	}
+}
+
+func (p *exitedArtifactAfterInterruptProvider) markExited(name string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.exited[name] = true
+}
+
+func (p *exitedArtifactAfterInterruptProvider) Interrupt(name string) error {
+	if err := p.Fake.Interrupt(name); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	keepRunning := p.keepRunningOnInterrupt[name]
+	p.mu.Unlock()
+	if keepRunning {
+		return nil
+	}
+	p.markExited(name)
+	return nil
+}
+
+func (p *exitedArtifactAfterInterruptProvider) IsRunning(name string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.exited[name] {
+		return false
+	}
+	return p.Fake.IsRunning(name)
+}
+
+func (p *exitedArtifactAfterInterruptProvider) ListRunning(prefix string) ([]string, error) {
+	names, err := p.Fake.ListRunning(prefix)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	filtered := names[:0]
+	for _, name := range names {
+		if p.listExited || !p.exited[name] {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered, p.listErr
+}
+
+func (p *exitedArtifactAfterInterruptProvider) Stop(name string) error {
+	p.mu.Lock()
+	p.stopCalls[name]++
+	p.mu.Unlock()
+	return p.Fake.Stop(name)
+}
+
 type dropDependencyAfterNStartsProvider struct {
 	*runtime.Fake
 	mu        sync.Mutex
@@ -3756,6 +3827,102 @@ func TestGracefulStopAll_UsesListRunningToStopLingeringSessions(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "Stopped agent 'custom-worker'") {
 		t.Fatalf("stdout = %q, want forced stop message", stdout.String())
+	}
+}
+
+func TestGracefulStopAll_CleansExitedRuntimeArtifact(t *testing.T) {
+	sp := newExitedArtifactAfterInterruptProvider()
+	if err := sp.Start(context.Background(), "custom-worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+
+	gracefulStopAll([]string{"custom-worker"}, sp, 20*time.Millisecond, rec, nil, nil, &stdout, &stderr)
+
+	if sp.stopCalls["custom-worker"] == 0 {
+		t.Fatalf("expected gracefulStopAll to cleanup exited runtime artifact, calls=%+v", sp.Calls)
+	}
+	if !strings.Contains(stdout.String(), "Agent 'custom-worker' exited gracefully") {
+		t.Fatalf("stdout = %q, want graceful exit message", stdout.String())
+	}
+}
+
+func TestGracefulStopAll_CleansExitedRuntimeArtifactAlongsideLiveSurvivor(t *testing.T) {
+	sp := newExitedArtifactAfterInterruptProvider()
+	for _, name := range []string{"corpse-worker", "live-worker"} {
+		if err := sp.Start(context.Background(), name, runtime.Config{}); err != nil {
+			t.Fatalf("Start(%s): %v", name, err)
+		}
+	}
+	sp.keepRunningOnInterrupt["live-worker"] = true
+
+	rec := events.NewFake()
+	var stdout, stderr bytes.Buffer
+
+	gracefulStopAll([]string{"corpse-worker", "live-worker"}, sp, 20*time.Millisecond, rec, nil, nil, &stdout, &stderr)
+
+	if sp.stopCalls["corpse-worker"] == 0 {
+		t.Fatalf("expected cleanup Stop for exited runtime artifact, calls=%+v", sp.Calls)
+	}
+	if sp.stopCalls["live-worker"] == 0 {
+		t.Fatalf("expected forced Stop for live survivor, calls=%+v", sp.Calls)
+	}
+	if !strings.Contains(stdout.String(), "Agent 'corpse-worker' exited gracefully") {
+		t.Fatalf("stdout = %q, want corpse graceful-exit message", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Stopped agent 'live-worker'") {
+		t.Fatalf("stdout = %q, want live forced-stop message", stdout.String())
+	}
+}
+
+func TestDoStopCleansExitedRuntimeArtifact(t *testing.T) {
+	sp := newExitedArtifactAfterInterruptProvider()
+	if err := sp.Start(context.Background(), "custom-worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	sp.markExited("custom-worker")
+	sp.listExited = true
+
+	var stdout, stderr bytes.Buffer
+
+	doStop([]string{"custom-worker"}, sp, nil, nil, 20*time.Millisecond, events.Discard, &stdout, &stderr)
+
+	if sp.stopCalls["custom-worker"] == 0 {
+		t.Fatalf("expected doStop to cleanup exited runtime artifact, calls=%+v", sp.Calls)
+	}
+}
+
+func TestDoStopCleansVisibleExitedRuntimeArtifactWithPartialListError(t *testing.T) {
+	sp := newExitedArtifactAfterInterruptProvider()
+	if err := sp.Start(context.Background(), "custom-worker", runtime.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	sp.markExited("custom-worker")
+	sp.listExited = true
+	sp.listErr = &runtime.PartialListError{Err: errors.New("remote backend down")}
+
+	var stdout, stderr bytes.Buffer
+
+	doStop([]string{"custom-worker"}, sp, nil, nil, 20*time.Millisecond, events.Discard, &stdout, &stderr)
+
+	if sp.stopCalls["custom-worker"] == 0 {
+		t.Fatalf("expected doStop to cleanup exited runtime artifact despite partial list error, calls=%+v", sp.Calls)
+	}
+	if !strings.Contains(stderr.String(), "listing sessions partially failed") {
+		t.Fatalf("stderr = %q, want partial-list warning", stderr.String())
+	}
+}
+
+func TestDoStopSkipsExplicitNameThatIsNeitherAliveNorVisible(t *testing.T) {
+	sp := newExitedArtifactAfterInterruptProvider()
+	var stdout, stderr bytes.Buffer
+
+	doStop([]string{"absent-worker"}, sp, nil, nil, 20*time.Millisecond, events.Discard, &stdout, &stderr)
+
+	if sp.stopCalls["absent-worker"] != 0 {
+		t.Fatalf("Stop calls for absent-worker = %d, want 0", sp.stopCalls["absent-worker"])
 	}
 }
 
