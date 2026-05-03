@@ -1621,6 +1621,118 @@ func TestReconcileSessionBeads_AlwaysNamedSessionWakesFromDrainedCompatibilitySt
 	}
 }
 
+// TestReconcileSessionBeads_AlwaysNamedSessionWakesAfterLiveChurnSequence
+// pins the expected post-churn contract by driving the full crash-then-recover
+// sequence instead of pre-staging post-churn metadata. This covers the contract
+// needed for issue #1493, but it is not proof that the reported production
+// trigger was reproduced or fixed; keep #1493 open until reporter confirmation
+// or a production-shaped integration shard reproduces the original symptom.
+func TestReconcileSessionBeads_AlwaysNamedSessionWakesAfterLiveChurnSequence(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{
+		Workspace:     config.Workspace{Name: "test-city"},
+		Agents:        []config.Agent{{Name: "worker", StartCommand: "true"}},
+		NamedSessions: []config.NamedSession{{Template: "worker", Mode: "always"}},
+	}
+	sessionName := config.NamedSessionRuntimeName(env.cfg.Workspace.Name, env.cfg.Workspace, "worker")
+	env.desiredState[sessionName] = TemplateParams{
+		Command:                 "true",
+		SessionName:             sessionName,
+		TemplateName:            "worker",
+		ConfiguredNamedIdentity: "worker",
+		ConfiguredNamedMode:     "always",
+	}
+	session := env.createSessionBead(sessionName, "worker")
+	// Mark the bead as having woken 90 seconds ago: past stabilityThreshold
+	// (30s) and before churnProductivityThreshold (5min). This is the churn
+	// band that recordChurn fires for. The session is NOT running in the
+	// fake provider, so the reconciler will see alive=false.
+	wokeAt := env.clk.Now().Add(-90 * time.Second).UTC().Format(time.RFC3339)
+	env.setSessionMetadata(&session, map[string]string{
+		namedSessionMetadataKey:      "true",
+		namedSessionIdentityMetadata: "worker",
+		namedSessionModeMetadata:     "always",
+		"state":                      "active",
+		"last_woke_at":               wokeAt,
+		"session_key":                "old-key",
+	})
+
+	// First tick: detect non-productive death, recordChurn fires, session
+	// transitions through to asleep state.
+	env.reconcile([]beads.Bead{session})
+
+	// Reload the bead from the store to capture every metadata change made
+	// by the reconciler tick (healState, checkChurn, recordChurn).
+	reloaded, err := env.store.Get(session.ID)
+	if err != nil {
+		t.Fatalf("Get(%s): %v", session.ID, err)
+	}
+	if reloaded.Metadata["churn_count"] != "1" {
+		t.Fatalf("after tick 1 churn_count = %q, want 1 (recordChurn must fire)", reloaded.Metadata["churn_count"])
+	}
+	if reloaded.Metadata["last_woke_at"] != "" {
+		t.Fatalf("after tick 1 last_woke_at = %q, want empty (checkChurn clears it)", reloaded.Metadata["last_woke_at"])
+	}
+
+	// Second tick: the post-churn shape is now in the store. The
+	// named-always session must be re-woken on this tick.
+	env.clk.Time = env.clk.Time.Add(30 * time.Second)
+	env.reconcile([]beads.Bead{reloaded})
+
+	if !env.sp.IsRunning(sessionName) {
+		final, _ := env.store.Get(session.ID)
+		t.Fatalf(
+			"always named session %q must restart on the tick after churn (#1493); state=%q sleep_reason=%q churn_count=%q wake_attempts=%q quarantined_until=%q",
+			sessionName,
+			final.Metadata["state"],
+			final.Metadata["sleep_reason"],
+			final.Metadata["churn_count"],
+			final.Metadata["wake_attempts"],
+			final.Metadata["quarantined_until"],
+		)
+	}
+}
+
+// TestReconcileSessionBeads_QuarantinedNamedSessionStaysAsleepAfterChurn pins
+// the negative half of the post-churn invariant: when churn pushes the
+// session into quarantine, the session must stay asleep until the
+// quarantine elapses, even for mode=always.
+func TestReconcileSessionBeads_QuarantinedNamedSessionStaysAsleepAfterChurn(t *testing.T) {
+	env := newReconcilerTestEnv()
+	env.cfg = &config.City{
+		Workspace:     config.Workspace{Name: "test-city"},
+		Agents:        []config.Agent{{Name: "worker", StartCommand: "true"}},
+		NamedSessions: []config.NamedSession{{Template: "worker", Mode: "always"}},
+	}
+	sessionName := config.NamedSessionRuntimeName(env.cfg.Workspace.Name, env.cfg.Workspace, "worker")
+	env.desiredState[sessionName] = TemplateParams{
+		Command:                 "true",
+		SessionName:             sessionName,
+		TemplateName:            "worker",
+		ConfiguredNamedIdentity: "worker",
+		ConfiguredNamedMode:     "always",
+	}
+	session := env.createSessionBead(sessionName, "worker")
+	env.setSessionMetadata(&session, map[string]string{
+		namedSessionMetadataKey:      "true",
+		namedSessionIdentityMetadata: "worker",
+		namedSessionModeMetadata:     "always",
+		"state":                      "asleep",
+		"sleep_reason":               "context-churn",
+		"churn_count":                "3",
+		"quarantined_until":          env.clk.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339),
+	})
+
+	woken := env.reconcile([]beads.Bead{session})
+
+	if woken != 0 {
+		t.Fatalf("woken = %d, want 0 (quarantined session must not wake during the quarantine window)", woken)
+	}
+	if env.sp.IsRunning(sessionName) {
+		t.Fatalf("quarantined named session %q must stay asleep until the quarantine elapses", sessionName)
+	}
+}
+
 func TestReconcileSessionBeads_OrdinaryDesiredStateDoesNotWakeDrainedCompatibilityState(t *testing.T) {
 	env := newReconcilerTestEnv()
 	env.cfg = &config.City{
