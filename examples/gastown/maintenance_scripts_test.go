@@ -2602,6 +2602,46 @@ func TestJsonlExportRetriesPendingAlertWithoutUserDatabases(t *testing.T) {
 	}
 }
 
+func TestJsonlExportRetriesMultiplePendingAlertsWithoutUserDatabases(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	stateFile := filepath.Join(stateDir, "jsonl-export-state.json")
+
+	writeNoUserDatabasesDoltStub(t, binDir)
+	writeJsonlExportGCStub(t, binDir)
+
+	if err := os.WriteFile(stateFile, []byte(`{"pending_spike_alerts":{"alpha":{"database":"alpha","prev_count":100,"current_count":10,"delta":90,"threshold":20},"beta":{"database":"beta","prev_count":80,"current_count":20,"delta":75,"threshold":20}}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(state file): %v", err)
+	}
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	mailData, err := os.ReadFile(mailLog)
+	if err != nil {
+		t.Fatalf("ReadFile(mail log): %v", err)
+	}
+	if got := strings.Count(string(mailData), "ESCALATION: JSONL spike"); got != 2 {
+		t.Fatalf("expected both pending spike alerts to retry, got %d entries:\n%s", got, mailData)
+	}
+	if !strings.Contains(string(mailData), "Database: alpha") || !strings.Contains(string(mailData), "Database: beta") {
+		t.Fatalf("expected both pending spike alerts to be delivered, got:\n%s", mailData)
+	}
+
+	stateData, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state file): %v", err)
+	}
+	if strings.Contains(string(stateData), `"pending_spike_alert"`) {
+		t.Fatalf("expected all pending spike alerts to clear after retry, got:\n%s", stateData)
+	}
+}
+
 func TestJsonlExportHaltMailFailurePreservesExistingPendingAlerts(t *testing.T) {
 	cityDir := t.TempDir()
 	binDir := t.TempDir()

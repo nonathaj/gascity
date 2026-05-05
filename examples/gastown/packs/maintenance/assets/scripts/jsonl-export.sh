@@ -258,7 +258,10 @@ retry_pending_spike_alert() {
 
     state_json=$(read_state_json | normalize_pending_spike_alert_state)
     updated_state_json="$state_json"
-    mapfile -t pending_alerts < <(
+    while IFS= read -r alert_json; do
+        [ -n "$alert_json" ] || continue
+        pending_alerts+=("$alert_json")
+    done < <(
         printf '%s\n' "$state_json" \
             | jq -c '.pending_spike_alerts // {} | to_entries | sort_by(.key) | .[].value'
     )
