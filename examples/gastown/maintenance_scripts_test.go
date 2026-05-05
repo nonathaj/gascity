@@ -1572,6 +1572,19 @@ func initSeedArchiveWithRemote(t *testing.T, archiveRepo string) (string, string
 	return remoteRepo, strings.TrimSpace(string(headOut))
 }
 
+func initEmptyArchiveRemote(t *testing.T, archiveRepo string, prevCount int) string {
+	t.Helper()
+	remoteRepo := filepath.Join(t.TempDir(), "archive-remote.git")
+	if out, err := exec.Command("git", "init", "--bare", "-q", remoteRepo).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+	initSeedArchive(t, archiveRepo, prevCount)
+	if out, err := exec.Command("git", "-C", archiveRepo, "remote", "add", "origin", remoteRepo).CombinedOutput(); err != nil {
+		t.Fatalf("git remote add origin: %v\n%s", err, out)
+	}
+	return remoteRepo
+}
+
 func advanceArchiveRemoteMain(t *testing.T, remoteRepo string) string {
 	t.Helper()
 	worktree := t.TempDir()
@@ -2482,6 +2495,112 @@ func TestJsonlExportExportFailureDoesNotBlockPendingArchiveReplay(t *testing.T) 
 	}
 	if strings.Contains(string(stateData), `"pending_archive_push":true`) {
 		t.Fatalf("expected pending_archive_push to clear after replay, got:\n%s", stateData)
+	}
+}
+
+func TestJsonlExportPushBootstrapCreatesRemoteMainWhenMissing(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	stateFile := filepath.Join(stateDir, "jsonl-export-state.json")
+
+	remoteRepo := initEmptyArchiveRemote(t, archiveRepo, 3)
+	writeMultiRecordDoltStub(t, binDir, 5)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	localHeadOut, err := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse local HEAD: %v\n%s", err, localHeadOut)
+	}
+	localHead := strings.TrimSpace(string(localHeadOut))
+
+	remoteHeadOut, err := exec.Command("git", "--git-dir", remoteRepo, "rev-parse", "refs/heads/main").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse remote main: %v\n%s", err, remoteHeadOut)
+	}
+	if got := strings.TrimSpace(string(remoteHeadOut)); got != localHead {
+		t.Fatalf("expected bootstrap push to publish local HEAD: got remote %s want local %s", got, localHead)
+	}
+
+	stateData, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state file): %v", err)
+	}
+	if strings.Contains(string(stateData), `"pending_archive_push":true`) {
+		t.Fatalf("expected pending_archive_push to clear after bootstrap push, got:\n%s", stateData)
+	}
+}
+
+func TestJsonlExportLegacyStateBackupRecoversPendingArchiveReplay(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	legacyStateFile := filepath.Join(cityDir, ".gc", "jsonl-export-state.json")
+
+	remoteRepo, remoteHead := initSeedArchiveWithRemote(t, archiveRepo)
+	writeMultiRecordDoltStub(t, binDir, 10)
+	writeJsonlExportGCStub(t, binDir)
+
+	if err := os.MkdirAll(filepath.Dir(legacyStateFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll(legacy state dir): %v", err)
+	}
+	if err := os.WriteFile(legacyStateFile, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(legacy state file): %v", err)
+	}
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	localHeadOut, err := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse local HALT HEAD: %v\n%s", err, localHeadOut)
+	}
+	localHaltHead := strings.TrimSpace(string(localHeadOut))
+	if localHaltHead == remoteHead {
+		t.Fatalf("HALT run must create a local-only commit")
+	}
+
+	backupData, err := os.ReadFile(legacyStateFile + ".bak")
+	if err != nil {
+		t.Fatalf("ReadFile(legacy state backup): %v", err)
+	}
+	if !strings.Contains(string(backupData), `"pending_archive_push":true`) {
+		t.Fatalf("expected legacy backup to preserve pending archive push, got:\n%s", backupData)
+	}
+
+	if err := os.WriteFile(legacyStateFile, []byte("not-json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(legacy state file): %v", err)
+	}
+
+	writeNoUserDatabasesDoltStub(t, binDir)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	remoteHeadOut, err := exec.Command("git", "--git-dir", remoteRepo, "rev-parse", "refs/heads/main").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse remote main after replay: %v\n%s", err, remoteHeadOut)
+	}
+	if got := strings.TrimSpace(string(remoteHeadOut)); got != localHaltHead {
+		t.Fatalf("expected legacy backup replay to publish pending archive commit: got %s want %s", got, localHaltHead)
+	}
+
+	stateData, err := os.ReadFile(legacyStateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(legacy state file): %v", err)
+	}
+	if strings.Contains(string(stateData), `"pending_archive_push":true`) {
+		t.Fatalf("expected legacy pending_archive_push to clear after replay, got:\n%s", stateData)
 	}
 }
 

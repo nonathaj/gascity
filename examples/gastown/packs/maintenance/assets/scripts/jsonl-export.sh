@@ -336,8 +336,11 @@ push_archive_main() {
     }
 
     if ! refresh_archive_remote_main; then
-        record_archive_push_failure "jsonl-export: fetching origin/main failed"
-        return 1
+        if git rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then
+            record_archive_push_failure "jsonl-export: fetching origin/main failed"
+            return 1
+        fi
+        echo "jsonl-export: origin/main missing; attempting initial push bootstrap" >&2
     fi
 
     if git rev-parse --verify refs/remotes/origin/main >/dev/null 2>&1; then
@@ -412,7 +415,6 @@ discard_staged_archive_outputs() {
 
 # State file for tracking consecutive push failures.
 STATE_FILE="$PACK_STATE_DIR/jsonl-export-state.json"
-STATE_FILE_BACKUP="${STATE_FILE}.bak"
 
 if [ -z "${GC_JSONL_ARCHIVE_REPO:-}" ] && [ ! -d "$ARCHIVE_REPO/.git" ] && [ -d "$LEGACY_ARCHIVE_REPO/.git" ]; then
     ARCHIVE_REPO="$LEGACY_ARCHIVE_REPO"
@@ -420,6 +422,7 @@ fi
 if [ ! -e "$STATE_FILE" ] && [ -e "$LEGACY_STATE_FILE" ]; then
     STATE_FILE="$LEGACY_STATE_FILE"
 fi
+STATE_FILE_BACKUP="${STATE_FILE}.bak"
 mkdir -p "$(dirname "$STATE_FILE")"
 
 retry_pending_spike_alert
