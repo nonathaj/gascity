@@ -107,16 +107,16 @@ func TestPathWithin(t *testing.T) {
 
 func TestPathWithinSymlinkedMissingLeaf(t *testing.T) {
 	root := t.TempDir()
-	real := filepath.Join(root, "real")
-	if err := os.MkdirAll(real, 0o755); err != nil {
+	realPath := filepath.Join(root, "real")
+	if err := os.MkdirAll(realPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(realPath, link); err != nil {
 		t.Skip("symlinks not supported")
 	}
 	candidate := filepath.Join(link, "missing", "leaf")
-	if !PathWithin(real, candidate) {
-		t.Fatalf("PathWithin(%q, %q) = false, want true through symlink ancestor", real, candidate)
+	if !PathWithin(realPath, candidate) {
+		t.Fatalf("PathWithin(%q, %q) = false, want true through symlink ancestor", realPath, candidate)
 	}
 }
