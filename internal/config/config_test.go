@@ -4832,11 +4832,12 @@ schedule = "0 3 * * *"
 // without a paired update to the controller's watcher exclusion list.
 func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 	const (
-		wantTraceExport  = `export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CONTROL_DISPATCHER_TRACE_DEFAULT:-${GC_CITY}/` + citylayout.RuntimeDataRoot + `/control-dispatcher-trace.log}}"`
-		wantTraceDirExpr = `trace_dir="${GC_WORKFLOW_TRACE%/*}"`
-		wantMkdirSnip    = `mkdir -p "$trace_dir"`
-		oldTracePath     = "${GC_CITY}/control-dispatcher-trace.log"
-		qualifiedName    = "qcore/control-dispatcher"
+		wantTraceExport    = `export GC_WORKFLOW_TRACE="${GC_WORKFLOW_TRACE:-${GC_CONTROL_DISPATCHER_TRACE_DEFAULT:-${GC_CITY}/` + citylayout.RuntimeDataRoot + `/control-dispatcher-trace.log}}"`
+		wantTraceDirExpr   = `trace_dir="${GC_WORKFLOW_TRACE%/*}"`
+		wantRootTraceGuard = `elif [ -z "$trace_dir" ]; then trace_dir="/"; fi`
+		wantMkdirSnip      = `mkdir -p "$trace_dir"`
+		oldTracePath       = "${GC_CITY}/control-dispatcher-trace.log"
+		qualifiedName      = "qcore/control-dispatcher"
 	)
 
 	t.Run("city-level constant", func(t *testing.T) {
@@ -4849,6 +4850,9 @@ func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 		}
 		if !strings.Contains(got, wantTraceDirExpr) {
 			t.Errorf("ControlDispatcherStartCommand missing %q so explicit GC_WORKFLOW_TRACE overrides create their own parent dir\n got: %s", wantTraceDirExpr, got)
+		}
+		if !strings.Contains(got, wantRootTraceGuard) {
+			t.Errorf("ControlDispatcherStartCommand missing %q so absolute root trace overrides normalize to /\n got: %s", wantRootTraceGuard, got)
 		}
 		if !strings.Contains(got, wantMkdirSnip) {
 			t.Errorf("ControlDispatcherStartCommand missing %q (needed so the resolved trace parent exists on first start)\n got: %s", wantMkdirSnip, got)
@@ -4868,6 +4872,9 @@ func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 		}
 		if !strings.Contains(got, wantTraceDirExpr) {
 			t.Errorf("ControlDispatcherStartCommandFor missing %q so explicit GC_WORKFLOW_TRACE overrides create their own parent dir\n got: %s", wantTraceDirExpr, got)
+		}
+		if !strings.Contains(got, wantRootTraceGuard) {
+			t.Errorf("ControlDispatcherStartCommandFor missing %q so absolute root trace overrides normalize to /\n got: %s", wantRootTraceGuard, got)
 		}
 		if !strings.Contains(got, wantMkdirSnip) {
 			t.Errorf("ControlDispatcherStartCommandFor missing %q\n got: %s", wantMkdirSnip, got)
@@ -4943,6 +4950,8 @@ set -eu
 trace_parent=${GC_WORKFLOW_TRACE%%/*}
 if [ "$trace_parent" = "$GC_WORKFLOW_TRACE" ]; then
   trace_parent=.
+elif [ -z "$trace_parent" ]; then
+  trace_parent=/
 fi
 [ -d "$trace_parent" ]
 : > "$GC_WORKFLOW_TRACE"

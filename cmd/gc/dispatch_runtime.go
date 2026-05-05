@@ -80,15 +80,22 @@ var (
 	workflowServeWakeSweepInterval = 1 * time.Second
 	workflowServeMaxIdleSleep      = 30 * time.Second
 	workflowServeWaitForWake       = waitForRelevantWorkflowWakeWithTrace
+	workflowTraceNow               = time.Now
 	// The trace helper is intentionally process-global because workflowTracef
 	// does not carry per-invocation context. Nested installs (serve ->
 	// runControlDispatcherWithStore) reuse the active dedup map so one bad trace
 	// path warns once per command invocation instead of once per control bead.
+	// The newest installed scope owns the active writer; the most recent scope
+	// for a given writer reuses that writer's dedupe map, and out-of-order
+	// restores reactivate the newest remaining scope instead of panicking.
+	// This assumes top-level callers are nested, not concurrently active from
+	// separate goroutines in the same process.
 	workflowTraceWarnings = struct {
 		mu     sync.Mutex
 		writer io.Writer
 		warned map[string]struct{}
-		depth  int
+		scopes []workflowTraceWarningScope
+		nextID uint64
 	}{
 		writer: os.Stderr,
 		warned: map[string]struct{}{},
@@ -135,6 +142,12 @@ type hookBead struct {
 	Metadata hookBeadMetadata `json:"metadata"`
 }
 
+type workflowTraceWarningScope struct {
+	id     uint64
+	writer io.Writer
+	warned map[string]struct{}
+}
+
 // hookBeadMetadata handles metadata where values may be JSON strings,
 // numbers, or booleans (bd writes numbers for numeric-looking values).
 // Normalizes everything to strings on unmarshal.
@@ -171,8 +184,8 @@ func workflowTracef(format string, args ...any) {
 		workflowTraceWarnOpenFailure(path, err)
 		return
 	}
-	defer f.Close()                                                                                    //nolint:errcheck // best-effort trace log
-	fmt.Fprintf(f, "%s %s\n", time.Now().UTC().Format(time.RFC3339Nano), fmt.Sprintf(format, args...)) //nolint:errcheck
+	defer f.Close()                                                                                            //nolint:errcheck // best-effort trace log
+	fmt.Fprintf(f, "%s %s\n", workflowTraceNow().UTC().Format(time.RFC3339Nano), fmt.Sprintf(format, args...)) //nolint:errcheck
 }
 
 func workflowTraceWarnOpenFailure(path string, err error) {
@@ -180,36 +193,82 @@ func workflowTraceWarnOpenFailure(path string, err error) {
 		return
 	}
 	workflowTraceWarnings.mu.Lock()
-	defer workflowTraceWarnings.mu.Unlock()
-	if workflowTraceWarnings.writer == nil {
-		return
-	}
-	if _, warned := workflowTraceWarnings.warned[path]; warned {
-		return
-	}
-	workflowTraceWarnings.warned[path] = struct{}{}
-	fmt.Fprintf(workflowTraceWarnings.writer, "gc convoy control --serve: warning: opening workflow trace %q: %v\n", path, err) //nolint:errcheck // best-effort stderr
+	writer := workflowTraceWarnings.writer
+	workflowTraceWarnings.mu.Unlock()
+	workflowTraceWarnf(writer, "trace-open:"+normalizePathForCompare(path), "gc convoy control --serve: warning: opening workflow trace %q: %v\n", path, err)
 }
 
-// useWorkflowTraceWarnings installs a per-command warning sink and must be
-// restored in the same goroutine with strict LIFO discipline.
+func workflowTraceWarnf(writer io.Writer, dedupeKey, format string, args ...any) {
+	if writer == nil {
+		return
+	}
+	workflowTraceWarnings.mu.Lock()
+	warned := workflowTraceWarnings.warned
+	if workflowTraceWarnings.writer != writer || warned == nil {
+		warned = nil
+		for i := len(workflowTraceWarnings.scopes) - 1; i >= 0; i-- {
+			if workflowTraceWarnings.scopes[i].writer == writer {
+				warned = workflowTraceWarnings.scopes[i].warned
+				break
+			}
+		}
+	}
+	if warned != nil {
+		if _, alreadyWarned := warned[dedupeKey]; alreadyWarned {
+			workflowTraceWarnings.mu.Unlock()
+			return
+		}
+		warned[dedupeKey] = struct{}{}
+	}
+	workflowTraceWarnings.mu.Unlock()
+	fmt.Fprintf(writer, format, args...) //nolint:errcheck // best-effort stderr
+}
+
+// useWorkflowTraceWarnings installs a per-command warning sink. Nested callers
+// that share a writer reuse the same dedupe map so a single command invocation
+// warns once per path. Restores may arrive out of order; the newest remaining
+// scope stays active so helper reuse cannot panic the process.
 func useWorkflowTraceWarnings(writer io.Writer) func() {
 	workflowTraceWarnings.mu.Lock()
-	prevWriter := workflowTraceWarnings.writer
-	prevWarned := workflowTraceWarnings.warned
-	prevDepth := workflowTraceWarnings.depth
-	if workflowTraceWarnings.depth == 0 || writer != workflowTraceWarnings.writer {
-		workflowTraceWarnings.writer = writer
-		workflowTraceWarnings.warned = map[string]struct{}{}
+	workflowTraceWarnings.nextID++
+	restoreID := workflowTraceWarnings.nextID
+	warned := map[string]struct{}{}
+	for i := len(workflowTraceWarnings.scopes) - 1; i >= 0; i-- {
+		if workflowTraceWarnings.scopes[i].writer == writer {
+			warned = workflowTraceWarnings.scopes[i].warned
+			break
+		}
 	}
-	workflowTraceWarnings.depth++
+	workflowTraceWarnings.scopes = append(workflowTraceWarnings.scopes, workflowTraceWarningScope{
+		id:     restoreID,
+		writer: writer,
+		warned: warned,
+	})
+	workflowTraceWarnings.writer = writer
+	workflowTraceWarnings.warned = warned
 	workflowTraceWarnings.mu.Unlock()
 	return func() {
 		workflowTraceWarnings.mu.Lock()
-		workflowTraceWarnings.writer = prevWriter
-		workflowTraceWarnings.warned = prevWarned
-		workflowTraceWarnings.depth = prevDepth
-		workflowTraceWarnings.mu.Unlock()
+		defer workflowTraceWarnings.mu.Unlock()
+		restoreIdx := -1
+		for i := len(workflowTraceWarnings.scopes) - 1; i >= 0; i-- {
+			if workflowTraceWarnings.scopes[i].id == restoreID {
+				restoreIdx = i
+				break
+			}
+		}
+		if restoreIdx < 0 {
+			return
+		}
+		workflowTraceWarnings.scopes = append(workflowTraceWarnings.scopes[:restoreIdx], workflowTraceWarnings.scopes[restoreIdx+1:]...)
+		if n := len(workflowTraceWarnings.scopes); n > 0 {
+			top := workflowTraceWarnings.scopes[n-1]
+			workflowTraceWarnings.writer = top.writer
+			workflowTraceWarnings.warned = top.warned
+			return
+		}
+		workflowTraceWarnings.writer = os.Stderr
+		workflowTraceWarnings.warned = map[string]struct{}{}
 	}
 }
 
@@ -221,11 +280,12 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 	if err != nil {
 		return err
 	}
-	warnLegacyWorkflowTracePath(cityPath, stderr)
 	cfg, err := loadCityConfig(cityPath, stderr)
 	if err != nil {
 		return err
 	}
+	resolveRigPaths(cityPath, cfg.Rigs)
+	warnLegacyWorkflowTracePath(cityPath, cfg.Rigs, stderr)
 	if agentName == "" {
 		agentName = os.Getenv("GC_ALIAS")
 	}
@@ -265,23 +325,78 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 	return runWorkflowServeFollow(agentCfg, cityPath, workDir, workQuery, workEnv, stderr)
 }
 
-func warnLegacyWorkflowTracePath(cityPath string, stderr io.Writer) {
+func legacyWorkflowTracePaths(cityPath string, rigs []config.Rig) []string {
+	paths := make([]string, 0, len(rigs)+1)
+	seen := make(map[string]struct{}, len(rigs)+1)
+	appendTracePath := func(root string) {
+		root = strings.TrimSpace(root)
+		if root == "" || !pathIsWithin(cityPath, root) {
+			return
+		}
+		tracePath := filepath.Join(root, "control-dispatcher-trace.log")
+		normalized := normalizePathForCompare(tracePath)
+		if normalized == "" {
+			return
+		}
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		paths = append(paths, tracePath)
+	}
+
+	appendTracePath(cityPath)
+	for _, rig := range rigs {
+		appendTracePath(rig.Path)
+	}
+	appendTracePath(os.Getenv("GC_RIG_ROOT"))
+	return paths
+}
+
+func warnLegacyWorkflowTracePath(cityPath string, rigs []config.Rig, stderr io.Writer) {
 	if stderr == nil {
 		return
 	}
-	current := strings.TrimSpace(os.Getenv("GC_WORKFLOW_TRACE"))
-	if current == "" {
-		return
-	}
-	legacyTracePath := filepath.Join(cityPath, "control-dispatcher-trace.log")
-	if !samePath(current, legacyTracePath) {
-		return
-	}
+	legacyTracePaths := legacyWorkflowTracePaths(cityPath, rigs)
 	nextTracePath := strings.TrimSpace(os.Getenv("GC_CONTROL_DISPATCHER_TRACE_DEFAULT"))
 	if nextTracePath == "" {
 		nextTracePath = citylayout.ControlDispatcherTraceDefaultPath(cityPath)
 	}
-	fmt.Fprintf(stderr, "gc convoy control --serve: warning: legacy control-dispatcher trace path %q still in use; restart or recycle this session so it adopts %q\n", current, nextTracePath) //nolint:errcheck // best-effort stderr
+	current := strings.TrimSpace(os.Getenv("GC_WORKFLOW_TRACE"))
+	if current != "" {
+		for _, legacyTracePath := range legacyTracePaths {
+			if samePath(current, legacyTracePath) {
+				workflowTraceWarnf(
+					stderr,
+					"legacy-trace-path:"+normalizePathForCompare(current),
+					"gc convoy control --serve: warning: legacy control-dispatcher trace path %q matches a watcher-visible legacy location; change or unset GC_WORKFLOW_TRACE so this session adopts %q, or restart/recycle the session if this value was inherited before the upgrade\n",
+					current,
+					nextTracePath,
+				)
+				return
+			}
+		}
+	}
+	activeTracePath := current
+	if activeTracePath == "" {
+		activeTracePath = nextTracePath
+	}
+	for _, legacyTracePath := range legacyTracePaths {
+		if samePath(activeTracePath, legacyTracePath) {
+			continue
+		}
+		info, err := os.Stat(legacyTracePath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		workflowTraceWarnf(
+			stderr,
+			"legacy-trace-file:"+normalizePathForCompare(legacyTracePath),
+			"gc convoy control --serve: warning: legacy control-dispatcher trace file %q still exists; writes to it can wake the city watcher. If it is still growing, restart or recycle the control-dispatcher session so it adopts %q.\n",
+			legacyTracePath,
+			nextTracePath,
+		)
+	}
 }
 
 type workflowServeDrainResult struct {

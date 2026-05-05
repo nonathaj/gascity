@@ -851,9 +851,13 @@ func TestWatchConfigDirs_CityRootIgnoresRuntimeTraceWrites(t *testing.T) {
 	if err := os.WriteFile(traceFile, []byte("first\n"), 0o644); err != nil {
 		t.Fatalf("seed runtime trace: %v", err)
 	}
+	legacyTraceFile := filepath.Join(dir, "control-dispatcher-trace.log")
 
 	if !shouldIgnoreConfigWatchEvent(traceFile) {
 		t.Fatalf("shouldIgnoreConfigWatchEvent(%q) = false, want true", traceFile)
+	}
+	if shouldIgnoreConfigWatchEvent(legacyTraceFile) {
+		t.Fatalf("shouldIgnoreConfigWatchEvent(%q) = true, want false", legacyTraceFile)
 	}
 
 	var dirty atomic.Bool
@@ -868,17 +872,32 @@ func TestWatchConfigDirs_CityRootIgnoresRuntimeTraceWrites(t *testing.T) {
 	}
 	dirty.Store(false)
 
-	if err := os.WriteFile(traceFile, []byte("second\n"), 0o644); err != nil {
-		t.Fatalf("rewrite runtime trace: %v", err)
+	for i, body := range []string{"second\n", "third\n", "fourth\n"} {
+		if err := os.WriteFile(traceFile, []byte(body), 0o644); err != nil {
+			t.Fatalf("rewrite runtime trace #%d: %v", i+1, err)
+		}
+		select {
+		case <-pokeCh:
+			t.Fatalf("unexpected watcher poke after runtime trace write #%d; stderr=%q", i+1, stderr.String())
+		case <-time.After(250 * time.Millisecond):
+		}
+		if dirty.Load() {
+			t.Fatalf("dirty flag set after runtime trace write #%d; stderr=%q", i+1, stderr.String())
+		}
+	}
+
+	dirty.Store(false)
+	if err := os.WriteFile(legacyTraceFile, []byte("legacy\n"), 0o644); err != nil {
+		t.Fatalf("write legacy city-root trace: %v", err)
 	}
 
 	select {
 	case <-pokeCh:
-		t.Fatalf("unexpected watcher poke after runtime trace write; stderr=%q", stderr.String())
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timed out waiting for watcher poke after legacy city-root trace write; stderr=%q", stderr.String())
 	}
-	if dirty.Load() {
-		t.Fatalf("dirty flag set after runtime trace write; stderr=%q", stderr.String())
+	if !dirty.Load() {
+		t.Fatalf("dirty flag not set after legacy city-root trace write; stderr=%q", stderr.String())
 	}
 }
 

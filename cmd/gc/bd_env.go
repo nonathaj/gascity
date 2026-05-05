@@ -510,38 +510,7 @@ func bdRuntimeEnv(cityPath string) map[string]string {
 }
 
 func cityRuntimeEnvMapForCity(cityPath string) map[string]string {
-	env := citylayout.CityRuntimeEnvMap(cityPath)
-	if runtimeDir := trustedAmbientCityRuntimeDir(cityPath); runtimeDir != "" {
-		env["GC_CITY_RUNTIME_DIR"] = runtimeDir
-	}
-	env["GC_CONTROL_DISPATCHER_TRACE_DEFAULT"] = controlDispatcherTraceDefaultPathForRuntimeDir(cityPath, env["GC_CITY_RUNTIME_DIR"])
-	return env
-}
-
-func trustedAmbientCityRuntimeDir(cityPath string) string {
-	runtimeDir := strings.TrimSpace(os.Getenv("GC_CITY_RUNTIME_DIR"))
-	if runtimeDir == "" {
-		return ""
-	}
-	for _, key := range []string{"GC_CITY_PATH", "GC_CITY"} {
-		if samePath(strings.TrimSpace(os.Getenv(key)), cityPath) {
-			return normalizePathForCompare(runtimeDir)
-		}
-	}
-	return ""
-}
-
-func controlDispatcherTraceDefaultPathForRuntimeDir(cityPath, runtimeDir string) string {
-	canonicalRuntimeDir := citylayout.RuntimeDataDir(cityPath)
-	runtimeDir = strings.TrimSpace(runtimeDir)
-	if runtimeDir == "" {
-		runtimeDir = canonicalRuntimeDir
-	}
-	hiddenRoot := filepath.Join(cityPath, ".gc")
-	if pathIsWithin(cityPath, runtimeDir) && !pathIsWithin(hiddenRoot, runtimeDir) {
-		runtimeDir = canonicalRuntimeDir
-	}
-	return filepath.Join(runtimeDir, "control-dispatcher-trace.log")
+	return citylayout.CityRuntimeEnvMapForRuntimeDir(cityPath, citylayout.TrustedAmbientCityRuntimeDir(cityPath))
 }
 
 func cityRuntimeProcessEnv(cityPath string) []string {

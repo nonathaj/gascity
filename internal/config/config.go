@@ -45,7 +45,7 @@ const (
 	// controlDispatcherTraceDirInit creates the parent directory for the
 	// resolved trace path. This preserves explicit GC_WORKFLOW_TRACE overrides
 	// instead of unconditionally depending on the default runtime root.
-	controlDispatcherTraceDirInit = `trace_dir="${GC_WORKFLOW_TRACE%/*}"; if [ "$trace_dir" = "$GC_WORKFLOW_TRACE" ]; then trace_dir="."; fi; mkdir -p "$trace_dir"`
+	controlDispatcherTraceDirInit = `trace_dir="${GC_WORKFLOW_TRACE%/*}"; if [ "$trace_dir" = "$GC_WORKFLOW_TRACE" ]; then trace_dir="."; elif [ -z "$trace_dir" ]; then trace_dir="/"; fi; mkdir -p "$trace_dir"`
 	// ControlDispatcherStartCommand runs the built-in control-dispatcher worker.
 	// Wrapped in `sh -c` so any appended prompt suffix is ignored as $0.
 	// The control lane is kept resident and blocks on workflow-relevant city
