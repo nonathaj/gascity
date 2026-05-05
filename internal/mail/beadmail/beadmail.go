@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/mail"
@@ -25,43 +26,60 @@ const (
 )
 
 // Provider implements [mail.Provider] using [beads.Store] as the backend.
-//
-// The Provider memoizes its enumeration of gc:session beads for the duration
-// of its lifetime: identity resolution, recipient routing, and historical-
-// alias lookup all need the same set, and a single command invocation creates
-// one Provider. The cache is intentionally not invalidated on Send: a fresh
-// message bead is not a session bead, and stale session-cache vs newly-
-// committed session beads is not a code path mail commands ever exercise.
 type Provider struct {
-	store          beads.Store
-	sessionsCache  []beads.Bead
-	sessionsCached bool
+	store        beads.Store
+	sessionCache *sessionBeadCache
+}
+
+type sessionBeadCache struct {
+	mu      sync.Mutex
+	list    []beads.Bead
+	fetched bool
 }
 
 // New returns a beadmail provider backed by the given store.
+//
+// The default provider is stateless so long-lived shared users such as the API
+// always see fresh session topology.
 func New(store beads.Store) *Provider {
 	return &Provider{store: store}
 }
 
-// cachedSessionBeads returns the full set of session beads (open + closed),
-// fetching once and reusing across the Provider's lifetime. This is the
-// single-source-of-truth for any code path that needs to enumerate sessions
-// to resolve identity, recipient routes, or historical aliases.
-func (p *Provider) cachedSessionBeads() ([]beads.Bead, error) {
-	if p.sessionsCached {
-		return p.sessionsCache, nil
+// NewCached returns a beadmail provider backed by the given store with a
+// provider-local session enumeration cache for command-scoped reuse.
+func NewCached(store beads.Store) *Provider {
+	return &Provider{
+		store:        store,
+		sessionCache: &sessionBeadCache{},
 	}
+}
+
+// cachedSessionBeads returns the full set of session beads (open + closed).
+// Cached providers reuse a single enumeration; stateless providers fetch
+// fresh results on every call.
+func (p *Provider) cachedSessionBeads() ([]beads.Bead, error) {
 	if p.store == nil {
-		p.sessionsCached = true
 		return nil, nil
 	}
-	sessions, err := p.store.List(beads.ListQuery{Label: session.LabelSession, IncludeClosed: true})
+	if p.sessionCache == nil {
+		return p.store.List(beads.ListQuery{Label: session.LabelSession, IncludeClosed: true})
+	}
+	return p.sessionCache.get(p.store)
+}
+
+func (c *sessionBeadCache) get(store beads.Store) ([]beads.Bead, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.fetched {
+		return c.list, nil
+	}
+	list, err := store.List(beads.ListQuery{Label: session.LabelSession, IncludeClosed: true})
 	if err != nil {
 		return nil, err
 	}
-	p.sessionsCache = sessions
-	p.sessionsCached = true
-	return sessions, nil
+	c.list = list
+	c.fetched = true
+	return list, nil
 }
 
 // Send creates a message bead with subject in Title and body in Description.

@@ -1495,12 +1495,51 @@ func (s *countingSessionListStore) List(query beads.ListQuery) ([]beads.Bead, er
 	return s.MemStore.List(query)
 }
 
-func TestProvider_BroadSessionListCachedAcrossInboxCalls(t *testing.T) {
-	// Pin: when an Inbox call has to fall back to historical-alias enumeration
-	// (the only path that issues a broad gc:session scan in beadmail), the
-	// scan happens AT MOST ONCE per Provider lifetime — even if multiple
-	// Inbox calls force the fallback. Without the cache, each Inbox call
-	// re-issues the scan, producing the fanout that ga-q6ct tracks.
+func TestProvider_DefaultProviderSeesNewHistoricalAliasSessionAcrossCalls(t *testing.T) {
+	// Pin: the default Provider is safe for long-lived shared use. If a lookup
+	// runs before the matching session exists, later lookups must see newly
+	// created sessions instead of reusing a stale provider-lifetime snapshot.
+	store := &countingSessionListStore{MemStore: beads.NewMemStore()}
+	p := New(store)
+
+	if _, err := p.Inbox("old-route"); err != nil {
+		t.Fatalf("initial Inbox(old-route): %v", err)
+	}
+
+	sessionBead, err := store.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			"alias":         "worker-a",
+			"alias_history": "old-route",
+			"session_name":  "wf__a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+	if _, err := p.Send("human", sessionBead.Metadata["alias"], "", "for old route"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	msgs, err := p.Inbox("old-route")
+	if err != nil {
+		t.Fatalf("second Inbox(old-route): %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("Inbox(old-route) = %d messages, want 1", len(msgs))
+	}
+	if msgs[0].Body != "for old route" {
+		t.Fatalf("Inbox(old-route) body = %q, want %q", msgs[0].Body, "for old route")
+	}
+	if store.sessionListCalls != 2 {
+		t.Errorf("broad gc:session List calls = %d, want 2 (default provider must refetch per call to avoid stale shared state)", store.sessionListCalls)
+	}
+}
+
+func TestProviderCached_BroadSessionListCachedAcrossInboxCalls(t *testing.T) {
+	// Pin: the command-scoped cached Provider still dedupes the broad
+	// historical-alias session scan within one provider lifetime.
 	store := &countingSessionListStore{MemStore: beads.NewMemStore()}
 
 	// Two live sessions with alias_history that includes the route we'll
@@ -1528,7 +1567,7 @@ func TestProvider_BroadSessionListCachedAcrossInboxCalls(t *testing.T) {
 		t.Fatalf("Create session B: %v", err)
 	}
 
-	p := New(store)
+	p := NewCached(store)
 
 	// Exercise three independent Inbox calls that each force the
 	// alias-history fallback (no current alias matches "old-route" or

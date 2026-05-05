@@ -2826,3 +2826,33 @@ func TestListLiveSessionMailboxesCached_UsesCache(t *testing.T) {
 		t.Errorf("broad gc:session List calls = %d, want 1 across listLiveSessionMailboxes + resolve sharing one cache", store.sessionListCalls)
 	}
 }
+
+func TestResolveMailIdentityWithConfigCached_SharedCacheSurvivesFallbackMiss(t *testing.T) {
+	// Pin: the shared cache must stay in effect even when identity resolution
+	// misses every shortcut and falls back to the generic resolution path.
+	base := beads.NewMemStore()
+	store := &countingMailIdentityListStore{Store: base}
+
+	if _, err := base.Create(beads.Bead{
+		Type:   session.BeadType,
+		Labels: []string{session.LabelSession},
+		Metadata: map[string]string{
+			namedSessionIdentityMetadata: "gascity/worker",
+			"alias":                      "worker",
+		},
+	}); err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+
+	cache := &mailIdentitySessionCache{}
+	if _, err := listLiveSessionMailboxesCached(store, cache); err != nil {
+		t.Fatalf("listLiveSessionMailboxesCached: %v", err)
+	}
+	if _, err := resolveMailIdentityWithConfigCached("", nil, store, "no-match", cache); !errors.Is(err, session.ErrSessionNotFound) {
+		t.Fatalf("resolveMailIdentityWithConfigCached(no-match) error = %v, want ErrSessionNotFound", err)
+	}
+
+	if store.sessionListCalls != 1 {
+		t.Errorf("broad gc:session List calls = %d, want 1 across listLiveSessionMailboxes + fallback miss resolution", store.sessionListCalls)
+	}
+}

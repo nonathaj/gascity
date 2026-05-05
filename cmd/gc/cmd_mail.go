@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"unicode"
 	"unicode/utf8"
@@ -427,14 +428,14 @@ func sessionMailboxAddresses(b beads.Bead) []string {
 	return addresses
 }
 
-func resolveMailIdentity(store beads.Store, identifier string) (string, error) {
+func resolveMailIdentityCached(store beads.Store, identifier string, cache *mailIdentitySessionCache) (string, error) {
 	if identifier == "" || identifier == "human" {
 		return "human", nil
 	}
 	sessionID, err := resolveSessionID(store, identifier)
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
-			if target, matched, targetErr := resolveLiveConfiguredNamedMailTarget(store, identifier); targetErr != nil {
+			if target, matched, targetErr := resolveLiveConfiguredNamedMailTargetCached(store, identifier, cache); targetErr != nil {
 				return "", targetErr
 			} else if matched {
 				return target.display, nil
@@ -489,7 +490,7 @@ func resolveMailIdentityWithConfigCached(cityPath string, cfg *config.City, stor
 	if address, ok := configuredMailboxAddressWithConfig(cityPath, cfg, identifier); ok {
 		return address, nil
 	}
-	return resolveMailIdentity(store, identifier)
+	return resolveMailIdentityCached(store, identifier, cache)
 }
 
 func resolveMailRecipientIdentity(cityPath string, cfg *config.City, store beads.Store, identifier string) (string, error) {
@@ -537,16 +538,12 @@ func configuredMailboxAddressWithConfig(cityPath string, cfg *config.City, ident
 	return spec.Identity, true
 }
 
-func listLiveSessionMailboxes(store beads.Store) (map[string]bool, error) {
-	return listLiveSessionMailboxesCached(store, nil)
-}
-
 func listLiveSessionMailboxesCached(store beads.Store, cache *mailIdentitySessionCache) (map[string]bool, error) {
 	recipients := map[string]bool{"human": true}
 	if store == nil {
 		return recipients, nil
 	}
-	all, err := cache.get(store)
+	all, err := listMailIdentitySessions(store, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -618,30 +615,29 @@ func mailSenderDisplayFromMetadata(fallback string, metadata map[string]string) 
 // mailIdentitySessionCache memoizes a single gc:session enumeration so that
 // repeated identity-resolution attempts (multi-candidate retry, sender +
 // recipient resolution in the same command, etc.) share the same broad scan.
-// Zero value is a valid empty cache; the first get() fetches and reuses.
+// A nil cache disables memoization; the zero value memoizes on first use.
 type mailIdentitySessionCache struct {
+	mu      sync.Mutex
 	list    []beads.Bead
 	fetched bool
 }
 
-func (c *mailIdentitySessionCache) get(store beads.Store) ([]beads.Bead, error) {
-	if c == nil {
+func listMailIdentitySessions(store beads.Store, cache *mailIdentitySessionCache) ([]beads.Bead, error) {
+	if cache == nil {
 		return store.List(beads.ListQuery{Label: session.LabelSession})
 	}
-	if c.fetched {
-		return c.list, nil
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.fetched {
+		return cache.list, nil
 	}
 	list, err := store.List(beads.ListQuery{Label: session.LabelSession})
 	if err != nil {
 		return nil, err
 	}
-	c.list = list
-	c.fetched = true
+	cache.list = list
+	cache.fetched = true
 	return list, nil
-}
-
-func resolveLiveConfiguredNamedMailTarget(store beads.Store, identifier string) (resolvedMailTarget, bool, error) {
-	return resolveLiveConfiguredNamedMailTargetCached(store, identifier, nil)
 }
 
 func resolveLiveConfiguredNamedMailTargetCached(store beads.Store, identifier string, cache *mailIdentitySessionCache) (resolvedMailTarget, bool, error) {
@@ -649,7 +645,7 @@ func resolveLiveConfiguredNamedMailTargetCached(store beads.Store, identifier st
 	if store == nil || identifier == "" || identifier == "human" || strings.Contains(identifier, "/") {
 		return resolvedMailTarget{}, false, nil
 	}
-	all, err := cache.get(store)
+	all, err := listMailIdentitySessions(store, cache)
 	if err != nil {
 		return resolvedMailTarget{}, false, err
 	}
