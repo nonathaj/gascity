@@ -93,31 +93,51 @@ normalize_pending_spike_alert_state() {
 }
 
 read_state_json() {
-    if [ -f "$STATE_FILE" ]; then
-        if jq -c '.' "$STATE_FILE" 2>/dev/null; then
-            return
+    if [ -f "$STATE_FILE" ] && jq -c '.' "$STATE_FILE" 2>/dev/null; then
+        return
+    fi
+    if [ -f "$STATE_FILE_BACKUP" ] && jq -c '.' "$STATE_FILE_BACKUP" 2>/dev/null; then
+        if [ -f "$STATE_FILE" ]; then
+            echo "jsonl-export: state file malformed; using last-known-good backup" >&2
+        else
+            echo "jsonl-export: state file missing; using last-known-good backup" >&2
         fi
+        return
+    fi
+    if [ -f "$STATE_FILE" ]; then
         echo "jsonl-export: state file malformed; resetting to empty state" >&2
     fi
     echo '{}'
 }
 
-write_state_json() {
+write_state_file_atomically() {
+    local path="$1"
+    local label="$2"
+    local content="$3"
     local tmpfile
 
-    if ! tmpfile=$(mktemp "${STATE_FILE}.tmp.XXXXXX"); then
-        echo "jsonl-export: creating temporary state file failed" >&2
+    if ! tmpfile=$(mktemp "${path}.tmp.XXXXXX"); then
+        echo "jsonl-export: creating temporary $label failed" >&2
         return 1
     fi
-    if ! printf '%s\n' "$1" > "$tmpfile"; then
-        echo "jsonl-export: writing temporary state file failed" >&2
+    if ! printf '%s\n' "$content" > "$tmpfile"; then
+        echo "jsonl-export: writing temporary $label failed" >&2
         rm -f "$tmpfile"
         return 1
     fi
-    if ! mv -f "$tmpfile" "$STATE_FILE"; then
-        echo "jsonl-export: replacing state file failed" >&2
+    if ! mv -f "$tmpfile" "$path"; then
+        echo "jsonl-export: replacing $label failed" >&2
         rm -f "$tmpfile"
         return 1
+    fi
+}
+
+write_state_json() {
+    if ! write_state_file_atomically "$STATE_FILE" "state file" "$1"; then
+        return 1
+    fi
+    if ! write_state_file_atomically "$STATE_FILE_BACKUP" "state backup" "$1"; then
+        echo "jsonl-export: state backup update failed; continuing with primary state only" >&2
     fi
 }
 
@@ -377,6 +397,7 @@ discard_staged_archive_outputs() {
 
 # State file for tracking consecutive push failures.
 STATE_FILE="$PACK_STATE_DIR/jsonl-export-state.json"
+STATE_FILE_BACKUP="${STATE_FILE}.bak"
 
 if [ -z "${GC_JSONL_ARCHIVE_REPO:-}" ] && [ ! -d "$ARCHIVE_REPO/.git" ] && [ -d "$LEGACY_ARCHIVE_REPO/.git" ]; then
     ARCHIVE_REPO="$LEGACY_ARCHIVE_REPO"

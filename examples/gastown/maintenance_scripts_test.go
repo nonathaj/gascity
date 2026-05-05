@@ -2515,6 +2515,56 @@ func TestJsonlExportHaltMailFailureRecoversFromMalformedState(t *testing.T) {
 	}
 }
 
+func TestJsonlExportRetriesPendingAlertFromBackupAfterPrimaryCorruption(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	stateFile := filepath.Join(stateDir, "jsonl-export-state.json")
+
+	initSeedArchiveWithRemote(t, archiveRepo)
+	writeMultiRecordDoltStub(t, binDir, 10)
+	writeJsonlExportGCStubWithMailExitCode(t, binDir, 1)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	backupData, err := os.ReadFile(stateFile + ".bak")
+	if err != nil {
+		t.Fatalf("ReadFile(state backup): %v", err)
+	}
+	if !strings.Contains(string(backupData), `"pending_spike_alerts"`) {
+		t.Fatalf("expected backup state to preserve pending spike alert, got:\n%s", backupData)
+	}
+	if err := os.WriteFile(stateFile, []byte("not-json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(state file): %v", err)
+	}
+
+	writeNoUserDatabasesDoltStub(t, binDir)
+	writeJsonlExportGCStub(t, binDir)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	mailData, err := os.ReadFile(mailLog)
+	if err != nil {
+		t.Fatalf("ReadFile(mail log): %v", err)
+	}
+	if got := strings.Count(string(mailData), "ESCALATION: JSONL spike"); got != 2 {
+		t.Fatalf("expected failed attempt plus backup-backed retry, got %d entries:\n%s", got, mailData)
+	}
+
+	stateData, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state file): %v", err)
+	}
+	if strings.Contains(string(stateData), `"pending_spike_alert"`) {
+		t.Fatalf("expected pending spike alert to clear after backup-backed retry, got:\n%s", stateData)
+	}
+}
+
 func TestJsonlExportRetriesPendingAlertWithoutUserDatabases(t *testing.T) {
 	cityDir := t.TempDir()
 	binDir := t.TempDir()
