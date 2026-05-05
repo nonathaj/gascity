@@ -1163,6 +1163,8 @@ func TestIntegrationEnvForUsesIsolatedHome(t *testing.T) {
 	t.Setenv("GC_DOLT_PORT", "0")
 	t.Setenv("GC_DOLT_USER", "ambient-user")
 	t.Setenv("GC_DOLT_PASSWORD", "ambient-password")
+	t.Setenv("BEADS_ACTOR", "ambient-actor")
+	t.Setenv("BEADS_DIR", "/host/repo/.beads")
 	t.Setenv("BEADS_DOLT_SERVER_HOST", "ambient-beads-host")
 	t.Setenv("BEADS_DOLT_SERVER_PORT", "0")
 	t.Setenv("BEADS_DOLT_SERVER_USER", "ambient-beads-user")
@@ -1207,6 +1209,8 @@ func TestIntegrationEnvForUsesIsolatedHome(t *testing.T) {
 		"GC_DOLT_PORT",
 		"GC_DOLT_USER",
 		"GC_DOLT_PASSWORD",
+		"BEADS_ACTOR",
+		"BEADS_DIR",
 		"BEADS_DOLT_SERVER_HOST",
 		"BEADS_DOLT_SERVER_PORT",
 		"BEADS_DOLT_SERVER_USER",
