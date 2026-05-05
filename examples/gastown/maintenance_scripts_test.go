@@ -1452,6 +1452,25 @@ func writeEmptyIssuesPayloadDoltStub(t *testing.T, binDir string) {
 	writeExecutable(t, filepath.Join(binDir, "dolt"), body)
 }
 
+func writeIssuesExportFailureDoltStub(t *testing.T, binDir string) {
+	t.Helper()
+	body := "#!/bin/sh\n" +
+		"case \"$*\" in\n" +
+		"  *\"SHOW DATABASES\"*)\n" +
+		"    printf 'Database\\nbeads\\n'\n" +
+		"    ;;\n" +
+		"  *\"FROM \\`beads\\`.issues\"*)\n" +
+		"    echo 'simulated issues export failure' >&2\n" +
+		"    exit 1\n" +
+		"    ;;\n" +
+		"  *\"SELECT *\"*)\n" +
+		"    printf '{\"rows\":[]}\\n'\n" +
+		"    ;;\n" +
+		"esac\n" +
+		"exit 0\n"
+	writeExecutable(t, filepath.Join(binDir, "dolt"), body)
+}
+
 func writeGitSubcommandFailureStub(t *testing.T, binDir, realGit, subcommand string) {
 	t.Helper()
 	writeExecutable(t, filepath.Join(binDir, "git"), fmt.Sprintf(`#!/bin/sh
@@ -2397,6 +2416,75 @@ func TestJsonlExportNoChangePushFailureWithMalformedStateUsesTrackingRef(t *test
 	}
 }
 
+func TestJsonlExportExportFailureDoesNotBlockPendingArchiveReplay(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	stateFile := filepath.Join(stateDir, "jsonl-export-state.json")
+
+	remoteRepo, remoteHead := initSeedArchiveWithRemote(t, archiveRepo)
+	writeMultiRecordDoltStub(t, binDir, 10)
+	writeJsonlExportGCStub(t, binDir)
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	localHeadBeforeReplay, err := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse local HALT HEAD: %v\n%s", err, localHeadBeforeReplay)
+	}
+	haltHead := strings.TrimSpace(string(localHeadBeforeReplay))
+	if haltHead == remoteHead {
+		t.Fatalf("HALT run must create a local-only commit")
+	}
+
+	advancedRemoteHead := advanceArchiveRemoteMain(t, remoteRepo)
+	if advancedRemoteHead == haltHead {
+		t.Fatalf("remote advance must create a new remote commit")
+	}
+
+	writeIssuesExportFailureDoltStub(t, binDir)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	localHeadAfterReplay, err := exec.Command("git", "-C", archiveRepo, "rev-parse", "HEAD").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse local replay HEAD: %v\n%s", err, localHeadAfterReplay)
+	}
+	replayedHead := strings.TrimSpace(string(localHeadAfterReplay))
+	if replayedHead == haltHead {
+		t.Fatalf("expected replay to rebase HALT commit onto advanced remote")
+	}
+
+	remoteHeadOut, err := exec.Command("git", "--git-dir", remoteRepo, "rev-parse", "refs/heads/main").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git rev-parse remote main after replay: %v\n%s", err, remoteHeadOut)
+	}
+	if got := strings.TrimSpace(string(remoteHeadOut)); got != replayedHead {
+		t.Fatalf("expected replayed local HEAD to publish after export failure: got remote %s want local %s", got, replayedHead)
+	}
+
+	statusOut, err := exec.Command("git", "-C", archiveRepo, "status", "--short").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git status: %v\n%s", err, statusOut)
+	}
+	if strings.TrimSpace(string(statusOut)) != "" {
+		t.Fatalf("export failure must leave the archive worktree clean, got:\n%s", statusOut)
+	}
+
+	stateData, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state file): %v", err)
+	}
+	if strings.Contains(string(stateData), `"pending_archive_push":true`) {
+		t.Fatalf("expected pending_archive_push to clear after replay, got:\n%s", stateData)
+	}
+}
+
 func TestJsonlExportEmptyIssuesPayloadDoesNotCommitBrokenOutputs(t *testing.T) {
 	cityDir := t.TempDir()
 	binDir := t.TempDir()
@@ -2453,6 +2541,40 @@ func TestJsonlExportPushFailureRecoversFromMalformedState(t *testing.T) {
 	writeJsonlExportGCStub(t, binDir)
 
 	if err := os.WriteFile(stateFile, []byte("not-json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(state file): %v", err)
+	}
+
+	env := jsonlExportEnv(t, cityDir, binDir, stateDir, archiveRepo, gcLog, mailLog)
+
+	runScript(t, filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "jsonl-export.sh"), env)
+
+	stateData, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("ReadFile(state file): %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(stateData, &state); err != nil {
+		t.Fatalf("Unmarshal(state file): %v\n%s", err, stateData)
+	}
+	if got := state["consecutive_push_failures"]; got != float64(1) {
+		t.Fatalf("consecutive_push_failures = %v, want 1\nstate: %s", got, stateData)
+	}
+}
+
+func TestJsonlExportPushFailureRecoversFromWrongShapeState(t *testing.T) {
+	cityDir := t.TempDir()
+	binDir := t.TempDir()
+	stateDir := t.TempDir()
+	gcLog := filepath.Join(t.TempDir(), "gc.log")
+	mailLog := filepath.Join(t.TempDir(), "gc-mail.log")
+	archiveRepo := filepath.Join(cityDir, "archive")
+	stateFile := filepath.Join(stateDir, "jsonl-export-state.json")
+
+	initSeedArchive(t, archiveRepo, 3)
+	writeMultiRecordDoltStub(t, binDir, 5)
+	writeJsonlExportGCStub(t, binDir)
+
+	if err := os.WriteFile(stateFile, []byte("[]\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(state file): %v", err)
 	}
 

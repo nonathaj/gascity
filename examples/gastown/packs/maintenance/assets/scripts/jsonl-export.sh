@@ -92,11 +92,23 @@ normalize_pending_spike_alert_state() {
     '
 }
 
+read_state_object() {
+    local path="$1"
+
+    jq -c '
+        if type == "object" then
+            .
+        else
+            error("state root must be a JSON object")
+        end
+    ' "$path" 2>/dev/null
+}
+
 read_state_json() {
-    if [ -f "$STATE_FILE" ] && jq -c '.' "$STATE_FILE" 2>/dev/null; then
+    if [ -f "$STATE_FILE" ] && read_state_object "$STATE_FILE"; then
         return
     fi
-    if [ -f "$STATE_FILE_BACKUP" ] && jq -c '.' "$STATE_FILE_BACKUP" 2>/dev/null; then
+    if [ -f "$STATE_FILE_BACKUP" ] && read_state_object "$STATE_FILE_BACKUP"; then
         if [ -f "$STATE_FILE" ]; then
             echo "jsonl-export: state file malformed; using last-known-good backup" >&2
         else
@@ -464,7 +476,16 @@ for DB in $DATABASES; do
     mkdir -p "$DB_DIR"
 
     # Step 1: Export issues table.
-    if ! dolt_sql -r json -q "SELECT * FROM \`$DB\`.issues $SCRUB_FILTER" > "$DB_DIR/issues.jsonl" 2>/dev/null; then
+    ISSUE_EXPORT_TMP=$(mktemp "$DB_DIR/issues.jsonl.tmp.XXXXXX")
+    if ! dolt_sql -r json -q "SELECT * FROM \`$DB\`.issues $SCRUB_FILTER" > "$ISSUE_EXPORT_TMP" 2>/dev/null; then
+        rm -f "$ISSUE_EXPORT_TMP"
+        discard_failed_db_outputs "$DB"
+        FAILED_DBS="${FAILED_DBS}$DB "
+        continue
+    fi
+    if ! mv -f "$ISSUE_EXPORT_TMP" "$DB_DIR/issues.jsonl"; then
+        rm -f "$ISSUE_EXPORT_TMP"
+        discard_failed_db_outputs "$DB"
         FAILED_DBS="${FAILED_DBS}$DB "
         continue
     fi
