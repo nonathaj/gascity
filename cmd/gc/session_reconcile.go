@@ -174,10 +174,11 @@ func sessionStartRequested(session beads.Bead, clk clock.Clock) bool {
 }
 
 // staleCreatingStateTimeout bounds how long a state=creating bead may sit
-// before the reconciler rolls it back. Measured from the pending-create
-// transition (see staleCreatingState below), not from the bead row's
-// CreatedAt — so configured-named-session reopens get a fresh window
-// each time the bead is reopened.
+// before generic creating metadata and corrupt start leases roll back. It is
+// measured from the pending-create transition (see staleCreatingState below),
+// not from the bead row's CreatedAt, so configured named-session reopens get a
+// fresh window each time the bead is reopened. Pending creates that never
+// reached preWakeCommit use pendingCreateNeverStartedTimeout instead.
 const staleCreatingStateTimeout = time.Minute
 
 func sessionMetadataState(session beads.Bead) string {
