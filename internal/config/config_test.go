@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
@@ -4831,14 +4832,18 @@ schedule = "0 3 * * *"
 // without a paired update to the controller's watcher exclusion list.
 func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 	const (
-		wantTracePath = "${GC_CITY}/.gc/runtime/control-dispatcher-trace.log"
-		wantMkdirSnip = `mkdir -p "${GC_CITY}/.gc/runtime"`
-		oldTracePath  = "${GC_CITY}/control-dispatcher-trace.log"
-		qualifiedName = "qcore/control-dispatcher"
+		wantRuntimeDir = "${GC_CITY_RUNTIME_DIR:-${GC_CITY}/" + citylayout.RuntimeDataRoot + "}"
+		wantTracePath  = wantRuntimeDir + "/control-dispatcher-trace.log"
+		wantMkdirSnip  = `mkdir -p "` + wantRuntimeDir + `"`
+		oldTracePath   = "${GC_CITY}/control-dispatcher-trace.log"
+		qualifiedName  = "qcore/control-dispatcher"
 	)
 
 	t.Run("city-level constant", func(t *testing.T) {
 		got := ControlDispatcherStartCommand
+		if !strings.Contains(got, "GC_CITY_RUNTIME_DIR") {
+			t.Errorf("ControlDispatcherStartCommand must route through GC_CITY_RUNTIME_DIR so runtime-root overrides stay canonical\n got: %s", got)
+		}
 		if !strings.Contains(got, wantTracePath) {
 			t.Errorf("ControlDispatcherStartCommand missing %q\n got: %s", wantTracePath, got)
 		}
@@ -4855,6 +4860,9 @@ func TestControlDispatcherStartCommandTracesUnderGCRuntime(t *testing.T) {
 
 	t.Run("qualified-name builder", func(t *testing.T) {
 		got := ControlDispatcherStartCommandFor(qualifiedName)
+		if !strings.Contains(got, "GC_CITY_RUNTIME_DIR") {
+			t.Errorf("ControlDispatcherStartCommandFor must route through GC_CITY_RUNTIME_DIR so runtime-root overrides stay canonical\n got: %s", got)
+		}
 		if !strings.Contains(got, wantTracePath) {
 			t.Errorf("ControlDispatcherStartCommandFor missing %q\n got: %s", wantTracePath, got)
 		}
