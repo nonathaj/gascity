@@ -1971,6 +1971,10 @@ exit 0
 func TestReaperScopesIssueAutoCloseToCityBeadsDir(t *testing.T) {
 	cityDir := t.TempDir()
 	writeCityBeadsMetadata(t, cityDir, "citydb")
+	canonicalCityDir, err := filepath.EvalSymlinks(cityDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(city dir): %v", err)
+	}
 	binDir := t.TempDir()
 	doltLog := filepath.Join(t.TempDir(), "dolt-args.log")
 	bdLog := filepath.Join(t.TempDir(), "bd.log")
@@ -2025,10 +2029,10 @@ exit 0
 	if !strings.Contains(bdLogText, "args=close ga-city --reason stale:auto-closed by reaper") {
 		t.Fatalf("reaper did not close city issue:\n%s", bdLogText)
 	}
-	if !strings.Contains(bdLogText, "pwd="+cityDir) {
+	if !strings.Contains(bdLogText, "pwd="+canonicalCityDir) {
 		t.Fatalf("reaper did not run bd close from city dir:\n%s", bdLogText)
 	}
-	if !strings.Contains(bdLogText, "beads="+filepath.Join(cityDir, ".beads")) {
+	if !strings.Contains(bdLogText, "beads="+filepath.Join(canonicalCityDir, ".beads")) {
 		t.Fatalf("reaper did not scope bd close to the city beads dir:\n%s", bdLogText)
 	}
 	if strings.Contains(bdLogText, "beads="+ambientBeadsDir) {
