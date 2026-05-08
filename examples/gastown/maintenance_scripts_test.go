@@ -4869,11 +4869,23 @@ exit 0
 	}
 }
 
-func TestGateSweepToleratesBdFailures(t *testing.T) {
+// TestGateSweepToleratesGhGateBdFailures verifies the surviving '|| true':
+// bd failures on the gh-gate evaluation path are tolerated because fresh
+// cities without 'gh auth' would otherwise fail this order on every 30s
+// cooldown. Timer-gate failures are NOT tolerated (see
+// TestGateSweepPropagatesTimerGateBdFailures) since #1734.
+func TestGateSweepToleratesGhGateBdFailures(t *testing.T) {
 	binDir, _, env := gateSweepEnv(t)
 	writeExecutable(t, filepath.Join(binDir, "bd"), `#!/bin/sh
-echo "bd: simulated failure" >&2
-exit 1
+case "$*" in
+  *--type=gh*)
+    echo "bd: simulated gh-gate failure (e.g., missing gh auth)" >&2
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
 `)
 
 	script := filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "gate-sweep.sh")
@@ -4881,7 +4893,35 @@ exit 1
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("gate-sweep should exit 0 even when bd fails (|| true is load-bearing for fresh cities without gh auth); got %v\n%s", err, out)
+		t.Fatalf("gate-sweep should exit 0 when only the gh-gate bd call fails (|| true is load-bearing for fresh cities without gh auth); got %v\n%s", err, out)
+	}
+}
+
+// TestGateSweepPropagatesTimerGateBdFailures verifies the #1734 fix:
+// failures on the timer-gate evaluation path must propagate (no '|| true'
+// suppression) so real bd regressions surface in the controller log.
+// Timer-gate evaluation is local-only and has no auth requirement that
+// would justify swallowing errors.
+func TestGateSweepPropagatesTimerGateBdFailures(t *testing.T) {
+	binDir, _, env := gateSweepEnv(t)
+	writeExecutable(t, filepath.Join(binDir, "bd"), `#!/bin/sh
+case "$*" in
+  *--type=timer*)
+    echo "bd: simulated timer-gate failure" >&2
+    exit 1
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`)
+
+	script := filepath.Join(exampleDir(), "packs", "maintenance", "assets", "scripts", "gate-sweep.sh")
+	cmd := exec.Command(script)
+	cmd.Env = mergeTestEnv(env)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("gate-sweep should exit non-zero when the timer-gate bd call fails (no || true suppression on that line); got success\n%s", out)
 	}
 }
 

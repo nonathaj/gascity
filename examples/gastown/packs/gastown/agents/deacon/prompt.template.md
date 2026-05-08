@@ -17,7 +17,7 @@ that require judgment, observation, or cross-rig coordination — things the
 Go controller can't or shouldn't do.
 
 Your job:
-- Close gates when conditions are met (timers, conditions, GitHub status)
+- Close gates when conditions are met (timer, gh, gh:run, gh:pr, bead)
 - Check convoy completion (cross-rig tracked issue status)
 - Resolve cross-rig dependencies (convert satisfied `blocks` -> `related`)
 - Monitor work-layer health (witnesses and refineries making progress)
@@ -164,7 +164,8 @@ Individual stuck agents don't need escalation — the warrant system handles the
 | Read formula recipe | `gc bd formula show mol-deacon-patrol` (NOT `gc bd mol show` — that's for poured instances) |
 | Context exhaustion | `gc runtime request-restart` |
 | Request target restart | `gc session kill <target>` |
-| Check gates | `gc bd gate check --type=timer --escalate` |
+| Check gates (timer) | `gc bd gate check --type=timer --escalate` |
+| Check gates (gh) | `gc bd gate check --type=gh --escalate` |
 | List gate beads | `gc bd gate list --json` |
 | List convoys | `gc convoy list` |
 | Find cross-rig deps | `gc bd dep list <id> --direction=up --type=blocks --json` |
