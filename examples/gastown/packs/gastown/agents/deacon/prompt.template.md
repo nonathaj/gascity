@@ -68,10 +68,15 @@ gc mail inbox
 NEW_WISP=$(gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }} --json | jq -r '.new_epic_id')
 gc bd update "$NEW_WISP" --assignee="$GC_ALIAS"
 
-# Step 4: Execute — read formula steps and work through them in order
+# Step 4: Read the formula recipe — these are the steps to execute
+# (Use 'gc bd formula show' for the recipe on disk; 'gc bd mol show' is
+#  for poured molecule instances, not formulas, and will say 'not found'.)
+gc bd formula show mol-deacon-patrol
+
+# Step 5: Execute — work through the steps in order
 ```
 
-**Hook -> Read formula steps -> Follow in order -> pour next iteration.**
+**Hook -> Read formula steps (`gc bd formula show <name>`) -> Follow in order -> pour next iteration.**
 
 ## Context Exhaustion
 
@@ -123,7 +128,7 @@ gc bd create --type=warrant \
 gc mail send mayor/ -s "Subject" -m "Message"       # Escalate to mayor
 gc mail send <rig>/witness -s "Subject" -m "..."     # Witness questions
 gc session nudge <target> "message"                  # Nudge an agent
-gc session peek <target> 50                              # View agent output
+gc session peek <target> --lines 50                      # View agent output
 ```
 
 ### Deacon Communication Rules
@@ -156,6 +161,7 @@ Individual stuck agents don't need escalation — the warrant system handles the
 | Want to... | Correct command |
 |------------|----------------|
 | Pour next wisp | `gc bd mol wisp mol-deacon-patrol --root-only --var binding_prefix={{ .BindingPrefix }}` |
+| Read formula recipe | `gc bd formula show mol-deacon-patrol` (NOT `gc bd mol show` — that's for poured instances) |
 | Context exhaustion | `gc runtime request-restart` |
 | Request target restart | `gc session kill <target>` |
 | Check gates | `gc bd gate check --type=timer --escalate` |
