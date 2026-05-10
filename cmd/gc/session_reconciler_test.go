@@ -472,8 +472,11 @@ func TestReconcileSessionBeads_UndesiredDrainAckStopsAndCloses(t *testing.T) {
 	if got.Status != "closed" {
 		t.Fatalf("status = %q, want closed; metadata=%v", got.Status, got.Metadata)
 	}
-	if got.Metadata["close_reason"] != "drained" {
-		t.Fatalf("close_reason = %q, want drained", got.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason("drained"); got.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", got.Metadata["close_reason"], want)
+	}
+	if got.Metadata["state"] != "drained" {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], "drained")
 	}
 }
 
@@ -1058,8 +1061,11 @@ func TestReconcileSessionBeads_CloseGatePreservesSleepReason(t *testing.T) {
 			if got.Status != "closed" {
 				t.Fatalf("status = %q, want closed", got.Status)
 			}
-			if got.Metadata["close_reason"] != tc.wantReason {
-				t.Fatalf("close_reason = %q, want %q — close gate must preserve the originating sleep_reason for forensic fidelity", got.Metadata["close_reason"], tc.wantReason)
+			if want := sessionpkg.CanonicalCloseReason(tc.wantReason); got.Metadata["close_reason"] != want {
+				t.Fatalf("close_reason = %q, want %q (canonical for %q) — close gate must preserve the originating sleep_reason for forensic fidelity", got.Metadata["close_reason"], want, tc.wantReason)
+			}
+			if got.Metadata["state"] != tc.wantReason {
+				t.Fatalf("state = %q, want %q — state preserves the short sleep_reason code", got.Metadata["state"], tc.wantReason)
 			}
 		})
 	}
@@ -2495,7 +2501,7 @@ func TestReconcileSessionBeads_PendingCreateLeasePreventsOrphanClose(t *testing.
 	if got.Status == "closed" {
 		t.Fatalf("pending-create session was closed as orphan: %+v", got)
 	}
-	if got.Metadata["state"] == "orphaned" || got.Metadata["close_reason"] == "orphaned" {
+	if got.Metadata["state"] == "orphaned" {
 		t.Fatalf("pending-create session was marked orphaned: %+v", got.Metadata)
 	}
 }
@@ -2519,7 +2525,7 @@ func TestReconcileSessionBeads_FreshPendingCreateSurvivesStaleConfigSnapshot(t *
 	if got.Status == "closed" {
 		t.Fatalf("fresh pending-create session was closed as orphan: %+v", got)
 	}
-	if got.Metadata["state"] == "orphaned" || got.Metadata["close_reason"] == "orphaned" {
+	if got.Metadata["state"] == "orphaned" {
 		t.Fatalf("fresh pending-create session was marked orphaned: %+v", got.Metadata)
 	}
 }
@@ -2548,7 +2554,7 @@ func TestReconcileSessionBeads_PendingCreateWithoutDesiredStateUsesNeverStartedL
 	if got.Status == "closed" {
 		t.Fatalf("pending-create session was closed before never-started lease expired: %+v", got)
 	}
-	if got.Metadata["state"] == "orphaned" || got.Metadata["close_reason"] == "orphaned" {
+	if got.Metadata["state"] == "orphaned" {
 		t.Fatalf("pending-create session was marked orphaned before never-started lease expired: %+v", got.Metadata)
 	}
 }
@@ -2981,8 +2987,11 @@ func TestReconcileSessionBeads_OrphanNotRunningClosed(t *testing.T) {
 	if b.Status != "closed" {
 		t.Errorf("orphan bead status = %q, want closed", b.Status)
 	}
-	if b.Metadata["close_reason"] != "orphaned" {
-		t.Errorf("close_reason = %q, want %q", b.Metadata["close_reason"], "orphaned")
+	if want := sessionpkg.CanonicalCloseReason("orphaned"); b.Metadata["close_reason"] != want {
+		t.Errorf("close_reason = %q, want %q", b.Metadata["close_reason"], want)
+	}
+	if b.Metadata["state"] != "orphaned" {
+		t.Errorf("state = %q, want %q", b.Metadata["state"], "orphaned")
 	}
 }
 
@@ -3021,8 +3030,11 @@ func TestReconcileSessionBeads_SuspendedNotRunningClosed(t *testing.T) {
 	if b.Status != "closed" {
 		t.Errorf("suspended bead status = %q, want closed", b.Status)
 	}
-	if b.Metadata["close_reason"] != "suspended" {
-		t.Errorf("close_reason = %q, want %q", b.Metadata["close_reason"], "suspended")
+	if want := sessionpkg.CanonicalCloseReason("suspended"); b.Metadata["close_reason"] != want {
+		t.Errorf("close_reason = %q, want %q", b.Metadata["close_reason"], want)
+	}
+	if b.Metadata["state"] != "suspended" {
+		t.Errorf("state = %q, want %q", b.Metadata["state"], "suspended")
 	}
 }
 
@@ -3313,8 +3325,11 @@ func TestReconcileSessionBeads_InvalidNamedSessionConfigDoesNotPreserveBead(t *t
 	if b.Status != "closed" {
 		t.Fatalf("status = %q, want closed", b.Status)
 	}
-	if b.Metadata["close_reason"] != "suspended" {
-		t.Fatalf("close_reason = %q, want suspended", b.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason("suspended"); b.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", b.Metadata["close_reason"], want)
+	}
+	if b.Metadata["state"] != "suspended" {
+		t.Fatalf("state = %q, want %q", b.Metadata["state"], "suspended")
 	}
 }
 
@@ -3624,8 +3639,11 @@ func TestReconcileSessionBeads_RollsBackAdHocCreateOnRuntimeCollision(t *testing
 	if got.Metadata["session_name"] != "" {
 		t.Fatalf("session_name = %q, want empty after rollback", got.Metadata["session_name"])
 	}
-	if got.Metadata["close_reason"] != "failed-create" {
-		t.Fatalf("close_reason = %q, want failed-create", got.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason("failed-create"); got.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", got.Metadata["close_reason"], want)
+	}
+	if got.Metadata["state"] != "failed-create" {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], "failed-create")
 	}
 	if got.Metadata["wake_attempts"] != "" {
 		t.Fatalf("wake_attempts = %q, want empty", got.Metadata["wake_attempts"])
@@ -3816,8 +3834,8 @@ func TestReconcileSessionBeads_RollsBackPendingCreateWhenLeaseExpiredAndNoRuntim
 	if got.Status != "closed" {
 		t.Fatalf("status = %q, want closed (stale lease + no runtime should rollback)", got.Status)
 	}
-	if got.Metadata["close_reason"] != "failed-create" {
-		t.Fatalf("close_reason = %q, want failed-create", got.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason(string(sessionpkg.StateFailedCreate)); got.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", got.Metadata["close_reason"], want)
 	}
 }
 
@@ -4164,8 +4182,11 @@ func TestReconcileSessionBeads_RollsBackPendingCreateWhenConflictingRuntimeAlrea
 	if got.Metadata["session_name"] != "" {
 		t.Fatalf("session_name = %q, want empty after rollback", got.Metadata["session_name"])
 	}
-	if got.Metadata["close_reason"] != "failed-create" {
-		t.Fatalf("close_reason = %q, want failed-create", got.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason("failed-create"); got.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", got.Metadata["close_reason"], want)
+	}
+	if got.Metadata["state"] != "failed-create" {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], "failed-create")
 	}
 }
 
@@ -4216,8 +4237,8 @@ func TestReconcileSessionBeads_RollbackBudgetDefersExcessMismatchesAndStillStart
 			t.Fatalf("Get(%s): %v", sessions[i].ID, err)
 		}
 		if got.Status == "closed" {
-			if got.Metadata["close_reason"] != "failed-create" {
-				t.Fatalf("%s close_reason = %q, want failed-create", name, got.Metadata["close_reason"])
+			if want := sessionpkg.CanonicalCloseReason(string(sessionpkg.StateFailedCreate)); got.Metadata["close_reason"] != want {
+				t.Fatalf("%s close_reason = %q, want %q", name, got.Metadata["close_reason"], want)
 			}
 			closedMismatches++
 			continue
@@ -4286,8 +4307,8 @@ func TestReconcileSessionBeads_RollbackBudgetDefersExcessStaleNoRuntimeCreatesAn
 			t.Fatalf("Get(%s): %v", sessions[i].ID, err)
 		}
 		if got.Status == "closed" {
-			if got.Metadata["close_reason"] != "failed-create" {
-				t.Fatalf("%s close_reason = %q, want failed-create", name, got.Metadata["close_reason"])
+			if want := sessionpkg.CanonicalCloseReason(string(sessionpkg.StateFailedCreate)); got.Metadata["close_reason"] != want {
+				t.Fatalf("%s close_reason = %q, want %q", name, got.Metadata["close_reason"], want)
 			}
 			closedCreates++
 			continue
@@ -4487,8 +4508,11 @@ func TestReconcileSessionBeads_RollsBackPendingCreateOnProviderError(t *testing.
 	if got.Metadata["session_name"] != "" {
 		t.Fatalf("session_name = %q, want empty after rollback", got.Metadata["session_name"])
 	}
-	if got.Metadata["close_reason"] != "failed-create" {
-		t.Fatalf("close_reason = %q, want failed-create", got.Metadata["close_reason"])
+	if want := sessionpkg.CanonicalCloseReason("failed-create"); got.Metadata["close_reason"] != want {
+		t.Fatalf("close_reason = %q, want %q", got.Metadata["close_reason"], want)
+	}
+	if got.Metadata["state"] != "failed-create" {
+		t.Fatalf("state = %q, want %q", got.Metadata["state"], "failed-create")
 	}
 	if got.Metadata["wake_attempts"] != "" {
 		t.Fatalf("wake_attempts = %q, want empty", got.Metadata["wake_attempts"])
@@ -6183,8 +6207,8 @@ func TestReconcileSessionBeads_SyncReplacesFailedCreateNamedSession(t *testing.T
 	if gotFailed.Status != "closed" {
 		t.Fatalf("failed-create named bead status = %q, want closed; stderr:\n%s", gotFailed.Status, stderr.String())
 	}
-	if gotFailed.Metadata["close_reason"] != string(sessionpkg.StateFailedCreate) {
-		t.Fatalf("failed-create named bead close_reason = %q, want %q", gotFailed.Metadata["close_reason"], sessionpkg.StateFailedCreate)
+	if want := sessionpkg.CanonicalCloseReason(string(sessionpkg.StateFailedCreate)); gotFailed.Metadata["close_reason"] != want {
+		t.Fatalf("failed-create named bead close_reason = %q, want %q", gotFailed.Metadata["close_reason"], want)
 	}
 	if gotFailed.Metadata["pending_create_claim"] != "" {
 		t.Fatalf("failed-create named bead pending_create_claim = %q, want cleared", gotFailed.Metadata["pending_create_claim"])
@@ -6314,8 +6338,8 @@ func TestReconcileSessionBeads_ClosesOrphanedFailedCreateAndFreesSlot(t *testing
 	if got.Status != "closed" {
 		t.Fatalf("failed-create bead status = %q, want closed", got.Status)
 	}
-	if got.Metadata["close_reason"] != string(sessionpkg.StateFailedCreate) {
-		t.Fatalf("failed-create bead close_reason = %q, want %q", got.Metadata["close_reason"], sessionpkg.StateFailedCreate)
+	if want := sessionpkg.CanonicalCloseReason(string(sessionpkg.StateFailedCreate)); got.Metadata["close_reason"] != want {
+		t.Fatalf("failed-create bead close_reason = %q, want %q", got.Metadata["close_reason"], want)
 	}
 	if got.Metadata["pending_create_claim"] != "" || got.Metadata["pending_create_started_at"] != "" {
 		t.Fatalf("failed-create pending metadata = claim %q started_at %q, want cleared",
