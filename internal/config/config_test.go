@@ -4945,8 +4945,11 @@ name = "mayor"
 		t.Fatalf("LoadWithIncludes: %v", err)
 	}
 
-	if len(prov.Warnings) != 0 {
-		t.Errorf("expected no warning, got:\n%s", strings.Join(prov.Warnings, "\n"))
+	// This test guards the attachment-list tombstone warning, not the
+	// v1-surface warnings. Filter v1-surface warnings (the [[agent]] in
+	// the fixture intentionally exercises the legacy surface).
+	if other := warningsExcludingV1Surfaces(prov.Warnings); len(other) != 0 {
+		t.Errorf("expected no non-v1-surface warning, got:\n%s", strings.Join(other, "\n"))
 	}
 }
 

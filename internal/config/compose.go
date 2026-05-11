@@ -142,6 +142,7 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 	var rootPackGlobals []ResolvedPackGlobal
 	var rootPackRequires []PackRequirement
 	packPath := filepath.Join(cityRoot, packFile)
+	legacyV1SurfaceWarningsEnabled := false
 	if packData, pErr := fs.ReadFile(packPath); pErr == nil {
 		packExists = true
 		pc, md, packWarnings, decErr := parsePackConfigWithMetadata(packData, packPath)
@@ -154,6 +155,14 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 		prov.Warnings = append(prov.Warnings, packWarnings...)
 		if err := validatePackMeta(&pc.Pack); err != nil {
 			return nil, nil, fmt.Errorf("city pack.toml: %w", err)
+		}
+		legacyV1SurfaceWarningsEnabled = pc.Pack.Schema >= 2
+		if legacyV1SurfaceWarningsEnabled {
+			// Detect v1 surfaces on the freshly-parsed city.toml, before
+			// pack.toml merging or fragment processing can inject
+			// pack-discovered agents or pack-default rig includes into the
+			// same fields.
+			prov.Warnings = append(prov.Warnings, DetectLegacyV1Surfaces(root, path)...)
 		}
 		// Preserve the city.toml agents so they can override pack-defined
 		// and convention-discovered agents.
@@ -361,6 +370,9 @@ func LoadWithIncludesOptions(fs fsys.FS, path string, opts LoadOptions, extraInc
 			return nil, nil, fmt.Errorf("fragment %q: %w", inc, err)
 		}
 		prov.Warnings = append(prov.Warnings, fragWarnings...)
+		if legacyV1SurfaceWarningsEnabled {
+			prov.Warnings = append(prov.Warnings, DetectLegacyV1Surfaces(frag, fragPath)...)
+		}
 
 		// Fragments cannot include other fragments.
 		if len(frag.Include) > 0 {

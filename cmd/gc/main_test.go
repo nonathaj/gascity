@@ -4892,17 +4892,7 @@ func TestDoStopStopError(t *testing.T) {
 // --- doAgentAdd (with fsys.Fake) ---
 
 func TestDoAgentAddSuccess(t *testing.T) {
-	f := fsys.NewFake()
-	cfg := config.DefaultCity("bright-lights")
-	data, err := cfg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
-	f.Files[filepath.Join("/city", "pack.toml")] = []byte(`[pack]
-name = "bright-lights"
-schema = 2
-`)
+	f := v2CityWithPack(t)
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAdd(f, "/city", "worker", "", "", false, &stdout, &stderr)
@@ -4941,17 +4931,7 @@ schema = 2
 }
 
 func TestDoAgentAddDuplicate(t *testing.T) {
-	f := fsys.NewFake()
-	cfg := config.DefaultCity("bright-lights")
-	data, err := cfg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
-	f.Files[filepath.Join("/city", "pack.toml")] = []byte(`[pack]
-name = "bright-lights"
-schema = 2
-`)
+	f := v2CityWithPack(t)
 
 	var stdout, stderr bytes.Buffer
 	if code := doAgentAdd(f, "/city", "dupe", "", "", false, &stdout, &stderr); code != 0 {
@@ -5090,17 +5070,7 @@ func TestResolveAgentChoiceUnknown(t *testing.T) {
 }
 
 func TestDoAgentAddWithPromptTemplate(t *testing.T) {
-	f := fsys.NewFake()
-	cfg := config.DefaultCity("bright-lights")
-	data, err := cfg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
-	f.Files[filepath.Join("/city", "pack.toml")] = []byte(`[pack]
-name = "bright-lights"
-schema = 2
-`)
+	f := v2CityWithPack(t)
 	f.Files[filepath.Join("/city", "templates", "worker.md")] = []byte("prompt")
 
 	var stdout, stderr bytes.Buffer
@@ -6488,17 +6458,7 @@ func TestCurrentRigContextUsesWorkingDirThroughSymlinkAlias(t *testing.T) {
 // --- doAgentAdd with --dir and --suspended ---
 
 func TestDoAgentAddWithDir(t *testing.T) {
-	f := fsys.NewFake()
-	cfg := config.DefaultCity("bright-lights")
-	data, err := cfg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
-	f.Files[filepath.Join("/city", "pack.toml")] = []byte(`[pack]
-name = "bright-lights"
-schema = 2
-`)
+	f := v2CityWithPack(t)
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAdd(f, "/city", "builder", "", "hello-world", false, &stdout, &stderr)
@@ -6534,17 +6494,7 @@ schema = 2
 }
 
 func TestDoAgentAddWithSuspended(t *testing.T) {
-	f := fsys.NewFake()
-	cfg := config.DefaultCity("bright-lights")
-	data, err := cfg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
-	f.Files[filepath.Join("/city", "pack.toml")] = []byte(`[pack]
-name = "bright-lights"
-schema = 2
-`)
+	f := v2CityWithPack(t)
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAdd(f, "/city", "builder", "", "hello-world", true, &stdout, &stderr)
