@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -729,6 +730,101 @@ func TestHashPathContentUnreadableChild(t *testing.T) {
 	h := HashPathContent(sub)
 	if h != "" {
 		t.Errorf("expected empty hash when child is unreadable, got %q", h)
+	}
+}
+
+// TestFingerprintVersionedOutputFormat enforces FR-5/FR-7 from ga-s760.1:
+// every fingerprint helper emits "<FingerprintVersion>:<hex>" so the
+// reconciler can tell which binary produced a stored hash.
+func TestFingerprintVersionedOutputFormat(t *testing.T) {
+	if FingerprintVersion == "" {
+		t.Fatal("FingerprintVersion constant must be set (FR-7)")
+	}
+	if !strings.HasPrefix(FingerprintVersion, "v") {
+		t.Errorf("FingerprintVersion = %q, want a 'v'-prefixed identifier", FingerprintVersion)
+	}
+	for _, r := range FingerprintVersion[1:] {
+		if r < '0' || r > '9' {
+			t.Errorf("FingerprintVersion = %q, want v<digits> shape", FingerprintVersion)
+			break
+		}
+	}
+
+	prefix := FingerprintVersion + ":"
+	cfg := Config{
+		Command: "claude --skip",
+		Env:     map[string]string{"GC_CITY": "/x", "GC_RIG": "r"},
+		SessionLive: []string{
+			"tmux set-option -t {{.Session}} remain-on-exit on",
+		},
+	}
+
+	cases := []struct {
+		name string
+		got  string
+	}{
+		{"ConfigFingerprint", ConfigFingerprint(cfg)},
+		{"CoreFingerprint", CoreFingerprint(cfg)},
+		{"LiveFingerprint", LiveFingerprint(cfg)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.HasPrefix(tc.got, prefix) {
+				t.Fatalf("%s = %q, want prefix %q", tc.name, tc.got, prefix)
+			}
+			tail := strings.TrimPrefix(tc.got, prefix)
+			if tail == "" {
+				t.Fatalf("%s = %q, no hex tail after prefix", tc.name, tc.got)
+			}
+			if strings.Contains(tail, ":") {
+				t.Errorf("%s = %q, hex tail must not contain ':'", tc.name, tc.got)
+			}
+			for _, r := range tail {
+				if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+					t.Errorf("%s = %q, non-hex character %q in tail", tc.name, tc.got, r)
+					break
+				}
+			}
+			// The previous bare-hex output was 64 chars (SHA-256). The
+			// versioned output keeps the same hex tail length.
+			if len(tail) != 64 {
+				t.Errorf("%s tail length = %d, want 64", tc.name, len(tail))
+			}
+		})
+	}
+}
+
+// TestIsLegacyOrMismatchedVersion enforces FR-1, FR-2: the reconciler
+// distinguishes legacy (no prefix) and mismatched-version stored hashes
+// from current-version hashes via this helper. Reconciler treats the
+// "true" cases as triggers for silent rebaseline (no drain, no event).
+func TestIsLegacyOrMismatchedVersion(t *testing.T) {
+	bareHex := strings.Repeat("a", 64)
+	current := FingerprintVersion + ":" + bareHex
+
+	cases := []struct {
+		name   string
+		stored string
+		want   bool
+	}{
+		{"bare hex (no prefix, legacy)", bareHex, true},
+		{"empty stored (handled by separate gate, not legacy/mismatch)", "", false},
+		{"current version prefix", current, false},
+		{"v0 prefix (older mismatched version)", "v0:" + bareHex, true},
+		{"v2 prefix (future mismatched version)", "v2:" + bareHex, true},
+		{"vX prefix (non-numeric, treated as legacy)", "vX:" + bareHex, true},
+		{"v01 prefix (different literal version, mismatch)", "v01:" + bareHex, true},
+		{"non-v prefix (e.g. xyz, treated as legacy)", "xyz:" + bareHex, true},
+		{"colon-only prefix (no version literal, legacy)", ":" + bareHex, true},
+		{"prefix without colon (looks like bare hex)", FingerprintVersion + bareHex, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsLegacyOrMismatchedVersion(tc.stored)
+			if got != tc.want {
+				t.Errorf("IsLegacyOrMismatchedVersion(%q) = %v, want %v", tc.stored, got, tc.want)
+			}
+		})
 	}
 }
 
