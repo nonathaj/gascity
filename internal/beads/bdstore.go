@@ -33,6 +33,9 @@ var (
 	// pre-bounded behavior; lowered in follow-up work after slow read
 	// paths are identified.
 	bdReadCommandTimeout = 120 * time.Second
+	// bdGraphApplyCommandTimeout bounds atomic graph creation below callers'
+	// outer command budgets so transient Dolt stalls can retry or fall back.
+	bdGraphApplyCommandTimeout = 45 * time.Second
 )
 
 // ExecCommandRunner returns a CommandRunner that uses os/exec to run commands.
@@ -117,6 +120,9 @@ func ExecCommandRunnerWithEnv(env map[string]string) CommandRunner {
 func bdCommandTimeoutFor(name string, args []string) time.Duration {
 	if name != "bd" || len(args) == 0 {
 		return bdCommandTimeout
+	}
+	if len(args) >= 2 && args[0] == "create" && args[1] == "--graph" {
+		return bdGraphApplyCommandTimeout
 	}
 	switch args[0] {
 	case "count", "list", "ready", "show", "stats":

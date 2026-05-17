@@ -537,6 +537,13 @@ func TestInstantiateDoesNotFallbackForNonTransientGraphApplyError(t *testing.T) 
 	}
 }
 
+func TestIsTransientGraphApplyErrorTreatsCommandTimeoutAsTransient(t *testing.T) {
+	err := fmt.Errorf("bd create --graph: timed out after 45s")
+	if !isTransientGraphApplyError(err) {
+		t.Fatalf("isTransientGraphApplyError(%v) = false, want true", err)
+	}
+}
+
 func TestBuildRecipeApplyPlan_GraphWorkflowOwnershipUsesTracks(t *testing.T) {
 	recipe := &formula.Recipe{
 		Name: "wf",
