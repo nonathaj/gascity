@@ -840,7 +840,7 @@ func (s *BdStore) runBDTransientWrite(args ...string) error {
 	var err error
 	for attempt := 1; attempt <= bdTransientWriteAttempts; attempt++ {
 		_, err = s.runner(s.dir, "bd", args...)
-		if err == nil || !isBdTransientWriteConflict(err) || attempt == bdTransientWriteAttempts {
+		if err == nil || !isBdTransientWriteError(err) || attempt == bdTransientWriteAttempts {
 			return err
 		}
 		time.Sleep(time.Duration(attempt) * 25 * time.Millisecond)
@@ -848,13 +848,20 @@ func (s *BdStore) runBDTransientWrite(args ...string) error {
 	return err
 }
 
-func isBdTransientWriteConflict(err error) bool {
+func isBdTransientWriteError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "Error 1213 (40001): serialization failure") ||
-		strings.Contains(msg, "this transaction conflicts with a committed transaction")
+		strings.Contains(msg, "this transaction conflicts with a committed transaction") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "invalid connection") ||
+		strings.Contains(msg, "bad connection") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "timed out after") ||
+		strings.Contains(msg, "deadline exceeded")
 }
 
 // Ping verifies the bd binary is accessible by running a no-op command.
@@ -1309,7 +1316,7 @@ func (s *BdStore) DepAdd(issueID, dependsOnID, depType string) error {
 			return nil
 		}
 	}
-	_, err := s.runner(s.dir, "bd", "dep", "add", issueID, dependsOnID, "--type", depType)
+	err := s.runBDTransientWrite("dep", "add", issueID, dependsOnID, "--type", depType)
 	if err != nil {
 		return fmt.Errorf("adding dep %s→%s: %w", issueID, dependsOnID, err)
 	}
