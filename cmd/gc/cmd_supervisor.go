@@ -209,6 +209,23 @@ var supervisorShutdownSettleDelay = 50 * time.Millisecond
 
 var supervisorSignalNotify = signal.Notify
 
+// supervisorHardExitCodeRepeatedShutdown is the exit code for repeated
+// destructive shutdown escalation. 130 approximates the shell SIGINT
+// convention; the supervisor does not retain which destructive signal caused
+// the escalation.
+const supervisorHardExitCodeRepeatedShutdown = 130
+
+// supervisorHardExit terminates the supervisor immediately. It intentionally
+// bypasses graceful cleanup and may leave managed sessions or child processes
+// alive for operator recovery. Overridable for tests.
+var supervisorHardExit = func(stderr io.Writer, code int) {
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	fmt.Fprintln(stderr, "gc supervisor: repeated shutdown request received; exiting immediately") //nolint:errcheck
+	os.Exit(code)
+}
+
 func supervisorPreserveSessionsOnSignal() bool {
 	return os.Getenv(supervisorPreserveSessionsOnSignalEnv) == "1"
 }
@@ -253,7 +270,7 @@ func supervisorShutdownModeName(mode supervisorShutdownMode) string {
 	}
 }
 
-func requestSupervisorShutdown(stderr io.Writer, rec events.Recorder, shutdownCtl *supervisorShutdownController, cancel context.CancelFunc, mode supervisorShutdownMode, trigger shutdownTrigger) {
+func requestSupervisorShutdown(stderr io.Writer, rec events.Recorder, shutdownCtl *supervisorShutdownController, cancel context.CancelFunc, mode supervisorShutdownMode, trigger shutdownTrigger) bool {
 	modeName := supervisorShutdownModeName(mode)
 	// Plain-text breadcrumb to stderr -> ~/.gc/supervisor.log via the
 	// launchd/systemd-redirected stream. This is the canonical place
@@ -279,11 +296,14 @@ func requestSupervisorShutdown(stderr io.Writer, rec events.Recorder, shutdownCt
 			})
 		}
 	}
-	shutdownCtl.request(mode)
-	cancel()
+	repeatedDestructive := shutdownCtl.request(mode)
+	if !repeatedDestructive {
+		cancel()
+	}
+	return repeatedDestructive
 }
 
-func supervisorSignalLoop(sigCh <-chan os.Signal, done <-chan struct{}, requestShutdown func(supervisorShutdownMode, shutdownTrigger), requestReconcile func()) {
+func supervisorSignalLoop(sigCh <-chan os.Signal, done <-chan struct{}, requestShutdown func(supervisorShutdownMode, shutdownTrigger) bool, requestReconcile func(), stderr io.Writer) {
 	for {
 		select {
 		case sig := <-sigCh:
@@ -294,30 +314,40 @@ func supervisorSignalLoop(sigCh <-chan os.Signal, done <-chan struct{}, requestS
 				requestReconcile()
 				continue
 			}
-			requestShutdown(supervisorShutdownModeForSignal(sig), shutdownTrigger{
+			mode := supervisorShutdownModeForSignal(sig)
+			if requestShutdown(mode, shutdownTrigger{
 				Source: "signal",
 				Signal: sig.String(),
-			})
+			}) {
+				supervisorHardExit(stderr, supervisorHardExitCodeRepeatedShutdown)
+				return
+			}
 		case <-done:
 			return
 		}
 	}
 }
 
-func (c *supervisorShutdownController) request(mode supervisorShutdownMode) {
+// request records shutdown intent and reports whether this is a repeated
+// destructive shutdown request. Signal callers use a repeated destructive
+// request as the hard-exit trigger; socket callers keep the request local.
+func (c *supervisorShutdownController) request(mode supervisorShutdownMode) bool {
 	if mode == supervisorShutdownDestructive {
-		c.destructiveRequested.Store(true)
+		if !c.destructiveRequested.CompareAndSwap(false, true) {
+			return true
+		}
 		c.mode.Store(int32(supervisorShutdownDestructive))
 		c.destructiveOnce.Do(func() {
 			if c.destructiveCh != nil {
 				close(c.destructiveCh)
 			}
 		})
-		return
+		return false
 	}
 	if mode == supervisorShutdownPreserveSessions {
 		c.mode.CompareAndSwap(int32(supervisorShutdownNone), int32(supervisorShutdownPreserveSessions))
 	}
+	return false
 }
 
 func (c *supervisorShutdownController) preservesSessions() bool {
@@ -369,7 +399,7 @@ func (s *shutdownState) finish(err error) {
 	close(s.done)
 }
 
-func startSupervisorSocket(sockPath string, requestShutdown func(supervisorShutdownMode, shutdownTrigger), reconcileCh chan reconcileRequest, shut *shutdownState) (net.Listener, error) {
+func startSupervisorSocket(sockPath string, requestShutdown func(supervisorShutdownMode, shutdownTrigger) bool, reconcileCh chan reconcileRequest, shut *shutdownState) (net.Listener, error) {
 	os.Remove(sockPath) //nolint:errcheck // remove stale socket from previous crash
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -401,7 +431,7 @@ func startSupervisorSocket(sockPath string, requestShutdown func(supervisorShutd
 // then — if the client keeps the connection open — blocks until shutdown
 // completes and sends a second line "done:ok\n" or "done:err:<detail>\n"
 // so --wait clients can distinguish clean shutdown from partial failure.
-func handleSupervisorConn(conn net.Conn, requestShutdown func(supervisorShutdownMode, shutdownTrigger), reconcileCh chan reconcileRequest, shut *shutdownState) {
+func handleSupervisorConn(conn net.Conn, requestShutdown func(supervisorShutdownMode, shutdownTrigger) bool, reconcileCh chan reconcileRequest, shut *shutdownState) {
 	defer conn.Close()                                     //nolint:errcheck
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second)) //nolint:errcheck
 	scanner := bufio.NewScanner(conn)
@@ -412,7 +442,7 @@ func handleSupervisorConn(conn net.Conn, requestShutdown func(supervisorShutdown
 			if addr := conn.RemoteAddr(); addr != nil {
 				peer = addr.String()
 			}
-			requestShutdown(supervisorShutdownDestructive, shutdownTrigger{
+			_ = requestShutdown(supervisorShutdownDestructive, shutdownTrigger{
 				Source:     "socket_stop",
 				ClientAddr: peer,
 			})
@@ -884,8 +914,8 @@ func runSupervisor(stdout, stderr io.Writer) int {
 		registry.SetSupervisorRecorder(supFR)
 		defer supFR.Close() //nolint:errcheck
 	}
-	requestShutdown := func(mode supervisorShutdownMode, trigger shutdownTrigger) {
-		requestSupervisorShutdown(stderr, registry.SupervisorEventRecorder(), shutdownCtl, cancel, mode, trigger)
+	requestShutdown := func(mode supervisorShutdownMode, trigger shutdownTrigger) bool {
+		return requestSupervisorShutdown(stderr, registry.SupervisorEventRecorder(), shutdownCtl, cancel, mode, trigger)
 	}
 
 	// Reconcile channel — triggers immediate reconciliation from SIGHUP
@@ -904,7 +934,7 @@ func runSupervisor(stdout, stderr io.Writer) int {
 		case reconcileCh <- reconcileRequest{}:
 		default: // reconcile already pending
 		}
-	})
+	}, stderr)
 
 	// Load supervisor config.
 	supCfg, err := supervisor.LoadConfig(supervisor.ConfigPath())
