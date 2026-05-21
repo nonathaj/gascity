@@ -1747,8 +1747,8 @@ func TestDefaultPoolCheckUsesPoolName(t *testing.T) {
 		PoolName: "hello-world/dog",
 	}
 	check := a.EffectiveScaleCheck()
-	if !strings.Contains(check, "gc.routed_to=hello-world/dog-1") {
-		t.Errorf("EffectiveScaleCheck() = %q, want gc.routed_to=hello-world/dog-1", check)
+	if !strings.Contains(check, "gc.routed_to=hello-world/dog") {
+		t.Errorf("EffectiveScaleCheck() = %q, want gc.routed_to=hello-world/dog", check)
 	}
 }
 
@@ -1762,11 +1762,153 @@ func TestDefaultPoolCheckUsesBdReady(t *testing.T) {
 	if !strings.Contains(check, "bd ready") {
 		t.Errorf("EffectiveScaleCheck() = %q, want bd ready for blocker-aware counting", check)
 	}
+	if !strings.Contains(check, "--exclude-type=epic") {
+		t.Errorf("EffectiveScaleCheck() = %q, want --exclude-type=epic for executable demand only", check)
+	}
 	if strings.Contains(check, "--type=molecule") {
 		t.Errorf("EffectiveScaleCheck() = %q, should not count molecule containers as demand", check)
 	}
 	if strings.Contains(check, "--status=in_progress") || strings.Contains(check, "${active:-0}") {
 		t.Errorf("EffectiveScaleCheck() = %q, should not count in-progress work as new demand", check)
+	}
+}
+
+// TestPoolDemandPredicateSharedWithWorkQuery is the structural regression
+// test for the protocol-mismatch class addressed by PR #1516. The
+// reconciler's pool-demand path (EffectivePoolDemandQuery) and the
+// worker's claim path (EffectiveWorkQuery Tier 3) must derive their
+// "is there work on this routed queue?" predicate from the same
+// bdReadyPoolDemandShell helper. Adding a tier to one without updating
+// the other re-introduces the spawn-storm bug — this test ensures both
+// reference the identical predicate string for the same target.
+func TestPoolDemandPredicateSharedWithWorkQuery(t *testing.T) {
+	tests := []struct {
+		name   string
+		agent  Agent
+		target string
+	}{
+		{
+			name:   "template",
+			agent:  Agent{Name: "worker", Dir: "foundations"},
+			target: "foundations/worker",
+		},
+		{
+			name: "pool instance",
+			agent: Agent{
+				Name:     "worker-1",
+				Dir:      "foundations",
+				PoolName: "foundations/worker",
+			},
+			target: "foundations/worker",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			predicate := bdReadyPoolDemandShell(tt.target)
+
+			wq := tt.agent.EffectiveWorkQuery()
+			if !strings.Contains(wq, predicate) {
+				t.Errorf("EffectiveWorkQuery() missing shared predicate %q in %q", predicate, wq)
+			}
+
+			demand := tt.agent.EffectivePoolDemandQuery()
+			if !strings.Contains(demand, predicate) {
+				t.Errorf("EffectivePoolDemandQuery() missing shared predicate %q in %q", predicate, demand)
+			}
+		})
+	}
+}
+
+// TestEffectivePoolDemandQueryRespectsOverride verifies the user-set
+// scale_check override flows through unchanged. Pass-through behavior
+// preserves config-side flexibility while keeping the default form
+// structurally tied to the work_query predicate.
+func TestEffectivePoolDemandQueryRespectsOverride(t *testing.T) {
+	a := Agent{Name: "worker", Dir: "foundations", ScaleCheck: "echo 7"}
+	if got := a.EffectivePoolDemandQuery(); got != "echo 7" {
+		t.Errorf("EffectivePoolDemandQuery() = %q, want %q", got, "echo 7")
+	}
+	if got := a.EffectiveScaleCheck(); got != "echo 7" {
+		t.Errorf("EffectiveScaleCheck() = %q, want pass-through %q", got, "echo 7")
+	}
+}
+
+// TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics is the behavioral
+// counterpart to TestPoolDemandPredicateSharedWithWorkQuery. Given a
+// fake bd that returns the same routed-and-claimable signal to either
+// caller, EffectiveWorkQuery (worker side) and EffectivePoolDemandQuery
+// (reconciler side) must agree: both see work, or both see none.
+//
+// The "state worker can't claim" cases — the bead is assigned, blocked,
+// in_progress, or an epic — are filtered by `bd ready --unassigned
+// --exclude-type=epic`, so the fake returns [] for them and both paths
+// report no work. This is the
+// regression test for the spawn-storm class fo-spawn-storm describes.
+func TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics(t *testing.T) {
+	cases := []struct {
+		name           string
+		agent          Agent
+		target         string
+		bdReadyOutput  string
+		wantWorkQuery  string
+		wantDemandZero bool
+	}{
+		{
+			name:           "no routed work",
+			agent:          Agent{Name: "worker", Dir: "foundations"},
+			target:         "foundations/worker",
+			bdReadyOutput:  `[]`,
+			wantWorkQuery:  `[]`,
+			wantDemandZero: true,
+		},
+		{
+			name:           "one routed unassigned bead",
+			agent:          Agent{Name: "worker", Dir: "foundations"},
+			target:         "foundations/worker",
+			bdReadyOutput:  `[{"id":"fo-routed"}]`,
+			wantWorkQuery:  `[{"id":"fo-routed"}]`,
+			wantDemandZero: false,
+		},
+		{
+			name: "pool instance uses pool target",
+			agent: Agent{
+				Name:     "worker-1",
+				Dir:      "foundations",
+				PoolName: "foundations/worker",
+			},
+			target:         "foundations/worker",
+			bdReadyOutput:  `[{"id":"fo-routed"}]`,
+			wantWorkQuery:  `[{"id":"fo-routed"}]`,
+			wantDemandZero: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bdScript := `#!/bin/sh
+case "$*" in
+  *"ready --metadata-field gc.routed_to=` + tc.target + ` --unassigned --exclude-type=epic"*)
+    printf '%s' '` + tc.bdReadyOutput + `'
+    ;;
+  *)
+    printf '[]'
+    ;;
+esac
+`
+			wqOut := strings.TrimSpace(runEffectiveWorkQuery(t, tc.agent, nil, bdScript))
+			if wqOut != tc.wantWorkQuery {
+				t.Errorf("EffectiveWorkQuery output = %q, want %q", wqOut, tc.wantWorkQuery)
+			}
+			demandOut := strings.TrimSpace(runShellWithFakeBd(t, tc.agent.EffectivePoolDemandQuery(), nil, bdScript))
+			if tc.wantDemandZero {
+				if demandOut != "0" {
+					t.Errorf("EffectivePoolDemandQuery output = %q, want 0", demandOut)
+				}
+			} else {
+				if demandOut == "0" {
+					t.Errorf("EffectivePoolDemandQuery output = %q, want >0 when work_query reports work", demandOut)
+				}
+			}
+		})
 	}
 }
 
@@ -1946,6 +2088,9 @@ func TestEffectiveScaleCheckDefaults(t *testing.T) {
 	if !strings.Contains(check, "--unassigned") {
 		t.Errorf("EffectiveScaleCheck = %q, want --unassigned for new unassigned demand", check)
 	}
+	if !strings.Contains(check, "--exclude-type=epic") {
+		t.Errorf("EffectiveScaleCheck = %q, want --exclude-type=epic for executable demand only", check)
+	}
 	if strings.Contains(check, "--type=molecule") || strings.Contains(check, "${molecules:-0}") {
 		t.Errorf("EffectiveScaleCheck = %q, should not count molecule containers as demand", check)
 	}
@@ -1968,6 +2113,9 @@ func TestEffectiveScaleCheckDefaultsQualified(t *testing.T) {
 	if !strings.Contains(check, "--unassigned") {
 		t.Errorf("EffectiveScaleCheck = %q, want --unassigned for new unassigned demand", check)
 	}
+	if !strings.Contains(check, "--exclude-type=epic") {
+		t.Errorf("EffectiveScaleCheck = %q, want --exclude-type=epic for executable demand only", check)
+	}
 	if strings.Contains(check, "--type=molecule") {
 		t.Errorf("EffectiveScaleCheck = %q, should not count molecule containers as demand", check)
 	}
@@ -1988,6 +2136,9 @@ func TestEffectiveScaleCheckUsesReadyOnly(t *testing.T) {
 
 	if !strings.Contains(check, "bd ready") {
 		t.Errorf("missing bd ready query for blocker-aware task counting")
+	}
+	if !strings.Contains(check, "--exclude-type=epic") {
+		t.Errorf("EffectiveScaleCheck = %q, want --exclude-type=epic for executable demand only", check)
 	}
 	if strings.Contains(check, "--status=open --type=molecule") {
 		t.Errorf("unexpected molecule query in scale check: %q", check)
@@ -3892,6 +4043,14 @@ func TestEffectiveMethodsQualifyConsistently(t *testing.T) {
 
 func runEffectiveWorkQuery(t *testing.T, a Agent, env map[string]string, bdScript string) string {
 	t.Helper()
+	return runShellWithFakeBd(t, a.EffectiveWorkQuery(), env, bdScript)
+}
+
+// runShellWithFakeBd executes shellCmd with a fake `bd` script on PATH so
+// shared-predicate tests can exercise EffectiveWorkQuery and
+// EffectivePoolDemandQuery against the same simulated bd state.
+func runShellWithFakeBd(t *testing.T, shellCmd string, env map[string]string, bdScript string) string {
+	t.Helper()
 
 	tmp := t.TempDir()
 	bdPath := filepath.Join(tmp, "bd")
@@ -3899,14 +4058,14 @@ func runEffectiveWorkQuery(t *testing.T, a Agent, env map[string]string, bdScrip
 		t.Fatalf("write fake bd: %v", err)
 	}
 
-	cmd := exec.Command("sh", "-c", a.EffectiveWorkQuery())
+	cmd := exec.Command("sh", "-c", shellCmd)
 	cmd.Env = []string{"PATH=" + tmp + ":" + os.Getenv("PATH")}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("run work query: %v", err)
+		t.Fatalf("run shell with fake bd: %v", err)
 	}
 	return string(out)
 }
