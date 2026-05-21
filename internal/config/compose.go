@@ -1307,7 +1307,7 @@ func LoadRootPackDefaultRigImports(fs fsys.FS, cityRoot string) ([]BoundImport, 
 		}
 		return nil, fmt.Errorf("loading city pack.toml: %w", err)
 	}
-	var pc packConfig
+	var pc PackConfig
 	md, err := toml.Decode(string(packData), &pc)
 	if err != nil {
 		return nil, fmt.Errorf("parsing city pack.toml: %w", err)
@@ -1318,7 +1318,7 @@ func LoadRootPackDefaultRigImports(fs fsys.FS, cityRoot string) ([]BoundImport, 
 	return defaultRigImportsFromPackDefaults(pc.Defaults, md)
 }
 
-func defaultRigImportsFromPackDefaults(defaults packDefaults, md toml.MetaData) ([]BoundImport, error) {
+func defaultRigImportsFromPackDefaults(defaults PackDefaults, md toml.MetaData) ([]BoundImport, error) {
 	if len(defaults.Rig.Imports) == 0 {
 		return nil, nil
 	}
@@ -1335,7 +1335,7 @@ func defaultRigImportsFromPackDefaults(defaults packDefaults, md toml.MetaData) 
 	return imports, nil
 }
 
-func defaultRigIncludesFromPackDefaults(defaults packDefaults, md toml.MetaData) ([]string, error) {
+func defaultRigIncludesFromPackDefaults(defaults PackDefaults, md toml.MetaData) ([]string, error) {
 	imports, err := defaultRigImportsFromPackDefaults(defaults, md)
 	if err != nil {
 		return nil, err
