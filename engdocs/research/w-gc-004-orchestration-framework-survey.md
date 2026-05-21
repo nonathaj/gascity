@@ -81,13 +81,18 @@ Source: [docs.crewai.com](https://docs.crewai.com/concepts/agents).
   enum is a clean activation knob analogous to Gas City's progressive
   capability levels.
 - **Where Gas City diverges:** CrewAI's `Process` is hardcoded (sequential
-  / hierarchical / consensual). Gas City pushes orchestration shape into
-  formulas, where the model can compose new shapes. Also, CrewAI's
-  in-process memory fails the NDI ("work survives session death") test.
+  and hierarchical; a `consensual` variant is sketched as a `TODO` in
+  [`src/crewai/process.py`](https://github.com/crewAIInc/crewAI/blob/main/lib/crewai/src/crewai/process.py)
+  but not implemented as of this survey). Gas City pushes orchestration
+  shape into formulas, where the model can compose new shapes. Also,
+  CrewAI's in-process memory fails the NDI ("work survives session death")
+  test.
 
 **Contradicts the wasteland item's premise:** CrewAI already treats roles
 as YAML config. The "ZERO hardcoded roles" stance is not unique; what
-*is* unique is Gas City's refusal to let Go code branch on role identity.
+*is* unique is Gas City's strict reading of the rule — per AGENTS.md,
+"If a line of Go references a specific role name, it's a bug." Not just
+no role-identity branches: no role-name mentions in Go source at all.
 
 ### LangGraph
 
@@ -267,10 +272,13 @@ Source: [microsoft.com/en-us/research/articles/magentic-one](https://www.microso
 - **Health/failure:** "If the Orchestrator finds that progress is not
   being made for enough steps, it can update the Task Ledger and
   create a new plan." Stall detection is implicit replanning.
-- **Mapped to Gas City:** Session = ✓, Task Store = ✓ (the two
-  ledgers), Event Bus = — (AutoGen pub/sub inherited), Config = —
-  (code), Prompt Templates = partial, Messaging = ✓, Dispatch = ✓
-  (Orchestrator assigns), Health Patrol = ✓ (stall → replan).
+- **Mapped to Gas City:** Session = ✓, Task Store = partial (the two
+  ledgers are orchestrator-internal in-memory state, not a persisted
+  queryable work store like beads), Event Bus = — (AutoGen pub/sub
+  inherited), Config = — (code), Prompt Templates = partial, Messaging =
+  ✓, Dispatch = ✓ (Orchestrator assigns), Health Patrol = partial
+  (replanning runs inside the orchestrator loop; it is not a separable
+  patrol primitive that probes external state and publishes stalls).
 - **Gets right:** Explicit dual-ledger separation between the *plan*
   and the *progress against the plan*. Gas City has a single bead
   graph that conflates these. Worth borrowing as a query convention,
@@ -294,10 +302,12 @@ to avoid padding.
 
 1. **ZERO hardcoded roles is real but narrower than it sounds.** CrewAI
    already defines roles in YAML. Claude Agent SDK already defines
-   subagents in config. The actual unique constraint is that *Gas City
-   Go code never branches on role identity* — neither CrewAI's
-   `Process` enum nor Magentic-One's Orchestrator could exist inside
-   Gas City's `internal/`.
+   subagents in config. The actual unique constraint, per AGENTS.md, is
+   strict: *"If a line of Go references a specific role name, it's a
+   bug."* That is stronger than "no branching on role identity" — even
+   a string mention of a role name in Go source is a violation. Neither
+   CrewAI's `Process` enum nor Magentic-One's Orchestrator could exist
+   inside Gas City's `internal/`.
 2. **ZFC is genuinely uncommon.** LangGraph's conditional edges,
    Magentic-One's stall detection, CrewAI's `Process` selection, and
    AutoGen's topic routing all contain judgment calls in framework
