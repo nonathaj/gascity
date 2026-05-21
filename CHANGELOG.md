@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `gc converge status --json` returns the convergence metadata object with
+  `ok: true` injected. `gc converge list --json` returns an object with
+  `ok: true` and `entries`. These converge JSON outputs do not include a
+  `schema_version` field.
+- `gc runtime drain-check --json` now emits a JSON result when the target
+  session is not draining, with `ok: true`, `draining: false`, and the
+  existing shell-condition exit code of 1.
 - `gc sling --json` now emits one JSONL result record, matching its checked-in
   result schema; earlier JSON support emitted an indented multi-line object.
 - `gc trace status` and `gc trace show` now default to human-readable output;
