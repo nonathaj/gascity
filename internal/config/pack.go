@@ -23,6 +23,15 @@ const packFile = "pack.toml"
 // currentPackSchema is the supported pack schema version.
 const currentPackSchema = 2
 
+type deferredRigPatches struct {
+	rigName            string
+	agentStart         int
+	agentEnd           int
+	expectedAgentCount int
+	expectedAgentNames []string
+	overrides          []AgentOverride
+}
+
 // PackConfig is the TOML structure of a pack.toml file.
 // It has a [pack] metadata header and agent definitions.
 type PackConfig struct {
@@ -64,6 +73,9 @@ type PackRigDefaults struct {
 // Overrides from the rig are applied to the stamped agents (after all
 // packs for the rig are expanded). All expansion happens before
 // validation — downstream sees a flat City struct.
+// ExpandPacks applies those rig overrides inline. It does not coordinate
+// ordering with city-level ApplyPatches; use LoadWithIncludes for full
+// city composition where city-level patches run before rig overrides.
 //
 // rigFormulaDirs is populated with per-rig pack formula directories
 // (Layer 3). cityRoot is the city directory (parent of city.toml), used
@@ -407,11 +419,25 @@ func expandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 			return err
 		}
 
-		// Apply per-rig overrides/patches after all packs for this rig.
+		// Apply or defer per-rig overrides/patches after all packs for this rig.
 		// V2 accepts both "overrides" (V1) and "patches" (V2) TOML keys.
-		allOverrides := rig.Overrides
+		allOverrides := append([]AgentOverride(nil), rig.Overrides...)
 		allOverrides = append(allOverrides, rig.RigPatches...)
-		if err := applyOverrides(rigAgents, allOverrides, rig.Name); err != nil {
+		if opts.deferRigPatches {
+			if opts.deferredRigPatches == nil {
+				return fmt.Errorf("rig %q: deferred rig patches requested without destination", rig.Name)
+			}
+			if len(allOverrides) > 0 {
+				start := len(cfg.Agents) + len(expanded)
+				*opts.deferredRigPatches = append(*opts.deferredRigPatches, deferredRigPatches{
+					rigName:            rig.Name,
+					agentStart:         start,
+					agentEnd:           start + len(rigAgents),
+					expectedAgentNames: qualifiedAgentNames(rigAgents),
+					overrides:          allOverrides,
+				})
+			}
+		} else if err := applyOverrides(rigAgents, allOverrides, rig.Name); err != nil {
 			return fmt.Errorf("rig %q: %w", rig.Name, err)
 		}
 
@@ -427,6 +453,11 @@ func expandPacks(cfg *City, fs fsys.FS, cityRoot string, rigFormulaDirs map[stri
 		cfg.NamedSessions = append(cfg.NamedSessions, rigNamedSessions...)
 	}
 	cfg.Agents = append(cfg.Agents, expanded...)
+	if opts.deferRigPatches && opts.deferredRigPatches != nil {
+		for i := range *opts.deferredRigPatches {
+			(*opts.deferredRigPatches)[i].expectedAgentCount = len(cfg.Agents)
+		}
+	}
 	return nil
 }
 
@@ -2373,6 +2404,38 @@ func filterNamedSessionsByScope(sessions []NamedSession, cityExpansion bool) []N
 		}
 	}
 	return result
+}
+
+func applyDeferredRigPatches(cfg *City, deferred []deferredRigPatches) error {
+	for _, d := range deferred {
+		if d.agentStart < 0 || d.agentEnd < d.agentStart || d.agentEnd > len(cfg.Agents) {
+			return fmt.Errorf("rig %q: deferred agent range [%d:%d] outside merged agents", d.rigName, d.agentStart, d.agentEnd)
+		}
+		if len(cfg.Agents) != d.expectedAgentCount {
+			return fmt.Errorf("rig %q: merged agent count changed before deferred rig patches: got %d, want %d", d.rigName, len(cfg.Agents), d.expectedAgentCount)
+		}
+		if len(d.expectedAgentNames) != d.agentEnd-d.agentStart {
+			return fmt.Errorf("rig %q: deferred agent range [%d:%d] has %d identity snapshots", d.rigName, d.agentStart, d.agentEnd, len(d.expectedAgentNames))
+		}
+		for i, want := range d.expectedAgentNames {
+			got := cfg.Agents[d.agentStart+i].QualifiedName()
+			if got != want {
+				return fmt.Errorf("rig %q: agent at deferred range index %d changed before deferred rig patches: got %q, want %q", d.rigName, d.agentStart+i, got, want)
+			}
+		}
+		if err := applyOverrides(cfg.Agents[d.agentStart:d.agentEnd], d.overrides, d.rigName); err != nil {
+			return fmt.Errorf("rig %q: %w", d.rigName, err)
+		}
+	}
+	return nil
+}
+
+func qualifiedAgentNames(agents []Agent) []string {
+	names := make([]string, 0, len(agents))
+	for i := range agents {
+		names = append(names, agents[i].QualifiedName())
+	}
+	return names
 }
 
 // applyOverrides applies per-rig overrides to pack-stamped agents.
