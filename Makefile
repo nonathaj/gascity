@@ -27,15 +27,19 @@ LDFLAGS := -X main.version=$(VERSION) \
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/gc
 ifeq ($(shell uname),Darwin)
-	@codesign -s - -f $(BUILD_DIR)/$(BINARY) 2>/dev/null || true
-	@echo "Signed $(BINARY) for macOS"
+	@scripts/sign-darwin-local.sh $(BUILD_DIR)/$(BINARY)
 endif
 
 ## install: build and install gc to GOPATH/bin (same location as go install)
 install: build
 	@mkdir -p $(INSTALL_DIR)
-	@rm -f $(INSTALL_DIR)/$(BINARY)
-	@cp $(BUILD_DIR)/$(BINARY) $(INSTALL_DIR)/$(BINARY)
+	@set -e; \
+		tmp="$(INSTALL_DIR)/.$(BINARY).tmp.$$$$"; \
+		trap 'rm -f "$$tmp"' EXIT INT TERM HUP; \
+		cp -f "$(BUILD_DIR)/$(BINARY)" "$$tmp"; \
+		chmod 0755 "$$tmp"; \
+		mv -f "$$tmp" "$(INSTALL_DIR)/$(BINARY)"; \
+		trap - EXIT INT TERM HUP
 	@# Migrate from old install location: replace stale binary with symlink
 	@if [ "$(INSTALL_DIR)" != "$(HOME)/.local/bin" ]; then \
 		if [ -f "$(HOME)/.local/bin/$(BINARY)" ] || [ -L "$(HOME)/.local/bin/$(BINARY)" ]; then \
@@ -190,6 +194,8 @@ TEST_ENV = env -i \
 	SHELL="$$SHELL" \
 	LANG="$$LANG" \
 	TMPDIR="$${TMPDIR:-/tmp}" \
+	OBSERVABLE_TEST_LOG="$${OBSERVABLE_TEST_LOG-}" \
+	OBSERVABLE_FAILURE_LINES="$${OBSERVABLE_FAILURE_LINES-}" \
 	XDG_RUNTIME_DIR="$$XDG_RUNTIME_DIR" \
 	GOPATH="$(GOPATH_VAL)" \
 	GOCACHE="$(GOCACHE_VAL)" \
@@ -235,7 +241,7 @@ LOCAL_TEST_JOBS ?= $(shell nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev
 
 ## test-fast-parallel: run the default fast suite with cmd/gc sharded locally
 test-fast-parallel:
-	LOCAL_TEST_JOBS=$(LOCAL_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel fast
+	$(TEST_ENV) LOCAL_TEST_JOBS=$(LOCAL_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel fast
 
 ## test-fsys-darwin-compile: cross-compile internal/fsys for macOS so
 ## unix.Stat_t field-type regressions fail in the default fast test path.

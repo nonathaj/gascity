@@ -205,6 +205,210 @@ func TestResolvedWorkerRuntimeResumesPoolSessionPreservesLaunchFlags(t *testing.
 	}
 }
 
+// TestResolvedWorkerRuntimeWithConfigSeedsCityRuntimeEnv is a regression
+// test for upstream gastownhall/gascity#101 (re-opened): on session
+// restart, the worker resolver reseeded the session env from
+// resolved.Env (provider-only). That dropped the city-anchored env vars
+// (GC_CITY, GC_CITY_PATH, GC_CITY_RUNTIME_DIR), so spawned/restarted
+// agent sessions could not locate their city — bd commands failed,
+// mailboxes resolved against the wrong path, and downstream tooling
+// behaved as if no city was configured. The CLI-side defense in
+// cmd/gc/main.go resolveContext (#2062) masked the symptom; this
+// resolver-level fix is the root cause: the resolved runtime must
+// always carry the city anchor vars so any restart path is sound.
+func TestResolvedWorkerRuntimeWithConfigSeedsCityRuntimeEnv(t *testing.T) {
+	cityDir := t.TempDir()
+	gcDir := filepath.Join(cityDir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gcDir, "settings.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	claude := config.BuiltinProviders()["claude"]
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Provider: "claude",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"claude": claude,
+		},
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+		Template: "worker",
+		WorkDir:  cityDir,
+	}, "")
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
+	}
+
+	if got := resolved.SessionEnv["GC_CITY"]; got != cityDir {
+		t.Errorf("SessionEnv[GC_CITY] = %q, want %q", got, cityDir)
+	}
+	if got := resolved.SessionEnv["GC_CITY_PATH"]; got != cityDir {
+		t.Errorf("SessionEnv[GC_CITY_PATH] = %q, want %q", got, cityDir)
+	}
+	wantRuntimeDir := filepath.Join(cityDir, ".gc", "runtime")
+	if got := resolved.SessionEnv["GC_CITY_RUNTIME_DIR"]; got != wantRuntimeDir {
+		t.Errorf("SessionEnv[GC_CITY_RUNTIME_DIR] = %q, want %q", got, wantRuntimeDir)
+	}
+	// Identity-only contract (per Copilot review): the dispatcher trace
+	// default must NOT be seeded by the resume reseed, because it has to
+	// stay per-dispatcher-qualified (template_resolve.go owns the
+	// qualified override). Seeding the city-uniform default here would
+	// regress trace files for control-dispatcher sessions on restart.
+	if got, present := resolved.SessionEnv["GC_CONTROL_DISPATCHER_TRACE_DEFAULT"]; present {
+		t.Errorf("SessionEnv[GC_CONTROL_DISPATCHER_TRACE_DEFAULT] = %q present, want absent (identity-only reseed)", got)
+	}
+}
+
+// TestResolvedWorkerRuntimeWithConfigCityAnchorsBeatConflictingProviderEnv
+// pins the precedence contract: when the resolved provider env carries
+// its own GC_CITY (e.g. left over from a stale pool entry, or a
+// provider that hard-codes one), the city-anchored reseed must win.
+// Without this assertion, future refactors could accidentally reverse
+// the merge order and re-introduce upstream #101 from the other side.
+func TestResolvedWorkerRuntimeWithConfigCityAnchorsBeatConflictingProviderEnv(t *testing.T) {
+	cityDir := t.TempDir()
+	gcDir := filepath.Join(cityDir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gcDir, "settings.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	claude := config.BuiltinProviders()["claude"]
+	// Force a conflicting GC_CITY in the provider env so we can prove
+	// the reseed wins. We can't reach into resolved.Env directly, so we
+	// instead pin the worker's env on its own ProviderSpec via the
+	// pool entry's runtime env section (which feeds resolved.Env).
+	claude.Env = map[string]string{
+		"GC_CITY":      "/wrong/city",
+		"GC_CITY_PATH": "/wrong/city",
+	}
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Provider: "claude",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"claude": claude,
+		},
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfig(cityDir, cfg, session.Info{
+		Template: "worker",
+		WorkDir:  cityDir,
+	}, "")
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfig: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfig() = nil")
+	}
+	if got := resolved.SessionEnv["GC_CITY"]; got != cityDir {
+		t.Errorf("SessionEnv[GC_CITY] = %q, want %q (city anchor must win over provider env)", got, cityDir)
+	}
+	if got := resolved.SessionEnv["GC_CITY_PATH"]; got != cityDir {
+		t.Errorf("SessionEnv[GC_CITY_PATH] = %q, want %q (city anchor must win over provider env)", got, cityDir)
+	}
+}
+
+func TestResolvedWorkerRuntimeWithConfigSkipsCityAnchorsWhenCityPathEmpty(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{{
+			Name:     "worker",
+			Provider: "stub",
+		}},
+		Providers: map[string]config.ProviderSpec{
+			"stub": {
+				Command: "/bin/echo",
+				Env: map[string]string{
+					"GC_CITY":        "/provider/city",
+					"PROVIDER_TOKEN": "ok",
+				},
+			},
+		},
+	}
+
+	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata("", cfg, session.Info{
+		Template: "worker",
+		WorkDir:  "/tmp/work",
+	}, "", nil)
+	if err != nil {
+		t.Fatalf("resolvedWorkerRuntimeWithConfigAndMetadata: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("resolvedWorkerRuntimeWithConfigAndMetadata() = nil")
+	}
+	if got := resolved.SessionEnv["GC_CITY"]; got != "/provider/city" {
+		t.Fatalf("SessionEnv[GC_CITY] = %q, want provider value", got)
+	}
+	if got := resolved.SessionEnv["PROVIDER_TOKEN"]; got != "ok" {
+		t.Fatalf("SessionEnv[PROVIDER_TOKEN] = %q, want ok", got)
+	}
+	if _, ok := resolved.SessionEnv["GC_CITY_PATH"]; ok {
+		t.Fatalf("SessionEnv[GC_CITY_PATH] = %q, want absent when city path is empty", resolved.SessionEnv["GC_CITY_PATH"])
+	}
+	if _, ok := resolved.SessionEnv["GC_CITY_RUNTIME_DIR"]; ok {
+		t.Fatalf("SessionEnv[GC_CITY_RUNTIME_DIR] = %q, want absent when city path is empty", resolved.SessionEnv["GC_CITY_RUNTIME_DIR"])
+	}
+}
+
+// TestResolvedWorkerSessionConfigWithConfigSeedsCityAnchorsOnCreatePath
+// covers the CLI session-create path (called by `gc session start` /
+// `gc session new` etc. through newWorkerSessionHandleForResolvedRuntimeWithConfig).
+// Before this fix, the create path passed resolved.Env directly as
+// SessionEnv, so direct CLI creates landed without GC_CITY anchors —
+// the same upstream #101 symptom as the resume path, just through a
+// different door. Companion to the resume-path regression test above.
+func TestResolvedWorkerSessionConfigWithConfigSeedsCityAnchorsOnCreatePath(t *testing.T) {
+	cityDir := t.TempDir()
+	gcDir := filepath.Join(cityDir, ".gc")
+	if err := os.MkdirAll(gcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := resolvedWorkerSessionConfigWithConfig(
+		cityDir,
+		"",
+		"",
+		cityDir,
+		"worker",
+		"",
+		"worker",
+		"Worker",
+		"",
+		&config.ResolvedProvider{Name: "claude"},
+		map[string]string{"session_origin": "test"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("resolvedWorkerSessionConfigWithConfig: %v", err)
+	}
+	env := cfg.Runtime.SessionEnv
+	if got := env["GC_CITY"]; got != cityDir {
+		t.Errorf("Runtime.SessionEnv[GC_CITY] = %q, want %q", got, cityDir)
+	}
+	if got := env["GC_CITY_PATH"]; got != cityDir {
+		t.Errorf("Runtime.SessionEnv[GC_CITY_PATH] = %q, want %q", got, cityDir)
+	}
+	if env["GC_CITY_RUNTIME_DIR"] == "" {
+		t.Error("Runtime.SessionEnv[GC_CITY_RUNTIME_DIR] = empty, want set")
+	}
+	if got, present := env["GC_CONTROL_DISPATCHER_TRACE_DEFAULT"]; present {
+		t.Errorf("Runtime.SessionEnv[GC_CONTROL_DISPATCHER_TRACE_DEFAULT] = %q present, want absent (identity-only)", got)
+	}
+}
+
 func TestShouldPreserveStoredRuntimeCommandForTransportRejectsExecutableOnlyMatch(t *testing.T) {
 	if shouldPreserveStoredRuntimeCommandForTransport(
 		"claude",
@@ -434,6 +638,92 @@ args = ["{{.AgentName}}"]
 	}
 }
 
+func TestResolveWorkerRuntimeProviderWithConfigProviderKindPrefersPersistedProvider(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Providers: map[string]config.ProviderSpec{
+			"stored-provider": {
+				Command: "true",
+				Args:    []string{"stored"},
+			},
+			"template-provider": {
+				Command: "true",
+				Args:    []string{"template"},
+			},
+		},
+	}
+	info := session.Info{
+		Template: "template-provider",
+		Provider: "stored-provider",
+	}
+
+	resolved, _ := resolveWorkerRuntimeProviderWithConfig(cfg, info, "provider")
+	if resolved == nil {
+		t.Fatal("resolveWorkerRuntimeProviderWithConfig() = nil")
+	}
+	if got := resolved.Name; got != "stored-provider" {
+		t.Fatalf("resolved.Name = %q, want stored-provider", got)
+	}
+}
+
+func TestResolveWorkerRuntimeProviderWithConfigMetadataIdentifiesProviderSession(t *testing.T) {
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "test-city"},
+		Agents: []config.Agent{
+			{Name: "worker", Dir: "myrig", Provider: "agent-provider"},
+		},
+		Providers: map[string]config.ProviderSpec{
+			"stored-provider": {
+				Command: "true",
+				Args:    []string{"stored"},
+			},
+			"agent-provider": {
+				Command: "true",
+				Args:    []string{"agent"},
+			},
+		},
+	}
+	info := session.Info{
+		Template: "myrig/worker",
+		Provider: "stored-provider",
+	}
+
+	resolved, _ := resolveWorkerRuntimeProviderWithConfigAndMetadata(cfg, info, "", map[string]string{
+		"session_origin": "manual",
+	})
+	if resolved == nil {
+		t.Fatal("resolveWorkerRuntimeProviderWithConfigAndMetadata() = nil")
+	}
+	if got := resolved.Name; got != "stored-provider" {
+		t.Fatalf("resolved.Name = %q, want stored-provider", got)
+	}
+
+	legacyAgentInfo := session.Info{
+		Template: "myrig/worker",
+		Provider: "agent-provider",
+	}
+	resolved, _ = resolveWorkerRuntimeProviderWithConfigAndMetadata(cfg, legacyAgentInfo, "", map[string]string{
+		"session_origin": "manual",
+	})
+	if resolved == nil {
+		t.Fatal("resolveWorkerRuntimeProviderWithConfigAndMetadata(legacy agent) = nil")
+	}
+	if got := resolved.Name; got != "agent-provider" {
+		t.Fatalf("legacy agent resolved.Name = %q, want agent-provider", got)
+	}
+
+	resolved, _ = resolveWorkerRuntimeProviderWithConfigAndMetadata(cfg, info, "", map[string]string{
+		"session_origin": "manual",
+		"agent_name":     "myrig/worker",
+	})
+	if resolved == nil {
+		t.Fatal("resolveWorkerRuntimeProviderWithConfigAndMetadata(agent) = nil")
+	}
+	if got := resolved.Name; got != "agent-provider" {
+		t.Fatalf("agent resolved.Name = %q, want agent-provider", got)
+	}
+}
+
 func TestResolvedWorkerRuntimeWithConfigKeepsDefaultTransportWithoutExplicitACPTemplate(t *testing.T) {
 	cityDir := t.TempDir()
 	writePhase0InterfaceCity(t, cityDir, `[workspace]
@@ -638,14 +928,20 @@ func TestResolvedWorkerRuntimeWithConfigReplaysTemplateOverridesOnResume(t *test
 		}},
 		Providers: map[string]config.ProviderSpec{
 			"custom": {
-				Command:   "/bin/echo",
-				PathCheck: "true",
+				Command:       "/bin/echo",
+				ResumeCommand: "/bin/echo --resume {{.SessionKey}} --effort low",
+				ResumeFlag:    "--resume",
+				ResumeStyle:   "flag",
+				PathCheck:     "true",
 				OptionsSchema: []config.ProviderOption{{
 					Key:  "effort",
 					Type: "select",
 					Choices: []config.OptionChoice{{
 						Value:    "high",
 						FlagArgs: []string{"--effort", "high"},
+					}, {
+						Value:    "low",
+						FlagArgs: []string{"--effort", "low"},
 					}},
 				}},
 			},
@@ -653,9 +949,10 @@ func TestResolvedWorkerRuntimeWithConfigReplaysTemplateOverridesOnResume(t *test
 	}
 
 	resolved, err := resolvedWorkerRuntimeWithConfigAndMetadata(cityDir, cfg, session.Info{
-		Template: "myrig/worker",
-		Command:  "/bin/echo",
-		WorkDir:  cityDir,
+		Template:   "myrig/worker",
+		Command:    "/bin/echo",
+		WorkDir:    cityDir,
+		SessionKey: "abc-123",
 	}, "", map[string]string{
 		"template_overrides": `{"effort":"high","initial_message":"hello"}`,
 	})
@@ -667,6 +964,9 @@ func TestResolvedWorkerRuntimeWithConfigReplaysTemplateOverridesOnResume(t *test
 	}
 	if got, want := resolved.Command, "/bin/echo --effort high"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	if got, want := resolved.Resume.ResumeCommand, "/bin/echo --resume {{.SessionKey}} --effort high"; got != want {
+		t.Fatalf("Resume.ResumeCommand = %q, want %q", got, want)
 	}
 }
 
@@ -1034,6 +1334,7 @@ func TestResolvedWorkerSessionConfigWithConfigFallsBackToResolvedProviderNameFor
 	cfg, err := resolvedWorkerSessionConfigWithConfig(
 		"",
 		"",
+		"",
 		"/tmp/work",
 		"worker",
 		"",
@@ -1060,6 +1361,7 @@ func TestResolvedWorkerSessionConfigWithConfigFallsBackToResolvedProviderNameFor
 func TestResolvedWorkerSessionConfigWithConfigFallsBackToProviderArgForCommand(t *testing.T) {
 	cfg, err := resolvedWorkerSessionConfigWithConfig(
 		"",
+		"",
 		"legacy-provider",
 		"/tmp/work",
 		"worker",
@@ -1084,6 +1386,7 @@ func TestResolvedWorkerSessionConfigWithConfigFallsBackToProviderArgForCommand(t
 
 func TestResolvedWorkerSessionConfigWithConfigPersistsStoredMCPMetadata(t *testing.T) {
 	cfg, err := resolvedWorkerSessionConfigWithConfig(
+		"",
 		"",
 		"legacy-provider",
 		"/tmp/work",
@@ -1119,6 +1422,7 @@ func TestResolvedWorkerSessionConfigWithConfigPersistsStoredMCPMetadata(t *testi
 
 func TestResolvedWorkerSessionConfigWithConfigSkipsStoredMCPMetadataForTmuxTransport(t *testing.T) {
 	cfg, err := resolvedWorkerSessionConfigWithConfig(
+		"",
 		"",
 		"legacy-provider",
 		"/tmp/work",

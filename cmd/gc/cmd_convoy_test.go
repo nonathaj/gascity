@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -46,11 +47,12 @@ func TestConvoyCreate(t *testing.T) {
 func TestConvoyCreateWithIssues(t *testing.T) {
 	store := beads.NewMemStore()
 	// Pre-create issues.
-	_, _ = store.Create(beads.Bead{Title: "fix auth"})    // gc-1
-	_, _ = store.Create(beads.Bead{Title: "fix logging"}) // gc-2
+	_, _ = store.Create(beads.Bead{Title: "epic", Type: "epic"})         // gc-1
+	_, _ = store.Create(beads.Bead{Title: "fix auth", ParentID: "gc-1"}) // gc-2
+	_, _ = store.Create(beads.Bead{Title: "fix logging"})                // gc-3
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreate(store, events.Discard, []string{"security fixes", "gc-1", "gc-2"}, &stdout, &stderr)
+	code := doConvoyCreate(store, events.Discard, []string{"security fixes", "gc-2", "gc-3"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyCreate = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -58,15 +60,39 @@ func TestConvoyCreateWithIssues(t *testing.T) {
 		t.Errorf("stdout = %q, want tracking count", stdout.String())
 	}
 
-	// Verify issues have convoy as parent.
-	for _, id := range []string{"gc-1", "gc-2"} {
-		b, err := store.Get(id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if b.ParentID != "gc-3" {
-			t.Errorf("bead %s ParentID = %q, want %q", id, b.ParentID, "gc-3")
-		}
+	got, err := store.Get("gc-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentID != "gc-1" {
+		t.Errorf("bead gc-2 ParentID = %q, want preserved epic parent gc-1", got.ParentID)
+	}
+	requireConvoyTrack(t, store, "gc-4", "gc-2")
+	requireConvoyTrack(t, store, "gc-4", "gc-3")
+}
+
+func TestConvoyCreateJSON(t *testing.T) {
+	store := beads.NewMemStore()
+	issue, _ := store.Create(beads.Bead{Title: "fix auth"})
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCreateWithOptionsJSON(store, nil, "", events.Discard,
+		[]string{"security fixes", issue.ID}, convoyCreateOptions{}, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCreateWithOptionsJSON = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	var got struct {
+		SchemaVersion string   `json:"schema_version"`
+		OK            bool     `json:"ok"`
+		Command       string   `json:"command"`
+		ConvoyID      string   `json:"convoy_id"`
+		IssueIDs      []string `json:"issue_ids"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if got.SchemaVersion != "1" || !got.OK || got.Command != "convoy.create" || got.ConvoyID == "" || len(got.IssueIDs) != 1 {
+		t.Fatalf("payload = %+v", got)
 	}
 }
 
@@ -107,7 +133,7 @@ func TestConvoyCreateMultiRig(t *testing.T) {
 
 	// Test 1: single-store mode (cfg=nil) — all beads in same store.
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreateWithOptions(cityStore, nil, "", events.Discard,
+	code := doConvoyCreateWithOptions(cityStore, events.Discard,
 		[]string{"cross-rig batch", child1.ID, child2.ID}, convoyCreateOptions{}, &stdout, &stderr)
 	// Should fail because children are in rigStore, not cityStore.
 	if code != 1 {
@@ -119,7 +145,7 @@ func TestConvoyCreateMultiRig(t *testing.T) {
 	stderr.Reset()
 	child3, _ := cityStore.Create(beads.Bead{Title: "city task"})
 	child4, _ := cityStore.Create(beads.Bead{Title: "city task 2"})
-	code = doConvoyCreateWithOptions(cityStore, nil, "", events.Discard,
+	code = doConvoyCreateWithOptions(cityStore, events.Discard,
 		[]string{"same-store batch", child3.ID, child4.ID}, convoyCreateOptions{}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("same-store convoy failed: %s", stderr.String())
@@ -128,16 +154,28 @@ func TestConvoyCreateMultiRig(t *testing.T) {
 		t.Errorf("stdout = %q, want tracking 2 issues", stdout.String())
 	}
 
-	// Verify children have parent set.
+	// Verify children are tracked without requiring parent changes.
 	got3, _ := cityStore.Get(child3.ID)
 	got4, _ := cityStore.Get(child4.ID)
-	convoyID := got3.ParentID
+	if got3.ParentID != "" || got4.ParentID != "" {
+		t.Fatalf("children were reparented: %q, %q", got3.ParentID, got4.ParentID)
+	}
+	convoys, err := cityStore.List(beads.ListQuery{Type: "convoy", IncludeClosed: true})
+	if err != nil {
+		t.Fatalf("list convoys: %v", err)
+	}
+	convoyID := ""
+	for _, convoy := range convoys {
+		if convoy.Title == "same-store batch" {
+			convoyID = convoy.ID
+			break
+		}
+	}
 	if convoyID == "" {
-		t.Fatal("child3 has no parent")
+		t.Fatalf("same-store convoy not found: %+v", convoys)
 	}
-	if got4.ParentID != convoyID {
-		t.Errorf("child4 parent = %q, want %q", got4.ParentID, convoyID)
-	}
+	requireConvoyTrack(t, cityStore, convoyID, child3.ID)
+	requireConvoyTrack(t, cityStore, convoyID, child4.ID)
 	convoy, _ := cityStore.Get(convoyID)
 	if convoy.Type != "convoy" {
 		t.Errorf("convoy type = %q, want convoy", convoy.Type)
@@ -146,8 +184,8 @@ func TestConvoyCreateMultiRig(t *testing.T) {
 
 // TestConvoyCreateRigChildrenShareStore is a regression test: when children
 // have a rig prefix, the convoy must be created in the same store as the
-// children (not the city root store). Otherwise bd update --parent fails
-// because the parent bead doesn't exist in the child's database.
+// children (not the city root store). Otherwise the membership relationship
+// points at beads in a different database.
 func TestValidateConvoyCreateStoreScopeRejectsMixedStores(t *testing.T) {
 	cfg := &config.City{
 		Rigs: []config.Rig{{Name: "frontend", Prefix: "fe", Path: "frontend"}},
@@ -177,23 +215,30 @@ func TestConvoyCreateRigChildrenShareStore(t *testing.T) {
 	c3, _ := store.Create(beads.Bead{Title: "Haskell hello"})
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreateWithOptions(store, nil, "", events.Discard,
+	code := doConvoyCreateWithOptions(store, events.Discard,
 		[]string{"Hello World Variants", c1.ID, c2.ID, c3.ID}, convoyCreateOptions{}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("convoy create failed: %s", stderr.String())
 	}
 
-	// All children must have parent set to the convoy.
+	// All children must be tracked by the convoy without being reparented.
 	got1, _ := store.Get(c1.ID)
 	got2, _ := store.Get(c2.ID)
 	got3, _ := store.Get(c3.ID)
-	convoyID := got1.ParentID
-	if convoyID == "" {
-		t.Fatal("child1 has no parent — convoy not linked")
+	if got1.ParentID != "" || got2.ParentID != "" || got3.ParentID != "" {
+		t.Fatalf("children were reparented: %q, %q, %q", got1.ParentID, got2.ParentID, got3.ParentID)
 	}
-	if got2.ParentID != convoyID || got3.ParentID != convoyID {
-		t.Errorf("children have different parents: %q, %q, %q", got1.ParentID, got2.ParentID, got3.ParentID)
+	convoys, err := store.List(beads.ListQuery{Type: "convoy", IncludeClosed: true})
+	if err != nil {
+		t.Fatalf("list convoys: %v", err)
 	}
+	if len(convoys) != 1 {
+		t.Fatalf("convoys = %d, want 1", len(convoys))
+	}
+	convoyID := convoys[0].ID
+	requireConvoyTrack(t, store, convoyID, c1.ID)
+	requireConvoyTrack(t, store, convoyID, c2.ID)
+	requireConvoyTrack(t, store, convoyID, c3.ID)
 
 	// Convoy must exist in the SAME store as children.
 	convoy, err := store.Get(convoyID)
@@ -207,10 +252,10 @@ func TestConvoyCreateRigChildrenShareStore(t *testing.T) {
 		t.Errorf("convoy title = %q, want Hello World Variants", convoy.Title)
 	}
 
-	// Verify the convoy is expandable (Children returns all 3).
-	children, err := store.Children(convoyID)
+	// Verify the convoy is expandable through the compatibility helper.
+	children, err := listConvoyChildren(store, convoyID, false)
 	if err != nil {
-		t.Fatalf("listing children: %v", err)
+		t.Fatalf("listing convoy children: %v", err)
 	}
 	if len(children) != 3 {
 		t.Errorf("got %d children, want 3", len(children))
@@ -278,7 +323,7 @@ func TestConvoyListAcrossStores(t *testing.T) {
 	_, _ = rigStore.Create(beads.Bead{Title: "rig task", ParentID: "gc-1"})
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyListAcrossStores([]convoyStoreView{{store: cityStore}, {store: rigStore}}, &stdout, &stderr)
+	code := doConvoyListAcrossStores([]convoyStoreView{{store: cityStore}, {store: rigStore}}, false, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyListAcrossStores = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -287,6 +332,76 @@ func TestConvoyListAcrossStores(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("stdout missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestConvoyListJSON(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{
+		Title:    "batch 1",
+		Type:     "convoy",
+		Labels:   []string{"owned"},
+		Metadata: map[string]string{"target": "integration/gc-1"},
+	})
+	_, _ = store.Create(beads.Bead{Title: "fix auth", ParentID: "gc-1"})
+	_, _ = store.Create(beads.Bead{Title: "fix logs", ParentID: "gc-1", Assignee: "worker"})
+	_ = store.Close("gc-3")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyListAcrossStores([]convoyStoreView{{store: store}}, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyListAcrossStores --json = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stdout lines = %d, want one JSONL record: %q", len(lines), stdout.String())
+	}
+	var result convoyListResultJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if result.SchemaVersion != "1" {
+		t.Fatalf("schema_version = %q, want 1", result.SchemaVersion)
+	}
+	if result.Summary.Total != 1 || len(result.Convoys) != 1 {
+		t.Fatalf("result summary/items = %+v/%+v, want one convoy", result.Summary, result.Convoys)
+	}
+	got := result.Convoys[0]
+	if got.ID != "gc-1" || got.Title != "batch 1" || !got.Owned {
+		t.Fatalf("convoy summary = %+v, want gc-1 batch 1 owned", got)
+	}
+	if got.Progress.Closed != 1 || got.Progress.Total != 2 {
+		t.Fatalf("progress = %+v, want 1/2", got.Progress)
+	}
+	if got.Fields.Target != "integration/gc-1" {
+		t.Fatalf("target = %q, want integration/gc-1", got.Fields.Target)
+	}
+}
+
+func TestConvoyListJSONEmpty(t *testing.T) {
+	store := beads.NewMemStore()
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyListAcrossStores([]convoyStoreView{{store: store}}, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyListAcrossStores --json = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "No open convoys") {
+		t.Fatalf("json stdout contains human message: %q", stdout.String())
+	}
+	var result convoyListResultJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if result.SchemaVersion != "1" || result.Summary.Total != 0 || len(result.Convoys) != 0 {
+		t.Fatalf("result = %+v, want empty v1 list", result)
 	}
 }
 
@@ -325,6 +440,174 @@ func TestConvoyStatus(t *testing.T) {
 			t.Errorf("stdout missing %q:\n%s", want, out)
 		}
 	}
+}
+
+func TestConvoyStatusTracksDeps(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "deploy", Type: "convoy"})     // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                     // gc-2
+	_, _ = store.Create(beads.Bead{Title: "task B", Assignee: "worker"}) // gc-3
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-3", "tracks"))
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyStatus(store, []string{"gc-1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyStatus = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	out := stdout.String()
+	for _, want := range []string{"1/2 closed", "task A", "closed", "task B", "worker"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestConvoyStatusReportsDanglingTracks(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "deploy", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                 // gc-2
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-missing", "tracks"))
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyStatus(store, []string{"gc-1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyStatus = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	out := stdout.String()
+	for _, want := range []string{"Progress: 1/2 closed (1 dangling track)", "gc-missing", "unknown"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stdout missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestConvoyStatusJSON(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{
+		Title:    "deploy",
+		Type:     "convoy",
+		Labels:   []string{"owned"},
+		Metadata: map[string]string{"target": "integration/gc-1", "convoy.owner": "mayor"},
+	})
+	_, _ = store.Create(beads.Bead{Title: "task A", ParentID: "gc-1"})
+	_, _ = store.Create(beads.Bead{Title: "task B", ParentID: "gc-1", Assignee: "worker"})
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyStatusWithJSON(store, []string{"gc-1"}, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyStatus --json = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stdout lines = %d, want one JSONL record: %q", len(lines), stdout.String())
+	}
+	var result convoyStatusResultJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if result.SchemaVersion != "1" {
+		t.Fatalf("schema_version = %q, want 1", result.SchemaVersion)
+	}
+	if result.Convoy.ID != "gc-1" || result.Convoy.Title != "deploy" || !result.Convoy.Owned {
+		t.Fatalf("convoy = %+v, want owned gc-1 deploy", result.Convoy)
+	}
+	if result.Convoy.Fields.Target != "integration/gc-1" || result.Convoy.Fields.Owner != "mayor" {
+		t.Fatalf("fields = %+v, want target and owner", result.Convoy.Fields)
+	}
+	if result.Progress.Closed != 1 || result.Progress.Total != 2 {
+		t.Fatalf("progress = %+v, want 1/2", result.Progress)
+	}
+	if len(result.Children) != 2 || result.Children[1].Assignee != "worker" {
+		t.Fatalf("children = %+v, want two children with second assigned", result.Children)
+	}
+}
+
+func TestConvoyStatusJSONReportsDanglingTracks(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "deploy", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                 // gc-2
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-missing", "tracks"))
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyStatusWithJSON(store, []string{"gc-1"}, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyStatus --json = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	var result convoyStatusResultJSON
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if result.Progress.Closed != 1 || result.Progress.Total != 2 || result.Progress.DanglingTracks != 1 {
+		t.Fatalf("progress = %+v, want 1/2 with 1 dangling track", result.Progress)
+	}
+}
+
+func TestConvoyListAndStatusJSONCommands(t *testing.T) {
+	cityDir := t.TempDir()
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_BEADS_SCOPE_ROOT", "")
+	t.Setenv("GC_CITY", cityDir)
+	t.Setenv("GC_CITY_PATH", "")
+	t.Setenv("GC_CITY_ROOT", "")
+	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte("[workspace]\nname = \"test-city\"\n"), 0o644); err != nil {
+		t.Fatalf("write city.toml: %v", err)
+	}
+	store, err := openCityStoreAt(cityDir)
+	if err != nil {
+		t.Fatalf("openCityStoreAt: %v", err)
+	}
+	_, _ = store.Create(beads.Bead{Title: "release train", Type: "convoy"})
+	_, _ = store.Create(beads.Bead{Title: "ship docs", ParentID: "gc-1"})
+
+	t.Run("list", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"convoy", "list", "--json"}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("run convoy list --json = %d; stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("stderr = %q, want empty", stderr.String())
+		}
+		var result convoyListResultJSON
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+		}
+		if result.SchemaVersion != "1" || len(result.Convoys) != 1 {
+			t.Fatalf("result = %+v, want one v1 convoy", result)
+		}
+	})
+
+	t.Run("status", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"convoy", "status", "gc-1", "--json"}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("run convoy status --json = %d; stderr=%s stdout=%s", code, stderr.String(), stdout.String())
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("stderr = %q, want empty", stderr.String())
+		}
+		var result convoyStatusResultJSON
+		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+			t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+		}
+		if result.SchemaVersion != "1" || result.Convoy.ID != "gc-1" || len(result.Children) != 1 {
+			t.Fatalf("result = %+v, want gc-1 with one child", result)
+		}
+	})
 }
 
 func TestConvoyTarget(t *testing.T) {
@@ -525,25 +808,27 @@ func TestConvoyStatusMissingID(t *testing.T) {
 
 func TestConvoyAdd(t *testing.T) {
 	store := beads.NewMemStore()
-	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
-	_, _ = store.Create(beads.Bead{Title: "task A"})                // gc-2
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"})    // gc-1
+	_, _ = store.Create(beads.Bead{Title: "epic", Type: "epic"})       // gc-2
+	_, _ = store.Create(beads.Bead{Title: "task A", ParentID: "gc-2"}) // gc-3
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyAdd(store, []string{"gc-1", "gc-2"}, &stdout, &stderr)
+	code := doConvoyAdd(store, []string{"gc-1", "gc-3"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyAdd = %d, want 0; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Added gc-2 to convoy gc-1") {
+	if !strings.Contains(stdout.String(), "Added gc-3 to convoy gc-1") {
 		t.Errorf("stdout = %q, want add confirmation", stdout.String())
 	}
 
-	b, err := store.Get("gc-2")
+	b, err := store.Get("gc-3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.ParentID != "gc-1" {
-		t.Errorf("bead ParentID = %q, want %q", b.ParentID, "gc-1")
+	if b.ParentID != "gc-2" {
+		t.Errorf("bead ParentID = %q, want preserved epic parent gc-2", b.ParentID)
 	}
+	requireConvoyTrack(t, store, "gc-1", "gc-3")
 }
 
 func TestConvoyAddNotConvoy(t *testing.T) {
@@ -658,6 +943,132 @@ func TestConvoyCheck(t *testing.T) {
 	}
 	if b.Status != "closed" {
 		t.Errorf("bead Status = %q, want %q", b.Status, "closed")
+	}
+}
+
+func TestConvoyCheckTracksDeps(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                // gc-2
+	_, _ = store.Create(beads.Bead{Title: "task B"})                // gc-3
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-3", "tracks"))
+	_ = store.Close("gc-2")
+	_ = store.Close("gc-3")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCheck(store, events.Discard, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCheck = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `Auto-closed convoy gc-1 "batch"`) {
+		t.Errorf("stdout missing auto-close message:\n%s", stdout.String())
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Status != "closed" {
+		t.Errorf("bead Status = %q, want closed", b.Status)
+	}
+}
+
+func TestConvoyCheckTreatsTombstoneTrackAsComplete(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                // gc-2
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	tombstone := "tombstone"
+	requireNoError(t, store.Update("gc-2", beads.UpdateOpts{Status: &tombstone}))
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCheck(store, events.Discard, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCheck = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `Auto-closed convoy gc-1 "batch"`) {
+		t.Errorf("stdout missing auto-close message:\n%s", stdout.String())
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Status != "closed" {
+		t.Errorf("bead Status = %q, want closed", b.Status)
+	}
+}
+
+func TestConvoyCheckDanglingTrackDoesNotAutoClose(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                // gc-2
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-missing", "tracks"))
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCheck(store, events.Discard, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCheck = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Auto-closed") {
+		t.Errorf("stdout should not contain Auto-closed for unresolved tracked item:\n%s", stdout.String())
+	}
+
+	b, err := store.Get("gc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Status != "open" {
+		t.Errorf("bead Status = %q, want open", b.Status)
+	}
+}
+
+func TestConvoyCheckJSONAutoCloseEmitsSingleResult(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"})    // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A", ParentID: "gc-1"}) // gc-2
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyCheckAcrossStoresJSON([]convoyStoreView{{store: store}}, events.Discard, true, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyCheckAcrossStoresJSON = %d, want 0; stderr: %s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "Auto-closed convoy") {
+		t.Fatalf("stdout contains human auto-close text in JSON mode:\n%s", stdout.String())
+	}
+	if strings.Count(stdout.String(), "\n") != 1 {
+		t.Fatalf("stdout = %q, want exactly one JSONL result", stdout.String())
+	}
+
+	var got struct {
+		SchemaVersion string `json:"schema_version"`
+		OK            bool   `json:"ok"`
+		Command       string `json:"command"`
+		Action        string `json:"action"`
+		Closed        int    `json:"closed"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if got.SchemaVersion != "1" || !got.OK || got.Command != "convoy.check" || got.Action != "check" || got.Closed != 1 {
+		t.Fatalf("payload = %+v", got)
+	}
+}
+
+func TestConvoyCheckJSONReportsWriteError(t *testing.T) {
+	store := beads.NewMemStore()
+
+	var stderr bytes.Buffer
+	code := doConvoyCheckAcrossStoresJSON([]convoyStoreView{{store: store}}, events.Discard, true, errWriter{}, &stderr)
+	if code != 1 {
+		t.Fatalf("doConvoyCheckAcrossStoresJSON = %d, want 1", code)
+	}
+	if !strings.Contains(stderr.String(), "writing JSON result") {
+		t.Fatalf("stderr = %q, want JSON write error", stderr.String())
 	}
 }
 
@@ -792,6 +1203,40 @@ func TestConvoyStrandedClosedExcluded(t *testing.T) {
 	}
 }
 
+func TestConvoyListReportsDanglingTracks(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
+	_, _ = store.Create(beads.Bead{Title: "task A"})                // gc-2
+	requireNoError(t, store.DepAdd("gc-1", "gc-2", "tracks"))
+	requireNoError(t, store.DepAdd("gc-1", "gc-missing", "tracks"))
+	_ = store.Close("gc-2")
+
+	var stdout, stderr bytes.Buffer
+	code := doConvoyList(store, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("doConvoyList = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "1/2 closed (1 dangling track)") {
+		t.Errorf("stdout = %q, want dangling track progress", stdout.String())
+	}
+}
+
+func TestConvoyStrandedIgnoresDanglingTracks(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"}) // gc-1
+	requireNoError(t, store.DepAdd("gc-1", "gc-missing", "tracks"))
+
+	var stdout bytes.Buffer
+	code := doConvoyStranded(store, &stdout, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("doConvoyStranded = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "No stranded work") {
+		t.Errorf("stdout = %q, want no stranded message for dangling tracks", stdout.String())
+	}
+}
+
 func TestConvoyStrandedAcrossStores(t *testing.T) {
 	cityStore := beads.NewMemStore()
 	rigStore := beads.NewMemStore()
@@ -922,6 +1367,34 @@ func TestConvoyAutocloseHappyPath(t *testing.T) {
 	}
 	if b.Status != "closed" {
 		t.Errorf("convoy Status = %q, want %q", b.Status, "closed")
+	}
+}
+
+func TestConvoyAutocloseTracksDeps(t *testing.T) {
+	store := beads.NewMemStore()
+	_, _ = store.Create(beads.Bead{Title: "epic", Type: "epic"})       // gc-1
+	_, _ = store.Create(beads.Bead{Title: "batch", Type: "convoy"})    // gc-2
+	_, _ = store.Create(beads.Bead{Title: "task A", ParentID: "gc-1"}) // gc-3
+	_, _ = store.Create(beads.Bead{Title: "task B"})                   // gc-4
+	requireNoError(t, store.DepAdd("gc-2", "gc-3", "tracks"))
+	requireNoError(t, store.DepAdd("gc-2", "gc-4", "tracks"))
+	_ = store.Close("gc-3")
+	_ = store.Close("gc-4")
+
+	var stdout bytes.Buffer
+	doConvoyAutocloseWith(store, events.Discard, "gc-3", &stdout, &bytes.Buffer{})
+
+	out := stdout.String()
+	if !strings.Contains(out, `Auto-closed convoy gc-2 "batch"`) {
+		t.Errorf("stdout = %q, want tracks convoy auto-close message", out)
+	}
+
+	b, err := store.Get("gc-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Status != "closed" {
+		t.Errorf("convoy Status = %q, want closed", b.Status)
 	}
 }
 
@@ -1335,7 +1808,7 @@ func TestConvoyCreateWithFields(t *testing.T) {
 	fields := ConvoyFields{Owner: "mayor", Merge: "mr"}
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreateWithOptions(store, nil, "", events.Discard, []string{"deploy"}, convoyCreateOptions{Fields: fields}, &stdout, &stderr)
+	code := doConvoyCreateWithOptions(store, events.Discard, []string{"deploy"}, convoyCreateOptions{Fields: fields}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyCreateWithOptions = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -1361,7 +1834,7 @@ func TestConvoyCreateWithOptionsOwnedAndTarget(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doConvoyCreateWithOptions(store, nil, "", events.Discard, []string{"deploy"}, opts, &stdout, &stderr)
+	code := doConvoyCreateWithOptions(store, events.Discard, []string{"deploy"}, opts, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("doConvoyCreateWithOptions = %d, want 0; stderr: %s", code, stderr.String())
 	}
@@ -1394,5 +1867,26 @@ func TestConvoyLandWithNotify(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "notify: mayor") {
 		t.Errorf("stdout = %q, want notify message", stdout.String())
+	}
+}
+
+func requireConvoyTrack(t *testing.T, store beads.Store, convoyID, itemID string) {
+	t.Helper()
+	deps, err := store.DepList(convoyID, "down")
+	if err != nil {
+		t.Fatalf("DepList(%s): %v", convoyID, err)
+	}
+	for _, dep := range deps {
+		if dep.IssueID == convoyID && dep.DependsOnID == itemID && dep.Type == "tracks" {
+			return
+		}
+	}
+	t.Fatalf("missing tracks dep %s -> %s; deps=%v", convoyID, itemID, deps)
+}
+
+func requireNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

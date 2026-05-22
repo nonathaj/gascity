@@ -172,6 +172,42 @@ func ReadAutoStartDisabled(fs fsys.FS, path string) (bool, error) {
 	return false, nil
 }
 
+// ReadExportAuto returns the configured value of export.auto along with a
+// presence indicator. ok=false means the key is absent from the config OR
+// the value is not a recognized boolean (the upstream bd default is true).
+// Used by gc to gate cleanup of stale .beads/issues.jsonl exports: when
+// export.auto is explicitly false, the JSONL is a stale artifact that bd's
+// auto-import-on-write path (sa-41j3kp) would otherwise reload on every
+// write, stalling bd create for minutes on large datasets.
+//
+// Because this gates destructive cleanup, parsing is strict: only the
+// boolean literals strconv.ParseBool accepts count as present. A garbage
+// value (e.g. "yes", "off", "foo") returns ok=false so callers fall back
+// to other gc-managed signals rather than mis-treating the scope as
+// canonical.
+func ReadExportAuto(fs fsys.FS, path string) (value bool, ok bool, err error) {
+	doc, err := readConfigDoc(fs, path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, false, nil
+		}
+		if raw, scanOK := scanConfigLineValue(fs, path, "export.auto:"); scanOK {
+			if parsed, parseErr := strconv.ParseBool(raw); parseErr == nil {
+				return parsed, true, nil
+			}
+			return false, false, nil
+		}
+		return false, false, err
+	}
+	if raw, present := configStringValue(mappingRoot(doc), "export.auto"); present {
+		if parsed, parseErr := strconv.ParseBool(raw); parseErr == nil {
+			return parsed, true, nil
+		}
+		return false, false, nil
+	}
+	return false, false, nil
+}
+
 // ReadEndpointStatus reads gc.endpoint_status when present.
 func ReadEndpointStatus(fs fsys.FS, path string) (EndpointStatus, bool, error) {
 	doc, err := readConfigDoc(fs, path)
@@ -514,6 +550,11 @@ func ensureCanonicalConfigFallback(fs fsys.FS, path string, state ConfigState) (
 		return false, err
 	}
 
+	repairedLines, repaired := repairMalformedConfigLines(strings.Split(string(data), "\n"))
+	if repaired {
+		data = []byte(strings.Join(repairedLines, "\n"))
+	}
+
 	prefix := strings.TrimSpace(state.IssuePrefix)
 	if prefix == "" {
 		if existing, ok := scanConfigLineValueFromData(data, "issue_prefix:", "issue-prefix:"); ok {
@@ -563,9 +604,11 @@ func ensureCanonicalConfigFallback(fs fsys.FS, path string, state ConfigState) (
 	lines := strings.Split(string(data), "\n")
 	out := make([]string, 0, len(lines)+len(replacements))
 	seen := make(map[string]bool, len(replacements))
-	changed := false
+	changed := repaired
 
-	for _, line := range lines {
+	lastTopLevelIndex := lastTopLevelKeyIndex(lines)
+
+	for i, line := range lines {
 		key, _, ok := topLevelConfigLine(line)
 		if !ok {
 			out = append(out, line)
@@ -577,6 +620,13 @@ func ensureCanonicalConfigFallback(fs fsys.FS, path string, state ConfigState) (
 		}
 		want, manage := replacements[key]
 		if !manage {
+			// Per YAML semantics, last-write-wins for duplicate top-level
+			// keys. Drop earlier occurrences so the canonical writer
+			// converges on a single entry per key.
+			if i != lastTopLevelIndex[key] {
+				changed = true
+				continue
+			}
 			out = append(out, line)
 			continue
 		}
@@ -874,4 +924,106 @@ func trimmedString(value any) string {
 		return ""
 	}
 	return trimmed
+}
+
+// repairMalformedConfigLines splits top-level config lines that have been
+// glued together by an upstream writer that forgot a trailing newline.
+// Returns the (possibly-expanded) line slice and a flag indicating whether
+// any line was split.
+//
+// Concretely this handles the ga-um7 reproducer: `bd init` against a git
+// repo can leave a line like
+//
+//	sync.remote: "<url>"types.custom: <value>
+//
+// which would otherwise trip the YAML parser and survive the line-based
+// fallback unchanged.
+func repairMalformedConfigLines(lines []string) ([]string, bool) {
+	out := make([]string, 0, len(lines))
+	changed := false
+	for _, line := range lines {
+		parts := splitGluedConfigLine(line)
+		if len(parts) > 1 {
+			changed = true
+		}
+		out = append(out, parts...)
+	}
+	return out, changed
+}
+
+// splitGluedConfigLine recursively splits a top-level config line that
+// contains a quoted-string value immediately followed by another top-level
+// key. Returns the original line as a one-element slice when no split is
+// possible.
+func splitGluedConfigLine(line string) []string {
+	if strings.TrimLeft(line, " \t") != line {
+		return []string{line}
+	}
+	colon := strings.Index(line, ":")
+	if colon <= 0 {
+		return []string{line}
+	}
+	rest := line[colon+1:]
+	quoteStart := strings.Index(rest, `"`)
+	if quoteStart < 0 {
+		return []string{line}
+	}
+	quoteEnd := strings.Index(rest[quoteStart+1:], `"`)
+	if quoteEnd < 0 {
+		return []string{line}
+	}
+	afterQuote := quoteStart + 1 + quoteEnd + 1
+	tail := rest[afterQuote:]
+	if !looksLikeTopLevelKeyStart(tail) {
+		return []string{line}
+	}
+	head := line[:colon+1+afterQuote]
+	// The tail may itself glue another key; recurse so chains of
+	// missing-newline writes all get split apart.
+	return append([]string{head}, splitGluedConfigLine(tail)...)
+}
+
+// looksLikeTopLevelKeyStart reports whether s begins with a YAML-style
+// top-level key followed by a colon (e.g. `types.custom: value`).
+func looksLikeTopLevelKeyStart(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if r == ':' {
+			return i > 0
+		}
+		if !isYamlKeyRune(r) {
+			return false
+		}
+	}
+	return false
+}
+
+func isYamlKeyRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z':
+		return true
+	case r >= 'A' && r <= 'Z':
+		return true
+	case r >= '0' && r <= '9':
+		return true
+	case r == '.' || r == '-' || r == '_':
+		return true
+	default:
+		return false
+	}
+}
+
+// lastTopLevelKeyIndex returns a map from top-level key name to the index
+// of its final occurrence in lines. Used by the fallback writer to drop
+// earlier duplicates so YAML last-write-wins semantics survive a rewrite.
+func lastTopLevelKeyIndex(lines []string) map[string]int {
+	last := make(map[string]int, len(lines))
+	for i, line := range lines {
+		if key, _, ok := topLevelConfigLine(line); ok {
+			last[key] = i
+		}
+	}
+	return last
 }

@@ -57,6 +57,7 @@ type agentFile struct {
 	Description            string            `toml:"description,omitempty"`
 	Dir                    string            `toml:"dir,omitempty"`
 	WorkDir                string            `toml:"work_dir,omitempty"`
+	TmuxAlias              string            `toml:"tmux_alias,omitempty"`
 	Scope                  string            `toml:"scope,omitempty"`
 	Suspended              bool              `toml:"suspended,omitempty"`
 	PreStart               []string          `toml:"pre_start,omitempty"`
@@ -64,6 +65,7 @@ type agentFile struct {
 	Session                string            `toml:"session,omitempty"`
 	Provider               string            `toml:"provider,omitempty"`
 	StartCommand           string            `toml:"start_command,omitempty"`
+	Lifecycle              string            `toml:"lifecycle,omitempty"`
 	Args                   []string          `toml:"args,omitempty"`
 	PromptMode             string            `toml:"prompt_mode,omitempty"`
 	PromptFlag             string            `toml:"prompt_flag,omitempty"`
@@ -715,6 +717,7 @@ func agentConfigFromAgent(agent config.Agent) agentFile {
 		Description:            agent.Description,
 		Dir:                    agent.Dir,
 		WorkDir:                agent.WorkDir,
+		TmuxAlias:              agent.TmuxAlias,
 		Scope:                  agent.Scope,
 		Suspended:              agent.Suspended,
 		PreStart:               agent.PreStart,
@@ -722,6 +725,7 @@ func agentConfigFromAgent(agent config.Agent) agentFile {
 		Session:                agent.Session,
 		Provider:               agent.Provider,
 		StartCommand:           agent.StartCommand,
+		Lifecycle:              agent.Lifecycle,
 		Args:                   agent.Args,
 		PromptMode:             agent.PromptMode,
 		PromptFlag:             agent.PromptFlag,
@@ -763,6 +767,7 @@ func isZeroAgentConfig(cfg agentFile) bool {
 	return cfg.Description == "" &&
 		cfg.Dir == "" &&
 		cfg.WorkDir == "" &&
+		cfg.TmuxAlias == "" &&
 		cfg.Scope == "" &&
 		!cfg.Suspended &&
 		len(cfg.PreStart) == 0 &&
@@ -770,6 +775,7 @@ func isZeroAgentConfig(cfg agentFile) bool {
 		cfg.Session == "" &&
 		cfg.Provider == "" &&
 		cfg.StartCommand == "" &&
+		cfg.Lifecycle == "" &&
 		len(cfg.Args) == 0 &&
 		cfg.PromptMode == "" &&
 		cfg.PromptFlag == "" &&
