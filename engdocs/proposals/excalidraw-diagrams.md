@@ -65,11 +65,9 @@ The visual output is the best of the three, and the pastel palette established d
 
 ## Toolchain
 
-Everything is already wired up in this branch:
-
 - **MCP server** — `https://mcp.excalidraw.com` configured in `.mcp.json`. Lets Claude author and edit `.excalidraw` files conversationally.
 - **CLI renderer** — `@swiftlysingh/excalidraw-cli` run via `npx` (no global install, Node 18+ required). Converts `.excalidraw` → SVG.
-- **Makefile targets** — `make diagrams-excalidraw` renders changed files; `make diagrams-d2` renders D2 sources; `make diagrams` runs both.
+- **Makefile target** — `make diagrams-excalidraw` renders changed files under `docs/diagrams/excalidraw/` to `docs/diagrams/excalidraw-rendered/`.
 
 Full setup instructions (including a copy-paste prompt for bootstrapping in a fresh session) are in [`engdocs/contributors/excalidraw-setup.md`](../contributors/excalidraw-setup.md).
 
