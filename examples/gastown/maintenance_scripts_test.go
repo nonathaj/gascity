@@ -1768,12 +1768,14 @@ exit 0
 		t.Fatalf("reaper ran dependency-aware queries against legacy dependency schema:\n%s", log)
 	}
 
+	// A silently-skipped DB may make no gc calls at all, so a missing
+	// gc log is a valid no-escalation outcome.
 	gcData, err := os.ReadFile(gcLog)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("ReadFile(gc log): %v", err)
 	}
-	if !strings.Contains(string(gcData), "dependencies table lacks split target columns") {
-		t.Fatalf("reaper did not surface legacy dependency schema anomaly:\n%s", gcData)
+	if strings.Contains(string(gcData), "dependencies table lacks split target columns") {
+		t.Errorf("reaper escalated the legacy dependency schema as an anomaly; the split-target gate must skip silently:\n%s", gcData)
 	}
 }
 

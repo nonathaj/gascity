@@ -330,7 +330,9 @@ while IFS= read -r DB; do
         continue
     fi
     if ! has_split_dependency_target_columns "$DB"; then
-        record_anomaly "$DB" "dependencies table lacks split target columns; dependency-aware reaper queries skipped"
+        # Legacy dependency schema (pre-#2399). Skip silently like the
+        # has_wisps_table gate above; the only fix is the schema migration,
+        # which the reaper cannot perform. See gastownhall/gascity#2456.
         continue
     fi
 
