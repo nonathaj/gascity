@@ -3167,6 +3167,321 @@ func TestSweepStaleOrderTracking_ClosesOnlyOldOpenTrackingBeads(t *testing.T) {
 	}
 }
 
+type noopCloseAllStore struct {
+	beads.Store
+	closeCalls int
+}
+
+func (s *noopCloseAllStore) CloseAll(_ []string, _ map[string]string) (int, error) {
+	s.closeCalls++
+	return 1, nil
+}
+
+func TestCloseOrderTrackingBeadErrorsWhenVerificationStillOpen(t *testing.T) {
+	base := beads.NewMemStore()
+	tracking, err := base.Create(beads.Bead{
+		Title:     "order:stuck",
+		Labels:    []string{"order-run:stuck", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(tracking): %v", err)
+	}
+	store := &noopCloseAllStore{Store: base}
+
+	err = closeOrderTrackingBead(context.Background(), store, tracking.ID)
+	if err == nil {
+		t.Fatal("closeOrderTrackingBead err = nil, want read-after-close verification error")
+	}
+	if !strings.Contains(err.Error(), tracking.ID) {
+		t.Fatalf("err = %q, want stuck tracking bead id %q", err, tracking.ID)
+	}
+	if store.closeCalls < 2 {
+		t.Fatalf("CloseAll calls = %d, want retry before verification failure", store.closeCalls)
+	}
+}
+
+type flakyCloseAllStore struct {
+	beads.Store
+	failuresRemaining int
+	closeCalls        int
+}
+
+func (s *flakyCloseAllStore) CloseAll(ids []string, metadata map[string]string) (int, error) {
+	s.closeCalls++
+	if s.failuresRemaining > 0 {
+		s.failuresRemaining--
+		return 0, fmt.Errorf("transient close conflict")
+	}
+	return s.Store.CloseAll(ids, metadata)
+}
+
+func TestCloseOrderTrackingBeadRetriesTransientCloseConflict(t *testing.T) {
+	base := beads.NewMemStore()
+	tracking, err := base.Create(beads.Bead{
+		Title:     "order:retry",
+		Labels:    []string{"order-run:retry", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(tracking): %v", err)
+	}
+	store := &flakyCloseAllStore{Store: base, failuresRemaining: 1}
+
+	if err := closeOrderTrackingBead(context.Background(), store, tracking.ID); err != nil {
+		t.Fatalf("closeOrderTrackingBead: %v", err)
+	}
+	if store.closeCalls != 2 {
+		t.Fatalf("CloseAll calls = %d, want 2", store.closeCalls)
+	}
+	got, err := base.Get(tracking.ID)
+	if err != nil {
+		t.Fatalf("Get(tracking): %v", err)
+	}
+	if got.Status != "closed" {
+		t.Fatalf("tracking status = %q, want closed", got.Status)
+	}
+}
+
+func TestSweepStaleOrderTrackingAcrossStoresClosesRigStoreAndUnblocksDispatch(t *testing.T) {
+	cityDir := t.TempDir()
+	rigDir := filepath.Join(cityDir, "frontend")
+	if err := os.MkdirAll(rigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rigStore := beads.NewMemStore()
+	legacyStore := beads.NewMemStore()
+	ran := false
+	m := &memoryOrderDispatcher{
+		aa: []orders.Order{{
+			Name:     "rig-digest",
+			Rig:      "frontend",
+			Trigger:  "cooldown",
+			Interval: "1m",
+			Exec:     "true",
+			Timeout:  "1m",
+		}},
+		storeFn: func(target execStoreTarget) (beads.Store, error) {
+			if target.ScopeKind == "city" {
+				return legacyStore, nil
+			}
+			return rigStore, nil
+		},
+		execRun: func(context.Context, string, string, []string) ([]byte, error) {
+			ran = true
+			return nil, nil
+		},
+		rec:    events.Discard,
+		stderr: &bytes.Buffer{},
+		cfg: &config.City{
+			Rigs: []config.Rig{{
+				Name: "frontend",
+				Path: rigDir,
+			}},
+		},
+	}
+	stale, err := rigStore.Create(beads.Bead{
+		Title:     "order:rig-digest:rig:frontend",
+		Labels:    []string{"order-run:rig-digest:rig:frontend", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(stale): %v", err)
+	}
+
+	m.dispatch(context.Background(), cityDir, stale.CreatedAt.Add(time.Hour))
+	m.drain(context.Background())
+	if ran {
+		t.Fatal("dispatch ran before stale rig tracking bead was cleaned")
+	}
+
+	result, err := sweepStaleOrderTrackingAcrossStores(
+		[]beads.Store{rigStore, legacyStore},
+		stale.CreatedAt.Add(time.Hour),
+		time.Minute,
+		orderFilterForTest("rig-digest:rig:frontend"),
+		orderTrackingSweepMetadataInitiator,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("sweepStaleOrderTrackingAcrossStores: %v", err)
+	}
+	if result.trackingClosed != 1 {
+		t.Fatalf("trackingClosed = %d, want 1", result.trackingClosed)
+	}
+
+	m.dispatch(context.Background(), cityDir, stale.CreatedAt.Add(2*time.Hour))
+	m.drain(context.Background())
+	if !ran {
+		t.Fatal("dispatch did not run after stale rig tracking bead was closed")
+	}
+}
+
+type failingListOrderTrackingStore struct {
+	beads.Store
+	err error
+}
+
+func (s *failingListOrderTrackingStore) ListByLabel(label string, limit int, opts ...beads.QueryOpt) ([]beads.Bead, error) {
+	if label == labelOrderTracking {
+		return nil, s.err
+	}
+	return s.Store.ListByLabel(label, limit, opts...)
+}
+
+func TestSweepStaleOrderTrackingAcrossStoresContinuesAfterStoreError(t *testing.T) {
+	failingStore := &failingListOrderTrackingStore{
+		Store: beads.NewMemStore(),
+		err:   fmt.Errorf("store unavailable"),
+	}
+	cityStore := beads.NewMemStore()
+	rigStore := beads.NewMemStore()
+	cityStale, err := cityStore.Create(beads.Bead{
+		Title:     "order:cleanup",
+		Labels:    []string{"order-run:cleanup", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(city stale): %v", err)
+	}
+	rigStale, err := rigStore.Create(beads.Bead{
+		Title:     "order:cleanup:rig:frontend",
+		Labels:    []string{"order-run:cleanup:rig:frontend", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(rig stale): %v", err)
+	}
+
+	result, err := sweepStaleOrderTrackingAcrossStores(
+		[]beads.Store{failingStore, cityStore, rigStore},
+		cityStale.CreatedAt.Add(time.Hour),
+		time.Minute,
+		nil,
+		orderTrackingSweepMetadataInitiator,
+		false,
+	)
+	if err == nil {
+		t.Fatal("sweepStaleOrderTrackingAcrossStores err = nil, want aggregate store error")
+	}
+	if result.trackingClosed != 2 {
+		t.Fatalf("trackingClosed = %d, want 2", result.trackingClosed)
+	}
+	if result.storesSwept != 2 {
+		t.Fatalf("storesSwept = %d, want 2", result.storesSwept)
+	}
+	for _, tc := range []struct {
+		name  string
+		store beads.Store
+		id    string
+	}{
+		{name: "city", store: cityStore, id: cityStale.ID},
+		{name: "rig", store: rigStore, id: rigStale.ID},
+	} {
+		got, err := tc.store.Get(tc.id)
+		if err != nil {
+			t.Fatalf("%s Get(%s): %v", tc.name, tc.id, err)
+		}
+		if got.Status != "closed" {
+			t.Fatalf("%s stale tracking status = %q, want closed", tc.name, got.Status)
+		}
+	}
+}
+
+func TestSweepStaleOrderTrackingClosesTriggerEnvFailedBeadsAndUnblocksDispatch(t *testing.T) {
+	store := beads.NewMemStore()
+	failed, err := store.Create(beads.Bead{
+		Title:     "order:pg-cooldown",
+		Labels:    []string{"order-run:pg-cooldown", labelOrderTracking, labelTriggerEnvFailed},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(trigger-env failed): %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	normal, err := store.Create(beads.Bead{
+		Title:     "order:pg-cooldown",
+		Labels:    []string{"order-run:pg-cooldown", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(normal tracking): %v", err)
+	}
+
+	result, err := sweepStaleOrderTrackingWithOptions(
+		store,
+		normal.CreatedAt.Add(time.Hour),
+		time.Minute,
+		nil,
+		orderTrackingSweepMetadataInitiator,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("sweepStaleOrderTrackingWithOptions: %v", err)
+	}
+	if result.trackingClosed != 2 {
+		t.Fatalf("trackingClosed = %d, want 2", result.trackingClosed)
+	}
+	gotFailed, err := store.Get(failed.ID)
+	if err != nil {
+		t.Fatalf("Get(trigger-env failed): %v", err)
+	}
+	if gotFailed.Status != "closed" {
+		t.Fatalf("trigger-env failed status = %s, want closed", gotFailed.Status)
+	}
+	gotNormal, err := store.Get(normal.ID)
+	if err != nil {
+		t.Fatalf("Get(normal tracking): %v", err)
+	}
+	if gotNormal.Status != "closed" {
+		t.Fatalf("normal tracking status = %s, want closed", gotNormal.Status)
+	}
+
+	ran := false
+	ad := buildOrderDispatcherFromListExec([]orders.Order{{
+		Name:     "pg-cooldown",
+		Trigger:  "cooldown",
+		Interval: "1s",
+		Exec:     "true",
+	}}, store, nil, func(context.Context, string, string, []string) ([]byte, error) {
+		ran = true
+		return nil, nil
+	}, nil)
+	ad.dispatch(context.Background(), t.TempDir(), normal.CreatedAt.Add(2*time.Hour))
+	ad.drain(context.Background())
+	if !ran {
+		t.Fatal("dispatch did not run after stale trigger-env marker was closed")
+	}
+}
+
+func TestCloseAndVerifyOrderTrackingBeadsStopsRetryOnContextCancel(t *testing.T) {
+	base := beads.NewMemStore()
+	tracking, err := base.Create(beads.Bead{
+		Title:     "order:canceled",
+		Labels:    []string{"order-run:canceled", labelOrderTracking},
+		Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("Create(tracking): %v", err)
+	}
+	store := &noopCloseAllStore{Store: base}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = closeAndVerifyOrderTrackingBeads(ctx, store, []string{tracking.ID}, map[string]string{
+		"close_reason": completedOrderTrackingCloseReason,
+	})
+	if err == nil {
+		t.Fatal("closeAndVerifyOrderTrackingBeads err = nil, want context cancellation")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if store.closeCalls != 1 {
+		t.Fatalf("CloseAll calls = %d, want 1", store.closeCalls)
+	}
+}
+
 func orderFilterForTest(names ...string) map[string]struct{} {
 	out := make(map[string]struct{}, len(names))
 	for _, name := range names {
