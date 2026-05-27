@@ -3010,7 +3010,8 @@ func TestCityRuntimeTick_PrefixesEachJoinedWispGCErrorLine(t *testing.T) {
 		cfg:                 &config.City{},
 		sp:                  runtime.NewFake(),
 		standaloneCityStore: store,
-		wg: fixedWispGC{err: fmt.Errorf("%s\n%s",
+		wg: fixedWispGC{err: fmt.Errorf(
+			"%s\n%s",
 			"deleting expired bead \"mol-1\": delete failed",
 			"listing closed order-tracking beads: list failed",
 		)},
