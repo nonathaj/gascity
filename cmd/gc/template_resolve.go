@@ -716,7 +716,7 @@ func templateParamsToConfig(tp TemplateParams) runtime.Config {
 		CopyFiles:              tp.Hints.CopyFiles,
 		FingerprintExtra:       tp.FPExtra,
 	}
-	applyT3BridgeRuntimeConfig(tp, env, &cfg)
+	applyT3BridgeRuntimeConfig(tp, env)
 	return cfg
 }
 

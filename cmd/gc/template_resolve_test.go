@@ -10,8 +10,8 @@ func TestT3BridgeStartupEnvelopeModel_PrefersResolvedEnvModel(t *testing.T) {
 		},
 	}
 
-	if got := t3BridgeStartupEnvelopeModel(tp.Env["GC_PROVIDER"], tp); got != "gpt-5-codex" {
-		t.Fatalf("startupEnvelopeModel() = %q, want gpt-5-codex", got)
+	if got := t3BridgeStartupEnvelopeModel(tp.Env["GC_PROVIDER"], tp); got != "gpt-5.4-mini" {
+		t.Fatalf("startupEnvelopeModel() = %q, want gpt-5.4-mini", got)
 	}
 }
 

@@ -158,7 +158,7 @@ func newSessionProviderByName(name string, sc config.SessionConfig, cityName, ci
 }
 
 func isLegacyT3BridgeExecScript(script string) bool {
-	return strings.HasSuffix(strings.TrimSpace(script), "gc-session-t3")
+	return filepath.Base(strings.TrimSpace(script)) == "gc-session-t3"
 }
 
 // newSessionProvider returns a runtime.Provider based on the session provider
