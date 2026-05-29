@@ -2,7 +2,7 @@ package doctor
 
 // RED tests for internal/doctor/checks_dolt_local_only.go (ga-673qo6.1).
 //
-// These tests define the expected behaviour of DoltLocalOnlyRemoteCheck and
+// These tests define the expected behavior of DoltLocalOnlyRemoteCheck and
 // must fail to compile until the builder implements:
 //   - internal/doctor/checks_dolt_local_only.go with DoltLocalOnlyRemoteCheck,
 //     NewDoltLocalOnlyRemoteCheck, and the injectable removeRemote field.
@@ -416,7 +416,7 @@ func TestDoltLocalOnlyRemoteCheck_Fix_CallsRemoveForOffBoxRemotes(t *testing.T) 
 	c := NewDoltLocalOnlyRemoteCheck(cityPath, rig, doltDataDir)
 
 	var removeCalls []string
-	c.removeRemote = func(rigPath, remoteName string) error {
+	c.removeRemote = func(_ string, remoteName string) error {
 		removeCalls = append(removeCalls, remoteName)
 		return nil
 	}
@@ -451,7 +451,7 @@ func TestDoltLocalOnlyRemoteCheck_Fix_PropagatesRemoveError(t *testing.T) {
 	rig := config.Rig{Name: "testrig", Path: rigPath}
 	c := NewDoltLocalOnlyRemoteCheck(cityPath, rig, doltDataDir)
 	removeErr := errors.New("bd dolt remote remove: server not reachable")
-	c.removeRemote = func(rigPath, remoteName string) error {
+	c.removeRemote = func(_ string, _ string) error {
 		return removeErr
 	}
 

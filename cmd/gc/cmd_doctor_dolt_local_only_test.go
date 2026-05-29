@@ -93,9 +93,7 @@ func TestDoDoctorRegistersLocalOnlyRemoteCheckForActiveManagedRigs(t *testing.T)
 	newDoctorRigDoltServerCheck = func(cityPath string, rig config.Rig, _ bool) *doctor.RigDoltServerCheck {
 		return doctor.NewRigDoltServerCheck(cityPath, rig, true)
 	}
-	newDoctorDoltBackupCheck = func(cityPath string, rig config.Rig, dataDir string) *doctor.DoltBackupCheck {
-		return doctor.NewDoltBackupCheck(cityPath, rig, dataDir)
-	}
+	newDoctorDoltBackupCheck = doctor.NewDoltBackupCheck
 	registered := map[string]string{}
 	newDoctorDoltLocalOnlyCheck = func(cityPath string, rig config.Rig, dataDir string) *doctor.DoltLocalOnlyRemoteCheck {
 		registered[rig.Name] = dataDir
@@ -127,7 +125,7 @@ func TestDoDoctorRegistersLocalOnlyRemoteCheckForActiveManagedRigs(t *testing.T)
 
 // TestDoDoctorSkipsLocalOnlyCheckWhenGCDoltSkip verifies that the
 // dolt-local-only-remote check is not registered when GC_DOLT=skip, matching
-// the behaviour of the existing dolt-backup check.
+// the behavior of the existing dolt-backup check.
 func TestDoDoctorSkipsLocalOnlyCheckWhenGCDoltSkip(t *testing.T) {
 	clearInheritedBeadsEnv(t)
 
@@ -180,9 +178,7 @@ prefix = "ma"
 	newDoctorRigDoltServerCheck = func(cityPath string, rig config.Rig, _ bool) *doctor.RigDoltServerCheck {
 		return doctor.NewRigDoltServerCheck(cityPath, rig, true)
 	}
-	newDoctorDoltBackupCheck = func(cityPath string, rig config.Rig, dataDir string) *doctor.DoltBackupCheck {
-		return doctor.NewDoltBackupCheck(cityPath, rig, dataDir)
-	}
+	newDoctorDoltBackupCheck = doctor.NewDoltBackupCheck
 	newDoctorDoltLocalOnlyCheck = func(cityPath string, rig config.Rig, dataDir string) *doctor.DoltLocalOnlyRemoteCheck {
 		registered++
 		return doctor.NewDoltLocalOnlyRemoteCheck(cityPath, rig, dataDir)
