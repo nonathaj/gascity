@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   published regular-usage pricing is unchanged from Opus 4.7: $5/MTok input
   and $25/MTok output.
 
+### Fixed
+
+- Built-in pack auto-includes now skip packs already reachable from rig pack
+  graphs, preventing duplicate maintenance agents when a rig pack imports a
+  built-in pack transitively.
+
 ## [1.2.0] - 2026-05-25
 
 ### Added
