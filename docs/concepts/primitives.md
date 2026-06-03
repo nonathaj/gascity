@@ -133,19 +133,28 @@ These files serve distinct purposes:
 
 **What it does for you:** `city.toml` is where you say *how* your city runs; packs, formula files, and order files are where you say *what* your agents do. Together they form the full picture of your city's desired state, with no separate state file to maintain.
 
+A minimal two-agent city declares each agent as its own directory under
+`agents/`, and uses `city.toml` for the operational defaults they inherit:
+
+```text
+bright-lights/
+├── city.toml          # operational config (below)
+└── agents/            # behavioral config — one directory per agent
+    ├── mayor/
+    │   └── prompt.template.md
+    └── worker/
+        └── prompt.template.md
+```
+
 ```toml
-# city.toml — a minimal two-agent city (operational config)
+# city.toml — operational config
 [workspace]
 name = "bright-lights"
-
-[[agent]]
-name = "mayor"
-provider = "claude"
-
-[[agent]]
-name = "worker"
-provider = "claude"
+provider = "claude"   # default provider; an agent's agent.toml can override it
 ```
+
+Both `mayor` and `worker` run on `claude` because they inherit the workspace
+default; neither needs an `agent.toml` until it diverges from it.
 
 
 ### Prompt Templates
@@ -286,7 +295,7 @@ Like [Dispatch](#dispatch-sling) it composes the primitives end to end:
 
 The supervision model follows the Erlang/OTP "let it crash, then restart" pattern.
 
-Crucially, the [**controller**](/concepts/architecture-overview#controller) drives all of this on its own — no user-configured agent role is required for the infrastructure to stay healthy. If removing an `[[agent]]` entry would break supervision, that would be a bug.
+Crucially, the [**controller**](/concepts/architecture-overview#controller) drives all of this on its own — no user-configured agent role is required for the infrastructure to stay healthy. If removing an agent's `agents/<name>/` directory would break supervision, that would be a bug.
 
 **What it does for you:** stalled and crashed sessions recover automatically. You declare the health thresholds in config; the controller does the probing, restarting, and backoff. When you want to check the system's health yourself:
 
