@@ -130,6 +130,7 @@ These files serve distinct purposes:
 
 - **`city.toml`** is the *operational* config: which agents run, how many, on which provider, health thresholds, mail settings, etc. It is the desired state the [controller](/concepts/architecture-overview#controller) reconciles toward — change it and the controller notices (it watches the file) and drives reality to match, no restart required for most changes.
 - **`pack.toml`** is the *behavioral* config: what agents do — their prompts. Packs are reusable and can be shared across cities.
+- **`agents/<name>/agent.toml`** is the *per-agent* config: how one agent diverges from the defaults — its provider, rig scope, model, or pool size. Optional; omit it and the agent inherits everything.
 - **Formula and order files** are the *workflow* config: the step-by-step definitions that instantiating a molecule or firing an order consumes at runtime. They can live at the city root or inside a pack.
 
 **What it does for you:** `city.toml` is where you say *how* your city runs; packs, formula files, and order files are where you say *what* your agents do. Together they form the full picture of your city's desired state, with no separate state file to maintain.
