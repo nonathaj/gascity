@@ -477,17 +477,18 @@ func TestRenderPromptWorkQuery(t *testing.T) {
 
 func TestBuildTemplateData(t *testing.T) {
 	ctx := PromptContext{
-		CityRoot:      "/city",
-		AgentName:     "a/b",
-		TemplateName:  "b",
-		BindingName:   "dep",
-		BindingPrefix: "dep.",
-		RigName:       "a",
-		WorkDir:       "/city/a",
-		IssuePrefix:   "te-",
-		Branch:        "main",
-		DefaultBranch: "main",
-		Env:           map[string]string{"Custom": "val", "CityRoot": "override"},
+		CityRoot:           "/city",
+		AgentName:          "a/b",
+		TemplateName:       "b",
+		BindingName:        "dep",
+		BindingPrefix:      "dep.",
+		RigName:            "a",
+		WorkDir:            "/city/a",
+		IssuePrefix:        "te-",
+		Branch:             "main",
+		DefaultBranch:      "main",
+		AssignedReadyQuery: `gc bd ready --assignee="$GC_SESSION_NAME"`,
+		Env:                map[string]string{"Custom": "val", "CityRoot": "override"},
 	}
 	data := buildTemplateData(ctx)
 	// SDK vars override Env.
@@ -508,6 +509,9 @@ func TestBuildTemplateData(t *testing.T) {
 	}
 	if data["DefaultBranch"] != "main" {
 		t.Errorf("DefaultBranch = %q, want %q", data["DefaultBranch"], "main")
+	}
+	if data["AssignedReadyQuery"] != `gc bd ready --assignee="$GC_SESSION_NAME"` {
+		t.Errorf("AssignedReadyQuery = %q", data["AssignedReadyQuery"])
 	}
 }
 
@@ -800,6 +804,50 @@ func TestFormulaFilesystemSearchGuidanceCoversPromptSources(t *testing.T) {
 				if !strings.Contains(text, want) {
 					t.Fatalf("%s missing %q", rel, want)
 				}
+			}
+		})
+	}
+}
+
+func TestCoreWorkerPromptsUseAssignedReadyQueryTemplate(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("filepath.Abs(repo root): %v", err)
+	}
+
+	for _, rel := range []string{
+		"internal/bootstrap/packs/core/assets/prompts/pool-worker.md",
+		"internal/bootstrap/packs/core/assets/prompts/graph-worker.md",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(repoRoot, rel))
+			if err != nil {
+				t.Fatalf("ReadFile(%s): %v", rel, err)
+			}
+			text := string(data)
+			if !strings.Contains(text, "{{ .AssignedReadyQuery }}") {
+				t.Fatalf("%s missing AssignedReadyQuery placeholder", rel)
+			}
+			if strings.Contains(text, "bd ready --include-ephemeral --assignee") {
+				t.Fatalf("%s hardcodes bd ready --include-ephemeral instead of AssignedReadyQuery", rel)
+			}
+		})
+	}
+
+	for _, rel := range []string{
+		"internal/bootstrap/packs/core/overlay/per-provider/kiro/AGENTS.md",
+		"internal/bootstrap/packs/core/skills/gc-work/SKILL.md",
+		"examples/gastown/packs/gastown/agents/mayor/prompt.template.md",
+		"examples/hyperscale/packs/hyperscale/agents/worker/prompt.template.md",
+		"examples/swarm/packs/swarm/agents/coder/prompt.template.md",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(repoRoot, rel))
+			if err != nil {
+				t.Fatalf("ReadFile(%s): %v", rel, err)
+			}
+			if strings.Contains(string(data), "bd ready --include-ephemeral") {
+				t.Fatalf("%s hardcodes bd ready --include-ephemeral in static prompt guidance", rel)
 			}
 		})
 	}
