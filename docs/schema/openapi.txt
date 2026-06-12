@@ -6169,6 +6169,9 @@
           "SessionID": {
             "type": "string"
           },
+          "SessionName": {
+            "type": "string"
+          },
           "Status": {
             "$ref": "#/components/schemas/BindingStatus"
           }
@@ -6178,6 +6181,7 @@
           "SchemaVersion",
           "Conversation",
           "SessionID",
+          "SessionName",
           "Status",
           "BoundAt",
           "ExpiresAt",
