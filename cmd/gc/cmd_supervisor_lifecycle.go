@@ -561,11 +561,21 @@ func ensureSupervisorRunning(stdout, stderr io.Writer) int {
 		if supervisorAliveHook() != 0 {
 			return 0
 		}
-		if err := runDelegatedSystemctl(delegation, "start"); err != nil {
+		// A bounded systemctl-start timeout is not terminal: fall through to
+		// the same socket-then-fallback liveness check that confirms a late
+		// start. Only an ordinary systemctl failure is terminal.
+		if err := runDelegatedSystemctlTimeout(delegation, "start", delegatedSystemctlJobTimeout); err != nil && !isDelegatedSystemctlTimeout(err) {
 			fmt.Fprintf(stderr, "gc: %v\n", err) //nolint:errcheck // best-effort stderr
 			return 1
 		}
 		if waitForSupervisorPID() != 0 {
+			return 0
+		}
+		// The socket never answered — the expected state for a
+		// system-scope unit under another uid. Trust the same fallback
+		// evidence status does (unit active, then API) before calling
+		// the start a failure.
+		if delegatedLivenessWithoutSocket(delegation) != "" {
 			return 0
 		}
 		// A delegated supervisor logs to the journal, not gc's fork-mode
