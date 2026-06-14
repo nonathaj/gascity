@@ -15,12 +15,19 @@ title: "Code-layering View (implements the six primitives)"
 
 ## Summary
 
-This document describes Gas City's code substrate as a set of layers, and
-maps each layer onto the six user-facing primitives. The substrate is
-irreducible: removing any layer makes it impossible to build a multi-agent
-orchestration system. The higher-layer machinery (messaging, dispatch,
-health patrol) is provably composable from the lower layers. Every concept
-here links to its detailed architecture doc.
+This document maps Gas City's code substrate onto the six user-facing
+primitives. The product is v2 orchestration: you write a Formula and the
+controller runs it as a graph of beads — decomposing the job, fanning ready
+work out to many agents at once, gating each step on its dependencies,
+retrying failures, draining convoys in parallel, and driving the graph to
+completion outside any user session. That orchestration is implemented by
+the control dispatcher in `internal/dispatch` executing control beads
+(check, retry, fan-out, tally, drain, scope-check, workflow-finalize). A
+central design property is that this orchestration is composed entirely from
+the substrate primitives with zero hardcoded roles — which is why the same
+SDK can express Gas Town, Ralph, or any other pack. Composability here means
+substitutable, not small. Every concept here links to its detailed
+architecture doc.
 
 ### Code substrate → six-primitive mapping
 
@@ -44,10 +51,10 @@ Before adding a new primitive, apply three necessary conditions (see
 
 1. **Atomicity** — can it be decomposed into existing primitives? If
    yes, it's derived, not primitive.
-2. **Bitter Lesson** — does it become MORE useful as models improve?
-   If it becomes less useful, it fails.
-3. **ZFC** — does Go handle transport only, with no judgment calls?
-   If Go makes decisions, it's a violation.
+2. **More useful as models improve** — does it become MORE useful as
+   models improve? If it becomes less useful, it fails.
+3. **Judgment out of Go** — does Go handle transport only, with no
+   judgment calls? If Go makes decisions, it's a violation.
 
 ## Layer 0-1: Substrate (Agent, Bead, Event, Pack)
 
@@ -142,12 +149,17 @@ templates, and they render into a running agent.
 
 ## Layer 2-4: Composed machinery (Formula and messaging)
 
-Each layer here is provably composed from the substrate below. The
-derivation proof for each shows which substrate it uses and why no new
-infrastructure is needed. **Formula** is a user-facing primitive (the HOW):
-the Formulas, Dispatch (Sling), Orders, and Health Patrol machinery below
-all implement it — they are not a separate "derived" concept. Messaging
-composes the Agent and Bead substrate.
+The machinery in this section — Formulas, Dispatch, Orders, Health Patrol —
+is Gas City's orchestration engine. It is built entirely from the substrate
+primitives with zero hardcoded roles, which is what lets one SDK express
+many orchestration packs. Each entry notes which primitives it composes;
+that composability is a substitution property, not a statement that the
+machinery is minor. The control dispatcher driving a formula graph to
+completion is substantial work that happens outside any user session.
+**Formula** is a user-facing primitive (the HOW): the Formulas, Dispatch
+(Sling), Orders, and Health Patrol machinery below all implement it — they
+are not a separate "derived" concept. Messaging composes the Agent and Bead
+substrate.
 
 ### 6. Messaging — composes the Bead and Agent substrate
 
@@ -165,34 +177,50 @@ Mail + nudge. No new substrate needed.
 
 ### 7. Formula — the HOW primitive
 
-A **Formula** is the HOW: a reusable method applied over a convoy of beads,
-looping over each bead and fanning it to an agent that executes the work in
-a rig. A formula is the method, not the work — the beads are the work. An
-**Order** automates WHEN a formula runs (Health Patrol is one kind of
-order). A formula run materializes as beads (the v1 materialization is a
-molecule — a root bead plus child step beads; ephemeral runs are wisps).
+A **Formula** is the HOW: a method for getting a job done. Under the v2
+contract the compiler turns a formula into a flat graph — a workflow root
+plus independently routable step beads plus controller-owned control beads
+(check, retry, fan-out, tally, drain, scope-check, workflow-finalize). The
+controller's control dispatcher (`internal/dispatch`) executes that graph:
+gating each step on its dependencies, fanning ready work out to many agents
+or pools at once, retrying failures, draining convoys in parallel, and
+finalizing the workflow — all outside any user session. v1 remains a
+supported peer shape: a single agent running the steps as a sequence inside
+its own session, materialized as a molecule (a root bead plus child step
+beads; ephemeral runs are wisps). A formula is the method, not the work —
+the beads are the work. An **Order** automates WHEN a formula runs (Health
+Patrol is one kind of order).
 
 - **Formula resolution**: Config (the Pack substrate) resolves formula
   layers and active files.
 - **Run materialization**: the Bead Store (the Bead substrate) holds the
-  root bead and any step beads a run produces.
+  workflow root, step beads, and control beads a run produces.
+- **Graph execution**: the control dispatcher (`internal/dispatch`) drives
+  the compiled graph to completion via control beads.
 - **Order automation**: a formula plus Event Bus (the Event substrate)
   trigger evaluation plus Config (the Pack substrate) scheduling.
-- **Proof**: Uses Config, the Bead Store, and the Event Bus. No new
-  infrastructure.
+- **Composition**: Built from Config, the Bead Store, and the Event Bus
+  with zero hardcoded roles — which is what makes the orchestration
+  substitutable across packs, not a sign that it is small.
 
 **Details**: [Formulas](formulas.md) | [Orders](orders.md)
 
-### 8. Dispatch (Sling) — runs a Formula
+### 8. Dispatch (Sling) — kicks off a Formula run
 
-Find/spawn agent → select formula → materialize the run as beads → hook to
-agent → nudge → create convoy → log event.
+Sling kicks off a formula run: select the formula, compile and materialize
+it as a graph of beads, create the convoy, and log the event. For a v1
+formula the run is then worked by the single slung agent in its own session.
+For a v2 formula, slinging hands the compiled graph to the controller's
+control dispatcher, which gates, fans out, retries, and drains the work
+across many agents until the workflow finalizes — no further user
+involvement.
 
 - **Derivation**: Session (find/spawn) + Config (select formula)
-  + Bead Store (materialize the run, create convoy) + Session (nudge) +
-  Event Bus (log event).
-- **Proof**: Pure composition of the substrate layers. No new
-  infrastructure.
+  + Bead Store (compile and materialize the graph, create convoy) +
+  Session (nudge) + Event Bus (log event); for v2, the control dispatcher
+  (`internal/dispatch`) then drives the graph to completion.
+- **Composition**: Built from the substrate layers with zero hardcoded
+  roles, so the same kickoff path serves any pack.
 
 **Details**: [Dispatch](dispatch.md)
 
