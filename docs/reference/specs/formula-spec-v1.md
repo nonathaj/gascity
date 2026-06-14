@@ -33,14 +33,21 @@ requirements unless the paragraph is explicitly marked as non-normative.
 
 ## 0. Concept And Data Model
 
+### 0.1. Concept
+
 A formula is a TOML file specifying *how* work should be carried out — its
 steps, their ordering and dependencies, and the control flow around them. A
 formula is not the work itself (a bead is a unit of work) nor a grouping of
 work (a convoy is a graph of related work); it is the reusable method that
-*produces* work when applied. Compilation produces a
-**recipe**: a flattened, validated list of steps and dependency edges.
-Instantiation (`gc formula cook`, `gc sling --formula`, or the Go API
-`molecule.Cook` / `molecule.CookOn` / `molecule.Attach` in
+*produces* work when applied. The method is defined independently of how its
+work is stored; the data model below is the *current implementation* of that
+storage, not part of the definition of a formula.
+
+### 0.2. Data Model
+
+Compilation produces a **recipe**: a flattened, validated list of steps and
+dependency edges. Instantiation (`gc formula cook`, `gc sling --formula`, or
+the Go API `molecule.Cook` / `molecule.CookOn` / `molecule.Attach` in
 `internal/molecule`) materializes the recipe into the bead store.
 
 Under the v1 contract the materialized shape is a **molecule**: a

@@ -12,15 +12,21 @@ in a TOML file — the steps, the dependencies between them, the variables that
 parameterize them, and the control flow around them — and apply it whenever
 that kind of work comes up.
 
-Applying a formula is what turns the method into running work, in three
-stages. The formula is the file on disk, resolved across pack layers so a city
-can override what a pack ships. Compiling it produces a recipe: an in-memory
-plan with namespaced step IDs and dependency edges. Instantiating the recipe
-creates the beads — and from that moment the work is independent of both the
-file and any agent session. Sessions crash, restart, and get recycled; the
-beads persist, and whoever picks the work up next finds the same state. That
-property — work survives sessions — is what every pattern in this guide builds
-on.
+Applying a formula is what turns the method into running work, and from that
+moment the work is independent of both the formula file and any agent session.
+Sessions crash, restart, and get recycled; the work persists, and whoever
+picks it up next finds the same state. That property — work survives
+sessions — is what every pattern in this guide builds on.
+
+How that work is stored is an implementation detail. The formula is a file on
+disk, resolved across pack layers so a city can override what a pack ships;
+applying it compiles the file into a *recipe* (an in-memory plan of steps and
+the dependencies between them) and materializes that recipe as beads in the
+store — the persistence above is theirs. But the method is defined
+independently of how its work is stored. The rest of this guide is about what
+formulas *do* and how to choose between them; it reaches for bead vocabulary
+only where that clarifies behavior, and leaves the exact materialization rules
+to the two specifications.
 
 ![Applying a formula in three stages: the formula.toml on disk is compiled
 into an in-memory recipe (flattened steps plus dependency edges), then
@@ -45,24 +51,24 @@ exact format rules live in the two specifications, the
 Two compiler contracts are live, and both are supported. They are peers, not
 a version ladder — each is the right answer to a different question.
 
-The **v1 contract** — the default when a formula declares nothing — compiles
-steps into a parent-child molecule tree. Everything dynamic is resolved at
-cook time: conditions filter steps in or out, loops unroll into concrete
-iterations. After cooking, the molecule is inert data. Agents advance the
-work from inside their own sessions, and nothing else moves the workflow
-along.
+The **v1 contract** — the default when a formula declares nothing — makes the
+agent the engine. Everything dynamic is resolved when the formula is applied:
+conditions filter steps in or out, loops unroll into concrete iterations.
+After that the plan is inert; the one agent you sling it to advances the work
+from inside its own session, and nothing else moves it along. (Mechanically,
+the steps become a parent-child molecule tree — see the
+[v1 spec](/reference/specs/formula-spec-v1).)
 
-The **formulas v2 contract** compiles the same steps into a flat graph of
-independently routable step beads connected only by blocking dependency
-edges. The compiler appends a `workflow-finalize` control step after all sink
-steps and makes the root block on it, so the root never surfaces as ready
-work while the graph is running; the controller closes the root, pass or
-fail, when the graph completes. The structural change carries an
-execution-model change: at runtime the controller executes every control
-bead — check and retry evaluation, fan-out, tally, drain, scope checks,
-finalize — while agents only ever run plain work beads. Per-step routing
-(`gc.run_target`) is resolved at dispatch, so one workflow can spread its
-steps across agents and pools.
+The **formulas v2 contract** makes the *controller* the engine and agents
+interchangeable workers it feeds. Steps become independently routable units of
+work, and the controller drives all the control flow around them — check and
+retry loops, fan-out, tally, drain, scope checks, and the finalize that closes
+the workflow once every step is terminal — while agents only ever run plain
+work steps. Because steps route independently (`gc.run_target` resolved at
+dispatch), one workflow can spread its work across many agents and pools.
+(Mechanically, the steps become a flat graph linked only by blocking
+dependency edges, with an appended `workflow-finalize` the root blocks on —
+see the [v2 spec](/reference/specs/formula-spec-v2).)
 
 ![Side-by-side comparison of the two contracts. Left, v1: a molecule root
 that contains its step beads as parent-child children, so a step that needs
@@ -70,10 +76,6 @@ the root waits for all of them. Right, v2: a workflow root plus independent
 step beads linked only by blocking-dependency edges, ending in a
 workflow-finalize step that the root blocks on — the root goes ready only
 when the whole graph completes.](/diagrams/excalidraw-rendered/formula-v1-vs-v2.svg)
-
-In reader terms: under v1, the agent you sling to is the engine. Under v2,
-the controller is the engine and agents are interchangeable workers that the
-engine feeds.
 
 For new work, choose v2. Two edges of the v1 surface have not finished
 converging, but neither is a reason to start on v1:
@@ -186,6 +188,40 @@ difference. Migrating the pack to the canonical spelling (and removing this
 caveat) is tracked in
 [gastownhall/gascity#3462](https://github.com/gastownhall/gascity/issues/3462).
 
+### The Whole Job, End To End
+
+Most real formulas are not a single pattern but a pipeline of them, and the
+clearest way to see what a formula is *for* is to follow one body of work all
+the way through.
+
+![One body of work, end to end: a left-to-right pipeline of stages —
+decompose, drain, review (loops until the verdict passes), gap analysis, fix
+gaps, check, ship — with a convoy of implementation beads hanging beneath the
+drain stage. The stages are the method (the formula); the beads are the work
+(the items).](/diagrams/excalidraw-rendered/formula-whole-job.svg)
+
+A typical build does this: an approved plan is
+**decomposed** into a convoy of implementation items; the convoy is
+**drained** so every ready member is worked at once, in dependency-ordered
+waves, until they are all done; the result is **reviewed** for best practices
+across several lanes that loop until the verdict passes; a **gap analysis**
+compares what was built against what was asked and the gaps are filled; and a
+**check** gates the whole thing before it ships. None of that ordering lives
+in an agent's head — it is the formula, written down once.
+
+Read that way, the division of labor is clean. The **work** is the items
+themselves — "implement feature A", "review the result", "fill the gap" — each
+an independent unit that survives sessions. The **formula is the method** that
+produces those items, orders them, loops over them, and decides what counts as
+done. The sections below are the individual moves in that pipeline —
+[decomposition](#planning-reviews-and-decomposition),
+[fan-out](#fan-out-over-a-runtime-discovered-set),
+[review loops](#multi-lane-review-loops), and
+[self-checking](#self-checking-work-and-transient-hardening) — and the gascity
+pack's `build-*` chain wires them together with
+[`extends`](#multi-step-feature-workflows) so the whole job is one composed
+method, not one giant file.
+
 ### Multi-Step Feature Workflows
 
 You have one unit of work with ordered phases — design it, build it, review
@@ -222,9 +258,13 @@ title = "Submit the change"
 needs = ["review"]
 ```
 
-At runtime each step becomes a bead, `needs` edges gate readiness so
-`implement` only surfaces once `design` closes, and the appended finalize
-step closes the root when the last step completes. Sling it at an agent or a
+At runtime each step becomes an independent unit of work, and `needs` gates
+readiness so `implement` stays invisible until `design` closes. You declare
+the ordering and the runtime runs whatever is ready, so work flows in
+dependency-ordered waves rather than on a schedule you manage — the same
+mechanism that lets a [drain](#fan-out-over-a-runtime-discovered-set) run an
+entire convoy's worth of ready members in parallel. The appended finalize step
+closes the workflow when the last step completes. Sling it at an agent or a
 pool and the steps flow in order. The same file without the `[requires]`
 table compiles under v1 into a molecule instead — declare v2 when you want
 per-step routing and runtime control.
