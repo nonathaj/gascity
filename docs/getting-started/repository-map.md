@@ -10,7 +10,7 @@ description: Where the main subsystems live in the Gas City repository.
 | `cmd/gc/` | CLI entrypoints, controller wiring, runtime assembly, and command handlers |
 | `internal/runtime/` | Runtime provider abstraction plus tmux, subprocess, exec, ACP, K8s, and hybrid implementations |
 | `internal/config/` | `city.toml` schema, validation, composition, packs, patches, and override resolution |
-| `internal/beads/` | Store abstraction and provider implementations used for work, mail, molecules, and waits |
+| `internal/beads/` | Store abstraction and provider implementations used for beads (work, mail, convoys) and waits |
 | `internal/session/` | Session bead metadata, wait lifecycle helpers, and session identity utilities |
 | `internal/orders/` | Order parsing and scanning for periodic dispatch |
 | `internal/convergence/` | Bounded iterative refinement loops and gate handling |
@@ -29,10 +29,12 @@ description: Where the main subsystems live in the Gas City repository.
   provider package you are changing.
 - Config and pack behavior: start in `internal/config/config.go`,
   `internal/config/compose.go`, and `internal/config/pack.go`.
-- Work routing and molecule creation: start in `cmd/gc/cmd_sling.go` and
+- Work dispatch (sling): start in `cmd/gc/cmd_sling.go` and
   `internal/beads/`.
 - Supervisor, sessions, and wake/sleep behavior: start in `cmd/gc/`,
   `internal/session/`, and `internal/runtime/`.
 
-For a contributor-oriented package walkthrough, continue to
-the Codebase Map (`engdocs/contributors/codebase-map`).
+For the concepts these packages implement, see
+[The six primitives](/concepts/primitives). For a contributor-oriented package
+walkthrough, continue to the Codebase Map
+(`engdocs/contributors/codebase-map`).

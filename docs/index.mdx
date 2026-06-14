@@ -8,13 +8,22 @@ tree is organized for engineers who want to run Gas City: understand how the
 system fits together, install the toolchain, run a local city, and then find
 the relevant subsystem.
 
-If you are new, start with the
-[Architecture Overview](/concepts/architecture-overview) — it explains what the
-major pieces are (cities, rigs, agents, sessions, the beads store, the event
-bus, and the controller) and how work flows through them, with diagrams.
+If you are new, start with the [six primitives](/concepts/primitives) — the
+shortest path to the mental model. Gas City is built from six primitives: an
+**agent** is *who* does the work (sessions, providers, and pools are derived
+under it), a **bead** is *what* the work is, a **formula** is *how* the work is
+carried out, a **rig** is *where* it happens (a project registered with the
+city), a **pack** is what *configures* the system — the City is the local
+(root) pack; it imports shared packs — and an **event** is fired by activity so
+you can *observe* what happened. The
+[Architecture Overview](/concepts/architecture-overview) then shows how these
+fit together and how work flows through them, with diagrams.
 
 ## Start Here
 
+- [Primitives](/concepts/primitives) is the first conceptual read: the six
+  primitives (Agent, Bead, Formula, Rig, Pack, Event) that everything else is
+  built from.
 - [Architecture Overview](/concepts/architecture-overview) gives you the mental
   model for the whole system before you run anything.
 - [Installation](/getting-started/installation) explains the local toolchain

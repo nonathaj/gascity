@@ -7,6 +7,9 @@ The `gc` supervisor exposes a single, typed HTTP control plane
 described by an OpenAPI 3.1 document. Everything the CLI does, any
 third-party client can do too — there is no hidden surface.
 
+See also: [The six primitives](/concepts/primitives) — the canonical model this
+API projects over.
+
 ## Get the spec
 
 - **<a href="https://raw.githubusercontent.com/gastownhall/gascity/main/docs/reference/schema/openapi.json" target="_blank" rel="noopener">openapi.json</a>** —
@@ -33,10 +36,10 @@ The spec is the full reference. A brief summary of the surfaces:
   query + hook operations, dependencies, labels.
 - **Sessions.** CRUD under `/v0/city/{cityName}/sessions`, submit,
   prompt, resume, interaction response, transcript, SSE stream.
-- **Mail, convoys, orders, formulas, molecules, participants,
+- **Mail, convoys, orders, formulas, participants,
   transcripts, adapters.** External messaging and orchestration
   surfaces; see the spec for per-operation shapes.
-- **Event bus.** `GET /v0/events` + `GET /v0/events/stream` at
+- **Events.** `GET /v0/events` + `GET /v0/events/stream` at
   supervisor scope, and `GET /v0/city/{cityName}/events` +
   `GET /v0/city/{cityName}/events/stream` at city scope.
 - **Config & packs.** Per-city config and pack metadata under

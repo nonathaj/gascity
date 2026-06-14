@@ -215,10 +215,11 @@ Upgrade via Homebrew (`brew upgrade dolt`) or download a newer release from
 
 ## `bd` Version Too Old
 
-Gas City requires `bd` 1.0.0 or newer. The bd-backed store relies on wisps
-support, including `bd create --ephemeral` and `bd query ephemeral=true`, so
-older binaries can fail order-tracking and wisp cleanup paths. Check your
-version:
+Gas City requires `bd` 1.0.0 or newer. The bd-backed store relies on
+ephemeral-bead support used by order tracking, including `bd create
+--ephemeral` and `bd query ephemeral=true`, so older binaries can fail
+order tracking and the cleanup of those ephemeral beads (the v1 materialization
+calls them wisps). Check your version:
 
 ```bash
 bd version
@@ -633,6 +634,9 @@ hatches (`gc rig set-endpoint --inherit`/`--self --force`/`--external`),
 and an end-to-end recovery recipe.
 
 ## Still Stuck?
+
+If a symptom only makes sense once you know how the pieces fit together, see
+[The six primitives](/concepts/primitives) for the underlying model.
 
 Open an issue at
 [gastownhall/gascity/issues](https://github.com/gastownhall/gascity/issues)

@@ -1,16 +1,20 @@
 ---
 title: Tutorial 06 - Beads
 sidebarTitle: 06 - Beads
-description: Understand the universal work primitive that underlies sessions, mail, formulas, and convoys — and learn to query and manipulate work items directly.
+description: Understand the universal work primitive — the bead — that sessions, mail, and convoys are made of, that formulas materialize into when run, and learn to query and manipulate work items directly.
 ---
 
 If you've been following along, you've been creating beads without knowing it.
 When you started a session — that created a bead. When you sent mail — bead.
 When you cooked a formula — beads. When sling dispatched work — bead.
 
-Beads are the universal work primitive in Gas City. Every trackable thing —
-tasks, messages, sessions, molecules, convoys — is a bead in the store. This
-tutorial peels back the layer and shows you what's underneath.
+A bead is the **WHAT** — a unit of work — and it's the universal substrate in
+Gas City. Every trackable thing — tasks, messages, sessions, convoys — is a
+bead in the store. A formula (the **HOW**, a reusable method) isn't itself a
+bead; when you run one it materializes its steps *as* beads. See
+[the six primitives](/concepts/primitives) for how Bead relates to Agent,
+Formula, Rig, Pack, and Event. This tutorial peels back the layer and shows
+you what's underneath.
 
 We'll pick up where [Tutorial 05](/tutorials/05-formulas) left off. You
 should have `my-city` running with `my-project` rigged, the `pancakes`
@@ -119,7 +123,6 @@ The type determines what a bead represents:
 | **task**     | A unit of work — including formula steps and workflow roots | `bd create`, `gc formula cook`, `gc sling` |
 | **message**  | Inter-agent mail                                    | `gc mail send`                              |
 | **session**  | A running agent session                             | `gc session new`                            |
-| **molecule** | v1 formula instance (container root)            | `gc formula cook` on a formula without the v2 requirement |
 | **convoy**   | Container grouping related beads                    | `gc convoy create`, auto-created by sling   |
 
 The type system is simple by design. Gas City doesn't have separate storage for
@@ -127,15 +130,15 @@ tasks vs. messages vs. sessions — they're all beads with different type labels
 This is what makes the system composable: the same store, the same query
 interface, the same dependency model works for everything.
 
-Notice that a formula instance isn't a special type. When you cook or sling a
-v2 formula (any formula declaring `[requires]
-formula_compiler = ">=2.0.0"`), the root and every step are plain `task` beads;
-the root carries `gc.kind=workflow` metadata marking it as a workflow root. A
-root-only **wisp** — an ephemeral instance where the root bead itself is the
-work, so no container is needed — is likewise a `task`, carrying
-`gc.kind=wisp` metadata. The kind lives in metadata, not in the type column.
-Only v1 formulas — ones without the v2 requirement — create a `molecule`
-container bead with parent-child step children.
+Notice that a formula doesn't get a special type. A formula is the method (the
+HOW); running it *materializes its steps as beads* (the work). When you cook or
+sling a formula, the root and every step are plain `task` beads; the root
+carries `gc.kind=workflow` metadata marking it as a workflow root, and an
+ephemeral root-only instance carries `gc.kind=wisp`. The kind lives in
+metadata, not in the type column. (Historically, the v1 materialization wrapped
+a formula run in a dedicated `molecule` container bead with parent-child step
+children; the current materialization uses plain `task` beads plus `gc.kind`
+metadata instead.)
 
 ## Creating beads
 
@@ -523,8 +526,9 @@ $ bd close mc-a4l
 The `Sprint 42` entry under `BLOCKS` is the convoy's incoming `tracks` edge —
 grouping, not a blocker.
 
-Beads are the ground truth of the running state of the city. Everything else in
-Gas City — sessions, mail, formulas, convoys — is built on top of them.
+Beads are the ground truth of the running state of the city. Sessions, mail,
+and convoys are all beads; a formula is the reusable method that, when run,
+materializes its work as beads.
 
 ## What's next
 

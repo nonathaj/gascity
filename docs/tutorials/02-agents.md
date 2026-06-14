@@ -5,9 +5,10 @@ description: Define agents and use them to execute work.
 ---
 
 In [Tutorial 01](/tutorials/01-cities-and-rigs), you created a city, added a
-rig, and slung work to an implicit agent. The implicit agents (`claude`, `codex`, etc.)
-are convenient, but they have no custom prompt — they're just the raw provider.
-In this tutorial, you'll define your own agents with specific roles and use them
+rig, and slung work to an implicit agent. The implicit agents (`claude`, `codex`,
+etc.) are convenient default agents — unconfigured, with no custom prompt, so
+each one adopts its provider's name and just runs the raw provider. In this
+tutorial, you'll define your own agents with specific roles and use them
 to get work done.
 
 We'll pick up where Tutorial 01 left off. You should have `my-city` running with
@@ -157,8 +158,9 @@ directory you can target it explicitly as `my-project/reviewer`. Gas City
 started a Codex session, loaded the prompt from
 `agents/reviewer/prompt.template.md`, and delivered the task to the rig-scoped
 reviewer. The output looks a little different from Tutorial 01's sling, and
-that's expected: implicit agents like `claude` come with `mol-do-work` as
-their default sling formula, but a custom agent has none until you configure
+that's expected: default agents like `claude` (an unconfigured agent that
+adopts its provider's name) come with `mol-do-work` as their default sling
+formula, but a custom agent has none until you configure
 one — so there's no `Attached workflow` line here. The bead is delivered
 directly, and sling creates an auto-convoy to track it. You can watch progress with `bd show` as you already know. And when
 the work is done, you can check the file system for the review you requested:
@@ -186,8 +188,11 @@ tutorial](/tutorials/03-sessions).
 You've defined an agent with a custom prompt, pointed it at a different
 provider, and slung work to it directly. From here:
 
+- **[The six primitives](/concepts/primitives)** — the canonical model agents,
+  sessions, and work all build on
 - **[Sessions](/tutorials/03-sessions)** — session lifecycle, sleep/wake,
   suspension, named sessions
 - **[Formulas](/tutorials/05-formulas)** — how multi-step work should be
   done: steps, dependencies, and variables
-- **[Beads](/tutorials/06-beads)** — the work tracking system underneath it all
+- **[Beads](/tutorials/06-beads)** — the unit of work; every task, message, and
+  convoy member is a bead

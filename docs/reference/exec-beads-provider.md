@@ -2,12 +2,14 @@
 title: "Exec Beads Provider"
 ---
 
-Gas City's bead store is the universal persistence substrate for work units
-(tasks, messages, molecules, convoys). Today it has two providers: `bd`
-(shells out to the `bd` CLI backed by Dolt) and `file` (JSON persistence
-for tutorials). This document designs a third: `exec`, which delegates each
-store operation to a user-supplied script — the same pattern used by the
-exec session provider.
+The Bead is the WHAT primitive — a unit of work — and the bead store is the
+machinery that persists beads (tasks, messages, convoy members, and the
+ephemeral beads a formula run materializes). See
+[Primitives](/concepts/primitives) for where the Bead sits among the six.
+Today the store has two providers: `bd` (shells out to the `bd` CLI backed by
+Dolt) and `file` (JSON persistence for tutorials). This document designs a
+third: `exec`, which delegates each store operation to a user-supplied
+script — the same pattern used by the exec session provider.
 
 ## Motivation
 
@@ -30,7 +32,7 @@ at their own implementation.
 ### Store Interface (9 methods)
 
 `internal/beads/beads.go` defines the `Store` interface — the SDK's
-contract for bead persistence:
+contract for the machinery that persists beads (the WHAT primitive):
 
 ```go
 type Store interface {
@@ -42,7 +44,7 @@ type Store interface {
     Ready() ([]Bead, error)            // all open beads
     Children(parentID string) ([]Bead, error)  // beads with matching ParentID
     SetMetadata(id, key, value string) error   // key-value metadata on a bead
-    MolCook(formula, title string, vars []string) (string, error)  // instantiate molecule
+    MolCook(formula, title string, vars []string) (string, error)  // materialize a formula run into beads
 }
 ```
 
@@ -95,10 +97,12 @@ provider = "bd"    # or "file", or "exec:/path/to/script"
 
 ### 1. Promote ListByLabel to the Store Interface
 
-`ListByLabel` is used by the order subsystem for:
-- **Order history** — list all wisps for a order
-- **Last run time** — find most recent wisp for a order
-- **Event cursor** — find max `seq:` label across order wisps
+An order automates when a formula runs; each invocation is a run, and its
+work is materialized as ephemeral beads. `ListByLabel` is used by the order
+subsystem to query those run beads:
+- **Order history** — list all run beads for an order
+- **Last run time** — find the most recent run bead for an order
+- **Event cursor** — find the max `seq:` label across an order's run beads
 
 This is a core query pattern, not a bd-specific feature. Any bead store
 can filter by label. The interface should include it:
@@ -165,18 +169,19 @@ provider pattern exactly.
 | `list-by-label` | `script list-by-label <label> <limit>` | — | Bead JSON array |
 
 `script ready` returns actionable durable beads by default. When Gas City needs
-wisp-aware ready queries, including controller-demand scans, it calls
+ephemeral-aware ready queries, including controller-demand scans, it calls
 `script ready --include-ephemeral` and expects the script to include both
 durable and ephemeral rows in its JSON result. Gas City applies final
 tier-specific filtering after reading the rows, so providers should not reject
 ephemeral rows when the flag is present.
 
 The `--include-ephemeral` flag is part of the `ready` operation contract. Gas
-City does not retry wisp-aware ready queries without it, because silently
-downgrading would hide runnable wisps from the controller. Legacy scripts that
-cannot support the flag should fail the `ready --include-ephemeral` invocation
-with exit code 1 and an explanatory stderr message; exit code 2 remains reserved
-for unknown operation names, not unsupported arguments to a known operation.
+City does not retry ephemeral-aware ready queries without it, because silently
+downgrading would hide runnable ephemeral beads from the controller. Legacy
+scripts that cannot support the flag should fail the
+`ready --include-ephemeral` invocation with exit code 1 and an explanatory
+stderr message; exit code 2 remains reserved for unknown operation names, not
+unsupported arguments to a known operation.
 
 #### Admin Operations (Optional)
 
@@ -229,7 +234,7 @@ The wire format matches `beads.Bead` JSON tags — the same shape that
 ```json
 {
   "id": "WP-42",
-  "title": "digest wisp",
+  "title": "digest run",
   "status": "open",
   "type": "task",
   "created_at": "2026-02-27T10:00:00Z",
@@ -248,10 +253,10 @@ Fields omitted from the JSON are treated as zero values. The `id` field
 on `create` input is ignored (the script assigns IDs).
 
 `ephemeral=true` is part of the exec provider contract. Scripts must preserve
-it on create/read paths so Gas City can keep wisps-tier work out of normal
-ready-work and issues-tier queries. Backends without a native wisps table may
-store the bit internally, such as with a private label, but must return it as
-the `ephemeral` JSON field.
+it on create/read paths so Gas City can keep ephemeral run beads out of normal
+ready-work and issues-tier queries. Backends without a native ephemeral table
+may store the bit internally, such as with a private label, but must return it
+as the `ephemeral` JSON field.
 
 `defer_until` is part of the ready-work contract. Scripts may exclude
 future-deferred beads from `ready` output themselves, but any bead they return
@@ -261,7 +266,7 @@ City can apply the same filter at the store boundary.
 `list`, `children`, and `list-by-label` should return every matching bead the
 script can see, including ephemeral beads. Gas City applies the caller's tier
 mode after parsing the JSON, so scripts do not receive a separate
-issues/wisps/both argument.
+durable/ephemeral/both argument.
 
 #### Create Request
 
@@ -407,27 +412,27 @@ Or via environment:
 export GC_BEADS=exec:gc-beads-br
 ```
 
-## Dependency Map: SDK Primitives vs. Provider Operations
+## Dependency Map: Subsystems vs. Provider Operations
 
 This table maps every Gas City subsystem to the bead store operations it
-requires. This is how we verify the layering: if every operation in the
+requires. This is how we verify the boundary: if every operation in the
 "Uses" column is in the Store interface (or exec protocol), the subsystem
 works with any provider.
 
-| Subsystem | Layer | Uses (Store Interface) | Uses (*BdStore Only) |
-|-----------|-------|----------------------|---------------------|
-| Dispatch (sling) | L3 | Create, Get, Update, Close, MolCook | — |
-| Task loop | L2 | Ready, Get, Update, Close | — |
-| Molecules | L2 | Create, Children, Update, Close, MolCook | — |
-| Messaging | L2 | Create (type=message), List | — |
-| Order check | L3 | — | ListByLabel (→ promote) |
-| Order run | L3 | MolCook | ListByLabel (→ promote) |
-| Order history | L3 | — | ListByLabel (→ promote) |
-| Health patrol | L2 | Ready, SetMetadata | — |
-| Convoy | L3 | Create, Children, Close, Update | — |
-| Rig init | L0 | — | Init, ConfigSet |
-| Dolt sync | L0 | — | Purge |
-| Event cursor | L3 | — | ListByLabel (→ promote) |
+| Subsystem | Uses (Store Interface) | Uses (*BdStore Only) |
+|-----------|----------------------|---------------------|
+| Dispatch (sling) | Create, Get, Update, Close, MolCook | — |
+| Task loop | Ready, Get, Update, Close | — |
+| Formula-run materialization | Create, Children, Update, Close, MolCook | — |
+| Messaging | Create (type=message), List | — |
+| Order check | — | ListByLabel (→ promote) |
+| Order run | MolCook | ListByLabel (→ promote) |
+| Order history | — | ListByLabel (→ promote) |
+| Health patrol | Ready, SetMetadata | — |
+| Convoy | Create, Children, Close, Update | — |
+| Rig init | — | Init, ConfigSet |
+| Dolt sync | — | Purge |
+| Event cursor | — | ListByLabel (→ promote) |
 
 **After promoting ListByLabel:** Only `Init`, `ConfigSet`, and `Purge`
 remain outside the Store interface. These are all admin/lifecycle
@@ -459,8 +464,8 @@ maps to Gas City's requirements:
 |-------------|-----|------------|
 | `Children(parentID)` | No `--parent` on create | Script tracks parent→child in sidecar or labels |
 | `SetMetadata(id, key, value)` | No `--set-metadata` | Script uses labels (`meta:key=value`) or sidecar file |
-| `MolCook(formula, title, vars)` | No molecule concept | Script creates root bead + step beads from formula TOML |
-| Wisp-aware `Ready` | No ready query that includes ephemeral rows | Script rejects `ready --include-ephemeral` with exit 1 rather than silently downgrading |
+| `MolCook(formula, title, vars)` | No formula-run materialization | Script creates root bead + step beads from formula TOML |
+| Ephemeral-aware `Ready` | No ready query that includes ephemeral rows | Script rejects `ready --include-ephemeral` with exit 1 rather than silently downgrading |
 
 ### Not Needed by Store Interface
 
@@ -468,7 +473,7 @@ maps to Gas City's requirements:
 |-----------|-----------|
 | `br comment` | Not in Store interface — could be future extension |
 | `br search` | Not in Store interface — search is done via List + filter |
-| `br dep-tree` | Interesting for molecules but not required |
+| `br dep-tree` | Interesting for formula-run bead trees but not required |
 | `br blocked` | Subset of Ready with dependency tracking |
 | `br priority` | Not in Gas City's bead model |
 
@@ -482,29 +487,31 @@ MolCook) require the script to implement bridging logic:
   label on create)
 - **SetMetadata**: Use `br update --label=meta:key=value` (script
   convention)
-- **MolCook**: Parse formula TOML, create root + step beads, wire
-  parent links. This is the hardest gap — it requires the script to
-  understand Gas City's formula format.
+- **MolCook**: Parse formula TOML and materialize the run as beads —
+  create root + step beads and wire parent links. A formula is the HOW (the
+  reusable method); the work is the beads it materializes. This is the
+  hardest gap — it requires the script to understand Gas City's formula
+  format.
 
 A more practical approach: implement `MolCook` in Go within Gas City
 (it already knows formula TOML) and decompose it into `Create` + `Update`
-calls against the Store interface. This makes MolCook a **composed
-operation** rather than a primitive the script must implement.
+calls against the Store interface. This makes `MolCook` a **composed
+operation** rather than a store operation the script must implement.
 
 ## Design Decision: MolCook as Composed vs. Primitive
 
-**Option A: MolCook is a primitive in the exec protocol.**
-The script must understand formulas and create molecule bead trees.
+**Option A: MolCook is a wire operation in the exec protocol.**
+The script must understand formulas and materialize the run as a bead tree.
 Simple for bd (has `bd mol cook`), hard for custom backends.
 
 **Option B: MolCook is composed from Create + Update in Go.**
 Gas City reads the formula TOML, creates the root bead via `Create`,
 creates step beads with ParentID via `Create`, wires dependencies via
-`Update`. The script only needs CRUD primitives.
+`Update`. The script only needs bead CRUD.
 
-**Recommendation: Option B.** MolCook is a *mechanism* (Layer 2),
-not a *primitive*. It's composed from Task Store operations + Config
-parsing. Pushing formula knowledge into every backend script violates
+**Recommendation: Option B.** `MolCook` is composition machinery, not a
+distinct store operation: a formula run is materialized from bead CRUD plus
+formula parsing. Pushing formula knowledge into every backend script violates
 the Bitter Lesson — the SDK should handle composition, scripts handle
 storage.
 
@@ -521,7 +528,7 @@ type Store interface {
     Children(parentID string) ([]Bead, error)
     SetMetadata(id, key, value string) error
     ListByLabel(label string, limit int) ([]Bead, error)
-    MolCook(formula, title string, vars []string) (string, error)  // composed internally for exec
+    MolCook(formula, title string, vars []string) (string, error)  // materializes a formula run; composed internally for exec
 }
 ```
 
@@ -564,7 +571,7 @@ get their own Go implementation.
 | Forward compat | Exit 2 = unknown op | Exit 2 = unknown op |
 | Wire types | `startConfig` (stable subset) | `beads.Bead` JSON tags (stable) |
 | Timeout | 30s | 30s |
-| Composed ops | None (all primitive) | MolCook (composed from Create+Update) |
+| Composed ops | None (all direct store ops) | MolCook (composed from Create+Update) |
 
 ## Open Questions
 
