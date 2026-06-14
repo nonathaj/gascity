@@ -567,7 +567,18 @@ func TestLocalMarkdownLinks(t *testing.T) {
 		}
 	}
 	if len(unexpected) > 0 {
-		t.Errorf("broken local markdown links:")
+		t.Errorf(`broken local markdown links (%d):
+
+docs/ is authored for the Mintlify site (https://docs.gascityhall.com), NOT for
+direct GitHub viewing. Internal page links in docs/ are extensionless by
+convention — use /tutorials/01-beads, not /tutorials/01-beads.md. A .md/.mdx
+suffix breaks Mintlify navigation even though the file exists on disk, so please
+don't reformat docs/ links to be "GitHub-friendly". (engdocs/ and root .md files
+ARE GitHub-only and DO require explicit .md paths.) See CONTRIBUTING.md ->
+"Docs link conventions". If a link is genuinely broken on the live site, say so
+in the PR and we'll fix it Mintlify-side rather than changing the path here.
+
+Offending links:`, len(unexpected))
 		for _, item := range unexpected {
 			t.Errorf("  %s", item)
 		}
