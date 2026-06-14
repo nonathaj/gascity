@@ -6,7 +6,9 @@ description: How to think about formulas, choose a contract, and apply the major
 A formula is *how* work should be done. A [bead](/tutorials/06-beads) is the
 work itself — a single unit of it — and a [convoy](/tutorials/06-beads) is a
 graph of related work; a formula is neither. It is the reusable method you
-apply to produce and organize that work. Instead of prompting an agent "do
+apply to produce and organize that work. (Formula, Bead, and the other core
+ideas are defined in [the primitives](/concepts/primitives) — start there for
+the canonical model.) Instead of prompting an agent "do
 this thing" and steering every step yourself, you write the method down once
 in a TOML file — the steps, the dependencies between them, the variables that
 parameterize them, and the control flow around them — and apply it whenever
@@ -114,11 +116,12 @@ doctor reports — live in the specs: see
 [v2 conformance and compatibility](/reference/specs/formula-spec-v2#5-conformance-and-compatibility)
 and its [v1 counterpart](/reference/specs/formula-spec-v1#5-conformance-and-compatibility).
 
-## Wisp or Molecule, Cook or Sling
+## Cook, Sling, or Order — and What Lands in the Store
 
 Once the contract is chosen, you face two more decisions: the **verb** (how
-the instance gets created and routed) and the **shape** (what lands in the
-bead store). They are related but separate.
+the instance gets created and routed) and the **outcome** (what lands in the
+bead store, which follows from the contract you declared). They are related
+but separate.
 
 Three verbs create formula instances:
 
@@ -129,37 +132,40 @@ Three verbs create formula instances:
   work with `--attach <bead-id>`.
 - **Sling creates and routes.** `gc sling <target> <name> --formula` does
   the cook and the routing in one motion: a v2 formula starts a workflow
-  routed to the target, a v1 formula becomes a wisp routed to the target.
-  Sling is the one-shot dispatch verb.
+  routed to the target, a v1 formula starts a single-bead run (a *wisp* in
+  v1 terms) routed to the target. Sling is the one-shot dispatch verb.
 - **Orders are scheduled dispatch.** An order names a formula (or a shell
   command — never both) and a trigger; the controller instantiates the
   formula each time the trigger fires and routes it to the order's pool. You
   never run a verb at all — the schedule does.
 
-Three shapes land in the store:
+What lands in the store follows from the contract, not from a separate
+choice. There are three outcomes:
 
-| Shape | How you get it | Per-step beads | Root is visible work |
+| Outcome | How you get it | Per-step beads | Root is visible work |
 |---|---|---|---|
-| Root-only wisp (v1-era) | `phase = "vapor"` formula (no `pour`) — a holdover from when bead writes were expensive; not a shape to design for | No — steps stay in the recipe | Yes — the root is the work |
-| v1 molecule | v1 formula with steps | Yes, as children of the container root | No — the root is a container |
+| Single-bead run (v1, no steps) | `phase = "vapor"` formula (no `pour`) — a holdover from when bead writes were expensive; not an outcome to design for | No — steps stay in the recipe | Yes — the root is the work |
+| v1 run with steps | v1 formula with steps (materialized as a *molecule*: a container root holding its step beads) | Yes, as children of the container root | No — the root is a container |
 | v2 workflow | v2 formula | Yes, independently routable | No — the root blocks on finalize |
 
 The tradeoffs behind that table:
 
 - **Visibility and debugging.** Materialized steps are real beads you can
   list, show, and watch move through statuses — a per-step audit trail. A
-  root-only wisp keeps the store lean but gives you a single bead and no
+  single-bead run keeps the store lean but gives you one bead and no
   step-level record.
 - **Routing.** v2 workflow steps are each routable to a different agent or
-  pool; a v1 molecule is typically worked end-to-end by the one agent it was
+  pool; a v1 run is typically worked end-to-end by the one agent it was
   slung to. Pools add a constraint: a pool wakes only for Ready-visible
-  work, so slinging a v1 molecule at a pool is refused outright — convert
-  the formula to v2 first.
-- **Cleanup.** Wisps are ephemeral by design: the core pack's reaper order
-  exists to reap stale wisps and purge closed molecules, and its cleanup
-  edges cover v2 workflows too. Use wisps for fire-and-forget activity you
-  do not need a durable record of; use materialized molecules and workflows
-  when the step history is the point.
+  work, so slinging a v1 run at a pool is refused outright — convert the
+  formula to v2 first.
+- **Cleanup: fire-and-forget vs. durable step history.** A single-bead run
+  is ephemeral by design — use it for fire-and-forget activity you do not
+  need a durable record of. A v1 run with steps and a v2 workflow both leave
+  a per-step record, which is the point when you want the history. The core
+  pack's reaper order keeps the store tidy across all three: it reaps stale
+  ephemeral runs and purges closed step records, and its cleanup edges cover
+  v2 workflows too.
 
 One rule cuts across all of it: **cook and sling in the store the worker
 reads.** Each rig has its own bead store, and the city has one too. Cook
@@ -837,11 +843,11 @@ overrides.
 
 The two frameworks above compose. Find your situation, read across:
 
-| You want | Contract | Verb | Resulting shape |
+| You want | Contract | Verb | Resulting outcome |
 |---|---|---|---|
-| Ordered steps worked by one agent | v1 or v2 | `gc sling --formula` | molecule (v1) or workflow (v2) |
+| Ordered steps worked by one agent | v1 or v2 | `gc sling --formula` | v1 run (a *molecule*) or v2 workflow |
 | Steps spread across agents or pools | v2 | `gc sling --formula` | workflow |
-| Inspect or route the beads yourself | either | `gc formula cook` | unrouted molecule or workflow |
+| Inspect or route the beads yourself | either | `gc formula cook` | unrouted run (v1) or workflow (v2) |
 | A sub-DAG grafted onto existing work | either | `gc formula cook --attach` | steps blocking the given bead |
 | One run per convoy member | v2 | `gc sling --on` (targeted) | workflow with drain units |
 | Verified or hardened steps | v2 | any | workflow with check or retry controls |
@@ -887,6 +893,8 @@ in the v1 spec.
 
 ## Where Next
 
+- [The primitives](/concepts/primitives) — the canonical model that places
+  Formula alongside Agent, Bead, Rig, Pack, and Event.
 - [Tutorial 05: Formulas](/tutorials/05-formulas) — write, inspect, and
   dispatch your first formulas hands-on.
 - [Formula spec (v2)](/reference/specs/formula-spec-v2) — the normative format,

@@ -51,7 +51,7 @@ Send mail to the mayor:
 ```shell
 ~/my-city
 $ gc mail send mayor -s "Review needed" -m "Please look at the auth module changes in my-project"
-Sent message mc-wisp-8t8 to mayor
+Sent message mc-msg-8t8 to mayor
 ```
 
 `gc mail send` takes the recipient as a positional argument and the subject/body
@@ -70,8 +70,8 @@ See the inbox:
 ```shell
 ~/my-city
 $ gc mail inbox mayor
-ID           FROM   SUBJECT        BODY
-mc-wisp-8t8  human  Review needed  Please look at the auth module changes in my-project
+ID          FROM   SUBJECT        BODY
+mc-msg-8t8  human  Review needed  Please look at the auth module changes in my-project
 ```
 
 `gc mail inbox` lists only unread messages, so there's no STATE column —
@@ -117,7 +117,7 @@ session, so you'll see whatever the agent has rendered, not Gas City–formatted
 lines.)
 
 The mayor didn't talk to the reviewer directly. It slung a bead to the
-`my-project/reviewer` agent template, and Gas City figured out which session
+`my-project/reviewer` agent (a rig-scoped agent), and Gas City figured out which session
 picks it up. If the reviewer was asleep, Gas City woke it. If there were
 multiple reviewer sessions for that rig, Gas City routed the work to an
 available one. The mayor doesn't know or care about any of that — it describes
@@ -173,6 +173,8 @@ Without hooks, you'd have to manually tell each agent to run `gc mail check` and
 You've seen the two coordination mechanisms — mail for messages and slung beads
 for work — and the hook infrastructure that wires it all together. From here:
 
+- **[The six primitives](/concepts/primitives)** — the canonical model mail,
+  slung work, and hooks build on
 - **[Formulas](/tutorials/05-formulas)** — how multi-step work should be
   done: steps, dependencies, and variables
 - **[Beads](/tutorials/06-beads)** — the work tracking system underneath it all

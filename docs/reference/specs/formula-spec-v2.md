@@ -9,6 +9,7 @@ description: Authoritative specification for the formulas v2 contract.
 | Last verified | 2026-06-12 |
 | Contract | `formula_compiler >=2.0.0` (deprecated alias: `contract = "graph.v2"`) |
 | Primary implementation | `internal/formula`, `internal/graphv2`, `internal/dispatch`, `internal/molecule` |
+| Concept model | [Primitives](/concepts/primitives) — where a formula (the HOW) sits among the six primitives |
 | User-facing guide | [Understanding Formulas](/guides/understanding-formulas) |
 | Tutorial | [Formulas tutorial](/tutorials/05-formulas) |
 
@@ -183,7 +184,7 @@ declaration as an error.
 | `vars` | table | Template variable declarations (section 1.4) |
 | `steps` | []table | Work items to create (section 1.3) |
 | `type` | string | `workflow` (default), `expansion`, or `aspect` |
-| `phase` | string | v1-era materialization hint: `"liquid"` (pour) or `"vapor"` (wisp). `phase = "vapor"` without `pour` compiles a root-only recipe — steps are not materialized as beads. Kept for compatibility; not a design surface for new formulas |
+| `phase` | string | Legacy v1 materialization mechanics, not a v2 authoring choice: `"liquid"` (pour) or `"vapor"`. `phase = "vapor"` without `pour` compiles a root-only recipe — steps are not materialized as beads. This selects how v1 stores a run's work (see the section 0.1 hedge: the storage shape is implementation, not part of the definition of a formula); it is accepted for compatibility and must not be used to design new formulas |
 | `pour` | bool | Materialize each step as a bead row (checkpoint recovery). Default `false`. Monotonic through `extends`: any ancestor's `pour = true` sticks |
 | `catalog` | table | `{name, description}` opting the formula into workflow-catalog discovery (`gc formula catalog`) |
 | `template` | []table | Expansion template steps for `type = "expansion"` formulas (`{target}` / `{target.description}` placeholders) |
@@ -1051,8 +1052,10 @@ yet; neither is a design commitment:
   `needs`.
 
 Conversely, routing a formula to a scale-from-zero pool requires a
-Ready-visible surface, which v1 molecule containers lack; `gc sling`
-rejects them:
+Ready-visible surface, which the v1 container materialization lacks; `gc sling`
+rejects them. The remedy in the error text below is migration to formulas v2;
+the `phase="vapor"`/root-only alternative it names is legacy v1 materialization
+mechanics (section 1.2), not a v2 authoring choice:
 
 ```text
 formula "<name>" root is a molecule container, not Ready-visible work; scale-from-zero pools will not wake for this wisp. Convert the formula to phase="vapor"/root-only or formulas v2 before routing it to a pool

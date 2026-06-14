@@ -6,7 +6,8 @@ description: Task-oriented config overrides for running the Gastown pack on Gas 
 This page collects the common config edits for the Gastown pack — the changes
 you reach for *while editing files*. The conceptual migration story, including
 how Gas Town roles and mechanisms map onto Gas City primitives, lives in
-[Coming from Gas Town](/getting-started/coming-from-gastown).
+[Coming from Gas Town](/getting-started/coming-from-gastown); for the primitives
+themselves, see [The six primitives](/concepts/primitives).
 
 ## Common Gastown Overrides
 
@@ -338,9 +339,12 @@ like this:
 # (witness, refinery, polecat). Mechanical housekeeping (gate/orphan/wisp
 # sweeps, branch pruning, nudge relays) ships with the builtin core pack.
 #
-# Referenced by both workspace.pack and rigs[].pack:
-#   workspace.pack → expands city-scoped agents only (mayor, deacon, boot, dog)
-#   rigs[].pack    → expands rig agents only (witness, refinery, polecat)
+# Imported at both city and rig scope:
+#   [imports.gastown] (root pack)              → expands city-scoped agents
+#                                                 only (mayor, deacon, boot, dog)
+#   [defaults.rig.imports.gastown] / [rigs.imports.gastown]
+#                                              → expands rig agents only
+#                                                 (witness, refinery, polecat)
 #
 # Crew members are individually named directory agents (agents/<name>/) plus a
 # named session; see the crew member note in the city file above.

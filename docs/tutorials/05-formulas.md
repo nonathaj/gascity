@@ -179,14 +179,15 @@ agent by default; pass `--nudge` if you want the target poked immediately.
 
 The verb differs from Tutorial 01's sling on purpose: there, sling created a
 bead from your prompt text and _attached_ a workflow instantiated from the
-agent's default formula (`Attached workflow ...`); here the formula itself is
-the work, so sling _starts_ the workflow directly.
+agent's default formula (`Attached workflow ...`); here you're slinging the
+formula (the method) directly, so sling _starts_ a workflow — materializing
+the formula's steps into beads (the work).
 
-(With the v1 compiler, slinging a formula creates a **wisp** — an ephemeral
-_molecule_, a container bead that holds its steps as children — instead.
-You'll still see that vocabulary in older formulas and messages; v2 formulas
-start workflows. [Tutorial 06](/tutorials/06-beads) shows how both shapes
-land in the bead store.)
+(With the v1 compiler, slinging a formula instead creates a wisp — an ephemeral
+molecule, a container bead that holds its steps as children. You'll still see
+that vocabulary in older formulas and messages; v2 formulas start workflows.
+[Tutorial 06](/tutorials/06-beads) shows how both shapes land in the bead
+store.)
 
 Sometimes you want to create the workflow's beads _without_ routing them to
 anyone yet — to inspect them first, or to route the work yourself. That's `gc
@@ -670,6 +671,8 @@ loops, checks, and retries.
 
 ## What's next
 
+- **[The six primitives](/concepts/primitives)** — the canonical model formulas
+  and the work they produce build on
 - **[Formula spec (v2)](/reference/specs/formula-spec-v2)** — the complete surface: every
   top-level key, every step field, and the v2 runtime constructs
 - **[Beads](/tutorials/06-beads)** — the universal work primitive underneath

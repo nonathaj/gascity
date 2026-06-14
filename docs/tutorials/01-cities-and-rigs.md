@@ -33,6 +33,11 @@ $ gc version
 > repo](https://github.com/gastownhall/gascity) to get the latest and greatest
 > bits before running these tutorials.
 
+New to the vocabulary? Read [Primitives](/concepts/primitives) first — it's the
+canonical model for the six primitives (Agent, Bead, Formula, Rig, Pack, Event)
+this tutorial puts into practice. The City is the local (root) pack; it imports
+shared packs.
+
 Now we're ready to create our first city.
 
 ## Creating a city
@@ -179,7 +184,9 @@ Gas City also gives you an implicit agent for each provider declared in
 `city.toml`'s `[providers]` table — so `claude` is available as an agent name
 (and, once you add a rig, `<rig>/claude`) even though it's not listed in
 `pack.toml`. Implicit agents use the core pack's stock pool-worker prompt and
-get `mol-do-work` as their default sling formula — more on that in a moment.
+get `mol-do-work` as their default sling formula — more on that in a moment. (The
+`mol-` prefix is legacy v1 naming carried by the formula's name; it doesn't
+change what the formula is — a reusable method.)
 
 To check on the status of your city, use `gc status`:
 

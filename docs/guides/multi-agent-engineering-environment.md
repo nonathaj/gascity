@@ -44,13 +44,24 @@ content.
 
 ## What Gas City gives that workflow
 
-At a high level:
+New to the core vocabulary? Read
+[the six primitives](/concepts/primitives) first — Agent, Bead, Formula,
+Rig, Pack, and Event are the model everything below configures.
 
-- the **pack** holds portable team behavior
-- the **city** holds deployment choices for this working environment
-- **agents** become explicit directories with prompt and local assets
-- **commands**, **doctor checks**, **orders**, **formulas**, and
-  **template fragments** stop being random loose files
+At a high level, the primitives give the work a home:
+
+- **agents** (WHO does the work) become explicit directories with prompt
+  and local assets
+- **formulas** (HOW the work gets done) and **orders** (WHEN they run)
+  stop being random loose files
+- a **pack** (what CONFIGURES all of the above) declares those agents,
+  formulas, and orders; the City is the local (root) pack, and it imports
+  shared packs
+
+Around those primitives, the supporting config artifacts also get a home:
+
+- **commands**, **doctor checks**, and **template fragments** stop being
+  random loose files
 - `.gc/` becomes the machine-local site-binding and runtime layer
 
 That means the working style becomes:
@@ -62,9 +73,11 @@ That means the working style becomes:
 
 ## The mental model
 
-Think in three layers:
+The City is the local (root) pack; it imports shared packs. So these are
+not two separate kinds of container — they are the same kind of thing at
+different scopes. Think in three layers:
 
-### 1. Portable team definition
+### 1. Portable team definition (a pack)
 
 This is the stuff you want to keep, share, review, and evolve:
 
@@ -83,13 +96,14 @@ This belongs in:
 - pack-owned directories like `agents/`, `commands/`, `doctor/`,
   `formulas/`, `orders/`, `template-fragments/`, `overlay/`, and `assets/`
 
-### 2. City deployment choices
+### 2. City deployment choices (the local pack)
 
-This is the stuff that says how this particular engineering environment
-is arranged:
+The City is the local pack — the same portable definition as layer 1,
+plus the choices that say how this particular engineering environment is
+arranged:
 
 - which rigs exist
-- which packs compose into the city or specific rigs
+- which shared packs the local pack imports into the city or specific rigs
 - runtime and substrate choices
 - deployment-specific policy
 

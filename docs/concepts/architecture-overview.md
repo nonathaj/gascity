@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-description: How Gas City's pieces — cities, rigs, agents, sessions, the beads store, the event bus, and the controller — hang together to route and process multi-agent work.
+description: How Gas City's six primitives — Agent, Bead, Formula, Rig, Pack, and Event — hang together to route and process multi-agent work, and the machinery that runs them.
 ---
 
 Gas City is an orchestration-builder SDK: a toolkit for composing multi-agent
@@ -8,10 +8,12 @@ coding workflows. This page gives you the mental model you need before diving
 into the [Tutorials](/tutorials/index) — what the major parts are, how work
 travels through the system, and how agents get spawned and talk to each other.
 
-You do **not** need to read any internal engineering notes to follow along.
-Everything here maps onto commands you can run with `gc`. Once you have the
-mental model, the [Primitives Reference](/concepts/primitives) is the deeper,
-per-concept companion to this page — dip into it for any single building block.
+The deepest, per-concept companion to this page is the
+[Primitives Reference](/concepts/primitives) — read it first if you want the
+authoritative model. Everything here is built on its **six primitives**: Agent
+(WHO), Bead (WHAT), Formula (HOW), Rig (WHERE), Pack (CONFIGURES), and Event
+(OBSERVE). You do **not** need to read any internal engineering notes to follow
+along; everything here maps onto commands you can run with `gc`.
 
 ## The core idea: work is the primitive
 
@@ -19,42 +21,109 @@ The single most important thing to understand about Gas City is that
 **orchestration is a thin layer on top of work tracking**.
 
 The system does not hardcode any roles — there is no built-in "manager" or "reviewer" baked into
-the binary. Instead, every role is supplied as configuration, and the SDK
-provides only the **infrastructure** — the role-agnostic machinery that every
-orchestration needs no matter what the agents are actually *for* — which consists of:
+the binary. Instead, every role is supplied as configuration through a **Pack**,
+and the SDK provides only the **infrastructure** — the role-agnostic machinery
+that every orchestration needs no matter what the agents are actually *for*. That
+machinery is:
 
-- a place to store work (the **beads store**)
-- a way to run agents (**sessions**)
-- a way to observe what happens (the **event bus**)
-- an engine that keeps them all in sync (the **controller**).
+- a place to store work — the **bead store**, where every bead lives
+- a way to run agents — **sessions**, the live process behind a running agent
+- a way to fire activity outward so others can watch — the **event bus**
+- an engine that keeps them all in sync — the **controller**.
 
 None of this machinery knows or cares what your agents do. That is what we mean
 throughout this page by "infrastructure": the plumbing the SDK owns, as opposed
-to the role behavior you supply as configuration.
+to the role behavior you supply as configuration. The machinery exists to serve
+the **six primitives** — Agent, Bead, Formula, Rig, Pack, and Event — which are
+what you actually reason about, and what the rest of this page is organized
+around.
 
-## The major pieces
+## The six primitives
 
-### City
+Everything you reason about in Gas City is one of six primitives. Packs
+**configure** agents, formulas, and orders; the local pack is your City. A
+**Formula** is the method applied *over* work: it loops over a convoy of
+**Beads** and fans each one out to an **Agent**, which executes those beads
+*in* a **Rig**. As all of this happens, the city fires **Events** so humans and
+agents can watch.
 
-A **city** is the top-level unit of deployment. Concretely, it is a directory
-on disk that contains:
+The five remaining pieces below are primitives; the [machinery](#the-machinery)
+section that follows — bead store, event bus, controller — is the plumbing that
+runs them.
 
-- a `city.toml` config file
-- a `.gc/` directory of runtime state
-- a `.beads/` directory holding the city's own work store.
+### Agent — WHO does the work
 
-It also keeps track of the rigs you have registered — but a rig's own directory
-can live anywhere on disk, inside or outside the city directory (see
-[Rig](#rig)).
+An **agent** is a configured worker — the *who* of an orchestration. Agents are
+pure configuration:
 
-You create a city with `gc init`.
+- a name
+- the provider that backs them (for example `claude`)
+- a prompt template that defines their behavior
+- a query that says which work routes to them
+- and many more operational knobs (see [Config reference](/reference/config) for the full list)...
 
-A city has exactly one long-running **controller** process that keeps everything reconciled.
+Because agents are configuration, you can define as many as you like, and the
+SDK never assumes any particular one exists.
 
-### Rig
+A **session** is a single *running* instance of an agent — a live process (by
+default a `tmux` pane) that the SDK can start, stop, prompt, and observe.
+Sessions are derived from the Agent primitive, not a primitive of their own:
+one agent can be instantiated into many running sessions (a *pool*). Sessions
+are ephemeral — they come and go, and the work they were doing survives them,
+because work lives in beads, not in the session.
 
-A **rig** is an external project registered with the city — usually a git
-repository you want agents to work in.
+Two particular controller actions on sessions are worth spelling out:
+
+- **Adoption.** If the controller restarts and finds agent processes still
+  running from before, it *adopts* them — reconnecting to the live panes and
+  recording a session bead for each — instead of killing and respawning them.
+  Nothing is lost across a controller restart.
+- **Scaling up and down.** An agent can be configured as a *pool*. On each tick
+  the controller runs the agent's `scale_check` query to size the pool to
+  demand: more pending work spawns more sessions (up to a configured max), and
+  idle capacity is retired (down to a configured min).
+
+### Bead — WHAT the work is
+
+A **bead** is a single unit of work — the *what*. It has an ID, a title, a
+status, and a type. Beads are also the universal substrate for domain state:
+tasks, mail messages, sessions, and convoys are all beads that differ only by
+their `type`. A **convoy** is a container bead that groups related beads so you
+can track a batch as a unit, and **dependencies** are edges between beads; both
+are derived under the Bead primitive, not separate primitives.
+
+Everything an agent executes is a bead, and the work persists in beads — not in
+any session. That is why the system converges to correct outcomes even as
+sessions churn: if an agent dies, its beads stay open, and a fresh agent's hooks
+discover the same work and pick up where it left off.
+
+### Formula — HOW the work gets done
+
+A **formula** is *how* the work is carried out — a reusable, written-down method
+applied *over* work. A formula is not the work, and it is not a grouping of
+work: it loops over the beads of a convoy and fans each one out to an agent,
+defining its own steps along the way. Applying a formula is what *produces*
+work: the `formula.toml` compiles into a recipe that is materialized as beads in
+the store, and those beads are the work that outlives both the file and any
+session.
+
+You apply a formula in a few ways, all derived under this one primitive:
+
+- **Sling** (`gc sling`) creates *and* routes work in one motion: it resolves the
+  target agent or pool, instantiates the formula, routes each bead, and nudges
+  the agent to start.
+- **Cook** (`gc formula cook`) creates the work without routing it.
+- An **Order** automates *when* a formula runs. An `order.toml` pairs a trigger
+  (`cooldown`, `cron`, `condition`, `event`, or `manual`) with an action, and
+  when the trigger fires the controller instantiates the formula and routes the
+  instance to the order's pool — no human runs a verb. **Health Patrol** is one
+  kind of order-driven controller work: each tick the controller evaluates the
+  due order triggers and fires them.
+
+### Rig — WHERE the work happens
+
+A **rig** is an external project registered with the city — the *where*. It is
+usually a git repository you want agents to work in.
 
 A rig's directory can live anywhere on
 disk; it does **not** have to sit inside the city directory. You register one
@@ -66,50 +135,55 @@ one rig stays logically isolated from the others. That isolation is by
 underlying store, and `bd` filters every read and write to the current scope's
 prefix. See [Beads Storage Topology](/reference/internal/beads-topology) for the details.
 
-### Agent
+### Pack — what CONFIGURES everything
 
-An **agent** is a configured worker. Agents are pure configuration:
+A **pack** is the unit of configuration: it declares the agents, formulas, and
+orders an orchestration uses. The City is the local (root) pack; it imports
+shared packs. So a **city** is not a thing apart from packs — it *is* a pack,
+the one rooted at this deployment. Concretely, a city is a directory on disk
+that contains:
 
-- a name
-- the provider that backs them (for example `claude`)
-- a prompt template that defines their behavior
-- a query that says which work routes to them
-- and many more operational knobs (see [Config reference](/reference/config) for the full list)...
+- a `pack.toml` / `city.toml` config file declaring the local pack's agents,
+  formulas, and orders
+- a `.gc/` directory of runtime state
+- a `.beads/` directory holding the city's own work store.
 
-Because agents are configuration, you can define as many as you like, and the SDK never assumes any particular one exists.
+It also keeps track of the rigs you have registered — but a rig's own directory
+can live anywhere on disk, inside or outside the city directory (see
+[Rig](#rig--where-the-work-happens)).
 
-### Session
+You create a city with `gc init`. A city has exactly one long-running
+**controller** process that keeps everything reconciled. Because the City is
+just the local pack, an imported pack's agents, formulas, and orders read
+exactly like the ones declared locally.
 
-A **session** is a single running instance of an agent — a live process (by
-default a `tmux` pane) that the SDK can start, stop, prompt, and observe.
+### Event — how you OBSERVE
 
-Sessions are ephemeral: they come and go, and the work they were doing survives
-them, because work lives in the beads store, not in the session.
+An **event** is an outbound notification fired by activity, so humans and agents
+can watch what the system is doing. Beads fire `bead.created` / `bead.closed`;
+sessions fire `session.woke` / `session.crashed`; convoys fire
+`convoy.created` / `convoy.closed`; order-driven runs fire `order.fired` /
+`order.completed`. You follow them live with `gc events --follow`.
 
-Two particular controller actions are worth spelling out:
+Events are *fired*, not polled: the primitive is the notification itself. The
+**event bus** beneath them is just the delivery machinery — an append-only
+pub/sub log that carries each fired event to whoever is watching. (Coordination
+between the parts of the system happens through shared bead state, which the
+controller reads each tick; events are how *observers* keep up.)
 
-- **Adoption.** If the controller restarts and finds agent processes still
-  running from before, it *adopts* them — reconnecting to the live panes and
-  recording a session bead for each — instead of killing and respawning them.
-  Nothing is lost across a controller restart.
-- **Scaling up and down.** An agent can be configured as a *pool*. On each tick
-  the controller runs the agent's `scale_check` query to size the pool to
-  demand: more pending work spawns more sessions (up to a configured max), and
-  idle capacity is retired (down to a configured min).
+## The machinery
 
-### Beads store
+Three pieces of plumbing run the primitives above. None of them is something you
+configure a role around — they are the SDK's infrastructure.
 
-The **beads store** is the universal persistence substrate.
+### Bead store
 
-*Everything* is a bead, meaning a row in the same beads store:
+The **bead store** is the universal persistence substrate beneath the Bead
+primitive: every bead is a row in it.
 
-- tasks
-- mail messages
-- molecules
-- convoys.
-
-The store offers a single interface — create, read, update, close, list,
-query by label, and walk parent/child relationships.
+It holds tasks, mail messages, sessions, and convoys alike, and offers a single
+interface — create, read, update, close, list, query by label, and walk
+parent/child relationships.
 
 By default it is backed by Dolt through the `bd` CLI. Physically there is **one** Dolt server per city.
 The city root and every rig each hold a `.beads/` configuration directory, but they all resolve to
@@ -122,16 +196,17 @@ how the prefix scoping works.
 
 ### Event bus
 
-The **event bus** is the universal observation substrate: an append-only
-pub/sub log of everything that happens in the system.
+The **event bus** is the delivery machinery beneath the Event primitive: an
+append-only pub/sub log that carries each fired event to whoever is watching.
 
 It has two tiers:
 
 - critical events on a bounded queue for infrastructure
 - optional fire-and-forget events for audit.
 
-Other parts of the system watch the bus
-reactively rather than polling.
+Observers watch the bus reactively rather than polling. The bus only *delivers*
+events; the parts of the system coordinate with each other through shared bead
+state, not by reading the bus.
 
 ### Controller
 
@@ -144,14 +219,14 @@ declaration:
 
 - spawning missing sessions
 - scaling agent pools
-- dispatching automations
+- firing due orders so their formulas run
 - garbage-collecting expired ephemeral work
 - restarting stalled sessions.
 
 There is no separate "desired state" file you maintain. The declaration **is**
-`city.toml` — which agents should exist, and how many instances each pool should
-run — and reconciliation is simply how the controller keeps the live system
-matching it.
+the local pack's `city.toml` — which agents should exist, and how many instances
+each pool should run — and reconciliation is simply how the controller keeps the
+live system matching it.
 
 Crucially, the controller can do all of this with no
 user-configured agent running: keeping the infrastructure healthy is the SDK's
@@ -159,9 +234,10 @@ job, and user agents only execute work.
 
 ## How the pieces fit together
 
-Structurally, a city wraps a controller and a beads store, registers one or
-more rigs, and runs agents as live sessions. The event bus sits alongside as
-the observation channel everything writes to.
+Structurally, the local pack (your city) wraps a controller and a bead store,
+registers one or more rigs, and runs agents as live sessions. The event bus
+sits alongside as the channel each fired event flows out on so observers can
+watch.
 
 ![Structural diagram of a Gas City: the city wraps the controller, beads store,
 and event bus, with rigs and live agent sessions inside it. Config declares the
@@ -219,7 +295,10 @@ A lone bead _is not_ the only way work enters the system. It is just the
 clearest place to start: the same infrastructure carries the richer shapes.
 For instance you can also:
 
-- sling a *formula* that expands into a multi-step **molecule** (a root bead plus one bead per step)
+- sling a **formula** — a reusable *method* — which Gas City applies over a
+  convoy of beads, materializing its steps as beads (a root bead plus one bead
+  per step) and fanning them out to agents; the formula is the *how*, the beads
+  are the work
 - group related work into a **convoy**.
 
 ## Agent spawning, lifecycle, and communication
@@ -249,16 +328,18 @@ dies — a fresh session picks up exactly where the work record says to.
 
 ### Communication
 
-Agents coordinate through two derived mechanisms, neither of
-which is a new primitive:
+Agents coordinate without any new primitive — the two ways they talk fold back
+into ones you already met:
 
-- **Mail** is just a bead with a `message` type. An agent's inbox is a query for
-  open message beads addressed to it; archiving a message is closing that bead.
-- **Nudge** is a session-layer operation: text typed directly into a running
-  agent's session to prod it. It is fire-and-forget.
+- **Mail** is just a **bead** with a `message` type. An agent's inbox is a query
+  for open message beads addressed to it; archiving a message is closing that
+  bead.
+- **Nudge** is a session-layer operation under the **Agent** primitive: text
+  typed directly into a running agent's session to prod it. It is
+  fire-and-forget.
 
-Both reduce to the two primitives you already met — mail is the beads store,
-nudge is the session. There is nothing else to learn.
+There is nothing else to learn: mail is a bead, nudge is an operation on a
+running agent.
 
 ## A runnable example
 
@@ -294,7 +375,8 @@ bd show <bead-id> --watch
 ## Where to go next
 
 - [Primitives Reference](/concepts/primitives) — the deeper, per-concept
-  reference for the nine building blocks introduced above.
+  reference for the six primitives (Agent, Bead, Formula, Rig, Pack, Event)
+  introduced above.
 - [Quickstart](/getting-started/quickstart) — the same path above, in a few
   minutes.
 - [Tutorial 01: Cities and Rigs](/tutorials/01-cities-and-rigs) — start the

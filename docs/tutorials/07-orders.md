@@ -25,7 +25,12 @@ a schedule or in response to events.
 
 Orders live in an `orders/` directory at the top level of your city, alongside
 `formulas/` and `agents/`. Each order is a flat `*.toml` file in that
-directory.
+directory. The City is the local (root) pack; it imports shared packs — so
+these `orders/`, `formulas/`, and `agents/` directories are the local pack's
+own contents, the same structure an imported pack provides. An order imported
+from a shared pack reads exactly like a local one. See
+[primitives](/concepts/primitives) for how packs, formulas, agents, and orders
+relate.
 
 ```
 orders/
@@ -52,36 +57,34 @@ The `pool` field tells the controller where to send the work. A _pool_ is a
 named group of one or more agents that share a work queue — you glimpsed one
 in Tutorial 01, where `gc status` showed the bundled `dolt.dog` pool. A single
 agent's name works as a pool target too; the examples here route to the
-`worker` agent from Tutorial 05. When an order fires, the controller creates a
-wisp from the formula and routes it to the named pool. Any agent in that pool
-can pick it up.
+`worker` agent from Tutorial 05. When an order fires, the controller runs the
+formula and routes the resulting work (beads) to the named pool. Any agent in
+that pool can pick it up and run the formula's steps.
 
 The controller evaluates trigger conditions on every tick. When five minutes have
-passed since the last run, it instantiates the `pancakes` formula as a wisp and
-routes it to the `worker` pool. The order name comes from the file basename
+passed since the last run, it runs the `pancakes` formula and routes its work
+beads to the `worker` pool. The order name comes from the file basename
 (`pancakes-check.toml` → `pancakes-check`), not from anything in the TOML.
 
-(Tutorial 05 taught you that v2 formulas start **workflows** — the order
-machinery still calls any dispatched formula instance a wisp, and that's the
-word `gc order run` prints even for v2 formulas. Same beads either way.)
-
-When the dispatcher stamps the wisp for a pool target it writes
-`gc.routed_to=<pool>` so the worker's `bd ready` query and the supervisor's
-default `scale_check` both see it through the shared routed queue. Formula
-orders that should wake a pool must compile to Ready-visible work. v2
-formulas — anything declaring `[requires] formula_compiler = ">=2.0.0"` (see
+When the dispatcher routes that work to a pool target it writes
+`gc.routed_to=<pool>` on the beads so the worker's `bd ready` query and the
+supervisor's default `scale_check` both see them through the shared routed
+queue. An order that should wake a pool needs work that is immediately Ready —
+beads with no open blockers — so a scaled-from-zero pool has something to pick
+up. v2 formulas — anything declaring
+`[requires] formula_compiler = ">=2.0.0"` (see
 [Choosing a Compiler Contract](/guides/understanding-formulas#choosing-a-compiler-contract))
-— qualify: the dispatcher routes their step beads to the pool, and steps with
-no open blockers are Ready immediately. (Root-only v1 wisps qualify too,
-but that shape is a holdover — use v2 for new formulas.) What doesn't
-qualify is a v1 formula whose root is a molecule container — `bd ready`
-filters those out, and the dispatcher logs a warning telling you to convert
-the formula before routing it to a pool.
+— produce this: the dispatcher routes their step beads to the pool, and steps
+with no open blockers are Ready right away. Prefer v2 for new formulas.
 
-After upgrading from older dispatcher versions, close any open v1
-molecule-shaped pool-order wisps with `gc order sweep-tracking --include-wisps
-<order>` or let a min-floor worker drain them before expecting that order to
-fire again from a scale-from-zero pool.
+> **Note (v1 mechanics):** A v1 formula whose root materializes as a container
+> bead doesn't put immediately-Ready work on the pool — `bd ready` filters the
+> container out, and the dispatcher logs a warning telling you to convert the
+> formula to v2 before routing it to a pool. After upgrading from older
+> dispatcher versions, drain any such already-dispatched container work with
+> `gc order sweep-tracking --include-wisps <order>`, or let a min-floor worker
+> clear it, before expecting the order to fire again from a scale-from-zero
+> pool.
 
 Orders are discovered when the city starts, and the controller rescans the
 order set as it ticks — at most once per minute. You don't need to restart
@@ -150,7 +153,10 @@ $ gc order run pancakes-check
 Order "pancakes-check" executed: wisp mc-2xz → gc.routed_to=worker
 ```
 
-For exec orders, the output is simpler — `Order "<name>" executed (exec)`.
+The bead ID (`mc-2xz` here) is the dispatched work, stamped `gc.routed_to=worker`
+so the `worker` pool sees it. (`wisp` is the CLI's label for that v1
+materialization.) For exec orders, the output is simpler — `Order "<name>"
+executed (exec)`.
 
 This is useful for testing a new order or for kicking off work that's almost due
 anyway.
@@ -276,7 +282,8 @@ interval = "5m"
 exec = "scripts/prune-merged.sh"
 ```
 
-An exec order runs the script on the controller — no agent, no LLM, no wisp.
+An exec order runs the script on the controller — no agent, no LLM, no work
+beads.
 This is the right choice for purely mechanical operations: pruning branches,
 running linters, checking disk usage, anything where involving an agent would be
 wasteful.
@@ -309,9 +316,9 @@ timeout = "60s"
 ```
 
 For formula orders, the timeout covers the initial dispatch — compiling the
-formula, creating the wisp, and routing it to the pool. Once the wisp is created
-and handed off, the agent works on it at its own pace; the timeout doesn't kill
-an agent mid-work. For exec orders, the timeout covers the full script execution
+formula, materializing its work beads, and routing them to the pool. Once the
+work is dispatched and handed off, the agent works on it at its own pace; the
+timeout doesn't kill an agent mid-work. For exec orders, the timeout covers the full script execution
 — if the script is still running when time is up, the process is killed. You can
 also set a global cap in `city.toml`:
 
@@ -544,7 +551,7 @@ Internally, Gas City distinguishes them by _scoped name_:
 `test-suite:rig:my-api` vs `test-suite:rig:my-frontend`.
 
 Pool targets are auto-qualified at dispatch: `pool = "worker"` in the order
-definition becomes `gc.routed_to=my-api/worker` on the dispatched wisp,
+definition becomes `gc.routed_to=my-api/worker` on the dispatched work beads,
 routing work to the rig's own agents rather than the city-level pool.
 
 ## Order layering

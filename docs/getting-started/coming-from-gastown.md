@@ -97,20 +97,18 @@ The single most important thing to understand about Gas City is that **orchestra
 
 Gas City does not hardcode any roles. There is no built-in mayor, deacon, or polecat baked into the binary — every role you knew in Gas Town is supplied as configuration. The SDK provides only the **infrastructure**: the role-agnostic machinery every orchestration needs no matter what the agents are actually for.
 
-Gas City gives you a small set of building blocks. There are **five primitives**:
+Gas City gives you **six primitives**:
 
-- **Session** — start, stop, prompt, and observe agents, regardless of provider.
-- **Beads Store** — CRUD over work units. Everything durable is a bead: tasks, mail, molecules, convoys.
-- **Event Bus** — an append-only pub/sub log of all system activity.
-- **Config** — TOML files that activate capabilities progressively.
-- **Prompt Templates** — the behavioral specification for what each role does.
+- **Agent** — WHO does the work. An agent is a configured worker; its session, provider, and pool are derived facets under it (start, stop, prompt, and observe a session regardless of provider; scale a pool of them).
+- **Bead** — WHAT the work is. A unit of work. Everything durable is a bead: tasks, mail, convoy members. Convoys and dependencies are derived groupings under Bead.
+- **Formula** — HOW work gets done. A reusable method applied *over* a convoy of beads, looping and fanning each bead to an agent. Run, sling, and order are derived under Formula; Health Patrol is one kind of order.
+- **Rig** — WHERE work happens. A project or repo registered with the city.
+- **Pack** — CONFIGURES the system. A pack declares agents, formulas, and orders. The City is the local (root) pack; it imports shared packs.
+- **Event** — OBSERVE what happens. An outbound notification fired by activity so humans and agents can watch. (The "bus" is the delivery machinery beneath it.)
 
-…and **four derived mechanisms** composed from them:
+The relationship backbone ties them together: packs declare agents, formulas, and orders → the local pack is the City → a Formula operates over a convoy of Beads, fanning to Agents that execute in a Rig → an Order automates *when* a formula runs → Events are fired for observation.
 
-- **Messaging** — mail and nudges.
-- **Formulas & Molecules** — a formula is the reusable method for how work is done; a molecule is the work it produces at runtime.
-- **Dispatch** (`gc sling`) — find or spawn an agent and route work to it.
-- **Health Patrol** — stall detection and restart-with-backoff.
+Underneath these primitives sits the supporting machinery: the **beads store** (durable bead persistence), the **session layer** (provider-agnostic session lifecycle under Agent), the **event bus** (event delivery), **config** (TOML that activates capabilities progressively), **prompt templates** (the behavioral spec a pack supplies to an agent), **messaging** (mail and nudges), and **dispatch** (`gc sling`, which finds or spawns an agent and routes work to it). A formula run materializes as beads at runtime (the v1 container is a *molecule*; ephemeral ones are *wisps*).
 
 The **controller** is the engine that keeps these in sync — it owns SDK infrastructure operations such as reconciliation, scaling, order evaluation, and health patrol.
 
@@ -151,7 +149,7 @@ Each table is preceded by a one-sentence scope statement so you always know whic
 |---|---|---|
 | Mayor | Configured agent + coordinating prompt template (e.g. the Gastown pack's `mayor`) | A role name in a pack, not an SDK primitive. Reachable with `gc session attach mayor`. |
 | Deacon | Controller / supervisor infrastructure + config; optionally a configured agent | Watchdog behavior moves into the controller. You tune thresholds in config rather than running a role. |
-| Witness | Event bus + waits, formulas, and session scale config | The SDK gives you the mechanisms; a pack decides whether to model a "witness" role at all. |
+| Witness | Events + waits, formulas, and session scale config | The SDK gives you the mechanisms; a pack decides whether to model a "witness" role at all. |
 | Refinery | Configured agent + a formula or order post-processing step | Post-processing is a workflow step, not a standing role type. |
 | Polecat | Scalable / transient agent config (a pool — `min`/`max_active_sessions`) | "Polecat" is an operating style — on-demand sessions, often with worktrees — expressed as agent config. |
 | Crew | Persistent named agent config | "Crew" is an operating style — long-lived named agents — expressed as agent config. |
@@ -164,10 +162,10 @@ Each table is preceded by a one-sentence scope statement so you always know whic
 | Gas Town behavior | Gas City equivalent | Notes |
 |---|---|---|
 | Deacon watchdog logic | Controller health patrol + reconciliation | Stall detection, restart-with-backoff, and reconcile-to-desired-state are controller concerns, not a role agent. |
-| Witness lifecycle tracking | Waits, formulas, session scale config, controller wake/sleep, event bus | The mechanisms are first-class; modeling a "witness" on top of them is optional pack behavior. |
+| Witness lifecycle tracking | Waits, formulas, session scale config, controller wake/sleep, events | The mechanisms are first-class; modeling a "witness" on top of them is optional pack behavior. |
 | Plugin (scheduled / event / conditional automation) | Order — exec order or formula order | Use an **exec order** for shell or controller-side logic; a **formula order** to instantiate agent-driven work. |
 | Convoy as an orchestration runtime | Convoy beads + `gc sling` + formulas | Convoys stay bead-backed grouping and lineage; there is no special convoy runtime layer you must use. |
-| Formula runner inside Town workflows | In-process formula compiler + controller execution | Gas City compiles formulas and instantiates molecules itself. For v2 formulas (host-enabled by default), the controller executes the workflow's control beads; agents execute the work beads. See [Choosing a Compiler Contract](/guides/understanding-formulas#choosing-a-compiler-contract). |
+| Formula runner inside Town workflows | In-process formula compiler + controller execution | Gas City compiles formulas and runs them over the convoy's beads itself. For v2 formulas (host-enabled by default), the controller executes the workflow's control beads; agents execute the work beads. See [Choosing a Compiler Contract](/guides/understanding-formulas#choosing-a-compiler-contract). |
 | Path-derived identity | Explicit agent identity, rig scope, env, bead metadata | Do not port code or prompts that assume the directory path implies who the agent is. |
 
 ### Filesystem / State Layout → Gas City Equivalents
@@ -274,7 +272,7 @@ In Gas Town, some orchestration behavior is mediated through specific roles. In 
 - session scaling
 - order evaluation
 - health patrol
-- wisp garbage collection
+- garbage-collecting ephemeral run beads (the v1 *wisp* container)
 
 If something is fundamentally SDK infrastructure, prefer putting it in the controller path instead of inventing another deacon-like role behavior.
 
@@ -388,7 +386,7 @@ The most common architectural mistake is importing Town's surface area instead o
 
 If you already know Gas Town, this is the shortest path to becoming effective in Gas City:
 
-1. Read the [Architecture Overview](/concepts/architecture-overview) for the top-down mental model, then the [Primitives Reference](/concepts/primitives) for the nine building blocks in user terms.
+1. Read the [Architecture Overview](/concepts/architecture-overview) for the top-down mental model, then the [Primitives Reference](/concepts/primitives) for the six primitives in user terms.
 2. Skim the [CLI reference](/reference/cli) alongside the [Gas Town → Gas City Command Map](/reference/gastown-command-map) so the `gt` → `gc` muscle memory transfers.
 3. Read [Tutorial 07 — Orders](/tutorials/07-orders) and mentally remap "plugins" to "orders".
 4. Read [Tutorial 05 — Formulas](/tutorials/05-formulas) and remember that Gas City compiles and instantiates formulas itself; for v2 formulas the controller drives the workflow's control beads while agents execute the work beads.

@@ -127,7 +127,10 @@ per-session files you manage yourself:
 
 ## Roles
 
-**Definition**: the *kind* of agent — what it does.
+**Definition**: the *kind* of agent — what it does. Role, identity, and pool are
+all facets of the one **Agent** primitive (WHO): a role is the kind of agent, an
+identity is a specific running instance of it, and a pool is many instances of
+the same role.
 
 **In a coding agent**:
 
@@ -157,9 +160,13 @@ per-session files you manage yourself:
   message, wake, peek at, and resume exactly that one across restarts.
 - One role can be instantiated into many identities (a pool of
   `polecat_furiosa`, `polecat_nux`, …). See them with `gc session list`.
+- Role (the kind), identity (the running instance), and pool (the set of
+  instances) are all facets of the single **Agent** primitive — see
+  [the six primitives](/concepts/primitives).
 
 ## See also
 
+- [The six primitives](/concepts/primitives) — the canonical model; start here.
 - [Coming from Gas Town](/getting-started/coming-from-gastown)
 - [Tutorial 04: Communication](/tutorials/04-communication) — mail and nudge.
 - [Config Reference](/reference/config)

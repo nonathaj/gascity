@@ -4,9 +4,12 @@ description: Learn what packs are, how imports work, and how Gas City turns reus
 ---
 
 Every reusable capability in Gas City comes from a pack. A pack tells Gas City
-what can be loaded: agents, named sessions, formulas, orders, skills, commands,
-MCP configuration, defaults, and the files those definitions need while
-running.
+what can be loaded: agents, formulas, and orders, along with skills, commands,
+MCP configuration, defaults, the per-agent named-session config that keeps an
+agent persistent, and the files those definitions need while running. If you
+are still mapping these terms to the core model, start with
+[the six primitives](/concepts/primitives) — Pack is the one that CONFIGURES,
+and the City is the local (root) pack; it imports shared packs.
 
 This guide has two parts:
 
@@ -59,10 +62,11 @@ directory contains `prompt.md`, the loader discovers that prompt by convention.
 If another city imports this pack, it does not need to copy `prompt.md`; the
 file still belongs to the pack that declared it.
 
-Every city also has a city pack: the pack rooted at the city directory, next to
-`city.toml`. In loader and spec language, this is also called the root pack.
-The city pack is where the city keeps reusable definitions, imports, and local
-pack metadata.
+This is the relationship introduced above: the City is the local (root) pack;
+it imports shared packs. That local pack is rooted at the city directory, next
+to `city.toml`, and in loader and spec language is also called the root pack.
+It is where the city keeps reusable definitions, imports, and local pack
+metadata.
 
 If the loader cannot understand a pack's `schema`, it stops and reports an
 error. That is deliberate: it is better to reject a pack whose format is not

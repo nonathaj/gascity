@@ -9,6 +9,7 @@ description: Authoritative specification for the formulas v1 contract.
 | Last verified | 2026-06-12 |
 | Contract | `formula_compiler 1.0` (default — no declaration required) |
 | Primary implementation | `internal/formula`, `internal/molecule` |
+| Concept model | [Six Primitives](/concepts/primitives) (authoritative — where Formula fits in the taxonomy) |
 | User-facing guide | [Understanding Formulas](/guides/understanding-formulas) |
 | Tutorial | [Formulas tutorial](/tutorials/05-formulas) |
 
@@ -307,6 +308,9 @@ instantiation:
 ```bash
 gc sling worker deploy --formula --var env=prod
 ```
+
+Here `worker` is a pack-supplied agent name, not an SDK built-in; targets in
+these examples are illustrative names a pack declares.
 
 **Injected names.** v1 reserves no variable names; the v2
 reserved-variable rules (`convoy_id`, `bead_id`) do not apply. On a
