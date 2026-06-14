@@ -121,7 +121,7 @@ Run `make help` for the full list. The most useful targets are:
 | `make build` | Build `gc` with version metadata |
 | `make install` | Install `gc` into `$(go env GOPATH)/bin` |
 | `make check` | Fast Go quality gates |
-| `make check-docs` | Docs sync tests plus Mintlify broken-link checks |
+| `make check-docs` | Docs sync tests (on-disk link checker; does not run `mint broken-links`) |
 | `make check-all` | Extended quality gates including integration tests |
 | `make test` | Unit and repo-level Go tests |
 | `make test-integration` | Integration tests |

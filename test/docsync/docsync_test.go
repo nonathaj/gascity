@@ -478,6 +478,23 @@ func TestSchemaFreshness(t *testing.T) {
 	}
 }
 
+// hasMdSuffix reports whether the path portion of a link target (before any
+// anchor or query) has a .md or .mdx extension. Used to catch "GitHub-friendly"
+// edits that add .md suffixes to Mintlify page links — the deployed site serves
+// extensionless routes, so the suffix breaks navigation even though the file
+// exists on disk.
+func hasMdSuffix(target string) bool {
+	path := target
+	if idx := strings.Index(path, "#"); idx >= 0 {
+		path = path[:idx]
+	}
+	if idx := strings.Index(path, "?"); idx >= 0 {
+		path = path[:idx]
+	}
+	ext := filepath.Ext(path)
+	return ext == ".md" || ext == ".mdx"
+}
+
 // isMintlifySource returns true if path belongs to a doc tree that has a
 // Mintlify config (docs.json). In Mintlify trees, extensionless root-relative
 // links like /tutorials/01-beads are the expected convention. Other trees are
@@ -505,6 +522,10 @@ func TestLocalMarkdownLinks(t *testing.T) {
 			t.Fatalf("reading %s: %v", path, err)
 		}
 		mintlify := isMintlifySource(root, path)
+		docsRoot := filepath.Join(root, "docs")
+		relToDocsRoot, _ := filepath.Rel(docsRoot, path)
+		relToDocsRoot = filepath.ToSlash(relToDocsRoot)
+		publishedMintlifyPage := mintlify && !docsPublishExemptions[relToDocsRoot]
 		for _, target := range extractMarkdownLinks(string(data)) {
 			if isExternalLink(target) {
 				continue
@@ -514,9 +535,16 @@ func TestLocalMarkdownLinks(t *testing.T) {
 				continue
 			}
 			if mintlify {
-				// Mintlify docs: extensionless links are OK (deployed
-				// site uses route-based URLs without .md).
-				if !localLinkExists(resolved) {
+				// Mintlify docs: extensionless links are the correct convention
+				// (deployed site uses route-based URLs without extensions).
+				// A .md/.mdx suffix on an internal page link breaks Mintlify
+				// navigation even though the file exists on disk.
+				// Only enforce for published pages — workspace meta files
+				// (docsPublishExemptions) may legitimately reference raw filenames.
+				if publishedMintlifyPage && hasMdSuffix(target) {
+					relPath, _ := filepath.Rel(root, path)
+					broken = append(broken, relPath+" -> "+target)
+				} else if !localLinkExists(resolved) {
 					relPath, _ := filepath.Rel(root, path)
 					broken = append(broken, relPath+" -> "+target)
 				}
