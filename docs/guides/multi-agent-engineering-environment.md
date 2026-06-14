@@ -3,134 +3,82 @@ title: "Using Gas City as a Multi-Agent Engineering Environment"
 description: How to take a multi-human, multi-agent workflow you are already running by hand and give it a better home in Gas City.
 ---
 
-This guide is for teams who are already doing some version of
-multi-agent engineering by hand.
+This guide is for teams already doing some version of multi-agent
+engineering by hand: humans coordinating branches in chat, several AI
+sessions working in parallel, docs and migration notes and issue threads
+all moving at once, one person watching release shape, another carrying
+operational truth, another driving the bits into existence.
 
-Maybe you already have:
+Gas City does not ask you to invent a new kind of work. It takes the
+coordination you do by hand — deciding what is ready, fanning tasks out to
+several agents at once, waiting on dependencies, retrying failures — and
+lets a controller run it for you. You write the method down once as a
+formula; the controller drives it to completion across many agents,
+outside any single session.
 
-- humans coordinating branches and worktrees in chat
-- several AI sessions working in parallel
-- docs, migration notes, and issue threads moving at the same time
-- one person watching product and release shape
-- another person carrying operational/tutorial truth
-- another person driving the bits into existence
+## The hand-rolled system has predictable friction
 
-If that sounds familiar, Gas City does not ask you to invent a new kind
-of work. It gives the work you are already doing a better home.
+Most multi-agent teams improvise a system that looks like this: a shared
+repo with multiple worktrees, one or more coordinator humans keeping the
+branch story straight, specialist agents doing bounded tasks in parallel,
+and prompts, scripts, notes, and checklists scattered between files and
+chat. It works — and it leaks:
 
-## What you may already be doing by hand
+| Where work lives now | The cost |
+| --- | --- |
+| Important context in chat | Lost when the thread scrolls away |
+| Role behavior as loose prompts | Hard to version cleanly |
+| Branch and environment setup | Repeated by hand every time |
+| Operational truth in tutorials, notes, and heads | Drifts from what the tooling knows |
 
-A lot of multi-agent engineering teams are already improvising a system
-that looks something like this:
+Gas City makes those moving parts first-class pack and city content, and
+puts a controller behind them that dispatches ready work to many agents at
+once, waits on dependencies, and retries failures — so coordination no
+longer lives in one person's head and chat window.
 
-- a shared repo with multiple worktrees
-- one or more “coordinator” humans keeping the branch story straight
-- specialist agents doing bounded tasks in parallel
-- prompts, scripts, notes, and checklists scattered between files and chat
-- ad hoc naming for roles like reviewer, migration lead, docs owner, or release sheriff
+## The primitives let a controller run your team's work
 
-This can work surprisingly well.
+New to the core vocabulary? Read [the six primitives](/concepts/primitives)
+first — Agent, Bead, Formula, Rig, Pack, and Event are the model everything
+below configures.
 
-It also creates friction:
+- **Formulas** (HOW the work gets done) become methods the controller
+  compiles into a graph of beads and drives to completion — decomposing a
+  job, fanning ready steps out to many agents at once, gating each step on
+  its dependencies, retrying failures. **Orders** (WHEN) trigger those
+  formulas on a schedule or event.
+- **Agents** (WHO does the work) become explicit directories with prompt
+  and local assets.
+- A **pack** (what CONFIGURES the above) declares those agents, formulas,
+  and orders. The City is the local root pack; it imports shared packs.
 
-- important context lives only in chat
-- prompt and role behavior are hard to version cleanly
-- branch and environment setup is repetitive
-- teams drift between “what we do” and “what the tooling knows”
-- operational truth gets split across tutorials, notes, and people’s heads
+Around the primitives, the supporting config gets a home too: **commands**,
+**doctor checks**, and **template fragments** stop being loose files, and
+`.gc/` becomes the machine-local site-binding and runtime layer. The
+working style becomes controller-driven instead of hand-driven — ready work
+fans out in parallel, dependencies gate, failures retry — and the method
+itself becomes reproducible, legible, shareable, and version-controlled.
 
-Gas City helps by making those moving parts first-class pack and city
-content.
+## Everything sorts into three layers
 
-## What Gas City gives that workflow
+The City is the local root pack; it imports shared packs. A pack and a city
+are the same kind of container at different scopes. Each piece of your
+workflow belongs to exactly one of three layers:
 
-New to the core vocabulary? Read
-[the six primitives](/concepts/primitives) first — Agent, Bead, Formula,
-Rig, Pack, and Event are the model everything below configures.
+| Layer | What it holds | Where it lives |
+| --- | --- | --- |
+| **1. Portable team definition** (a pack) | Pack identity, agent defaults, imported packs, prompts, overlays, helper scripts, commands, doctor checks, formulas, and orders | `pack.toml` and pack-owned dirs: `agents/`, `commands/`, `doctor/`, `formulas/`, `orders/`, `template-fragments/`, `overlay/`, `assets/` |
+| **2. City deployment choices** (the local pack) | Which rigs exist, which shared packs import into the city or specific rigs, runtime and substrate choices, deployment policy | `city.toml` |
+| **3. Machine-local site binding and runtime state** | Local rig bindings, controller state, caches, worktrees, sockets, logs, generated state | `.gc/` and other runtime directories |
 
-At a high level, the primitives give the work a home:
+Formulas and orders live in layer 1 because they are portable method: a
+formula compiles to a graph the controller runs across many agents; an
+order triggers it on a schedule or event. Layer 3 is the stuff that must
+never be mistaken for portable definition.
 
-- **agents** (WHO does the work) become explicit directories with prompt
-  and local assets
-- **formulas** (HOW the work gets done) and **orders** (WHEN they run)
-  stop being random loose files
-- a **pack** (what CONFIGURES all of the above) declares those agents,
-  formulas, and orders; the City is the local (root) pack, and it imports
-  shared packs
+## A useful first city is small
 
-Around those primitives, the supporting config artifacts also get a home:
-
-- **commands**, **doctor checks**, and **template fragments** stop being
-  random loose files
-- `.gc/` becomes the machine-local site-binding and runtime layer
-
-That means the working style becomes:
-
-- more reproducible
-- more legible
-- easier to share
-- easier to evolve under version control
-
-## The mental model
-
-The City is the local (root) pack; it imports shared packs. So these are
-not two separate kinds of container — they are the same kind of thing at
-different scopes. Think in three layers:
-
-### 1. Portable team definition (a pack)
-
-This is the stuff you want to keep, share, review, and evolve:
-
-- pack identity
-- agent defaults
-- imported packs
-- prompts
-- overlays
-- helper scripts
-- commands and doctor checks
-- formulas and orders
-
-This belongs in:
-
-- `pack.toml`
-- pack-owned directories like `agents/`, `commands/`, `doctor/`,
-  `formulas/`, `orders/`, `template-fragments/`, `overlay/`, and `assets/`
-
-### 2. City deployment choices (the local pack)
-
-The City is the local pack — the same portable definition as layer 1,
-plus the choices that say how this particular engineering environment is
-arranged:
-
-- which rigs exist
-- which shared packs the local pack imports into the city or specific rigs
-- runtime and substrate choices
-- deployment-specific policy
-
-This belongs in:
-
-- `city.toml`
-
-### 3. Machine-local site binding and runtime state
-
-This is the stuff that should not be mistaken for portable definition:
-
-- local rig bindings
-- runtime/controller state
-- caches
-- worktrees
-- sockets, logs, local generated state
-
-This belongs in:
-
-- `.gc/`
-- other runtime directories such as caches and work products
-
-## A useful starting point
-
-You do not need a perfect city on day one.
-
-A good first version is:
+You do not need a perfect city on day one. A good first version:
 
 1. one root city pack
 2. a small set of named agents for the human and agent roles you already have
@@ -140,134 +88,121 @@ A good first version is:
 
 That is enough to start learning.
 
-## A concrete team shape
+## Real roles get real places to live
 
-Imagine a release-wave team with three humans and several agents.
+Imagine a release-wave team with three humans and several agents. The
+humans divide into an operational/tutorial owner, a product/engineering
+connector, and an implementation-heavy technical lead. The agents divide
+into audit/review, migration, release-shape validation, docs-truth/schema
+alignment, and targeted implementation workers.
 
-The humans might naturally divide into:
+| Role surface | Lives in |
+| --- | --- |
+| Human-facing operations | `commands/` |
+| Known-mistake checks | `doctor/` |
+| Reusable prompt language | `template-fragments/` |
+| Per-agent prompt and overlay state | `agents/<name>/` |
 
-- an operational/tutorial owner
-- a product/engineering connector
-- an implementation-heavy technical lead
+The point is not to freeze your team shape forever. It is to stop
+pretending a real multi-agent workflow is just "some prompts somewhere"
+plus shell history. The method that coordinates the agents — what runs in
+parallel, what waits on what, what retries — becomes a formula the
+controller executes for you, not a routine you perform by hand every time.
 
-The agents might naturally divide into:
+## Move the parts you already repeat
 
-- audit / review
-- migration
-- release-shape validation
-- docs truth / schema alignment
-- targeted implementation workers
-
-Gas City gives those roles places to live:
-
-- human-facing commands in `commands/`
-- doctor checks in `doctor/`
-- reusable prompt language in `template-fragments/`
-- agent-specific prompt and overlay state in `agents/<name>/`
-
-The point is not to freeze your team shape forever.
-
-The point is to stop pretending that a real multi-agent workflow is just
-“some prompts somewhere” plus a pile of shell history.
-
-## What moves cleanly into Gas City
-
-Good candidates:
-
-- stable role prompts
-- shared operating language
-- repeated review or migration commands
-- checks for known structural mistakes
-- common overlays, helper scripts, and formulas
-- release-wave coordination patterns you keep repeating
-
-Less urgent candidates:
-
-- every experimental prompt variation
-- every temporary branch-specific hack
-- major organization-wide policy before the local team model is working
+| Good candidates | Less urgent |
+| --- | --- |
+| Stable role prompts | Every experimental prompt variation |
+| Shared operating language | Every temporary branch-specific hack |
+| Repeated review or migration commands | Org-wide policy before the local model works |
+| Checks for known structural mistakes | |
+| Common overlays, helper scripts, formulas | |
+| Release-wave coordination patterns | |
 
 Start with the parts you are already repeating.
 
-## Commands are underrated
+## Turn repeated operations into pack commands
 
-One of the easiest wins is to turn repeated human/team operations into
-pack commands.
+A pack command is a directory under `commands/` holding a `command.toml`
+(its description and help) plus a script the controller runs. The command
+surfaces as a top-level `gc` subcommand named after the directory:
 
-Examples:
+```toml
+# commands/release-branches/command.toml
+description = "Show me the active release branches"
+```
 
-- “show me the active release branches”
-- “run the focused migration checks”
-- “summarize open release issues”
-- “prepare the branch for review”
+```sh
+# commands/release-branches/run.sh — runs as: gc release-branches
+set -e
+git for-each-ref --sort=-committerdate \
+  --format='%(refname:short)' 'refs/remotes/origin/release/*'
+```
 
-This is valuable even if the implementation is just shell scripts at
-first.
+Other easy wins: "run the focused migration checks", "summarize open
+release issues", "prepare the branch for review". The win is not just
+automation — it is that your working method becomes visible and versioned,
+even when the implementation is just shell at first.
 
-The win is not just automation.
+## Encode known mistakes as doctor checks
 
-The win is that your working method becomes visible and versioned.
+If your team keeps rediscovering the same mistakes — stale file naming
+after a migration, a required prompt file missing from an agent directory,
+contradictory config across pack and city layers, known release-shape
+mismatches — encode them. A doctor check is a directory under `doctor/`
+with a `doctor.toml` description and a `run.sh` that exits non-zero on
+failure; `gc doctor` runs every check the city's packs supply:
 
-## Doctor checks are underrated too
+```toml
+# doctor/check-agent-prompts/doctor.toml
+description = "Every agent directory has a prompt.md"
+```
 
-If your team keeps rediscovering the same mistakes, encode them.
+```sh
+# doctor/check-agent-prompts/run.sh
+set -e
+for dir in agents/*/; do
+  test -f "$dir/prompt.md" || {
+    echo "missing prompt.md in $dir" >&2
+    exit 1
+  }
+done
+```
 
-Examples:
+```console
+$ gc doctor
+✓ check-agent-prompts  Every agent directory has a prompt.md
+```
 
-- stale file naming after a migration
-- a required prompt file missing from an agent directory
-- contradictory config shape across pack and city layers
-- known release-shape mismatches in example packs
+A doctor check is a better long-term home than a Slack message or a buried
+release note.
 
-A doctor check is often a better long-term home than a Slack message or
-buried release note.
+## Dogfooding is your highest-signal feedback loop
 
-## Use the product to improve the product
+If your team is building Gas City, using Gas City to do that work surfaces
+problems nothing else will: awkward workflow you feel, docs that lie,
+migration paths that turn out shaky. Not every hour must run through the
+city — but when you want meaningful product signal, use a branch you are
+actually trying to trust, not a throwaway sandbox.
 
-If your team is building Gas City, using Gas City to do that work is one
-of the highest-signal feedback loops you can create.
+## Adopt by writing down what you already do
 
-That does not mean every hour of work must happen through the city.
-
-It means:
-
-- if the workflow is awkward, you will feel it
-- if the docs lie, you will discover it
-- if the migration path is shaky, the team will notice quickly
-- if the working model is good, it will make the release better
-
-The key is to use a branch you are actually trying to trust, not a
-purely experimental sandbox, when you want meaningful product signal.
-
-## A practical adoption path
-
-You do not need to start from scratch.
-
-Instead:
+You do not need to start from scratch:
 
 1. write down the working style you already have
 2. identify the parts you keep doing by hand
 3. move the repeated parts into pack-owned content
-4. give the team a city that reflects the way you actually work
+4. give the team a city that reflects how you actually work
 5. let the friction teach you what to improve next
 
-This is usually a better path than trying to design the perfect
-multi-agent city in one shot.
+This beats trying to design the perfect multi-agent city in one shot.
 
 ## What this guide is not
 
-This guide is not:
-
-- the Pack/City schema reference
-- the tutorials
-
-Those documents answer different questions:
-
-- the **reference** says what the fields mean
-- the **tutorials** teach the product
-
-This guide is about turning an existing multi-agent engineering style
-into something more coherent and more teachable.
+This is not the schema reference (it says what fields mean) and not the
+tutorials (they teach the product). This guide is about turning an existing
+multi-agent engineering style into something more coherent and teachable.
 
 ## See also
 

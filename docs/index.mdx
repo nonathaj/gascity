@@ -1,23 +1,31 @@
 ---
 title: Gas City
-description: Documentation for engineers who want to run the Gas City orchestration SDK.
+description: Gas City orchestrates fleets of coding agents — you write a formula and the controller runs it as a graph across many agents, outside your session. Docs for engineers who run it.
 ---
 
-Gas City is an orchestration-builder SDK for multi-agent systems. This docs
-tree is organized for engineers who want to run Gas City: understand how the
-system fits together, install the toolchain, run a local city, and then find
-the relevant subsystem.
+Gas City orchestrates fleets of coding agents through real engineering work.
+You write a **formula** — a method for how a job gets done — and the
+**controller** runs it as a graph: it decomposes the job into beads, fans the
+ready ones out to many agents at once, gates each step until its dependencies
+close, retries what fails, drains convoys in parallel, and drives the whole
+graph to completion *outside your session*. [Orders](/tutorials/07-orders)
+trigger formulas on a schedule or event; health patrol keeps the fleet alive.
+This orchestration is the point.
 
-If you are new, start with the [six primitives](/concepts/primitives) — the
-shortest path to the mental model. Gas City is built from six primitives: an
-**agent** is *who* does the work (sessions, providers, and pools are derived
-under it), a **bead** is *what* the work is, a **formula** is *how* the work is
-carried out, a **rig** is *where* it happens (a project registered with the
-city), a **pack** is what *configures* the system — the City is the local
-(root) pack; it imports shared packs — and an **event** is fired by activity so
-you can *observe* what happened. The
-[Architecture Overview](/concepts/architecture-overview) then shows how these
-fit together and how work flows through them, with diagrams.
+Gas City is built from six primitives:
+
+![The six primitives and how they relate: Packs declare agents, formulas, and orders; a Formula operates over a convoy of Beads, fanning work out to Agents that execute in a Rig; Events are fired as it happens so humans and agents can observe.](diagrams/excalidraw-rendered/primitives.svg)
+
+- **Agent** — *who* does the work (sessions, providers, and pools derive under it)
+- **Bead** — *what* the work is
+- **Formula** — *how* a job gets done, the method the controller runs as a graph across many agents
+- **Rig** — *where* it happens, a project registered with the city
+- **Pack** — what *configures* the system; the City is the local (root) pack and imports shared packs
+- **Event** — fired by activity so you can *observe* what happened
+
+New here? Start with the [six primitives](/concepts/primitives) for the mental
+model, then read the [Architecture Overview](/concepts/architecture-overview)
+to see how they fit together and how work flows through them.
 
 ## Start Here
 
@@ -35,6 +43,7 @@ fit together and how work flows through them, with diagrams.
   primitives.
 - [Repository Map](/getting-started/repository-map) explains where the CLI,
   runtime, config, store, and controller code live.
+
 ## Documentation Types
 
 - [Concepts](/concepts/architecture-overview): the architecture overview and the
@@ -48,9 +57,3 @@ fit together and how work flows through them, with diagrams.
 
 For contributor-facing material (architecture, design docs, and archived
 notes), see the `engdocs/` directory in the repository.
-
-## Repository Context
-
-Gas City is the open-source SDK extracted from Gas Town. The public docs now
-separate guidance for running Gas City from historical planning material so new
-readers can get oriented without reading every audit and roadmap first.

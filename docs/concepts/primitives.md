@@ -1,18 +1,18 @@
 ---
 title: Primitives
-description: A per-concept reference for the six primitives of Gas City — Agent (who), Bead (what), Formula (how), Rig (where), Pack (config), and Event (observe) — each with a copy-pasteable example.
+description: The six primitives of Gas City — Agent (who), Bead (what), Formula (how), Rig (where), Pack (config), and Event (observe) — explained one at a time, each with a copy-pasteable example.
 ---
 
-The [Architecture Overview](/concepts/architecture-overview) gives you the top-down mental model. This page is the bottom-up companion: a reference you can dip into for any single primitive once you know where it sits in the whole.
+The [Architecture Overview](/concepts/architecture-overview) gives you the top-down mental model. This page is the bottom-up companion: dip into any single primitive to see what it is and where it sits in the whole.
 
 Gas City is built from **six primitives**, each with a role: **Agent** is *who* does the work, **Bead** is *what* the work is, **Formula** is *how* the work is carried out, **Rig** is *where* it happens, **Pack** is what *configures* the system, and **Event** is how you *observe* it.
 
-They fit together as one story. **Packs** declare the agents, formulas, and orders; the local pack is your **City**, which can depend on shared packs through imports. A **Formula** is a method applied *over* work: it loops over the **Beads** of a convoy and fans each one out to an **Agent**, which executes those beads *in* a **Rig**. As all of this happens, the city fires **Events** so humans and agents can watch what's going on.
+They fit together as one story. **Packs** declare the agents, formulas, and orders; the local pack is your **City**, which can depend on shared packs through imports. A **Formula** is the method the **controller** runs over work: applying it decomposes a job into **Beads** and the controller drives the graph — fanning the ready beads out to many **Agents** at once, each executing *in* a **Rig**, gating steps on their dependencies and retrying failures along the way. As all of this happens, the city fires **Events** so humans and agents can watch what's going on.
 
 ![The six primitives and how they relate: Packs declare agents, formulas, and orders; a Formula operates over a convoy of Beads, fanning work out to Agents that execute in a Rig; Events are fired as it happens so humans and agents can observe.](../diagrams/excalidraw-rendered/primitives.svg)
 
 <Note>
-This is reference material, not a tutorial. Each section explains what a primitive is, how it works, and shows a snippet you can copy-paste. For the guided, end-to-end path, start with the [Tutorials](/tutorials/index).
+Each section explains what a primitive is, how it works, and shows a snippet you can copy-paste. If you'd like a step-by-step, end-to-end walkthrough, check out the [Tutorials](/tutorials/index).
 </Note>
 
 ## Agent
@@ -25,7 +25,7 @@ The prompt template is the behavioral spec. The SDK contains **zero** hardcoded 
 
 The `scope` field controls *where* the agent is instantiated: `"rig"` (one per rig — the default for pack-defined agents) or `"city"` (one per city). The `provider` field names a provider preset that backs the agent at startup; agents carry many startup and runtime fields besides — `start_command`, `args`, `prompt_mode`, `env`, `idle_timeout`, `max_session_age`, `wake_mode`, `resume_command`.
 
-A **session** is an agent *running*. It is the surface for starting, stopping, prompting, and observing a live agent regardless of provider — covering identity, pools, sandboxes, resume, and crash adoption. Each live agent gets a stable, deterministic session name (for example `hello-world/gastown.polecat_furiosa`), so it can be messaged, woken, peeked at, and resumed across restarts. A single agent (one role) can be instantiated into many running identities — a pool of sessions — which you can list with `gc session list`.
+A **session** is an agent *running*. It is the surface for starting, stopping, prompting, and observing a live agent regardless of provider — covering identity, pools, sandboxes, resume, and crash adoption. Each live agent gets a stable, deterministic session name (for example `hello-world/gastown.worker_furiosa`), so it can be messaged, woken, peeked at, and resumed across restarts. A single agent (one role) can be instantiated into many running identities — a pool of sessions — which you can list with `gc session list`.
 
 A **provider** is the engine that backs a running agent: a named preset (`[providers.<name>]`) with a command, args, a prompt-delivery mode, a resume style, env, and capability flags like `supports_acp` and `supports_hooks`. The runtime boundary is a `Provider` interface implemented by pluggable backends — tmux, subprocess, exec, Kubernetes, plus acp/auto/hybrid routing layers. The agent selects one via its `provider` field. Examples named in the docs include Claude Code, Codex, and Gemini CLI.
 
@@ -58,7 +58,7 @@ Every bead has an **ID** (unique, prefixed with two letters derived from the cit
 
 There is no separate storage for tasks versus messages versus sessions — they are all beads with different type labels, sharing one store, one query interface, and one dependency model. That makes the bead store effectively the execution state of the entire system: every running session, in-flight message, and formula step is a bead with a status, so to know what the city is doing, you query the store. Work is persisted there, not held in memory — if an agent dies its beads stay open, and when it restarts its hooks discover the same work and pick up where it left off. If the whole city restarts, the bead store is ground truth.
 
-Beads carry **labels** (string tags for organizing and routing, applied one at a time via `bd label add`) and arbitrary key-value **metadata** (`bd update --set-metadata`); the `gc.` prefix is the reserved namespace for engine-minted keys. Agents find work via the claim protocol: `gc hook --claim` checks existing assigned work, assigned ready work, and routed work, then atomically claims one ready bead for the session before the agent runs it — the GUPP rule, "if you find work on your hook, you run it."
+Beads carry **labels** (string tags for organizing and routing, applied one at a time via `bd label add`) and arbitrary key-value **metadata** (`bd update --set-metadata`); the `gc.` prefix is the reserved namespace for engine-minted keys. Agents find work via the claim protocol: `gc hook --claim` checks existing assigned work, assigned ready work, and routed work, then atomically claims one ready bead for the session before the agent runs it — the rule that if you find work on your hook, you run it.
 
 **Dependencies** are blocking `needs` edges between beads: a `needs` declaration becomes a `blocks` edge, and a bead with an open `blocks` dependency is invisible to agent work queries until its blocker closes. This is how Gas City enforces ordering without a central scheduler — each bead knows what it's waiting for, and agents only ever see work that's ready. Other dependency types — `tracks` (informational), `related` (loose association), `parent-child` (containment), and `discovered-from` (work that surfaced while doing other work) — express grouping rather than ordering; only `blocks` affects work visibility.
 
@@ -74,7 +74,7 @@ $ gc convoy status mc-d4g           # Progress: 1/3 closed
 
 ## Formula
 
-A **formula** is *how* the work is carried out — a reusable, written-down method applied *over* work. It loops over the beads of a convoy, fanning each out to an agent, and it defines its own steps. A formula is not the work (a bead) nor a grouping of work (a convoy): applying it is what *produces* that work.
+A **formula** is *how* the work is carried out — a reusable, written-down method that the **controller** runs as a graph. Applying a formula decomposes a job into beads and the controller drives them to completion outside your session: it fans the ready ones out to many agents at once, gates each step on its dependencies, retries failures, and drains convoys in parallel. A formula is not the work (a bead) nor a grouping of work (a convoy): applying it is what *produces* that work and sets the controller orchestrating it.
 
 A formula is a TOML file specifying its steps, their ordering, dependencies, and control flow. Applying it is a pipeline: the `formula.toml` on disk compiles into an in-memory *recipe* — a flattened, validated list of steps plus dependency edges — which is then materialized as beads in the store. Those beads are the work, and they outlive the file and any agent session: sessions crash and restart, the work persists.
 
@@ -84,11 +84,11 @@ Execution responsibility splits by bead kind. The controller executes every cont
 
 `needs` (an alias for `depends_on`) gates readiness, so a downstream step stays invisible until its dependency closes; the runtime runs whatever is ready, so work flows in dependency-ordered waves rather than on a managed schedule. Variables are declared in `[vars]` and substitute via `{{placeholder}}` into titles, descriptions, notes, assignees, and metadata, with `required` / `enum` / `pattern` enforced at instantiation. `extends` composes a child from parents: a child step whose id duplicates a parent's overrides that step in place; new child steps append.
 
-A **run** is one execution of a formula over a convoy: applying the formula compiles the recipe and materializes it into beads, and from that moment the running work is independent of both the formula file and any agent session. A formula drives agents by *marshaling beads* to them — it loops over and orders the convoy's member beads and the step beads it defines, fanning each out to an agent that executes it. The agent never touches the formula directly, only the beads.
+A **run** is one execution of a formula over a convoy: applying it compiles the recipe and materializes it into beads, and from that moment the running work is independent of both the formula file and any agent session. From there the **controller** drives the graph: it executes every control bead (check, retry, fan-out, tally, drain, scope, finalize) outside any session, and makes the ready step beads visible so different agents and pools pick them up in parallel. Agents never touch the formula — they only ever see the beads the controller surfaces to them.
 
 A formula loops *over* a convoy of work with `drain`: it scatters the input convoy into one-member units and runs an item formula per unit, fanning members out to agents and pools in parallel — the pack's single load-bearing parallelism pattern. A real build pipeline is a composed chain of formulas, written down once as `extends`-composed bases rather than living in an agent's head: decompose a plan into an implementation convoy, drain it member-by-member to implement, review the generated code, gap-analyze the implementation against the beads and fill the gaps, then check coverage before shipping.
 
-**Sling** is the dispatch op that creates *and* routes in one motion — `gc sling <target> <name> --formula` starts a v2 workflow routed to the target. It resolves the target agent or pool, instantiates the formula, runs the agent's sling query to route each bead, optionally wraps a single bead in a tracking convoy, records telemetry, and nudges. (`gc formula cook` creates without routing.)
+**Sling** is the dispatch op that creates *and* routes in one motion — `gc sling <target> <name> --formula` starts a v2 workflow whose step beads the controller then drives to completion across the target agent or pool, fanning ready steps out in parallel rather than running them in your session. It resolves the target agent or pool, instantiates the formula, runs the agent's sling query to route each bead, optionally wraps a single bead in a tracking convoy, records telemetry, and nudges. (`gc formula cook` creates without routing.)
 
 An **order** automates *when* a formula runs. An `order.toml` pairs a trigger (`cooldown`, `cron`, `condition`, `event`, or `manual`) with an action that is a formula name *or* an `exec` shell command — never both. When the trigger fires, the controller instantiates the formula and routes the instance to the order's pool; no human runs a verb. **Health Patrol** is one kind of order-driven controller work: on every patrol tick the controller evaluates all non-manual order triggers and fires the due ones as one phase of its tick cycle.
 

@@ -511,9 +511,9 @@ creates step beads with ParentID via `Create`, wires dependencies via
 
 **Recommendation: Option B.** `MolCook` is composition machinery, not a
 distinct store operation: a formula run is materialized from bead CRUD plus
-formula parsing. Pushing formula knowledge into every backend script violates
-the Bitter Lesson — the SDK should handle composition, scripts handle
-storage.
+formula parsing. Pushing formula knowledge into every backend script works
+against the principle that a primitive should become more useful as models
+improve — the SDK should handle composition, scripts handle storage.
 
 This means the Store interface becomes:
 

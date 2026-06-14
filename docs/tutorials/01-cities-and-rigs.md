@@ -6,15 +6,13 @@ description: Create a city, add a project as a rig, and sling your first work to
 
 ## Setup
 
-First, you'll need to install at least one CLI coding agent (which Gas City
-calls "providers") and make sure that they're on the PATH. Gas City supports
-many providers, including but not limited to Claude Code (`claude`), Codex
-(`codex`), Gemini (`gemini`), Grok Build (`grok`), OpenCode (`opencode`),
-Groq (`groq`), and Cerebras (`cerebras`). Make sure you've configured each of your chosen
-providers (the more the merrier!) with the appropriate token and/or API key so
-that they can each run and do things for you.
+Install at least one CLI coding agent (Gas City calls these "providers") and
+put it on the PATH. Gas City supports many, including Claude Code (`claude`),
+Codex (`codex`), Gemini (`gemini`), Grok Build (`grok`), OpenCode (`opencode`),
+Groq (`groq`), and Cerebras (`cerebras`). Configure each with its token or API
+key so it can run — the more the merrier.
 
-Next, you'll need to get the Gas City CLI installed and on your PATH:
+Then install the Gas City CLI and put it on the PATH:
 
 ```shell
 ~
@@ -23,7 +21,7 @@ $ brew install gascity
 
 ~
 $ gc version
-1.2.1
+1.1.1
 ```
 
 > NOTE: the gascity installation is a great way to get the right dependencies in
@@ -33,28 +31,19 @@ $ gc version
 > repo](https://github.com/gastownhall/gascity) to get the latest and greatest
 > bits before running these tutorials.
 
-New to the vocabulary? Read [Primitives](/concepts/primitives) first — it's the
+New to the vocabulary? Read [Primitives](/concepts/primitives) first — the
 canonical model for the six primitives (Agent, Bead, Formula, Rig, Pack, Event)
-this tutorial puts into practice. The City is the local (root) pack; it imports
+this tutorial puts into practice. The city is the local (root) pack; it imports
 shared packs.
-
-Now we're ready to create our first city.
 
 ## Creating a city
 
-A city is a directory that holds your pack definition, deployment config, agent
-prompts, and workflows. You create a new city with `gc init`:
+A **city** is the directory holding the agents, formulas, rigs, orders, and
+local settings the controller needs to run multi-agent workflows on this
+machine. Inside it, a **pack** is the portable part — the definitions worth
+sharing with other cities. A city is a pack plus deployment details.
 
-A useful mental model is:
-
-- A **city** is the whole working folder for one Gas City environment. It
-  combines your agents, formulas, rigs, orders, and the local settings that
-  tell Gas City how to run them on this machine.
-- A **pack** is the reusable part of that city. It holds the Gas City
-  definitions that are portable and worth sharing with other cities or other
-  people.
-
-Another way to say it: a city is a pack plus deployment details.
+Create one with `gc init`:
 
 ```shell
 
@@ -97,17 +86,15 @@ your machine — today it can probe Claude Code, Codex, Gemini CLI, and
 Antigravity. If exactly one is configured, the wizard selects it without
 asking.
 
-You can avoid the prompts and just specify what provider you want. Here's the
-same command, with the provider supplied explicitly.
+To skip the prompts, supply the provider explicitly:
 
 ```shell
 ~
 $ gc init ~/my-city --default-provider claude
 ```
 
-Gas City created the city directory, registered it, and started it. A city
-created with `gc init` comes with `pack.toml`, `city.toml`, and the standard
-top-level directories, so let's look at what's inside:
+Gas City created the city directory, registered it, and started it. Look
+inside:
 
 ```shell
 ~
@@ -118,35 +105,28 @@ $ ls
 agents  assets  city.toml  commands  doctor  formulas  orders  overlays  pack.toml  template-fragments
 ```
 
-At the top level of the city directory:
-
-- `pack.toml` — the portable pack definition layer
-- `city.toml` — city-local deployment and runtime settings
-
-This city comes with a built-in `mayor` agent. The mayor's prompt lives at
-`agents/mayor/prompt.template.md`, and `pack.toml` defines the always-on mayor
-session that uses it. Assuming you chose the default `minimal` config
-template and Claude Code, `city.toml` keeps the shared runtime settings:
+The two config files are the portable `pack.toml` and the city-local
+`city.toml`. With the default `minimal` template and Claude Code:
 
 ```shell
 ~/my-city
 $ cat city.toml
 [workspace]
 provider = "claude"
+# includes point at builtin packs gc materializes under .gc/system/packs/:
+# core (orders, doctor checks, default prompts, core formulas) and bd (the
+# default beads provider, which pulls in its dolt helper pack).
+# gc doctor --fix restores them if they go missing.
 includes = [".gc/system/packs/core", ".gc/system/packs/bd"]
 
 [providers]
-[providers.claude]
+[providers.claude]              # registers your provider against a builtin preset
 base = "builtin:claude"
 ready_delay_ms = 0
 
 [daemon]
-formula_v2 = true
-
-... # commented mail-retention example elided
+formula_v2 = true               # the v2 formula compiler, on by default (Tutorial 05)
 ```
-
-The portable pack definition lives next to it:
 
 ```shell
 ~/my-city
@@ -155,37 +135,22 @@ $ cat pack.toml
 name = "my-city"
 schema = 2
 
-[[named_session]]
-template = "mayor"
+[[named_session]]               # keeps a mayor session running so you can talk to it
+template = "mayor"              # mayor prompt: agents/mayor/prompt.template.md
 mode = "always"
 ```
 
-The `[workspace]` section in `city.toml` sets shared runtime defaults such as
-the provider. The `includes` entries are written by `gc init` and point at the
-builtin packs bundled with the `gc` binary, which Gas City materializes under
-`.gc/system/packs/`: `core` (housekeeping orders, doctor checks, default
-prompts, and core formulas) and — for cities on the default `bd` beads
-provider — `bd`, which brings in its `dolt` helper pack. If these includes go
-missing, `gc doctor --fix` restores them. The `[providers.claude]` table
-registers your chosen provider against the builtin `claude` preset, and
-`[daemon]`'s `formula_v2 = true` turns on the v2 formula compiler — the
-default for new cities (you'll meet formulas in
-[Tutorial 05](/tutorials/05-formulas)). The machine-local workspace identity
-lives in `.gc/site.toml` instead, which is how `gc cities`, `gc status`, and
-other commands still know this city is named `my-city`.
-
-The built-in `mayor` comes from the scaffolded `agents/mayor/` content, and
-`[[named_session]]` keeps a `mayor` session running so you can talk to it at
-any time. When you add more agents later, Gas City creates `agents/<name>/`,
-with `prompt.template.md` for the prompt and `agent.toml` for any per-agent
-overrides.
+The machine-local workspace identity lives in `.gc/site.toml`, which is how
+`gc cities`, `gc status`, and other commands know this city is named
+`my-city`. When you add more agents later, Gas City creates `agents/<name>/`
+with a `prompt.template.md` and an `agent.toml` for per-agent overrides.
 
 Gas City also gives you an implicit agent for each provider declared in
 `city.toml`'s `[providers]` table — so `claude` is available as an agent name
 (and, once you add a rig, `<rig>/claude`) even though it's not listed in
 `pack.toml`. Implicit agents use the core pack's stock pool-worker prompt and
-get `mol-do-work` as their default sling formula — more on that in a moment. (The
-`mol-` prefix is legacy v1 naming carried by the formula's name; it doesn't
+get `mol-do-work` as their default sling formula — more on that in a moment.
+(The `mol-` prefix is v1 naming carried by the formula's name; it doesn't
 change what the formula is — a reusable method.)
 
 To check on the status of your city, use `gc status`:
@@ -245,31 +210,16 @@ Adding rig 'my-project'...
 Rig added.
 ```
 
-Gas City derived the rig name from the directory basename (`my-project`) and set
-up work tracking in it. The shared rig declaration lives in `city.toml`:
+Gas City derived the rig name from the directory basename (`my-project`) and
+set up work tracking in it. The portable declaration lands in `city.toml`; the
+path binding stays machine-local in `.gc/site.toml`:
 
-```shell
-
-~/my-city
-$ cat city.toml
-[workspace]
-provider = "claude"
-includes = [".gc/system/packs/core", ".gc/system/packs/bd"]
-
-... # content elided
-
+```toml
+# city.toml — portable
 [[rigs]]
 name = "my-project"
 
-[daemon]
-formula_v2 = true
-```
-
-The machine-local workspace identity and path binding live in `.gc/site.toml`:
-
-```toml
-workspace_name = "my-city"
-
+# .gc/site.toml — machine-local
 [[rig]]
 name = "my-project"
 path = "/Users/csells/my-project"
@@ -295,10 +245,9 @@ Rigs in /Users/csells/my-city:
 
 ## Slinging your first work
 
-You assign work to agents by "slinging" it — think of it as tossing a task to
-someone who knows what to do. To sling work on a rig, target the rig-scoped
-agent explicitly; we'll also hop into the rig directory so we can inspect the
-results:
+You assign work to agents by "slinging" it. Target the rig-scoped agent
+explicitly to keep the work on this rig; hop into the rig directory to inspect
+the results:
 
 ```shell
 ~/my-city
@@ -310,14 +259,13 @@ Created mp-ff9 — "Write hello world in python to the file hello.py"
 Attached workflow mp-6yh (formula "mol-do-work") to mp-ff9
 ```
 
-Because the target is `my-project/claude`, the work stays scoped to this rig.
+One command set the whole loop in motion: sling created a work bead, attached
+a workflow from the agent's default formula (`mol-do-work` — read the bead, do
+the work, close it), and the controller spawned a session to run it.
 
-The `gc sling` command created a work item in our city (called a "bead") and
-dispatched it to the `claude` agent. Two more things happened behind the
-scenes: sling instantiated a workflow from the agent's default formula
-(`mol-do-work` — read the bead, do the work, close it), and it created an
-input convoy that tracks your bead so the workflow knows what to act on. You
-can watch the bead progress:
+![Work lifecycle after a sling: you run gc sling, the beads store creates a work bead and route, the controller's reconcile tick spawns a session, the agent receives a primed prompt and finds its hooked work, edits the rig and runs commands, then updates the bead's progress and closes it when done — while the event bus records every step and gc bd show --watch streams live status back to you.](/diagrams/excalidraw-rendered/work-lifecycle.svg)
+
+Watch the bead progress with `--watch`:
 
 ```shell
 ~/my-project
@@ -332,11 +280,9 @@ BLOCKS
 Watching for changes... (Press Ctrl+C to exit)
 ```
 
-The `BLOCKS` line shows the input convoy that sling created to track the bead.
-When the agent finishes the work, the watch view updates and the bead's status
-flips from `OPEN` to `CLOSED`.
-
-Once the bead moves to `CLOSED`, you can see the results:
+The `BLOCKS` line is the input convoy sling created to track your bead. When
+the agent finishes, the status flips from `OPEN` to `CLOSED` — and the file is
+there:
 
 ```shell
 ~/my-project
@@ -344,7 +290,13 @@ $ ls
 hello.py
 ```
 
-Success! You just dispatched work to an AI agent and got results back.
+Success! You dispatched work to an AI agent and got results back.
+
+That was the simplest possible job: one agent, one task. The reason Gas City
+exists is what happens when the job is bigger — you write a formula and the
+controller runs it as a graph, fanning ready steps out to many agents at once
+and driving them to completion without you babysitting a session. You'll build
+one of those in the Formulas tutorial.
 
 ## What's next
 
@@ -354,6 +306,8 @@ that rig. From here:
 - **[Agents](/tutorials/02-agents)** — go deeper on agent configuration:
   prompts, sessions, scope, working directories
 - **[Sessions](/tutorials/03-sessions)** — interactive conversations with
-  agents, polecats and crew
-- **[Formulas](/tutorials/05-formulas)** — how multi-step work should be
-  done: steps, dependencies, and variables
+  agents, on-demand workers and persistent worker pools
+- **[Formulas](/tutorials/05-formulas)** — write a method for how a job gets
+  done and let the controller run it as a graph: fan steps out across many
+  agents, gate them on dependencies, retry failures, and drive the job to
+  completion outside your session

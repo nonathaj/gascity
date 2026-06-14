@@ -224,7 +224,7 @@ scope = "city"
 mode = "always"
 
 [[named_session]]
-template = "polecat"
+template = "builder"
 scope = "rig"
 mode = "on_demand"
 ```

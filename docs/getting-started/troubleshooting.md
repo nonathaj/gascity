@@ -218,8 +218,8 @@ Upgrade via Homebrew (`brew upgrade dolt`) or download a newer release from
 Gas City requires `bd` 1.0.0 or newer. The bd-backed store relies on
 ephemeral-bead support used by order tracking, including `bd create
 --ephemeral` and `bd query ephemeral=true`, so older binaries can fail
-order tracking and the cleanup of those ephemeral beads (the v1 materialization
-calls them wisps). Check your version:
+order tracking and the cleanup of those ephemeral beads. Check your
+version:
 
 ```bash
 bd version
@@ -565,7 +565,8 @@ environment, so set these at controller start to customize routing:
 - `GC_MAINTENANCE_DONE_TARGET` — session target to nudge with
   `MAINTENANCE_DONE:`/warn summaries when a maintenance run completes
   (default: unset, no completion nudge). Deployments that relied on the
-  old hardcoded deacon nudges should set this to restore that loop.
+  old hardcoded completion nudges to a health-patrol session should set
+  this to restore that loop.
 
 Common root causes, in rough order of frequency:
 

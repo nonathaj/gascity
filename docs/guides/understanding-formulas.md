@@ -3,74 +3,50 @@ title: "Understanding Formulas"
 description: How to think about formulas, choose a contract, and apply the major patterns.
 ---
 
-A formula is *how* work should be done. A [bead](/tutorials/06-beads) is the
-work itself — a single unit of it — and a [convoy](/tutorials/06-beads) is a
-graph of related work; a formula is neither. It is the reusable method you
-apply to produce and organize that work. (Formula, Bead, and the other core
-ideas are defined in [the primitives](/concepts/primitives) — start there for
-the canonical model.) Instead of prompting an agent "do
-this thing" and steering every step yourself, you write the method down once
-in a TOML file — the steps, the dependencies between them, the variables that
-parameterize them, and the control flow around them — and apply it whenever
-that kind of work comes up.
+A formula is *how* a job gets done — written down once as a method instead of
+steered live in a prompt. You write the steps, the dependencies between them,
+the variables that parameterize them, and the control flow around them into a
+TOML file, then apply it whenever that kind of work comes up. Under the v2
+contract that method becomes a graph the controller runs for you: it decomposes
+the job into beads, fans the ready ones out to as many agents as you have,
+gates each step on its dependencies, retries transient failures, and drives the
+whole thing to completion outside any single session.
 
-Applying a formula is what turns the method into running work, and from that
-moment the work is independent of both the formula file and any agent session.
-Sessions crash, restart, and get recycled; the work persists, and whoever
-picks it up next finds the same state. That property — work survives
-sessions — is what every pattern in this guide builds on.
-
-How that work is stored is an implementation detail. The formula is a file on
-disk, resolved across pack layers so a city can override what a pack ships;
-applying it compiles the file into a *recipe* (an in-memory plan of steps and
-the dependencies between them) and materializes that recipe as beads in the
-store — the persistence above is theirs. But the method is defined
-independently of how its work is stored. The rest of this guide is about what
-formulas *do* and how to choose between them; it reaches for bead vocabulary
-only where that clarifies behavior, and leaves the exact materialization rules
-to the two specifications.
+A [bead](/tutorials/06-beads) is one unit of work; a
+[convoy](/tutorials/06-beads) is a graph of related work; a formula is the
+reusable method that produces and orders it. Applying a formula compiles the
+file into a *recipe* (an in-memory plan of steps and dependency edges) and
+materializes that recipe as beads. From that moment the work is independent of
+both the formula file and any agent session: sessions crash, restart, and get
+recycled; the work persists, and whoever picks it up next finds the same
+state. That durability is what lets the controller drive the graph across many
+sessions without losing its place.
 
 ![Applying a formula in three stages: the formula.toml on disk is compiled
 into an in-memory recipe (flattened steps plus dependency edges), then
 instantiated into beads in the store — the actual work, which then outlives
 the file and any agent session.](/diagrams/excalidraw-rendered/formula-apply-pipeline.svg)
 
-Because the method is written down rather than improvised in a prompt, you get
-leverage: preview what a formula will produce before creating anything (`gc
-formula show`), apply one method across many runs with different inputs
-(`--var`), and detect when running work has drifted from the formula it came
-from (`gc formula version-check`).
-
 This guide is about judgment: which compiler contract to declare, which
 instantiation verb to use, and how the major patterns fit together. The
-hands-on walkthrough is the [formulas tutorial](/tutorials/05-formulas); the
-exact format rules live in the two specifications, the
-[v1 formula spec](/reference/specs/formula-spec-v1) and the
-[v2 formula spec](/reference/specs/formula-spec-v2).
+canonical model is [the primitives](/concepts/primitives); the hands-on
+walkthrough is the [formulas tutorial](/tutorials/05-formulas); the exact
+format rules live in the
+[v1](/reference/specs/formula-spec-v1) and
+[v2](/reference/specs/formula-spec-v2) specs.
 
 ## Choosing a Compiler Contract
 
-Two compiler contracts are live, and both are supported. They are peers, not
-a version ladder — each is the right answer to a different question.
+Both contracts are live and supported. They are peers, not a version ladder —
+each makes a different thing the engine.
 
-The **v1 contract** — the default when a formula declares nothing — makes the
-agent the engine. Everything dynamic is resolved when the formula is applied:
-conditions filter steps in or out, loops unroll into concrete iterations.
-After that the plan is inert; the one agent you sling it to advances the work
-from inside its own session, and nothing else moves it along. (Mechanically,
-the steps become a parent-child molecule tree — see the
-[v1 spec](/reference/specs/formula-spec-v1).)
-
-The **formulas v2 contract** makes the *controller* the engine and agents
-interchangeable workers it feeds. Steps become independently routable units of
-work, and the controller drives all the control flow around them — check and
-retry loops, fan-out, tally, drain, scope checks, and the finalize that closes
-the workflow once every step is terminal — while agents only ever run plain
-work steps. Because steps route independently (`gc.run_target` resolved at
-dispatch), one workflow can spread its work across many agents and pools.
-(Mechanically, the steps become a flat graph linked only by blocking
-dependency edges, with an appended `workflow-finalize` the root blocks on —
-see the [v2 spec](/reference/specs/formula-spec-v2).)
+| | **v1** (default) | **v2** (`[requires]`) |
+|---|---|---|
+| Engine | the agent you sling to | the controller |
+| Steps | resolved at apply, then inert | independently routable units |
+| Control flow | none after apply | check/retry/drain/tally, scope checks, finalize |
+| Routing | one agent, one session | many agents and pools (`gc.run_target` per step) |
+| Shape | parent-child molecule tree | flat graph of blocking edges + appended finalize |
 
 ![Side-by-side comparison of the two contracts. Left, v1: a molecule root
 that contains its step beads as parent-child children, so a step that needs
@@ -79,126 +55,113 @@ step beads linked only by blocking-dependency edges, ending in a
 workflow-finalize step that the root blocks on — the root goes ready only
 when the whole graph completes.](/diagrams/excalidraw-rendered/formula-v1-vs-v2.svg)
 
-For new work, choose v2. Two edges of the v1 surface have not finished
-converging, but neither is a reason to start on v1:
-
-- **`gc converge` currently accepts only v1 formulas** (it rejects v2 until
-  it has an explicit input convoy target). For iterate-until-it-passes
-  behavior, use a v2 [check loop](#self-checking-work-and-transient-hardening)
-  instead of `gc converge`.
-- **Container dependencies have a known v2 gap.** Under v1, a step that
-  `needs` a parent waits for all of that parent's children; the v2 compiler
-  creates no parent-child edges yet, so the same dependency gates only on
-  the parent step itself
-  ([#3451](https://github.com/gastownhall/gascity/issues/3451)). Until that
-  lands, list the children you depend on explicitly in `needs`.
-
-Base constructs — `steps`, `needs`, `children`, `condition`, `loop`, `vars`,
-`extends` — are common to both contracts and mean the same thing in both.
-Graph-only constructs — `check`, `retry`, `drain`, `on_complete`, `tally`,
-and certain reserved `gc.*` step metadata — require an explicit v2
-declaration; compiling without one fails with `requires: formulas that use
-graph-only constructs must declare [requires] formula_compiler = ">=2.0.0"
-or the deprecated contract = "graph.v2" explicitly`.
-
-The opt-in is one table:
+For new work, choose v2. The opt-in is one table:
 
 ```toml
 [requires]
 formula_compiler = ">=2.0.0"
 ```
 
-That is the entire mechanism. The deprecated `contract = "graph.v2"` key
-still parses (and `gc doctor` warns about it), and the host-side
-`[daemon] formula_v2` switch defaults to on. The full rules — how
-requirements compose through `extends`, what conflicts look like, and what
-doctor reports — live in the specs: see
-[v2 conformance and compatibility](/reference/specs/formula-spec-v2#5-conformance-and-compatibility)
-and its [v1 counterpart](/reference/specs/formula-spec-v1#5-conformance-and-compatibility).
+Base constructs (`steps`, `needs`, `children`, `condition`, `loop`, `vars`,
+`extends`) mean the same in both contracts. Graph-only constructs (`check`,
+`retry`, `drain`, `on_complete`, `tally`, and reserved `gc.*` step metadata)
+require the v2 declaration; compiling without it fails with `requires:
+formulas that use graph-only constructs must declare [requires]
+formula_compiler = ">=2.0.0"`.
+
+Two v1-only edges remain, neither a reason to start on v1:
+
+- **`gc converge` accepts only v1 formulas** (it rejects v2 until it has an
+  explicit input convoy target). For iterate-until-it-passes behavior, use a
+  v2 [check loop](#self-checking-work-and-transient-hardening) instead.
+- **Container dependencies have a v2 gap.** Under v1 a step that `needs` a
+  parent waits for all of that parent's children; the v2 compiler creates no
+  parent-child edges yet, so the dependency gates only on the parent step
+  ([#3451](https://github.com/gastownhall/gascity/issues/3451)). Until that
+  lands, list the children you depend on explicitly in `needs`.
+
+<Note>
+The deprecated `contract = "graph.v2"` key still parses (`gc doctor` warns),
+and the host-side `[daemon] formula_v2` switch defaults to on. How
+requirements compose through `extends` and what doctor reports live in the
+[v2](/reference/specs/formula-spec-v2#5-conformance-and-compatibility) and
+[v1](/reference/specs/formula-spec-v1#5-conformance-and-compatibility) specs.
+</Note>
 
 ## Cook, Sling, or Order — and What Lands in the Store
 
-Once the contract is chosen, you face two more decisions: the **verb** (how
-the instance gets created and routed) and the **outcome** (what lands in the
-bead store, which follows from the contract you declared). They are related
-but separate.
+Two more decisions follow the contract: the **verb** (how the instance gets
+created and routed) and the **outcome** (what lands in the store, which
+follows from the contract).
 
 Three verbs create formula instances:
 
 - **Cook creates without routing.** `gc formula cook <name>` compiles the
   formula, writes its beads into the current scope's store, and stops.
-  Nothing is assigned; nothing wakes up. Cook when you want to inspect the
-  beads first, route the work yourself, or graft a sub-DAG onto existing
-  work with `--attach <bead-id>`.
-- **Sling creates and routes.** `gc sling <target> <name> --formula` does
-  the cook and the routing in one motion: a v2 formula starts a workflow
-  routed to the target, a v1 formula starts a single-bead run (a *wisp* in
-  v1 terms) routed to the target. Sling is the one-shot dispatch verb.
+  Nothing wakes up. Cook to inspect the beads first, route the work
+  yourself, or graft a sub-DAG onto existing work with `--attach <bead-id>`.
+- **Sling creates and routes.** `gc sling <target> <name> --formula` cooks
+  and routes in one motion: a v2 formula starts a workflow, a v1 formula
+  starts a single-bead run (a *wisp*), both routed to the target. The
+  one-shot dispatch verb.
 - **Orders are scheduled dispatch.** An order names a formula (or a shell
-  command — never both) and a trigger; the controller instantiates the
-  formula each time the trigger fires and routes it to the order's pool. You
-  never run a verb at all — the schedule does.
+  command — never both) and a trigger; the controller instantiates and
+  routes the formula to the order's pool each time the trigger fires. The
+  schedule runs the verb for you.
 
-What lands in the store follows from the contract, not from a separate
-choice. There are three outcomes:
+The outcome follows from the contract, not from a separate choice:
 
-| Outcome | How you get it | Per-step beads | Root is visible work |
+| Outcome | From | Per-step beads | Root is visible work |
 |---|---|---|---|
-| Single-bead run (v1, no steps) | `phase = "vapor"` formula (no `pour`) — a holdover from when bead writes were expensive; not an outcome to design for | No — steps stay in the recipe | Yes — the root is the work |
-| v1 run with steps | v1 formula with steps (materialized as a *molecule*: a container root holding its step beads) | Yes, as children of the container root | No — the root is a container |
-| v2 workflow | v2 formula | Yes, independently routable | No — the root blocks on finalize |
+| Single-bead run | v1, no steps (`phase = "vapor"`) | No — steps stay in the recipe | Yes — the root is the work |
+| v1 run with steps | v1 with steps (a *molecule*: container root + step children) | Yes, as children | No — the root is a container |
+| v2 workflow | v2 | Yes, independently routable | No — the root blocks on finalize |
 
-The tradeoffs behind that table:
+The tradeoffs:
 
-- **Visibility and debugging.** Materialized steps are real beads you can
-  list, show, and watch move through statuses — a per-step audit trail. A
-  single-bead run keeps the store lean but gives you one bead and no
-  step-level record.
-- **Routing.** v2 workflow steps are each routable to a different agent or
-  pool; a v1 run is typically worked end-to-end by the one agent it was
-  slung to. Pools add a constraint: a pool wakes only for Ready-visible
-  work, so slinging a v1 run at a pool is refused outright — convert the
-  formula to v2 first.
-- **Cleanup: fire-and-forget vs. durable step history.** A single-bead run
-  is ephemeral by design — use it for fire-and-forget activity you do not
-  need a durable record of. A v1 run with steps and a v2 workflow both leave
-  a per-step record, which is the point when you want the history. The core
-  pack's reaper order keeps the store tidy across all three: it reaps stale
-  ephemeral runs and purges closed step records, and its cleanup edges cover
-  v2 workflows too.
+- **Visibility.** Materialized steps are real beads you can list, show, and
+  watch move through statuses — a per-step audit trail. A single-bead run
+  keeps the store lean but gives one bead and no step-level record.
+- **Routing.** v2 steps each route to a different agent or pool; a v1 run is
+  worked end-to-end by the one agent it was slung to. A pool wakes only for
+  Ready-visible work, so slinging a v1 run at a pool is refused outright —
+  convert to v2 first.
+- **Cleanup.** A single-bead run is ephemeral by design — fire-and-forget
+  activity you need no record of. v1-with-steps and v2 workflows leave a
+  per-step record. The core pack's cleanup order tidies all three: it reaps
+  stale ephemeral runs and purges closed step records, with cleanup edges
+  covering v2 workflows too.
 
 One rule cuts across all of it: **cook and sling in the store the worker
-reads.** Each rig has its own bead store, and the city has one too. Cook
-materializes into the scope you run it from (`--rig` flag, else the
-enclosing rig directory, else the city), and sling refuses a cross-store
-route — a bead in one rig's store slung at an agent that reads a different
-store fails with `refusing cross-store route`, telling you to re-file the
-bead or pick a reachable target. City-scoped agents are the exception: they
-are cross-store eligible and may serve work in any store.
+reads.** Each rig has its own bead store; the city has one too. Cook
+materializes into the scope you run it from (`--rig` flag, else the enclosing
+rig directory, else the city), and sling refuses a cross-store route with
+`refusing cross-store route`, telling you to re-file the bead or pick a
+reachable target. City-scoped agents are the exception: they are cross-store
+eligible and may serve work in any store.
 
 ## Major Use Cases
 
 The patterns below cover most of what formulas get used for. Each shows the
-minimal shape, what happens at runtime, and where the normative detail
-lives. To keep the examples honest, each one points at the formula in the
+minimal shape, what happens at runtime, and where the normative detail lives,
+and points at the formula in the
 [gascity pack](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas)
-that uses the pattern in production. Those shipped files predate the current
-canon in two ways worth knowing before you read them: every one opts into v2
-with the deprecated top-level `contract = "graph.v2"` key instead of the
-`[requires] formula_compiler = ">=2.0.0"` table shown throughout this guide,
-and every one is named `<name>.formula.toml` rather than the canonical
-`<name>.toml`. Both spellings still parse — `gc doctor` warns about the
-contract key — and the fences here are adapted to today's canon. Where a note
-says "the shipped file still uses the older spelling," that is the only
-difference. Migrating the pack to the canonical spelling (and removing this
-caveat) is tracked in
-[gastownhall/gascity#3462](https://github.com/gastownhall/gascity/issues/3462).
+that uses the pattern in production.
+
+<Note>
+**The shipped pack predates the current canon.** Every pack formula opts into
+v2 with the deprecated top-level `contract = "graph.v2"` key (not the
+`[requires]` table) and is named `<name>.formula.toml` (not `<name>.toml`).
+Both spellings still parse — `gc doctor` warns about the contract key — and
+every fence below is adapted to today's canon. Migrating the pack is tracked
+in [#3462](https://github.com/gastownhall/gascity/issues/3462).
+</Note>
 
 ### The Whole Job, End To End
 
-Most real formulas are not a single pattern but a pipeline of them, and the
-clearest way to see what a formula is *for* is to follow one body of work all
-the way through.
+Most real formulas are a pipeline of patterns, not a single one. The clearest
+way to see what a formula is *for* is to follow one body of work all the way
+through.
 
 ![One body of work, end to end: a left-to-right pipeline of stages —
 decompose, drain, review (loops until the verdict passes), gap analysis, fix
@@ -206,27 +169,24 @@ gaps, check, ship — with a convoy of implementation beads hanging beneath the
 drain stage. The stages are the method (the formula); the beads are the work
 (the items).](/diagrams/excalidraw-rendered/formula-whole-job.svg)
 
-A typical build does this: an approved plan is
-**decomposed** into a convoy of implementation items; the convoy is
-**drained** so every ready member is worked at once, in dependency-ordered
-waves, until they are all done; the result is **reviewed** for best practices
-across several lanes that loop until the verdict passes; a **gap analysis**
-compares what was built against what was asked and the gaps are filled; and a
-**check** gates the whole thing before it ships. None of that ordering lives
-in an agent's head — it is the formula, written down once.
+A typical build **decomposes** an approved plan into a convoy of
+implementation items; **drains** the convoy so every ready member is worked at
+once, in dependency-ordered waves; **reviews** the result across several lanes
+that loop until the verdict passes; runs a **gap analysis** and fills the gaps;
+and gates a final **check** before shipping. The division of labor is
+three-sided: the **work** is the items themselves (independent beads that
+survive sessions), the **formula** is the method that declares them and their
+order, and the **controller** is the engine that runs the method as a live
+graph — all outside any single agent's session.
 
-Read that way, the division of labor is clean. The **work** is the items
-themselves — "implement feature A", "review the result", "fill the gap" — each
-an independent unit that survives sessions. The **formula is the method** that
-produces those items, orders them, loops over them, and decides what counts as
-done. The sections below are the individual moves in that pipeline —
+The sections below are the individual moves in that pipeline —
 [decomposition](#planning-reviews-and-decomposition),
 [fan-out](#fan-out-over-a-runtime-discovered-set),
 [review loops](#multi-lane-review-loops), and
-[self-checking](#self-checking-work-and-transient-hardening) — and the gascity
-pack's `build-*` chain wires them together with
-[`extends`](#multi-step-feature-workflows) so the whole job is one composed
-method, not one giant file.
+[self-checking](#self-checking-work-and-transient-hardening) — and the pack's
+`build-*` chain wires them together with
+[`extends`](#multi-step-feature-workflows) into one composed method, not one
+giant file.
 
 ### Multi-Step Feature Workflows
 
@@ -264,44 +224,37 @@ title = "Submit the change"
 needs = ["review"]
 ```
 
-At runtime each step becomes an independent unit of work, and `needs` gates
-readiness so `implement` stays invisible until `design` closes. You declare
-the ordering and the runtime runs whatever is ready, so work flows in
-dependency-ordered waves rather than on a schedule you manage — the same
-mechanism that lets a [drain](#fan-out-over-a-runtime-discovered-set) run an
-entire convoy's worth of ready members in parallel. The appended finalize step
-closes the workflow when the last step completes. Sling it at an agent or a
-pool and the steps flow in order. The same file without the `[requires]`
-table compiles under v1 into a molecule instead — declare v2 when you want
-per-step routing and runtime control.
+Each step becomes an independent unit of work; `needs` gates readiness so
+`implement` stays invisible until `design` closes. You declare the ordering
+and the runtime runs whatever is ready — work flows in dependency-ordered
+waves, the same mechanism that lets a
+[drain](#fan-out-over-a-runtime-discovered-set) run a whole convoy's ready
+members in parallel. The appended finalize step closes the workflow when the
+last step completes. The same file without `[requires]` compiles under v1 into
+a molecule instead.
 
-**In the wild.** Real multi-step builds rarely live in one file. The gascity
-pack's build pipeline is a chain of `extends` bases — a `prepare → requirements
-→ plan → plan-review → decompose → implement → review → finalize → publish`
-flow assembled across
+<Accordion title="In the wild: the build pipeline composes with extends">
+Real multi-step builds rarely live in one file. The pack's build pipeline is a
+chain of `extends` bases — a `prepare → requirements → plan → plan-review →
+decompose → implement → review → finalize → publish` flow assembled across
 [`build-base`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/build-base.formula.toml)
-and the `build-from-*-base` family — and the entries you actually dispatch are
-thin wrappers over those bases. Composition uses two `extends` rules. A child
-formula's steps are appended to the parent's; but a child step that reuses a
-parent step's `id` *overrides* the parent step in place, keeping its position
-in the graph. That single rule is how a base can declare a skeleton and a
-descendant can splice new steps into the middle of it — the descendant
-redeclares an inherited step id with a new `needs` list, and the inserted
-steps land before it.
+and the `build-from-*-base` family — and the entries you dispatch are thin
+wrappers over those bases.
+
+Composition uses two `extends` rules: a child's steps are appended to the
+parent's, but a child step that reuses a parent step's `id` *overrides* it in
+place, keeping its position. That rule is how a base declares a skeleton and a
+descendant splices new steps into the middle — the descendant redeclares an
+inherited step id with a new `needs` list, and the inserted steps land before
+it.
 
 The cataloged entrypoint adds almost nothing. The pack's
 [`build-from-convoy`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/build-from-convoy.formula.toml)
-is 21 lines with no `[[steps]]` at all — it extends the base and supplies the
-catalog name plus methodology defaults:
+is 21 lines with no `[[steps]]` — it extends the base and supplies the catalog
+name plus methodology defaults:
 
 ```toml
 formula = "build-from-convoy"
-description = """
-Default build continuation from an implementation convoy.
-
-This cataloged entrypoint extends build-from-convoy-base with the
-built-in methodology defaults.
-"""
 extends = ["build-from-convoy-base"]
 
 [requires]
@@ -317,12 +270,11 @@ implementation_strategy = "drain"
 review_modes = ["report", "agent", "interactive"]
 ```
 
-`gc formula show build-from-convoy` resolves the `extends` chain and prints
-the base's full step graph under this name. The shipped file uses
-`contract = "graph.v2"` and the `.formula.toml` extension; the `[requires]`
-table above is the canonical opt-in. Build new methodology variants the same
+`gc formula show build-from-convoy` resolves the `extends` chain and prints the
+base's full step graph under this name. Build new methodology variants the same
 way: extend the matching base and override defaults or routes, rather than
 copying the step graph.
+</Accordion>
 
 See [steps](/reference/specs/formula-spec-v2#13-steps),
 [compilation](/reference/specs/formula-spec-v2#2-compilation), and
@@ -352,30 +304,27 @@ id = "deploy"
 title = "Deploy {{env}} from {{branch}}"
 ```
 
-`{{placeholders}}` substitute into titles, descriptions, notes, assignee,
-and metadata values. `required` and `enum` are enforced when the formula is
-instantiated, so a missing or misspelled `env` fails before any bead exists.
-Every interactive path takes `--var`: preview with
-`gc formula show deploy --var env=prod`, dispatch with
-`gc sling worker deploy --formula --var env=prod`, stage with
-`gc formula cook deploy --var env=prod`, and `gc converge create` accepts
-repeatable `--var` too.
+`{{placeholders}}` substitute into titles, descriptions, notes, assignee, and
+metadata values. `required` and `enum` are enforced at instantiation, so a
+missing or misspelled `env` fails before any bead exists. Every interactive
+path takes repeatable `--var` — `gc formula show`, `gc sling --formula`, `gc
+formula cook`, and `gc converge create`.
 
-**In the wild.** Variables are how the pack's build bases stay swappable
-without forking the graph. They flow down the `extends` chain and substitute
-into both routing metadata and child-formula names. The convoy base
-(`build-from-convoy-base`) routes its drain step to
-`"gc.run_target" = "{{implementation_target}}"`, so overriding that one var
-re-points every drained unit at a different worker role; its
-`{{drain_policy}}` var selects which drain step survives compilation (next
-section); and the review bases' `{{code_review_formula}}` var (declared on
-`build-base` and `build-from-review-base`, default `"review"`) names *which
-formula* the review stage dispatches, so a methodology pack can swap the whole
-reviewer by setting a default. Each var is declared once on the base and
-inherited by every wrapper. The lesson for your own templates: put the
-swappable decisions — target roles, sub-formula names, policy switches — in
-vars on the base, and let descendants override the defaults instead of
-editing steps.
+<Accordion title="In the wild: vars keep build bases swappable">
+Variables are how the pack's build bases stay swappable without forking the
+graph. They flow down the `extends` chain and substitute into both routing
+metadata and child-formula names. The convoy base (`build-from-convoy-base`)
+routes its drain step to `"gc.run_target" = "{{implementation_target}}"`, so
+overriding that one var re-points every drained unit at a different worker
+role; its `{{drain_policy}}` var selects which drain step survives compilation
+(next section); and the review bases' `{{code_review_formula}}` var (default
+`"review"`) names *which formula* the review stage dispatches, so a methodology
+pack can swap the whole reviewer by setting a default.
+
+The lesson for your own templates: put the swappable decisions — target roles,
+sub-formula names, policy switches — in vars on the base, and let descendants
+override the defaults instead of editing steps.
+</Accordion>
 
 <Note>
 Orders are the exception: order TOML has no variable mechanism and
@@ -462,40 +411,39 @@ needs = ["implement", "implement-same-session"]
 metadata = { "gc.run_target" = "gc.implementation-reviewer" }
 ```
 
-A drain step forces a targeted invocation — sling an existing bead or convoy
-at it (`gc sling gc.run-operator <convoy-id> --on build-from-convoy`); an
-untargeted run fails with `v2 formula "build-from-convoy" requires a target
-convoy`. Core injects the convoy as the reserved `convoy_id` target, so the
-formula never declares that variable. At runtime the controller scatters the
-input convoy into one-member unit convoys and runs the item formula — itself
-a v2 formula — once per unit. `member_access = "exclusive"` reserves each
-member so no second drain can claim it.
+A drain step forces a targeted invocation — sling a bead or convoy at it
+(`gc sling gc.run-operator <convoy-id> --on build-from-convoy`); an untargeted
+run fails with `requires a target convoy`. Core injects the convoy as the
+reserved `convoy_id` target, so the formula never declares it. At runtime the
+controller scatters the input convoy into one-member unit convoys and runs the
+item formula (itself a v2 formula) once per unit; `member_access = "exclusive"`
+reserves each member so no second drain can claim it.
 
-Two details make this the pack's real workhorse rather than a toy. First, the
-**policy fork**: both drain steps `needs`-feed `review`, but `condition`
-filters them at compile time, so exactly one survives per instance.
-`gc formula show build-from-convoy` prints `implement` (the `context =
-"separate"` branch, where every unit gets its own git worktree and they all
-run in parallel); `--var drain_policy=same-session` prints
-`implement-same-session` instead (the `context = "shared"`,
-`item.single_lane = true` branch that runs units one at a time in one
-session, marking the rest skipped after the first failure via
-`on_item_failure`). The surviving step's name flows into `review`'s `needs`
-automatically. Second, the item formula is itself swappable — the real base
-points `separate` at
+<Accordion title="In the wild: the policy fork and swappable item formula">
+Two details make this the pack's workhorse. First, the **policy fork**: both
+drain steps `needs`-feed `review`, but `condition` filters them at compile
+time, so exactly one survives. `gc formula show build-from-convoy` prints
+`implement` (the `context = "separate"` branch, where every unit gets its own
+git worktree and they all run in parallel); `--var drain_policy=same-session`
+prints `implement-same-session` instead (`context = "shared"`,
+`item.single_lane = true`, running units one at a time and skipping the rest
+after the first failure via `on_item_failure`). The surviving step's name flows
+into `review`'s `needs` automatically.
+
+Second, the item formula is swappable — the real base points `separate` at
 [`do-work`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/do-work.formula.toml)
 (a checked `prepare-worktree → implement → close-source-anchor` flow) and
-`shared` at `do-work-item`, both overridable by descendants. The shipped
-files use `contract = "graph.v2"` and the `.formula.toml` extension.
+`shared` at `do-work-item`, both overridable by descendants.
+</Accordion>
 
-The contrast ([#2947](https://github.com/gastownhall/gascity/issues/2947)):
-`on_complete` also fans out, but over a collection in the *step's structured
-output* rather than over convoy members, and `tally` can aggregate the
-results. Fan-out driven by raw `gc.output_json_required` step metadata is
-deprecated — `gc lint` warns `gc.output_json is deprecated; use drain in v2
-formulas`. The whole gascity pack is pure-drain: zero `on_complete`, zero
-`tally`. Prefer drain when the set is convoy members; reach for `on_complete`
-only when the set exists solely in a step's output.
+`on_complete` also fans out, but over a collection in a *step's structured
+output* rather than over convoy members, and `tally` aggregates the results
+([#2947](https://github.com/gastownhall/gascity/issues/2947)). The whole
+gascity pack is pure-drain — zero `on_complete`, zero `tally`. Prefer drain
+when the set is convoy members; reach for `on_complete` only when the set
+exists solely in a step's output. (Raw `gc.output_json_required` fan-out is
+deprecated; `gc lint` warns `gc.output_json is deprecated; use drain in v2
+formulas`.)
 
 See [drain](/reference/specs/formula-spec-v2#33-drain) and
 [on-complete and tally](/reference/specs/formula-spec-v2#34-on-complete-and-tally) in
@@ -503,18 +451,16 @@ the v2 spec.
 
 ### Multi-Lane Review Loops
 
-You want several independent verdicts on the same work — an acceptance
-reviewer, a test-evidence reviewer, a simplicity reviewer — and you want the
-work to keep iterating until the combined verdict says it is done. This is
-the "code review for best practices" pattern, and the gascity pack expresses
-it not as a one-shot vote but as a loop: review lanes fan out, a synthesizer
-fans them in, a fix step applies the findings, and the whole subtree repeats
-until a verdict check passes.
+You want several independent verdicts on the same work — acceptance, test
+evidence, simplicity — and you want it to keep iterating until the combined
+verdict says it is done. The pack expresses this not as a one-shot vote but as
+a loop: review lanes fan out, a synthesizer fans them in, a fix step applies
+the findings, and the whole subtree repeats until a verdict check passes.
 
 The real example is
 [`build-basic-review`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/build-basic-review.formula.toml),
-an expansion formula. Adapted to canon, its loop core is a `[[template]]`
-step carrying a `[template.check]` and a set of `[[template.children]]`:
+an expansion formula whose loop core is a `[[template]]` step carrying a
+`[template.check]` and a set of `[[template.children]]`:
 
 ```toml
 formula = "code-review"
@@ -571,33 +517,28 @@ metadata = { "gc.run_target" = "{implementation_target}", "gc.continuation_group
 ```
 
 The single-brace `{target}` and `{implementation_target}` are
-expansion-template placeholders, distinct from the `{{var}}` substitution
-used in ordinary steps; when the host expands this template, `{target}` is
-rewritten to the host step's id. `gc formula show code-review` compiles the
-template into an `iteration.1` scope: the three review children run in
-parallel (no `needs` between them), each on a different reviewer role, fan in
-to `synthesize-review`, then `apply-review-findings` makes the smallest fixes
-and records a verdict in bead metadata. The controller — never an agent —
-then runs `implementation-review-approved.sh`, which reads the verdict for
-the current iteration and the report's severities; while it is `iterate` and
-budget remains (`max_attempts = 6`), the controller re-spawns the *entire*
-lanes-synthesize-fix subtree as the next iteration. The verdict travels as
-bead metadata; no judgment lives in Go.
+expansion-template placeholders, distinct from `{{var}}` substitution; when the
+host expands the template, `{target}` is rewritten to the host step's id. `gc
+formula show code-review` compiles it into an `iteration.1` scope: the three
+review children run in parallel (no `needs` between them), each on a different
+reviewer role, fan in to `synthesize-review`, then `apply-review-findings`
+makes the smallest fixes and records a verdict in bead metadata. The controller
+— never an agent — then runs `implementation-review-approved.sh`; while the
+verdict is `iterate` and budget remains (`max_attempts = 6`), it re-spawns the
+*entire* lanes-synthesize-fix subtree as the next iteration. The verdict
+travels as bead metadata; no judgment lives in Go.
 
-This is the canonical real-world fan-out review, with no vote-tally plumbing
-at all — it loops on a check verdict instead of counting ballots. Two notes
-on the shipped file. It uses `contract = "graph.v2"` and the `.formula.toml`
-extension. And its host,
-[`build-basic`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/build-basic.formula.toml),
-combines `expand` with its own `[steps.check]` on the same step — a shape the
-current compiler rejects (`check cannot be combined with expand`): the
-expansion's `[template.check]` is the supported home for the loop, so keep the
-check on the template step, as above, not on the step that expands it.
+<Warning>
+A step cannot combine `expand` with its own `[steps.check]` — the compiler
+rejects it with `check cannot be combined with expand`. The expansion's
+`[template.check]` is the supported home for the loop, so keep the check on the
+template step, not on the step that expands it.
+</Warning>
 
-If you genuinely need quorum *voting* — independent verdicts reduced by
-`majority`, `unanimous`, or `any-pass` — that is `on_complete` plus `tally`,
-covered under [Fan-Out](#fan-out-over-a-runtime-discovered-set); the gascity
-pack does not use it, preferring the synthesize-and-recheck loop above.
+For quorum *voting* — verdicts reduced by `majority`, `unanimous`, or
+`any-pass` — use `on_complete` plus `tally` (under
+[Fan-Out](#fan-out-over-a-runtime-discovered-set)); the gascity pack does not,
+preferring the synthesize-and-recheck loop above.
 
 See [check](/reference/specs/formula-spec-v2#31-check) and
 [loops](/reference/specs/formula-spec-v2#16-loops) in the v2 spec.
@@ -607,17 +548,13 @@ See [check](/reference/specs/formula-spec-v2#31-check) and
 Two different failure modes, two different constructs — mutually exclusive
 on the same step.
 
-`check` is for work you can verify: the step is not done when the agent says
-so, but when your script says so.
+`check` is for work you can verify: the step is done when your script says so,
+not when the agent says so.
 
-The pack's gap-analysis loop is the production version of this. The
-[`gap-analysis`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/gap-analysis.formula.toml)
-formula itself contains no loop — it is a two-step report producer. The
-looping lives in
-[`fix-loop-base`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/fix-loop-base.formula.toml),
-which wraps a fix-and-re-verify cycle around it: plan the fixes, apply them,
-re-review, and gate the re-review with a `[steps.check]` that runs an
-artifact validator. Adapted to canon:
+The pack's
+[`fix-loop-base`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/fix-loop-base.formula.toml)
+is the production version — it plans fixes, applies them, re-reviews, and gates
+the re-review with a `[steps.check]` that runs an artifact validator:
 
 ```toml
 formula = "fix-loop"
@@ -660,20 +597,15 @@ path = ".gc/scripts/checks/build-artifact-valid.sh"
 timeout = "5m"
 ```
 
-After each iteration of `re-review` closes, the controller runs the script.
-Pass closes the step; fail with budget left spawns the next iteration —
-`gc formula show fix-loop` shows `re-review` materialized into a `.spec`
-sidecar, an agent-visible `iteration.1`, and a controller-owned control bead;
-exhaustion closes the step as failed and blocks downstream work. The
-validator resolves the artifact from the metadata keys named in
-`gc.build.artifact_path_keys` and checks it against the schema in
+After each `re-review` closes, the controller runs the script: pass closes the
+step; fail with budget left spawns the next iteration; exhaustion closes the
+step failed and blocks downstream work. The validator resolves the artifact
+from the keys named in `gc.build.artifact_path_keys` and checks it against the
 `gc.build.artifact_schema`, so "done" means the schema validator agrees, not
 the reviewer. Note the layering: this `[steps.check]` is the bounded,
 controller-driven inner loop (`max_attempts`); the `{{max_iterations}}` var
-bounds an *outer* loop that callers drive by re-dispatching the whole fix
-formula on a still-failing verdict — judgment in the prompt, iteration in the
-config. The shipped file uses `contract = "graph.v2"` and the `.formula.toml`
-extension.
+bounds an *outer* loop that callers drive by re-dispatching the whole formula
+on a still-failing verdict — judgment in the prompt, iteration in the config.
 
 `retry` is for steps that fail for boring reasons — provider hiccups,
 timeouts — where re-running is the fix:
@@ -751,22 +683,21 @@ metadata = { "gc.run_target" = "gc.review-synthesizer" }
 ```
 
 The formula only routes and orders; the description file behind `plan-review`
-reads `review_mode` and decides what to do — in `report` mode it records
-findings without touching the plan, in `agent` mode it also produces a fix
-handoff, in `interactive` mode it applies safe fixes directly. That is Zero
-Framework Cognition: the judgment is a sentence in the prompt, not a branch
-in code. For a heavier plan review that loops review lanes until approved,
-the pack reuses the same expansion-plus-`[template.check]` machinery shown in
+reads `review_mode` and decides what to do — `report` records findings,
+`agent` also produces a fix handoff, `interactive` applies safe fixes
+directly. The judgment is a sentence in the prompt, not a branch in code. For a
+heavier plan review that loops review lanes until approved, the pack reuses the
+expansion-plus-`[template.check]` machinery from
 [Multi-Lane Review Loops](#multi-lane-review-loops) — see
 [`github-issue-fix-design-review-work`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/github-issue-fix-design-review-work.formula.toml).
 
-**Decomposition shreds a plan into a convoy.** The work is split into beads
-not by a formula construct but by an agent — the
+**Decomposition shreds a plan into a convoy** — done by an agent, not a formula
+construct. The
 [`build-from-decompose-base`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/build-from-decompose-base.formula.toml)
 `decompose` step routes to a decomposer role whose prompt reads the approved
-plan, creates an implementation convoy with its member beads, and stamps the
-convoy id on the workflow root so the downstream drain can find it. The
-formula contributes a bounded validation loop around that act:
+plan, creates an implementation convoy, and stamps the convoy id on the
+workflow root so the downstream drain can find it. The formula contributes a
+bounded validation loop around that act:
 
 ```toml
 formula = "decompose"
@@ -800,15 +731,14 @@ timeout = "5m"
 ```
 
 The `[steps.check]` validates the decomposition artifact against its schema
-with bounded repair, exactly as the [self-checking](#self-checking-work-and-transient-hardening)
-pattern does — the decomposer's output is not trusted until it validates. The
+with bounded repair, exactly as the
+[self-checking](#self-checking-work-and-transient-hardening) pattern does. The
 smaller [`decomposition-base`](https://github.com/gastownhall/gascity-packs/tree/main/gascity/formulas/decomposition-base.formula.toml)
-is the swappable methodology contract: one checked step that packs override,
-named through the `decomposition_formula` var so a build can swap the shredder
-without touching the pipeline. The convoy this step produces is precisely the
-runtime-discovered set the drain fans out over — decomposition and fan-out are
-two ends of the same pipeline. The shipped files use `contract = "graph.v2"`
-and the `.formula.toml` extension.
+is the swappable methodology contract, named through the
+`decomposition_formula` var so a build can swap the shredder without touching
+the pipeline. The convoy this step produces is the runtime-discovered set the
+drain fans out over — decomposition and fan-out are two ends of the same
+pipeline.
 
 See [check](/reference/specs/formula-spec-v2#31-check) and
 [variables](/reference/specs/formula-spec-v2#14-variables) in the v2 spec.
@@ -830,11 +760,10 @@ pool = "worker"
 An order names a formula *or* an `exec` shell command, never both —
 deterministic maintenance belongs in `exec`, judgment work in a formula.
 Triggers are `cooldown`, `cron`, `condition`, `event`, or `manual`. When the
-trigger fires, the controller instantiates the formula and routes the
-instance to the pool. Pool readiness matters here the same way it does for
-sling: a pool wakes only for Ready-visible roots, so order formulas routed
-to pools should be v2 — the dispatcher warns otherwise. Test any order immediately with `gc order run <name>`, which
-bypasses the trigger.
+trigger fires, the controller instantiates the formula and routes it to the
+pool. As with sling, a pool wakes only for Ready-visible roots, so order
+formulas routed to pools should be v2 (the dispatcher warns otherwise). Test
+any order with `gc order run <name>`, which bypasses the trigger.
 
 See the [orders tutorial](/tutorials/07-orders) for triggers, layering, and
 overrides.
@@ -858,16 +787,14 @@ The two frameworks above compose. Find your situation, read across:
 
 ### Convergence Loops
 
-Some work is not a pipeline but a loop: draft, evaluate, refine, repeat
-until good enough. The recommended way to express this is a v2 **check
-loop** — `[steps.check]` re-runs the work until a verification script
-passes, as covered in
-[Self-Checking Work](#self-checking-work-and-transient-hardening) — because
-it keeps the loop inside the formula where the controller drives it.
+Some work is not a pipeline but a loop: draft, evaluate, refine, repeat until
+good enough. Express it as a v2 **check loop** — `[steps.check]` re-runs the
+work until a verification script passes (see
+[Self-Checking Work](#self-checking-work-and-transient-hardening)) — which
+keeps the loop inside the formula where the controller drives it.
 
-Gas City also has a dedicated command, `gc converge`, which predates the v2
-runtime and currently accepts only v1 formulas — there are no
-convergence-specific formula keys:
+The dedicated `gc converge` command predates the v2 runtime and accepts only v1
+formulas, with no convergence-specific formula keys:
 
 ```toml
 formula = "refine-doc"
@@ -907,6 +834,5 @@ in the v1 spec.
   — real formulas to read. The `build-*` chain shows `extends` composition
   end to end, `do-work` / `do-work-item` show the drain item contract,
   `fix-loop-base` and `build-basic-review` show check loops, and
-  `planning-base` / `decomposition-base` show review and decomposition. They
-  predate the current `[requires]` opt-in and use `contract = "graph.v2"`
-  with the `.formula.toml` extension.
+  `planning-base` / `decomposition-base` show review and decomposition (in the
+  older spelling noted above).

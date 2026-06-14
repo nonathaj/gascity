@@ -656,7 +656,7 @@ controller component advances the molecule.
   when every transitive descendant is terminal (close reason
   `molecule autoclose: all step children closed`). Container dependents
   unblock at that point (section 1.3).
-- **Garbage collection.** The core pack's `reaper` exec order (cooldown
+- **Garbage collection.** A core-pack cleanup exec order (cooldown
   trigger, 30m interval) closes stale wisps whose parents or roots are
   closed, purges old closed molecule data, and closes TTL-expired beads.
 
