@@ -209,8 +209,7 @@ Rig-level imports create rig-scoped identities such as
 Gas City's built-in packs are not implicit. `gc init` writes explicit
 workspace includes into `city.toml` (`.gc/system/packs/core`, plus
 `.gc/system/packs/bd` for bd-provider cities), and `gc doctor --fix` repairs
-missing or stale entries. The former `maintenance` pack no longer exists; its
-housekeeping orders ship in the bundled `core` pack. See
+missing or stale entries. Housekeeping orders ship in the bundled `core` pack. See
 [System Packs](/reference/system-packs) for details.
 
 ## Named Sessions
