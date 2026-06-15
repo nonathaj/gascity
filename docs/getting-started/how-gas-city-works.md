@@ -30,7 +30,10 @@ role around any of them.
 | **Event bus** | fires activity outward so humans and agents can watch what's happening |
 
 None of this machinery knows what your agents do. It's the substrate the six
-primitives sit on.
+primitives sit on. Notice the shape of the loop: the orchestrator acts on
+sessions — spawning, stopping, restarting them — but reads their progress from
+the bead store and event bus rather than being called back directly. The loop
+closes through shared state, which is why work survives a crash on either side.
 
 ## The six primitives
 
@@ -58,8 +61,12 @@ scope and a provider. The prompt template is its entire behavioral spec; because
 the platform has no hardcoded roles, a "reviewer" or a "planner" is nothing more
 than the prompt you wrote for it. When an agent is *running* it is a **session** —
 a live process the platform can start, stop, prompt, and observe. The engine backing
-that session is its **provider**. A single agent can be scaled into a **pool** of
-identical workers sharing one queue, sized to demand each tick. Sessions are
+that session is its **provider**; when the orchestrator restarts, it *adopts* the
+live sessions it finds — creating a session bead for each — rather than respawning
+them. A single agent can be scaled into a **pool** of identical workers sharing one
+queue: each tick the orchestrator runs the agent's `scale_check` query to measure
+demand and sizes the pool to it — up to `max_active_sessions`, never below a
+`min_active_sessions` floor — retiring sessions that fall idle. Sessions are
 disposable; the work they did survives them, because work lives in beads.
 
 ### Bead
@@ -112,7 +119,9 @@ purely by swapping which packs it loads.
 ### Event
 
 An **event** is how you *observe* what's happening — an immutable, append-only
-record fired by city activity, not something the other primitives consume. Beads
+record fired by city activity, not something the other primitives consume. Every
+event carries a monotonically increasing sequence number, so a watcher can replay
+the stream from any point. Beads
 fire `bead.created` / `bead.closed`, sessions fire `session.woke` /
 `session.crashed`, convoys fire `convoy.created` / `convoy.closed`, and orders
 fire `order.fired` / `order.completed`. Humans watch the stream with `bd show

@@ -20,7 +20,10 @@ materializes that recipe as beads. From that moment the work is independent of
 both the formula file and any agent session: sessions crash, restart, and get
 recycled; the work persists, and whoever picks it up next finds the same
 state. That durability is what lets the orchestrator drive the graph across many
-sessions without losing its place.
+sessions without losing its place. Because a run is detached from its file, the
+file can change underneath it — `gc formula version-check <bead-id>` compares
+the formula hash recorded on a run's bead against the current on-disk file, so
+you can spot that drift.
 
 ![Applying a formula in three stages: the formula.toml on disk is compiled
 into an in-memory recipe (flattened steps plus dependency edges), then
@@ -67,7 +70,8 @@ Base constructs (`steps`, `needs`, `children`, `condition`, `loop`, `vars`,
 `retry`, `drain`, `on_complete`, `tally`, and reserved `gc.*` step metadata)
 require the v2 declaration; compiling without it fails with `requires:
 formulas that use graph-only constructs must declare [requires]
-formula_compiler = ">=2.0.0"`.
+formula_compiler = ">=2.0.0" or the deprecated contract = "graph.v2"
+explicitly`.
 
 Two v1-only edges remain, neither a reason to start on v1:
 
