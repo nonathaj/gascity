@@ -174,34 +174,15 @@ pack.
 
 ## Names
 
-Agent names are local names inside the pack that defines them. Import bindings
-are local names chosen by the importing file. When a pack is imported, the
-import binding becomes the runtime namespace for imported agent names; the
-imported pack's own name does not override that binding.
+Because the import binding qualifies every imported agent name (as
+`gascity.planner` above), you address imported agents by that qualified name —
+not bare `planner` — in patches, targets, and commands, and the imported pack's
+own name never overrides the binding.
 
-If a city imports this dependency:
-
-```toml
-[imports.review_tools]
-source = "../packs/review"
-```
-
-and the imported pack defines `agents/reviewer/agent.toml`, the runtime name is:
-
-```text
-review_tools.reviewer
-```
-
-Gas City uses the binding to find and order dependencies while loading config,
-and stamps it on every imported agent as a runtime namespace. Imported agents
-are addressed by their qualified name — `review_tools.reviewer`, not bare
-`reviewer` — in patches, targets, and commands.
-
-Because the binding qualifies the name, two imports that define agents with the
-same local name do not collide: `build.worker` and `review.worker` coexist.
-Config load fails only when two source directories produce the same qualified
-name on the same surface — for example, two unbound legacy includes that both
-define a city-level `reviewer`.
+Two imports that define agents with the same local name therefore coexist:
+`build.worker` and `review.worker` do not collide. Config load fails only when
+two source directories produce the same qualified name on the same surface — for
+example, two unbound legacy includes that both define a city-level `reviewer`.
 
 ## Defaults And Patches
 
