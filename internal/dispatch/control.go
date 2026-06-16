@@ -1012,7 +1012,7 @@ func applyAttemptControlStepRoute(step *formula.RecipeStep, executionTarget stri
 	}
 	step.Labels = removeAttemptPoolLabels(step.Labels)
 
-	controlTarget := controlDispatcherTargetForExecutionTarget(resolvedExecutionTarget)
+	controlTarget := controlDispatcherTargetForExecutionTarget(resolvedExecutionTarget, cfg)
 	if controlTarget != "" {
 		step.Metadata[beadmeta.RoutedToMetadataKey] = controlTarget
 	} else {
@@ -1021,10 +1021,24 @@ func applyAttemptControlStepRoute(step *formula.RecipeStep, executionTarget stri
 	step.Assignee = ""
 }
 
-func controlDispatcherTargetForExecutionTarget(executionTarget string) string {
+func controlDispatcherTargetForExecutionTarget(executionTarget string, cfg *config.City) string {
 	executionTarget = strings.TrimSpace(executionTarget)
+	rigContext := ""
 	if slash := strings.IndexByte(executionTarget, '/'); slash > 0 {
-		return executionTarget[:slash] + "/" + config.ControlDispatcherAgentName
+		rigContext = executionTarget[:slash]
+	}
+	if cfg != nil {
+		for _, agentCfg := range cfg.Agents {
+			if !config.IsDeterministicControlDispatcher(&agentCfg) {
+				continue
+			}
+			if strings.TrimSpace(agentCfg.Dir) == rigContext {
+				return agentCfg.QualifiedName()
+			}
+		}
+	}
+	if rigContext != "" {
+		return rigContext + "/" + config.ControlDispatcherAgentName
 	}
 	return config.ControlDispatcherAgentName
 }

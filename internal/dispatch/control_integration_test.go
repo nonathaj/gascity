@@ -1075,6 +1075,54 @@ func TestApplyAttemptControlStepRoute_ConfiguredControlDispatcherUsesMetadataRou
 	}
 }
 
+func TestApplyAttemptControlStepRoute_ImportQualifiedControlDispatcherUsesScope(t *testing.T) {
+	t.Parallel()
+
+	maxActive := 1
+	cfg := &config.City{
+		Workspace: config.Workspace{Name: "maintainer-city"},
+		Daemon:    config.DaemonConfig{FormulaV2: true},
+		Rigs: []config.Rig{{
+			Name: "fixture",
+			Path: t.TempDir(),
+		}},
+		Agents: []config.Agent{{
+			Name:              config.ControlDispatcherAgentName,
+			BindingName:       "core",
+			StartCommand:      config.ControlDispatcherStartCommandFor("{{.Agent}}"),
+			ProcessNames:      []string{"gc"},
+			MaxActiveSessions: &maxActive,
+		}, {
+			Name:              config.ControlDispatcherAgentName,
+			BindingName:       "core",
+			Dir:               "fixture",
+			StartCommand:      config.ControlDispatcherStartCommandFor("{{.Agent}}"),
+			ProcessNames:      []string{"gc"},
+			MaxActiveSessions: &maxActive,
+		}, {
+			Name: "superpowers.brainstorming",
+			Dir:  "fixture",
+		}},
+	}
+
+	step := &formula.RecipeStep{
+		Metadata: map[string]string{
+			"gc.routed_to": "stale-route",
+		},
+	}
+	applyAttemptControlStepRoute(step, "fixture/superpowers.brainstorming", cfg, beads.NewMemStore())
+
+	if step.Assignee != "" {
+		t.Fatalf("assignee = %q, want empty routed control-dispatcher queue", step.Assignee)
+	}
+	if got := step.Metadata["gc.routed_to"]; got != "fixture/core.control-dispatcher" {
+		t.Fatalf("gc.routed_to = %q, want fixture/core.control-dispatcher", got)
+	}
+	if got := step.Metadata["gc.execution_routed_to"]; got != "fixture/superpowers.brainstorming" {
+		t.Fatalf("gc.execution_routed_to = %q, want fixture/superpowers.brainstorming", got)
+	}
+}
+
 func TestSpawnNextAttemptUsesSourceRigForBareChildControlRoute(t *testing.T) {
 	t.Parallel()
 
