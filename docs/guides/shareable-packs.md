@@ -132,44 +132,21 @@ binding.
 
 ## Registry Discovery
 
-Registries help you find packs, but they do not change the authored import
-shape. The registry commands available in this release cover discovery, cache
-management, authentication, and publish submission:
+Registries help you *find* packs; they never change the authored import shape.
+When you add a pack from a registry, `pack.toml` stores the resolved durable
+`source` and optional `version`, not the registry handle. The `main` registry
+(the public `gascity-packs` catalog) is configured by default:
 
 ```text
-gc pack registry add example https://raw.githubusercontent.com/gastownhall/gascity-packs/main/registry.toml
-gc pack registry refresh main
 gc pack registry search gastown
-gc pack registry show main:gastown
-gc pack registry login
-gc pack registry publish .
-gc pack registry whoami
-gc pack registry list
-gc pack registry remove example
+gc pack registry show main:gastown      # prints a paste-ready import command
+gc pack registry publish .              # submit a pack (after gc pack registry login)
 ```
-
-When a registry entry is used to add or migrate a pack, the durable
-`pack.toml` entry stores the entry's resolved `source` and optional `version`,
-not the registry handle.
-
-The first public registry is the `gascity-packs` catalog, configured by default
-as the built-in `main` registry, so there is nothing to add:
-
-```text
-gc pack registry refresh main
-gc pack registry search gascity
-gc pack registry show main:gascity
-```
-
-Registry caches are local. Search and show warn when a registry cache is older
-than the freshness window. The default window is 24 hours. Set
-`GC_REGISTRY_FRESHNESS` to a positive Go duration string, such as `1h` or
-`30m`, to change that warning window. Invalid, zero, or negative values warn.
-Pass `--refresh` to `gc pack registry search` or `gc pack registry show` when
-you want that command to fetch the latest catalog before reading it.
 
 See [Public Registry Packs](/guides/registry-showcase) for the first-party
-packs currently advertised through the public registry.
+catalog and cache-freshness controls (`--refresh`, `GC_REGISTRY_FRESHNESS`), and
+[Understanding Packs](/guides/understanding-packs#registries-handles-and-sources)
+for the handle-vs-source model.
 
 ## City Usage
 
@@ -316,11 +293,8 @@ use the well-known formulas/ directory`), and `gc doctor` reports any
 remaining declaration through the fixable `v2-formulas-dir` check. Put
 formulas in the well-known `formulas/` directory.
 
-Treat the listed fields as migration surfaces for your own packs, with one exception:
-the built-in system packs compose through explicit `workspace.includes`
-entries in `city.toml` (`gc init` writes them; `gc doctor --fix` repairs
-them). `gc doctor --fix` can migrate root
-`pack.toml` legacy inline agent definitions into `agents/<name>/agent.toml`;
-legacy agent definitions inside config fragments still need a hand edit. New
-shareable packs should use `schema = 2`, `[imports.*]`,
+Treat the listed fields as migration surfaces for your own packs. `gc doctor
+--fix` migrates root `pack.toml` legacy inline agent definitions into
+`agents/<name>/agent.toml`; legacy definitions inside config fragments still
+need a hand edit. New shareable packs should use `schema = 2`, `[imports.*]`,
 `agents/<name>/`, conventional `formulas/`, and patches for customization.
