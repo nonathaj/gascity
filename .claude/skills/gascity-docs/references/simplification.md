@@ -9,13 +9,35 @@ code.
 
 ## The goal
 
-Cut roughly **25–30% of the visible prose per page while making the point
-*sharper*, not thinner.** The win is almost never deleting information — it's
-moving information to a cheaper carrier (a table, an accordion, a diagram, or a
-link to the page that already owns it) and then deleting what was only
-restatement. A reader should land on a leaner page and understand *more*,
-faster. Word count is a compass, not a contract: a page that is already lean
-stops early.
+Remove **redundancy and unnecessary words**, and make the point *sharper*, not
+thinner. **Word count is the output, not the target** — never trim toward a
+number. The win is almost never deleting information; it's moving it to a cheaper
+carrier (a table, an accordion, a diagram, or a link to the page that already
+owns it) and deleting what was only restatement. A reader should land on a leaner
+page and understand *more*, faster.
+
+How much a page sheds depends entirely on how much *genuine redundancy* it
+carries — not on a target percentage. Measured against `main@head`, the same pass
+produced wildly different cuts, and that's correct:
+
+- A page that **restates what a sibling page owns** sheds a lot. A registry
+  showcase re-teaching the pack model dropped ~20% by dedup-by-link; a packs
+  guide whose "Names" section re-taught import binding dropped a section.
+- A page whose length is **earned teaching** (worked examples plus the runtime
+  behavior they illustrate) barely moves — forcing it toward a number guts the
+  teaching. The formulas guide cut ~1%: remove its real redundancy and stop.
+- A page that is **already lean** gets left alone entirely.
+
+Two corollaries that bite if you forget them:
+
+- **Accordions and tables fold content for scannability without deleting words.**
+  A page can read dramatically lighter with almost no word-count change. Don't
+  measure that work by the word delta, and don't reach for aggressive cuts just
+  because the number didn't move.
+- **A close trim surfaces stale facts.** Reading every line to decide what's
+  redundant is also a fact-check — expect to find model drift the last sweep
+  missed (e.g. two guides still claiming built-in packs compose through
+  `workspace.includes` after that model was retired). Fix them as you go.
 
 ## The per-page loop
 
