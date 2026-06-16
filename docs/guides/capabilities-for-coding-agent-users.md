@@ -1,5 +1,5 @@
 ---
-title: Coming from a Coding Agent
+title: Coming from Coding Agents
 description: How context, state, skills, history, messaging, roles, and identity work in Gas City — mapped to what you already know from coding agents.
 ---
 
