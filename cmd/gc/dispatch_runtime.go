@@ -684,7 +684,8 @@ func workflowServeWorkQuery(agentCfg config.Agent, expandedWorkQuery ...string) 
 func isWorkflowServeControlDispatcherAgent(agentCfg config.Agent) bool {
 	qualified := strings.TrimSpace(agentCfg.QualifiedName())
 	return qualified == config.ControlDispatcherAgentName ||
-		strings.HasSuffix(qualified, "/"+config.ControlDispatcherAgentName)
+		strings.HasSuffix(qualified, "/"+config.ControlDispatcherAgentName) ||
+		strings.HasSuffix(qualified, "."+config.ControlDispatcherAgentName)
 }
 
 func workflowServeControlReadyQuery(agentCfg config.Agent, controlSessionNames ...string) string {

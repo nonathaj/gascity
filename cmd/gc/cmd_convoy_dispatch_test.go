@@ -2888,6 +2888,20 @@ func TestWorkflowServeControlReadyQueryUsesControlTiers(t *testing.T) {
 	}
 }
 
+func TestWorkflowServeWorkQueryRecognizesCoreControlDispatcher(t *testing.T) {
+	query := workflowServeWorkQuery(config.Agent{Name: "core.control-dispatcher", Dir: "fixture"})
+
+	if strings.Contains(query, "bd query --json") {
+		t.Fatalf("core control-dispatcher serve query should avoid generic ephemeral scans: %q", query)
+	}
+	if !strings.Contains(query, "BD_EXPORT_AUTO=false") {
+		t.Fatalf("core control-dispatcher serve query should use the specialized control query: %q", query)
+	}
+	if !strings.Contains(query, "GC_CONTROL_TARGET='fixture/core.control-dispatcher'") {
+		t.Fatalf("core control-dispatcher serve query missing scoped target: %q", query)
+	}
+}
+
 func TestWorkflowServeControlReadyQueryBD105IncludesEphemeral(t *testing.T) {
 	query := workflowServeControlReadyQueryForBeads(
 		config.Agent{Name: config.ControlDispatcherAgentName},
