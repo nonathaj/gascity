@@ -295,6 +295,57 @@ scope = "city"
 	t.Fatalf("imported agent tools.worker not found: %+v", explicitAgents(cfg.Agents))
 }
 
+func TestImport_CityImportRigScopedConventionAgentsExpandPerRig(t *testing.T) {
+	dir := t.TempDir()
+	cityDir := filepath.Join(dir, "city")
+	importDir := filepath.Join(dir, "superpowers")
+	mustMkdirAll(t, cityDir, 0o755)
+	mustMkdirAll(t, importDir, 0o755)
+
+	writeTestFile(t, cityDir, "city.toml", `
+[workspace]
+name = "test"
+
+[imports.superpowers]
+source = "../superpowers"
+
+[[rigs]]
+name = "fixture"
+path = "/tmp/fixture"
+`)
+	writeTestFile(t, importDir, "pack.toml", `
+[pack]
+name = "superpowers"
+schema = 2
+`)
+	writeTestFile(t, filepath.Join(importDir, "agents", "code-reviewer"), "agent.toml", `
+scope = "rig"
+`)
+	writeTestFile(t, filepath.Join(importDir, "agents", "code-reviewer"), "prompt.template.md", "review code\n")
+
+	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
+	if err != nil {
+		t.Fatalf("LoadWithIncludes: %v", err)
+	}
+
+	for _, a := range explicitAgents(cfg.Agents) {
+		if a.QualifiedName() != "fixture/superpowers.code-reviewer" {
+			continue
+		}
+		if a.BindingName != "superpowers" {
+			t.Errorf("BindingName = %q, want superpowers", a.BindingName)
+		}
+		if a.SourceDir != importDir {
+			t.Errorf("SourceDir = %q, want %q", a.SourceDir, importDir)
+		}
+		if want := filepath.Join(importDir, "agents", "code-reviewer", "prompt.template.md"); a.PromptTemplate != want {
+			t.Errorf("PromptTemplate = %q, want %q", a.PromptTemplate, want)
+		}
+		return
+	}
+	t.Fatalf("imported rig agent fixture/superpowers.code-reviewer not found: %+v", explicitAgents(cfg.Agents))
+}
+
 func TestImport_BindingNameStamped(t *testing.T) {
 	dir := t.TempDir()
 	cityDir := filepath.Join(dir, "city")
