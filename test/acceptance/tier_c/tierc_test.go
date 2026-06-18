@@ -205,7 +205,7 @@ func TestSwarm_SlingWorkCoderCommits(t *testing.T) {
 	time.Sleep(15 * time.Second)
 
 	// Sling work to the coder pool.
-	out, err := c.GC("sling", swarmRigAgent(rigName, "coder"), "Create a file called hello.txt with the text 'hello world'")
+	out, err := c.GC("sling", swarmRigAgent(rigName, "coder"), "Create a file named hello.txt in the current working directory (use a relative path, not an absolute path) with the text 'hello world'")
 	if err != nil {
 		t.Fatalf("gc sling: %v\n%s", err, out)
 	}
@@ -262,7 +262,7 @@ func TestGastown_PolecatImplementsRefineryMerges(t *testing.T) {
 	}, 2*time.Minute, 2*time.Second, "rig bead store did not become ready")
 
 	// Sling attached formula work while the pool is suspended.
-	out, err := c.GC("sling", gastownRigAgent(rigName, "polecat"), "Create a file called feature.txt containing 'new feature'", "--on", "mol-polecat-work")
+	out, err := c.GC("sling", gastownRigAgent(rigName, "polecat"), "Create a file named feature.txt in the current working directory (use a relative path, not an absolute path) containing 'new feature'", "--on", "mol-polecat-work")
 	if err != nil {
 		t.Fatalf("gc sling: %v\n%s", err, out)
 	}
