@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default, so `gc init` omits the `[daemon] formula_v2` line instead of writing
   the default value. An explicit `formula_v2 = false` (or the deprecated
   `graph_workflows = false` alias) is still honored and preserved on round-trip.
+- **`gc session logs --tail N` no longer renders blank.** Every transcript
+  entry that occupies a tail window now prints at least one line — a non-error
+  `tool_result` shows `tool_result: ok`, and any otherwise non-rendering entry
+  (empty text, thinking, or an unrecognized block) shows `(no displayable
+  content)` — so a tail landing on such entries can no longer produce empty
+  output.
 - **The built-in Claude provider no longer declares a fresh-start
   `session_id_flag`.** Claude remains resume-capable, but Gas City now records
   the provider-created session key after startup instead of passing a
