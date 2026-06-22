@@ -2706,18 +2706,16 @@ func sessionHasOpenAssignedWorkForReachableStore(
 	session beads.Bead,
 ) (bool, error) {
 	identifiers := sessionAssignmentIdentifiersForConfig(session, cfg)
-	storeRef, ok := assignedWorkStoreRefForSession(cityPath, cfg, session)
-	if !ok {
-		return sessionHasOpenAssignedWorkInStores(store, rigStores, identifiers)
+	stores, err := reachableStoresForSession(cityPath, cfg, store, rigStores, session)
+	if err != nil {
+		return false, err
 	}
-	if storeRef == "" {
-		return sessionHasOpenAssignedWorkInStoreByIdentifiers(store, identifiers)
+	for _, s := range stores {
+		if has, err := sessionHasOpenAssignedWorkInStoreByIdentifiers(s, identifiers); err != nil || has {
+			return has, err
+		}
 	}
-	rigStore, ok := rigStores[storeRef]
-	if !ok || rigStore == nil {
-		return false, fmt.Errorf("rig store %q unavailable for session %q", storeRef, session.Metadata["session_name"])
-	}
-	return sessionHasOpenAssignedWorkInStoreByIdentifiers(rigStore, identifiers)
+	return false, nil
 }
 
 // sessionHasAwakeAssignedWorkForReachableStore reports whether assigned work
@@ -2731,39 +2729,45 @@ func sessionHasAwakeAssignedWorkForReachableStore(
 	session beads.Bead,
 ) (bool, error) {
 	identifiers := sessionAssignmentIdentifiersForConfig(session, cfg)
-	storeRef, ok := assignedWorkStoreRefForSession(cityPath, cfg, session)
-	if !ok {
-		return sessionHasAwakeAssignedWorkInStores(store, rigStores, identifiers)
+	stores, err := reachableStoresForSession(cityPath, cfg, store, rigStores, session)
+	if err != nil {
+		return false, err
 	}
+	for _, s := range stores {
+		if has, err := sessionHasAwakeAssignedWorkInStoreByIdentifiers(s, identifiers); err != nil || has {
+			return has, err
+		}
+	}
+	return false, nil
+}
+
+// reachableStoresForSession returns the store(s) in which the session's assigned
+// work can live, applying the same cross-store model as openSessionReachableStoreRef.
+// A cross-store-eligible (city-scoped) session federates across the primary store
+// and every rig store (vp-kvp); a session whose template/agent can't be resolved
+// falls back to the same fan-out (legacy keep-on-match fail-safe); a rig-bound
+// session routes to its one rig store; every other session routes to the primary
+// store. The slice is ordered primary-first so "first match" callers keep their
+// historical ordering. Returns an error only when a resolved rig store is missing.
+func reachableStoresForSession(cityPath string, cfg *config.City, store beads.Store, rigStores map[string]beads.Store, session beads.Bead) ([]beads.Store, error) {
+	agentCfg := sessionAgentConfig(cfg, session)
+	if agentCfg == nil || agentIsCrossStoreEligible(agentCfg) {
+		stores := make([]beads.Store, 0, 1+len(rigStores))
+		stores = append(stores, store)
+		for _, rs := range rigStores {
+			stores = append(stores, rs)
+		}
+		return stores, nil
+	}
+	storeRef := assignedWorkStoreRefForAgent(cityPath, cfg, agentCfg)
 	if storeRef == "" {
-		return sessionHasAwakeAssignedWorkInStoreByIdentifiers(store, identifiers)
+		return []beads.Store{store}, nil
 	}
 	rigStore, ok := rigStores[storeRef]
 	if !ok || rigStore == nil {
-		return false, fmt.Errorf("rig store %q unavailable for session %q", storeRef, session.Metadata["session_name"])
+		return nil, fmt.Errorf("rig store %q unavailable for session %q", storeRef, session.Metadata["session_name"])
 	}
-	return sessionHasAwakeAssignedWorkInStoreByIdentifiers(rigStore, identifiers)
-}
-
-func assignedWorkStoreRefForSession(cityPath string, cfg *config.City, session beads.Bead) (string, bool) {
-	if cfg == nil {
-		return "", false
-	}
-	template := normalizedSessionTemplate(session, cfg)
-	if template == "" {
-		template = strings.TrimSpace(session.Metadata["template"])
-	}
-	if template == "" {
-		template = strings.TrimSpace(session.Metadata["common_name"])
-	}
-	if template == "" {
-		return "", false
-	}
-	agentCfg := findAgentByTemplate(cfg, template)
-	if agentCfg == nil {
-		return "", false
-	}
-	return assignedWorkStoreRefForAgent(cityPath, cfg, agentCfg), true
+	return []beads.Store{rigStore}, nil
 }
 
 // firstOpenAssignedWorkBeadForReachableStore returns the first open or
@@ -2787,26 +2791,16 @@ func firstOpenAssignedWorkBeadForReachableStore(
 	session beads.Bead,
 ) (beads.Bead, bool, error) {
 	identifiers := sessionAssignmentIdentifiersForConfig(session, cfg)
-	storeRef, ok := assignedWorkStoreRefForSession(cityPath, cfg, session)
-	if !ok {
-		if bead, found, err := firstOpenAssignedWorkBeadInStoreByIdentifiers(store, identifiers); err != nil || found {
+	stores, err := reachableStoresForSession(cityPath, cfg, store, rigStores, session)
+	if err != nil {
+		return beads.Bead{}, false, err
+	}
+	for _, s := range stores {
+		if bead, found, err := firstOpenAssignedWorkBeadInStoreByIdentifiers(s, identifiers); err != nil || found {
 			return bead, found, err
 		}
-		for _, rs := range rigStores {
-			if bead, found, err := firstOpenAssignedWorkBeadInStoreByIdentifiers(rs, identifiers); err != nil || found {
-				return bead, found, err
-			}
-		}
-		return beads.Bead{}, false, nil
 	}
-	if storeRef == "" {
-		return firstOpenAssignedWorkBeadInStoreByIdentifiers(store, identifiers)
-	}
-	rigStore, ok := rigStores[storeRef]
-	if !ok || rigStore == nil {
-		return beads.Bead{}, false, fmt.Errorf("rig store %q unavailable for session %q", storeRef, session.Metadata["session_name"])
-	}
-	return firstOpenAssignedWorkBeadInStoreByIdentifiers(rigStore, identifiers)
+	return beads.Bead{}, false, nil
 }
 
 func firstOpenAssignedWorkBeadInStoreByIdentifiers(store beads.Store, identifiers []string) (beads.Bead, bool, error) {
@@ -3008,32 +3002,13 @@ func collectSessionAssignedWork(cityPath string, cfg *config.City, store beads.S
 		}
 		return nil
 	}
-	// Route to the same store the gate routed to.
-	storeRef, ok := assignedWorkStoreRefForSession(cityPath, cfg, session)
-	switch {
-	case !ok:
-		// No agent template resolvable: gate fans out across the
-		// primary store + all rig stores. Mirror that.
-		if err := collect(store); err != nil {
-			return out, err
-		}
-		for _, rs := range rigStores {
-			if err := collect(rs); err != nil {
-				return out, err
-			}
-		}
-	case storeRef == "":
-		// Agent template resolvable but no rig store binding: gate
-		// queries only the primary store.
-		if err := collect(store); err != nil {
-			return out, err
-		}
-	default:
-		rigStore, found := rigStores[storeRef]
-		if !found || rigStore == nil {
-			return out, fmt.Errorf("rig store %q unavailable for session %q", storeRef, session.Metadata["session_name"])
-		}
-		if err := collect(rigStore); err != nil {
+	// Route to the same store(s) the gate routed to.
+	stores, err := reachableStoresForSession(cityPath, cfg, store, rigStores, session)
+	if err != nil {
+		return out, err
+	}
+	for _, s := range stores {
+		if err := collect(s); err != nil {
 			return out, err
 		}
 	}
@@ -3062,18 +3037,6 @@ func sessionHasAssignedWorkInStoresForStatuses(store beads.Store, rigStores map[
 	}
 	for _, rs := range rigStores {
 		if has, err := sessionHasAssignedWorkInStoreByIdentifiersForStatuses(rs, identifiers, statuses); err != nil || has {
-			return has, err
-		}
-	}
-	return false, nil
-}
-
-func sessionHasAwakeAssignedWorkInStores(store beads.Store, rigStores map[string]beads.Store, identifiers []string) (bool, error) {
-	if has, err := sessionHasAwakeAssignedWorkInStoreByIdentifiers(store, identifiers); err != nil || has {
-		return has, err
-	}
-	for _, rs := range rigStores {
-		if has, err := sessionHasAwakeAssignedWorkInStoreByIdentifiers(rs, identifiers); err != nil || has {
 			return has, err
 		}
 	}
@@ -4032,9 +3995,12 @@ func relaunchAgentForLaunchDrift(
 	fmt.Fprintf(stdout, "Launch-only config change for '%s', relaunched agent in warm box\n", tp.DisplayName()) //nolint:errcheck
 	// Rebaseline the Core baseline (started_config_hash) and the partition
 	// sub-hashes so the next tick sees no Core drift. started_live_hash is
-	// DELIBERATELY left untouched: a relaunch does not re-run SessionLive, so any
-	// concurrent live drift must still be re-applied by the live-drift clause on
-	// the next tick (the relaunch does not silently swallow it).
+	// DELIBERATELY left untouched: a relaunch MAY re-run SessionLive via the
+	// shared orchestration tail (tmux and ssh do; k8s does not), so the live
+	// half is not reliably re-applied here. Leaving the live hash alone keeps
+	// this provider-independent — any concurrent live drift is re-applied
+	// idempotently by the live-drift clause on the next tick (a redundant
+	// SessionLive re-apply is harmless; a missed one self-heals).
 	if err := rebaselineLaunchDriftHashes(session, store, agentCfg); err != nil {
 		// The agent is already relaunched; do not trigger a second restart. The
 		// stale Core baseline self-corrects on a later rebaseline tick.
@@ -4056,8 +4022,10 @@ func relaunchAgentForLaunchDrift(
 // after a successful warm-box relaunch — started_config_hash + the provision/
 // launch sub-hashes + core_hash_breakdown — WITHOUT touching started_live_hash/
 // live_hash. The relaunch re-applied the launch half (the agent now runs
-// agentCfg); the provision half was unchanged by definition. The live half is
-// left alone so a concurrent SessionLive change is still re-applied by the
+// agentCfg); the provision half was unchanged by definition. The live hash is
+// left untouched because relaunch does not reliably re-apply the live half
+// (tmux/ssh re-run SessionLive via the shared orchestration tail; k8s does
+// not), so a concurrent SessionLive change is re-applied idempotently by the
 // live-drift clause on the next tick. Contrast sessionHashRebaselineMetadata,
 // which rebaselines every field (used when the config did not actually change).
 func rebaselineLaunchDriftHashes(session *beads.Bead, store beads.Store, agentCfg runtime.Config) error {

@@ -2880,6 +2880,9 @@ func mergeAgentDefaultsAliasPreferCanonical(dst *AgentDefaults, src AgentDefault
 	if !meta.IsDefined("agent_defaults", "model") {
 		dst.Model = src.Model
 	}
+	if !meta.IsDefined("agent_defaults", "upstream") {
+		dst.Upstream = src.Upstream
+	}
 	if !meta.IsDefined("agent_defaults", "wake_mode") {
 		dst.WakeMode = src.WakeMode
 	}
@@ -4364,6 +4367,12 @@ func mergeAgentDefaults(dst *AgentDefaults, src AgentDefaults, label string, pro
 			prov.Warnings = append(prov.Warnings, fmt.Sprintf("agent_defaults.model redefined by %q", label))
 		}
 		dst.Model = src.Model
+	}
+	if src.Upstream != "" {
+		if prov != nil && dst.Upstream != "" && dst.Upstream != src.Upstream {
+			prov.Warnings = append(prov.Warnings, fmt.Sprintf("agent_defaults.upstream redefined by %q", label))
+		}
+		dst.Upstream = src.Upstream
 	}
 	if src.WakeMode != "" {
 		if prov != nil && dst.WakeMode != "" && dst.WakeMode != src.WakeMode {

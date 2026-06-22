@@ -420,6 +420,9 @@ func mergeAgentDefaultsAliasForMigration(dst *config.AgentDefaults, src config.A
 	if !meta.IsDefined("agent_defaults", "model") {
 		dst.Model = src.Model
 	}
+	if !meta.IsDefined("agent_defaults", "upstream") {
+		dst.Upstream = src.Upstream
+	}
 	if !meta.IsDefined("agent_defaults", "wake_mode") {
 		dst.WakeMode = src.WakeMode
 	}
@@ -450,6 +453,9 @@ func mergeMigratedAgentDefaults(dst *config.AgentDefaults, src config.AgentDefau
 	if dst.Model == "" {
 		dst.Model = src.Model
 	}
+	if dst.Upstream == "" {
+		dst.Upstream = src.Upstream
+	}
 	if dst.WakeMode == "" {
 		dst.WakeMode = src.WakeMode
 	}
@@ -466,6 +472,7 @@ func mergeMigratedAgentDefaults(dst *config.AgentDefaults, src config.AgentDefau
 func isZeroAgentDefaults(defaults config.AgentDefaults) bool {
 	return defaults.Provider == "" &&
 		defaults.Model == "" &&
+		defaults.Upstream == "" &&
 		defaults.WakeMode == "" &&
 		defaults.DefaultSlingFormula == "" &&
 		len(defaults.AllowOverlay) == 0 &&
@@ -948,6 +955,7 @@ func isZeroAgentConfig(cfg agentFile) bool {
 		cfg.Nudge == "" &&
 		cfg.Session == "" &&
 		cfg.Provider == "" &&
+		cfg.Upstream == "" &&
 		cfg.StartCommand == "" &&
 		cfg.Lifecycle == "" &&
 		len(cfg.Args) == 0 &&

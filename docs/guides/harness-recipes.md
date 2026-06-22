@@ -279,7 +279,8 @@ above.
 
 - **Other agent knobs** (prompt, model permission modes, transport, runtime,
   pools, lifecycle): [Configuring an Agent](/guides/configuring-an-agent).
-- **Ship a harness + upstream as a reusable preset:**
+- **Ship a harness as a reusable preset** — a provider and its `upstream_env`
+  binding (named `[upstreams]` endpoint presets stay city-level):
   [Understanding Packs](/guides/understanding-packs) ·
   [Shareable Packs](/guides/shareable-packs).
 - **Exact fields and types:** [Config Reference](/reference/config).

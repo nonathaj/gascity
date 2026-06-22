@@ -433,6 +433,14 @@ func resolveCommandContext(args []string) (resolvedContext, error) {
 	if len(args) == 0 {
 		return resolveContext()
 	}
+	// A name-shaped positional may be a registered city name or a local rig
+	// directory. Route it through the shared name resolver, which consults the
+	// registry and the rig-path resolver before failing and never feeds a bare
+	// name to resolveContextFromPath's upward city walk (which would silently
+	// target an ambient ancestor city).
+	if classifyCityRef(args[0]) == cityRefName {
+		return resolveCityNameContext(args[0], resolveContextFromPath)
+	}
 	return resolveContextFromPath(args[0])
 }
 
@@ -464,7 +472,7 @@ func resolveContext() (resolvedContext, error) {
 
 	// Step 1: --city + --rig
 	if city != "" && rig != "" {
-		cp, err := validateCityPath(city)
+		cp, err := resolveCityFlagValue(city)
 		if err != nil {
 			return resolvedContext{}, err
 		}
@@ -473,7 +481,7 @@ func resolveContext() (resolvedContext, error) {
 
 	// Step 2: --city only
 	if city != "" {
-		cp, err := validateCityPath(city)
+		cp, err := resolveCityFlagValue(city)
 		if err != nil {
 			return resolvedContext{}, err
 		}
@@ -657,7 +665,7 @@ func resolveRigToContext(nameOrPath string) (resolvedContext, error) {
 
 func resolveLocalCityForRigFallback() (string, error) {
 	if cityFlag != "" {
-		return validateCityPath(cityFlag)
+		return resolveCityFlagValue(cityFlag)
 	}
 	if gcCity, ok := resolveExplicitCityPathEnv(); ok {
 		return gcCity, nil

@@ -271,10 +271,16 @@ func (p *Provider) requiresPostStartLiveness(cfg runtime.Config) bool {
 	return cfg.Lifecycle != runtime.LifecycleOneShot && runtime.HasManagedStartupHints(cfg)
 }
 
-// Stop kills the tmux session; idempotent (kill-session on a missing session
-// exits non-zero, which is swallowed).
+// Stop kills the tmux session. It is idempotent — kill-session on a MISSING
+// session exits non-zero with no transport error (err==nil, code!=0), which is
+// swallowed — but a transport failure (context error, or ssh exit 255: host
+// unreachable, auth, host-key change) is returned. Swallowing the transport
+// error would let the seam adapter drop tracking while the remote tmux session
+// and the agent inside it keep running untracked, leaking the remote box.
 func (p *Provider) Stop(name string) error {
-	_, _, _ = p.tmux(context.Background(), name, "kill-session", "-t", name)
+	if _, _, err := p.tmux(context.Background(), name, "kill-session", "-t", name); err != nil {
+		return fmt.Errorf("ssh stop %q: %w", name, err)
+	}
 	return nil
 }
 

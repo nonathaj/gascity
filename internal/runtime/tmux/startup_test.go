@@ -1850,7 +1850,7 @@ func TestDoRelaunchSession_RespawnsThenOrchestrates(t *testing.T) {
 		ProcessNames:      []string{"claude", "node"},
 	}
 
-	if err := doRelaunchSession(context.Background(), ops, "gc-city-mayor", cfg, DefaultConfig().SetupTimeout); err != nil {
+	if err := doRelaunchSession(context.Background(), ops, "gc-city-agent-a", cfg, DefaultConfig().SetupTimeout); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -1866,8 +1866,8 @@ func TestDoRelaunchSession_RespawnsThenOrchestrates(t *testing.T) {
 	})
 
 	respawn := callsByMethod(t, ops, "respawnAgent", 1)[0]
-	if respawn.name != "gc-city-mayor" {
-		t.Errorf("respawnAgent name = %q, want %q", respawn.name, "gc-city-mayor")
+	if respawn.name != "gc-city-agent-a" {
+		t.Errorf("respawnAgent name = %q, want %q", respawn.name, "gc-city-agent-a")
 	}
 	if respawn.workDir != "/proj" {
 		t.Errorf("respawnAgent workDir = %q, want %q", respawn.workDir, "/proj")
