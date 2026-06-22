@@ -272,8 +272,11 @@ $ gc doctor                          # validates your city / agent config
 - **Spec / reference:** the authoritative field list and types —
   [Config Reference](/reference/config). Wire contract for exec runtimes —
   [Exec Session Provider](/reference/exec-session-provider).
-- **Packs:** ship harness presets and upstreams as reusable, shareable bundles —
+- **Packs:** ship harness presets — a provider and its `upstream_env`
+  serving-env binding — as reusable, shareable bundles —
   [Understanding Packs](/guides/understanding-packs),
-  [Shareable Packs](/guides/shareable-packs).
+  [Shareable Packs](/guides/shareable-packs). (Named `[upstreams.<name>]`
+  endpoint presets stay city-level: declare them in `city.toml` or a city
+  fragment, not in a pack.)
 - **Tutorial:** the guided walkthrough that introduces agents —
   [Tutorial 02 — Agents](/tutorials/02-agents).

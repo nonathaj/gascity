@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -11,8 +12,9 @@ import (
 // non-Running pod + its PVC, a t3 event-watcher goroutine, a tmux corpse).
 
 type fakeSeamRuntime struct {
-	openOK    bool     // does Open report the box as running?
-	teardowns []string // names passed to Teardown, in order
+	openOK      bool     // does Open report the box as running?
+	teardowns   []string // names passed to Teardown, in order
+	teardownErr error    // when non-nil, Teardown fails with this
 }
 
 func (r *fakeSeamRuntime) Provision(context.Context, string, ProvisionRequest) (Place, error) {
@@ -28,7 +30,7 @@ func (r *fakeSeamRuntime) Open(_ context.Context, _ string) (Place, bool, error)
 
 func (r *fakeSeamRuntime) Teardown(_ context.Context, name string) error {
 	r.teardowns = append(r.teardowns, name)
-	return nil
+	return r.teardownErr
 }
 
 func (r *fakeSeamRuntime) List(context.Context, string) ([]string, error) { return nil, nil }
@@ -44,11 +46,18 @@ func (*fakeSeamPlace) IsRunning(context.Context) (bool, error)  { return true, n
 func (*fakeSeamPlace) Teardown(context.Context) error           { return nil }
 
 type fakeSeamTransport struct {
-	openOK bool // does Open report a live attachment?
-	closed int  // count of Attachment.Close calls
+	openOK          bool  // does Open report a live attachment?
+	closed          int   // count of Attachment.Close calls
+	separableLaunch bool  // does Capabilities report a separable launch?
+	launchErr       error // when non-nil, Launch fails with this (B3b launch-failure path)
+	launches        int   // count of Launch calls
 }
 
 func (t *fakeSeamTransport) Launch(context.Context, Place, LaunchSpec) (Attachment, error) {
+	t.launches++
+	if t.launchErr != nil {
+		return nil, t.launchErr
+	}
 	return &fakeSeamAttachment{t: t}, nil
 }
 
@@ -61,7 +70,9 @@ func (t *fakeSeamTransport) Open(_ context.Context, _ Place, _ string) (Attachme
 
 func (t *fakeSeamTransport) Attach(context.Context, Place, string) error { return nil }
 func (t *fakeSeamTransport) Name() string                                { return "fake" }
-func (t *fakeSeamTransport) Capabilities() TransportCapabilities         { return TransportCapabilities{} }
+func (t *fakeSeamTransport) Capabilities() TransportCapabilities {
+	return TransportCapabilities{SeparableLaunch: t.separableLaunch}
+}
 
 type fakeSeamAttachment struct{ t *fakeSeamTransport }
 
@@ -107,5 +118,75 @@ func TestSeamProviderStopClosesAttachmentThenTearsDown(t *testing.T) {
 	}
 	if len(rt.teardowns) != 1 || rt.teardowns[0] != "live-box" {
 		t.Fatalf("teardown (where-half) must run for a running box; got %v", rt.teardowns)
+	}
+}
+
+// TestSeamProviderStartTearsDownBoxWhenLaunchFails pins the separable-launch
+// failure path (B3b: an exec pack whose proc.provision creates the box WITHOUT
+// the agent, so Start must Provision THEN Launch). If Launch fails after a
+// successful Provision, the freshly-provisioned box must be torn down
+// best-effort instead of leaking — the asymmetric opposite of the unconditional
+// Stop teardown (SEAM-1/2/3 — no leaked boxes).
+func TestSeamProviderStartTearsDownBoxWhenLaunchFails(t *testing.T) {
+	rt := &fakeSeamRuntime{}
+	tp := &fakeSeamTransport{separableLaunch: true, launchErr: errors.New("launch boom")}
+	p := NewProviderFromSeams(rt, tp)
+
+	err := p.Start(context.Background(), "leaky-box", Config{})
+	if err == nil {
+		t.Fatal("Start must surface the launch error")
+	}
+	if tp.launches != 1 {
+		t.Fatalf("Launch should be attempted once on the separable path; launches=%d", tp.launches)
+	}
+	if len(rt.teardowns) != 1 || rt.teardowns[0] != "leaky-box" {
+		t.Fatalf("a failed separable launch must tear down the provisioned box; got %v", rt.teardowns)
+	}
+}
+
+// TestSeamProviderStartSurfacesTeardownErrorWhenLaunchAndTeardownFail pins the
+// double-failure path: when separable Launch fails AND the best-effort Teardown
+// of the freshly-provisioned box ALSO fails, Start must surface BOTH errors. A
+// discarded teardown failure means the provisioned box may still be running
+// untracked, so hiding it behind the launch error alone silently leaks the box
+// (SEAM-1/2/3 — no leaked boxes).
+func TestSeamProviderStartSurfacesTeardownErrorWhenLaunchAndTeardownFail(t *testing.T) {
+	launchErr := errors.New("launch boom")
+	teardownErr := errors.New("teardown boom")
+	rt := &fakeSeamRuntime{teardownErr: teardownErr}
+	tp := &fakeSeamTransport{separableLaunch: true, launchErr: launchErr}
+	p := NewProviderFromSeams(rt, tp)
+
+	err := p.Start(context.Background(), "leaky-box", Config{})
+	if err == nil {
+		t.Fatal("Start must surface an error when launch and teardown both fail")
+	}
+	if !errors.Is(err, launchErr) {
+		t.Fatalf("returned error must preserve the launch failure; got %v", err)
+	}
+	if !errors.Is(err, teardownErr) {
+		t.Fatalf("returned error must preserve the teardown failure; got %v", err)
+	}
+	if len(rt.teardowns) != 1 || rt.teardowns[0] != "leaky-box" {
+		t.Fatalf("a failed separable launch must still attempt teardown; got %v", rt.teardowns)
+	}
+}
+
+// TestSeamProviderStartSucceedsWithoutTeardown pins the success path so the
+// leak fix does not over-correct: a separable launch that succeeds must leave
+// the box up (no teardown).
+func TestSeamProviderStartSucceedsWithoutTeardown(t *testing.T) {
+	rt := &fakeSeamRuntime{}
+	tp := &fakeSeamTransport{separableLaunch: true}
+	p := NewProviderFromSeams(rt, tp)
+
+	if err := p.Start(context.Background(), "good-box", Config{}); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if tp.launches != 1 {
+		t.Fatalf("separable launch should run once; launches=%d", tp.launches)
+	}
+	if len(rt.teardowns) != 0 {
+		t.Fatalf("a successful start must not tear down the box; got %v", rt.teardowns)
 	}
 }

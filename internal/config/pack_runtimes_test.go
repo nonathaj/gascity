@@ -222,6 +222,47 @@ includes = ["../shared"]
 	}
 }
 
+func TestMergeCityRuntimes_SamePackNameDifferentDirConflicts(t *testing.T) {
+	// Two DIFFERENT pack directories sharing a pack.name declare the same runtime
+	// name with the same bare (PATH-resolved) command. They are distinct packs and
+	// MUST conflict — a shared name+command must not collapse two declaring
+	// directories into one runtime row.
+	cfg := &City{}
+	a := DiscoveredRuntime{Name: "same", Command: "gc-runtime", Protocol: 0, PackName: "shared", PackDir: filepath.Join(t.TempDir(), "alpha")}
+	b := DiscoveredRuntime{Name: "same", Command: "gc-runtime", Protocol: 0, PackName: "shared", PackDir: filepath.Join(t.TempDir(), "beta")}
+
+	if err := mergeCityRuntimes(cfg, []DiscoveredRuntime{a}); err != nil {
+		t.Fatalf("first declaration must register: %v", err)
+	}
+	err := mergeCityRuntimes(cfg, []DiscoveredRuntime{b})
+	if err == nil {
+		t.Fatal("same pack.name+command from a different pack directory must conflict, not dedupe")
+	}
+	if !strings.Contains(err.Error(), "same") {
+		t.Errorf("error %q should name the runtime", err)
+	}
+}
+
+func TestMergeCityRuntimes_SameDirReDeclarationDedupes(t *testing.T) {
+	// The diamond-import case: the SAME resolved pack directory is reached twice.
+	// Identical re-declarations dedupe (the absolute-path comparison tolerates a
+	// relative vs. absolute spelling of the same directory).
+	cfg := &City{}
+	dir := t.TempDir()
+	abs := DiscoveredRuntime{Name: "common", Command: "gc-runtime", Protocol: 0, PackName: "shared", PackDir: dir}
+	rel := DiscoveredRuntime{Name: "common", Command: "gc-runtime", Protocol: 0, PackName: "shared", PackDir: filepath.Join(dir, ".")}
+
+	if err := mergeCityRuntimes(cfg, []DiscoveredRuntime{abs}); err != nil {
+		t.Fatalf("first declaration must register: %v", err)
+	}
+	if err := mergeCityRuntimes(cfg, []DiscoveredRuntime{rel}); err != nil {
+		t.Fatalf("identical re-declaration from the same dir must dedupe, got: %v", err)
+	}
+	if _, ok := cfg.Runtimes["common"]; !ok {
+		t.Fatalf("runtime should register once; got %v", cfg.Runtimes)
+	}
+}
+
 func TestExpandCityPacks_PackRuntimeValidation(t *testing.T) {
 	cases := []struct {
 		name    string

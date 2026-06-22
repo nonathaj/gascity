@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -64,9 +65,22 @@ func (s *seamProvider) Start(ctx context.Context, name string, cfg Config) error
 		return err
 	}
 	if s.tp.Capabilities().SeparableLaunch {
-		_, err = s.tp.Launch(ctx, place, LaunchSpec{Config: cfg})
+		if _, err := s.tp.Launch(ctx, place, LaunchSpec{Config: cfg}); err != nil {
+			// Provision created the box WITHOUT the agent (B3b); a failed Launch
+			// would otherwise orphan it — the asymmetric opposite of the
+			// unconditional Stop teardown. Tear it down best-effort before
+			// surfacing the launch error so a separable-launch failure leaks no
+			// box (SEAM-1/2/3 — no leaked boxes). If teardown ALSO fails the box
+			// may still be running untracked, so surface BOTH errors instead of
+			// hiding the cleanup failure behind the launch error.
+			launchErr := fmt.Errorf("seam start %q: launch after provision: %w", name, err)
+			if teardownErr := s.rt.Teardown(ctx, name); teardownErr != nil {
+				return errors.Join(launchErr, fmt.Errorf("seam start %q: teardown after failed launch: %w", name, teardownErr))
+			}
+			return launchErr
+		}
 	}
-	return err
+	return nil
 }
 
 // attach re-resolves the live attachment for name, or (nil,false) when the box is

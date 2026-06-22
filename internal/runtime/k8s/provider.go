@@ -14,6 +14,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -406,17 +407,33 @@ func k8sRequiresPostStartLiveness(cfg runtime.Config) bool {
 	return runtime.HasManagedStartupHints(cfg)
 }
 
-// Stop deletes the pod for the named session. Idempotent.
+// Stop deletes the pod(s) for the named session. Missing/not-found is
+// idempotent (no error: the session is genuinely gone), but a transport
+// failure surfaces. A list failure is "unknown state", NOT "session gone" —
+// swallowing it would let the seam adapter (Runtime.Teardown → Stop) drop
+// tracking while pods and their PVCs keep running untracked, leaking the most
+// expensive runtime. Delete errors are joined for the same reason; only a
+// genuine Kubernetes NotFound (the pod raced to gone) is treated as idempotent.
+// This mirrors the ssh provider's Stop discrimination.
 func (p *Provider) Stop(name string) error {
 	ctx := context.Background()
 	label := SanitizeLabel(name)
 
 	pods, err := p.ops.listPods(ctx, "gc-session="+label, "")
 	if err != nil {
-		return nil // best-effort
+		if apierrors.IsNotFound(err) {
+			return nil // session genuinely gone
+		}
+		return fmt.Errorf("k8s stop %q: listing pods: %w", name, err)
 	}
+	var errs []error
 	for i := range pods {
-		_ = p.ops.deletePod(ctx, pods[i].Name, 5)
+		if delErr := p.ops.deletePod(ctx, pods[i].Name, 5); delErr != nil && !apierrors.IsNotFound(delErr) {
+			errs = append(errs, fmt.Errorf("deleting pod %q: %w", pods[i].Name, delErr))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("k8s stop %q: %w", name, errors.Join(errs...))
 	}
 	return nil
 }

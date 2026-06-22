@@ -91,11 +91,18 @@ func resolveRuntimeCommand(command, packDir string) string {
 func mergeCityRuntimes(cfg *City, runtimes []DiscoveredRuntime) error {
 	for _, rt := range runtimes {
 		if existing, ok := cfg.Runtimes[rt.Name]; ok {
-			if existing.PackName == rt.PackName && existing.Command == rt.Command && existing.Protocol == rt.Protocol {
+			// Dedupe ONLY when the same resolved pack directory re-declares the
+			// same runtime — the diamond-import DAG case where one pack is reached
+			// twice. Two DIFFERENT declaring directories are a genuine conflict
+			// even when pack.name, command, and protocol coincide (e.g. two packs
+			// both named "shared" with a bare PATH command): a runtime row must
+			// never silently collapse two distinct packs, or doctor and
+			// `gc runtime check` would misattribute its provenance.
+			if sameRuntimeDeclaration(existing, rt) {
 				continue
 			}
-			return fmt.Errorf("runtime %q: pack %q (%s) conflicts with declaration from pack %q (%s)",
-				rt.Name, rt.PackName, rt.Command, existing.PackName, existing.Command)
+			return fmt.Errorf("runtime %q: pack %q (%s in %s) conflicts with declaration from pack %q (%s in %s)",
+				rt.Name, rt.PackName, rt.Command, rt.PackDir, existing.PackName, existing.Command, existing.PackDir)
 		}
 		if cfg.Runtimes == nil {
 			cfg.Runtimes = make(map[string]DiscoveredRuntime)
@@ -103,6 +110,25 @@ func mergeCityRuntimes(cfg *City, runtimes []DiscoveredRuntime) error {
 		cfg.Runtimes[rt.Name] = rt
 	}
 	return nil
+}
+
+// sameRuntimeDeclaration reports whether two discovered runtimes are the same
+// declaration reached more than once (a diamond import) rather than a conflict
+// between distinct packs. Identity is the resolved pack DIRECTORY plus the
+// resolved command and protocol; PackDir is compared by absolute path so a
+// relative/absolute spelling of the same directory still dedupes.
+func sameRuntimeDeclaration(a, b DiscoveredRuntime) bool {
+	return samePackDir(a.PackDir, b.PackDir) &&
+		a.Command == b.Command &&
+		a.Protocol == b.Protocol
+}
+
+// samePackDir reports whether two pack directories resolve to the same absolute
+// path, matching the normalization used by filterRuntimesByPackDir.
+func samePackDir(a, b string) bool {
+	absA, _ := filepath.Abs(a)
+	absB, _ := filepath.Abs(b)
+	return absA == absB
 }
 
 // filterRuntimesByPackDir keeps only runtimes declared directly by the

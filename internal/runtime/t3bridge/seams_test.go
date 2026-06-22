@@ -10,7 +10,7 @@ import (
 )
 
 // t3SeamProvider wires a Provider (via its seams) to a mock T3 bridge whose
-// snapshot binds session "mayor" to a ready thread (with a runtime provider/model
+// snapshot binds session "agent-a" to a ready thread (with a runtime provider/model
 // so Nudge can dispatch a turn). It returns the bridge server too, so driving
 // tests can inspect the dispatched commands. (Provision→Start's full
 // thread-creation flow is exercised in provider_test.go; the seam delegation is
@@ -24,8 +24,8 @@ func t3SeamProvider(t *testing.T) (runtime.Runtime, runtime.Transport, *t3Bridge
 				"id":        "thread-1",
 				"projectId": "project-1",
 				"customMetadata": map[string]interface{}{
-					"gc.agent":           "mayor",
-					"gc.sessionName":     "mayor",
+					"gc.agent":           "agent-a",
+					"gc.sessionName":     "agent-a",
 					"gc.runtimeProvider": "codex",
 					"gc.startupModel":    "gpt-5.4",
 				},
@@ -51,7 +51,7 @@ func TestSeamsT3ExecUnsupported(t *testing.T) {
 	rt, _, _ := t3SeamProvider(t)
 	ctx := context.Background()
 
-	place, ok, err := rt.Open(ctx, "mayor")
+	place, ok, err := rt.Open(ctx, "agent-a")
 	if err != nil || !ok {
 		t.Fatalf("Open(live) = %v, %v; want true, nil", ok, err)
 	}
@@ -65,7 +65,7 @@ func TestSeamsT3OpenLiveAndAbsent(t *testing.T) {
 	rt, _, _ := t3SeamProvider(t)
 	ctx := context.Background()
 
-	if _, ok, err := rt.Open(ctx, "mayor"); err != nil || !ok {
+	if _, ok, err := rt.Open(ctx, "agent-a"); err != nil || !ok {
 		t.Fatalf("Open(live) = %v, %v; want true, nil", ok, err)
 	}
 	if pl, ok, err := rt.Open(ctx, "ghost"); pl != nil || ok || err != nil {
@@ -96,7 +96,7 @@ func TestSeamsT3Observe(t *testing.T) {
 	rt, tp, _ := t3SeamProvider(t)
 	ctx := context.Background()
 
-	place, ok, err := rt.Open(ctx, "mayor")
+	place, ok, err := rt.Open(ctx, "agent-a")
 	if err != nil || !ok {
 		t.Fatalf("Open: %v, %v", ok, err)
 	}
@@ -134,7 +134,7 @@ func TestSeamsT3Driving(t *testing.T) {
 	rt, tp, server := t3SeamProvider(t)
 	ctx := context.Background()
 
-	place, ok, err := rt.Open(ctx, "mayor")
+	place, ok, err := rt.Open(ctx, "agent-a")
 	if err != nil || !ok {
 		t.Fatalf("Open: %v, %v", ok, err)
 	}
@@ -168,16 +168,16 @@ func TestSeamsT3MetaStore(t *testing.T) {
 	if !ok {
 		t.Fatal("t3bridge Runtime should implement runtime.MetaStore")
 	}
-	if err := ms.SetMeta("mayor", "k", "v"); err != nil {
+	if err := ms.SetMeta("agent-a", "k", "v"); err != nil {
 		t.Fatalf("SetMeta: %v", err)
 	}
-	if got, err := ms.GetMeta("mayor", "k"); err != nil || got != "v" {
+	if got, err := ms.GetMeta("agent-a", "k"); err != nil || got != "v" {
 		t.Fatalf("GetMeta = %q, %v; want v, nil", got, err)
 	}
-	if err := ms.RemoveMeta("mayor", "k"); err != nil {
+	if err := ms.RemoveMeta("agent-a", "k"); err != nil {
 		t.Fatalf("RemoveMeta: %v", err)
 	}
-	if got, _ := ms.GetMeta("mayor", "k"); got != "" {
+	if got, _ := ms.GetMeta("agent-a", "k"); got != "" {
 		t.Fatalf("GetMeta after remove = %q; want empty", got)
 	}
 }
@@ -188,7 +188,7 @@ func TestSeamsT3StageAndTeardown(t *testing.T) {
 	rt, _, _ := t3SeamProvider(t)
 	ctx := context.Background()
 
-	place, ok, err := rt.Open(ctx, "mayor")
+	place, ok, err := rt.Open(ctx, "agent-a")
 	if err != nil || !ok {
 		t.Fatalf("Open: %v, %v", ok, err)
 	}

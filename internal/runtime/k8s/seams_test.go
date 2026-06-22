@@ -2,9 +2,12 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	execerr "k8s.io/client-go/util/exec"
 
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -231,4 +234,62 @@ func TestSeamsK8sStopDeletesNonRunningPod(t *testing.T) {
 	if !deleted {
 		t.Fatal("seam Stop should call deletePod for the non-running pod")
 	}
+}
+
+// TestSeamsK8sStopSurfacesTransportFailure is the M3 carrier guard for the
+// un-weld lifecycle (Runtime.Teardown → Stop): a transport failure during
+// teardown must surface as an error so the seam adapter keeps tracking the
+// session, instead of reporting SUCCESS while the pod + its PVC keep running
+// untracked (the same rationale ssh.Stop already uses). A genuine Kubernetes
+// NotFound stays idempotent (nil) — the session is really gone.
+func TestSeamsK8sStopSurfacesTransportFailure(t *testing.T) {
+	podGR := schema.GroupResource{Group: "", Resource: "pods"}
+
+	t.Run("listPods transport failure surfaces (unknown state, not gone)", func(t *testing.T) {
+		fake := newFakeK8sOps()
+		p := newProviderWithOps(fake)
+		fake.listErr = errors.New("etcdserver: request timed out")
+
+		seam := runtime.NewProviderFromSeams(p.Seams())
+		err := seam.Stop("s")
+		if err == nil {
+			t.Fatal("seam Stop must surface a pod-list transport failure (unknown state), not swallow it")
+		}
+		if !errors.Is(err, fake.listErr) {
+			t.Fatalf("seam Stop error = %v; want it to wrap the list transport error", err)
+		}
+	})
+
+	t.Run("deletePod transport failure surfaces and is joined", func(t *testing.T) {
+		fake := newFakeK8sOps()
+		p := newProviderWithOps(fake)
+		addFailedPod(fake, "s", "s") // exists by label, so Stop reaches deletePod
+		fake.deleteErr = errors.New("connection refused")
+
+		seam := runtime.NewProviderFromSeams(p.Seams())
+		err := seam.Stop("s")
+		if err == nil {
+			t.Fatal("seam Stop must surface a pod-delete transport failure, not discard it")
+		}
+		if !errors.Is(err, fake.deleteErr) {
+			t.Fatalf("seam Stop error = %v; want it to join the delete transport error", err)
+		}
+		// The pod is still present because the delete failed — proving the
+		// surfaced error matches reality (the pod was NOT torn down).
+		if _, exists := fake.pods["s"]; !exists {
+			t.Fatal("precondition: a failed deletePod must leave the pod present")
+		}
+	})
+
+	t.Run("NotFound on delete stays idempotent (nil)", func(t *testing.T) {
+		fake := newFakeK8sOps()
+		p := newProviderWithOps(fake)
+		addFailedPod(fake, "s", "s") // listed by label, then delete races a gone pod
+		fake.deleteErr = apierrors.NewNotFound(podGR, "s")
+
+		seam := runtime.NewProviderFromSeams(p.Seams())
+		if err := seam.Stop("s"); err != nil {
+			t.Fatalf("seam Stop on a genuine NotFound = %v; want nil (idempotent: session gone)", err)
+		}
+	})
 }

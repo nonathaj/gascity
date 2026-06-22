@@ -131,6 +131,22 @@ func TestProvider_StopIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestProvider_StopReturnsTransportError(t *testing.T) {
+	// A transport failure (ctx error or ssh exit 255) surfaces as err!=nil from
+	// the runner. Stop must NOT swallow it: reporting success would let the seam
+	// adapter drop tracking while the remote session keeps running untracked.
+	want := errors.New("ssh box: connection failed (ssh exit 255)")
+	f := &fakeRunner{code: -1, err: want}
+	p := providerWith(f)
+	err := p.Stop("s")
+	if err == nil {
+		t.Fatal("Stop must return the transport error, not swallow it")
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("Stop err = %v, want wrapped %v", err, want)
+	}
+}
+
 func TestProvider_IsRunning(t *testing.T) {
 	running := &fakeRunner{code: 0}
 	if !providerWith(running).IsRunning("s") {
