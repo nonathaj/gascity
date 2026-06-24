@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
@@ -19,6 +20,10 @@ type SessionRequest struct {
 	Tier          string
 	SessionBeadID string // concrete session to preserve for resume or in-flight new demand
 	WorkBeadID    string // the work bead driving this request
+	WorkBeadTitle string // title of the work bead driving this request, when known
+	WorkPack      string // pack route key from the work bead, when known
+	WorkWorkspace string // explicit pack workspace route key from the work bead, when known
+	WorkStoreRef  string // city or rig:<name> store reference for WorkBeadID when known
 	// FloorGuarantee marks a "new" request created to satisfy an agent's
 	// min_active_sessions floor (as opposed to elastic scale-check demand).
 	// The per-tick create-budget allocator reserves a token for each
@@ -73,7 +78,7 @@ func ComputePoolDesiredStates(
 	sessionBeads []beads.Bead,
 	scaleCheckCounts map[string]int,
 ) []PoolDesiredState {
-	return computePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads, scaleCheckCounts, nil)
+	return computePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads, scaleCheckCounts, nil, nil)
 }
 
 func ComputePoolDesiredStatesTraced(
@@ -83,7 +88,18 @@ func ComputePoolDesiredStatesTraced(
 	scaleCheckCounts map[string]int,
 	trace *sessionReconcilerTraceCycle,
 ) []PoolDesiredState {
-	return computePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads, scaleCheckCounts, trace)
+	return computePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads, scaleCheckCounts, nil, trace)
+}
+
+func ComputePoolDesiredStatesWithDemandTraced(
+	cfg *config.City,
+	assignedWorkBeads []beads.Bead,
+	sessionBeads []beads.Bead,
+	scaleCheckCounts map[string]int,
+	scaleCheckDemand map[string]scaleCheckDemand,
+	trace *sessionReconcilerTraceCycle,
+) []PoolDesiredState {
+	return computePoolDesiredStates(cfg, assignedWorkBeads, sessionBeads, scaleCheckCounts, scaleCheckDemand, trace)
 }
 
 func computePoolDesiredStates(
@@ -91,6 +107,7 @@ func computePoolDesiredStates(
 	assignedWorkBeads []beads.Bead,
 	sessionBeads []beads.Bead,
 	scaleCheckCounts map[string]int,
+	scaleCheckDemand map[string]scaleCheckDemand,
 	trace *sessionReconcilerTraceCycle,
 ) []PoolDesiredState {
 	// Build reverse lookup: any identifier → session bead ID.
@@ -175,6 +192,8 @@ func computePoolDesiredStates(
 					Tier:          "resume",
 					SessionBeadID: sessionBeadID,
 					WorkBeadID:    wb.ID,
+					WorkPack:      strings.TrimSpace(wb.Metadata[beadmeta.PackMetadataKey]),
+					WorkWorkspace: strings.TrimSpace(wb.Metadata[beadmeta.PackWorkspaceMetadataKey]),
 				})
 				continue
 			}
@@ -192,10 +211,12 @@ func computePoolDesiredStates(
 			}
 			wakeRequestedTemplates[template] = struct{}{}
 			resumeRequests = append(resumeRequests, SessionRequest{
-				Template:     template,
-				BeadPriority: beadPriority(wb),
-				Tier:         "wake-known-identity",
-				WorkBeadID:   wb.ID,
+				Template:      template,
+				BeadPriority:  beadPriority(wb),
+				Tier:          "wake-known-identity",
+				WorkBeadID:    wb.ID,
+				WorkPack:      strings.TrimSpace(wb.Metadata[beadmeta.PackMetadataKey]),
+				WorkWorkspace: strings.TrimSpace(wb.Metadata[beadmeta.PackWorkspaceMetadataKey]),
 			})
 			if trace != nil {
 				trace.recordDecision(string(TraceSitePoolWakeKnownIdentity), template, "", "assigned_work", "scheduled", traceRecordPayload{
@@ -251,9 +272,34 @@ func computePoolDesiredStates(
 				usage.accept(req, limits)
 			}
 			for j := inFlightCount; j < newCount; j++ {
+				workBeadID := ""
+				workBeadTitle := ""
+				workPack := ""
+				workWorkspace := ""
+				workStoreRef := ""
+				if demand := scaleCheckDemand[template]; len(demand.WorkBeadIDs) > j {
+					workBeadID = strings.TrimSpace(demand.WorkBeadIDs[j])
+					if demand.Titles != nil {
+						workBeadTitle = strings.TrimSpace(demand.Titles[workBeadID])
+					}
+					if demand.Packs != nil {
+						workPack = strings.TrimSpace(demand.Packs[workBeadID])
+					}
+					if demand.Workspaces != nil {
+						workWorkspace = strings.TrimSpace(demand.Workspaces[workBeadID])
+					}
+					if demand.StoreRefs != nil {
+						workStoreRef = strings.TrimSpace(demand.StoreRefs[workBeadID])
+					}
+				}
 				req := SessionRequest{
-					Template: template,
-					Tier:     "new",
+					Template:      template,
+					Tier:          "new",
+					WorkBeadID:    workBeadID,
+					WorkBeadTitle: workBeadTitle,
+					WorkPack:      workPack,
+					WorkWorkspace: workWorkspace,
+					WorkStoreRef:  workStoreRef,
 				}
 				allRequests = append(allRequests, req)
 				usage.accept(req, limits)
@@ -299,6 +345,8 @@ func poolInFlightNewRequests(cfg *config.City, sessionBeads []beads.Bead, resume
 				Template:      template,
 				Tier:          "new",
 				SessionBeadID: sb.ID,
+				WorkBeadID:    strings.TrimSpace(sb.Metadata[beadmeta.TriggerBeadIDMetadataKey]),
+				WorkStoreRef:  strings.TrimSpace(sb.Metadata[beadmeta.TriggerBeadStoreRefMetadataKey]),
 			})
 		}
 	}
