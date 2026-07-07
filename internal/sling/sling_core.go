@@ -383,7 +383,7 @@ func attachFormulaToBead(opts SlingOpts, deps SlingDeps, querier BeadQuerier, be
 			wfResult.FormulaName = formulaName
 			return wfResult, wfErr
 		}
-		if err := deps.Store.SetMetadata(beadID, "molecule_id", wispRootID); err != nil {
+		if err := deps.Store.SetMetadata(beadID, beadmeta.MoleculeIDMetadataKey, wispRootID); err != nil {
 			result.MetadataErrors = append(result.MetadataErrors,
 				fmt.Sprintf("setting molecule_id on %s: %v", beadID, err))
 		}
@@ -461,7 +461,7 @@ func finalize(opts SlingOpts, deps SlingDeps, beadID, method string, result Slin
 
 	// Merge strategy metadata.
 	if opts.Merge != "" && deps.Store != nil {
-		if err := deps.Store.SetMetadata(beadID, "merge_strategy", opts.Merge); err != nil {
+		if err := deps.Store.SetMetadata(beadID, beadmeta.MergeStrategyMetadataKey, opts.Merge); err != nil {
 			result.MetadataErrors = append(result.MetadataErrors,
 				fmt.Sprintf("setting merge strategy: %v", err))
 		}
@@ -1004,7 +1004,7 @@ func attachBatchFormula(ctx context.Context, opts SlingOpts, deps SlingDeps, chi
 			WispRootID:  mResult.RootID,
 			FormulaName: formulaName,
 		}
-		if err := deps.Store.SetMetadata(child.ID, "molecule_id", mResult.RootID); err != nil {
+		if err := deps.Store.SetMetadata(child.ID, beadmeta.MoleculeIDMetadataKey, mResult.RootID); err != nil {
 			result.MetadataErrors = append(result.MetadataErrors,
 				fmt.Sprintf("setting molecule_id on %s: %v", child.ID, err))
 		}
