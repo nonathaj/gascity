@@ -330,10 +330,48 @@ func wrapError(err error, stderr string, args []string) error {
 		return ErrSessionNotFound
 	}
 
+	// psmux (the tmux-compatible Windows multiplexer) exits 1 with no
+	// diagnostic where tmux prints "can't find session". Classify a silent
+	// exit status 1 from target-lookup subcommands as session-not-found so
+	// probes and existence checks behave identically on both multiplexers.
+	if stderr == "" && exitCodeIs(err, 1) {
+		switch tmuxSubcommand(args) {
+		case "has-session", "kill-session", "capture-pane", "display-message":
+			return ErrSessionNotFound
+		}
+	}
+
 	if stderr != "" {
 		return fmt.Errorf("tmux %s: %s", args[0], stderr)
 	}
 	return fmt.Errorf("tmux %s: %w", args[0], err)
+}
+
+// exitCodeIs reports whether err carries the given subprocess exit code.
+func exitCodeIs(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
+// tmuxSubcommand returns the first non-flag argument — the tmux subcommand —
+// skipping global flags and the values of those that take one (-L/-S/-f/-T).
+func tmuxSubcommand(args []string) string {
+	skipValue := false
+	for _, arg := range args {
+		if skipValue {
+			skipValue = false
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			switch arg {
+			case "-L", "-S", "-f", "-T":
+				skipValue = true
+			}
+			continue
+		}
+		return arg
+	}
+	return ""
 }
 
 // probeServerAlive verifies the tmux server bound to SocketName is responsive

@@ -169,7 +169,9 @@ func NewFileRecorder(path string, stderr io.Writer, opts ...FileRecorderOption) 
 		return nil, err
 	}
 
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	// O_RDWR (not O_WRONLY): Windows LockFileEx requires read or write access
+	// on the handle, and Go maps O_WRONLY|O_APPEND to FILE_APPEND_DATA only.
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("opening event log: %w", err)
 	}
@@ -357,7 +359,7 @@ func (r *FileRecorder) rotateLocked() (RotationResult, error) {
 		// fails, mark the recorder closed so subsequent Record calls
 		// drop cleanly instead of dereferencing a nil file under
 		// maybeAutoRotateLocked.
-		if newF, openErr := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); openErr == nil {
+		if newF, openErr := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644); openErr == nil {
 			r.file = newF
 		} else {
 			r.closed = true
@@ -365,7 +367,7 @@ func (r *FileRecorder) rotateLocked() (RotationResult, error) {
 		return RotationResult{}, fmt.Errorf("renaming active log: %w", err)
 	}
 
-	newFile, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	newFile, err := os.OpenFile(r.path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return RotationResult{}, fmt.Errorf("opening new active log: %w", err)
 	}

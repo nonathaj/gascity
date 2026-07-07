@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1424,7 +1425,13 @@ func ensureFreshSession(ops startOps, name string, cfg runtime.Config) error {
 }
 
 func longPromptCommand(command, promptFlag, promptFile string) string {
-	quotedPromptFile := shellquote.Quote(promptFile)
+	promptPath := promptFile
+	if goruntime.GOOS == "windows" {
+		// Git-for-Windows sh handles C:/-style paths more reliably than
+		// backslashed ones once shell quoting is involved.
+		promptPath = filepath.ToSlash(promptFile)
+	}
+	quotedPromptFile := shellquote.Quote(promptPath)
 	var script string
 	if promptFlag != "" {
 		script = fmt.Sprintf(`__gc_prompt="$(cat %s && printf .)"; __gc_status=$?; rm -f %s; [ "$__gc_status" -eq 0 ] || exit "$__gc_status"; __gc_prompt="${__gc_prompt%%.}"; exec %s %s "$__gc_prompt"`,
@@ -1432,6 +1439,18 @@ func longPromptCommand(command, promptFlag, promptFile string) string {
 	} else {
 		script = fmt.Sprintf(`__gc_prompt="$(cat %s && printf .)"; __gc_status=$?; rm -f %s; [ "$__gc_status" -eq 0 ] || exit "$__gc_status"; __gc_prompt="${__gc_prompt%%.}"; exec %s "$__gc_prompt"`,
 			quotedPromptFile, quotedPromptFile, command)
+	}
+	if goruntime.GOOS == "windows" {
+		// psmux's command parser does not survive the nested '\'' quoting the
+		// inline form needs. Write the wrapper next to the prompt file and
+		// hand the multiplexer a launch command with a single quoted path
+		// instead. The script cannot rm itself on Windows (sh holds it open),
+		// so launcher scripts are left in .gc/tmp alongside prompt-file
+		// turnover; they are a few hundred bytes each.
+		launchFile := promptFile + ".launch.sh"
+		if err := os.WriteFile(launchFile, []byte(script+"\n"), 0o700); err == nil {
+			return "sh " + shellquote.Quote(filepath.ToSlash(launchFile))
+		}
 	}
 	return "sh -c " + shellquote.Quote(script)
 }

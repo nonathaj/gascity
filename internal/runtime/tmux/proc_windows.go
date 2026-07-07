@@ -90,3 +90,36 @@ func procKillPID(pid string, force bool) {
 	kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	_ = kill.Run()
 }
+
+// procSnapshotAll enumerates the full process table (PID, PPID, executable
+// name) via a toolhelp snapshot — the Windows equivalent of the `ps` sweep
+// the state cache performs. Args mirrors Command; reading another process's
+// argv would require PEB access and the state cache's name matching only
+// needs the executable identity.
+func procSnapshotAll() ([]processRuntimeState, error) {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer windows.CloseHandle(snapshot) //nolint:errcheck // best-effort handle close
+
+	var out []processRuntimeState
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, err
+	}
+	for {
+		name := strings.TrimSuffix(windows.UTF16ToString(entry.ExeFile[:]), ".exe")
+		out = append(out, processRuntimeState{
+			PID:     strconv.FormatUint(uint64(entry.ProcessID), 10),
+			PPID:    strconv.FormatUint(uint64(entry.ParentProcessID), 10),
+			Command: name,
+			Args:    name,
+		})
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
+	}
+	return out, nil
+}

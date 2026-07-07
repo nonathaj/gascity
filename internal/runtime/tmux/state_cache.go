@@ -417,6 +417,13 @@ func fetchProcessSnapshot(ctx context.Context) (processSnapshot, error) {
 	if goruntime.GOOS == "darwin" {
 		return fetchDarwinProcessSnapshot(ctx)
 	}
+	if goruntime.GOOS == "windows" {
+		processes, err := procSnapshotAll()
+		if err != nil {
+			return processSnapshot{}, fmt.Errorf("fetching process snapshot: %w", err)
+		}
+		return newProcessSnapshot(processes), nil
+	}
 	out, err := exec.CommandContext(ctx, "ps", processSnapshotPSArgs()...).Output()
 	if err != nil {
 		return processSnapshot{}, fmt.Errorf("fetching process snapshot: %w", err)
