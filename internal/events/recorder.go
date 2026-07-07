@@ -3,13 +3,11 @@ package events
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -213,14 +211,13 @@ func (r *FileRecorder) Record(e Event) {
 	// in-process callers, so this loop never spins for an in-process peer.
 	// The bounded wait drops the recorder if a dead writer is holding the
 	// lock instead of blocking forever and piling up processes.
-	fd := int(r.file.Fd())
 	deadline := time.Now().Add(recordFlockTimeout)
 	for {
-		err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
+		err := tryLockRecorderFile(r.file)
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		if !recorderLockWouldBlock(err) {
 			fmt.Fprintf(r.stderr, "events: lock: %v\n", err) //nolint:errcheck // best-effort stderr
 			return
 		}
@@ -231,7 +228,7 @@ func (r *FileRecorder) Record(e Event) {
 		time.Sleep(recordFlockRetryInterval)
 	}
 	defer func() {
-		if err := syscall.Flock(fd, syscall.LOCK_UN); err != nil {
+		if err := unlockRecorderFile(r.file); err != nil {
 			fmt.Fprintf(r.stderr, "events: unlock: %v\n", err) //nolint:errcheck // best-effort stderr
 		}
 	}()

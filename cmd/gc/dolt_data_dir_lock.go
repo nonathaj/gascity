@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"io"
 	"os"
 	"path/filepath"
@@ -85,14 +86,14 @@ func managedDoltDataDirLockHolder(dataDir string) string {
 			}
 			continue
 		}
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err = fslock.TryLockEx(f)
 		if err == nil {
-			_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+			_ = fslock.Unlock(f)
 			_ = f.Close()
 			continue
 		}
 		_ = f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+		if fslock.WouldBlock(err) {
 			return path
 		}
 		fmt.Fprintf(os.Stderr, "warning: cannot probe dolt store lock %s: %v; treating as free (gastownhall/gascity#3174)\n", path, err)

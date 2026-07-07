@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"io"
 	"net"
 	"net/http"
@@ -110,7 +111,7 @@ func acquireControllerLock(cityPath string) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening controller lock: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := fslock.TryLockEx(f); err != nil {
 		f.Close() //nolint:errcheck // closing after flock failure
 		return nil, errControllerAlreadyRunning
 	}

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
+	"github.com/gastownhall/gascity/internal/processgroup"
 	"io"
 	"os"
 	"os/exec"
@@ -13,7 +15,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -1604,7 +1605,7 @@ func ensureNudgePoller(cityPath, agentName, sessionName string) error {
 		cmd.Env = os.Environ()
 		cmd.Stdout = io.Discard
 		cmd.Stderr = io.Discard
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		processgroup.StartCommandInNewGroup(cmd)
 		if err := cmd.Start(); err != nil {
 			return err
 		}
@@ -2552,9 +2553,9 @@ func withNudgePollerPIDLock(pidPath string, fn func() error) error {
 		return fmt.Errorf("opening nudge poller lock: %w", err)
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		return fmt.Errorf("locking nudge poller: %w", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 	return fn()
 }

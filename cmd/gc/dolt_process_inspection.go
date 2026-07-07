@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/processgroup"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -330,12 +331,12 @@ func lsofOutput(args ...string) ([]byte, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "lsof", args...)
 	cmd.WaitDelay = 100 * time.Millisecond
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return err
 		}
 		return nil
@@ -581,12 +582,12 @@ func processArgsFromPS(pid int, timeout time.Duration) (string, error) {
 
 	cmd := exec.CommandContext(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "args=")
 	cmd.WaitDelay = 100 * time.Millisecond
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return err
 		}
 		return nil

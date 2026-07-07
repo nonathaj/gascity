@@ -5,13 +5,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -301,10 +301,10 @@ func withCitySessionIdentifierLock(cityPath, identifier string, fn func() error)
 		return fmt.Errorf("opening session identifier lock: %w", err)
 	}
 	defer f.Close() //nolint:errcheck // best-effort cleanup
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(f); err != nil {
 		return fmt.Errorf("locking session identifier %q: %w", identifier, err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck // best-effort unlock
+	defer fslock.Unlock(f) //nolint:errcheck // best-effort unlock
 	return fn()
 }
 

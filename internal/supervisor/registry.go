@@ -7,12 +7,12 @@ package supervisor
 import (
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/pathutil"
@@ -350,13 +350,13 @@ func (r *Registry) fileLock() (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening registry lock: %w", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(f); err != nil {
 		f.Close() //nolint:errcheck
 		return nil, fmt.Errorf("acquiring registry lock: %w", err)
 	}
 	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
-		f.Close()                                   //nolint:errcheck
+		fslock.Unlock(f) //nolint:errcheck
+		f.Close()        //nolint:errcheck
 	}, nil
 }
 

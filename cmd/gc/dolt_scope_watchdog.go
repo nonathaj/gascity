@@ -29,6 +29,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/processgroup"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -137,7 +138,7 @@ func startManagedDoltSQLServerWithScopeWatchdog(cityPath, configFile, logFilePat
 	cmd := exec.Command(watchdogExecutable, managedDoltScopeWatchdogArg, configFile, logFilePath, cityPath)
 	cmd.Stderr = logFile
 	cmd.Stdin = nil
-	cmd.SysProcAttr = managedDoltSQLServerSysProcAttr()
+	configureManagedDoltSQLServerProcess(cmd)
 	cmd.Env = doltServerEnv(cityPath, os.Environ())
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -210,7 +211,7 @@ func runManagedDoltScopeWatchdog(args []string, stdout, stderr *os.File) int {
 	// cmd_dolt_config.go), so descendant helpers are rare by construction,
 	// and a SIGTERM'd dolt winds down its own children; only the SIGKILL
 	// escalation of an unresponsive server could strand descendants.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	cmd.Env = doltServerEnv(cityPath, os.Environ())
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(stderr, "start dolt sql-server: %v\n", err) //nolint:errcheck

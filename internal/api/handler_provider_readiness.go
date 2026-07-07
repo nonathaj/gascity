@@ -612,17 +612,30 @@ func findProbeBinary(name, homeDir string) (string, bool) {
 		if dir == "" {
 			continue
 		}
-		candidate := filepath.Join(dir, name)
-		info, err := os.Stat(candidate)
-		if err != nil || info.IsDir() {
-			continue
+		for _, candidateName := range probeBinaryCandidates(name) {
+			candidate := filepath.Join(dir, candidateName)
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			if info.Mode()&0o111 == 0 {
+				continue
+			}
+			return candidate, true
 		}
-		if info.Mode()&0o111 == 0 {
-			continue
-		}
-		return candidate, true
 	}
 	return "", false
+}
+
+// probeBinaryCandidates lists the file names a probe binary may have on the
+// current platform. Windows executables carry an extension (claude.exe,
+// gh.cmd, …), so the bare name is tried first and PATHEXT-style suffixes
+// after it.
+func probeBinaryCandidates(name string) []string {
+	if providerProbeGOOS != "windows" {
+		return []string{name}
+	}
+	return []string{name, name + ".exe", name + ".cmd", name + ".bat"}
 }
 
 func providerProbeSearchDirs(homeDir, goos, basePath string) []string {

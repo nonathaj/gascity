@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"io/fs"
 	"net"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -2800,12 +2800,12 @@ func IsControllerRunning(cityPath string) bool {
 	}
 	defer f.Close() //nolint:errcheck // probe only
 
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	err = fslock.TryLockEx(f)
 	if err != nil {
-		// EWOULDBLOCK means the lock is held — controller is running.
+		// A would-block error means the lock is held — controller is running.
 		return true
 	}
 	// We got the lock, release immediately — no controller running.
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck // best-effort unlock
+	fslock.Unlock(f) //nolint:errcheck // best-effort unlock
 	return false
 }

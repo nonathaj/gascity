@@ -15,12 +15,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beadmeta"
@@ -254,7 +254,7 @@ func WithLock(ctx context.Context, cityPath, scopeRef, sourceBeadID string, fn f
 	if err := lockFile(ctx, f, sourceBeadID); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck // best-effort unlock
+	defer fslock.Unlock(f) //nolint:errcheck // best-effort unlock
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -309,11 +309,11 @@ func (l *localLock) Unlock() {
 
 func lockFile(ctx context.Context, f *os.File, sourceBeadID string) error {
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err := fslock.TryLockEx(f)
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		if !fslock.WouldBlock(err) {
 			return fmt.Errorf("lock source workflow %q: %w", sourceBeadID, err)
 		}
 		timer := time.NewTimer(fileLockRetryInterval)
