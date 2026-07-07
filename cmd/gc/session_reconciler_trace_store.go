@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
@@ -483,11 +482,10 @@ func (s *SessionReconcilerTraceStore) quarantine(path string, cause error) error
 }
 
 func (s *SessionReconcilerTraceStore) isLowSpace() (bool, error) {
-	var st syscall.Statfs_t
-	if err := syscall.Statfs(s.rootDir, &st); err != nil {
+	free, err := platformFreeDiskBytes(s.rootDir)
+	if err != nil {
 		return false, err
 	}
-	free := st.Bavail * uint64(st.Bsize)
 	if s.lowSpace {
 		return free < sessionReconcilerTraceLowSpaceExitFree, nil
 	}

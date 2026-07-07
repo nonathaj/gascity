@@ -99,7 +99,7 @@ func stopManagedDoltProcessWithOptions(cityPath, port string, clearPublishedStat
 	report.HadPID = true
 	report.PID = targetPID
 	if managedStopPIDAlive(targetPID) {
-		if err := syscall.Kill(targetPID, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+		if err := platformKill(targetPID, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 			return report, fmt.Errorf("signal %d with SIGTERM: %w", targetPID, err)
 		}
 	}
@@ -124,7 +124,7 @@ func stopManagedDoltProcessWithOptions(cityPath, port string, clearPublishedStat
 		// (cmdline/data-dir/cwd), which a reused unrelated PID fails.
 		if managedDoltProcessControllable(targetPID, layout) {
 			report.Forced = true
-			if err := syscall.Kill(targetPID, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			if err := platformKill(targetPID, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 				return report, fmt.Errorf("signal %d with SIGKILL: %w", targetPID, err)
 			}
 			time.Sleep(time.Second)

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"time"
@@ -607,7 +608,8 @@ func checkHardDependencies(cityPath string) []missingDep {
 		{
 			name:        "flock",
 			installHint: "brew install flock (macOS) or apt install util-linux (Linux)",
-			condition:   func() bool { return needsBd },
+			// Windows uses in-process LockFileEx (internal/fslock); no binary needed.
+			condition: func() bool { return needsBd && goruntime.GOOS != "windows" },
 		},
 		{
 			name:        "timeout/gtimeout/python3",
@@ -620,10 +622,14 @@ func checkHardDependencies(cityPath string) []missingDep {
 		{
 			name:        "pgrep",
 			installHint: "brew install proctools (macOS) or apt install procps (Linux)",
+			// Windows uses native toolhelp snapshots (internal/runtime/tmux proc seam).
+			condition: func() bool { return goruntime.GOOS != "windows" },
 		},
 		{
 			name:        "lsof",
 			installHint: "brew install lsof (macOS) or apt install lsof (Linux)",
+			// Windows callers LookPath-guard lsof and degrade gracefully.
+			condition: func() bool { return goruntime.GOOS != "windows" },
 		},
 	}
 

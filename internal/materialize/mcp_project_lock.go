@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // withTargetLock serializes writers that target the same provider-native MCP
@@ -35,11 +35,11 @@ func withTargetLock(lockRoot, provider, target string, fn func() error) error {
 		return fmt.Errorf("opening lock %s: %w", lockPath, err)
 	}
 	defer f.Close() //nolint:errcheck // lock released on close
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(f); err != nil {
 		return fmt.Errorf("locking %s: %w", lockPath, err)
 	}
 	defer func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = fslock.Unlock(f)
 	}()
 	return fn()
 }

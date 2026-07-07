@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
@@ -99,10 +99,10 @@ func WithState(cityPath string, fn func(*State) error) error {
 	}
 	defer lockFile.Close() //nolint:errcheck
 
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		return fmt.Errorf("locking nudge queue: %w", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 
 	state, err := LoadState(cityPath)
 	if err != nil {

@@ -2,9 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
@@ -73,10 +73,10 @@ func (s *SessionReconcilerTraceArmStore) withLock(fn func() error) error {
 		return err
 	}
 	defer f.Close() //nolint:errcheck
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(f); err != nil {
 		return err
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(f) //nolint:errcheck
 	return fn()
 }
 

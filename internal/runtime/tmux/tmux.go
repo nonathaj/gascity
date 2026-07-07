@@ -605,7 +605,7 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 
 		// Send SIGTERM to all descendants (deepest first to avoid orphaning)
 		for _, dpid := range descendants {
-			_ = exec.Command("kill", "-TERM", dpid).Run()
+			_ = func() error { procKillPID(dpid, false); return nil }()
 		}
 
 		// Wait for graceful shutdown (2s gives processes time to clean up)
@@ -613,13 +613,13 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 
 		// Send SIGKILL to any remaining descendants
 		for _, dpid := range descendants {
-			_ = exec.Command("kill", "-KILL", dpid).Run()
+			_ = func() error { procKillPID(dpid, true); return nil }()
 		}
 
 		// Kill the pane process itself (may have called setsid() and detached)
-		_ = exec.Command("kill", "-TERM", pid).Run()
+		_ = func() error { procKillPID(pid, false); return nil }()
 		time.Sleep(processKillGracePeriod)
-		_ = exec.Command("kill", "-KILL", pid).Run()
+		_ = func() error { procKillPID(pid, true); return nil }()
 	}
 
 	// Kill the tmux session
@@ -685,7 +685,7 @@ func (t *Tmux) KillSessionWithProcessesExcluding(name string, excludePIDs []stri
 
 		// Send SIGTERM to all non-excluded processes
 		for _, dpid := range killList {
-			_ = exec.Command("kill", "-TERM", dpid).Run()
+			_ = func() error { procKillPID(dpid, false); return nil }()
 		}
 
 		// Wait for graceful shutdown (2s gives processes time to clean up)
@@ -693,15 +693,15 @@ func (t *Tmux) KillSessionWithProcessesExcluding(name string, excludePIDs []stri
 
 		// Send SIGKILL to any remaining non-excluded processes
 		for _, dpid := range killList {
-			_ = exec.Command("kill", "-KILL", dpid).Run()
+			_ = func() error { procKillPID(dpid, true); return nil }()
 		}
 
 		// Kill the pane process itself (may have called setsid() and detached)
 		// Only if not excluded
 		if killPaneLeader {
-			_ = exec.Command("kill", "-TERM", pid).Run()
+			_ = func() error { procKillPID(pid, false); return nil }()
 			time.Sleep(processKillGracePeriod)
-			_ = exec.Command("kill", "-KILL", pid).Run()
+			_ = func() error { procKillPID(pid, true); return nil }()
 		}
 	}
 
@@ -792,13 +792,8 @@ func reparentedOrphans(members []string, knownPIDs map[string]bool, parentOf fun
 func getAllDescendants(pid string) []string {
 	var result []string
 
-	// Get direct children using pgrep
-	out, err := exec.Command("pgrep", "-P", pid).Output()
-	if err != nil {
-		return result
-	}
-
-	children := strings.Fields(strings.TrimSpace(string(out)))
+	// Get direct children (pgrep -P equivalent).
+	children := procChildPIDs(pid)
 	for _, child := range children {
 		// First add grandchildren (recursively) - deepest first
 		result = append(result, getAllDescendants(child)...)
@@ -855,7 +850,7 @@ func (t *Tmux) KillPaneProcesses(pane string) error {
 
 	// Send SIGTERM to all descendants (deepest first to avoid orphaning)
 	for _, dpid := range descendants {
-		_ = exec.Command("kill", "-TERM", dpid).Run()
+		_ = func() error { procKillPID(dpid, false); return nil }()
 	}
 
 	// Wait for graceful shutdown (2s gives processes time to clean up)
@@ -863,14 +858,14 @@ func (t *Tmux) KillPaneProcesses(pane string) error {
 
 	// Send SIGKILL to any remaining descendants
 	for _, dpid := range descendants {
-		_ = exec.Command("kill", "-KILL", dpid).Run()
+		_ = func() error { procKillPID(dpid, true); return nil }()
 	}
 
 	// Kill the pane process itself (may have called setsid() and detached,
 	// or may have no children like Claude Code)
-	_ = exec.Command("kill", "-TERM", pid).Run()
+	_ = func() error { procKillPID(pid, false); return nil }()
 	time.Sleep(processKillGracePeriod)
-	_ = exec.Command("kill", "-KILL", pid).Run()
+	_ = func() error { procKillPID(pid, true); return nil }()
 
 	return nil
 }
@@ -933,7 +928,7 @@ func (t *Tmux) KillPaneProcessesExcluding(pane string, excludePIDs []string) err
 
 	// Send SIGTERM to all non-excluded descendants (deepest first to avoid orphaning)
 	for _, dpid := range filtered {
-		_ = exec.Command("kill", "-TERM", dpid).Run()
+		_ = func() error { procKillPID(dpid, false); return nil }()
 	}
 
 	// Wait for graceful shutdown (2s gives processes time to clean up)
@@ -941,14 +936,14 @@ func (t *Tmux) KillPaneProcessesExcluding(pane string, excludePIDs []string) err
 
 	// Send SIGKILL to any remaining non-excluded descendants
 	for _, dpid := range filtered {
-		_ = exec.Command("kill", "-KILL", dpid).Run()
+		_ = func() error { procKillPID(dpid, true); return nil }()
 	}
 
 	// Kill the pane process itself only if not excluded
 	if !exclude[pid] {
-		_ = exec.Command("kill", "-TERM", pid).Run()
+		_ = func() error { procKillPID(pid, false); return nil }()
 		time.Sleep(processKillGracePeriod)
-		_ = exec.Command("kill", "-KILL", pid).Run()
+		_ = func() error { procKillPID(pid, true); return nil }()
 	}
 
 	return nil
@@ -2440,23 +2435,20 @@ func processMatchesNames(pid string, names []string) bool {
 		return false
 	}
 
-	// Use ps to get the command name (COMM column gives the executable name)
-	cmd := exec.Command("ps", "-p", pid, "-o", "comm=")
-	out, err := cmd.Output()
+	// Get the command name (ps COMM equivalent — the executable name).
+	commPath, err := procComm(pid)
 	if err != nil {
 		return false
 	}
-	commPath := strings.TrimSpace(string(out))
 
 	// Fall back to argv[0] from the full command line. This catches wrapper
 	// scripts launched as "/path/to/codex" where COMM may report "bash" or
 	// another interpreter instead of the provider name.
-	cmd = exec.Command("ps", "-p", pid, "-o", "args=")
-	out, err = cmd.Output()
+	args, err := procArgs(pid)
 	if err != nil {
 		return false
 	}
-	return processMatchesNameSet(commPath, string(out), nameSet)
+	return processMatchesNameSet(commPath, args, nameSet)
 }
 
 // hasDescendantWithNames checks if a process has any descendant (child, grandchild, etc.)
@@ -2466,18 +2458,8 @@ func hasDescendantWithNames(pid string, names []string, depth int) bool {
 	if len(names) == 0 || depth > maxProcessDescendantDepth {
 		return false
 	}
-	// Use pgrep to find child processes.
-	cmd := exec.Command("pgrep", "-P", pid)
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		childPid := strings.TrimSpace(line)
-		if childPid == "" {
-			continue
-		}
+	// Find child processes (pgrep -P equivalent).
+	for _, childPid := range procChildPIDs(pid) {
 		if processMatchesNames(childPid, names) {
 			return true
 		}

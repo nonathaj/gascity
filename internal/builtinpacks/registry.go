@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -487,7 +488,7 @@ func validatePackFiles(pack Pack, dst string) error {
 		if err != nil {
 			return fmt.Errorf("checking bundled pack cache %q file %s: %w", pack.Name, rel, err)
 		}
-		if !info.Mode().IsRegular() || info.Mode().Perm() != want.perm.Perm() {
+		if !info.Mode().IsRegular() || !packCacheModeMatches(info.Mode(), want.perm) {
 			return fmt.Errorf("bundled pack cache %q file %s has mode %s, expected %s", pack.Name, rel, info.Mode().Perm(), want.perm.Perm())
 		}
 		got, err := os.ReadFile(target)
@@ -642,4 +643,15 @@ func validateSyntheticDestination(dst string) error {
 		return fmt.Errorf("refusing to materialize synthetic repo to unsafe path %q", dst)
 	}
 	return nil
+}
+
+// packCacheModeMatches compares an on-disk mode against the manifest's
+// expected permissions. Windows has no Unix permission bits — os reports a
+// synthetic 0666/0444 — so only the owner-writable bit is meaningful there
+// and executable expectations cannot be verified.
+func packCacheModeMatches(got os.FileMode, want os.FileMode) bool {
+	if runtime.GOOS == "windows" {
+		return got.Perm()&0o200 == want.Perm()&0o200
+	}
+	return got.Perm() == want.Perm()
 }
