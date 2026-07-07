@@ -9,15 +9,24 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The recorder locks byte 0 of the log file; LockFileEx/UnlockFileEx must use
-// matching ranges. Rotation swaps r.file, and each Record locks/unlocks the
-// same *os.File, so the range never leaks across files.
+// Windows byte-range locks are MANDATORY, not advisory: locking byte 0 of the
+// live log would block every concurrent reader (ReadLatestSeq, tailers). To
+// get flock-like advisory semantics the recorder locks one byte at a huge
+// offset far past any real data, so the lock never overlaps actual reads or
+// writes and only ever contends with other recorders taking the same range.
+const (
+	recorderLockOffsetLow  = 0xFFFFFFFE
+	recorderLockOffsetHigh = 0x7FFFFFFF
+)
+
+func recorderLockOverlapped() *windows.Overlapped {
+	return &windows.Overlapped{Offset: recorderLockOffsetLow, OffsetHigh: recorderLockOffsetHigh}
+}
 
 // tryLockRecorderFile attempts a non-blocking exclusive cross-process lock on f.
 func tryLockRecorderFile(f *os.File) error {
-	var overlapped windows.Overlapped
 	return windows.LockFileEx(windows.Handle(f.Fd()),
-		windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &overlapped)
+		windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, recorderLockOverlapped())
 }
 
 // recorderLockWouldBlock reports whether err means another writer holds the lock.
@@ -27,6 +36,5 @@ func recorderLockWouldBlock(err error) bool {
 
 // unlockRecorderFile releases the cross-process lock on f.
 func unlockRecorderFile(f *os.File) error {
-	var overlapped windows.Overlapped
-	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &overlapped)
+	return windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, recorderLockOverlapped())
 }

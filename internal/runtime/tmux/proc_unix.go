@@ -3,6 +3,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 )
@@ -41,4 +42,10 @@ func procKillPID(pid string, force bool) {
 		sig = "-KILL"
 	}
 	_ = exec.Command("kill", sig, pid).Run()
+}
+
+// procSnapshotAll is only used on Windows; the Unix state cache shells `ps`
+// directly (see fetchProcessSnapshot).
+func procSnapshotAll() ([]processRuntimeState, error) {
+	return nil, fmt.Errorf("procSnapshotAll is windows-only; use the ps snapshot path")
 }
