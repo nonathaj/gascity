@@ -597,7 +597,9 @@ func checkHardDependencies(cityPath string) []missingDep {
 			name:        "dolt",
 			installHint: "https://github.com/dolthub/dolt/releases",
 			minVersion:  doltMinVersion,
-			condition:   func() bool { return needsBd },
+			// The doltlite backend uses bd's embedded engine — no dolt
+			// binary or server is involved.
+			condition: func() bool { return needsBd && !cityUsesDoltliteBeadsBackend(cityPath) },
 		},
 		{
 			name:        "bd",

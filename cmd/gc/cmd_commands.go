@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"os"
 	"os/exec"
@@ -156,7 +157,7 @@ func runDiscoveredCommand(entry config.DiscoveredCommand, cityPath, cityName str
 		scriptPath = filepath.Join(entry.SourceDir, scriptPath)
 	}
 
-	cmd := exec.Command(scriptPath, args...)
+	cmd := execshim.Command(scriptPath, args...)
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

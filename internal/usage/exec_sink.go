@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"time"
 )
 
@@ -67,7 +67,7 @@ func (s *ExecSink) Record(ctx context.Context, f Fact) error {
 		ctx, cancel = context.WithTimeout(ctx, s.timeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, s.script)
+	cmd := execshim.CommandContext(ctx, s.script)
 	cmd.WaitDelay = execSinkKillGrace
 	cmd.Stdin = bytes.NewReader(append(line, '\n'))
 	var stderr bytes.Buffer

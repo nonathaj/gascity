@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"os"
 	"os/exec"
 	"sort"
@@ -81,7 +82,7 @@ func (s *Store) run(stdinData []byte, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, s.script, args...)
+	cmd := execshim.CommandContext(ctx, s.script, args...)
 	// WaitDelay ensures Go forcibly closes I/O pipes after the context
 	// expires, even if grandchild processes still hold them open.
 	cmd.WaitDelay = 2 * time.Second

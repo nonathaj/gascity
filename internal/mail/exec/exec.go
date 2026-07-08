@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"os/exec"
 	"strings"
 	"sync"
@@ -230,7 +231,7 @@ func (p *Provider) run(stdinData []byte, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, p.script, args...)
+	cmd := execshim.CommandContext(ctx, p.script, args...)
 	cmd.WaitDelay = 2 * time.Second
 
 	var stdout, stderr bytes.Buffer

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"os/exec"
 	"strings"
@@ -113,7 +114,7 @@ func (p *Provider) LatestSeq() (uint64, error) {
 // complete JSON event.
 func (p *Provider) Watch(ctx context.Context, afterSeq uint64) (events.Watcher, error) {
 	p.ensureRunning()
-	cmd := exec.CommandContext(ctx, p.script, "watch", fmt.Sprintf("%d", afterSeq))
+	cmd := execshim.CommandContext(ctx, p.script, "watch", fmt.Sprintf("%d", afterSeq))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("exec events provider: stdout pipe: %w", err)
@@ -147,7 +148,7 @@ func (p *Provider) run(stdinData []byte, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, p.script, args...)
+	cmd := execshim.CommandContext(ctx, p.script, args...)
 	cmd.WaitDelay = 2 * time.Second
 
 	var stdout, stderr bytes.Buffer

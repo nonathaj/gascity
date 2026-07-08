@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"log"
 	"net"
@@ -1890,7 +1891,7 @@ func runProviderProbe(script, cityPath, provider string) bool {
 	ctx, cancel := providerLifecycleContext(context.Background(), providerProbeTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, script, "probe")
+	cmd := execshim.CommandContext(ctx, script, "probe")
 	cmd.WaitDelay = 2 * time.Second
 	prepareProviderOpCommand(cmd)
 	if cityPath != "" {
@@ -2169,7 +2170,7 @@ func runProviderOpWithEnv(script string, environ []string, args ...string) error
 	ctx, cancel := providerLifecycleContext(context.Background(), providerOpTimeout(op))
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, script, args...)
+	cmd := execshim.CommandContext(ctx, script, args...)
 	cmd.WaitDelay = 2 * time.Second
 	prepareProviderOpCommand(cmd)
 	if len(environ) > 0 {
