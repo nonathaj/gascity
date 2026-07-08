@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"os"
 	"os/exec"
 	"strconv"
@@ -77,7 +78,7 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 	ctx, cancel := context.WithTimeout(parent, dur)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, p.script, args...)
+	cmd := execshim.CommandContext(ctx, p.script, args...)
 	// WaitDelay ensures Go forcibly closes I/O pipes after the context
 	// expires, even if grandchild processes (e.g. sleep in a shell script)
 	// still hold them open.
