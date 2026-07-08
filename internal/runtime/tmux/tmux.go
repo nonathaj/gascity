@@ -2567,12 +2567,18 @@ func (t *Tmux) GetEnvironment(session, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Output format: KEY=value
-	parts := strings.SplitN(out, "=", 2)
-	if len(parts) != 2 {
-		return "", fmt.Errorf("unexpected environment format for %s: %q", key, out)
+	// Output format: KEY=value. Scan for the exact key instead of assuming
+	// the first line is it: psmux ignores the name filter and dumps the whole
+	// session environment (always containing PSMUX_TARGET_SESSION), which made
+	// every GetMeta probe return a value — e.g. GC_RESTART_REQUESTED read as
+	// "set", restart-looping named sessions forever (2026-07-08).
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, key+"="); ok {
+			return v, nil
+		}
 	}
-	return parts[1], nil
+	return "", fmt.Errorf("environment variable %s not set for session %s", key, session)
 }
 
 // GetAllEnvironment returns all environment variables for a session.
