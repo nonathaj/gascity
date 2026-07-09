@@ -1481,8 +1481,24 @@ func longPromptCommand(command, promptFlag, promptFile string) string {
 		// instead. The script cannot rm itself on Windows (sh holds it open),
 		// so launcher scripts are left in .gc/tmp alongside prompt-file
 		// turnover; they are a few hundred bytes each.
+		prelude := ""
+		if strings.Contains(command, "claude") {
+			// Claude Code's workspace-trust dialog is keyed on the exact
+			// project path in ~/.claude.json, so every fresh wisp worktree
+			// re-prompts and blocks the agent until a human presses Enter.
+			// Pre-seed trust for this workspace before exec'ing the CLI.
+			// Best effort: skipped when jq/cygpath are missing; temp+mv so a
+			// concurrent Claude rewrite of the config never sees a torn file.
+			prelude = "if command -v jq >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then\n" +
+				"  __gc_proj=\"$(cygpath -m \"$PWD\")\"\n" +
+				"  __gc_cfg=\"$HOME/.claude.json\"\n" +
+				"  if [ -f \"$__gc_cfg\" ]; then\n" +
+				"    jq --arg p \"$__gc_proj\" '.projects[$p] = ((.projects[$p] // {}) + {hasTrustDialogAccepted: true})' \"$__gc_cfg\" > \"$__gc_cfg.gc-tmp\" && mv \"$__gc_cfg.gc-tmp\" \"$__gc_cfg\"\n" +
+				"  fi\n" +
+				"fi\n"
+		}
 		launchFile := promptFile + ".launch.sh"
-		if err := os.WriteFile(launchFile, []byte(script+"\n"), 0o700); err == nil {
+		if err := os.WriteFile(launchFile, []byte(prelude+script+"\n"), 0o700); err == nil {
 			return "sh " + shellquote.Quote(filepath.ToSlash(launchFile))
 		}
 	}
