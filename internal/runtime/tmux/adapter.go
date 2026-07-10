@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/overlay"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/runtime/proctable"
@@ -899,7 +900,7 @@ func (o *tmuxStartOps) disableMouseAndActivity(name string) error {
 func (o *tmuxStartOps) runSetupCommand(ctx context.Context, cmd string, env map[string]string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	c := exec.CommandContext(ctx, "sh", "-c", cmd)
+	c := exec.CommandContext(ctx, execshim.ShPath(), "-c", cmd)
 	if workDir := strings.TrimSpace(env["GC_DIR"]); workDir != "" {
 		c.Dir = workDir
 	}

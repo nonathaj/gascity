@@ -534,14 +534,7 @@ func doSupervisorStartJSON(stdout, stderr io.Writer, jsonOut bool) int {
 	}
 	defer logFile.Close() //nolint:errcheck // best-effort cleanup
 
-	child := exec.Command(gcPath, "supervisor", "run")
-	child.SysProcAttr = backgroundSysProcAttr()
-	child.Stdin = nil
-	child.Stdout = logFile
-	child.Stderr = logFile
-	child.Env = os.Environ()
-
-	if err := child.Start(); err != nil {
+	if err := startDetached(logFile, gcPath, "supervisor", "run"); err != nil {
 		fmt.Fprintf(stderr, "gc supervisor start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
