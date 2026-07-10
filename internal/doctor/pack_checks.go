@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // PackScriptCheck implements Check by running a script shipped with
@@ -69,7 +70,9 @@ func (c *PackScriptCheck) Fix(ctx *CheckContext) error {
 		return nil
 	}
 
-	cmd := exec.Command(c.FixScript) //nolint:gosec // path from pack config
+	// execshim: pack scripts are .sh files; Windows cannot fork/exec them
+	// directly ("%1 is not a valid Win32 application").
+	cmd := execshim.Command(c.FixScript) //nolint:gosec // path from pack config
 	cmd.Dir = c.PackDir
 	cmd.Env = append(cmd.Environ(), citylayout.PackRuntimeEnv(ctx.CityPath, c.PackName)...)
 	cmd.Env = append(cmd.Env,
@@ -93,7 +96,8 @@ func (c *PackScriptCheck) Fix(ctx *CheckContext) error {
 
 // Run executes the pack script and interprets its output.
 func (c *PackScriptCheck) Run(ctx *CheckContext) *CheckResult {
-	cmd := exec.Command(c.Script) //nolint:gosec // script path from pack config
+	// execshim: see Fix — .sh pack scripts must route through sh on Windows.
+	cmd := execshim.Command(c.Script) //nolint:gosec // script path from pack config
 	cmd.Dir = c.PackDir
 	cmd.Env = append(cmd.Environ(), citylayout.PackRuntimeEnv(ctx.CityPath, c.PackName)...)
 	cmd.Env = append(cmd.Env,

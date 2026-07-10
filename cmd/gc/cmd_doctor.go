@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -263,8 +264,19 @@ func buildDoctorChecks(cityPath string, cfg *config.City, cfgErr error, opts bui
 	register(doctor.NewBinaryCheck("tmux", "", exec.LookPath))
 	register(doctor.NewBinaryCheck("git", "", exec.LookPath))
 	register(doctor.NewBinaryCheck("jq", "", exec.LookPath))
-	register(doctor.NewBinaryCheck("pgrep", "", exec.LookPath))
-	register(doctor.NewBinaryCheck("lsof", "", exec.LookPath))
+	// pgrep/lsof are Unix tools with no Windows equivalents on PATH. The
+	// Windows port uses psmux/native process inspection instead of pgrep,
+	// and every lsof caller (dolt cleanup/preflight/port inspection) already
+	// degrades gracefully behind an exec.LookPath guard — file/doltlite
+	// backends never reach them. Report an explicit skip, not a false
+	// failure, on Windows.
+	pgrepSkip, lsofSkip := "", ""
+	if runtime.GOOS == "windows" {
+		pgrepSkip = "skipped on Windows (port uses native process inspection)"
+		lsofSkip = "skipped on Windows (dolt-only dependency; callers degrade without it)"
+	}
+	register(doctor.NewBinaryCheck("pgrep", pgrepSkip, exec.LookPath))
+	register(doctor.NewBinaryCheck("lsof", lsofSkip, exec.LookPath))
 	// beads.role must be set before any bd command runs; check it here so
 	// the missing-role error appears before the downstream data/Dolt checks
 	// that will all fail for the same root cause.
