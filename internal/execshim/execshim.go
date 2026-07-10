@@ -7,10 +7,12 @@ package execshim
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // needsShell reports whether path must be interpreted by sh on this platform.
@@ -19,10 +21,45 @@ func needsShell(path string) bool {
 		strings.EqualFold(filepath.Ext(path), ".sh")
 }
 
+// ShPath resolves the sh interpreter. On PATH it is used as-is; otherwise on
+// Windows the Git for Windows layout is derived from git.exe's location,
+// because typical installs expose only mingw64\bin (git.exe) on PATH while
+// sh.exe lives in <GitRoot>\usr\bin and <GitRoot>\bin. Falls back to "sh" so
+// exec surfaces the original not-found error when nothing resolves.
+var ShPath = sync.OnceValue(func() string {
+	if p, err := exec.LookPath("sh"); err == nil {
+		return p
+	}
+	if runtime.GOOS != "windows" {
+		return "sh"
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return "sh"
+	}
+	// git.exe lives at <GitRoot>\cmd\git.exe or <GitRoot>\mingw64\bin\git.exe;
+	// probe both possible roots for the sh.exe locations Git for Windows ships.
+	for _, root := range []string{
+		filepath.Dir(filepath.Dir(git)),               // <GitRoot>\cmd -> <GitRoot>
+		filepath.Dir(filepath.Dir(filepath.Dir(git))), // <GitRoot>\mingw64\bin -> <GitRoot>
+	} {
+		for _, rel := range []string{
+			filepath.Join("usr", "bin", "sh.exe"),
+			filepath.Join("bin", "sh.exe"),
+		} {
+			cand := filepath.Join(root, rel)
+			if info, statErr := os.Stat(cand); statErr == nil && !info.IsDir() {
+				return cand
+			}
+		}
+	}
+	return "sh"
+})
+
 // Command is exec.Command with .sh routing on Windows.
 func Command(path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		return exec.Command("sh", append([]string{path}, args...)...)
+		return exec.Command(ShPath(), append([]string{path}, args...)...)
 	}
 	return exec.Command(path, args...)
 }
@@ -30,7 +67,7 @@ func Command(path string, args ...string) *exec.Cmd {
 // CommandContext is exec.CommandContext with .sh routing on Windows.
 func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		return exec.CommandContext(ctx, "sh", append([]string{path}, args...)...)
+		return exec.CommandContext(ctx, ShPath(), append([]string{path}, args...)...)
 	}
 	return exec.CommandContext(ctx, path, args...)
 }

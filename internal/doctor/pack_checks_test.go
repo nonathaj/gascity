@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -113,6 +114,11 @@ func TestPackScriptCheckNotFound(t *testing.T) {
 }
 
 func TestPackScriptCheckNotExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The exec bit does not exist on Windows: pack .sh scripts route
+		// through sh (execshim), which reads the file regardless of mode.
+		t.Skip("Unix exec-bit semantics; .sh scripts route through sh on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "check.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\necho ok\n"), 0o644); err != nil {
