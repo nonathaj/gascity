@@ -578,11 +578,28 @@ func spawnDetachedSupervisor(exe string, argv ...string) error {
 		return fmt.Errorf("opening log: %w", err)
 	}
 	defer logFile.Close() //nolint:errcheck // best-effort cleanup
-	child := exec.Command(exe, argv...)
-	child.SysProcAttr = backgroundSysProcAttr()
-	child.Stdin = nil
-	child.Stdout = logFile
-	child.Stderr = logFile
-	child.Env = os.Environ()
-	return child.Start()
+	return startDetached(logFile, exe, argv...)
+}
+
+// startDetached launches exe detached from this process's console, session
+// and (where the OS supports it) job. It tries breakaway-from-job first so a
+// supervisor launched from inside a job-managed terminal (e.g. a cockpit's
+// embedded shell) survives that terminal, and falls back when the parent job
+// forbids breakaway.
+func startDetached(logFile *os.File, exe string, argv ...string) error {
+	var lastErr error
+	for _, attr := range detachedSupervisorAttrs() {
+		child := exec.Command(exe, argv...)
+		child.SysProcAttr = attr
+		child.Stdin = nil
+		child.Stdout = logFile
+		child.Stderr = logFile
+		child.Env = supervisorEnv()
+		if err := child.Start(); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
