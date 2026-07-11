@@ -302,6 +302,15 @@ type BdStore struct {
 	readyProjectionMu      sync.Mutex
 	readyProjectionChecked bool
 	readyProjectionEnabled bool
+
+	// Conditional-write (ConditionalWriter) capability state, populated lazily on
+	// the first conditional write (bdstore_conditional.go). condWriteProbed/
+	// condWriteCapable memoize the four-verb --if-revision probe; condWriteLatched
+	// records a runtime unsupported response and is authoritative over the probe.
+	condWriteMu      sync.Mutex
+	condWriteProbed  bool
+	condWriteCapable bool
+	condWriteLatched bool
 }
 
 const (

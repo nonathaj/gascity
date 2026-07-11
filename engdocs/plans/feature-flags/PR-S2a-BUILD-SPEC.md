@@ -14,7 +14,8 @@ unconditional write.
 - **Phase 1 (S2-T1)** `bec9156b1` — interface + 4 typed errors + `Bead.Revision json:"-"` + `bdIssue` stamping + `ConditionalWriterFor`. Red-teamed (F1 contract carve-out, F5/F4a/F6 doc fixes folded; F2 Doltlite promotion = bd `ga-zj78gu`).
 - **Phase 2+3a (S2-T2, S2-T3-mem)** `ec0bccd04` — conformance harness + MemStore native CAS. Red-teamed + teeth-proven by mutation (T1 success-path subtest, T2 adaptive close/reopen, T3 Expected-unconditional + `SuppliesCurrent`, T4 16-racer+winner-value, T5 wide bump table, D1 FileStore shadow, D2 disable-under-lock).
 - **Phase 3b (S2-T3-file)** — FileStore native CAS (flock-wrapped reload→save→rollback, replacing the 3a shadow) + out-of-band `fileData.Revisions` persistence (F4b). Red-teamed: production code confirmed correct; the cross-process teeth were missing (all tests were single-handle), so added `TestFileStoreConditionalWriteCrossHandle` (two handles, kills a deleted reload AND a deleted save — both mutation-proven), a 2-bead reopen test (kills per-bead map bugs, mutation-proven), and a legacy-file (no `revisions` key) compat test.
-- **Remaining:** Phase 4 (S2-T4/T5 BdStore classifier+probe), Phase 5 (S2-T6/T7 verbs+CAS emulation+spike note), Phase 6 (S2-T8 CachingStore evict-never-patch). Then PR-S2b (S2-T10..T12). S2-T9 sqlite deferred out of S2.
+- **Phase 4 (S2-T4/T5 BdStore classifier + probe)** — new `bdstore_conditional.go` (`classifyConditionalWriteResult`, `parseBdConditionalErrorBody`/`decodeBdConditionalBody`, `conditionalWritesCapable` lazy four-verb probe, `markConditionalWritesUnsupported` latch) + `condWrite*` struct fields on `bdstore.go` + white-box `bdstore_conditional_internal_test.go`. Grounded against real bd v1.1.0-rc.1: NO `--if-revision`, exits 1 for all errors, envelope `{"error","hint","schema_version"}` flat or `{"schema_version","data":{...}}` wrapped, no `code` field yet — Decision 2 (message/body, not exit-code) confirmed at source. Fable **design** critique found 5 real defects, all folded before commit: **F1** anchored the unknown-flag match to `unknown flag: --if-revision` so a capable bd's cobra usage-echo (which lists the flag) can't latch it incapable; **F2** machine code dominates revision fields (a coded refusal with an informational `current_revision` is a gate refusal, not a precondition); **F3** ambiguous (may-have-committed) and not-found outrank a gate-refusal code; **F4** the two-source (out+err) parse prefers the body carrying a discriminator; **F5** `json.Decoder` tolerates trailing log bytes. 7-mutation teeth battery all killed (F1 unanchor, probe verb-drop, latch-precedence, F3a ambiguous>code, F2 code-dominance, F4 discriminator-pref, F5 Decoder). No `var _ ConditionalWriter = (*BdStore)(nil)` yet — needs the Phase-5 verbs.
+- **Remaining:** Phase 5 (S2-T6/T7 verbs+CAS emulation+spike note; **F2 Doltlite promotion `ga-zj78gu` fires here**), Phase 6 (S2-T8 CachingStore evict-never-patch). Then PR-S2b (S2-T10..T12). S2-T9 sqlite deferred out of S2.
 
 ## Resolved decisions (OVERRIDE stale plan wording)
 1. `Revision int64 \`json:"-"\`` on `beads.Bead`. Verified: `beads.Bead` IS the
@@ -216,3 +217,22 @@ Compile assert `var _ ConditionalWriter = (*CachingStore)(nil)`.
 - **F6 — "revision" wire key provisional.** bd #4682 unlanded; key name unconfirmed.
   Absent-key→0 == legacy behavior, so a mismatch fails ONLY at the integration
   conformance row against #4682-capable bd — that row is the guard, not silent drift.
+- **Phase-4 classifier substring port diverges from DESIGN §8.2's exit-code table
+  (2026-07-11).** §8.2 is written as an exit-9/exit-13 discriminator; the real bd
+  (v1.1.0-rc.1) has NO exit-code path — it exits 1 for every error and there is no
+  `code` field in its envelope yet, so the port is body-code + message-substring
+  (Decision 2). The two inputs that bypass the provisional substrings entirely, and
+  which the `//go:build integration` conformance row (S2-T12) against a #4682-capable
+  bd MUST include, are: **(a)** a *capable* bd's cobra usage-echo naming
+  `--if-revision` while reporting some *other* unknown flag (must NOT latch — the F1
+  anchored match); **(b)** a policy gate refusal (e.g. close-authority) that carries
+  an informational `current_revision` (must classify as `*GateRefusalError`, never a
+  precondition — the F2 code-dominance rule); **(c)** a coded gate refusal whose
+  human message contains "not found" (e.g. "lease not found for holder") — the
+  machine code must win over the loose not-found substring, or a permanent refusal
+  is swallowed as idempotent success (the red-team D3 hazard; the classifier resolves
+  the gate-code branch before the message not-found heuristic). The body scanner also
+  tolerates bracketed (`[WARN] ...`) and leading-JSON log lines around the envelope
+  (red-team D1/D2). Provisional machine codes assumed:
+  `precondition-failed`, `conditional-write-unsupported`. Confirm/rename against the
+  landed #4682 bd; a rename fails loudly at the integration row, not silently.
