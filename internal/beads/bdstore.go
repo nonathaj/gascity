@@ -614,6 +614,15 @@ type bdIssue struct {
 	NoHistory    bool         `json:"no_history,omitempty"`
 	DeferUntil   *time.Time   `json:"defer_until,omitempty"`
 	IsBlocked    optionalBool `json:"is_blocked,omitempty"`
+	// Revision carries bd's optimistic-concurrency token for ConditionalWriter.
+	// Pre-#4682 bd omits it, so it decodes to 0; toBead stamps it onto the
+	// otherwise json:"-" Bead.Revision field. The "revision" key is provisional:
+	// bd #4682 (which adds the column and --if-revision) is unlanded, so the
+	// exact wire key is unconfirmed. The integration conformance row against a
+	// #4682-capable bd is the guard — an absent key is indistinguishable from
+	// legacy bd here (both decode to 0), so a key-name mismatch would fail there,
+	// not silently.
+	Revision int64 `json:"revision,omitempty"`
 }
 
 type bdIssueDep struct {
@@ -766,6 +775,7 @@ func (b *bdIssue) toBead() Bead {
 		NoHistory:    b.NoHistory,
 		DeferUntil:   cloneTimePtr(b.DeferUntil),
 		IsBlocked:    b.IsBlocked.ptr(),
+		Revision:     b.Revision,
 	}
 }
 
