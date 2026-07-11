@@ -656,6 +656,24 @@ func (s *DoltliteReadStore) CompareAndSetMetadataKey(_, _, _, _ string) (bool, e
 	return false, ErrConditionalWriteUnsupported
 }
 
+// The stamp carrier promotes from the embedded *BdStore; the capability prober
+// must NOT — a capable bd behind this wrapper would answer the seam "capable"
+// while the verbs above are hard-degraded, putting ResolveConditionalWriter's
+// verdict and the store's behavior in contradiction. The shadow keeps the
+// seam's degrade/refuse path aligned with the F2 veto.
+var (
+	_ conditionalWritesModeCarrier     = (*DoltliteReadStore)(nil)
+	_ conditionalWriteCapabilityProber = (*DoltliteReadStore)(nil)
+)
+
+// probeConditionalWriteCapability shadows the embedded BdStore's prober with
+// the F2 verdict: the doltlite read path serves Get/List from SQL rows that
+// carry no bead revision until bd #4682, so conditional writes must degrade
+// regardless of what the bd subprocess advertises.
+func (s *DoltliteReadStore) probeConditionalWriteCapability() (bool, string) {
+	return false, "doltlite read store supplies no bead revision (SQL read path, pre-#4682); conditional writes degrade"
+}
+
 func compactStrings(values []string) []string {
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}

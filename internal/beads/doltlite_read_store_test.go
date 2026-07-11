@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/rollout/gate"
 )
 
 func TestDoltliteReadStoreListsSessionBeads(t *testing.T) {
@@ -1884,5 +1886,37 @@ func TestDoltliteReadStoreConditionalWriterLoudlyDegrades(t *testing.T) {
 		if !IsConditionalWriteUnsupported(last) {
 			t.Fatalf("ConditionalWriter.%s degraded to %v, want ErrConditionalWriteUnsupported (unshadowed promoted verb?)", name, last)
 		}
+	}
+}
+
+// TestDoltliteReadStoreResolveConditionalWriterDegrades pins the seam half of
+// F2: even when the embedded BdStore's capability probe would report capable,
+// DoltliteReadStore's prober shadow keeps ResolveConditionalWriter on the
+// degrade/refuse path — its SQL read path carries no bead revision, so a
+// promoted "capable" verdict would false-promote a store whose reads and
+// fenced writes disagree on the revision source. The fatal-on-call backing
+// runner doubles as the teeth: if the shadow ever disappears, the promoted
+// probe runs four subprocesses through it and the test dies loudly.
+func TestDoltliteReadStoreResolveConditionalWriterDegrades(t *testing.T) {
+	store := newDoltliteStoreWithIssues(t, []testDoltliteIssue{
+		{ID: "ga-1", Title: "target", Status: "open", IssueType: "task"},
+	})
+
+	store.stampConditionalWritesMode(gate.Auto, false)
+	w, diag, err := ResolveConditionalWriter(store)
+	if w != nil || err != nil {
+		t.Fatalf("auto over doltlite = (%v, _, %v), want (nil, diag, nil)", w, err)
+	}
+	if diag == nil || diag.PreflightGate != "conditional_writes" {
+		t.Fatalf("diag = %+v, want the conditional_writes degrade diagnostic", diag)
+	}
+	if !strings.Contains(diag.PreflightReason, "revision") {
+		t.Fatalf("PreflightReason = %q, want the no-revision F2 reason", diag.PreflightReason)
+	}
+
+	store.stampConditionalWritesMode(gate.Require, false)
+	w, diag, err = ResolveConditionalWriter(store)
+	if w != nil || diag == nil || !IsConditionalWritesRequired(err) {
+		t.Fatalf("require over doltlite = (%v, %v, %v), want (nil, diag, typed refusal)", w, diag, err)
 	}
 }

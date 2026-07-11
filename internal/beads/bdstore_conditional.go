@@ -21,7 +21,41 @@ import (
 // what activates promotion through DoltliteReadStore (which embeds *BdStore), so
 // the F2 loud-degrade methods on *DoltliteReadStore land in the same change — see
 // doltlite_read_store.go.
-var _ ConditionalWriter = (*BdStore)(nil)
+var (
+	_ ConditionalWriter                = (*BdStore)(nil)
+	_ conditionalWritesModeCarrier     = (*BdStore)(nil)
+	_ conditionalWriteCapabilityProber = (*BdStore)(nil)
+)
+
+// probeConditionalWriteCapability adapts the four-verb probe and the runtime
+// unsupported latch to the seam's capability answer. The reasons demand
+// different operator responses, so incapable is split three ways with the
+// latch preferred: a latch means bd rejected a real fenced write at runtime;
+// a probe subprocess failure means bd itself is broken or missing (fix the
+// runner environment, not the bd version); a probe miss means the live bd
+// never advertised the flag (upgrade bd). The probe-failure reason is read
+// from the memoized condWriteProbeErr so every later resolve reports the
+// same cause, not just the one that ran the probe.
+func (s *BdStore) probeConditionalWriteCapability() (bool, string) {
+	capable, err := s.conditionalWritesCapable()
+	if capable {
+		return true, ""
+	}
+	s.condWriteMu.Lock()
+	latched := s.condWriteLatched
+	if err == nil {
+		err = s.condWriteProbeErr
+	}
+	s.condWriteMu.Unlock()
+	switch {
+	case latched:
+		return false, "conditional writes latched unsupported at runtime (bd rejected " + conditionalWriteFlag + ")"
+	case err != nil:
+		return false, "capability probe failed: " + err.Error()
+	default:
+		return false, "bd lacks " + conditionalWriteFlag + " (four-verb capability probe)"
+	}
+}
 
 // conditionalWriteProbeVerbs are the bd subcommands whose --help output must all
 // advertise --if-revision for the store to be treated as CAS-capable. All four
@@ -58,7 +92,13 @@ func (s *BdStore) conditionalWritesCapable() (bool, error) {
 		out, err := s.runner(s.dir, "bd", verb, "--help")
 		if err != nil || !bytes.Contains(out, []byte(conditionalWriteFlag)) {
 			s.condWriteProbed, s.condWriteCapable = true, false
-			return false, nil
+			// A runner failure is memoized alongside the incapable verdict so
+			// diagnostics can distinguish "bd is broken/missing" from "bd is
+			// too old" for the life of the store, and returned so first-call
+			// sites can surface it. The verdict itself stays fail-closed
+			// either way: no unconditional fallback.
+			s.condWriteProbeErr = err
+			return false, err
 		}
 	}
 	s.condWriteProbed, s.condWriteCapable = true, true

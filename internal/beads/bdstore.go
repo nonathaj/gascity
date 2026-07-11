@@ -311,6 +311,15 @@ type BdStore struct {
 	condWriteProbed  bool
 	condWriteCapable bool
 	condWriteLatched bool
+	// condWriteProbeErr memoizes a probe SUBPROCESS failure (bd missing or
+	// broken) so incapable-because-broken stays distinguishable from
+	// incapable-because-old on every later capability answer.
+	condWriteProbeErr error
+
+	// condWritesStamp carries the factory-stamped beads.conditional_writes
+	// mode plus the once-per-store degrade latch, under its own mutex
+	// (disjoint from condWriteMu's capability state; no nesting).
+	condWritesStamp
 }
 
 const (

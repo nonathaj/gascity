@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/rollout/gate"
 )
 
 // TestClassifyConditionalWriteResult exhaustively exercises the pure classifier
@@ -405,12 +407,17 @@ func TestConditionalWritesCapableProbe(t *testing.T) {
 		}
 	})
 
-	t.Run("help subprocess error -> incapable", func(t *testing.T) {
+	t.Run("help subprocess error -> incapable with the failure surfaced", func(t *testing.T) {
 		s := NewBdStore("/city", func(_, _ string, _ ...string) ([]byte, error) {
 			return nil, errors.New("exec: bd not found")
 		})
-		if ok, err := s.conditionalWritesCapable(); ok || err != nil {
-			t.Fatalf("conditionalWritesCapable = (%v, %v), want (false, nil) on probe error", ok, err)
+		if ok, err := s.conditionalWritesCapable(); ok || err == nil || !strings.Contains(err.Error(), "bd not found") {
+			t.Fatalf("conditionalWritesCapable = (%v, %v), want (false, the runner error) so a broken bd is never reported as an old bd", ok, err)
+		}
+		// The verdict is memoized fail-closed; the failure cause is memoized
+		// with it (condWriteProbeErr) for every later capability answer.
+		if ok, _ := s.conditionalWritesCapable(); ok {
+			t.Fatal("memoized incapable verdict lost on the second call")
 		}
 	})
 
@@ -1157,5 +1164,110 @@ func TestConditionalWriteGateRefusalStampsIDAndVerb(t *testing.T) {
 	}
 	if w.writeCalls != 2 {
 		t.Fatalf("gate refusal latched the store: writeCalls = %d, want 2", w.writeCalls)
+	}
+}
+
+// TestResolveConditionalWriterBdStore covers the seam's prober adapter over
+// BdStore: the four-verb --help probe answers Auto/Require capability, and the
+// runtime unsupported latch is authoritative over a capable probe verdict.
+func TestResolveConditionalWriterBdStore(t *testing.T) {
+	capableHelp := func(verb string) []byte {
+		return []byte("Usage:\n  bd " + verb + " [flags]\n\nFlags:\n  --if-revision int   apply only at this revision\n")
+	}
+	incapableHelp := func(verb string) []byte {
+		return []byte("Usage:\n  bd " + verb + " [flags]\n\nFlags:\n  --json   emit JSON\n")
+	}
+
+	t.Run("auto over a capable bd resolves the store as the writer", func(t *testing.T) {
+		s := NewBdStore("/city", func(_, _ string, args ...string) ([]byte, error) {
+			return capableHelp(args[0]), nil
+		})
+		s.stampConditionalWritesMode(gate.Auto, false)
+		w, diag, err := ResolveConditionalWriter(s)
+		if err != nil || diag != nil {
+			t.Fatalf("auto∧capable = diag %v err %v, want nil/nil", diag, err)
+		}
+		if got, ok := w.(*BdStore); !ok || got != s {
+			t.Fatalf("writer = %T, want the resolved *BdStore itself", w)
+		}
+	})
+
+	t.Run("auto over an incapable bd degrades with the probe reason", func(t *testing.T) {
+		s := NewBdStore("/city", func(_, _ string, args ...string) ([]byte, error) {
+			return incapableHelp(args[0]), nil
+		})
+		s.stampConditionalWritesMode(gate.Auto, false)
+		w, diag, err := ResolveConditionalWriter(s)
+		if w != nil || err != nil {
+			t.Fatalf("auto∧incapable = (%v, _, %v), want (nil, diag, nil)", w, err)
+		}
+		if diag == nil || diag.PreflightGate != "conditional_writes" || diag.Store != "BdStore" {
+			t.Fatalf("diag = %+v, want conditional_writes/BdStore", diag)
+		}
+		if !strings.Contains(diag.PreflightReason, conditionalWriteFlag) {
+			t.Fatalf("PreflightReason = %q, want it to name %s", diag.PreflightReason, conditionalWriteFlag)
+		}
+	})
+
+	t.Run("require over an incapable bd refuses closed", func(t *testing.T) {
+		s := NewBdStore("/city", func(_, _ string, args ...string) ([]byte, error) {
+			return incapableHelp(args[0]), nil
+		})
+		s.stampConditionalWritesMode(gate.Require, false)
+		w, diag, err := ResolveConditionalWriter(s)
+		if w != nil || diag == nil {
+			t.Fatalf("require∧incapable = (%v, %v, _), want (nil, diag, refusal)", w, diag)
+		}
+		if !IsConditionalWritesRequired(err) {
+			t.Fatalf("err = %v, want *ConditionalWritesRequiredError", err)
+		}
+		var cre *ConditionalWritesRequiredError
+		if !errors.As(err, &cre) || cre.StoreKind != "BdStore" {
+			t.Fatalf("StoreKind = %v, want BdStore", err)
+		}
+	})
+
+	t.Run("runtime latch outranks a capable probe verdict", func(t *testing.T) {
+		s := NewBdStore("/city", func(_, _ string, args ...string) ([]byte, error) {
+			return capableHelp(args[0]), nil
+		})
+		s.stampConditionalWritesMode(gate.Auto, false)
+		if w, _, _ := ResolveConditionalWriter(s); w == nil {
+			t.Fatal("pre-latch resolve should return the writer")
+		}
+		s.markConditionalWritesUnsupported()
+		w, diag, err := ResolveConditionalWriter(s)
+		if w != nil || err != nil || diag == nil {
+			t.Fatalf("post-latch = (%v, %v, %v), want (nil, diag, nil)", w, diag, err)
+		}
+		if !strings.Contains(diag.PreflightReason, "latched") {
+			t.Fatalf("PreflightReason = %q, want the latch reason, not the stale probe verdict", diag.PreflightReason)
+		}
+	})
+}
+
+// TestResolveConditionalWriterBdStoreProbeFailureReason pins red-team F1: a
+// probe SUBPROCESS failure (bd missing/broken) must surface as "capability
+// probe failed", never as the lacks---if-revision reason — the two demand
+// opposite operator responses (fix the environment vs upgrade bd). The cause
+// is memoized, so every later resolve reports it, not just the one that ran
+// the probe.
+func TestResolveConditionalWriterBdStoreProbeFailureReason(t *testing.T) {
+	s := NewBdStore("/city", func(_, _ string, _ ...string) ([]byte, error) {
+		return nil, errors.New("exec: bd not found")
+	})
+	s.stampConditionalWritesMode(gate.Require, false)
+	for _, call := range []string{"first", "memoized"} {
+		_, diag, err := ResolveConditionalWriter(s)
+		if diag == nil || !IsConditionalWritesRequired(err) {
+			t.Fatalf("%s resolve = (diag %v, err %v), want refusal with diagnostic", call, diag, err)
+		}
+		if !strings.Contains(diag.PreflightReason, "capability probe failed") ||
+			!strings.Contains(diag.PreflightReason, "bd not found") {
+			t.Fatalf("%s resolve reason = %q, want the probe-failure cause", call, diag.PreflightReason)
+		}
+		if strings.Contains(diag.PreflightReason, "lacks") {
+			t.Fatalf("%s resolve reason = %q, misreports a broken bd as an old bd", call, diag.PreflightReason)
+		}
 	}
 }
