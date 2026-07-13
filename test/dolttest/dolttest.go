@@ -76,7 +76,7 @@ func Guard(runDir string) (stop func()) {
 			signal.Stop(sig)
 			if ss, ok := s.(syscall.Signal); ok {
 				signal.Reset(ss)
-				_ = syscall.Kill(os.Getpid(), ss)
+				reraiseSignal(ss)
 			}
 		case <-done:
 		}
@@ -209,8 +209,8 @@ func pidAlive(pid int) bool {
 	}
 	// Signal 0 probes existence without delivering a signal; EPERM means the
 	// process exists but is not ours to signal — treat as alive (don't reap).
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	// The probe itself is platform-specific (see dolttest_{unix,windows}.go).
+	return processExists(pid)
 }
 
 func reapPIDs(pids []int) {
@@ -218,7 +218,7 @@ func reapPIDs(pids []int) {
 		return
 	}
 	for _, pid := range pids {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = signalPID(pid, syscall.SIGTERM)
 	}
 	time.Sleep(250 * time.Millisecond)
 	for _, pid := range pids {
@@ -226,7 +226,7 @@ func reapPIDs(pids []int) {
 		// SIGKILL: a process that exited during the grace period may have had
 		// its pid reused by something unrelated (likelier on a loaded host).
 		if pidIsDoltSQLServer(pid) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			_ = signalPID(pid, syscall.SIGKILL)
 		}
 	}
 }
