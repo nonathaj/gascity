@@ -10,6 +10,11 @@ cmd/gc/.runtime/
 /genschema
 /bd
 /br
+# Windows compiled binaries — the Unix /gc,/bd,/br above missed these, so the
+# Windows port's gc.exe got committed (117MB x6 in history); never again (gw-afm)
+/gc.exe
+/gc-*.exe
+*.exe
 /tmp/
 .runtime/
 *.test
