@@ -724,6 +724,117 @@ func TestNormalizeCanonicalBdScopeFilesRejectsExistingManagedSystemDatabase(t *t
 	}
 }
 
+// seedDoltliteScope writes a canonical doltlite metadata.json plus a
+// config.yaml carrying a bd-init-style sync.remote for downgrade tests.
+func seedDoltliteScope(t *testing.T, scopeRoot, doltDatabase string) string {
+	t.Helper()
+	beadsDir := filepath.Join(scopeRoot, ".beads")
+	if err := os.MkdirAll(beadsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(beadsDir, "metadata.json")
+	if _, err := contract.EnsureCanonicalMetadata(fsys.OSFS{}, metadataPath, contract.MetadataState{
+		Database:     "doltlite",
+		Backend:      "doltlite",
+		DoltDatabase: doltDatabase,
+	}); err != nil {
+		t.Fatalf("seed doltlite metadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(beadsDir, "config.yaml"),
+		[]byte("sync.remote: \"git+https://example.com/foo.git\"\nissue_prefix: gc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return metadataPath
+}
+
+// TestNormalizeCanonicalBdScopeFilesForInitKeepsDoltliteScope guards gw-u76:
+// canonicalizing a doltlite scope declared by city.toml must never rewrite it
+// to the dolt/server shape (the downgrade that wedged the next start), and must
+// clear the sync.remote bd init auto-detected from the scope's git origin.
+func TestNormalizeCanonicalBdScopeFilesForInitKeepsDoltliteScope(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"),
+		[]byte("[workspace]\nprefix = \"gc\"\n[beads]\nprovider = \"bd\"\nbackend = \"doltlite\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := seedDoltliteScope(t, cityPath, "gc")
+	// No GC_BEADS_BACKEND: detection must come from city.toml, not the env var
+	// the workaround exported. This is the plain-restart case.
+	t.Setenv("GC_BEADS_BACKEND", "")
+
+	if err := normalizeCanonicalBdScopeFilesForInit(cityPath, cityPath, "gc", ""); err != nil {
+		t.Fatalf("normalizeCanonicalBdScopeFilesForInit: %v", err)
+	}
+
+	state, ok, err := contract.LoadMetadataState(fsys.OSFS{}, metadataPath)
+	if err != nil {
+		t.Fatalf("LoadMetadataState: %v", err)
+	}
+	if !ok {
+		t.Fatal("metadata.json missing after normalization")
+	}
+	if state.Backend != "doltlite" || state.DoltMode != "" {
+		t.Fatalf("metadata state = %+v, want doltlite backend with no dolt_mode (no downgrade)", state)
+	}
+	cfgData, err := os.ReadFile(filepath.Join(cityPath, ".beads", "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(cfgData), "example.com") {
+		t.Fatalf("sync.remote not cleared for doltlite scope:\n%s", cfgData)
+	}
+}
+
+// TestNormalizeCanonicalBdScopeFilesForInitFallsBackToScopeMetadata proves the
+// scope-aware fallback: when city.toml does not name a backend (or cityPath is
+// unreadable) an existing doltlite scope is still preserved, not downgraded.
+func TestNormalizeCanonicalBdScopeFilesForInitFallsBackToScopeMetadata(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"),
+		[]byte("[workspace]\nprefix = \"gc\"\n[beads]\nprovider = \"bd\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := seedDoltliteScope(t, cityPath, "gc")
+	t.Setenv("GC_BEADS_BACKEND", "")
+
+	if err := normalizeCanonicalBdScopeFilesForInit(cityPath, cityPath, "gc", ""); err != nil {
+		t.Fatalf("normalizeCanonicalBdScopeFilesForInit: %v", err)
+	}
+
+	state, ok, err := contract.LoadMetadataState(fsys.OSFS{}, metadataPath)
+	if err != nil {
+		t.Fatalf("LoadMetadataState: %v", err)
+	}
+	if !ok || state.Backend != "doltlite" || state.DoltMode != "" {
+		t.Fatalf("metadata state = %+v (ok=%v), want doltlite preserved via scope-metadata fallback", state, ok)
+	}
+}
+
+// TestNormalizeCanonicalBdScopeFilesForInitAllowsExplicitDoltMigration ensures
+// a genuine backend migration still works: an explicit city.toml dolt backend
+// downgrades a doltlite scope to the managed dolt/server shape.
+func TestNormalizeCanonicalBdScopeFilesForInitAllowsExplicitDoltMigration(t *testing.T) {
+	cityPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"),
+		[]byte("[workspace]\nprefix = \"gc\"\n[beads]\nprovider = \"bd\"\nbackend = \"dolt\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := seedDoltliteScope(t, cityPath, "gc")
+	t.Setenv("GC_BEADS_BACKEND", "")
+
+	if err := normalizeCanonicalBdScopeFilesForInit(cityPath, cityPath, "gc", ""); err != nil {
+		t.Fatalf("normalizeCanonicalBdScopeFilesForInit: %v", err)
+	}
+
+	state, ok, err := contract.LoadMetadataState(fsys.OSFS{}, metadataPath)
+	if err != nil {
+		t.Fatalf("LoadMetadataState: %v", err)
+	}
+	if !ok || state.Backend != "dolt" || state.DoltMode != "server" {
+		t.Fatalf("metadata state = %+v (ok=%v), want dolt/server after explicit migration", state, ok)
+	}
+}
+
 func TestNormalizeCanonicalBdScopeFilesForInitPreservesExistingManagedProbeDatabase(t *testing.T) {
 	cityPath := t.TempDir()
 	metadataPath := filepath.Join(cityPath, ".beads", "metadata.json")

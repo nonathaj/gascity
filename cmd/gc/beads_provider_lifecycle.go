@@ -419,15 +419,20 @@ func seedDeferredManagedBeadsErr(cityPath, dir, prefix, doltDatabase string) err
 	} else if usesPostgres {
 		return nil
 	}
+	scopeIsDoltlite := scopeUsesDoltliteBeadsBackend(cityPath, dir)
 	if state, ok, err := desiredScopeDoltConfigStateForInit(cityPath, dir, prefix); err != nil {
 		return err
 	} else if ok {
+		state.ClearSyncRemote = scopeIsDoltlite
 		if err := ensureCanonicalScopeConfigState(fsys.OSFS{}, dir, state); err != nil {
 			return err
 		}
 	}
 	if strings.TrimSpace(doltDatabase) == "" {
 		doltDatabase = readDeferredManagedDoltDatabase(filepath.Join(dir, ".beads", "metadata.json"), defaultScopeDoltDatabase(cityPath, dir, prefix))
+	}
+	if scopeIsDoltlite {
+		return ensureCanonicalDoltliteScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase)
 	}
 	return ensureCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase)
 }
@@ -464,6 +469,41 @@ func canonicalScopeDoltDatabase(cityPath, dir, prefix string) string {
 	return readDeferredManagedDoltDatabase(filepath.Join(dir, ".beads", "metadata.json"), defaultScopeDoltDatabase(cityPath, dir, prefix))
 }
 
+// scopeUsesDoltliteBeadsBackend reports whether a specific scope must be
+// treated as the embedded doltlite backend, robustly and independent of the
+// GC_BEADS_BACKEND env var or a possibly-empty runtime cityPath.
+//
+// The city config is authoritative when it explicitly names a backend, so a
+// genuine backend migration (e.g. doltlite -> dolt driven by city.toml) still
+// takes effect. When the city config is silent or unreadable — the case that
+// used to let a plain restart or an env-less subprocess mis-classify a doltlite
+// city as managed-dolt — the scope's own on-disk metadata.json decides. This
+// prevents an existing doltlite scope from being spuriously downgraded to the
+// dolt/server metadata shape, which wedges the next start (bd dials the absent
+// server, falls into --reinit-local, and trips bd's sync.remote guard).
+func scopeUsesDoltliteBeadsBackend(cityPath, scopeRoot string) bool {
+	switch strings.ToLower(strings.TrimSpace(configuredBeadsBackendValue(cityPath))) {
+	case "doltlite":
+		return true
+	case "dolt", "postgres":
+		return false
+	}
+	return scopeMetadataDeclaresDoltlite(scopeRoot)
+}
+
+// scopeMetadataDeclaresDoltlite reports whether a scope's on-disk
+// .beads/metadata.json declares the doltlite backend.
+func scopeMetadataDeclaresDoltlite(scopeRoot string) bool {
+	if strings.TrimSpace(scopeRoot) == "" {
+		return false
+	}
+	meta, ok, err := contract.LoadMetadataState(fsys.OSFS{}, scopeMetadataJSONPath(scopeRoot))
+	if err != nil || !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(meta.Backend), "doltlite")
+}
+
 func normalizeCanonicalBdScopeFilesForInit(cityPath, dir, prefix, doltDatabase string) error {
 	if !cityUsesBdStoreContract(cityPath) {
 		return nil
@@ -473,15 +513,22 @@ func normalizeCanonicalBdScopeFilesForInit(cityPath, dir, prefix, doltDatabase s
 	} else if usesPostgres {
 		return nil
 	}
+	scopeIsDoltlite := scopeUsesDoltliteBeadsBackend(cityPath, dir)
 	if state, ok, err := desiredScopeDoltConfigStateForInit(cityPath, dir, prefix); err != nil {
 		return err
 	} else if ok {
+		state.ClearSyncRemote = scopeIsDoltlite
 		if err := ensureCanonicalScopeConfigState(fsys.OSFS{}, dir, state); err != nil {
 			return err
 		}
 	}
 	if strings.TrimSpace(doltDatabase) == "" {
 		doltDatabase = canonicalScopeDoltDatabase(cityPath, dir, prefix)
+	}
+	if scopeIsDoltlite {
+		// Never rewrite a doltlite scope to the managed dolt/server shape:
+		// that downgrade wedges the next start. Preserve/canonicalize doltlite.
+		return ensureCanonicalDoltliteScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase)
 	}
 	if isReservedManagedDoltDatabase(doltDatabase) {
 		// Preserve legacy probe metadata during startup normalization so old
@@ -954,9 +1001,11 @@ func initDefaultRigBdStore(cityPath, dir, prefix, doltDatabase string) error {
 }
 
 func finalizeCanonicalBdScopeInit(cityPath, dir, prefix, doltDatabase string) error {
+	scopeIsDoltlite := scopeUsesDoltliteBeadsBackend(cityPath, dir)
 	if state, ok, err := forcedScopeDoltConfigStateForInit(cityPath, dir, prefix); err != nil {
 		return err
 	} else if ok {
+		state.ClearSyncRemote = scopeIsDoltlite
 		if err := ensureCanonicalScopeConfigState(fsys.OSFS{}, dir, state); err != nil {
 			return err
 		}
@@ -964,7 +1013,12 @@ func finalizeCanonicalBdScopeInit(cityPath, dir, prefix, doltDatabase string) er
 	if strings.TrimSpace(doltDatabase) == "" {
 		doltDatabase = defaultScopeDoltDatabase(cityPath, dir, prefix)
 	}
-	if isReservedManagedDoltDatabase(doltDatabase) {
+	if scopeIsDoltlite {
+		// Never downgrade a doltlite scope to the dolt/server shape.
+		if err := ensureCanonicalDoltliteScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase); err != nil {
+			return err
+		}
+	} else if isReservedManagedDoltDatabase(doltDatabase) {
 		if err := ensureCanonicalScopeMetadataForInit(fsys.OSFS{}, dir, doltDatabase); err != nil {
 			return err
 		}
@@ -1047,7 +1101,11 @@ func healthBeadsProvider(cityPath string) error {
 	if cityUsesBdStoreContract(cityPath) && gcDoltSkip() {
 		return nil
 	}
-	if cityUsesDoltliteBeadsBackend(cityPath) {
+	// Scope-aware so a doltlite city whose city.toml is momentarily unreadable
+	// (or an env-less subprocess) still short-circuits instead of driving the
+	// managed-server provider path, which would assert sync.remote and probe a
+	// server a doltlite city never runs.
+	if scopeUsesDoltliteBeadsBackend(cityPath, cityPath) {
 		return nil
 	}
 	provider := beadsProvider(cityPath)
@@ -1530,7 +1588,7 @@ func normalizeCanonicalBdScopeFiles(cityPath string, cfg *config.City, warns ...
 			return fmt.Errorf("classifying city backend: %w", err)
 		} else if !usesPostgres {
 			doltDatabase := defaultScopeDoltDatabase(cityPath, cityPath, config.EffectiveHQPrefix(cfg))
-			if cityUsesDoltliteBeadsBackend(cityPath) {
+			if scopeUsesDoltliteBeadsBackend(cityPath, cityPath) {
 				if err := ensureCanonicalDoltliteScopeMetadataForInit(fsys.OSFS{}, cityPath, doltDatabase); err != nil {
 					return fmt.Errorf("canonicalizing city doltlite metadata: %w", err)
 				}
@@ -1547,7 +1605,7 @@ func normalizeCanonicalBdScopeFiles(cityPath string, cfg *config.City, warns ...
 			return fmt.Errorf("classifying rig %q backend: %w", cfg.Rigs[i].Name, err)
 		} else if !usesPostgres {
 			doltDatabase := defaultScopeDoltDatabase(cityPath, cfg.Rigs[i].Path, cfg.Rigs[i].EffectivePrefix())
-			if cityUsesDoltliteBeadsBackend(cityPath) {
+			if scopeUsesDoltliteBeadsBackend(cityPath, cfg.Rigs[i].Path) {
 				if err := ensureCanonicalDoltliteScopeMetadataForInit(fsys.OSFS{}, cfg.Rigs[i].Path, doltDatabase); err != nil {
 					return fmt.Errorf("canonicalizing rig %q doltlite metadata: %w", cfg.Rigs[i].Name, err)
 				}

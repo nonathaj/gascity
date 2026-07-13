@@ -48,6 +48,13 @@ type ConfigState struct {
 	// When empty, the existing dolt.mode value is preserved.
 	DoltMode string
 	Dolt     DoltConfig
+	// ClearSyncRemote blanks any sync.remote value in config.yaml when true.
+	// Embedded doltlite scopes have no server to sync against, but `bd init`
+	// auto-detects the scope's git origin and writes it as sync.remote; a
+	// configured remote then trips bd's --reinit-local init-safety guard on the
+	// next start. GC owns the doltlite scope lifecycle, so it clears the remote
+	// bd re-asserts. Left false, the existing sync.remote value is preserved.
+	ClearSyncRemote bool
 }
 
 // DoltConfig is the Dolt-specific subset of .beads/config.yaml that GC owns.
@@ -526,6 +533,9 @@ func EnsureCanonicalConfig(fs fsys.FS, path string, state ConfigState) (bool, er
 	}
 
 	changed = deleteKeys(root, deprecatedConfigKeys...) || changed
+	if state.ClearSyncRemote {
+		changed = blankSyncRemote(root) || changed
+	}
 	if !changed {
 		return false, nil
 	}
@@ -635,6 +645,12 @@ func ensureCanonicalConfigFallback(fs fsys.FS, path string, state ConfigState) (
 	}
 	if state.EndpointStatus != "" {
 		replacements["gc.endpoint_status"] = "gc.endpoint_status: " + string(state.EndpointStatus)
+	}
+	// Blank an existing sync.remote (not added to orderedKeys, so absent
+	// remotes stay absent). See ConfigState.ClearSyncRemote.
+	if state.ClearSyncRemote {
+		replacements["sync.remote"] = `sync.remote: ""`
+		replacements["sync-remote"] = `sync-remote: ""`
 	}
 
 	host := strings.TrimSpace(state.DoltHost)
@@ -1233,6 +1249,29 @@ func trimmedString(value any) string {
 		return ""
 	}
 	return trimmed
+}
+
+// blankSyncRemote sets an existing sync.remote value to the empty string,
+// preserving the key's position and any attached comments. It is a no-op
+// (returns false) when no sync.remote key is present, so scopes that never
+// configured a remote are left untouched.
+func blankSyncRemote(root *yaml.Node) bool {
+	if root == nil || root.Kind != yaml.MappingNode {
+		return false
+	}
+	changed := false
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key := root.Content[i].Value
+		if key != "sync.remote" && key != "sync-remote" {
+			continue
+		}
+		val := root.Content[i+1]
+		if val.Kind != yaml.ScalarNode || val.Value != "" || val.Tag != "!!str" {
+			root.Content[i+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: ""}
+			changed = true
+		}
+	}
+	return changed
 }
 
 // repairMalformedConfigLines splits top-level config lines that have been
