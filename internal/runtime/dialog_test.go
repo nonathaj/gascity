@@ -27,6 +27,51 @@ func withZeroDialogTimings(t *testing.T) {
 	})
 }
 
+// TestAcceptStartupDialogsSharesBudgetAcrossClasses guards the gw-fnt fix: when
+// a pane shows no dialog and no ready prompt (a fresh agent cold-booting its MCP
+// servers with trust pre-seeded), the whole dialog phase must stay within ONE
+// shared timeout budget, not timeout-per-class. Before the fix, all 8 acceptors
+// each polled the full timeout (8×), which alone exceeded the session startup
+// budget and rolled a still-booting operator back with a cold_start_timeout.
+func TestAcceptStartupDialogsSharesBudgetAcrossClasses(t *testing.T) {
+	oldInterval := dialogPollInterval
+	oldFloor := minPerDialogPeekBudget
+	dialogPollInterval = 0             // spin without sleeping between peeks
+	minPerDialogPeekBudget = time.Millisecond
+	t.Cleanup(func() {
+		dialogPollInterval = oldInterval
+		minPerDialogPeekBudget = oldFloor
+	})
+
+	const timeout = 40 * time.Millisecond
+	var peeks atomic.Int64
+	start := time.Now()
+	err := AcceptStartupDialogsWithTimeout(
+		context.Background(),
+		timeout,
+		func(_ int) (string, error) {
+			peeks.Add(1)
+			return "", nil // never a dialog, never a prompt (blank cold-boot pane)
+		},
+		func(_ ...string) error { return nil },
+	)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("AcceptStartupDialogsWithTimeout() error = %v", err)
+	}
+	// Shared budget: total must stay near one timeout, nowhere near 8×timeout.
+	// A generous 4×timeout ceiling still fails the old per-class behavior
+	// (which was ≥8×timeout) while tolerating scheduler jitter.
+	if elapsed > 4*timeout {
+		t.Fatalf("dialog phase took %s with a blank pane; shared budget was %s (regressed to per-class timeout?)", elapsed, timeout)
+	}
+	// Floor guarantee: every dialog class still gets at least one peek even
+	// after the shared budget drains, so no class is skipped entirely.
+	if got := peeks.Load(); got < 8 {
+		t.Fatalf("peek called %d times; want >= 8 (one per dialog class via the floor)", got)
+	}
+}
+
 func TestContainsWorkspaceTrustDialog(t *testing.T) {
 	t.Parallel()
 
