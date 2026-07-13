@@ -1102,6 +1102,24 @@ func failIfSessionDiedDuringStartupProbe(ops startOps, name string) error {
 	return nil
 }
 
+// launchPhaseTraceEnabled reports whether per-step launch timing should be
+// emitted to stderr. Opt-in via GC_LAUNCH_PHASE_TRACE so normal operation is
+// unaffected; used to attribute where a slow cold start spends its budget
+// (gw-fnt: Windows operator cold start exceeds the startup budget).
+func launchPhaseTraceEnabled() bool {
+	return strings.TrimSpace(os.Getenv("GC_LAUNCH_PHASE_TRACE")) != ""
+}
+
+// logLaunchPhase records the wall-clock duration of a single named launch step
+// when GC_LAUNCH_PHASE_TRACE is set. Pure observability — no behavior change.
+// Call as: defer logLaunchPhase(name, "step", time.Now()).
+func logLaunchPhase(session, step string, begin time.Time) {
+	if !launchPhaseTraceEnabled() {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "launch-phase: session=%s step=%s dur=%s\n", session, step, time.Since(begin).Round(time.Millisecond))
+}
+
 // doStartSession is the pure startup orchestration logic.
 // Testable via fakeStartOps without a real tmux server.
 // The setupTimeout parameter controls the per-command timeout for
@@ -1112,17 +1130,21 @@ func doStartSession(ctx context.Context, ops startOps, name string, cfg runtime.
 	}
 
 	// Step 0: Run pre-start commands (directory/worktree preparation).
+	preStartBegin := time.Now()
 	if err := runPreStart(ctx, ops, name, cfg, setupTimeout); err != nil {
 		return fmt.Errorf("running pre_start: %w", err)
 	}
+	logLaunchPhase(name, "pre_start", preStartBegin)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	// Step 1: Ensure fresh session (zombie detection).
+	ensureFreshBegin := time.Now()
 	if err := ensureFreshSession(ops, name, cfg); err != nil {
 		return err
 	}
+	logLaunchPhase(name, "ensure_fresh_session", ensureFreshBegin)
 
 	// Enable remain-on-exit for crash forensics. Best-effort.
 	_ = ops.setRemainOnExit(name)
@@ -1210,7 +1232,9 @@ func doRelaunchSession(ctx context.Context, ops startOps, name string, cfg runti
 func launchOrchestration(ctx context.Context, ops startOps, name string, cfg runtime.Config, setupTimeout time.Duration) error {
 	// Step 2: Wait for agent command to appear (not still in shell).
 	if len(cfg.ProcessNames) > 0 {
+		waitCmdBegin := time.Now()
 		_ = ops.waitForCommand(ctx, name, 30*time.Second) // best-effort, non-fatal
+		logLaunchPhase(name, "wait_for_command", waitCmdBegin)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -1220,7 +1244,9 @@ func launchOrchestration(ctx context.Context, ops startOps, name string, cfg run
 	// Always attempted when process names are set, since any Claude-like
 	// agent may show a trust dialog regardless of EmitsPermissionWarning.
 	if shouldAcceptStartupDialogs(cfg) {
+		dialogsBegin := time.Now()
 		_ = ops.acceptStartupDialogs(ctx, name) // best-effort
+		logLaunchPhase(name, "accept_dialogs_1", dialogsBegin)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -1247,7 +1273,9 @@ func launchOrchestration(ctx context.Context, ops startOps, name string, cfg run
 	// ready screen. Re-run dialog acceptance after readiness so late dialogs do
 	// not strand the session in an unusable startup state.
 	if shouldAcceptStartupDialogs(cfg) {
+		dialogs2Begin := time.Now()
 		_ = ops.acceptStartupDialogs(ctx, name) // best-effort
+		logLaunchPhase(name, "accept_dialogs_2", dialogs2Begin)
 		if err := ctx.Err(); err != nil {
 			return ignoreDeadlineIfSessionAlive(ops, name, err)
 		}

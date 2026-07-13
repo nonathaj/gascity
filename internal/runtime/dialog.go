@@ -176,58 +176,58 @@ func AcceptStartupDialogsFromStreamWithStatus(
 	return observed, nil
 }
 
-// AcceptStartupDialogsWithTimeout dismisses known startup dialogs using the
-// provided timeout budget for each dialog class.
+// minPerDialogPeekBudget is the floor each dialog class is guaranteed even
+// after the shared startup-dialog budget is spent, so no class is skipped
+// entirely on a slow-rendering pane (it still gets at least one peek). Var, not
+// const, so tests can shrink it to keep timing assertions fast.
+var minPerDialogPeekBudget = 300 * time.Millisecond
+
+// AcceptStartupDialogsWithTimeout dismisses known startup dialogs within a
+// single shared timeout budget spanning ALL dialog classes.
+//
+// The budget is shared, not per-class: earlier this passed the full timeout to
+// each of the 8 acceptors in sequence, so a session that shows no dialog at all
+// (trust pre-seeded, prompt not yet rendered while a fresh agent cold-boots its
+// MCP servers) polled 8×timeout ≈ 64s at the default 8s — on its own larger than
+// the session startup budget, so the reconciler rolled the still-booting session
+// back with a cold_start_timeout (gw-fnt, Windows operator cold start). Each
+// class now shares one deadline and is floored at minPerDialogPeekBudget so it
+// still gets at least one peek; total worst case is ≈ timeout + 8×floor instead
+// of 8×timeout. Late-appearing dialogs are caught by the second acceptance pass
+// after readiness and by the reconciler's next tick, as before.
 func AcceptStartupDialogsWithTimeout(
 	ctx context.Context,
 	timeout time.Duration,
 	peek func(lines int) (string, error),
 	sendKeys func(keys ...string) error,
 ) error {
-	if err := acceptClaudeResumeDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("claude resume dialog: %w", err)
+	deadline := time.Now().Add(timeout)
+	remaining := func() time.Duration {
+		if r := time.Until(deadline); r > minPerDialogPeekBudget {
+			return r
+		}
+		return minPerDialogPeekBudget
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	acceptors := []struct {
+		name string
+		fn   func(context.Context, time.Duration, func(int) (string, error), func(...string) error) error
+	}{
+		{"claude resume dialog", acceptClaudeResumeDialog},
+		{"codex update dialog", acceptCodexUpdateDialog},
+		{"workspace trust dialog", acceptWorkspaceTrustDialog},
+		{"mcp trust dialog", acceptMCPTrustDialog},
+		{"codex hook review dialog", acceptCodexHookReviewDialog},
+		{"bypass permissions warning", acceptBypassPermissionsWarning},
+		{"custom API key dialog", acceptCustomAPIKeyDialog},
+		{"rate limit dialog", dismissRateLimitDialog},
 	}
-	if err := acceptCodexUpdateDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("codex update dialog: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := acceptWorkspaceTrustDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("workspace trust dialog: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := acceptMCPTrustDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("mcp trust dialog: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := acceptCodexHookReviewDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("codex hook review dialog: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := acceptBypassPermissionsWarning(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("bypass permissions warning: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := acceptCustomAPIKeyDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("custom API key dialog: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := dismissRateLimitDialog(ctx, timeout, peek, sendKeys); err != nil {
-		return fmt.Errorf("rate limit dialog: %w", err)
+	for _, a := range acceptors {
+		if err := a.fn(ctx, remaining(), peek, sendKeys); err != nil {
+			return fmt.Errorf("%s: %w", a.name, err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
