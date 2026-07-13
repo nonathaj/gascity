@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Audit date:** 2026-07-13
-- **Audit base:** `origin/main` at `8dadc511b` (after PR #4193)
+- **Audit base:** `origin/main` at `31a8d0b7e` (after PRs #4193 and #4151)
 - **Audit bead:** `ga-c4ky0l` (closed)
 - **Implementation epic:** `ga-80po0c` (open)
 
@@ -12,9 +12,9 @@ Gas City has unusually broad test coverage, good hermetic-fixture instincts, and
 several strong shared conformance suites. It does not have a weak-testing
 problem. It has an inverted-cost and unclear-ownership problem.
 
-The default checkout contains 1,548 Go test files and 735,025 lines of Go test
-code, 1.72 times the 428,004 lines of production Go. The `cmd/gc` package alone
-contains 317,712 test lines, 43.2% of all test Go; it produces a 293 MB test
+The default checkout contains 1,548 Go test files and 735,331 lines of Go test
+code, 1.72 times the 428,161 lines of production Go. The `cmd/gc` package alone
+contains 318,018 test lines, 43.2% of all test Go; it produces a 293 MB test
 binary, needs about 4.1 GB of memory to compile, and took 55 seconds merely to
 compile in a warm local measurement. Much of that package tests domain
 decisions through CLI globals, environment variables, subprocesses, mutable
@@ -111,10 +111,10 @@ end of this document.
 | Measure | Current value | Interpretation |
 |---|---:|---|
 | Go test files | 1,548 | Breadth is high; navigation and ownership matter. |
-| Test-prefixed functions | 18,222 | 18,210 runnable tests plus 12 `TestMain` entrypoints; also 9 benchmarks and 1 fuzz target. |
-| Test Go LOC | 735,025 | 63.2% of all Go LOC. |
-| Production Go LOC | 428,004 | Test:production ratio is 1.72:1. |
-| Untagged/default files, functions, LOC | 1,411 / 17,581 / 686,767 | 93.4% of test LOC enters the default package shape. |
+| Test-prefixed functions | 18,228 | 18,216 runnable tests plus 12 `TestMain` entrypoints; also 9 benchmarks and 1 fuzz target. |
+| Test Go LOC | 735,331 | 63.2% of all Go LOC. |
+| Production Go LOC | 428,161 | Test:production ratio is 1.72:1. |
+| Untagged/default files, functions, LOC | 1,411 / 17,587 / 687,073 | 93.4% of test LOC enters the default package shape. |
 | `t.Run` calls | 2,132 | Table/subtest use is modest relative to test count. |
 | `t.Parallel` call sites | 780 in 65 files | Sparse usage is consistent with global-state constraints; nested calls mean this is not a percentage of top-level tests. |
 | `t.Setenv` calls | 5,055 | 3,960 are under `cmd/gc`. |
@@ -142,7 +142,7 @@ to reason about from names alone.
 
 | Direct package/directory | Test files | Test-prefixed functions | Test LOC |
 |---|---:|---:|---:|
-| `cmd/gc` | 447 | 7,451 | 317,712 |
+| `cmd/gc` | 447 | 7,457 | 318,018 |
 | `internal/api` | 141 | 1,401 | 52,625 |
 | `internal/config` | 63 | 1,390 | 41,508 |
 | `internal/beads` | 52 | 679 | 31,258 |
@@ -184,7 +184,7 @@ production logic and its tests must leave the package.
 - `skipSlowCmdGCTest` appears in 78 markers across 27 `cmd/gc` files: 77 gated
   call sites plus the helper definition. Eighty-eight other untagged
   process-using files contain neither that gate nor a `testing.Short` guard.
-- `cmd/gc` contains only 113 `t.Parallel` call sites among 7,451 test-prefixed
+- `cmd/gc` contains only 113 `t.Parallel` call sites among 7,457 test-prefixed
   functions. Its `TestMain`, 3,960 `t.Setenv` calls, 98 direct `os.Chdir` calls,
   mutable package hooks, tmux roots, and provider factories make
   indiscriminate parallelization unsafe.
@@ -877,7 +877,7 @@ E1 remains the sole owner of Large journey/provider entries.
 
 **Acceptance:** Every Medium test inherits a checked package default or has an
 exact top-level owner and resource list. `cmd/gc` records its `TestMain` cost in
-one package row, not 7,450 copies; exact overrides name additional resources.
+one package row, not 7,456 copies; exact overrides name additional resources.
 Every known untagged Small violation is ledgered; new or growing debt fails a
 focused check; reclassification requires evidence rather than a label-only
 edit. The initial counts match this audit's baselines.
@@ -1504,10 +1504,10 @@ invariants appear in review evidence.
 
 **Dependencies:** H2, H4, E1-E2. **Estimate:** medium per family.
 
-#### E6 — Retire the all-7,450-runnable-test process lane
+#### E6 — Retire the all-7,456-runnable-test process lane
 
 **Change:** Classify all 77 gated `skipSlowCmdGCTest` call sites represented by
-the 78-marker census. The package has 7,450 runnable tests plus one `TestMain`
+the 78-marker census. The package has 7,456 runnable tests plus one `TestMain`
 entrypoint that every shard pays. Move argument, retry, ordering, and failure
 cases to Small tests through injected ports. Move the few real boundary proofs
 into explicit process-contract packages/manifests. Delete the 12-way lane only
