@@ -84,15 +84,23 @@ func legacyEphemeralReadyFilterJQ(selector string, limit int) string {
 	return filter
 }
 
+// routedEphemeralSelectorJQ is the jq selector for unassigned routed pool demand
+// over an ephemeral (bd query) candidate set: canonical gc.routed_to==$target,
+// or the migration triplet (empty gc.routed_to + gc.run_target==$target +
+// gc.kind=workflow). It is the ephemeral-store analogue of the durable
+// bdReadyPoolDemandShell / bdReadyPoolDemandMigrationShell predicates and is
+// shared by the reconciler count-form (legacyEphemeralPoolDemandShell) and the
+// batched worker work-query so the two cannot drift on the ephemeral tier.
+func routedEphemeralSelectorJQ() string {
+	return `select((.assignee // "") == "")` +
+		` | select((` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == $target) or ((` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == "") and (` + jqMeta(beadmeta.RunTargetMetadataKey) + ` == $target) and (` + jqMeta(beadmeta.KindMetadataKey) + ` == "` + beadmeta.KindWorkflow + `")))`
+}
+
 func legacyEphemeralPoolDemandShell(limit int, includeEphemeralReady, quiet bool) string {
 	if includeEphemeralReady {
 		return `printf "[]"`
 	}
-	filter := legacyEphemeralReadyFilterJQ(
-		`select((.assignee // "") == "")`+
-			` | select((`+jqMeta(beadmeta.RoutedToMetadataKey)+` == $target) or ((`+jqMeta(beadmeta.RoutedToMetadataKey)+` == "") and (`+jqMeta(beadmeta.RunTargetMetadataKey)+` == $target) and (`+jqMeta(beadmeta.KindMetadataKey)+` == "`+beadmeta.KindWorkflow+`")))`,
-		limit,
-	)
+	filter := legacyEphemeralReadyFilterJQ(routedEphemeralSelectorJQ(), limit)
 	query := bdQueryEphemeralStatusShell("open")
 	if quiet {
 		query = bdQueryEphemeralStatusQuietShell("open")
@@ -163,11 +171,6 @@ func (a *Agent) poolDemandTarget() string {
 	return target
 }
 
-func standardAssignedWorkQueryScript(includeEphemeralReady bool) string {
-	return standardAssignedInProgressWorkQueryScript(includeEphemeralReady) +
-		standardAssignedReadyWorkQueryScript(includeEphemeralReady)
-}
-
 func standardAssignedInProgressWorkQueryScript(includeEphemeralReady bool) string {
 	return `for id in "$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS"; do ` +
 		`[ -z "$id" ] && continue; ` +
@@ -184,11 +187,6 @@ func standardAssignedReadyWorkQueryScript(includeEphemeralReady bool) string {
 		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; ` +
 		ephemeralAssignedReadyProbeScript("id", includeEphemeralReady) +
 		`done; `
-}
-
-func legacyControlAssignedWorkQueryScript(includeEphemeralReady bool) string {
-	return legacyControlAssignedInProgressWorkQueryScript(includeEphemeralReady) +
-		legacyControlAssignedReadyWorkQueryScript(includeEphemeralReady)
 }
 
 func legacyControlAssignedInProgressWorkQueryScript(includeEphemeralReady bool) string {
@@ -255,6 +253,155 @@ func routedPoolWorkQueryCommand(includeEphemeralReady bool, targets ...string) s
 	return shellquote.Join(args)
 }
 
+// --- Batched work-query (gw-j1m) --------------------------------------------
+//
+// The per-tier/per-identity/per-route `bd` calls above each cold-open the
+// embedded doltlite store (~6-15s on Windows), so the compound work-query fired
+// ~6-10 serial cold-opens per idle cycle and blew its deadline. The batched
+// form below fetches each broad candidate set ONCE into a shell variable and
+// then partitions the tiers with jq (jq processes cached JSON text and does not
+// touch the store, so its cost is negligible). This preserves every selection
+// predicate and the tier/identity ordering while cutting cold-opens to at most:
+//
+//	bd list --status in_progress   (durable crash-recovery)
+//	bd query ephemeral in_progress (ephemeral crash-recovery)
+//	bd ready [--include-ephemeral] (durable ready: assigned + routed tiers)
+//	bd query ephemeral open        (1.0.4 ephemeral ready: assigned + routed)
+//
+// i.e. 2 cold-opens when crash-recovery work is found (the ready fetch is lazy,
+// after the in-progress tier), and 3-4 for a fully idle cycle (4 under bd 1.0.4,
+// 3 under bd 1.0.5 where ephemeral-ready folds into `bd ready`).
+
+// jqNotEpic is the jq equivalent of bd's `--exclude-type=epic` flag, matching
+// the epic test already used by legacyEphemeralReadyFilterJQ.
+const jqNotEpic = `(.issue_type // .type // "") != "epic"`
+
+// assignedIdentityMatchJQ selects rows assigned to the jq $id argument and keeps
+// only the first, reproducing the `--assignee=<id> ... --limit=1` /
+// `.[:1]` shape of the per-identity probes it replaces. It runs over an
+// already-fetched array cached in a shell variable, so the identity fan-out
+// costs one jq process per candidate instead of one bd cold-open per candidate.
+const assignedIdentityMatchJQ = `[.[] | select((.assignee // "") == $id)] | .[:1]`
+
+// batchedCandidateProbe emits one "filter the cached JSON array in $jsonVar by
+// the candidate in $candVar, print it and exit 0 if non-empty" step. jqFilter
+// reads the jq $id argument.
+func batchedCandidateProbe(jsonVar, candVar, jqFilter string) string {
+	return `r=$(printf '%s' "$` + jsonVar + `" | jq -c --arg id "$` + candVar + `" ` + shellquote.Quote(jqFilter) + ` 2>/dev/null); ` +
+		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; `
+}
+
+// batchedInProgressFetch performs the single cold-open pair that feeds every
+// assigned in-progress (crash-recovery) candidate probe: one `bd list --status
+// in_progress` for durable work and one ephemeral `bd query` (durable and
+// ephemeral live in separate stores under bd 1.0.4, and `bd list
+// --include-ephemeral` is not 1.0.4-compatible, so the two stay distinct). Each
+// result is cached and defaulted to "[]" so a transient store error degrades the
+// tier to "no work" exactly as the old per-call `2>/dev/null` did.
+func batchedInProgressFetch() string {
+	return `all_inprog=$(bd list --status in_progress --json --limit 0 2>/dev/null); [ -n "$all_inprog" ] || all_inprog='[]'; ` +
+		`eph_inprog=$(` + bdQueryEphemeralStatusQuietShell("in_progress") + `); [ -n "$eph_inprog" ] || eph_inprog='[]'; `
+}
+
+// batchedReadyFetch performs the single `bd ready` cold-open feeding both the
+// assigned-ready and routed pool-demand tiers (partitioned in jq), plus the
+// 1.0.4 ephemeral-ready `bd query`. Under bd 1.0.5 (`--include-ephemeral`) the
+// ephemeral-ready rows are already in `bd ready`, so no separate ephemeral fetch
+// is issued — matching the pre-batch behavior where the ephemeral-ready probes
+// were compiled out.
+func batchedReadyFetch(includeEphemeralReady bool) string {
+	s := `all_ready=$(bd ready` + bdReadyIncludeEphemeralArg(includeEphemeralReady) + ` --json --limit 0 2>/dev/null); [ -n "$all_ready" ] || all_ready='[]'; `
+	if !includeEphemeralReady {
+		s += `eph_open=$(` + bdQueryEphemeralStatusQuietShell("open") + `); [ -n "$eph_open" ] || eph_open='[]'; `
+	}
+	return s
+}
+
+// batchedAssignedInProgressBody probes the cached durable then ephemeral
+// in-progress sets for the current candidate (crash recovery, Tier 1).
+func batchedAssignedInProgressBody(candVar string) string {
+	return batchedCandidateProbe("all_inprog", candVar, assignedIdentityMatchJQ) +
+		batchedCandidateProbe("eph_inprog", candVar, assignedIdentityMatchJQ)
+}
+
+// batchedAssignedReadyBody probes the cached durable ready set (and, under bd
+// 1.0.4, the ephemeral-open set with the full ready filter) for the current
+// candidate (pre-assigned ready, Tier 2). Epics are intentionally NOT excluded
+// here: an agent must resume its own assigned epic wisp (the patrol-loop
+// pattern) — same asymmetry as the pre-batch assigned tier.
+func batchedAssignedReadyBody(candVar string, includeEphemeralReady bool) string {
+	body := batchedCandidateProbe("all_ready", candVar, assignedIdentityMatchJQ)
+	if !includeEphemeralReady {
+		body += batchedCandidateProbe("eph_open", candVar, legacyEphemeralReadyFilterJQ(`select((.assignee // "") == $id)`, 1))
+	}
+	return body
+}
+
+// standardIdentityLoop and legacyControlIdentityLoop reproduce the exact
+// identity fan-out of the pre-batch assigned tiers: $GC_SESSION_ID >
+// $GC_SESSION_NAME > $GC_ALIAS, and (control-dispatcher only) each identity's
+// legacy workflow-control alias. body references $id (standard) or $cand
+// (legacy control) as the candidate identity.
+func standardIdentityLoop(body string) string {
+	return `for id in "$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS"; do ` +
+		`[ -z "$id" ] && continue; ` +
+		body +
+		`done; `
+}
+
+func legacyControlIdentityLoop(body string) string {
+	return `for id in "$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS"; do ` +
+		`[ -z "$id" ] && continue; ` +
+		`legacy=""; case "$id" in *control-dispatcher) legacy="${id%control-dispatcher}workflow-control";; esac; ` +
+		`for cand in "$id" "$legacy"; do ` +
+		`[ -z "$cand" ] && continue; ` +
+		body +
+		`done; ` +
+		`done; `
+}
+
+// batchedRoutedCanonicalSelectJQ mirrors bdReadyPoolDemandShell
+// (`--metadata-field gc.routed_to=$target --unassigned --exclude-type=epic
+// --sort oldest --limit=20`) as a jq partition over the cached `bd ready` array.
+// bd already computed readiness for that array, so this reproduces only the
+// flag-level post-filters and deliberately does NOT re-derive dependency
+// readiness (that stays bd's job, exactly as the pre-batch predicate relied on
+// `bd ready`). The tier stays wider than one row so a self-blocked head has
+// ready routed work behind it for the hook layer (filterUnreadyHookCandidates)
+// to fall through to.
+func batchedRoutedCanonicalSelectJQ() string {
+	return `[.[] | select((.assignee // "") == "") | select(` + jqNotEpic + `) | select(` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == $target)] | sort_by(.created_at // "") | .[:20]`
+}
+
+// batchedRoutedMigrationSelectJQ mirrors bdReadyPoolDemandMigrationShell +
+// poolDemandMigrationFilterJQ(1): unassigned, non-epic, gc.run_target==$target,
+// gc.kind=workflow, and gc.routed_to still empty (a divergent routed_to means
+// the canonical key wins and the run_target hint is ignored), oldest first.
+func batchedRoutedMigrationSelectJQ() string {
+	return `[.[] | select((.assignee // "") == "") | select(` + jqNotEpic + `) | select(` + jqMeta(beadmeta.RunTargetMetadataKey) + ` == $target) | select(` + jqMeta(beadmeta.KindMetadataKey) + ` == "` + beadmeta.KindWorkflow + `") | select(` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == "")] | sort_by(.created_at // "") | .[:1]`
+}
+
+// batchedPoolDemandFunctionScript defines probe_pool_demand over the cached
+// ready sets: canonical gc.routed_to, then the gc.run_target migration
+// fallback, then (bd 1.0.4) the ephemeral routed set. Same order and same
+// predicates as poolDemandFirstRowFunctionScript, but zero additional
+// cold-opens per target.
+func batchedPoolDemandFunctionScript(includeEphemeralReady bool) string {
+	script := `probe_pool_demand() { ` +
+		`target="$1"; ` +
+		`[ -z "$target" ] && return 1; ` +
+		`r=$(printf '%s' "$all_ready" | jq -c --arg target "$target" ` + shellquote.Quote(batchedRoutedCanonicalSelectJQ()) + ` 2>/dev/null); ` +
+		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; ` +
+		`r=$(printf '%s' "$all_ready" | jq -c --arg target "$target" ` + shellquote.Quote(batchedRoutedMigrationSelectJQ()) + ` 2>/dev/null); ` +
+		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; `
+	if !includeEphemeralReady {
+		ephFilter := legacyEphemeralReadyFilterJQ(routedEphemeralSelectorJQ(), 1)
+		script += `r=$(printf '%s' "$eph_open" | jq -c --arg target "$target" ` + shellquote.Quote(ephFilter) + ` 2>/dev/null); ` +
+			`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; `
+	}
+	return script + `return 1; }; `
+}
+
 // EffectiveWorkQuery returns the work query command for this agent.
 // If WorkQuery is set, returns it as-is. Otherwise returns the default
 // three-tier query with multi-identifier assignee resolution.
@@ -308,16 +455,25 @@ func (a *Agent) effectiveWorkQuery(includeEphemeralReady bool) string {
 	target := a.poolDemandTarget()
 	legacyTarget := legacyWorkflowControlQualifiedName(target)
 	if legacyTarget == "" {
-		script := standardAssignedWorkQueryScript(includeEphemeralReady) +
+		// Fetches are staged so crash-recovery short-circuits before the ready
+		// fetch: in-progress tier first, then (only if it finds nothing) the
+		// ready fetch feeding the assigned-ready and routed pool tiers.
+		script := batchedInProgressFetch() +
+			standardIdentityLoop(batchedAssignedInProgressBody("id")) +
+			batchedReadyFetch(includeEphemeralReady) +
+			standardIdentityLoop(batchedAssignedReadyBody("id", includeEphemeralReady)) +
 			poolDemandOriginGateScript() +
-			poolDemandFirstRowFunctionScript(includeEphemeralReady) +
+			batchedPoolDemandFunctionScript(includeEphemeralReady) +
 			`probe_pool_demand "$1"; ` +
 			`printf "[]"`
 		return shellquote.Join([]string{"sh", "-c", script, "--", target})
 	}
-	script := legacyControlAssignedWorkQueryScript(includeEphemeralReady) +
+	script := batchedInProgressFetch() +
+		legacyControlIdentityLoop(batchedAssignedInProgressBody("cand")) +
+		batchedReadyFetch(includeEphemeralReady) +
+		legacyControlIdentityLoop(batchedAssignedReadyBody("cand", includeEphemeralReady)) +
 		poolDemandOriginGateScript() +
-		poolDemandFirstRowFunctionScript(includeEphemeralReady) +
+		batchedPoolDemandFunctionScript(includeEphemeralReady) +
 		`probe_pool_demand "$1"; ` +
 		`probe_pool_demand "$2"; ` +
 		`printf "[]"`

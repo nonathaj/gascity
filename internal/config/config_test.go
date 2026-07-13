@@ -1823,39 +1823,103 @@ func TestPoolRoundTrip(t *testing.T) {
 func TestEffectiveWorkQueryDefault(t *testing.T) {
 	a := Agent{Name: "mayor"}
 	got := a.EffectiveWorkQuery()
-	// Tiered query: tier 3 routes via gc.routed_to, with a temporary
-	// gc.run_target migration fallback for pre-backfill workflow roots, and
-	// tiers 1-2 resolve by assignee.
+	// Batched tiered query (gw-j1m): one broad `bd ready` + one `bd list
+	// --status in_progress` (+ ephemeral bd query under bd 1.0.4) feed every
+	// tier, which are partitioned in jq. Tier 3 routes via gc.routed_to with a
+	// gc.run_target migration fallback; tiers 1-2 resolve by assignee.
 	if strings.Contains(got, `--include-ephemeral`) {
 		t.Errorf("EffectiveWorkQuery() default must be bd 1.0.4-compatible without --include-ephemeral: %q", got)
 	}
-	if !strings.Contains(got, `bd ready --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --json --sort oldest --limit=20`) {
-		t.Errorf("EffectiveWorkQuery() missing tier 3 pool-demand probe: %q", got)
+	// Broad single-cold-open fetches replace the per-tier/per-identity bd calls.
+	for _, want := range []string{
+		`bd list --status in_progress --json --limit 0`,
+		`bd ready --json --limit 0`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("EffectiveWorkQuery() missing batched fetch %q: %q", want, got)
+		}
+	}
+	// Tier 3 pool demand is a jq partition over the cached ready set: canonical
+	// gc.routed_to (limit 20 for the blocked-head fallthrough), then the
+	// gc.run_target migration fallback, both unassigned + non-epic.
+	for _, want := range []string{
+		`select((.metadata["gc.routed_to"] // "") == $target)`,
+		`(.issue_type // .type // "") != "epic"`,
+		`select((.metadata["gc.run_target"] // "") == $target)`,
+		`select((.metadata["gc.kind"] // "") == "workflow")`,
+		`.[:20]`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("EffectiveWorkQuery() missing Tier 3 jq predicate %q: %q", want, got)
+		}
+	}
+	// The batched form must NOT re-introduce per-tier/per-identity bd cold-opens
+	// (that is the whole point of gw-j1m).
+	for _, bad := range []string{
+		`bd ready --metadata-field`,
+		`bd ready --assignee`,
+		`bd list --status in_progress --assignee`,
+	} {
+		if strings.Contains(got, bad) {
+			t.Errorf("EffectiveWorkQuery() re-introduced per-tier bd cold-open %q: %q", bad, got)
+		}
 	}
 	if !strings.Contains(got, "-- mayor") {
 		t.Errorf("EffectiveWorkQuery() missing tier 3 target argument: %q", got)
-	}
-	if !strings.Contains(got, `bd ready --metadata-field "gc.run_target=$target" --metadata-field "gc.kind=workflow" --unassigned --exclude-type=epic --json --sort oldest --limit=20`) {
-		t.Errorf("EffectiveWorkQuery() missing run_target migration fallback: %q", got)
-	}
-	for _, want := range []string{`.metadata`, `.[:1]`} {
-		if !strings.Contains(got, want) {
-			t.Errorf("EffectiveWorkQuery() missing run_target migration filter fragment %q: %q", want, got)
-		}
 	}
 	if !strings.Contains(got, `"$GC_SESSION_ID" "$GC_SESSION_NAME" "$GC_ALIAS"`) {
 		t.Errorf("EffectiveWorkQuery() missing multi-identifier resolution: %q", got)
 	}
 }
 
+// TestEffectiveWorkQueryBatchesBdColdOpens is the gw-j1m regression guard. Each
+// `bd` invocation cold-opens the embedded doltlite store (~6-15s), and the
+// pre-batch work-query fired one per tier/identity/route (~6-10 serial opens),
+// blowing the dispatcher's deadline. The batched form must issue only the broad
+// fetches: one `bd list --status in_progress`, one `bd ready`, and the ephemeral
+// `bd query` probes (two under bd 1.0.4, one under bd 1.0.5 where ephemeral-ready
+// folds into `bd ready`). probe_pool_demand and the identity fan-out add zero
+// cold-opens (they filter cached JSON in jq), so target count does not matter.
+func TestEffectiveWorkQueryBatchesBdColdOpens(t *testing.T) {
+	countBd := func(cmd string) int {
+		return strings.Count(cmd, "bd list") + strings.Count(cmd, "bd query") + strings.Count(cmd, "bd ready")
+	}
+	worker := Agent{Name: "worker", Dir: "hello-world"}
+	control := Agent{Name: ControlDispatcherAgentName, Dir: "gascity"}
+	bd105 := BeadsConfig{BDCompatibility: BeadsBDCompatibility105}
+	cases := []struct {
+		name string
+		cmd  string
+		want int
+	}{
+		{"standard worker bd-1.0.4", worker.EffectiveWorkQuery(), 4},
+		{"standard worker bd-1.0.5", worker.EffectiveWorkQueryForBeads(bd105), 3},
+		{"control-dispatcher bd-1.0.4", control.EffectiveWorkQuery(), 4},
+		{"control-dispatcher bd-1.0.5", control.EffectiveWorkQueryForBeads(bd105), 3},
+	}
+	for _, tc := range cases {
+		if got := countBd(tc.cmd); got != tc.want {
+			t.Errorf("%s: bd cold-open count = %d, want %d (batched work-query must not re-introduce per-tier/per-route bd calls)\n  cmd: %s", tc.name, got, tc.want, tc.cmd)
+		}
+	}
+}
+
 func TestEffectiveWorkQueryBD105CompatibilityOptIn(t *testing.T) {
 	a := Agent{Name: "mayor"}
 	got := a.EffectiveWorkQueryForBeads(BeadsConfig{BDCompatibility: BeadsBDCompatibility105})
-	if !strings.Contains(got, `bd ready --include-ephemeral --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --json --sort oldest --limit=20`) {
-		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) missing include-ephemeral routed probe: %q", got)
+	// Under bd 1.0.5 the single broad ready fetch folds in ephemeral rows, so no
+	// separate ephemeral-open bd query is issued.
+	if !strings.Contains(got, `bd ready --include-ephemeral --json --limit 0`) {
+		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) missing include-ephemeral broad ready fetch: %q", got)
 	}
-	if !strings.Contains(got, `bd ready --include-ephemeral --assignee="$id" --json --limit=1`) {
-		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) missing include-ephemeral assigned probe: %q", got)
+	if strings.Contains(got, `ephemeral=true AND status=open`) {
+		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) should fold ephemeral-open into bd ready, not issue a separate query: %q", got)
+	}
+	// The in-progress ephemeral bd query stays (bd list has no 1.0.4-safe
+	// --include-ephemeral form). The AND-expression is single-quoted inside the
+	// nested script, so assert on its (unescaped) content.
+	if !strings.Contains(got, `ephemeral=true AND status=in_progress`) {
+		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) missing ephemeral in-progress crash-recovery query: %q", got)
 	}
 }
 
@@ -2185,61 +2249,55 @@ func TestEffectiveWorkQueryControlDispatcherIncludesLegacyWorkflowControlRoute(t
 func TestEffectiveWorkQueryControlDispatcherClaimsLegacyAssignedWork(t *testing.T) {
 	a := Agent{Name: ControlDispatcherAgentName, Dir: "gascity"}
 	got := a.EffectiveWorkQuery()
+	// Batched assigned tiers partition the broad fetches by candidate (including
+	// the legacy workflow-control alias via the $cand loop).
 	for _, want := range []string{
-		`bd list --status in_progress --assignee="$cand"`,
-		`bd ready --assignee="$cand"`,
+		`bd list --status in_progress --json --limit 0`,
+		`bd ready --json --limit 0`,
+		`for cand in "$id" "$legacy"`,
+		`[.[] | select((.assignee // "") == $id)] | .[:1]`,
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("EffectiveWorkQuery() = %q, want storage-aware legacy assigned tier %q", got, want)
+			t.Fatalf("EffectiveWorkQuery() = %q, want batched legacy assigned tier %q", got, want)
 		}
 	}
+	// The broad `bd ready` returns a bead assigned to the legacy
+	// workflow-control alias; the jq assigned partition resolves it via the
+	// GC_ALIAS candidate's legacy alias.
 	out := runEffectiveWorkQuery(t, a, map[string]string{
 		"GC_SESSION_NAME": "gascity--control-dispatcher",
 		"GC_ALIAS":        "gascity/control-dispatcher",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  "list --status in_progress --assignee=gascity--control-dispatcher --json --limit=1"|\
-  "list --status in_progress --assignee=gascity/control-dispatcher --json --limit=1"|\
-  "list --status in_progress --assignee=gascity--workflow-control --json --limit=1"|\
-  "list --status in_progress --assignee=gascity/workflow-control --json --limit=1")
-    printf '[]'
-    ;;
-  "ready --assignee=gascity--workflow-control --json --limit=1"|\
-  "ready --assignee=gascity/workflow-control --json --limit=1")
-    printf '[{"id":"ga-legacy-ready"}]'
-    ;;
-  *)
-    printf '[]'
-    ;;
+case "$1" in
+  list) printf '[]' ;;
+  ready) printf '[{"id":"ga-legacy-ready","assignee":"gascity/workflow-control"}]' ;;
+  query) printf '[]' ;;
+  *) printf '[]' ;;
 esac
 `)
-	if got, want := strings.TrimSpace(out), `[{"id":"ga-legacy-ready"}]`; got != want {
-		t.Fatalf("legacy assigned work query output = %q, want %q", got, want)
+	if !strings.Contains(out, `"id":"ga-legacy-ready"`) {
+		t.Fatalf("legacy assigned work query output = %q, want ga-legacy-ready claimed via legacy alias", out)
 	}
 }
 
 func TestEffectiveWorkQueryControlDispatcherClaimsLegacyUnassignedRoute(t *testing.T) {
 	a := Agent{Name: ControlDispatcherAgentName, Dir: "gascity"}
-	out := runEffectiveWorkQuery(t, a, nil, `#!/bin/sh
+	// Only the legacy workflow-control route ($2) carries demand. The canonical
+	// target ($1=control-dispatcher) finds nothing, so probe_pool_demand "$2"
+	// must claim the workflow-control-routed bead. The broad `bd ready` returns
+	// both routes; jq partitions per target.
+	out := runEffectiveWorkQuery(t, a, map[string]string{
+		"GC_SESSION_ORIGIN": "ephemeral",
+	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"ready --include-ephemeral"*"--metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[]'
-    ;;
-  *"ready --metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[]'
-    ;;
-  *"ready --metadata-field gc.routed_to=gascity/workflow-control"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[{"id":"ga-legacy-route"}]'
-    ;;
-  *)
-    printf '[]'
-    ;;
+case "$1" in
+  ready) printf '[{"id":"ga-legacy-route","assignee":"","metadata":{"gc.routed_to":"gascity/workflow-control"}}]' ;;
+  *) printf '[]' ;;
 esac
 `)
-	if got, want := strings.TrimSpace(out), `[{"id":"ga-legacy-route"}]`; got != want {
-		t.Fatalf("legacy routed work query output = %q, want %q", got, want)
+	if !strings.Contains(out, `"id":"ga-legacy-route"`) {
+		t.Fatalf("legacy routed work query output = %q, want ga-legacy-route via probe $2", out)
 	}
 }
 
@@ -2247,20 +2305,22 @@ func TestEffectiveWorkQueryRoutedQueueUsesNativeOldestSortAcrossReadyTiers(t *te
 	a := Agent{Name: "worker", Dir: "hello-world"}
 	got := a.EffectiveWorkQuery()
 	for _, want := range []string{
-		`bd list --status in_progress --assignee="$id"`,
-		`bd ready --assignee="$id"`,
+		`bd list --status in_progress --json --limit 0`,
+		`bd ready --json --limit 0`,
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("EffectiveWorkQuery() = %q, want storage-aware assigned tier %q", got, want)
+			t.Fatalf("EffectiveWorkQuery() = %q, want batched assigned fetch %q", got, want)
 		}
 	}
+	// The broad ready set returns routed candidates newest-first; the jq routed
+	// partition must sort oldest-first so the hook claims the oldest head.
 	out := runEffectiveWorkQuery(t, a, map[string]string{
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  "ready --metadata-field gc.routed_to=hello-world/worker --unassigned --exclude-type=epic --json --sort oldest --limit=20")
-    printf '[{"id":"older-no-history","priority":2,"created_at":"2026-05-20T06:09:30Z","no_history":true}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"newer-durable","assignee":"","created_at":"2026-06-20T06:09:30Z","metadata":{"gc.routed_to":"hello-world/worker"}},{"id":"older-no-history","assignee":"","created_at":"2026-05-20T06:09:30Z","no_history":true,"metadata":{"gc.routed_to":"hello-world/worker"}}]'
     ;;
   *)
     printf '[]'
@@ -2268,10 +2328,11 @@ case "$*" in
 esac
 `)
 	if !strings.Contains(out, "older-no-history") {
-		t.Fatalf("EffectiveWorkQuery() did not pick oldest routed work: %q", out)
+		t.Fatalf("EffectiveWorkQuery() did not surface routed work: %q", out)
 	}
-	if strings.Contains(out, "newer-durable") {
-		t.Fatalf("EffectiveWorkQuery() returned more than first oldest routed work: %q", out)
+	idxOld, idxNew := strings.Index(out, "older-no-history"), strings.Index(out, "newer-durable")
+	if idxOld == -1 || (idxNew != -1 && idxNew < idxOld) {
+		t.Fatalf("EffectiveWorkQuery() did not order oldest routed work first: %q", out)
 	}
 }
 
@@ -2299,13 +2360,16 @@ func TestGeneratedBdReadCommandsStayBd104StorageCompatible(t *testing.T) {
 
 func TestEffectiveWorkQueryRoutedQueueUsesOldestBeforePriority(t *testing.T) {
 	a := Agent{Name: "worker", Dir: "hello-world"}
+	// Oldest must win over higher priority: the jq routed sort is by created_at,
+	// not priority. Return a newer high-priority bead ahead of an older
+	// low-priority one and assert the older sorts first.
 	out := runEffectiveWorkQuery(t, a, map[string]string{
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[{"id":"older-p2","priority":2,"created_at":"2026-05-20T06:09:30Z"}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"newer-p0","assignee":"","priority":0,"created_at":"2026-06-20T06:09:30Z","metadata":{"gc.routed_to":"hello-world/worker"}},{"id":"older-p2","assignee":"","priority":2,"created_at":"2026-05-20T06:09:30Z","metadata":{"gc.routed_to":"hello-world/worker"}}]'
     ;;
   *)
     printf '[]'
@@ -2313,25 +2377,26 @@ case "$*" in
 esac
 `)
 	if !strings.Contains(out, "older-p2") {
-		t.Fatalf("EffectiveWorkQuery() did not pick oldest routed work across priorities: %q", out)
+		t.Fatalf("EffectiveWorkQuery() did not surface routed work across priorities: %q", out)
 	}
-	if strings.Contains(out, "newer-p0") {
-		t.Fatalf("EffectiveWorkQuery() returned newer high-priority routed work before oldest: %q", out)
+	idxOld, idxNew := strings.Index(out, "older-p2"), strings.Index(out, "newer-p0")
+	if idxOld == -1 || (idxNew != -1 && idxNew < idxOld) {
+		t.Fatalf("EffectiveWorkQuery() ordered newer high-priority routed work before oldest: %q", out)
 	}
 }
 
 func TestEffectiveWorkQueryRoutedFallbackUsesNativeOldestSort(t *testing.T) {
 	a := Agent{Name: "worker", Dir: "hello-world"}
+	// No canonical gc.routed_to demand; only gc.run_target migration roots. The
+	// migration partition sorts oldest-first and takes a single head (.[:1]), so
+	// only the oldest fallback must surface.
 	out := runEffectiveWorkQuery(t, a, map[string]string{
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[]'
-    ;;
-  *"ready --metadata-field gc.run_target=hello-world/worker"*"--metadata-field gc.kind=workflow"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
-    printf '[{"id":"older-fallback","priority":2,"created_at":"2026-05-20T06:09:30Z","metadata":{"gc.kind":"workflow","gc.run_target":"hello-world/worker"}}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"newer-fallback","assignee":"","created_at":"2026-06-20T06:09:30Z","metadata":{"gc.kind":"workflow","gc.run_target":"hello-world/worker"}},{"id":"older-fallback","assignee":"","created_at":"2026-05-20T06:09:30Z","metadata":{"gc.kind":"workflow","gc.run_target":"hello-world/worker"}}]'
     ;;
   *)
     printf '[]'
@@ -2342,7 +2407,7 @@ esac
 		t.Fatalf("EffectiveWorkQuery() did not pick oldest routed fallback work: %q", out)
 	}
 	if strings.Contains(out, "newer-fallback") {
-		t.Fatalf("EffectiveWorkQuery() returned newer high-priority fallback work before oldest: %q", out)
+		t.Fatalf("EffectiveWorkQuery() returned newer fallback work before oldest (migration .[:1]): %q", out)
 	}
 }
 
@@ -2371,25 +2436,22 @@ func TestEffectiveWorkQueryExcludesEpics(t *testing.T) {
 	got := a.EffectiveWorkQuery()
 	// The routed (pool) tier excludes parent epics (gc-udx): an unassigned
 	// routed epic has no executable spec, so a pool worker grabbing one does
-	// undefined work. The assigned tiers do NOT exclude epics — an agent must
-	// resume its own assigned ephemeral epic wisp (the patrol-loop pattern).
+	// undefined work. The assigned durable tiers do NOT exclude epics — an agent
+	// must resume its own assigned epic wisp (the patrol-loop pattern). In the
+	// batched query the routed epic exclusion is a jq filter on the routed
+	// partitions; the durable assigned partition selects purely by assignee.
 	wantPresent := []string{
-		// routed/pool tier still excludes epics (gc-udx guard)
-		`bd ready --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --json`,
-		// assigned tiers carry NO epic exclusion
-		`bd list --status in_progress --assignee="$id" --json`,
-		`bd ready --assignee="$id" --json`,
+		// routed canonical + migration partitions carry the epic exclusion
+		`select((.issue_type // .type // "") != "epic") | select((.metadata["gc.routed_to"] // "") == $target)`,
+		`select((.issue_type // .type // "") != "epic") | select((.metadata["gc.run_target"] // "") == $target)`,
+		// durable assigned partition selects by assignee only (no epic exclusion)
+		`[.[] | select((.assignee // "") == $id)] | .[:1]`,
 		`-- hello-world/worker`,
 	}
 	for _, want := range wantPresent {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveWorkQuery() missing expected substring:\n  want: %s\n  got: %s", want, got)
 		}
-	}
-	// The assigned tiers must NOT carry --exclude-type=epic, or self-assigned
-	// epic wisps get stranded (gc hook exits 1 with empty output).
-	if bad := `--assignee="$id" --exclude-type=epic`; strings.Contains(got, bad) {
-		t.Errorf("EffectiveWorkQuery() assigned tier must not exclude epics, found: %s\n  got: %s", bad, got)
 	}
 }
 
@@ -2401,18 +2463,17 @@ func TestEffectiveWorkQueryExcludesEpicsControlDispatcher(t *testing.T) {
 	a := Agent{Name: ControlDispatcherAgentName, Dir: "gascity"}
 	got := a.EffectiveWorkQuery()
 	wantPresent := []string{
-		`bd ready --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --json`,
-		`bd list --status in_progress --assignee="$cand" --json`,
-		`bd ready --assignee="$cand" --json`,
+		// routed partition excludes epics (gc-udx guard)
+		`select((.issue_type // .type // "") != "epic") | select((.metadata["gc.routed_to"] // "") == $target)`,
+		// durable assigned partition selects by assignee only (candidate loop uses $cand)
+		`[.[] | select((.assignee // "") == $id)] | .[:1]`,
+		`for cand in "$id" "$legacy"`,
 		`-- gascity/control-dispatcher gascity/workflow-control`,
 	}
 	for _, want := range wantPresent {
 		if !strings.Contains(got, want) {
 			t.Errorf("EffectiveWorkQuery() missing expected substring on control-dispatcher:\n  want: %s\n  got: %s", want, got)
 		}
-	}
-	if bad := `--assignee="$cand" --exclude-type=epic`; strings.Contains(got, bad) {
-		t.Errorf("control-dispatcher assigned tier must not exclude epics, found: %s\n  got: %s", bad, got)
 	}
 }
 
@@ -2428,26 +2489,22 @@ func TestEffectiveWorkQueryExcludesEpicsControlDispatcher(t *testing.T) {
 // still excludes epics — see TestEffectiveWorkQuerySkipsEpicLeafScenario.
 func TestEffectiveWorkQueryAssignedTierSurfacesEpicWisp(t *testing.T) {
 	a := Agent{Name: "witness", Dir: "hello-world"}
+	// Under bd 1.0.5 the broad `bd ready --include-ephemeral` returns the epic
+	// wisp (no --exclude-type on the fetch), and the jq assigned partition keeps
+	// it because it filters by assignee only — never by type. The routed tier is
+	// the only one that drops epics.
 	out := runEffectiveWorkQueryForBeads(t, a, BeadsConfig{BDCompatibility: BeadsBDCompatibility105}, map[string]string{
 		"GC_SESSION_ID":     "witness-sess",
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
 case "$1" in
-  ready)
-    case "$*" in
-      *"--assignee=witness-sess"*"--exclude-type=epic"*)
-        # real bd drops the epic-typed wisp when epics are excluded
-        printf '[]' ;;
-      *"ready --include-ephemeral"*"--assignee=witness-sess"*)
-        printf '[{"id":"patrol-wisp","issue_type":"epic","ephemeral":true}]' ;;
-      *) printf '[]' ;;
-    esac ;;
+  ready) printf '[{"id":"patrol-wisp","issue_type":"epic","ephemeral":true,"assignee":"witness-sess"}]' ;;
   *) printf '[]' ;;
 esac
 `)
 	if !strings.Contains(out, "patrol-wisp") {
-		t.Fatalf("EffectiveWorkQuery() did not surface the self-assigned epic wisp (assigned tier still excludes epics?): %q", out)
+		t.Fatalf("EffectiveWorkQuery() did not surface the self-assigned epic wisp (assigned tier excludes epics?): %q", out)
 	}
 }
 
@@ -2473,17 +2530,15 @@ func TestEffectiveWorkQueryCustomPreservesOverride(t *testing.T) {
 // the tier-3 routed query — i.e. it asserts the flag is on the wire.
 func TestEffectiveWorkQuerySkipsEpicLeafScenario(t *testing.T) {
 	a := Agent{Name: "worker", Dir: "hello-world"}
+	// Both the parent epic and the leaf child are routed to the worker and
+	// unassigned; the jq routed partition must drop the epic and keep the leaf.
 	out := runEffectiveWorkQuery(t, a, map[string]string{
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"--exclude-type=epic"*"--metadata-field gc.routed_to=hello-world/worker"*|\
-  *"--metadata-field gc.routed_to=hello-world/worker"*"--exclude-type=epic"*)
-    printf '[{"id":"leaf-child","issue_type":"task"}]'
-    ;;
-  *"--metadata-field gc.routed_to=hello-world/worker"*)
-    printf '[{"id":"parent-epic","issue_type":"epic"}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"parent-epic","issue_type":"epic","assignee":"","metadata":{"gc.routed_to":"hello-world/worker"}},{"id":"leaf-child","issue_type":"task","assignee":"","metadata":{"gc.routed_to":"hello-world/worker"}}]'
     ;;
   *)
     printf '[]'
@@ -2507,9 +2562,9 @@ func TestEffectiveWorkQueryClaimsRoutedToRoot(t *testing.T) {
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"--metadata-field gc.routed_to=hello-world/worker"*)
-    printf '[{"id":"routed-root","issue_type":"workflow"}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"routed-root","issue_type":"workflow","assignee":"","metadata":{"gc.routed_to":"hello-world/worker"}}]'
     ;;
   *) printf '[]' ;;
 esac
@@ -2528,13 +2583,9 @@ func TestEffectiveWorkQueryClaimsRunTargetOnlyRootDuringMigration(t *testing.T) 
 		"GC_SESSION_ORIGIN": "ephemeral",
 	}, `#!/bin/sh
 set -eu
-case "$*" in
-  *"--metadata-field gc.routed_to=hello-world/worker"*)
-    printf '[]'
-    ;;
-  *"--metadata-field gc.run_target=hello-world/worker"*"--metadata-field gc.kind=workflow"*|\
-  *"--metadata-field gc.kind=workflow"*"--metadata-field gc.run_target=hello-world/worker"*)
-    printf '[{"id":"legacy-root","issue_type":"workflow"}]'
+case "$1" in
+  ready)
+    printf '%s' '[{"id":"legacy-root","issue_type":"workflow","assignee":"","metadata":{"gc.run_target":"hello-world/worker","gc.kind":"workflow"}}]'
     ;;
   *) printf '[]' ;;
 esac
@@ -2692,13 +2743,18 @@ func TestDefaultPoolCheckUsesBdReady(t *testing.T) {
 // TestPoolDemandPredicateSharedWithWorkQuery is the structural regression
 // test for the protocol-mismatch class addressed by PR #1516. The
 // reconciler's pool-demand path (EffectivePoolDemandQuery) and the
-// worker's claim path (EffectiveWorkQuery Tier 3) must derive their
-// "is there work on this routed queue?" predicate from the same
-// bdReadyPoolDemandShell helper. Adding a tier to one without updating
-// the other re-introduces the spawn-storm bug — this test ensures both
-// reference the same predicate helpers for the canonical routing key and the
-// temporary migration fallback. The worker first-row path bounds its migration
-// scan, while the reconciler count path keeps the unbounded count form.
+// worker's claim path (EffectiveWorkQuery Tier 3) must agree on "is there
+// work on this routed queue?".
+//
+// After gw-j1m the worker work-query batches its ready fetch and partitions
+// the routed tier in jq (batchedRoutedCanonicalSelectJQ /
+// batchedRoutedMigrationSelectJQ), while the reconciler count-form still uses
+// the bd-flag predicates (bdReadyPoolDemandShell /
+// bdReadyPoolDemandMigrationShell). The two are kept from drifting by (a)
+// sharing the same route-metadata vocabulary (canonical gc.routed_to; migration
+// gc.run_target + gc.kind=workflow gated on empty gc.routed_to), asserted
+// structurally here, and (b) behavioral parity in
+// TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics.
 func TestPoolDemandPredicateSharedWithWorkQuery(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -2724,13 +2780,14 @@ func TestPoolDemandPredicateSharedWithWorkQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			wq := tt.agent.EffectiveWorkQuery()
 			demand := tt.agent.EffectivePoolDemandQuery()
-			workPredicate := bdReadyPoolDemandShell("--sort oldest --limit=20", false)
-			if !strings.Contains(wq, workPredicate) {
-				t.Errorf("EffectiveWorkQuery() missing shared predicate %q in %q", workPredicate, wq)
+			// Worker side: batched jq partitions anchored to the same route keys.
+			workCanonical := batchedRoutedCanonicalSelectJQ()
+			if !strings.Contains(wq, workCanonical) {
+				t.Errorf("EffectiveWorkQuery() missing batched canonical routed predicate %q in %q", workCanonical, wq)
 			}
-			migrationWorkPredicate := bdReadyPoolDemandMigrationShell("--limit=20", false)
-			if !strings.Contains(wq, migrationWorkPredicate) {
-				t.Errorf("EffectiveWorkQuery() missing shared migration predicate %q in %q", migrationWorkPredicate, wq)
+			workMigration := batchedRoutedMigrationSelectJQ()
+			if !strings.Contains(wq, workMigration) {
+				t.Errorf("EffectiveWorkQuery() missing batched migration routed predicate %q in %q", workMigration, wq)
 			}
 			for _, want := range []string{`.metadata`, `.[:1]`} {
 				if !strings.Contains(wq, want) {
@@ -2828,7 +2885,7 @@ func TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics(t *testing.T) {
 		agent          Agent
 		target         string
 		bdReadyOutput  string
-		wantWorkQuery  string
+		wantWorkID     string
 		wantDemandZero bool
 	}{
 		{
@@ -2836,23 +2893,23 @@ func TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics(t *testing.T) {
 			agent:          Agent{Name: "worker", Dir: "foundations"},
 			target:         "foundations/worker",
 			bdReadyOutput:  `[]`,
-			wantWorkQuery:  `[]`,
+			wantWorkID:     "",
 			wantDemandZero: true,
 		},
 		{
 			name:           "one routed unassigned bead",
 			agent:          Agent{Name: "worker", Dir: "foundations"},
 			target:         "foundations/worker",
-			bdReadyOutput:  `[{"id":"fo-routed"}]`,
-			wantWorkQuery:  `[{"id":"fo-routed"}]`,
+			bdReadyOutput:  `[{"id":"fo-routed","assignee":"","metadata":{"gc.routed_to":"foundations/worker"}}]`,
+			wantWorkID:     "fo-routed",
 			wantDemandZero: false,
 		},
 		{
 			name:           "ephemeral wisp routed work",
 			agent:          Agent{Name: "worker", Dir: "foundations"},
 			target:         "foundations/worker",
-			bdReadyOutput:  `[{"id":"fo-wisp","type":"wisp"}]`,
-			wantWorkQuery:  `[{"id":"fo-wisp","type":"wisp"}]`,
+			bdReadyOutput:  `[{"id":"fo-wisp","type":"wisp","assignee":"","metadata":{"gc.routed_to":"foundations/worker"}}]`,
+			wantWorkID:     "fo-wisp",
 			wantDemandZero: false,
 		},
 		{
@@ -2863,26 +2920,30 @@ func TestPoolDemandAndWorkQueryAgreeOnRoutedSemantics(t *testing.T) {
 				PoolName: "foundations/worker",
 			},
 			target:         "foundations/worker",
-			bdReadyOutput:  `[{"id":"fo-routed"}]`,
-			wantWorkQuery:  `[{"id":"fo-routed"}]`,
+			bdReadyOutput:  `[{"id":"fo-routed","assignee":"","metadata":{"gc.routed_to":"foundations/worker"}}]`,
+			wantWorkID:     "fo-routed",
 			wantDemandZero: false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// One fake store, two callers: the batched worker work-query
+			// partitions the broad `bd ready` in jq; the (unchanged) reconciler
+			// count-form filters via bd flags (the fake ignores flags and
+			// returns the same set, letting each caller's own filter decide).
 			bdScript := `#!/bin/sh
-case "$*" in
-  *"ready --metadata-field gc.routed_to=` + tc.target + `"*"--unassigned"*"--exclude-type=epic"*)
-    printf '%s' '` + tc.bdReadyOutput + `'
-    ;;
-  *)
-    printf '[]'
-    ;;
+case "$1" in
+  ready) printf '%s' '` + tc.bdReadyOutput + `' ;;
+  *) printf '[]' ;;
 esac
 `
 			wqOut := strings.TrimSpace(runEffectiveWorkQuery(t, tc.agent, nil, bdScript))
-			if wqOut != tc.wantWorkQuery {
-				t.Errorf("EffectiveWorkQuery output = %q, want %q", wqOut, tc.wantWorkQuery)
+			if tc.wantDemandZero {
+				if wqOut != "[]" && wqOut != "" {
+					t.Errorf("EffectiveWorkQuery output = %q, want no work", wqOut)
+				}
+			} else if !strings.Contains(wqOut, tc.wantWorkID) {
+				t.Errorf("EffectiveWorkQuery output = %q, want to contain %q", wqOut, tc.wantWorkID)
 			}
 			demandOut := strings.TrimSpace(runShellWithFakeBd(t, tc.agent.EffectivePoolDemandQuery(), nil, bdScript))
 			if tc.wantDemandZero {
