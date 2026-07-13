@@ -31,3 +31,34 @@ func TestWorkQueryTimeoutsAccommodateMultiRoundTripProbe(t *testing.T) {
 		t.Errorf("hookWorkQueryTimeout = %s, want >= %s (multi-round-trip probe budget)", hookWorkQueryTimeout, minProbeBudget)
 	}
 }
+
+// TestResolveHookWorkQueryTimeoutEnvOverride covers the
+// GC_HOOK_WORK_QUERY_TIMEOUT override for hosts where each bd round-trip is
+// expensive (per-call doltlite fallback on Windows costs ~4s, so the composite
+// probe needs more than the 60s default). Invalid, non-positive, or absent
+// values must fall back to the default rather than disable or zero the cap.
+func TestResolveHookWorkQueryTimeoutEnvOverride(t *testing.T) {
+	const fallback = 60 * time.Second
+	cases := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{name: "unset", env: "", want: fallback},
+		{name: "valid seconds", env: "180s", want: 180 * time.Second},
+		{name: "valid minutes", env: "3m", want: 3 * time.Minute},
+		{name: "padded", env: "  90s  ", want: 90 * time.Second},
+		{name: "not a duration", env: "banana", want: fallback},
+		{name: "bare number", env: "180", want: fallback},
+		{name: "zero", env: "0s", want: fallback},
+		{name: "negative", env: "-30s", want: fallback},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GC_HOOK_WORK_QUERY_TIMEOUT", tc.env)
+			if got := resolveHookWorkQueryTimeout(); got != tc.want {
+				t.Errorf("resolveHookWorkQueryTimeout() with %q = %s, want %s", tc.env, got, tc.want)
+			}
+		})
+	}
+}

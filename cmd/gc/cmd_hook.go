@@ -544,7 +544,29 @@ type WorkQueryRunner func(command, dir string) (string, error)
 // check) and does not enclose this work query. The package-level var lets us
 // lower it again once the probe's round-trip count is reduced and the slow
 // per-rig `bd ready`/`gc ready` paths are optimized.
-var hookWorkQueryTimeout = 60 * time.Second
+//
+// GC_HOOK_WORK_QUERY_TIMEOUT overrides the cap (Go duration syntax, e.g.
+// "180s"). Hosts where each bd invocation is expensive — per-call doltlite
+// fallback on Windows costs ~4s per round-trip — need more than the default
+// 60s budget for the composite probe; without the override the serve loop
+// emits session.work_query_failed every cycle and operators are starved of
+// routed work.
+var hookWorkQueryTimeout = resolveHookWorkQueryTimeout()
+
+// resolveHookWorkQueryTimeout returns the GC_HOOK_WORK_QUERY_TIMEOUT override
+// when it parses to a positive duration, and the 60s default otherwise.
+func resolveHookWorkQueryTimeout() time.Duration {
+	const fallback = 60 * time.Second
+	raw := strings.TrimSpace(os.Getenv("GC_HOOK_WORK_QUERY_TIMEOUT"))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
 
 // shellWorkQueryWithEnv runs a work query command via sh -c and returns
 // stdout. If env is non-nil it is used as the subprocess environment
