@@ -1,0 +1,79 @@
+# Packages whose unit tests pass on Windows (the "green list").
+# Consumed by .github/workflows/windows-gate.yml. One package per line;
+# lines starting with # are ignored.
+#
+# Baseline measured 2026-07-15 on the Windows port box (audit gw-z9u):
+# GC_FAST_UNIT=1 go test -p=4 -count=1 ./... — 71 green packages.
+# Grow this list as Phase 2 (gw-l8d, gw-kbr) lands; the end state is
+# "everything minus documented exclusions", at which point this file
+# inverts into an exclusion list or disappears.
+./examples
+./examples/swarm
+./examples/t3bridge-gastown
+./internal/agent
+./internal/agentutil
+./internal/api/apierr
+./internal/api/dashboardspa
+./internal/api/genclient
+./internal/beadmeta
+./internal/beads/beadstest
+./internal/bootstrap
+./internal/bootstrap/packs/core
+./internal/cityinit
+./internal/citywriteauth
+./internal/convoy
+./internal/coordclass
+./internal/deps
+./internal/doltauth
+./internal/doltversion
+./internal/eventfeed
+./internal/execenv
+./internal/extmsg
+./internal/gchome
+./internal/git
+./internal/githubmonitor
+./internal/graphroute
+./internal/graphv2
+./internal/importsvc
+./internal/logutil
+./internal/mail
+./internal/mail/beadmail
+./internal/migrate
+./internal/molecule
+./internal/nudgepoller
+./internal/orderdiscovery
+./internal/packman
+./internal/pidutil
+./internal/pricing
+./internal/processenv
+./internal/processgroup
+./internal/promptmeta
+./internal/promptsafe
+./internal/reliability
+./internal/remotesource
+./internal/reviewquorum
+./internal/runtime/auto
+./internal/runtime/herdr
+./internal/runtime/hybrid
+./internal/runtime/proctable
+./internal/runtime/registry
+./internal/runtime/runtimetest
+./internal/runtime/ssh
+./internal/shellquote
+./internal/sourceworkflow
+./internal/storeref
+./internal/suspensionstate
+./internal/telemetry
+./internal/validation
+./internal/webhookmatch
+./internal/webhooksink
+./internal/webhookverify
+./internal/worker/builtin
+./internal/worker/fake
+./test/acceptance
+./test/acceptance/tier_b
+./test/acceptance/tier_c
+./test/acceptance/tutorial_goldens
+./test/acceptance/worker_inference
+./test/integration
+./test/integration/filebdshim
