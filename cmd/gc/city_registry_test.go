@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/fslock"
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
@@ -99,7 +99,7 @@ func TestCityRegistryConsumePendingRequestIDIsAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		t.Fatal(err)
 	}
 
@@ -120,7 +120,7 @@ func TestCityRegistryConsumePendingRequestIDIsAtomic(t *testing.T) {
 
 	close(start)
 	time.Sleep(50 * time.Millisecond)
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN); err != nil {
+	if err := fslock.Unlock(lockFile); err != nil {
 		t.Fatal(err)
 	}
 

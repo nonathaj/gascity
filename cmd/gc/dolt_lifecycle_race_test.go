@@ -79,7 +79,7 @@ func startSigtermIgnoringProcess(t *testing.T, dir string) int {
 	}
 	pid := cmd.Process.Pid
 	t.Cleanup(func() {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_ = platformKill(pid, syscall.SIGKILL)
 		_, _ = cmd.Process.Wait()
 	})
 	go func() { _ = cmd.Wait() }()
@@ -258,7 +258,7 @@ func TestStopManagedDoltWaitsForLockReleaseAfterExit(t *testing.T) {
 	}
 	pid := cmd.Process.Pid
 	t.Cleanup(func() {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_ = platformKill(pid, syscall.SIGKILL)
 		_, _ = cmd.Process.Wait()
 	})
 	go func() { _ = cmd.Wait() }()

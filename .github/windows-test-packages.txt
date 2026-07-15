@@ -17,6 +17,7 @@
 ./internal/api/genclient
 ./internal/beadmeta
 ./internal/beads/beadstest
+./internal/beads/contract
 ./internal/bootstrap
 ./internal/bootstrap/packs/core
 ./internal/cityinit
@@ -28,6 +29,7 @@
 ./internal/doltauth
 ./internal/doltversion
 ./internal/eventfeed
+./internal/events
 ./internal/execenv
 ./internal/extmsg
 ./internal/gchome
@@ -42,6 +44,7 @@
 ./internal/migrate
 ./internal/molecule
 ./internal/nudgepoller
+./internal/nudgequeue
 ./internal/orderdiscovery
 ./internal/packman
 ./internal/pidutil

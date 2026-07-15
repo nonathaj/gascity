@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -245,7 +245,7 @@ func TestStopKillsProcessGroupDescendants(t *testing.T) {
 
 	deadline = time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := syscall.Kill(childPID, syscall.Signal(0)); err != nil {
+		if !pidutil.Alive(childPID) {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)

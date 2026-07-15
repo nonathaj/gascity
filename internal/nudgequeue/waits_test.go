@@ -4,11 +4,11 @@ import (
 	"errors"
 	"os"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 type listQueryCaptureStore struct {
@@ -181,10 +181,12 @@ func (s queueLockDetectStore) requireQueueLockAvailable() error {
 		return err
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	// Contend with the same cross-platform primitive production uses
+	// (fslock, see state.go) so the detection works on every OS.
+	if err := fslock.TryLockEx(lockFile); err != nil {
 		return errors.New("bead store work ran while nudge queue lock was held")
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 	return nil
 }
 

@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 const (
@@ -45,7 +46,7 @@ func holdAliveSentinel(dir string) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening alive sentinel in %q: %w", dir, err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := fslock.TryLockEx(f); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("locking alive sentinel in %q: %w", dir, err)
 	}
@@ -64,10 +65,10 @@ func aliveSentinelHeld(dir string) (exists, held bool) {
 		return true, true
 	}
 	defer f.Close() //nolint:errcheck
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := fslock.TryLockEx(f); err != nil {
 		return true, true
 	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = fslock.Unlock(f)
 	return true, false
 }
 

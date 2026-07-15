@@ -4257,7 +4257,7 @@ wait
 	t.Cleanup(cancel)
 	pid := waitForProviderTestChildPID(t, childPIDFile)
 	t.Cleanup(func() {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_ = platformKill(pid, syscall.SIGKILL)
 	})
 
 	cancel()
@@ -4301,7 +4301,7 @@ wait
 	t.Cleanup(cancel)
 	pid := waitForProviderTestChildPID(t, childPIDFile)
 	t.Cleanup(func() {
-		_ = syscall.Kill(pid, syscall.SIGKILL)
+		_ = platformKill(pid, syscall.SIGKILL)
 	})
 
 	cancel()
@@ -4381,7 +4381,7 @@ func waitForProviderTestPIDExit(t *testing.T, pid int, label string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if err := platformKill(pid, 0); errors.Is(err, syscall.ESRCH) {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -8555,19 +8555,15 @@ while [ ! -f "$release_file" ]; do
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	inodeFor := func(path string) uint64 {
+	identityFor := func(path string) os.FileInfo {
 		t.Helper()
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatalf("Stat(%s): %v", path, err)
 		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			t.Fatalf("Stat(%s) did not expose syscall.Stat_t", path)
-		}
-		return stat.Ino
+		return info
 	}
-	beforeInode := inodeFor(layout.LockFile)
+	beforeIdentity := identityFor(layout.LockFile)
 
 	env := sanitizedBaseEnv(
 		"GC_CITY_PATH="+cityPath,
@@ -8600,9 +8596,9 @@ while [ ! -f "$release_file" ]; do
 	if !strings.Contains(string(out), "could not acquire dolt start lock") {
 		t.Fatalf("gc-beads-bd start output = %q, want lock acquisition failure", out)
 	}
-	afterInode := inodeFor(layout.LockFile)
-	if afterInode != beforeInode {
-		t.Fatalf("lock inode changed from %d to %d while original holder was still live", beforeInode, afterInode)
+	afterIdentity := identityFor(layout.LockFile)
+	if !os.SameFile(beforeIdentity, afterIdentity) {
+		t.Fatal("lock file was replaced while original holder was still live")
 	}
 	if invocation, err := os.ReadFile(invocationFile); err == nil && strings.TrimSpace(string(invocation)) != "" {
 		t.Fatalf("dolt should not have been invoked while the start lock was held:\n%s", string(invocation))
