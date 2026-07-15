@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads/contract"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 const (
@@ -216,7 +217,7 @@ func scopeHasExecutableBdHooks(scopeRoot string) bool {
 	for _, name := range []string{"on_create", "on_update", "on_close"} {
 		path := filepath.Join(scopeRoot, ".beads", "hooks", name)
 		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		if err != nil || !fsys.IsExecutableMode(info.Mode()) {
 			continue
 		}
 		content, err := os.ReadFile(path)

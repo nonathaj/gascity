@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -109,15 +110,23 @@ esac
 
 func TestPackRuntimesDoctorCheck_NonExecutableCommandErrors(t *testing.T) {
 	dir := t.TempDir()
-	plain := filepath.Join(dir, "provider.sh")
-	if err := os.WriteFile(plain, []byte("#!/bin/sh\nexit 2\n"), 0o644); err != nil {
-		t.Fatal(err)
+	commands := map[string]string{}
+	// Exec bits do not exist on Windows: a plain regular file counts as
+	// executable there and proceeds to the handshake, so the mode-bit case
+	// is Unix-only. The directory case rejects everywhere.
+	if runtime.GOOS != "windows" {
+		plain := filepath.Join(dir, "provider.sh")
+		if err := os.WriteFile(plain, []byte("#!/bin/sh\nexit 2\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		commands["plainfile"] = plain
 	}
 	subdir := filepath.Join(dir, "provider-dir")
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, command := range map[string]string{"plainfile": plain, "directory": subdir} {
+	commands["directory"] = subdir
+	for name, command := range commands {
 		cfg := &config.City{Runtimes: map[string]config.DiscoveredRuntime{
 			name: {Name: name, Command: command, PackName: "p"},
 		}}
@@ -127,6 +136,32 @@ func TestPackRuntimesDoctorCheck_NonExecutableCommandErrors(t *testing.T) {
 		}
 		if joined := strings.Join(res.Details, "\n"); !strings.Contains(joined, "not an executable file") {
 			t.Errorf("%s: details %q should carry the non-executable diagnostic, not a handshake error", name, joined)
+		}
+	}
+}
+
+func TestRuntimeCommandIsPath(t *testing.T) {
+	tests := []struct {
+		goos    string
+		command string
+		want    bool
+	}{
+		{"linux", "dolt", false},
+		{"linux", "./bin/dolt", true},
+		{"linux", "/usr/local/bin/dolt", true},
+		{"windows", "dolt", false},
+		{"windows", "dolt.exe", false},
+		{"windows", `C:\tools\dolt.exe`, true},
+		{"windows", `.\bin\dolt.exe`, true},
+		{"windows", "C:/tools/dolt.exe", true},
+		{"windows", "bin/dolt.exe", true},
+		// Backslash in a bare name is a path separator on Windows only.
+		{"linux", `weird\name`, false},
+		{"windows", `weird\name`, true},
+	}
+	for _, tt := range tests {
+		if got := runtimeCommandIsPath(tt.goos, tt.command); got != tt.want {
+			t.Errorf("runtimeCommandIsPath(%q, %q) = %v, want %v", tt.goos, tt.command, got, tt.want)
 		}
 	}
 }

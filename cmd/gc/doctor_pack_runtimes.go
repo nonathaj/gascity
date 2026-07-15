@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
+	"github.com/gastownhall/gascity/internal/fsys"
 	sessionexec "github.com/gastownhall/gascity/internal/runtime/exec"
 )
 
@@ -75,7 +77,7 @@ func (c *packRuntimesDoctorCheck) Run(_ *doctor.CheckContext) *doctor.CheckResul
 // were resolved at composition; bare names resolve on PATH like the exec
 // provider does at session start.
 func packRuntimeInstallFailure(rt config.DiscoveredRuntime) string {
-	if !strings.Contains(rt.Command, "/") {
+	if !runtimeCommandIsPath(runtime.GOOS, rt.Command) {
 		if _, err := exec.LookPath(rt.Command); err != nil {
 			return fmt.Sprintf("runtime %q (pack %q): %q not found on PATH", rt.Name, rt.PackName, rt.Command)
 		}
@@ -85,8 +87,29 @@ func packRuntimeInstallFailure(rt config.DiscoveredRuntime) string {
 	if err != nil {
 		return fmt.Sprintf("runtime %q (pack %q): executable not found at %s", rt.Name, rt.PackName, rt.Command)
 	}
-	if info.IsDir() || info.Mode().Perm()&0o111 == 0 {
+	if !fsys.IsExecutableMode(info.Mode()) {
 		return fmt.Sprintf("runtime %q (pack %q): %s is not an executable file", rt.Name, rt.PackName, rt.Command)
 	}
 	return ""
+}
+
+// runtimeCommandIsPath reports whether command names an on-disk location
+// rather than a bare name to resolve on PATH. On Windows a path can be
+// spelled with backslashes or a drive prefix ("C:\tools\dolt.exe") and
+// contain no forward slash at all, so checking "/" alone misclassifies it
+// as a PATH lookup.
+func runtimeCommandIsPath(goos, command string) bool {
+	if strings.ContainsRune(command, '/') {
+		return true
+	}
+	if goos == "windows" {
+		if strings.ContainsRune(command, '\\') {
+			return true
+		}
+		// Drive-relative or drive-absolute spelling ("C:...").
+		if len(command) >= 2 && command[1] == ':' {
+			return true
+		}
+	}
+	return false
 }

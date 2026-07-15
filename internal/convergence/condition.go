@@ -7,12 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
@@ -46,10 +49,26 @@ func conditionPATH() string {
 			addDir(filepath.Dir(path))
 		}
 	}
-	for _, dir := range strings.Split(SafePATH, ":") {
-		addDir(dir)
+	if runtime.GOOS == "windows" {
+		// The Unix SafePATH seed is meaningless on Windows. Gate scripts
+		// run through sh (Git for Windows), so seed the interpreter's own
+		// directory (which carries the coreutils the scripts call) plus
+		// the system directories every Windows process expects. An
+		// unresolved ShPath is the bare name "sh" whose Dir is "." — skip
+		// it rather than seed the working directory.
+		if sh := execshim.ShPath(); filepath.IsAbs(sh) {
+			addDir(filepath.Dir(sh))
+		}
+		if sysRoot := os.Getenv("SystemRoot"); sysRoot != "" {
+			addDir(filepath.Join(sysRoot, "System32"))
+			addDir(sysRoot)
+		}
+	} else {
+		for _, dir := range strings.Split(SafePATH, ":") {
+			addDir(dir)
+		}
 	}
-	return strings.Join(dirs, ":")
+	return strings.Join(dirs, string(os.PathListSeparator))
 }
 
 // ConditionEnv builds the environment variables for a gate condition script.
@@ -100,6 +119,18 @@ func (ce ConditionEnv) Environ() []string {
 		"GC_MAX_ITERATIONS=" + strconv.Itoa(ce.MaxIterations),
 	}
 	env = append(env, citylayout.CityRuntimeEnvForRuntimeDir(ce.CityPath, citylayout.TrustedAmbientCityRuntimeDir(ce.CityPath))...)
+
+	if runtime.GOOS == "windows" {
+		// Windows processes need the system identity vars (winsock, DLL
+		// resolution, cmd children) that Unix has no analog for; TEMP/TMP
+		// are the Windows spellings of TMPDIR.
+		for _, key := range []string{"SystemRoot", "SystemDrive", "ComSpec", "PATHEXT"} {
+			if v := os.Getenv(key); v != "" {
+				env = append(env, key+"="+v)
+			}
+		}
+		env = append(env, "TEMP="+os.TempDir(), "TMP="+os.TempDir())
+	}
 
 	// Optional fields: only include if non-empty.
 	if ce.DocPath != "" {
@@ -255,7 +286,7 @@ func ResolveConditionPath(envelope, base, conditionPath string) (string, error) 
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("resolving gate condition path: not a regular file: %s", resolved)
 	}
-	if info.Mode().Perm()&0o111 == 0 {
+	if !fsys.IsExecutableMode(info.Mode()) {
 		return "", fmt.Errorf("resolving gate condition path: file is not executable: %s", resolved)
 	}
 
@@ -316,7 +347,9 @@ func runOnceNoPreExecRetry(ctx context.Context, scriptPath string, env Condition
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(execCtx, scriptPath)
+	// Gate scripts are pack-supplied shell scripts; Windows cannot exec a
+	// .sh directly, so build the command through the execshim.
+	cmd := execshim.CommandContext(execCtx, scriptPath)
 	cmd.Dir = env.CityPath
 	if env.StorePath != "" {
 		cmd.Dir = env.StorePath
