@@ -1,0 +1,65 @@
+# Windows Gate — fork-owned guardrail for the Windows port (gw-f6a).
+#
+# Two jobs, deliberately lean:
+#   1. cross-compile: GOOS=windows go build ./... on ubuntu. Seconds of
+#      runner time; catches every compile-level regression in the
+#      _windows.go surface, which no other CI compiles.
+#   2. unit-green: the curated green-list unit packages on windows-latest
+#      (.github/windows-test-packages.txt). Grows as Phase 2 of the
+#      Windows support plan lands.
+#
+# GOOS=windows go vet is intentionally absent: 7 test packages still use
+# unix-only syscalls (gw-l8d) and vet compiles test files. Upgrade the
+# cross-compile job to vet once those are split.
+name: Windows Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-compile:
+    name: GOOS=windows cross-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build all packages for windows/amd64
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build ./...
+
+  unit-green:
+    name: Windows unit tests (green list)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run green-list packages
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '1'
+        run: |
+          $pkgs = Get-Content .github/windows-test-packages.txt |
+            Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') }
+          Write-Host "Running $($pkgs.Count) packages"
+          go test -count=1 -timeout 30m @pkgs
