@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -136,6 +137,12 @@ func TestInjectionResolvesExeViaSeamWhenEmpty(t *testing.T) {
 }
 
 func TestInjectionFailsClosedOnBadPerms(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The world-readable perm check is deliberately skipped on Windows
+		// (rules.go — Unix mode bits don't exist there), so the fail-closed
+		// path cannot trigger via file mode.
+		t.Skip("unix permission-bit check does not apply on Windows")
+	}
 	city := t.TempDir()
 	clearCredEnv(t)
 	writeCredFile(t, filepath.Join(city, ".gc", "credentials.toml"),

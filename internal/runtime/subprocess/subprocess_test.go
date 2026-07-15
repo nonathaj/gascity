@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,7 +20,13 @@ import (
 // (macOS limit is 104 bytes). t.TempDir() paths often exceed this.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "gc-t-")
+	// Unix pins /tmp because macOS TMPDIR is too long for AF_UNIX paths;
+	// the Windows temp dir is short enough and "/tmp" may not exist there.
+	base := "/tmp"
+	if goruntime.GOOS == "windows" {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "gc-t-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +223,7 @@ func TestStopKillsProcessGroupDescendants(t *testing.T) {
 
 	p := newTestProvider(t)
 	if err := p.Start(context.Background(), "group-kill", runtime.Config{
-		Command: "sleep 3600 & echo $! > " + childPIDPath + "; wait",
+		Command: "sleep 3600 & echo $! > " + filepath.ToSlash(childPIDPath) + "; wait",
 		WorkDir: dir,
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -304,7 +311,7 @@ func TestEnvPassedToProcess(t *testing.T) {
 
 	p := newTestProvider(t)
 	err := p.Start(context.Background(), "env-test", runtime.Config{
-		Command: "echo $GC_TEST_VAR > " + marker,
+		Command: "echo $GC_TEST_VAR > " + filepath.ToSlash(marker),
 		Env:     map[string]string{"GC_TEST_VAR": "hello-from-subprocess"},
 	})
 	if err != nil {
@@ -331,9 +338,15 @@ func TestWorkDirSet(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "pwd.txt")
 
+	// Git-bash sh prints the msys mapping for plain pwd; -W prints the
+	// real Windows path with forward slashes.
+	pwdCmd := "pwd"
+	if goruntime.GOOS == "windows" {
+		pwdCmd = "pwd -W"
+	}
 	p := newTestProvider(t)
 	err := p.Start(context.Background(), "workdir-test", runtime.Config{
-		Command: "pwd > " + marker,
+		Command: pwdCmd + " > " + filepath.ToSlash(marker),
 		WorkDir: dir,
 	})
 	if err != nil {
@@ -349,6 +362,9 @@ func TestWorkDirSet(t *testing.T) {
 			// Canonicalize to handle macOS /var → /private/var symlink.
 			canonical, _ := filepath.EvalSymlinks(dir)
 			want := canonical + "\n"
+			if goruntime.GOOS == "windows" {
+				want = filepath.ToSlash(canonical) + "\n"
+			}
 			if got != want {
 				t.Errorf("workdir = %q, want %q", got, want)
 			}

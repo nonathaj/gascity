@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/processgroup"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
@@ -169,7 +170,7 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 		return fmt.Errorf("acp provider requires a command")
 	}
 
-	cmd := exec.Command("sh", "-c", command)
+	cmd := execshim.ShellCommand(command)
 	processgroup.StartCommandInNewGroup(cmd)
 	if cfg.WorkDir != "" {
 		cmd.Dir = cfg.WorkDir
@@ -848,9 +849,7 @@ func (p *Provider) stopBySocket(name string) error {
 }
 
 func isUnavailableSocketError(err error) bool {
-	return errors.Is(err, os.ErrNotExist) ||
-		errors.Is(err, syscall.ENOENT) ||
-		errors.Is(err, syscall.ECONNREFUSED)
+	return runtime.IsUnavailableSocketError(err)
 }
 
 // Capabilities reports ACP provider capabilities. The ACP provider has

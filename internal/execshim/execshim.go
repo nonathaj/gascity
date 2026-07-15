@@ -77,3 +77,15 @@ func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd 
 	}
 	return exec.CommandContext(ctx, path, args...)
 }
+
+// ShellCommand builds `sh -c command` with the resolved interpreter, so a
+// shell command line works on Windows hosts where sh.exe is not on PATH but
+// Git for Windows is installed.
+func ShellCommand(command string) *exec.Cmd {
+	return exec.Command(ShPath(), "-c", command)
+}
+
+// ShellCommandContext is ShellCommand with a context.
+func ShellCommandContext(ctx context.Context, command string) *exec.Cmd {
+	return exec.CommandContext(ctx, ShPath(), "-c", command)
+}
