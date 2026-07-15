@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/formula"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 // ResolveFormulas computes per-formula-name winners from layered formula
@@ -75,7 +76,7 @@ func ResolveFormulas(targetDir string, layers []string) error {
 			os.Remove(linkPath) //nolint:errcheck // will be recreated
 		}
 
-		if err := os.Symlink(srcPath, linkPath); err != nil {
+		if err := fsys.Symlink(srcPath, linkPath); err != nil {
 			return fmt.Errorf("creating formula symlink %q → %q: %w", linkName, srcPath, err)
 		}
 	}
