@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -26,21 +25,16 @@ func expectedIdentityBody(id string) string {
 		"id = \"" + id + "\"\n"
 }
 
-// inodeOf returns the inode number for path on unix-like systems. The
-// project does not target Windows (all production unix variants expose
-// *syscall.Stat_t through FileInfo.Sys), matching the existing pattern in
-// cmd/gc/beads_provider_lifecycle_test.go.
-func inodeOf(t *testing.T, path string) uint64 {
+// fileIdentity captures the FileInfo for path so os.SameFile can decide
+// whether a later stat still names the same underlying file — inode on
+// Unix, volume + file index on Windows.
+func fileIdentity(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat(%s): %v", path, err)
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatalf("Stat(%s) did not expose syscall.Stat_t", path)
-	}
-	return stat.Ino
+	return info
 }
 
 // writeIdentity writes body to <scope>/.beads/identity.toml after creating
@@ -250,6 +244,9 @@ func TestProjectIdentity(t *testing.T) {
 	})
 
 	t.Run("A10_read_permission_error_propagates", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod 0 does not revoke read access on Windows (ACLs rule)")
+		}
 		if os.Geteuid() == 0 {
 			t.Skip("root bypasses unix permission checks; cannot simulate read failure")
 		}
@@ -349,25 +346,33 @@ func TestProjectIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Stat(%s): %v", path, err)
 		}
-		if mode := info.Mode().Perm(); mode != 0o644 {
+		// Unix permission bits do not survive os.Stat on Windows.
+		if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o644 {
 			t.Fatalf("mode = %#o, want 0o644", mode)
 		}
 	})
 
 	t.Run("B2_write_idempotent_no_inode_change", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			// fsys.OSFS has no Windows ReadRegularFile yet, so
+			// WriteFileIfChangedAtomic cannot detect the no-op and always
+			// rewrites (WINDOWS_SUPPORT_PLAN §4.2 #12). Re-enable when the
+			// Windows read-side lands.
+			t.Skip("idempotent-write detection needs fsys.ReadRegularFile on Windows")
+		}
 		scope := t.TempDir()
 		id := "gc-local-write-b2"
 		if err := WriteProjectIdentity(fs, scope, id); err != nil {
 			t.Fatalf("first WriteProjectIdentity: %v", err)
 		}
 		path := ProjectIdentityPath(scope)
-		before := inodeOf(t, path)
+		before := fileIdentity(t, path)
 		if err := WriteProjectIdentity(fs, scope, id); err != nil {
 			t.Fatalf("second WriteProjectIdentity: %v", err)
 		}
-		after := inodeOf(t, path)
-		if before != after {
-			t.Fatalf("inode changed across idempotent write: before=%d after=%d", before, after)
+		after := fileIdentity(t, path)
+		if !os.SameFile(before, after) {
+			t.Fatal("file identity changed across idempotent write (expected the write to be skipped)")
 		}
 	})
 
@@ -377,13 +382,23 @@ func TestProjectIdentity(t *testing.T) {
 			t.Fatalf("first WriteProjectIdentity: %v", err)
 		}
 		path := ProjectIdentityPath(scope)
-		before := inodeOf(t, path)
+		before := fileIdentity(t, path)
 		if err := WriteProjectIdentity(fs, scope, "gc-local-write-b3-new"); err != nil {
 			t.Fatalf("second WriteProjectIdentity: %v", err)
 		}
-		after := inodeOf(t, path)
-		if before == after {
-			t.Fatalf("inode unchanged after overwrite with different id: inode=%d (atomic temp+rename should produce a new inode)", before)
+		after := fileIdentity(t, path)
+		// NTFS may reuse the replaced file's ID on rename-over-existing,
+		// so file identity is not a reliable replaced-ness signal on
+		// Windows; the content check below carries the assertion there.
+		if runtime.GOOS != "windows" && os.SameFile(before, after) {
+			t.Fatal("file identity unchanged after overwrite with different id (atomic temp+rename should produce a new file)")
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", path, err)
+		}
+		if want := expectedIdentityBody("gc-local-write-b3-new"); string(got) != want {
+			t.Fatalf("body after overwrite = %q, want %q", string(got), want)
 		}
 	})
 
@@ -460,7 +475,8 @@ func TestProjectIdentity(t *testing.T) {
 		if !info.IsDir() {
 			t.Fatalf("%s exists but is not a directory", dotBeads)
 		}
-		if mode := info.Mode().Perm(); mode != 0o755 {
+		// Unix permission bits do not survive os.Stat on Windows.
+		if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o755 {
 			t.Fatalf("mode = %#o, want 0o755", mode)
 		}
 	})
@@ -484,6 +500,13 @@ func TestProjectIdentity(t *testing.T) {
 	})
 
 	t.Run("B10_write_concurrent_same_id_safe", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			// Renaming over a file another writer has open fails with
+			// ERROR_ACCESS_DENIED on Windows; concurrent-writer safety
+			// needs the fsys rename retry hardening (gw-3ic,
+			// WINDOWS_SUPPORT_PLAN §4.2 #8) before this can hold.
+			t.Skip("concurrent rename-over-open needs Windows retry hardening (gw-3ic)")
+		}
 		scope := t.TempDir()
 		id := "gc-local-write-b10"
 

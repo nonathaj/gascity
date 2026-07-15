@@ -4,11 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 // makeDoltDataDirWithLock creates a managed-dolt-shaped data dir with one
@@ -37,7 +37,7 @@ func holdFlock(t *testing.T, path string) func() {
 	if err != nil {
 		t.Fatalf("open lock file: %v", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(f); err != nil {
 		_ = f.Close()
 		t.Fatalf("flock: %v", err)
 	}
@@ -47,7 +47,7 @@ func holdFlock(t *testing.T, path string) func() {
 			return
 		}
 		released = true
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = fslock.Unlock(f)
 		_ = f.Close()
 	}
 	t.Cleanup(release)

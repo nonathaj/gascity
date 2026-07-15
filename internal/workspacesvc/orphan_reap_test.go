@@ -1,3 +1,10 @@
+// The orphan-reap tests are built on /proc semantics end to end: spawning a
+// double-forked child that re-parents to init, reading /proc/<pid>/stat, and
+// asserting on ppid==1 identity matching. None of that exists on Windows
+// (the production Windows arm is orphan_signal_windows.go with its own
+// semantics), so the whole suite is Unix-only.
+//go:build !windows
+
 package workspacesvc
 
 import (

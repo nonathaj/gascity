@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -161,7 +162,13 @@ func (g *doltLeakGuardedTestingM) installSignalHandler() func() {
 			signal.Stop(signals)
 			if s, ok := sig.(syscall.Signal); ok {
 				signal.Reset(s)
-				_ = syscall.Kill(os.Getpid(), s)
+				// Unix re-raises so the default disposition kills us with
+				// the right status; Windows has no self-kill(2), so exit
+				// with the conventional 128+signal code instead.
+				if goruntime.GOOS == "windows" {
+					os.Exit(128 + int(s))
+				}
+				_ = platformKill(os.Getpid(), s)
 			}
 		case <-done:
 		}
@@ -468,7 +475,7 @@ func stopManagedDoltTestPID(t *testing.T, pid int) {
 	if pid <= 0 || !managedStopPIDAlive(pid) {
 		return
 	}
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := platformKill(pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
 		t.Fatalf("signal dolt test pid %d with SIGTERM: %v", pid, err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -478,7 +485,7 @@ func stopManagedDoltTestPID(t *testing.T, pid int) {
 	if !managedStopPIDAlive(pid) {
 		return
 	}
-	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+	if err := platformKill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 		t.Fatalf("signal dolt test pid %d with SIGKILL: %v", pid, err)
 	}
 	deadline = time.Now().Add(time.Second)

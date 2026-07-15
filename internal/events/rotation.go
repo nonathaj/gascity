@@ -78,6 +78,10 @@ func gzipAndArchive(source, dest string, stderr io.Writer) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("renaming %q -> %q: %w", tmp, dest, err)
 	}
+	// Close the source before removing it: Windows refuses to delete a
+	// file with an open handle (the deferred Close above only covers the
+	// early-return paths; a second Close is a harmless ErrClosed).
+	_ = in.Close()
 	if err := os.Remove(source); err != nil {
 		fmt.Fprintf(stderr, //nolint:errcheck // best-effort stderr
 			"events: rotation: archive succeeded but failed to remove source %q: %v\n",

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -1270,17 +1269,21 @@ func writeEmpty(path string) error {
 }
 
 // mustOpenSiblingLock opens a separate file descriptor against path and
-// takes a non-blocking exclusive flock on it. The returned *os.File is
-// the caller's to close (which also releases the flock).
+// takes the recorder's own non-blocking exclusive lock on it — the same
+// primitive a second recorder process would use, on every platform (flock
+// on Unix, the high-offset byte-range LockFileEx on Windows). The returned
+// *os.File is the caller's to close after unlockRecorderFile.
 func mustOpenSiblingLock(t *testing.T, path string) *os.File {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	// O_RDWR rather than O_WRONLY|O_APPEND: Windows append-only handles
+	// lack the access rights LockFileEx requires (Access is denied).
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatalf("open sibling: %v", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := tryLockRecorderFile(f); err != nil {
 		_ = f.Close()
-		t.Fatalf("sibling flock: %v", err)
+		t.Fatalf("sibling lock: %v", err)
 	}
 	return f
 }
@@ -1297,7 +1300,7 @@ func TestFileRecorderFlockTimeoutFiresWithinBudget(t *testing.T) {
 
 	sib := mustOpenSiblingLock(t, path)
 	defer func() {
-		_ = syscall.Flock(int(sib.Fd()), syscall.LOCK_UN)
+		_ = unlockRecorderFile(sib)
 		_ = sib.Close()
 	}()
 
@@ -1335,7 +1338,7 @@ func TestFileRecorderFlockSucceedsAfterShortContention(t *testing.T) {
 
 	sib := mustOpenSiblingLock(t, path)
 	time.AfterFunc(50*time.Millisecond, func() {
-		_ = syscall.Flock(int(sib.Fd()), syscall.LOCK_UN)
+		_ = unlockRecorderFile(sib)
 		_ = sib.Close()
 	})
 
