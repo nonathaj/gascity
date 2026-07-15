@@ -73,7 +73,7 @@ func TestConfigPathAddressesTheFieldResolveReads(t *testing.T) {
 // graduation tooth.
 func TestBeadsVersionAnchorPending(t *testing.T) {
 	t.Parallel()
-	s := specByKey(keyBeadsConditionalWrites)
+	s := beadsConditionalWritesSpec()
 	if s.VersionAnchor != "BD_CONDITIONAL_WRITES_MIN_VERSION" {
 		t.Fatalf("beads VersionAnchor = %q, want BD_CONDITIONAL_WRITES_MIN_VERSION", s.VersionAnchor)
 	}

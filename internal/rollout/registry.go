@@ -65,13 +65,15 @@ func Specs() []Spec {
 	return out
 }
 
-// specByKey returns the canonical Spec for key (zero Spec if unregistered). It
-// reads the package-private slice directly (no defensive copy needed for an
-// internal, read-only lookup) so the resolver can source names/semantics from
-// the registry.
-func specByKey(key string) Spec {
+// beadsConditionalWritesSpec returns the canonical Spec for the beads CAS gate
+// (zero Spec if unregistered). It reads the package-private slice directly (no
+// defensive copy needed for an internal, read-only lookup) so the resolver can
+// source names/semantics from the registry. When a second gate needs a lookup,
+// generalize this back to a by-key form — with one gate, a key parameter is a
+// constant in disguise.
+func beadsConditionalWritesSpec() Spec {
 	for _, s := range specs {
-		if s.Key == key {
+		if s.Key == keyBeadsConditionalWrites {
 			return s
 		}
 	}

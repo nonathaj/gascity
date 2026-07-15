@@ -54,7 +54,7 @@ func resolveBeadsConditionalWrites(cfg *config.City, lookup func(string) (string
 	// the CODEOWNERS-reviewed registry is the single source of truth — renaming
 	// Spec.EnvOverride or flipping EnvSemantics changes behavior here, and the
 	// registry↔resolver binding test proves it.
-	spec := specByKey(keyBeadsConditionalWrites)
+	spec := beadsConditionalWritesSpec()
 
 	raw, defined := readBeadsConditionalWrites(cfg)
 	mode, origin := Off, OriginBuiltin

@@ -49,7 +49,7 @@ func writeDotenv(t *testing.T, content string) string {
 // (still pending) deps.env.
 func TestConditionalWritesGraduation(t *testing.T) {
 	t.Parallel()
-	anchor := specByKey(keyBeadsConditionalWrites).VersionAnchor
+	anchor := beadsConditionalWritesSpec().VersionAnchor
 	if anchor == "" {
 		t.Fatal("beads CAS gate has no VersionAnchor")
 	}
@@ -85,7 +85,7 @@ func TestConditionalWritesGraduation(t *testing.T) {
 // because auto would silently degrade on every un-upgraded executor.
 func TestConditionalWritesGraduationRealDepsEnv(t *testing.T) {
 	t.Parallel()
-	anchor := specByKey(keyBeadsConditionalWrites).VersionAnchor
+	anchor := beadsConditionalWritesSpec().VersionAnchor
 	realDepsEnv := filepath.Join("..", "..", "deps.env")
 
 	if _, err := os.Stat(realDepsEnv); err != nil {
