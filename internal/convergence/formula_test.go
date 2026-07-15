@@ -2,6 +2,7 @@ package convergence
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,8 +50,9 @@ func TestValidateForConvergence_Valid(t *testing.T) {
 
 func TestValidateForConvergence_CustomEvaluatePromptValid(t *testing.T) {
 	content := []byte("Use bd meta set to record convergence.agent_verdict for this step.")
+	wantPath := filepath.Join("/city", "custom/evaluate.md")
 	readFile := func(path string) ([]byte, error) {
-		if path == "/city/custom/evaluate.md" {
+		if path == wantPath {
 			return content, nil
 		}
 		return nil, fmt.Errorf("not found: %s", path)

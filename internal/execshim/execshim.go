@@ -16,9 +16,15 @@ import (
 )
 
 // needsShell reports whether path must be interpreted by sh on this platform.
+// A path that does not exist is left to direct exec so callers still see the
+// standard file-not-found exec error instead of sh's exit 127 — gate and
+// hook error classification depends on that distinction.
 func needsShell(path string) bool {
-	return runtime.GOOS == "windows" &&
-		strings.EqualFold(filepath.Ext(path), ".sh")
+	if runtime.GOOS != "windows" || !strings.EqualFold(filepath.Ext(path), ".sh") {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // ShPath resolves the sh interpreter. On PATH it is used as-is; otherwise on

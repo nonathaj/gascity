@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/processenv"
 	"github.com/gastownhall/gascity/internal/processgroup"
 	"github.com/gastownhall/gascity/internal/searchpath"
@@ -1053,22 +1054,30 @@ func resolveStableSupervisorBinaryPath(homeDir, gopath, currentExe string) strin
 }
 
 func stableSupervisorBinaryCandidates(homeDir, gopath string) []string {
+	name := supervisorBinaryFileName(goruntime.GOOS)
 	var out []string
 	if homeDir != "" {
-		out = append(out, filepath.Join(homeDir, supervisorUserLocalBinPath, supervisorBinaryName))
+		out = append(out, filepath.Join(homeDir, supervisorUserLocalBinPath, name))
 	}
 	if gopath != "" {
-		out = append(out, filepath.Join(gopath, supervisorGopathBinPath, supervisorBinaryName))
+		out = append(out, filepath.Join(gopath, supervisorGopathBinPath, name))
 	}
 	return out
 }
 
+// supervisorBinaryFileName returns the on-disk file name of the gc binary
+// for the given GOOS: `go install` and the Windows deploy flow both produce
+// gc.exe there, so candidates without the suffix never stat.
+func supervisorBinaryFileName(goos string) string {
+	if goos == "windows" {
+		return supervisorBinaryName + ".exe"
+	}
+	return supervisorBinaryName
+}
+
 func supervisorBinaryCandidateMatches(candidate string, runningInfo os.FileInfo) bool {
 	info, err := os.Stat(candidate)
-	if err != nil || info.IsDir() {
-		return false
-	}
-	if info.Mode()&0o111 == 0 {
+	if err != nil || !fsys.IsExecutableMode(info.Mode()) {
 		return false
 	}
 	return os.SameFile(info, runningInfo)

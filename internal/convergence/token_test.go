@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -68,6 +69,11 @@ func TestWriteTokenFileMode(t *testing.T) {
 	info, err := os.Stat(filepath.Join(gcDir, TokenFile))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if runtime.GOOS == "windows" {
+		// Unix permission bits do not survive os.Stat on Windows (ACLs
+		// rule there); existence of the token file is the assertable part.
+		return
 	}
 	perm := info.Mode().Perm()
 	if perm != 0o600 {

@@ -40,13 +40,14 @@ func TestConditionEnvEnviron(t *testing.T) {
 
 	// Required vars.
 	checks := map[string]string{
-		"PATH":                      conditionPATH(),
-		"BEADS_DIR":                 "/home/test/city/.beads",
-		"GC_BEAD_ID":                "bead-123",
-		"GC_ITERATION":              "3",
-		"GC_CITY":                   "/home/test/city",
-		"GC_CITY_PATH":              "/home/test/city",
-		"GC_CITY_RUNTIME_DIR":       "/home/test/city/.gc/runtime",
+		"PATH":         conditionPATH(),
+		"GC_BEAD_ID":   "bead-123",
+		"GC_ITERATION": "3",
+		"GC_CITY":      "/home/test/city",
+		"GC_CITY_PATH": "/home/test/city",
+		// Derived via filepath.Join, so separators are platform-native.
+		"BEADS_DIR":                 filepath.Join("/home/test/city", ".beads"),
+		"GC_CITY_RUNTIME_DIR":       filepath.Join("/home/test/city", ".gc", "runtime"),
 		"GC_WISP_ID":                "wisp-456",
 		"GC_DOC_PATH":               "/docs/review.md",
 		"GC_MOLECULE_DIR":           "/home/test/city/.gc/molecules/root-xyz",
@@ -280,6 +281,33 @@ func TestResolveConditionPath(t *testing.T) {
 		_, err := ResolveConditionPath("/some/city", "/some/city", "/nonexistent/file.sh")
 		if err == nil {
 			t.Fatal("expected error for nonexistent file, got nil")
+		}
+	})
+
+	// Windows has no Unix execute bits (os.Stat reports 0o666 for every
+	// regular file), so the perm&0o111 gate must not apply there: gate
+	// scripts are run through the execshim, not exec'd by mode bit. On
+	// Unix the executable check still rejects a plain file.
+	t.Run("file without exec bits", func(t *testing.T) {
+		dir := t.TempDir()
+		script := filepath.Join(dir, "check.sh")
+		if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		got, err := ResolveConditionPath(dir, dir, "check.sh")
+		if runtime.GOOS == "windows" {
+			if err != nil {
+				t.Fatalf("windows must accept a regular file as executable, got: %v", err)
+			}
+			testutil.AssertSamePath(t, got, script)
+			return
+		}
+		if err == nil {
+			t.Fatal("expected not-executable error on unix, got nil")
+		}
+		if !strings.Contains(err.Error(), "not executable") {
+			t.Errorf("expected not-executable error, got: %v", err)
 		}
 	})
 
@@ -623,7 +651,15 @@ func TestRunConditionUsesWorkDir(t *testing.T) {
 	}
 
 	script := filepath.Join(cityDir, "check-workdir.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd\nprintf '%s\\n' \"$BEADS_DIR\"\ncat target.txt\n"), 0o755); err != nil {
+	pwdCmd := "pwd"
+	wantWorkDir := workDir
+	if runtime.GOOS == "windows" {
+		// Under Git-bash sh, plain pwd prints the msys POSIX mapping;
+		// pwd -W prints the real Windows path with forward slashes.
+		pwdCmd = "pwd -W"
+		wantWorkDir = filepath.ToSlash(workDir)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+pwdCmd+"\nprintf '%s\\n' \"$BEADS_DIR\"\ncat target.txt\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -639,8 +675,8 @@ func TestRunConditionUsesWorkDir(t *testing.T) {
 	if result.Outcome != GatePass {
 		t.Fatalf("Outcome = %q, want %q (stderr=%q)", result.Outcome, GatePass, result.Stderr)
 	}
-	if !strings.Contains(result.Stdout, workDir) {
-		t.Errorf("Stdout = %q, want to contain workdir %q", result.Stdout, workDir)
+	if !strings.Contains(result.Stdout, wantWorkDir) {
+		t.Errorf("Stdout = %q, want to contain workdir %q", result.Stdout, wantWorkDir)
 	}
 	wantBeadsDir := filepath.Join(cityDir, ".beads")
 	if !strings.Contains(result.Stdout, wantBeadsDir) {
@@ -692,18 +728,25 @@ func TestConditionPATHUsesResolvedToolDirs(t *testing.T) {
 	})
 
 	toolDir := t.TempDir()
-	for _, name := range []string{"bd", "gc"} {
+	names := []string{"bd", "gc"}
+	if runtime.GOOS == "windows" {
+		// LookPath resolves through PATHEXT on Windows; extension-less
+		// shell scripts are invisible to it.
+		names = []string{"bd.bat", "gc.bat"}
+	}
+	for _, name := range names {
 		path := filepath.Join(toolDir, name)
 		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Setenv("PATH", toolDir+":"+SafePATH); err != nil {
+	sep := string(os.PathListSeparator)
+	if err := os.Setenv("PATH", toolDir+sep+SafePATH); err != nil {
 		t.Fatal(err)
 	}
 
 	got := conditionPATH()
-	if !strings.HasPrefix(got, toolDir+":") && got != toolDir {
+	if !strings.HasPrefix(got, toolDir+sep) && got != toolDir {
 		t.Fatalf("conditionPATH() = %q, want prefix %q", got, toolDir)
 	}
 }
@@ -880,7 +923,13 @@ func TestRunConditionEnvVarsAvailable(t *testing.T) {
 	if !strings.Contains(result.Stdout, "ITER=7") {
 		t.Errorf("expected GC_ITERATION in output, got: %s", result.Stdout)
 	}
-	if !strings.Contains(result.Stdout, "PATH="+conditionPATH()) {
+	if runtime.GOOS == "windows" {
+		// msys sh rewrites $PATH into POSIX form (/c/... with colons), so
+		// the exact value cannot round-trip; assert it was set at all.
+		if !strings.Contains(result.Stdout, "PATH=/") {
+			t.Errorf("expected a non-empty POSIX-mapped PATH in output, got: %s", result.Stdout)
+		}
+	} else if !strings.Contains(result.Stdout, "PATH="+conditionPATH()) {
 		t.Errorf("expected resolved PATH in output, got: %s", result.Stdout)
 	}
 }

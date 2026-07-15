@@ -343,24 +343,30 @@ func cleanupManagedDoltTestPID(t *testing.T, pid int) {
 	_ = terminateManagedDoltTestPID(pid)
 }
 
-func TestManagedDoltSQLServerSysProcAttrProductionDetaches(t *testing.T) {
+func TestConfigureManagedDoltSQLServerProcessProductionDetaches(t *testing.T) {
 	withManagedDoltTestMode(t, false)
 	t.Setenv(managedDoltTestModeEnv, "")
 
-	attr := managedDoltSQLServerSysProcAttr()
+	cmd := exec.Command("dolt")
+	configureManagedDoltSQLServerProcess(cmd)
 
-	if attr == nil || !attr.Setpgid {
-		t.Fatalf("production managed Dolt must keep detached process-group behavior, got %#v", attr)
+	// The platform seam (processgroup.StartCommandInNewGroup) expresses
+	// "own process group" through SysProcAttr on every OS — Setpgid on
+	// Unix, CREATE_NEW_PROCESS_GROUP on Windows — so a configured attr is
+	// the cross-platform observable.
+	if cmd.SysProcAttr == nil {
+		t.Fatal("production managed Dolt must be detached into its own process group")
 	}
 }
 
-func TestManagedDoltSQLServerSysProcAttrTestModeDoesNotDetach(t *testing.T) {
+func TestConfigureManagedDoltSQLServerProcessTestModeDoesNotDetach(t *testing.T) {
 	withManagedDoltTestMode(t, true)
 
-	attr := managedDoltSQLServerSysProcAttr()
+	cmd := exec.Command("dolt")
+	configureManagedDoltSQLServerProcess(cmd)
 
-	if attr != nil {
-		t.Fatalf("test-mode managed Dolt must stay in the test process group, got %#v", attr)
+	if cmd.SysProcAttr != nil {
+		t.Fatalf("test-mode managed Dolt must stay in the test process group, got %#v", cmd.SysProcAttr)
 	}
 }
 
