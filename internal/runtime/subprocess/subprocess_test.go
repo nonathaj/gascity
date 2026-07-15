@@ -18,15 +18,21 @@ import (
 
 // shortTempDir returns a temp directory short enough for Unix socket paths
 // (macOS limit is 104 bytes). t.TempDir() paths often exceed this.
+
+// shortTempBase returns the base directory for temp dirs that must stay
+// short enough for AF_UNIX socket paths. Unix pins /tmp because macOS
+// TMPDIR (/var/folders/...) is too long; the Windows temp dir is short
+// enough and "/tmp" may not exist there.
+func shortTempBase() string {
+	if goruntime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
+}
+
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	// Unix pins /tmp because macOS TMPDIR is too long for AF_UNIX paths;
-	// the Windows temp dir is short enough and "/tmp" may not exist there.
-	base := "/tmp"
-	if goruntime.GOOS == "windows" {
-		base = ""
-	}
-	dir, err := os.MkdirTemp(base, "gc-t-")
+	dir, err := os.MkdirTemp(shortTempBase(), "gc-t-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +91,7 @@ func TestStartPersistsRuntimeMetadataForGetMeta(t *testing.T) {
 func TestStartLongSocketPathUsesShortSocketName(t *testing.T) {
 	// Use /tmp for a short base path — TMPDIR on macOS (/var/folders/...)
 	// is too long to find a depth where legacy > limit but short < limit.
-	root, err := os.MkdirTemp("/tmp", "gc-sock-")
+	root, err := os.MkdirTemp(shortTempBase(), "gc-sock-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
@@ -129,7 +135,7 @@ func TestStartLongSocketPathUsesShortSocketName(t *testing.T) {
 }
 
 func TestStartVeryLongSocketDirFallsBackToTempDir(t *testing.T) {
-	root, err := os.MkdirTemp("/tmp", "gc-sock-fallback-")
+	root, err := os.MkdirTemp(shortTempBase(), "gc-sock-fallback-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}

@@ -25,7 +25,13 @@ import (
 // (macOS limit is 104 bytes). t.TempDir() paths often exceed this.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "gc-t-")
+	// Unix pins /tmp because macOS TMPDIR is too long for AF_UNIX paths;
+	// the Windows temp dir is short enough and "/tmp" may not exist there.
+	base := "/tmp"
+	if goruntime.GOOS == "windows" {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "gc-t-")
 	if err != nil {
 		t.Fatal(err)
 	}
