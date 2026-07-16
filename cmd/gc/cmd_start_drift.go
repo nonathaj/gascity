@@ -595,6 +595,7 @@ func startDetached(logFile *os.File, exe string, argv ...string) error {
 		child.Stdout = logFile
 		child.Stderr = logFile
 		child.Env = supervisorEnv()
+		disableProductMetricsForChild(child)
 		if err := child.Start(); err != nil {
 			lastErr = err
 			continue
