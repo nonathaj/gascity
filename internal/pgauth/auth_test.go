@@ -88,12 +88,21 @@ func pinHome(t *testing.T, content string) {
 	t.Helper()
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
+	// DefaultCredentialsPath reads %APPDATA%\beads\credentials on Windows and
+	// ~/.config/beads/credentials elsewhere; pin the platform's location (and
+	// USERPROFILE, which os.UserHomeDir reads on Windows).
+	t.Setenv("USERPROFILE", homeDir)
+	credPath := filepath.Join(homeDir, ".config", "beads", "credentials")
+	if runtime.GOOS == "windows" {
+		appData := filepath.Join(homeDir, "AppData", "Roaming")
+		t.Setenv("APPDATA", appData)
+		credPath = filepath.Join(appData, "beads", "credentials")
+	}
 	if content == "" {
 		return
 	}
-	credPath := filepath.Join(homeDir, ".config", "beads", "credentials")
 	if err := os.MkdirAll(filepath.Dir(credPath), 0o755); err != nil {
-		t.Fatalf("MkdirAll(.config/beads): %v", err)
+		t.Fatalf("MkdirAll(credentials dir): %v", err)
 	}
 	if err := os.WriteFile(credPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile(credentials): %v", err)
@@ -309,6 +318,9 @@ func TestResolveFromEnv_NilEnvSkipsTiers1And2(t *testing.T) {
 }
 
 func TestResolveFromEnv_PermissiveScopeFileStopsChain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
+	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	envPath := writeStorePasswordWithMode(t, scopeRoot, "tier4-blocked", 0o644)
@@ -336,6 +348,9 @@ func TestResolveFromEnv_PermissiveScopeFileStopsChain(t *testing.T) {
 }
 
 func TestResolveFromEnv_OwnerExecutableScopeFileExplainsRejection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
+	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	writeStorePasswordWithMode(t, scopeRoot, "tier4-blocked", 0o700)
@@ -357,6 +372,9 @@ func TestResolveFromEnv_OwnerExecutableScopeFileExplainsRejection(t *testing.T) 
 }
 
 func TestResolveFromEnv_PermissiveCredentialsFileStopsChain(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
+	}
 	clearProcessEnv(t)
 	credPath := writeCredentialsFileWithMode(t, "127.0.0.1", "5433", "tier6-blocked", 0o604)
 	t.Setenv("BEADS_CREDENTIALS_FILE", credPath)
@@ -679,6 +697,9 @@ func TestReadStoreLocalPassword_ReturnsValueOnHappyPath(t *testing.T) {
 }
 
 func TestReadStoreLocalPassword_PermissiveModeReturnsTypedError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
+	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	envPath := writeStorePasswordWithMode(t, scopeRoot, "store-secret", 0o644)

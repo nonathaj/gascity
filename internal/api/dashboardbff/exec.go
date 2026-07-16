@@ -208,10 +208,12 @@ func sanitizeTerminalOutput(s string) string {
 // is the single gate for any supervisor-reported path consumed by a
 // subprocess or os.Stat.
 func isValidHostPath(p string) bool {
-	if p == "" || !strings.HasPrefix(p, "/") || strings.ContainsRune(p, 0) {
+	if p == "" || strings.ContainsRune(p, 0) || !filepath.IsAbs(p) {
 		return false
 	}
-	for _, seg := range strings.Split(p, "/") {
+	// Split on both separators so a ".." segment is caught regardless of the
+	// slash style the client sent (Windows accepts / and \ interchangeably).
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if seg == ".." {
 			return false
 		}
@@ -221,10 +223,12 @@ func isValidHostPath(p string) bool {
 
 // isPathUnderRoot reports whether cwd equals root or is nested under it,
 // matching on path-segment boundaries so "/a/gascity" admits "/a/gascity/x"
-// but not the sibling "/a/gascity-evil".
+// but not the sibling "/a/gascity-evil". Both paths are compared in OS-native
+// cleaned form, so separator style does not matter.
 func isPathUnderRoot(cwd, root string) bool {
-	root = strings.TrimSuffix(root, "/")
-	return cwd == root || strings.HasPrefix(cwd, root+"/")
+	cwd = filepath.Clean(cwd)
+	root = filepath.Clean(root)
+	return cwd == root || strings.HasPrefix(cwd, root+string(filepath.Separator))
 }
 
 // isValidRunCwd validates a run cwd before it is handed to `git -C <cwd>`. It is

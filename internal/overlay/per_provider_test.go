@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -120,12 +121,15 @@ func TestCopyDirForProviders_KiroPreservesExistingWorkspaceInstructions(t *testi
 	if string(data) != "project instructions" {
 		t.Fatalf("AGENTS.md = %q, want existing project instructions preserved", string(data))
 	}
-	info, err := os.Stat(filepath.Join(dst, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("stat AGENTS.md: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("AGENTS.md mode = %v, want 0600", got)
+	// Unix permission bits don't exist on Windows (os.Stat synthesizes 0666).
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(dst, "AGENTS.md"))
+		if err != nil {
+			t.Fatalf("stat AGENTS.md: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("AGENTS.md mode = %v, want 0600", got)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(dst, ".kiro", "agents", "gascity.json")); err != nil {
 		t.Fatalf("expected Kiro agent config to be staged: %v", err)

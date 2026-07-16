@@ -1041,7 +1041,7 @@ func TestLocalDiscoveredAgent_PackTOMLReadErrorSurfacesError(t *testing.T) {
 	if ok {
 		t.Fatal("LocalDiscoveredAgent classified agent as local-discovered despite pack.toml read error")
 	}
-	if !strings.Contains(err.Error(), "reading /city/pack.toml") {
+	if !strings.Contains(err.Error(), "reading "+filepath.Join("/city", "pack.toml")) {
 		t.Fatalf("LocalDiscoveredAgent error = %v, want pack.toml read context", err)
 	}
 }
@@ -1062,7 +1062,7 @@ func TestLocalDiscoveredAgent_MalformedPackTOMLSurfacesError(t *testing.T) {
 	if ok {
 		t.Fatal("LocalDiscoveredAgent classified agent as local-discovered despite malformed pack.toml")
 	}
-	if !strings.Contains(err.Error(), "parsing /city/pack.toml") {
+	if !strings.Contains(err.Error(), "parsing "+filepath.Join("/city", "pack.toml")) {
 		t.Fatalf("LocalDiscoveredAgent error = %v, want pack.toml parse context", err)
 	}
 }
