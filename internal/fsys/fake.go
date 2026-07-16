@@ -97,8 +97,8 @@ func (f *Fake) nextModTime() time.Time {
 
 // MkdirAll records the call and adds the directory (and parents) to Dirs.
 func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
-	path = f.canon(path)
 	f.Calls = append(f.Calls, Call{Method: "MkdirAll", Path: path})
+	path = f.canon(path)
 	if err, ok := f.Errors[path]; ok {
 		return err
 	}
@@ -120,8 +120,8 @@ func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 
 // WriteFile records the call and stores the data in Files.
 func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "WriteFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}
@@ -142,8 +142,8 @@ func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
 
 // ReadFile records the call and returns the file contents from Files.
 func (f *Fake) ReadFile(name string) ([]byte, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "ReadFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -158,8 +158,8 @@ func (f *Fake) ReadFile(name string) ([]byte, error) {
 // ReadRegularFile records the call and returns file contents without following
 // symlinks or accepting directories.
 func (f *Fake) ReadRegularFile(name string) ([]byte, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "ReadRegularFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -190,8 +190,8 @@ func (f *Fake) readRegularFileSnapshot(name string) (regularFileSnapshot, error)
 // Stat records the call and returns info based on Dirs/Files maps.
 // Symlinks are followed — use Lstat to detect them without following.
 func (f *Fake) Stat(name string) (os.FileInfo, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "Stat", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -227,8 +227,8 @@ func (f *Fake) Stat(name string) (os.FileInfo, error) {
 // Lstat records the call and reports the entry itself without following
 // symlinks. Tests populate Symlinks to exercise the symlink-rejection path.
 func (f *Fake) Lstat(name string) (os.FileInfo, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "Lstat", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -246,8 +246,8 @@ func (f *Fake) Lstat(name string) (os.FileInfo, error) {
 
 // Readlink records the call and returns the symlink target without following it.
 func (f *Fake) Readlink(name string) (string, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "Readlink", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return "", err
 	}
@@ -259,8 +259,8 @@ func (f *Fake) Readlink(name string) (string, error) {
 
 // Symlink records the call and creates a symlink entry.
 func (f *Fake) Symlink(oldname, newname string) error {
-	newname = f.canon(newname)
 	f.Calls = append(f.Calls, Call{Method: "Symlink", Path: newname})
+	newname = f.canon(newname)
 	if err, ok := f.Errors[newname]; ok {
 		return err
 	}
@@ -277,8 +277,8 @@ func (f *Fake) Symlink(oldname, newname string) error {
 
 // ReadDir records the call and returns entries from direct children.
 func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "ReadDir", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -325,9 +325,9 @@ func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 
 // Rename records the call and moves the file in the Files map.
 func (f *Fake) Rename(oldpath, newpath string) error {
+	f.Calls = append(f.Calls, Call{Method: "Rename", Path: oldpath})
 	oldpath = f.canon(oldpath)
 	newpath = canonFakePath(newpath)
-	f.Calls = append(f.Calls, Call{Method: "Rename", Path: oldpath})
 	if err, ok := f.Errors[oldpath]; ok {
 		return err
 	}
@@ -359,8 +359,8 @@ func (f *Fake) Rename(oldpath, newpath string) error {
 
 // Remove records the call and deletes the file from the Files map.
 func (f *Fake) Remove(name string) error {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "Remove", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}
@@ -384,8 +384,8 @@ func (f *Fake) Remove(name string) error {
 
 // Chmod records the call and updates the stored mode.
 func (f *Fake) Chmod(name string, mode os.FileMode) error {
-	name = f.canon(name)
 	f.Calls = append(f.Calls, Call{Method: "Chmod", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}
