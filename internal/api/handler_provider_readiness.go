@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/searchpath"
 	"gopkg.in/yaml.v3"
 )
@@ -618,7 +619,7 @@ func findProbeBinary(name, homeDir string) (string, bool) {
 			if err != nil || info.IsDir() {
 				continue
 			}
-			if info.Mode()&0o111 == 0 {
+			if !fsys.IsExecutableMode(info.Mode()) {
 				continue
 			}
 			return candidate, true

@@ -33,6 +33,7 @@
 ./internal/events
 ./internal/execenv
 ./internal/extmsg
+./internal/fsys
 ./internal/gchome
 ./internal/git
 ./internal/gitcred
