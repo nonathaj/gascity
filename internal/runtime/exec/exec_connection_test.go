@@ -15,7 +15,7 @@ import (
 // (e.g. `exec) sh -c "$(cat)" ;;`). Unlisted ops exit 2.
 func writeExecOpScript(t *testing.T, caseBody string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "gc-runtime-exec")
+	path := filepath.Join(t.TempDir(), "gc-runtime-exec.sh")
 	script := "#!/bin/sh\nop=\"$1\"; name=\"$2\"\ncase \"$op\" in\n" + caseBody + "\n  *) exit 2 ;;\nesac\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

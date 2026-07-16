@@ -75,7 +75,7 @@ func shellCommand(command, dir string, timeout time.Duration, env map[string]str
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = mergeRuntimeEnv(os.Environ(), env)
+	cmd.Env = execshim.EnvWithShellDir(mergeRuntimeEnv(os.Environ(), env))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("running command %q: %w", command, err)
