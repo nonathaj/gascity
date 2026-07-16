@@ -13,6 +13,11 @@ import (
 // provider-managed process termination from graceful to forced kill.
 const ManagedProcessStopGrace = 5 * time.Second
 
+// ManagedProcessReapGrace bounds how long a kill waits, after the forced
+// taskkill, for the target to be confirmed dead before reporting failure —
+// same contract as the Unix definition.
+const ManagedProcessReapGrace = 3 * time.Second
+
 // SignalProcessGroup approximates Unix group signaling on Windows. There is no
 // signal delivery to arbitrary processes; SIGKILL (and any escalation) maps to
 // a forced taskkill of the process tree, everything else attempts the graceful

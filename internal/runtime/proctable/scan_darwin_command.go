@@ -10,5 +10,8 @@ func darwinPSCommand(fields []string) string {
 }
 
 func isInfrastructureCommand(command string) bool {
-	return strings.Contains(strings.ToLower(command), "tmux")
+	lower := strings.ToLower(command)
+	// psmux is the Windows tmux workalike; its name does not contain the
+	// substring "tmux", so it needs its own match.
+	return strings.Contains(lower, "tmux") || strings.Contains(lower, "psmux")
 }
