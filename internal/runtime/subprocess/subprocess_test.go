@@ -369,7 +369,17 @@ func TestWorkDirSet(t *testing.T) {
 			canonical, _ := filepath.EvalSymlinks(dir)
 			want := canonical + "\n"
 			if goruntime.GOOS == "windows" {
-				want = filepath.ToSlash(canonical) + "\n"
+				// pwd -W may print 8.3 short names (RUNNER~1);
+				// EvalSymlinks expands them to the long form, and drive
+				// letter case can differ, so compare case-insensitively.
+				reported := filepath.FromSlash(strings.TrimSpace(got))
+				if resolved, rerr := filepath.EvalSymlinks(reported); rerr == nil {
+					reported = resolved
+				}
+				if !strings.EqualFold(reported, canonical) {
+					t.Errorf("workdir = %q (resolved %q), want %q", got, reported, canonical)
+				}
+				return
 			}
 			if got != want {
 				t.Errorf("workdir = %q, want %q", got, want)
