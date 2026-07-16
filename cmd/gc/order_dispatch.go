@@ -23,6 +23,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/graphroute"
@@ -133,8 +134,9 @@ func shellExecRunner(ctx context.Context, command, dir string, env []string) ([]
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := execshim.ShellCommandContext(ctx, command)
 	cmd.Dir = dir
+	// cmd.Environ() already carries execshim's shell-dir PATH injection.
 	cmd.Env = mergeOrderExecEnv(cmd.Environ(), env)
 	processgroup.StartCommandInNewGroup(cmd)
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // TriggerResult holds the outcome of a trigger check.
@@ -290,7 +291,7 @@ func checkCondition(a Order, opts TriggerOptions) TriggerResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", a.Check)
+	cmd := execshim.ShellCommandContext(ctx, a.Check)
 	cleanupCommand := prepareConditionCommand(cmd, conditionCheckSignalGrace)
 	cmd.WaitDelay = conditionCheckPostCancelWaitDelay
 	cmd.Stdout = io.Discard

@@ -26,6 +26,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // Version identifies the grant exec contract. It is echoed to the grant command
@@ -148,8 +150,8 @@ func runGrantCommand(ctx context.Context, command string, info GrantInfo) (strin
 	if err != nil {
 		return "", fmt.Errorf("clientgrant: encoding grant info: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
-	cmd.Env = append(strippedEnv(), GrantInfoEnv+"="+string(payload))
+	cmd := execshim.ShellCommandContext(ctx, command)
+	cmd.Env = execshim.EnvWithShellDir(append(strippedEnv(), GrantInfoEnv+"="+string(payload)))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("clientgrant: running grant command: %w", withStderr(err))
