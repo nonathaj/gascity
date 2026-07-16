@@ -5653,11 +5653,11 @@ func runShellWithFakeBd(t *testing.T, shellCmd string, env map[string]string, bd
 		t.Fatalf("write fake bd: %v", err)
 	}
 
-	cmd := exec.Command("sh", "-c", shellCmd)
-	cmd.Env = []string{"PATH=" + tmp + ":" + os.Getenv("PATH")}
+	extra := make([]string, 0, len(env))
 	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
+		extra = append(extra, k+"="+v)
 	}
+	cmd := testShellCommand(shellCmd, tmp, extra...)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("run shell with fake bd: %v", err)
@@ -5675,11 +5675,7 @@ func runLifecycleHookCommand(t *testing.T, command string, bdScript string) stri
 	}
 	logPath := filepath.Join(tmp, "bd.log")
 
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = []string{
-		"PATH=" + tmp + ":" + os.Getenv("PATH"),
-		"BD_LOG=" + logPath,
-	}
+	cmd := testShellCommand(command, tmp, "BD_LOG="+logPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run lifecycle hook: %v\n%s", err, out)
 	}
