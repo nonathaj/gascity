@@ -32,6 +32,7 @@
 ./internal/clientgrant
 ./internal/commandcensus
 ./internal/config
+./internal/configedit
 ./internal/convergence
 ./internal/convoy
 ./internal/coordclass
@@ -64,6 +65,7 @@
 ./internal/nudgequeue
 ./internal/orderdiscovery
 ./internal/orders
+./internal/overlay
 ./internal/packman
 ./internal/pgauth
 ./internal/pathutil
