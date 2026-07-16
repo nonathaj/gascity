@@ -4,3 +4,14 @@
 # assets, and collapse it in review UIs. Drift is still caught by the content-based
 # `git diff --quiet -- internal/api/dashboardspa/dist` gate in the Makefile.
 internal/api/dashboardspa/dist/** -diff linguist-generated
+
+# Golden/fixture files are compared byte-for-byte by tests (e.g.
+# internal/runproj, internal/api/dashboardbff). Pin the text ones to LF so a
+# Windows checkout with core.autocrlf=true doesn't rewrite them to CRLF and
+# fail every byte-exact golden comparison. Extension-scoped so binary fixtures
+# (archives, images) are never renormalized.
+**/testdata/**/*.json text eol=lf
+**/testdata/**/*.txt text eol=lf
+**/testdata/**/*.md text eol=lf
+**/testdata/**/*.jsonl text eol=lf
+*.golden text eol=lf

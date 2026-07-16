@@ -65,7 +65,9 @@ var ShPath = sync.OnceValue(func() string {
 // Command is exec.Command with .sh routing on Windows.
 func Command(path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		return exec.Command(ShPath(), append([]string{path}, args...)...)
+		cmd := exec.Command(ShPath(), append([]string{path}, args...)...)
+		cmd.Env = EnvWithShellDir(os.Environ())
+		return cmd
 	}
 	return exec.Command(path, args...)
 }
@@ -73,7 +75,9 @@ func Command(path string, args ...string) *exec.Cmd {
 // CommandContext is exec.CommandContext with .sh routing on Windows.
 func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		return exec.CommandContext(ctx, ShPath(), append([]string{path}, args...)...)
+		cmd := exec.CommandContext(ctx, ShPath(), append([]string{path}, args...)...)
+		cmd.Env = EnvWithShellDir(os.Environ())
+		return cmd
 	}
 	return exec.CommandContext(ctx, path, args...)
 }
@@ -82,10 +86,71 @@ func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd 
 // shell command line works on Windows hosts where sh.exe is not on PATH but
 // Git for Windows is installed.
 func ShellCommand(command string) *exec.Cmd {
-	return exec.Command(ShPath(), "-c", command)
+	cmd := exec.Command(ShPath(), "-c", command)
+	cmd.Env = EnvWithShellDir(os.Environ())
+	return cmd
 }
 
 // ShellCommandContext is ShellCommand with a context.
 func ShellCommandContext(ctx context.Context, command string) *exec.Cmd {
-	return exec.CommandContext(ctx, ShPath(), "-c", command)
+	cmd := exec.CommandContext(ctx, ShPath(), "-c", command)
+	cmd.Env = EnvWithShellDir(os.Environ())
+	return cmd
+}
+
+// LookPath resolves name like exec.LookPath, falling back to the resolved sh
+// interpreter's directory — Git for Windows ships the coreutils (tail, head,
+// cat, ...) alongside sh.exe in usr\bin, which a typical Windows PATH does not
+// expose. Callers that exec a coreutil directly (not through sh) use this so
+// the binary resolves on any host where gc's shell execution works at all.
+func LookPath(name string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	dir := filepath.Dir(ShPath())
+	if filepath.IsAbs(dir) {
+		cand := filepath.Join(dir, name)
+		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(name), ".exe") {
+			cand += ".exe"
+		}
+		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
+			return cand, nil
+		}
+	}
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
+// EnvWithShellDir returns env (a KEY=VALUE slice as from os.Environ) with the
+// resolved sh interpreter's directory ensured on PATH. Scripts routed through
+// sh on Windows invoke coreutils (cat, grep, sed, ...) that ship in the same
+// Git-for-Windows directory as sh.exe; a typical install exposes only
+// mingw64\bin (git.exe) on PATH, so without this those utilities are not found
+// and shell providers/hooks fail with "command not found". No-op on non-Windows
+// and when sh has no absolute directory (the plain "sh" fallback) or the dir is
+// already present. Callers that build a custom child environment (setting
+// cmd.Env explicitly after Command/ShellCommand) should wrap it with this.
+func EnvWithShellDir(env []string) []string {
+	if runtime.GOOS != "windows" {
+		return env
+	}
+	dir := filepath.Dir(ShPath())
+	if !filepath.IsAbs(dir) {
+		return env
+	}
+	norm := func(p string) string { return strings.ToLower(strings.TrimRight(p, `\`)) }
+	target := norm(dir)
+	for i, kv := range env {
+		if len(kv) < 5 || !strings.EqualFold(kv[:5], "PATH=") {
+			continue
+		}
+		for _, p := range strings.Split(kv[5:], string(os.PathListSeparator)) {
+			if norm(p) == target {
+				return env
+			}
+		}
+		out := append([]string(nil), env...)
+		out[i] = kv[:5] + dir + string(os.PathListSeparator) + kv[5:]
+		return out
+	}
+	return append(append([]string(nil), env...), "PATH="+dir)
 }

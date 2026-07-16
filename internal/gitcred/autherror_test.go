@@ -5,12 +5,14 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // exit128 returns a real *exec.ExitError with code 128.
 func exit128(t *testing.T) error {
 	t.Helper()
-	err := exec.Command("sh", "-c", "exit 128").Run()
+	err := execshim.ShellCommand("exit 128").Run()
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 128 {
 		t.Fatalf("setup: could not produce exit-128 error, got %v", err)
@@ -20,7 +22,7 @@ func exit128(t *testing.T) error {
 
 func exit1(t *testing.T) error {
 	t.Helper()
-	err := exec.Command("sh", "-c", "exit 1").Run()
+	err := execshim.ShellCommand("exit 1").Run()
 	if err == nil {
 		t.Fatalf("setup: expected exit-1 error")
 	}

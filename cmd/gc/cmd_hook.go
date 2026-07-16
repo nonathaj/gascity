@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
@@ -636,13 +637,13 @@ func resolveHookWorkQueryTimeout() time.Duration {
 func shellWorkQueryWithEnv(command, dir string, env []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), hookWorkQueryTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := execshim.ShellCommandContext(ctx, command)
 	cmd.WaitDelay = 2 * time.Second
 	prepareProviderOpCommand(cmd)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = workQueryEnvForDir(env, dir)
+	cmd.Env = execshim.EnvWithShellDir(workQueryEnvForDir(env, dir))
 	disableProductMetricsForChild(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

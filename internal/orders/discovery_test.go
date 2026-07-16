@@ -2,6 +2,7 @@ package orders
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,8 +34,8 @@ schedule = "*/5 * * * *"
 	if orders[0].Formula != "health-check" {
 		t.Fatalf("Formula = %q, want %q", orders[0].Formula, "health-check")
 	}
-	if orders[0].Source != "/pack/orders/health-check.toml" {
-		t.Fatalf("Source = %q, want %q", orders[0].Source, "/pack/orders/health-check.toml")
+	if want := filepath.FromSlash("/pack/orders/health-check.toml"); orders[0].Source != want {
+		t.Fatalf("Source = %q, want %q", orders[0].Source, want)
 	}
 }
 
@@ -103,7 +104,7 @@ schedule = "*/5 * * * *"
 	if err == nil {
 		t.Fatal("ScanRoots succeeded, want hard error for legacy subdirectory layout")
 	}
-	if !strings.Contains(err.Error(), "unsupported PackV1 order path /pack/orders/health-check/order.toml") {
+	if !strings.Contains(err.Error(), "unsupported PackV1 order path "+filepath.FromSlash("/pack/orders/health-check/order.toml")) {
 		t.Fatalf("error = %v, want PackV1 path rejection", err)
 	}
 	if !strings.Contains(err.Error(), "rename to orders/health-check.toml") {
@@ -135,11 +136,11 @@ trigger = "manual"
 	}
 	for _, want := range []string{
 		"unsupported PackV1 order paths",
-		"/base/orders/alpha/order.toml",
+		filepath.FromSlash("/base/orders/alpha/order.toml"),
 		"rename to orders/alpha.toml",
-		"/base/formulas/orders/beta/order.toml",
+		filepath.FromSlash("/base/formulas/orders/beta/order.toml"),
 		"move to orders/beta.toml",
-		"/pack/orders/gamma/order.toml",
+		filepath.FromSlash("/pack/orders/gamma/order.toml"),
 		"rename to orders/gamma.toml",
 		"applies to all pack schemas",
 	} {
@@ -193,7 +194,7 @@ schedule = "*/5 * * * *"
 	if orders[0].Name != "health-check" {
 		t.Fatalf("Name = %q, want health-check", orders[0].Name)
 	}
-	if orders[0].Source != "/pack/orders/health-check.order.toml" {
+	if orders[0].Source != filepath.FromSlash("/pack/orders/health-check.order.toml") {
 		t.Fatalf("Source = %q, want infixed flat source", orders[0].Source)
 	}
 }
@@ -227,7 +228,7 @@ trigger = "manual"
 	if orders[0].Formula != "plain" {
 		t.Fatalf("Formula = %q, want plain spelling to win", orders[0].Formula)
 	}
-	if orders[0].Source != "/pack/orders/health-check.toml" {
+	if orders[0].Source != filepath.FromSlash("/pack/orders/health-check.toml") {
 		t.Fatalf("Source = %q, want plain flat source", orders[0].Source)
 	}
 }
@@ -254,7 +255,7 @@ trigger = "manual"
 	if orders[0].Formula != "plain" {
 		t.Fatalf("Formula = %q, want plain spelling to win", orders[0].Formula)
 	}
-	if orders[0].Source != "/pack/orders/health-check.toml" {
+	if orders[0].Source != filepath.FromSlash("/pack/orders/health-check.toml") {
 		t.Fatalf("Source = %q, want plain flat source", orders[0].Source)
 	}
 }
@@ -276,7 +277,7 @@ schedule = "*/5 * * * *"
 	if err == nil {
 		t.Fatal("discoverRoot returned nil error for unreadable flat order file")
 	}
-	if !strings.Contains(err.Error(), "reading order /pack/orders/health-check.toml") {
+	if !strings.Contains(err.Error(), "reading order "+filepath.FromSlash("/pack/orders/health-check.toml")) {
 		t.Fatalf("error = %v, want flat order path context", err)
 	}
 }

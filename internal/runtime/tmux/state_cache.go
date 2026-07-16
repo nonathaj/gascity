@@ -455,6 +455,12 @@ func fetchProcessSnapshot(ctx context.Context) (processSnapshot, error) {
 		return fetchDarwinProcessSnapshot(ctx)
 	}
 	if goruntime.GOOS == "windows" {
+		// procSnapshotAll is a synchronous Toolhelp32 walk with no exec
+		// boundary for the context to interrupt, so honor cancellation
+		// explicitly to keep the Unix contract (canceled ctx => error).
+		if err := ctx.Err(); err != nil {
+			return processSnapshot{}, fmt.Errorf("fetching process snapshot: %w", err)
+		}
 		processes, err := procSnapshotAll()
 		if err != nil {
 			return processSnapshot{}, fmt.Errorf("fetching process snapshot: %w", err)

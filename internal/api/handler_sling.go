@@ -17,6 +17,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/execshim"
 	gitpkg "github.com/gastownhall/gascity/internal/git"
 	"github.com/gastownhall/gascity/internal/sling"
 	"github.com/gastownhall/gascity/internal/sourceworkflow"
@@ -323,11 +324,11 @@ func (s *Server) slingRunner() sling.SlingRunner {
 	return func(dir, command string, env map[string]string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "sh", "-c", command)
+		cmd := execshim.ShellCommandContext(ctx, command)
 		if dir != "" {
 			cmd.Dir = dir
 		}
-		cmd.Env = mergeEnvForSling(env)
+		cmd.Env = execshim.EnvWithShellDir(mergeEnvForSling(env))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return string(out), fmt.Errorf("running %q: %w", command, err)

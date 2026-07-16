@@ -7,6 +7,7 @@
 # Grow this list as Phase 2 (gw-l8d, gw-kbr) lands; the end state is
 # "everything minus documented exclusions", at which point this file
 # inverts into an exclusion list or disappears.
+./cmd/gc-write-mint
 ./examples
 ./examples/swarm
 ./examples/t3bridge-gastown
@@ -15,13 +16,19 @@
 ./internal/api/apierr
 ./internal/api/dashboardspa
 ./internal/api/genclient
+./internal/bdflags
 ./internal/beadmeta
 ./internal/beads/beadstest
 ./internal/beads/contract
 ./internal/bootstrap
 ./internal/bootstrap/packs/core
 ./internal/cityinit
+./internal/citylayout
 ./internal/citywriteauth
+./internal/cliauth
+./internal/clientauth
+./internal/clientgrant
+./internal/commandcensus
 ./internal/config
 ./internal/convergence
 ./internal/convoy
@@ -29,10 +36,12 @@
 ./internal/deps
 ./internal/doltauth
 ./internal/doltversion
+./internal/emergency
 ./internal/eventfeed
 ./internal/events
 ./internal/execenv
 ./internal/extmsg
+./internal/formula
 ./internal/fsys
 ./internal/gchome
 ./internal/git
@@ -40,6 +49,7 @@
 ./internal/githubmonitor
 ./internal/graphroute
 ./internal/graphv2
+./internal/hooks
 ./internal/importsvc
 ./internal/logutil
 ./internal/mail
@@ -49,7 +59,9 @@
 ./internal/nudgepoller
 ./internal/nudgequeue
 ./internal/orderdiscovery
+./internal/orders
 ./internal/packman
+./internal/pathutil
 ./internal/pidutil
 ./internal/pricing
 ./internal/processenv
@@ -59,6 +71,9 @@
 ./internal/reliability
 ./internal/remotesource
 ./internal/reviewquorum
+./internal/rig
+./internal/rollout
+./internal/runproj
 ./internal/runtime
 ./internal/runtime/acp
 ./internal/runtime/auto
@@ -69,11 +84,19 @@
 ./internal/runtime/runtimetest
 ./internal/runtime/ssh
 ./internal/runtime/subprocess
+./internal/sdnotify
+./internal/searchpath
+./internal/session/sessiontest
 ./internal/shellquote
+./internal/sling
 ./internal/sourceworkflow
+./internal/ssrf
 ./internal/storeref
 ./internal/suspensionstate
 ./internal/telemetry
+./internal/testpolicy/timingsummary
+./internal/testutil/providerledger
+./internal/transcriptmeta
 ./internal/usage
 ./internal/validation
 ./internal/webhookmatch
@@ -81,10 +104,16 @@
 ./internal/webhookverify
 ./internal/worker/builtin
 ./internal/worker/fake
+./internal/workdir
+./scripts/cipolicy
 ./test/acceptance
 ./test/acceptance/tier_b
 ./test/acceptance/tier_c
 ./test/acceptance/tutorial_goldens
 ./test/acceptance/worker_inference
+./test/dashport
 ./test/integration
 ./test/integration/filebdshim
+./test/packlint
+./test/tmuxtest
+./test/workflows

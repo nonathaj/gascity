@@ -17,6 +17,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 const agentScriptActionTimeout = 5 * time.Minute
@@ -713,10 +715,10 @@ func envKeySegment(value string) string {
 func (e agentScriptExecutor) runShellCommand(command string, env []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), agentScriptActionTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := execshim.ShellCommandContext(ctx, command)
 	cmd.WaitDelay = 2 * time.Second
 	prepareProviderOpCommand(cmd)
-	cmd.Env = workQueryEnvForDir(env, "")
+	cmd.Env = execshim.EnvWithShellDir(workQueryEnvForDir(env, ""))
 	cmd.Stdout = e.stdout
 	cmd.Stderr = e.stderr
 	if err := cmd.Run(); err != nil {

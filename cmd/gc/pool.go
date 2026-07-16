@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/telemetry"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
@@ -69,12 +69,13 @@ const hookTimeout = 30 * time.Second
 func shellCommand(command, dir string, timeout time.Duration, env map[string]string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	cmd := execshim.ShellCommandContext(ctx, command)
+	cmd.SysProcAttr = hookChildSysProcAttr()
 	cmd.WaitDelay = 2 * time.Second
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = mergeRuntimeEnv(os.Environ(), env)
+	cmd.Env = execshim.EnvWithShellDir(mergeRuntimeEnv(os.Environ(), env))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("running command %q: %w", command, err)

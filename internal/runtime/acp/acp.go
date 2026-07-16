@@ -188,7 +188,10 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 			env = append(env, k+"="+cfg.Env[k])
 		}
 	}
-	cmd.Env = env
+	// EnvWithShellDir re-applies execshim's sh-dir PATH injection, which this
+	// override would otherwise discard — the agent command line runs under sh
+	// and may invoke coreutils from the same Git-for-Windows directory.
+	cmd.Env = execshim.EnvWithShellDir(env)
 
 	// Set up stdio pipes for JSON-RPC.
 	stdinPipe, err := cmd.StdinPipe()

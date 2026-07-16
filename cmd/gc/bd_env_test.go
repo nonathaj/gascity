@@ -4494,7 +4494,7 @@ while :; do sleep 1; done
 	}()
 
 	pid := waitForProviderTestChildPID(t, childPIDFile)
-	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = platformKill(pid, syscall.SIGKILL) })
 	cancel()
 
 	select {

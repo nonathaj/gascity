@@ -116,7 +116,7 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 
 // runWithTTY executes the script with the terminal inherited (for Attach).
 func (p *Provider) runWithTTY(args ...string) error {
-	cmd := exec.Command(p.script, args...)
+	cmd := execshim.Command(p.script, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -273,7 +273,7 @@ func (p *Provider) startStartupWatch(
 	firstEventTimeout time.Duration,
 ) (<-chan string, func() error, bool, error) {
 	watchCtx, cancel := context.WithCancel(ctx)
-	cmd := exec.CommandContext(watchCtx, p.script, "watch-startup", name)
+	cmd := execshim.CommandContext(watchCtx, p.script, "watch-startup", name)
 	// Startup watchers are short-lived probes; tear them down quickly once the
 	// dialog helper is finished so Start cannot stall behind a sleeping wrapper.
 	cmd.WaitDelay = 250 * time.Millisecond
@@ -739,7 +739,7 @@ func (p *Provider) Exec(ctx context.Context, name string, argv []string) ([]byte
 	cmdCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(cmdCtx, p.script, "exec", name)
+	cmd := execshim.CommandContext(cmdCtx, p.script, "exec", name)
 	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -37,7 +37,10 @@ func ResolveDirPath(cityPath, dir string) string {
 		return cityPath
 	}
 	if filepath.IsAbs(dir) {
-		return dir
+		// Clean for parity with the Join branch below (Join cleans
+		// implicitly). Work-dir templates append '/'-joined segments, so on
+		// Windows an absolute expansion otherwise keeps mixed separators.
+		return filepath.Clean(dir)
 	}
 	return filepath.Join(cityPath, dir)
 }

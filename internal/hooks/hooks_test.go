@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1427,7 +1428,7 @@ func TestInstallClaudeUnreadableRuntimeDoesNotDemoteValidHook(t *testing.T) {
 		// the injected error also blocks WriteFile (it does, in the Fake).
 		// That's acceptable: a failed write surfaces loudly. What must NOT
 		// happen is silent success with the stale unreadable runtime kept.
-		if !strings.Contains(err.Error(), ".gc/settings.json") {
+		if !strings.Contains(err.Error(), filepath.Join(".gc", "settings.json")) {
 			t.Fatalf("unexpected error (expected a write failure surfacing the runtime path): %v", err)
 		}
 		return
@@ -1452,6 +1453,9 @@ func TestInstallClaudeUnreadableRuntimeDoesNotDemoteValidHook(t *testing.T) {
 //
 // Skipped as root (root bypasses unix permission checks).
 func TestInstallClaudeForceOverwritesUnreadableRuntimeOSFS(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("write-only (0o200) files are impossible on Windows: chmod only toggles the read-only attribute, so stat-ok/read-fail cannot be simulated")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses unix permission checks; cannot simulate stat-ok/read-fail")
 	}
@@ -1519,6 +1523,9 @@ func TestInstallClaudeForceOverwritesUnreadableRuntimeOSFS(t *testing.T) {
 //
 // Skipped as root (root bypasses unix permission checks).
 func TestInstallClaudePreservesTightenedRuntimeMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("user-tightened unix modes (0o600 vs 0o644) do not exist on Windows")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses unix permission checks")
 	}
@@ -1568,7 +1575,7 @@ func TestInstallClaudeSurfacesEmptyPreferredOverride(t *testing.T) {
 	if err == nil {
 		t.Fatal("Install must surface empty .claude/settings.json as an error")
 	}
-	if !strings.Contains(err.Error(), ".claude/settings.json") {
+	if !strings.Contains(err.Error(), filepath.Join(".claude", "settings.json")) {
 		t.Errorf("error must name the offending path: %v", err)
 	}
 	if !strings.Contains(err.Error(), "empty") {
@@ -1591,7 +1598,7 @@ func TestInstallClaudeSurfacesMalformedOverride(t *testing.T) {
 	if err == nil {
 		t.Fatal("Install must surface malformed .claude/settings.json as an error")
 	}
-	if !strings.Contains(err.Error(), ".claude/settings.json") {
+	if !strings.Contains(err.Error(), filepath.Join(".claude", "settings.json")) {
 		t.Errorf("error must name the offending path: %v", err)
 	}
 	if !strings.Contains(err.Error(), "invalid Claude settings override") {
@@ -1629,7 +1636,7 @@ func TestInstallClaudeSurfacesNonObjectOverride(t *testing.T) {
 			if err == nil {
 				t.Fatal("Install must surface non-object .claude/settings.json as an error")
 			}
-			if !strings.Contains(err.Error(), ".claude/settings.json") {
+			if !strings.Contains(err.Error(), filepath.Join(".claude", "settings.json")) {
 				t.Errorf("error must name the offending path: %v", err)
 			}
 			if !strings.Contains(err.Error(), "Claude settings override is not a JSON object") {
@@ -1868,7 +1875,9 @@ func TestInstallOverlayManagedProviders(t *testing.T) {
 		t.Errorf("Kiro prompt = %q, want file:// URI", kiroAgent.Prompt)
 	default:
 		promptRel := strings.TrimPrefix(kiroAgent.Prompt, "file://")
-		promptPath := filepath.Clean(filepath.Join(filepath.Dir("/work/.kiro/agents/gascity.json"), promptRel))
+		// ToSlash so the resolved path matches fsys.Fake's slash-canonical keys
+		// on Windows, where Clean/Join emit backslashes.
+		promptPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir("/work/.kiro/agents/gascity.json"), promptRel)))
 		if promptPath != "/work/AGENTS.md" {
 			t.Errorf("Kiro prompt resolves to %q, want /work/AGENTS.md", promptPath)
 		}

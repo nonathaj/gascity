@@ -25,5 +25,8 @@ func testShellCommand(shellCmd, pathPrepend string, extraEnv ...string) *exec.Cm
 			}
 		}
 	}
+	// Ensure sh's own directory (Git-for-Windows usr\bin, which also holds the
+	// coreutils the rendered shell lines invoke) survives the PATH override.
+	cmd.Env = execshim.EnvWithShellDir(cmd.Env)
 	return cmd
 }

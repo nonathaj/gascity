@@ -56,6 +56,9 @@ const psEnumerationTimeout = 30 * time.Second
 // start ticks. Hosts without /proc (including Darwin/macOS) fall back to ps for
 // process enumeration and lsof for best-effort listening ports.
 func discoverDoltProcesses() ([]DoltProcInfo, error) {
+	if procs, ok, err := discoverDoltProcessesPlatform(); ok {
+		return procs, err
+	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return discoverDoltProcessesFromPS()

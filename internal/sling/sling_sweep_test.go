@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 
@@ -111,7 +112,14 @@ func TestSweepOrphanSlingSkipsCurrentPID(t *testing.T) {
 
 func TestSweepOrphanSlingPreservesLivePID(t *testing.T) {
 	root := t.TempDir()
-	cmd := exec.Command("sleep", "60")
+	// Any long-lived child works; `sleep` doesn't exist on Windows, where
+	// ping's per-probe delay is the standard always-present substitute.
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("ping", "-n", "60", "127.0.0.1")
+	} else {
+		cmd = exec.Command("sleep", "60")
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start subprocess: %v", err)
 	}

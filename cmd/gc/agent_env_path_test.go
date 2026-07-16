@@ -17,8 +17,8 @@ func TestPrependGCBinDirToPATH_NoGCBin_NoOp(t *testing.T) {
 
 func TestPrependGCBinDirToPATH_AddsToExistingPATH(t *testing.T) {
 	env := map[string]string{"PATH": "/usr/bin:/bin"}
-	prependGCBinDirToPATH(env, "/Users/jbb/go/bin/gc")
-	want := "/Users/jbb/go/bin" + string(os.PathListSeparator) + "/usr/bin:/bin"
+	prependGCBinDirToPATH(env, filepath.FromSlash("/Users/jbb/go/bin/gc"))
+	want := filepath.FromSlash("/Users/jbb/go/bin") + string(os.PathListSeparator) + "/usr/bin:/bin"
 	if env["PATH"] != want {
 		t.Fatalf("PATH=%q, want %q", env["PATH"], want)
 	}
@@ -27,15 +27,15 @@ func TestPrependGCBinDirToPATH_AddsToExistingPATH(t *testing.T) {
 func TestPrependGCBinDirToPATH_FallsBackToOSPATH(t *testing.T) {
 	env := map[string]string{}
 	t.Setenv("PATH", "/usr/bin:/bin")
-	prependGCBinDirToPATH(env, "/opt/gc/bin/gc")
-	want := "/opt/gc/bin" + string(os.PathListSeparator) + "/usr/bin:/bin"
+	prependGCBinDirToPATH(env, filepath.FromSlash("/opt/gc/bin/gc"))
+	want := filepath.FromSlash("/opt/gc/bin") + string(os.PathListSeparator) + "/usr/bin:/bin"
 	if env["PATH"] != want {
 		t.Fatalf("PATH=%q, want %q", env["PATH"], want)
 	}
 }
 
 func TestPrependGCBinDirToPATH_ExplicitEmptyPATHUsesOnlyGCBinDir(t *testing.T) {
-	dir := "/opt/gc/bin"
+	dir := filepath.FromSlash("/opt/gc/bin")
 	env := map[string]string{"PATH": ""}
 	prependGCBinDirToPATH(env, filepath.Join(dir, "gc"))
 	if env["PATH"] != dir {
@@ -44,7 +44,7 @@ func TestPrependGCBinDirToPATH_ExplicitEmptyPATHUsesOnlyGCBinDir(t *testing.T) {
 }
 
 func TestPrependGCBinDirToPATH_UnsetPATHWithEmptyOSPATHUsesOnlyGCBinDir(t *testing.T) {
-	dir := "/opt/gc/bin"
+	dir := filepath.FromSlash("/opt/gc/bin")
 	env := map[string]string{}
 	t.Setenv("PATH", "")
 	prependGCBinDirToPATH(env, filepath.Join(dir, "gc"))
@@ -54,7 +54,7 @@ func TestPrependGCBinDirToPATH_UnsetPATHWithEmptyOSPATHUsesOnlyGCBinDir(t *testi
 }
 
 func TestPrependGCBinDirToPATH_AlreadyFirst_NoDuplicate(t *testing.T) {
-	dir := "/Users/jbb/go/bin"
+	dir := filepath.FromSlash("/Users/jbb/go/bin")
 	env := map[string]string{"PATH": dir + string(os.PathListSeparator) + "/usr/bin"}
 	prependGCBinDirToPATH(env, filepath.Join(dir, "gc"))
 	parts := strings.Split(env["PATH"], string(os.PathListSeparator))
@@ -73,7 +73,7 @@ func TestPrependGCBinDirToPATH_AlreadyFirst_NoDuplicate(t *testing.T) {
 }
 
 func TestPrependGCBinDirToPATH_PresentNotFirst_MovesToFront(t *testing.T) {
-	dir := "/Users/jbb/go/bin"
+	dir := filepath.FromSlash("/Users/jbb/go/bin")
 	env := map[string]string{"PATH": "/opt/homebrew/bin" + string(os.PathListSeparator) + dir + string(os.PathListSeparator) + "/usr/bin"}
 	prependGCBinDirToPATH(env, filepath.Join(dir, "gc"))
 	parts := strings.Split(env["PATH"], string(os.PathListSeparator))
@@ -92,7 +92,7 @@ func TestPrependGCBinDirToPATH_PresentNotFirst_MovesToFront(t *testing.T) {
 }
 
 func TestPrependGCBinDirToPATH_PreservesLeadingEmptyEntry(t *testing.T) {
-	dir := "/Users/jbb/go/bin"
+	dir := filepath.FromSlash("/Users/jbb/go/bin")
 	sep := string(os.PathListSeparator)
 	env := map[string]string{"PATH": sep + "/usr/bin"}
 	prependGCBinDirToPATH(env, filepath.Join(dir, "gc"))
