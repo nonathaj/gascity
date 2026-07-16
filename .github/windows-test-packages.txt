@@ -14,6 +14,7 @@
 ./internal/agent
 ./internal/agentutil
 ./internal/api/apierr
+./internal/api/dashboardbff
 ./internal/api/dashboardspa
 ./internal/api/genclient
 ./internal/bdflags
@@ -64,6 +65,7 @@
 ./internal/orderdiscovery
 ./internal/orders
 ./internal/packman
+./internal/pgauth
 ./internal/pathutil
 ./internal/pidutil
 ./internal/pricing
