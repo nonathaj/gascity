@@ -20,6 +20,7 @@
 ./internal/beadmeta
 ./internal/beads/beadstest
 ./internal/beads/contract
+./internal/beads/exec
 ./internal/bootstrap
 ./internal/bootstrap/packs/core
 ./internal/cityinit
@@ -39,6 +40,7 @@
 ./internal/emergency
 ./internal/eventfeed
 ./internal/events
+./internal/events/exec
 ./internal/execenv
 ./internal/extmsg
 ./internal/formula
@@ -54,6 +56,7 @@
 ./internal/logutil
 ./internal/mail
 ./internal/mail/beadmail
+./internal/mail/exec
 ./internal/migrate
 ./internal/molecule
 ./internal/nudgepoller
