@@ -14,9 +14,12 @@ import (
 )
 
 // writeScript creates an executable shell script in dir and returns its path.
+// The ".sh" extension is load-bearing on Windows: execshim routes .sh provider
+// scripts through sh.exe (a bare name cannot be fork/exec'd there), while on
+// Unix the shebang makes it directly executable regardless of name.
 func writeScript(t *testing.T, dir, content string) string {
 	t.Helper()
-	path := filepath.Join(dir, "beads-provider")
+	path := filepath.Join(dir, "beads-provider.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0o755); err != nil {
 		t.Fatal(err)
 	}
