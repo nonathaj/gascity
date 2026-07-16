@@ -26,6 +26,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/processenv"
 	"github.com/gastownhall/gascity/internal/processgroup"
@@ -859,7 +860,12 @@ func doSupervisorLogs(numLines int, follow bool, stdout, stderr io.Writer) int {
 	}
 	args = append(args, logPath)
 
-	cmd := exec.Command("tail", args...)
+	tailPath, err := execshim.LookPath("tail")
+	if err != nil {
+		fmt.Fprintf(stderr, "gc supervisor logs: %v\n", err) //nolint:errcheck // best-effort stderr
+		return 1
+	}
+	cmd := exec.Command(tailPath, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {

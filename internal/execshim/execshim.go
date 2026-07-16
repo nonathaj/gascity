@@ -98,6 +98,28 @@ func ShellCommandContext(ctx context.Context, command string) *exec.Cmd {
 	return cmd
 }
 
+// LookPath resolves name like exec.LookPath, falling back to the resolved sh
+// interpreter's directory — Git for Windows ships the coreutils (tail, head,
+// cat, ...) alongside sh.exe in usr\bin, which a typical Windows PATH does not
+// expose. Callers that exec a coreutil directly (not through sh) use this so
+// the binary resolves on any host where gc's shell execution works at all.
+func LookPath(name string) (string, error) {
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	dir := filepath.Dir(ShPath())
+	if filepath.IsAbs(dir) {
+		cand := filepath.Join(dir, name)
+		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(name), ".exe") {
+			cand += ".exe"
+		}
+		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
+			return cand, nil
+		}
+	}
+	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
 // EnvWithShellDir returns env (a KEY=VALUE slice as from os.Environ) with the
 // resolved sh interpreter's directory ensured on PATH. Scripts routed through
 // sh on Windows invoke coreutils (cat, grep, sed, ...) that ship in the same
