@@ -35,12 +35,31 @@ func WriteFileAtomic(fs FS, path string, data []byte, perm os.FileMode) error {
 		_ = fs.Remove(tmp)
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
-	if err := fs.Rename(tmp, path); err != nil {
+	if err := renameWithTransientRetry(fs, tmp, path); err != nil {
 		_ = fs.Remove(tmp)
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
 	sweepDeadAtomicOrphans(fs, path)
 	return nil
+}
+
+// renameWithTransientRetry renames tmp onto path, retrying briefly when the
+// failure is a transient Windows sharing error (ERROR_ACCESS_DENIED /
+// ERROR_SHARING_VIOLATION): antivirus scanners, the search indexer, or a
+// concurrent reader can hold the destination open for a few milliseconds,
+// and NTFS refuses the replace while they do. Unix never reports these
+// errno values from rename, so the retry loop is Windows-only in practice
+// and deterministic errors (including fsys.Fake's) fail on the first try.
+func renameWithTransientRetry(fs FS, tmp, path string) error {
+	delay := time.Millisecond
+	for attempt := 0; ; attempt++ {
+		err := fs.Rename(tmp, path)
+		if err == nil || attempt >= 8 || !isTransientRenameError(err) {
+			return err
+		}
+		time.Sleep(delay)
+		delay *= 2 // 1+2+...+128ms ≈ 255ms worst case
+	}
 }
 
 // sweepDeadAtomicOrphans removes sibling temp files left behind by previous
