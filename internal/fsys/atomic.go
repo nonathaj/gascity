@@ -113,18 +113,28 @@ func WriteFileIfChangedAtomic(fs FS, path string, data []byte, perm os.FileMode)
 	if info, err := fs.Lstat(path); err == nil && info.Mode().IsRegular() {
 		if snapshot, err := readRegularFileSnapshot(fs, path); err == nil && bytes.Equal(snapshot.data, data) {
 			if info, err := fs.Lstat(path); err == nil && info.Mode().IsRegular() {
-				if !snapshot.hasID {
-					return WriteFileAtomic(fs, path, data, perm)
+				if identityStillMatches(fs, path, info, snapshot, data) {
+					return nil
 				}
-				currentID, ok := fileIdentityFromInfo(info)
-				if !ok || currentID != snapshot.id {
-					return WriteFileAtomic(fs, path, data, perm)
-				}
-				return nil
 			}
 		}
 	}
 	return WriteFileAtomic(fs, path, data, perm)
+}
+
+// identityStillMatches reports whether path still names the file captured in
+// snapshot. On Unix the re-checked Lstat carries dev/ino; Windows Lstat
+// exposes no identity fields, so a second by-handle snapshot supplies the
+// identity (and re-confirms the bytes) from the same source as the first.
+func identityStillMatches(fs FS, path string, info os.FileInfo, snapshot regularFileSnapshot, data []byte) bool {
+	if !snapshot.hasID {
+		return false
+	}
+	if id, ok := fileIdentityFromInfo(info); ok {
+		return id == snapshot.id
+	}
+	second, err := readRegularFileSnapshot(fs, path)
+	return err == nil && second.hasID && second.id == snapshot.id && bytes.Equal(second.data, data)
 }
 
 // WriteFileIfContentOrModeChangedAtomic writes data to path atomically when
@@ -136,14 +146,9 @@ func WriteFileIfContentOrModeChangedAtomic(fs FS, path string, data []byte, perm
 	if info, err := fs.Lstat(path); err == nil && info.Mode().IsRegular() && ComparableMode(info.Mode()) == ComparableMode(perm) {
 		if snapshot, err := readRegularFileSnapshot(fs, path); err == nil && bytes.Equal(snapshot.data, data) {
 			if info, err := fs.Lstat(path); err == nil && info.Mode().IsRegular() && ComparableMode(info.Mode()) == ComparableMode(perm) {
-				if !snapshot.hasID {
-					return WriteFileAtomic(fs, path, data, perm)
+				if identityStillMatches(fs, path, info, snapshot, data) {
+					return nil
 				}
-				currentID, ok := fileIdentityFromInfo(info)
-				if !ok || currentID != snapshot.id {
-					return WriteFileAtomic(fs, path, data, perm)
-				}
-				return nil
 			}
 		}
 	}
