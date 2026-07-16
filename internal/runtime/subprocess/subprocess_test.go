@@ -14,6 +14,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // shortTempDir returns a temp directory short enough for Unix socket paths
@@ -43,6 +44,54 @@ func shortTempDir(t *testing.T) string {
 func newTestProvider(t *testing.T) *Provider {
 	t.Helper()
 	return NewProviderWithDir(filepath.Join(shortTempDir(t), "socks"))
+}
+
+func requirePrivateSocketDirectory(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("Lstat(%q): %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%q mode = %v, want directory", path, info.Mode())
+	}
+	// Unix mode-bit and uid ownership checks are platform-specific (Windows
+	// has neither; access is governed by NTFS ACLs on a per-user temp path).
+	requirePrivateSocketOwnership(t, path, info)
+}
+
+func ensurePrivateFallbackRootForTest(t *testing.T) string {
+	t.Helper()
+	root := privateFallbackRoot(os.Geteuid())
+	if err := os.Mkdir(root, 0o700); err != nil && !os.IsExist(err) {
+		t.Fatalf("Mkdir private fallback root: %v", err)
+	}
+	requirePrivateSocketDirectory(t, root)
+	return root
+}
+
+func requirePrivateFallbackRejected(t *testing.T, p *Provider, name string) {
+	t.Helper()
+	checks := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "Stop", run: func() error { return p.Stop(name) }},
+		{name: "Interrupt", run: func() error { return p.Interrupt(name) }},
+		{name: "ListRunning", run: func() error {
+			_, err := p.ListRunning("")
+			return err
+		}},
+		{name: "sendSocketCommand", run: func() error {
+			return p.sendSocketCommand(name, "ping", testutil.ExecRaceTimeout)
+		}},
+	}
+	for _, check := range checks {
+		err := check.run()
+		if err == nil || !strings.Contains(err.Error(), "private socket directory") {
+			t.Errorf("%s error = %v, want private socket directory validation", check.name, err)
+		}
+	}
 }
 
 func TestStartCreatesProcess(t *testing.T) {
@@ -140,6 +189,7 @@ func TestStartVeryLongSocketDirFallsBackToTempDir(t *testing.T) {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	t.Setenv("TMPDIR", root)
 
 	longDir := filepath.Join(root, strings.Repeat("p", 120), "runtime", "gc", "subprocess", "hash")
 	if err := os.MkdirAll(longDir, 0o755); err != nil {
@@ -174,6 +224,22 @@ func TestStartVeryLongSocketDirFallsBackToTempDir(t *testing.T) {
 	}
 	if len(got) != 1 || got[0] != name {
 		t.Fatalf("ListRunning = %#v, want [%q]", got, name)
+	}
+}
+
+func TestStopUnknownSessionWithVeryLongSocketDirIsIdempotent(t *testing.T) {
+	longDir := filepath.Join(t.TempDir(), strings.Repeat("p", 120))
+	p := NewProviderWithDir(longDir)
+	const name = "never-started-conformance-session"
+
+	if got := len(p.legacySockPath(name)); got <= socketPathLimit {
+		t.Fatalf("legacy socket path length = %d, want greater than %d", got, socketPathLimit)
+	}
+	if p.socketDir() == p.dir {
+		t.Fatal("test setup did not select the short fallback socket directory")
+	}
+	if err := p.Stop(name); err != nil {
+		t.Fatalf("Stop unknown session with overlong legacy socket path: %v", err)
 	}
 }
 
@@ -591,29 +657,9 @@ func TestStopBySocket_ReturnsErrorWhenSocketRejectsStop(t *testing.T) {
 	if err := os.WriteFile(p.sockNamePath(name), []byte(name), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+	gotCommand := startRejectingControlSocket(t, p.sockPath(name))
 
-	lis, err := net.Listen("unix", p.sockPath(name))
-	if err != nil {
-		t.Fatalf("Listen: %v", err)
-	}
-	t.Cleanup(func() { _ = lis.Close() })
-
-	gotCommand := make(chan string, 1)
-	go func() {
-		conn, acceptErr := lis.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close() //nolint:errcheck
-
-		line, readErr := bufio.NewReader(conn).ReadString('\n')
-		if readErr == nil {
-			gotCommand <- strings.TrimSpace(line)
-		}
-		_, _ = conn.Write([]byte("nope\n"))
-	}()
-
-	err = p.stopBySocket(name)
+	err := p.stopBySocket(name)
 	if err == nil {
 		t.Fatal("stopBySocket succeeded, want error")
 	}
@@ -629,6 +675,60 @@ func TestStopBySocket_ReturnsErrorWhenSocketRejectsStop(t *testing.T) {
 	if _, statErr := os.Stat(p.sockNamePath(name)); statErr != nil {
 		t.Fatalf("socket name path err = %v, want socket name preserved after failed stop", statErr)
 	}
+}
+
+func TestStopBySocket_PreservesCanonicalErrorWhenLegacyPathIsTooLong(t *testing.T) {
+	longDir := filepath.Join(t.TempDir(), strings.Repeat("p", 120))
+	p := NewProviderWithDir(longDir)
+	const name = "reject-stop"
+
+	if got := len(p.legacySockPath(name)); got <= socketPathLimit {
+		t.Fatalf("legacy socket path length = %d, want greater than %d", got, socketPathLimit)
+	}
+	euid := os.Geteuid()
+	if err := p.ensureSocketDir(p.socketDirForEUID(euid), euid); err != nil {
+		t.Fatalf("ensure canonical socket directory: %v", err)
+	}
+	_ = startRejectingControlSocket(t, p.sockPath(name))
+
+	err := p.stopBySocket(name)
+	if err == nil || !strings.Contains(err.Error(), "unexpected response") {
+		t.Fatalf("stopBySocket error = %v, want canonical unexpected-response error", err)
+	}
+}
+
+func startRejectingControlSocket(t *testing.T, path string) <-chan string {
+	return startRecordingControlSocket(t, path, "nope\n", 1)
+}
+
+func startRecordingControlSocket(t *testing.T, path, response string, commandBuffer int) <-chan string {
+	t.Helper()
+	lis, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatalf("Listen %q: %v", path, err)
+	}
+	t.Cleanup(func() {
+		_ = lis.Close()
+		_ = os.Remove(path)
+		_ = os.Remove(filepath.Dir(path))
+	})
+
+	gotCommand := make(chan string, commandBuffer)
+	go func() {
+		for {
+			conn, acceptErr := lis.Accept()
+			if acceptErr != nil {
+				return
+			}
+			line, readErr := bufio.NewReader(conn).ReadString('\n')
+			if readErr == nil {
+				gotCommand <- strings.TrimSpace(line)
+			}
+			_, _ = conn.Write([]byte(response))
+			_ = conn.Close()
+		}
+	}()
+	return gotCommand
 }
 
 func TestStopBySocket_FallsBackToLegacySocketWhenCanonicalRejectsStop(t *testing.T) {
@@ -774,6 +874,24 @@ func TestCrossProcessInterruptBySocket(t *testing.T) {
 
 	// sleep may or may not die on SIGINT depending on shell;
 	// just verify the interrupt was sent without error.
+}
+
+func TestInterruptPreservesBestEffortForNormalSocketProtocolError(t *testing.T) {
+	p := newTestProvider(t)
+	const name = "reject-interrupt"
+	gotCommand := startRejectingControlSocket(t, p.sockPath(name))
+
+	if err := p.Interrupt(name); err != nil {
+		t.Fatalf("Interrupt returned ordinary socket protocol error: %v", err)
+	}
+	select {
+	case got := <-gotCommand:
+		if got != "interrupt" {
+			t.Fatalf("socket command = %q, want interrupt", got)
+		}
+	case <-time.After(testutil.ExecRaceTimeout):
+		t.Fatal("timed out waiting for interrupt command")
+	}
 }
 
 func TestIsRunningViaSocket(t *testing.T) {

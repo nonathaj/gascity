@@ -6,6 +6,7 @@ coverage.noncmdgc.txt
 coverage.cmdgc.*.txt
 cmd/gc/.runtime/
 /bin/
+/dist/
 /gc
 /genschema
 /bd
@@ -69,3 +70,6 @@ __pycache__/
 # Beads / Dolt files (added by bd init)
 .beads/proxieddb/
 .beads.backup-*
+
+# Git-for-Windows / Cygwin crash dumps
+*.stackdump

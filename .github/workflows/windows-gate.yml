@@ -15,9 +15,9 @@ name: Windows Gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, windows-port]
   pull_request:
-    branches: [main]
+    branches: [main, windows-port]
   workflow_dispatch:
 
 permissions:
