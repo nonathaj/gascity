@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -14,6 +15,12 @@ import (
 // and returns the conn plus the socket path.
 func listenNotify(t *testing.T) (*net.UnixConn, string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		// sd_notify is a systemd protocol over AF_UNIX SOCK_DGRAM; Windows
+		// supports neither systemd nor unixgram sockets, and production
+		// Notify is a no-op there (NOTIFY_SOCKET is never set).
+		t.Skip("unixgram sockets are not supported on Windows")
+	}
 	dir, err := os.MkdirTemp("", "sdn-")
 	if err != nil {
 		t.Fatal(err)

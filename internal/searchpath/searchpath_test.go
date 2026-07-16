@@ -14,7 +14,10 @@ func TestExpandIncludesUserLocalAndBasePath(t *testing.T) {
 	if err := os.MkdirAll(localBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dirs := Expand(home, "linux", "/usr/bin:/bin")
+	// basePath is the host PATH, so it is split by the HOST list separator
+	// (';' on Windows) regardless of the goos argument.
+	basePath := "/usr/bin" + string(os.PathListSeparator) + "/bin"
+	dirs := Expand(home, "linux", basePath)
 	if !slices.Contains(dirs, localBin) {
 		t.Fatalf("expected %q in dirs: %v", localBin, dirs)
 	}

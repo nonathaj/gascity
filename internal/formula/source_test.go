@@ -424,11 +424,16 @@ func TestParserHonorsSetSourceForDescriptionFile(t *testing.T) {
 // layer that contains a Stat-hit wins, exactly as the legacy Resolve
 // did.
 func TestResolveWithSourcePrecedence(t *testing.T) {
+	// Production resolves candidates with filepath.Join, so key the stub by
+	// the same OS-native form ("\low\mol.toml" on Windows).
+	low := filepath.Join("/low", "mol.toml")
+	mid := filepath.Join("/mid", "mol.toml")
+	high := filepath.Join("/high", "mol.toml")
 	src := stubSource{
 		stat: map[string]bool{
-			"/low/mol.toml":  true,
-			"/mid/mol.toml":  true,
-			"/high/mol.toml": true,
+			low:  true,
+			mid:  true,
+			high: true,
 		},
 	}
 	layers := []string{"/low", "/mid", "/high"}
@@ -436,18 +441,18 @@ func TestResolveWithSourcePrecedence(t *testing.T) {
 	if !ok {
 		t.Fatal("ResolveWithSource missed")
 	}
-	if got != "/high/mol.toml" {
-		t.Fatalf("got %q, want /high/mol.toml (highest-priority wins)", got)
+	if got != high {
+		t.Fatalf("got %q, want %q (highest-priority wins)", got, high)
 	}
 
 	// Highest-priority layer absent → next-highest wins.
-	src.stat["/high/mol.toml"] = false
+	src.stat[high] = false
 	got, ok = ResolveWithSource(src, layers, "mol")
 	if !ok {
 		t.Fatal("ResolveWithSource missed after dropping high layer")
 	}
-	if got != "/mid/mol.toml" {
-		t.Fatalf("got %q, want /mid/mol.toml (fallthrough)", got)
+	if got != mid {
+		t.Fatalf("got %q, want %q (fallthrough)", got, mid)
 	}
 }
 

@@ -61,9 +61,21 @@ func TestNormalizePathForCompareResolvesSymlinkAncestorForMissingLeaf(t *testing
 	}
 }
 
+// osAbsAliasFixture makes a POSIX-style absolute fixture path OS-absolute:
+// unchanged on Unix, drive-rooted on Windows — where NormalizePathForCompare's
+// filepath.Abs would otherwise prefix the current drive and diverge from a
+// drive-less filepath.Clean want.
+func osAbsAliasFixture(p string) string {
+	if runtime.GOOS == "windows" {
+		return "C:" + filepath.FromSlash(p)
+	}
+	return p
+}
+
 func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
-	got := NormalizePathForCompare("/private/var/folders/example/gc-home")
-	want := filepath.Clean("/private/var/folders/example/gc-home")
+	in := osAbsAliasFixture("/private/var/folders/example/gc-home")
+	got := NormalizePathForCompare(in)
+	want := filepath.Clean(in)
 	if runtime.GOOS == "darwin" {
 		want = filepath.Clean("/var/folders/example/gc-home")
 	}
@@ -73,8 +85,9 @@ func TestNormalizePathForCompareCollapsesDarwinPrivateVarAlias(t *testing.T) {
 }
 
 func TestNormalizePathForCompareCollapsesDarwinPrivateTmpAlias(t *testing.T) {
-	got := NormalizePathForCompare("/private/tmp/gc-home")
-	want := filepath.Clean("/private/tmp/gc-home")
+	in := osAbsAliasFixture("/private/tmp/gc-home")
+	got := NormalizePathForCompare(in)
+	want := filepath.Clean(in)
 	if runtime.GOOS == "darwin" {
 		want = filepath.Clean("/tmp/gc-home")
 	}

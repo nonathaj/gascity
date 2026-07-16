@@ -1,6 +1,7 @@
 package workdir
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -317,7 +318,9 @@ func TestValidateAncestorWorktreesNotStale_AncestorHasStalePointer(t *testing.T)
 		t.Fatal("ValidateAncestorWorktreesNotStale() = nil, want error (ancestor has stale worktree pointer)")
 	}
 	for _, want := range []string{staleParent, missingTarget} {
-		if !strings.Contains(err.Error(), want) {
+		// The error renders paths with %q, which escapes Windows backslashes;
+		// match the quoted form so the assertion is separator-agnostic.
+		if !strings.Contains(err.Error(), fmt.Sprintf("%q", want)) {
 			t.Errorf("error %q missing reference %q", err.Error(), want)
 		}
 	}
@@ -423,7 +426,9 @@ func TestValidateAncestorWorktreesNotStale_GitdirTargetNotDirectory(t *testing.T
 	if err == nil {
 		t.Fatal("ValidateAncestorWorktreesNotStale() = nil, want error (gitdir target is a file, not a directory)")
 	}
-	for _, want := range []string{staleParent, fileTarget, "not a directory"} {
+	// Paths render with %q in the error (escaping Windows backslashes), so
+	// match their quoted form; the plain message fragment matches verbatim.
+	for _, want := range []string{fmt.Sprintf("%q", staleParent), fmt.Sprintf("%q", fileTarget), "not a directory"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing reference %q", err.Error(), want)
 		}

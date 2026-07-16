@@ -688,6 +688,10 @@ func markdownCell(value string) string {
 
 // CheckMarkdown checks the single generated TESTING.md ledger block.
 func CheckMarkdown(document string, entries []Entry) error {
+	// The comparison is about table content, not line endings: a Windows
+	// checkout with core.autocrlf=true reads TESTING.md with CRLF while
+	// RenderMarkdown emits LF. Normalize before comparing.
+	document = strings.ReplaceAll(document, "\r\n", "\n")
 	if strings.Count(document, MarkdownStart) != 1 || strings.Count(document, MarkdownEnd) != 1 {
 		return errors.New("TESTING.md must contain exactly one checked runtime provider ledger marker pair")
 	}

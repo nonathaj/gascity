@@ -3,6 +3,7 @@ package transcriptmeta
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -64,8 +65,11 @@ func TestWrite_EnabledWritesSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat sidecar: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("sidecar perm = %o, want 600", perm)
+	// Unix permission bits don't exist on Windows (os.Stat synthesizes 0666).
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("sidecar perm = %o, want 600", perm)
+		}
 	}
 }
 

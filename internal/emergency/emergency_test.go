@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -116,20 +117,24 @@ func TestWriteSpoolAtomicallyCreatesPrivateRecordAndRejectsDuplicateID(t *testin
 		t.Fatalf("WriteSpool() path = %q, want %q", path, wantPath)
 	}
 
-	spoolInfo, err := os.Stat(SpoolDir(cityPath))
-	if err != nil {
-		t.Fatalf("stat spool dir: %v", err)
-	}
-	if got, want := spoolInfo.Mode().Perm(), os.FileMode(0o700); got != want {
-		t.Fatalf("spool dir mode = %v, want %v", got, want)
-	}
+	// Unix permission bits don't exist on Windows (os.Stat synthesizes
+	// 0666/0777); the private-spool guarantee there comes from NTFS ACLs.
+	if runtime.GOOS != "windows" {
+		spoolInfo, err := os.Stat(SpoolDir(cityPath))
+		if err != nil {
+			t.Fatalf("stat spool dir: %v", err)
+		}
+		if got, want := spoolInfo.Mode().Perm(), os.FileMode(0o700); got != want {
+			t.Fatalf("spool dir mode = %v, want %v", got, want)
+		}
 
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat spool record: %v", err)
-	}
-	if got, want := fileInfo.Mode().Perm(), os.FileMode(0o600); got != want {
-		t.Fatalf("spool file mode = %v, want %v", got, want)
+		fileInfo, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat spool record: %v", err)
+		}
+		if got, want := fileInfo.Mode().Perm(), os.FileMode(0o600); got != want {
+			t.Fatalf("spool file mode = %v, want %v", got, want)
+		}
 	}
 
 	data, err := os.ReadFile(path)
@@ -235,19 +240,23 @@ func TestMarkNotifyDedupeSuppressesWithinTTLAndRefiresAfterExpiry(t *testing.T) 
 	}
 
 	markerPath := filepath.Join(SpoolDir(cityPath), notifyDedupeDirName, key)
-	info, err := os.Stat(markerPath)
-	if err != nil {
-		t.Fatalf("stat dedupe marker: %v", err)
-	}
-	if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
-		t.Fatalf("dedupe marker mode = %v, want %v", got, want)
-	}
-	dirInfo, err := os.Stat(filepath.Dir(markerPath))
-	if err != nil {
-		t.Fatalf("stat dedupe dir: %v", err)
-	}
-	if got, want := dirInfo.Mode().Perm(), os.FileMode(0o700); got != want {
-		t.Fatalf("dedupe dir mode = %v, want %v", got, want)
+	// Unix permission bits don't exist on Windows (os.Stat synthesizes
+	// 0666/0777); the private-marker guarantee there comes from NTFS ACLs.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(markerPath)
+		if err != nil {
+			t.Fatalf("stat dedupe marker: %v", err)
+		}
+		if got, want := info.Mode().Perm(), os.FileMode(0o600); got != want {
+			t.Fatalf("dedupe marker mode = %v, want %v", got, want)
+		}
+		dirInfo, err := os.Stat(filepath.Dir(markerPath))
+		if err != nil {
+			t.Fatalf("stat dedupe dir: %v", err)
+		}
+		if got, want := dirInfo.Mode().Perm(), os.FileMode(0o700); got != want {
+			t.Fatalf("dedupe dir mode = %v, want %v", got, want)
+		}
 	}
 }
 

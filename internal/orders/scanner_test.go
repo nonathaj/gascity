@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
@@ -221,7 +222,7 @@ trigger = "manual"
 	if len(orders) != 1 {
 		t.Fatalf("got %d orders, want 1", len(orders))
 	}
-	if orders[0].Source != "/layer1/orders/digest.toml" {
-		t.Errorf("Source = %q, want %q", orders[0].Source, "/layer1/orders/digest.toml")
+	if want := filepath.FromSlash("/layer1/orders/digest.toml"); orders[0].Source != want {
+		t.Errorf("Source = %q, want %q", orders[0].Source, want)
 	}
 }
