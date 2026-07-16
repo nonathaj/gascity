@@ -124,7 +124,7 @@ func resolveWsURLCandidates() []string {
 	}
 	t3Home := os.Getenv("T3_HOME")
 	if t3Home == "" {
-		t3Home = filepath.Join(os.Getenv("HOME"), ".t3")
+		t3Home = filepath.Join(userHome(), ".t3")
 	}
 	if urlBytes, err := os.ReadFile(filepath.Join(t3Home, "ws-url")); err == nil {
 		add(string(urlBytes))
@@ -165,7 +165,7 @@ func readRuntimeWSURL() (string, error) {
 }
 
 func resolveRuntimeStatePaths() []string {
-	home := os.Getenv("HOME")
+	home := userHome()
 	explicitT3Home := strings.TrimSpace(os.Getenv("T3_HOME")) != ""
 	baseDir := resolveT3BaseDir()
 	paths := make([]string, 0, 4)
@@ -228,7 +228,18 @@ func resolveT3BaseDir() string {
 	if v := os.Getenv("T3CODE_HOME"); strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)
 	}
-	return filepath.Join(os.Getenv("HOME"), ".t3")
+	return filepath.Join(userHome(), ".t3")
+}
+
+// userHome resolves the home directory: $HOME when set (the Unix and
+// test-override spelling), otherwise os.UserHomeDir (USERPROFILE on
+// Windows, where HOME is normally absent).
+func userHome() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 func decodeIssuedBearerSessionToken(output []byte) (string, error) {
@@ -442,7 +453,7 @@ func resolveLegacyStateDir() string {
 		}
 		return stateDir
 	}
-	home := os.Getenv("HOME")
+	home := userHome()
 	if home == "" {
 		home = os.TempDir()
 	}
@@ -468,7 +479,7 @@ func resolveNativeStateDir() string {
 		}
 		return stateDir
 	}
-	home := os.Getenv("HOME")
+	home := userHome()
 	if home == "" {
 		home = os.TempDir()
 	}

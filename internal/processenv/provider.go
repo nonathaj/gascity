@@ -5,6 +5,7 @@ package processenv
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/telemetry"
@@ -119,6 +120,21 @@ func ProviderProcessPassthroughEnv() map[string]string {
 	} {
 		if v := os.Getenv(key); v != "" {
 			m[key] = v
+		}
+	}
+	if runtime.GOOS == "windows" {
+		// The Windows identity/system vars every child process expects:
+		// USERPROFILE is the home HOME never is there, APPDATA/LOCALAPPDATA
+		// carry provider CLI config, and SystemRoot/ComSpec/PATHEXT are
+		// needed for winsock, cmd children, and PATH resolution.
+		for _, key := range []string{
+			"USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+			"APPDATA", "LOCALAPPDATA", "TEMP", "TMP",
+			"SystemRoot", "SystemDrive", "ComSpec", "PATHEXT", "USERNAME",
+		} {
+			if v := os.Getenv(key); v != "" {
+				m[key] = v
+			}
 		}
 	}
 	for _, key := range []string{"LANG", "LC_ALL", "LC_CTYPE"} {

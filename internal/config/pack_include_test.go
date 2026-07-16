@@ -230,6 +230,14 @@ func TestIncludeCacheName(t *testing.T) {
 		{"https://github.com/org/repo.git", "repo-"},
 		{"ssh://git@github.com/org/mytools.git", "mytools-"},
 		{"https://github.com/org/mono.git", "mono-"},
+		// Windows local paths: the drive colon must not be mistaken for an
+		// SSH host:path split, and backslashes are path separators — a bad
+		// slug here produces a cache dir name containing ':' and '\',
+		// invalid on NTFS (found via gw-kbr, WINDOWS_SUPPORT_PLAN §4.2 #11b).
+		{`C:\repos\fragments.git`, "fragments-"},
+		{"C:/repos/fragments.git", "fragments-"},
+		{`D:\deep\nested\packs.git`, "packs-"},
+		{"file:///D:/repos/local.git", "local-"},
 	}
 
 	for _, tt := range tests {
