@@ -75,9 +75,10 @@ func (OSFS) Readlink(name string) (string, error) {
 	return os.Readlink(name)
 }
 
-// Symlink delegates to [os.Symlink].
+// Symlink delegates to [Symlink] (os.Symlink with the Windows
+// privilege-failure diagnosis).
 func (OSFS) Symlink(oldname, newname string) error {
-	return os.Symlink(oldname, newname)
+	return Symlink(oldname, newname)
 }
 
 // ReadDir delegates to [os.ReadDir].

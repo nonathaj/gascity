@@ -45,6 +45,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/bootstrap"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 // vendorSinks maps an agent provider to the relative directory under the
@@ -794,7 +795,7 @@ func atomicSymlink(target, path string) error {
 	if err != nil {
 		return fmt.Errorf("allocating temp symlink path: %w", err)
 	}
-	if err := os.Symlink(target, tmp); err != nil {
+	if err := fsys.Symlink(target, tmp); err != nil {
 		return fmt.Errorf("creating temp symlink %q: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {

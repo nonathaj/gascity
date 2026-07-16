@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 )
 
@@ -119,7 +120,7 @@ func (c *InstructionsFileCheck) Fix(_ *CheckContext) error {
 			errs = append(errs, fmt.Errorf("%s: inspect %s: %w", instructionsScopeDescription(g), target, err))
 			continue
 		}
-		if err := os.Symlink(g.fallback, target); err != nil {
+		if err := fsys.Symlink(g.fallback, target); err != nil {
 			errs = append(errs, fmt.Errorf("%s: symlink %s -> %s: %w", instructionsScopeDescription(g), g.fallback, target, err))
 		}
 	}

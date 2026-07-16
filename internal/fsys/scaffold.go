@@ -19,9 +19,10 @@ func (OSScaffoldFS) Readlink(name string) (string, error) {
 	return os.Readlink(name)
 }
 
-// Symlink delegates to [os.Symlink].
+// Symlink delegates to [Symlink] (os.Symlink with the Windows
+// privilege-failure diagnosis).
 func (OSScaffoldFS) Symlink(oldname, newname string) error {
-	return os.Symlink(oldname, newname)
+	return Symlink(oldname, newname)
 }
 
 // RemoveAll delegates to [os.RemoveAll].
