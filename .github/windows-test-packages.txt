@@ -73,6 +73,7 @@
 ./internal/storeref
 ./internal/suspensionstate
 ./internal/telemetry
+./internal/usage
 ./internal/validation
 ./internal/webhookmatch
 ./internal/webhooksink
