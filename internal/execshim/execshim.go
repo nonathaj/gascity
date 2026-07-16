@@ -7,6 +7,7 @@ package execshim
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,12 +20,33 @@ import (
 // A path that does not exist is left to direct exec so callers still see the
 // standard file-not-found exec error instead of sh's exit 127 — gate and
 // hook error classification depends on that distinction.
+//
+// Beyond the ".sh" extension, an existing file with a "#!" shebang whose
+// extension Windows cannot execute natively (e.g. the repo's extensionless
+// contrib scripts) is also routed through sh: direct exec of such a file can
+// only ever fail on Windows, so shell routing is strictly an improvement and
+// matches what the kernel would do on Unix.
 func needsShell(path string) bool {
-	if runtime.GOOS != "windows" || !strings.EqualFold(filepath.Ext(path), ".sh") {
+	if runtime.GOOS != "windows" {
 		return false
 	}
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".sh":
+		info, err := os.Stat(path)
+		return err == nil && !info.IsDir()
+	case ".exe", ".bat", ".cmd", ".com", ".ps1":
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck // read-only sniff handle
+	var magic [2]byte
+	if n, _ := io.ReadFull(f, magic[:]); n != 2 {
+		return false
+	}
+	return magic[0] == '#' && magic[1] == '!'
 }
 
 // ShPath resolves the sh interpreter. On PATH it is used as-is; otherwise on

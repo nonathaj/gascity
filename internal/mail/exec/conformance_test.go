@@ -3,6 +3,7 @@ package exec //nolint:revive // internal package, always imported with alias
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/mail"
@@ -224,14 +225,26 @@ esac
 }
 
 func TestExecConformance(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The stateful fixture script forks ~15 processes per op (sed/grep
+		// loops), and msys process creation costs ~150-300ms each — the full
+		// suite exceeds 15 minutes on Windows, which no CI gate can absorb.
+		// Provider correctness on Windows is covered by this package's unit
+		// tests (execshim spawn semantics included); the conformance contract
+		// runs on Linux/macOS. Restoring Windows coverage by slimming the
+		// fixture script to single-pass awk is tracked as gw-e0a.
+		t.Skip("stateful conformance fixture is wall-clock infeasible under msys process-spawn overhead")
+	}
 	mailtest.RunProviderTests(t, func(t *testing.T) mail.Provider {
 		dir := t.TempDir()
-		stateDir := filepath.Join(dir, "state")
+		stateDir := filepath.ToSlash(filepath.Join(dir, "state"))
 		if err := os.MkdirAll(filepath.Join(stateDir, "messages"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 
-		scriptPath := filepath.Join(dir, "mail-provider")
+		// ".sh" is load-bearing on Windows: execshim routes .sh scripts
+		// through sh.exe; a bare name cannot be fork/exec'd there.
+		scriptPath := filepath.Join(dir, "mail-provider.sh")
 		if err := os.WriteFile(scriptPath, []byte(statefulScript(stateDir)), 0o755); err != nil {
 			t.Fatal(err)
 		}

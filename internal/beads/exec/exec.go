@@ -87,7 +87,10 @@ func (s *Store) run(stdinData []byte, args ...string) (string, error) {
 	// expires, even if grandchild processes still hold them open.
 	cmd.WaitDelay = 2 * time.Second
 
-	cmd.Env = execProcessEnv(s.env)
+	// EnvWithShellDir re-applies execshim's sh-dir PATH injection, which this
+	// override would otherwise discard — .sh provider scripts invoke coreutils
+	// (cat, sed, ...) from the same Git-for-Windows directory as sh.exe.
+	cmd.Env = execshim.EnvWithShellDir(execProcessEnv(s.env))
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
