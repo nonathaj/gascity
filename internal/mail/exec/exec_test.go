@@ -13,9 +13,12 @@ import (
 )
 
 // writeScript creates an executable shell script in dir and returns its path.
+// The ".sh" extension is load-bearing on Windows: execshim routes .sh provider
+// scripts through sh.exe (a bare name cannot be fork/exec'd there), while on
+// Unix the shebang makes it directly executable regardless of name.
 func writeScript(t *testing.T, dir, content string) string {
 	t.Helper()
-	path := filepath.Join(dir, "mail-provider")
+	path := filepath.Join(dir, "mail-provider.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +70,7 @@ func TestSend(t *testing.T) {
 
 func TestSend_stdinReachesScript(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 op="$1"
@@ -169,7 +172,7 @@ func TestArchive(t *testing.T) {
 
 func TestArchiveDoesNotConsumeCallerStdin(t *testing.T) {
 	dir := t.TempDir()
-	stdinLog := filepath.Join(dir, "stdin.log")
+	stdinLog := filepath.ToSlash(filepath.Join(dir, "stdin.log"))
 	script := writeScript(t, dir, `
 op="$1"
 if IFS= read -r line; then
@@ -261,7 +264,7 @@ esac
 
 func TestEnsureRunning_calledOnce(t *testing.T) {
 	dir := t.TempDir()
-	countFile := filepath.Join(dir, "count")
+	countFile := filepath.ToSlash(filepath.Join(dir, "count"))
 	os.WriteFile(countFile, []byte("0"), 0o644) //nolint:errcheck
 
 	script := writeScript(t, dir, `

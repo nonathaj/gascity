@@ -4,8 +4,10 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/mailtest"
 )
@@ -15,6 +17,13 @@ import (
 // that the MCP bridge script conforms to the mail.Provider contract when
 // run through the exec provider. Requires jq on PATH.
 func TestMCPMailConformance(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The bridge script + mock curl fork many processes per op; under
+		// msys spawn overhead the suite exceeds any viable gate budget (see
+		// TestExecConformance). Contract coverage runs on Linux/macOS;
+		// restoring Windows coverage is tracked as gw-e0a.
+		t.Skip("stateful MCP conformance fixture is wall-clock infeasible under msys process-spawn overhead")
+	}
 	if _, err := osexec.LookPath("jq"); err != nil {
 		t.Skip("jq not on PATH")
 	}
@@ -29,7 +38,7 @@ func TestMCPMailConformance(t *testing.T) {
 		dir := t.TempDir()
 
 		// State directory for the mock curl.
-		stateDir := filepath.Join(dir, "state")
+		stateDir := filepath.ToSlash(filepath.Join(dir, "state"))
 		for _, sub := range []string{"agents", "messages", "contacts"} {
 			if err := os.MkdirAll(filepath.Join(stateDir, sub), 0o755); err != nil {
 				t.Fatal(err)
@@ -65,10 +74,27 @@ func TestMCPMailConformance(t *testing.T) {
 // before main() runs; this test is a regression guard against the
 // bridge reverting to top-level operation parsing that would break
 // sourcing.
-func TestMCPMailBridgeSourceable(t *testing.T) {
-	if _, err := osexec.LookPath("bash"); err != nil {
+// testBashPath resolves the bash that can execute the bridge script. On
+// Windows, a bare LookPath("bash") finds the WSL shim in System32, which
+// cannot source Windows paths; Git for Windows ships a real bash.exe next to
+// sh.exe, so prefer that.
+func testBashPath(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		cand := filepath.Join(filepath.Dir(execshim.ShPath()), "bash.exe")
+		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
+			return cand
+		}
+	}
+	p, err := osexec.LookPath("bash")
+	if err != nil {
 		t.Skip("bash not on PATH")
 	}
+	return p
+}
+
+func TestMCPMailBridgeSourceable(t *testing.T) {
+	bash := testBashPath(t)
 	scriptPath, err := findMCPScript()
 	if err != nil {
 		t.Skipf("MCP mail script not found: %v", err)
@@ -83,7 +109,7 @@ func TestMCPMailBridgeSourceable(t *testing.T) {
 		`declare -f ensure_agent >/dev/null && ` +
 		`declare -f build_name_map_json >/dev/null && ` +
 		`declare -f ensure_contact >/dev/null`
-	cmd := osexec.Command("bash", "-c", check, "bash", scriptPath)
+	cmd := osexec.Command(bash, "-c", check, "bash", filepath.ToSlash(scriptPath))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("sourcing script failed: %v\noutput: %s", err, out)
@@ -117,7 +143,7 @@ func TestMCPMailCrossPodNameResolution(t *testing.T) {
 	}
 
 	// Shared mock MCP state — both "pods" talk to the same mock server.
-	stateDir := filepath.Join(dir, "state")
+	stateDir := filepath.ToSlash(filepath.Join(dir, "state"))
 	for _, sub := range []string{"agents", "messages", "contacts"} {
 		if err := os.MkdirAll(filepath.Join(stateDir, sub), 0o755); err != nil {
 			t.Fatal(err)
@@ -210,7 +236,7 @@ func TestMCPMailProjectKeyIsolation(t *testing.T) {
 	// Shared mock MCP state — the mock doesn't segregate by project_key,
 	// so both "pods" see each other's messages regardless of project value.
 	// This lets us isolate the cache-sharing behavior from mcp-side routing.
-	stateDir := filepath.Join(dir, "state")
+	stateDir := filepath.ToSlash(filepath.Join(dir, "state"))
 	for _, sub := range []string{"agents", "messages", "contacts"} {
 		if err := os.MkdirAll(filepath.Join(stateDir, sub), 0o755); err != nil {
 			t.Fatal(err)
@@ -309,15 +335,21 @@ func mcpWrapperWithCity(binDir, scriptPath, stateDir, cityDir string) string {
 func mcpWrapperWithProject(binDir, scriptPath, stateDir, cityDir, projectKey string) string {
 	cityExport := ""
 	if cityDir != "" {
-		cityExport = `export GC_CITY="` + cityDir + `"` + "\n"
+		cityExport = `export GC_CITY="` + filepath.ToSlash(cityDir) + `"` + "\n"
 	}
+	// Paths are embedded in slash form so bash never sees backslash escapes.
+	// The PATH prepend additionally converts to the shell's POSIX form via
+	// cygpath when available (Git bash on Windows): a drive-letter path
+	// contains ':' itself and would otherwise shatter PATH at the colon.
 	return `#!/usr/bin/env bash
 set -euo pipefail
-export PATH="` + binDir + `:$PATH"
-export GC_MOCK_STATE_DIR="` + stateDir + `"
+MOCK_BIN="` + filepath.ToSlash(binDir) + `"
+if command -v cygpath >/dev/null 2>&1; then MOCK_BIN="$(cygpath -u "$MOCK_BIN")"; fi
+export PATH="$MOCK_BIN:$PATH"
+export GC_MOCK_STATE_DIR="` + filepath.ToSlash(stateDir) + `"
 export GC_MCP_MAIL_URL="http://127.0.0.1:8765"
-export GC_MCP_MAIL_PROJECT="` + projectKey + `"
-` + cityExport + `exec "` + scriptPath + `" "$@"
+export GC_MCP_MAIL_PROJECT="` + filepath.ToSlash(projectKey) + `"
+` + cityExport + `exec "` + filepath.ToSlash(scriptPath) + `" "$@"
 `
 }
 

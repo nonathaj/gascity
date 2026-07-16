@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -94,7 +95,7 @@ func TestCreate(t *testing.T) {
 
 func TestCreate_stdinReachesScript(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 op="$1"
@@ -139,7 +140,7 @@ esac
 
 func TestCreate_deferUntilReachesScript(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 	deferUntil := time.Date(2026, 6, 1, 12, 30, 0, 0, time.UTC)
 
 	script := writeScript(t, dir, `
@@ -283,7 +284,7 @@ func TestCreate_ephemeralRoundTripsThroughConformanceScript(t *testing.T) {
 
 func TestCreate_metadataReachesScript(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 op="$1"
@@ -571,7 +572,7 @@ func TestCreate_numericLookingMetadataStaysString(t *testing.T) {
 
 func TestCreate_defaultsTypeToTask(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 case "$1" in
@@ -599,7 +600,7 @@ esac
 
 func TestUpdate_typeReachesScript(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 op="$1"
@@ -684,7 +685,7 @@ esac
 
 func TestUpdate(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 case "$1" in
@@ -834,7 +835,7 @@ func TestReady(t *testing.T) {
 
 func TestReady_wispsRequestsEphemeralRows(t *testing.T) {
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "ready-args.txt")
+	argsFile := filepath.ToSlash(filepath.Join(dir, "ready-args.txt"))
 	script := writeScript(t, dir, `
 op="$1"; shift
 case "$op" in
@@ -872,7 +873,7 @@ esac
 
 func TestReady_tierBothRequestsEphemeralRows(t *testing.T) {
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "ready-args.txt")
+	argsFile := filepath.ToSlash(filepath.Join(dir, "ready-args.txt"))
 	script := writeScript(t, dir, `
 op="$1"; shift
 case "$op" in
@@ -1065,7 +1066,7 @@ func TestListByLabel(t *testing.T) {
 
 func TestSetMetadata(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "meta.txt")
+	outFile := filepath.ToSlash(filepath.Join(dir, "meta.txt"))
 
 	script := writeScript(t, dir, `
 case "$1" in
@@ -1314,7 +1315,7 @@ func TestExecStoreConformanceUsesGCStoreRoot(t *testing.T) {
 
 func TestRunSanitizesAmbientLegacyAndStoreTargetEnv(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "env.txt")
+	outFile := filepath.ToSlash(filepath.Join(dir, "env.txt"))
 
 	t.Setenv("BEADS_DIR", "/ambient/.beads")
 	t.Setenv("GC_DOLT_HOST", "ambient-dolt")
@@ -1370,6 +1371,15 @@ esac
 }
 
 func TestExecStoreConformance(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The conformance fixture script forks jq/sed repeatedly per op, and
+		// msys process creation costs ~150-300ms each — the suite takes ~6
+		// minutes solo and fails under co-spawner contention. Windows spawn
+		// semantics (execshim routing, stdin, env) are covered by this
+		// package's fast unit tests; the store contract runs on Linux/macOS.
+		// Slimming the fixture to restore Windows coverage is gw-e0a.
+		t.Skip("stateful conformance fixture is wall-clock infeasible under msys process-spawn overhead")
+	}
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not available")
 	}
@@ -1391,7 +1401,7 @@ var _ beads.Store = (*Store)(nil)
 
 func TestListForwardsSupportedFilters(t *testing.T) {
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args.txt")
+	argsFile := filepath.ToSlash(filepath.Join(dir, "args.txt"))
 	script := writeScript(t, dir, `
 op="$1"
 shift
@@ -1424,7 +1434,7 @@ esac
 
 func TestListWithCreatedBeforeDoesNotForwardLimitBeforeClientFilter(t *testing.T) {
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args.txt")
+	argsFile := filepath.ToSlash(filepath.Join(dir, "args.txt"))
 	script := writeScript(t, dir, `
 op="$1"
 shift
@@ -1462,7 +1472,7 @@ esac
 
 func TestListWithSeekAfterDoesNotForwardLimitBeforeClientFilter(t *testing.T) {
 	dir := t.TempDir()
-	argsFile := filepath.Join(dir, "args.txt")
+	argsFile := filepath.ToSlash(filepath.Join(dir, "args.txt"))
 	script := writeScript(t, dir, `
 op="$1"
 shift

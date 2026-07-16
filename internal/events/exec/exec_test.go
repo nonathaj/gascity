@@ -15,9 +15,12 @@ import (
 )
 
 // writeScript creates an executable shell script in dir and returns its path.
+// The ".sh" extension is load-bearing on Windows: execshim routes .sh provider
+// scripts through sh.exe (a bare name cannot be fork/exec'd there), while on
+// Unix the shebang makes it directly executable regardless of name.
 func writeScript(t *testing.T, dir, content string) string {
 	t.Helper()
-	path := filepath.Join(dir, "events-provider")
+	path := filepath.Join(dir, "events-provider.sh")
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+content), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +54,7 @@ esac
 
 func TestRecord(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 case "$1" in
@@ -127,7 +130,7 @@ esac
 
 func TestListSendsFilter(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 
 	script := writeScript(t, dir, `
 case "$1" in
@@ -163,7 +166,7 @@ esac
 
 func TestListAppliesSDKFilterAndStripsScriptLimit(t *testing.T) {
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "stdin.json")
+	outFile := filepath.ToSlash(filepath.Join(dir, "stdin.json"))
 	script := writeScript(t, dir, `
 case "$1" in
   ensure-running) exit 2 ;;
@@ -324,7 +327,7 @@ func TestWatch(t *testing.T) {
 
 func TestEnsureRunningCalledOnce(t *testing.T) {
 	dir := t.TempDir()
-	countFile := filepath.Join(dir, "count")
+	countFile := filepath.ToSlash(filepath.Join(dir, "count"))
 	os.WriteFile(countFile, []byte("0"), 0o644) //nolint:errcheck
 
 	script := writeScript(t, dir, `
