@@ -48,8 +48,8 @@ func TestComputeWarningHighRatio(t *testing.T) {
 	if h.ThresholdMB != DefaultThresholdMB {
 		t.Fatalf("ThresholdMB = %v, want %v", h.ThresholdMB, DefaultThresholdMB)
 	}
-	if h.Path != "/c/.beads/dolt" {
-		t.Fatalf("Path = %q, want /c/.beads/dolt", h.Path)
+	if want := filepath.FromSlash("/c/.beads/dolt"); h.Path != want {
+		t.Fatalf("Path = %q, want %q", h.Path, want)
 	}
 }
 
