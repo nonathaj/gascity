@@ -16,9 +16,19 @@ import (
 // KillByPID terminates pid's process tree: a graceful taskkill first, a
 // forced one after runtime.ManagedProcessStopGrace, then a bounded wait
 // (runtime.ManagedProcessReapGrace) for the process to be confirmed dead
-// before returning — mirroring the Unix SIGTERM→SIGKILL→reap contract so
+// before returning — approximating the Unix SIGTERM→SIGKILL→reap contract so
 // callers can refuse to start a name-reused replacement that would race a
 // survivor. Already-gone processes are success.
+//
+// Residual difference from the Unix path: the Unix reaper captures the
+// target's start-time identity before signaling and confirms death against
+// it, so a PID recycled within the reap window is not mistaken for a live
+// survivor. pidutil.StartTime is unsupported on Windows, so liveness here is
+// plain pidutil.Alive; a PID reused inside ManagedProcessReapGrace could read
+// alive and make KillByPID report "not confirmed dead". This is low
+// probability (Windows recycles PIDs slowly and a real kill sets a non-259
+// exit code that confirms death promptly) and unfixable without a Windows
+// start-time source.
 func KillByPID(pid int) error {
 	return killByPIDWith(pid, taskkillTree, pidutil.Alive,
 		runtime.ManagedProcessStopGrace, runtime.ManagedProcessReapGrace)
