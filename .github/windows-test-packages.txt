@@ -87,6 +87,7 @@
 ./internal/runtime/runtimetest
 ./internal/runtime/ssh
 ./internal/runtime/subprocess
+./internal/runtime/tmux
 ./internal/sdnotify
 ./internal/searchpath
 ./internal/session/sessiontest
@@ -94,6 +95,7 @@
 ./internal/sling
 ./internal/sourceworkflow
 ./internal/ssrf
+./internal/storehealth
 ./internal/storeref
 ./internal/suspensionstate
 ./internal/telemetry
