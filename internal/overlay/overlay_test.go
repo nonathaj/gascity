@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -36,6 +37,12 @@ func TestCopyDir_RecursiveCopy(t *testing.T) {
 }
 
 func TestCopyDir_PreservesPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows has no Unix permission bits: os.Chmod only toggles the
+		// read-only attribute and os.Stat reports 0666/0777, so the
+		// executable-bit preservation this asserts is not expressible.
+		t.Skip("Unix permission-bit preservation is not observable on Windows")
+	}
 	src := t.TempDir()
 	dst := t.TempDir()
 
@@ -213,6 +220,9 @@ func TestCopyDirWithSkip_SkipDirExcludesSubtree(t *testing.T) {
 }
 
 func TestCopyDirWithSkip_PreservesPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission-bit preservation is not observable on Windows")
+	}
 	src := t.TempDir()
 	dst := t.TempDir()
 
@@ -401,6 +411,9 @@ func TestCopyDirWithSkip_MergesSettingsJSON(t *testing.T) {
 }
 
 func TestCopyDir_MergePreservesPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission-bit preservation is not observable on Windows")
+	}
 	src := t.TempDir()
 	dst := t.TempDir()
 
