@@ -214,8 +214,14 @@ func storeLocalEnvPath(scopeRoot string) string {
 }
 
 // isPermissive returns true when mode permits group/other read/write/execute
-// or owner execute.
+// or owner execute. Windows has no Unix permission bits — os.Stat synthesizes
+// 0666 for every writable file, so the check would reject every credentials
+// file there; access control on Windows comes from NTFS ACLs instead, and the
+// mode gate is skipped.
 func isPermissive(mode os.FileMode) bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
 	return mode.Perm()&0o177 != 0
 }
 

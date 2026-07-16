@@ -174,6 +174,14 @@ type tailState struct {
 func captureTailCursor(path string) *tailState {
 	st := &tailState{}
 	if info, err := os.Stat(path); err == nil {
+		// Force the platform file identity to load NOW. On Windows os.Stat
+		// defers the NTFS file-ID load until the first os.SameFile call and
+		// resolves it from the SAVED PATH — after a rotation that path names
+		// the fresh active file, so the deferred load would stamp the old
+		// FileInfo with the new file's identity and rotations would never be
+		// detected. A self-comparison pins the identity while the path still
+		// refers to this file; on Unix it is a no-op.
+		_ = os.SameFile(info, info)
 		st.offset = info.Size()
 		st.activeInfo = info
 	}
@@ -285,6 +293,13 @@ var readRotationCatchUp = events.ReadFilteredWithInFlight
 // drops the overlap the catch-up already folded.
 func (t *cityRunTailer) foldNext(proj *runproj.Projector, st *tailState) {
 	info, statErr := os.Stat(t.eventsPath)
+	if statErr == nil {
+		// Pin the platform file identity now (see captureTailCursor): this
+		// info may be stored as st.activeInfo below, and Windows would
+		// otherwise defer the ID load to a future SameFile call that resolves
+		// the saved path against whatever file lives there by then.
+		_ = os.SameFile(info, info)
+	}
 	rotated := statErr == nil && st.activeInfo != nil && !os.SameFile(st.activeInfo, info)
 	if rotated {
 		// ReadFilteredWithInFlight walks the sibling .gz archives (skipping any
