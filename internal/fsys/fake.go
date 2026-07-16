@@ -4,6 +4,7 @@ import (
 	"hash/fnv"
 	"io/fs"
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"sort"
 	"time"
@@ -45,6 +46,44 @@ func NewFake() *Fake {
 	}
 }
 
+// canonFakePath canonicalizes a path for map keying: cleaned and
+// slash-separated, so tests seeded with "/city/x"-style keys match paths
+// production code builds with filepath.Join (backslashes on Windows).
+func canonFakePath(p string) string {
+	return filepath.ToSlash(filepath.Clean(p))
+}
+
+// canonKeys rewrites m's keys to canonical form when any key needs it.
+func canonKeys[V any](m map[string]V) map[string]V {
+	dirty := false
+	for k := range m {
+		if canonFakePath(k) != k {
+			dirty = true
+			break
+		}
+	}
+	if !dirty {
+		return m
+	}
+	out := make(map[string]V, len(m))
+	for k, v := range m {
+		out[canonFakePath(k)] = v
+	}
+	return out
+}
+
+// canon canonicalizes the incoming path plus any test-seeded map keys, so
+// seeding and lookups agree regardless of separator style on either side.
+func (f *Fake) canon(p string) string {
+	f.Dirs = canonKeys(f.Dirs)
+	f.Files = canonKeys(f.Files)
+	f.Modes = canonKeys(f.Modes)
+	f.Symlinks = canonKeys(f.Symlinks)
+	f.Errors = canonKeys(f.Errors)
+	f.ModTimes = canonKeys(f.ModTimes)
+	return canonFakePath(p)
+}
+
 func (f *Fake) nextModTime() time.Time {
 	if f.ModTimes == nil {
 		f.ModTimes = make(map[string]time.Time)
@@ -59,6 +98,7 @@ func (f *Fake) nextModTime() time.Time {
 // MkdirAll records the call and adds the directory (and parents) to Dirs.
 func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "MkdirAll", Path: path})
+	path = f.canon(path)
 	if err, ok := f.Errors[path]; ok {
 		return err
 	}
@@ -68,8 +108,8 @@ func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 	if f.Modes == nil {
 		f.Modes = make(map[string]os.FileMode)
 	}
-	// Record this directory and all parents.
-	for p := filepath.Clean(path); p != "." && p != "/" && p != string(filepath.Separator); p = filepath.Dir(p) {
+	// Record this directory and all parents (canonical slash form).
+	for p := path; p != "." && p != "/"; p = slashpath.Dir(p) {
 		if !f.Dirs[p] {
 			f.Modes[p] = perm.Perm()
 		}
@@ -81,6 +121,7 @@ func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 // WriteFile records the call and stores the data in Files.
 func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "WriteFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}
@@ -102,6 +143,7 @@ func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
 // ReadFile records the call and returns the file contents from Files.
 func (f *Fake) ReadFile(name string) ([]byte, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -117,6 +159,7 @@ func (f *Fake) ReadFile(name string) ([]byte, error) {
 // symlinks or accepting directories.
 func (f *Fake) ReadRegularFile(name string) ([]byte, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadRegularFile", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
@@ -148,12 +191,14 @@ func (f *Fake) readRegularFileSnapshot(name string) (regularFileSnapshot, error)
 // Symlinks are followed — use Lstat to detect them without following.
 func (f *Fake) Stat(name string) (os.FileInfo, error) {
 	f.Calls = append(f.Calls, Call{Method: "Stat", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
-	if target, ok := f.Symlinks[name]; ok {
+	if rawTarget, ok := f.Symlinks[name]; ok {
+		target := canonFakePath(rawTarget)
 		if f.Dirs[target] {
-			return fakeFileInfo{name: filepath.Base(name), dir: true, mode: f.modeFor(target), id: fakeIdentity(target), hasID: true}, nil
+			return fakeFileInfo{name: slashpath.Base(name), dir: true, mode: f.modeFor(target), id: fakeIdentity(target), hasID: true}, nil
 		}
 		if data, ok := f.Files[target]; ok {
 			modTime := f.ModTimes[target]
@@ -161,12 +206,12 @@ func (f *Fake) Stat(name string) (os.FileInfo, error) {
 				modTime = f.nextModTime()
 				f.ModTimes[target] = modTime
 			}
-			return fakeFileInfo{name: filepath.Base(name), size: int64(len(data)), mode: f.modeFor(target), id: fakeIdentity(target), hasID: true, modTime: modTime}, nil
+			return fakeFileInfo{name: slashpath.Base(name), size: int64(len(data)), mode: f.modeFor(target), id: fakeIdentity(target), hasID: true, modTime: modTime}, nil
 		}
 		return nil, &os.PathError{Op: "stat", Path: name, Err: os.ErrNotExist}
 	}
 	if f.Dirs[name] {
-		return fakeFileInfo{name: filepath.Base(name), dir: true, mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
+		return fakeFileInfo{name: slashpath.Base(name), dir: true, mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
 	}
 	if data, ok := f.Files[name]; ok {
 		modTime := f.ModTimes[name]
@@ -174,7 +219,7 @@ func (f *Fake) Stat(name string) (os.FileInfo, error) {
 			modTime = f.nextModTime()
 			f.ModTimes[name] = modTime
 		}
-		return fakeFileInfo{name: filepath.Base(name), size: int64(len(data)), mode: f.modeFor(name), id: fakeIdentity(name), hasID: true, modTime: modTime}, nil
+		return fakeFileInfo{name: slashpath.Base(name), size: int64(len(data)), mode: f.modeFor(name), id: fakeIdentity(name), hasID: true, modTime: modTime}, nil
 	}
 	return nil, &os.PathError{Op: "stat", Path: name, Err: os.ErrNotExist}
 }
@@ -183,17 +228,18 @@ func (f *Fake) Stat(name string) (os.FileInfo, error) {
 // symlinks. Tests populate Symlinks to exercise the symlink-rejection path.
 func (f *Fake) Lstat(name string) (os.FileInfo, error) {
 	f.Calls = append(f.Calls, Call{Method: "Lstat", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
 	if _, ok := f.Symlinks[name]; ok {
-		return fakeFileInfo{name: filepath.Base(name), symlink: true, id: fakeIdentity(name), hasID: true}, nil
+		return fakeFileInfo{name: slashpath.Base(name), symlink: true, id: fakeIdentity(name), hasID: true}, nil
 	}
 	if f.Dirs[name] {
-		return fakeFileInfo{name: filepath.Base(name), dir: true, mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
+		return fakeFileInfo{name: slashpath.Base(name), dir: true, mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
 	}
 	if data, ok := f.Files[name]; ok {
-		return fakeFileInfo{name: filepath.Base(name), size: int64(len(data)), mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
+		return fakeFileInfo{name: slashpath.Base(name), size: int64(len(data)), mode: f.modeFor(name), id: fakeIdentity(name), hasID: true}, nil
 	}
 	return nil, &os.PathError{Op: "lstat", Path: name, Err: os.ErrNotExist}
 }
@@ -201,6 +247,7 @@ func (f *Fake) Lstat(name string) (os.FileInfo, error) {
 // Readlink records the call and returns the symlink target without following it.
 func (f *Fake) Readlink(name string) (string, error) {
 	f.Calls = append(f.Calls, Call{Method: "Readlink", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return "", err
 	}
@@ -213,6 +260,7 @@ func (f *Fake) Readlink(name string) (string, error) {
 // Symlink records the call and creates a symlink entry.
 func (f *Fake) Symlink(oldname, newname string) error {
 	f.Calls = append(f.Calls, Call{Method: "Symlink", Path: newname})
+	newname = f.canon(newname)
 	if err, ok := f.Errors[newname]; ok {
 		return err
 	}
@@ -230,18 +278,18 @@ func (f *Fake) Symlink(oldname, newname string) error {
 // ReadDir records the call and returns entries from direct children.
 func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadDir", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return nil, err
 	}
 
-	name = filepath.Clean(name)
 	seen := make(map[string]bool)
 	var entries []os.DirEntry
 
 	// Collect direct child directories.
 	for d := range f.Dirs {
-		if filepath.Dir(d) == name && d != name {
-			base := filepath.Base(d)
+		if slashpath.Dir(d) == name && d != name {
+			base := slashpath.Base(d)
 			if !seen[base] {
 				seen[base] = true
 				entries = append(entries, fakeDirEntry{name: base, dir: true, mode: f.modeFor(d), id: fakeIdentity(d), hasID: true})
@@ -250,8 +298,8 @@ func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 	}
 	// Collect direct child files.
 	for p, data := range f.Files {
-		if filepath.Dir(p) == name {
-			base := filepath.Base(p)
+		if slashpath.Dir(p) == name {
+			base := slashpath.Base(p)
 			if !seen[base] {
 				seen[base] = true
 				entries = append(entries, fakeDirEntry{name: base, size: int64(len(data)), mode: f.modeFor(p), id: fakeIdentity(p), hasID: true})
@@ -260,8 +308,8 @@ func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 	}
 	// Collect direct child symlinks.
 	for p := range f.Symlinks {
-		if filepath.Dir(p) == name {
-			base := filepath.Base(p)
+		if slashpath.Dir(p) == name {
+			base := slashpath.Base(p)
 			if !seen[base] {
 				seen[base] = true
 				entries = append(entries, fakeDirEntry{name: base, symlink: true, id: fakeIdentity(p), hasID: true})
@@ -278,6 +326,8 @@ func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 // Rename records the call and moves the file in the Files map.
 func (f *Fake) Rename(oldpath, newpath string) error {
 	f.Calls = append(f.Calls, Call{Method: "Rename", Path: oldpath})
+	oldpath = f.canon(oldpath)
+	newpath = canonFakePath(newpath)
 	if err, ok := f.Errors[oldpath]; ok {
 		return err
 	}
@@ -310,6 +360,7 @@ func (f *Fake) Rename(oldpath, newpath string) error {
 // Remove records the call and deletes the file from the Files map.
 func (f *Fake) Remove(name string) error {
 	f.Calls = append(f.Calls, Call{Method: "Remove", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}
@@ -334,6 +385,7 @@ func (f *Fake) Remove(name string) error {
 // Chmod records the call and updates the stored mode.
 func (f *Fake) Chmod(name string, mode os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "Chmod", Path: name})
+	name = f.canon(name)
 	if err, ok := f.Errors[name]; ok {
 		return err
 	}

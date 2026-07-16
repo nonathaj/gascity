@@ -19,7 +19,7 @@ func TestResolveSymlinks_RegularFileReturnsPathUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/city/city.toml" {
+	if filepath.ToSlash(got) != "/city/city.toml" {
 		t.Fatalf("got %q, want /city/city.toml", got)
 	}
 }
@@ -31,7 +31,7 @@ func TestResolveSymlinks_MissingPathReturnsPathUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/city/city.toml" {
+	if filepath.ToSlash(got) != "/city/city.toml" {
 		t.Fatalf("got %q, want /city/city.toml", got)
 	}
 }
@@ -45,7 +45,7 @@ func TestResolveSymlinks_FollowsAbsoluteLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/checkout/city.toml" {
+	if filepath.ToSlash(got) != "/checkout/city.toml" {
 		t.Fatalf("got %q, want /checkout/city.toml", got)
 	}
 }
@@ -59,7 +59,7 @@ func TestResolveSymlinks_ResolvesRelativeLinkAgainstLinkDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/checkout/city.toml" {
+	if filepath.ToSlash(got) != "/checkout/city.toml" {
 		t.Fatalf("got %q, want /checkout/city.toml", got)
 	}
 }
@@ -74,7 +74,7 @@ func TestResolveSymlinks_FollowsChains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/final/city.toml" {
+	if filepath.ToSlash(got) != "/final/city.toml" {
 		t.Fatalf("got %q, want /final/city.toml", got)
 	}
 }
@@ -87,7 +87,7 @@ func TestResolveSymlinks_DanglingLinkReturnsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/checkout/city.toml" {
+	if filepath.ToSlash(got) != "/checkout/city.toml" {
 		t.Fatalf("got %q, want /checkout/city.toml", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestResolveSymlinks_RelativeLinkBehindSymlinkedParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveSymlinks: %v", err)
 	}
-	if got != "/other/checkout/city.toml" {
+	if filepath.ToSlash(got) != "/other/checkout/city.toml" {
 		t.Fatalf("got %q, want /other/checkout/city.toml", got)
 	}
 }

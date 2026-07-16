@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -110,7 +111,8 @@ func TestWriteFileIfChangedAtomic_SkipsMatchingContentWhenModeDiffers(t *testing
 	if !info.ModTime().Equal(past) {
 		t.Fatalf("file was rewritten: modtime = %s, want %s", info.ModTime(), past)
 	}
-	if info.Mode().Perm() != 0o644 {
+	// Unix permission bits do not survive os.Stat on Windows.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
 		t.Fatalf("mode = %v, want unchanged 0644", info.Mode().Perm())
 	}
 }
@@ -142,6 +144,9 @@ func TestWriteFileIfChangedAtomic_ReplacesMatchingSymlink(t *testing.T) {
 }
 
 func TestWriteFileIfContentOrModeChangedAtomic_RepairsModeMismatch(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mode repair is a Unix-permission-bit behavior; Windows reports 0666 regardless")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "script.sh")
 	data := []byte("#!/bin/sh\n")

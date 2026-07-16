@@ -5714,8 +5714,7 @@ func runShellWithFakeBd(t *testing.T, shellCmd string, env map[string]string, bd
 		t.Fatalf("write fake bd: %v", err)
 	}
 
-	cmd := exec.Command("sh", "-c", shellCmd)
-	cmd.Env = []string{"PATH=" + tmp + ":" + os.Getenv("PATH")}
+	cmd := testShellCommand(shellCmd, tmp)
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -5736,11 +5735,7 @@ func runLifecycleHookCommand(t *testing.T, command string, bdScript string) stri
 	}
 	logPath := filepath.Join(tmp, "bd.log")
 
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = []string{
-		"PATH=" + tmp + ":" + os.Getenv("PATH"),
-		"BD_LOG=" + logPath,
-	}
+	cmd := testShellCommand(command, tmp, "BD_LOG="+logPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run lifecycle hook: %v\n%s", err, out)
 	}
@@ -7886,12 +7881,7 @@ printf 'TRACE=%%s\nARGS=%%s\n' "$GC_WORKFLOW_TRACE" "$*" > %q
 		t.Fatalf("write fake gc: %v", err)
 	}
 
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Env = []string{
-		"PATH=" + tmp + ":" + os.Getenv("PATH"),
-		"GC_BIN=" + gcPath,
-		"GC_CITY=" + cityDir,
-	}
+	cmd := testShellCommand(command, tmp, "GC_BIN="+gcPath, "GC_CITY="+cityDir)
 	for key, value := range extraEnv {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -39,8 +40,8 @@ var lineRE = regexp.MustCompile(`^\[([^\]]+)\]\s+(.*)$`)
 // deployLogPath returns the deploy-log path: $HOME/.dev-deploy-log, falling
 // back to a bare relative name when HOME is unset (mirrors DEFAULT_LOG_PATH).
 func deployLogPath() string {
-	if home := os.Getenv("HOME"); home != "" {
-		return home + "/.dev-deploy-log"
+	if home := userHome(); home != "" {
+		return filepath.Join(home, ".dev-deploy-log")
 	}
 	return ".dev-deploy-log"
 }
@@ -48,8 +49,8 @@ func deployLogPath() string {
 // deployMarkerPath returns the failure-marker path: $HOME/.dev-deploy-FAILED,
 // falling back to a bare relative name when HOME is unset.
 func deployMarkerPath() string {
-	if home := os.Getenv("HOME"); home != "" {
-		return home + "/.dev-deploy-FAILED"
+	if home := userHome(); home != "" {
+		return filepath.Join(home, ".dev-deploy-FAILED")
 	}
 	return ".dev-deploy-FAILED"
 }

@@ -47,12 +47,21 @@ func parseRemoteInclude(s string) (source, subpath, ref string) {
 func includeCacheName(source string) string {
 	// Extract slug: last path component, strip .git suffix.
 	slug := source
-	// For SSH URLs like git@github.com:org/repo.git, use the part after ':'
+	// For SSH URLs like git@github.com:org/repo.git, use the part after ':'.
+	// A Windows drive spelling ("C:\repos\x.git" or "C:/repos/x.git") also
+	// contains a colon, but its remainder starts with a separator — treat it
+	// as a path, not an SSH host split, or the slug keeps the whole path and
+	// the cache directory name ends up containing ':' and separators
+	// (invalid on NTFS; git clone fails with "could not create leading
+	// directories ... Invalid argument").
 	if i := strings.LastIndex(slug, ":"); i >= 0 && !strings.Contains(slug, "://") {
-		slug = slug[i+1:]
+		if rest := slug[i+1:]; !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, `\`) {
+			slug = rest
+		}
 	}
-	// For all URLs, take the last path component.
-	if i := strings.LastIndex(slug, "/"); i >= 0 {
+	// Take the last path component, honoring both separators so local
+	// Windows paths slug cleanly.
+	if i := strings.LastIndexAny(slug, `/\`); i >= 0 {
 		slug = slug[i+1:]
 	}
 	slug = strings.TrimSuffix(slug, ".git")

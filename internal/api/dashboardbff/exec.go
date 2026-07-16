@@ -163,9 +163,9 @@ func (b *cappedBuffer) String() string { return b.buf.String() }
 // terminal credential prompt — so a hostile repo cannot drive an out-of-band
 // helper that inherits this environment.
 func cleanEnv() []string {
-	home := os.Getenv("HOME")
+	home := userHome()
 	if home == "" {
-		home = "/tmp"
+		home = os.TempDir()
 	}
 	path := os.Getenv("ADMIN_PATH")
 	if path == "" {
@@ -289,11 +289,22 @@ var gitLogViews = map[string][]string{
 	"this-week":   {"log", gitPretty, "--since=7.days.ago", "--branches", "--remotes"},
 }
 
+// userHome resolves the home directory: $HOME when set (the Unix and
+// test-override spelling), otherwise os.UserHomeDir (USERPROFILE on
+// Windows, where HOME is normally absent).
+func userHome() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	home, _ := os.UserHomeDir()
+	return home
+}
+
 func gitRepoPath() string {
 	if p := os.Getenv("ADMIN_GIT_REPO"); p != "" {
 		return p
 	}
-	return os.Getenv("HOME")
+	return userHome()
 }
 
 // execGitLog runs a whitelisted `git log` view against the dashboard host repo.

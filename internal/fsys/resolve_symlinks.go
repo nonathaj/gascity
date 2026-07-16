@@ -33,11 +33,14 @@ func ResolveSymlinks(fs FS, path string) (string, error) {
 	sep := string(os.PathSeparator)
 
 	// volLen is the length of the walk anchor that ".." may never climb
-	// above: the leading separator for absolute paths, nothing for
-	// relative ones.
-	volLen := 0
-	if os.IsPathSeparator(path[0]) {
-		volLen = 1
+	// above: the volume prefix plus leading separator on Windows
+	// ("C:\", `\\host\share\`), the leading separator for Unix absolute
+	// paths, nothing for relative ones. Without the volume prefix, "C:"
+	// would walk as a relative path component and be joined onto the
+	// working directory.
+	volLen := len(filepath.VolumeName(path))
+	if len(path) > volLen && os.IsPathSeparator(path[volLen]) {
+		volLen++
 	}
 	dest := path[:volLen]
 	linksWalked := 0
@@ -114,11 +117,16 @@ func ResolveSymlinks(fs FS, path string) (string, error) {
 		}
 
 		path = target + path[end:]
-		if len(target) > 0 && os.IsPathSeparator(target[0]) {
-			// Absolute target: restart the walk from the root.
-			dest = target[:1]
-			volLen = 1
-			end = 1
+		if filepath.IsAbs(target) || (len(target) > 0 && os.IsPathSeparator(target[0])) {
+			// Absolute target: restart the walk from the target's root
+			// (volume-aware, so "C:\x" targets anchor at "C:\").
+			tv := len(filepath.VolumeName(target))
+			if len(target) > tv && os.IsPathSeparator(target[tv]) {
+				tv++
+			}
+			dest = target[:tv]
+			volLen = tv
+			end = tv
 		} else {
 			// Relative target: drop the link's own component from dest
 			// and continue the walk from its physical parent.
