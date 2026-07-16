@@ -77,7 +77,7 @@ name = "refinery"
 		}
 	}
 	// witness should have adjusted prompt_template path.
-	if !strings.Contains(cfg.Agents[0].PromptTemplate, "prompts/witness.md") {
+	if !strings.Contains(filepath.ToSlash(cfg.Agents[0].PromptTemplate), "prompts/witness.md") {
 		t.Errorf("witness prompt_template = %q, want to contain prompts/witness.md", cfg.Agents[0].PromptTemplate)
 	}
 }
@@ -799,11 +799,11 @@ prompt_template = "//prompts/shared.md"
 	}
 
 	// Relative path: resolved relative to pack dir, then made city-root-relative.
-	if cfg.Agents[0].PromptTemplate != "packs/gt/prompts/witness.md" {
+	if filepath.ToSlash(cfg.Agents[0].PromptTemplate) != "packs/gt/prompts/witness.md" {
 		t.Errorf("witness prompt = %q, want packs/gt/prompts/witness.md", cfg.Agents[0].PromptTemplate)
 	}
 	// "//" path: resolved to city root.
-	if cfg.Agents[1].PromptTemplate != "prompts/shared.md" {
+	if filepath.ToSlash(cfg.Agents[1].PromptTemplate) != "prompts/shared.md" {
 		t.Errorf("refinery prompt = %q, want prompts/shared.md", cfg.Agents[1].PromptTemplate)
 	}
 }
@@ -1288,7 +1288,7 @@ func TestResolveNamedPacks_Basic(t *testing.T) {
 	resolveNamedPacks(cfg, "/city")
 
 	want := "/city/.gc/cache/packs/gastown"
-	if cfg.Rigs[0].Includes[0] != want {
+	if filepath.ToSlash(cfg.Rigs[0].Includes[0]) != want {
 		t.Errorf("Includes[0] = %q, want %q", cfg.Rigs[0].Includes[0], want)
 	}
 }
@@ -1306,7 +1306,7 @@ func TestResolveNamedPacks_WithPath(t *testing.T) {
 	resolveNamedPacks(cfg, "/city")
 
 	want := "/city/.gc/cache/packs/mono/packages/topo"
-	if cfg.Rigs[0].Includes[0] != want {
+	if filepath.ToSlash(cfg.Rigs[0].Includes[0]) != want {
 		t.Errorf("Includes[0] = %q, want %q", cfg.Rigs[0].Includes[0], want)
 	}
 }
@@ -2126,7 +2126,7 @@ overlay_dir = "overlays/worker"
 
 	// overlay_dir should be adjusted relative to pack dir → city root.
 	want := "packs/gt/overlays/worker"
-	if cfg.Agents[0].OverlayDir != want {
+	if filepath.ToSlash(cfg.Agents[0].OverlayDir) != want {
 		t.Errorf("OverlayDir = %q, want %q", cfg.Agents[0].OverlayDir, want)
 	}
 }
@@ -2321,10 +2321,10 @@ name = "worker"
 	if !strings.Contains(errStr, "myrig") {
 		t.Errorf("error should mention rig name 'myrig', got: %s", errStr)
 	}
-	if !strings.Contains(errStr, "packs/base") {
+	if !strings.Contains(filepath.ToSlash(errStr), "packs/base") {
 		t.Errorf("error should mention first pack dir, got: %s", errStr)
 	}
-	if !strings.Contains(errStr, "packs/extras") {
+	if !strings.Contains(filepath.ToSlash(errStr), "packs/extras") {
 		t.Errorf("error should mention second pack dir, got: %s", errStr)
 	}
 }
@@ -2367,10 +2367,10 @@ name = "overseer"
 	if !strings.Contains(errStr, "city") {
 		t.Errorf("error should mention 'city' scope, got: %s", errStr)
 	}
-	if !strings.Contains(errStr, "packs/alpha") {
+	if !strings.Contains(filepath.ToSlash(errStr), "packs/alpha") {
 		t.Errorf("error should mention first pack dir, got: %s", errStr)
 	}
-	if !strings.Contains(errStr, "packs/beta") {
+	if !strings.Contains(filepath.ToSlash(errStr), "packs/beta") {
 		t.Errorf("error should mention second pack dir, got: %s", errStr)
 	}
 }
@@ -3226,7 +3226,7 @@ includes = ["packs/rigsup"]
 	}
 	// The surviving deacon is the city-scope definition (has the prompt
 	// template), not the bare rig-pack one.
-	if !strings.Contains(deacons[0].PromptTemplate, "prompts/deacon.md") {
+	if !strings.Contains(filepath.ToSlash(deacons[0].PromptTemplate), "prompts/deacon.md") {
 		t.Errorf("surviving deacon prompt_template = %q, want the city-scope definition (prompts/deacon.md)", deacons[0].PromptTemplate)
 	}
 	if deacons[0].Dir != "" {
@@ -4151,11 +4151,11 @@ overlay_dir = "overlays/custom"
 		t.Errorf("SessionSetupScript = %q, want %q", a.SessionSetupScript, wantScript)
 	}
 	wantTemplate := "packs/overlay/prompts/custom.md"
-	if a.PromptTemplate != wantTemplate {
+	if filepath.ToSlash(a.PromptTemplate) != wantTemplate {
 		t.Errorf("PromptTemplate = %q, want %q", a.PromptTemplate, wantTemplate)
 	}
 	wantOverlay := "packs/overlay/overlays/custom"
-	if a.OverlayDir != wantOverlay {
+	if filepath.ToSlash(a.OverlayDir) != wantOverlay {
 		t.Errorf("OverlayDir = %q, want %q", a.OverlayDir, wantOverlay)
 	}
 }

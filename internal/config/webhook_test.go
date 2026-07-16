@@ -295,16 +295,18 @@ digest = %q
 // stale-digest entry shadow a later valid re-consent: authorization holds when
 // ANY matching grant pins the current digest, regardless of grant order.
 func TestWebhookPublicDenyReason_StaleGrantDoesNotShadowValid(t *testing.T) {
-	const cityRoot = "/city"
+	// absFixturePath: matching is by canonical absolute path, and "/city" is
+	// not absolute on Windows without a volume prefix.
+	cityRoot := absFixturePath("/city")
 	w := &Webhook{
 		Name:      "github",
-		SourceDir: "/city/packs/gh",
+		SourceDir: absFixturePath("/city/packs/gh"),
 		Verify:    WebhookVerify{Scheme: "github-hmac-sha256", SecretEnv: "GC_WEBHOOK_GITHUB_SECRET"},
 		Rules:     []WebhookRule{{Event: "pull_request", Order: "pr-review-request"}},
 	}
 	digest := WebhookContentDigest(*w)
-	stale := WebhookAllowPublic{Name: "github", Source: "/city/packs/gh", Digest: "sha256:stale"}
-	valid := WebhookAllowPublic{Name: "github", Source: "/city/packs/gh", Digest: digest}
+	stale := WebhookAllowPublic{Name: "github", Source: absFixturePath("/city/packs/gh"), Digest: "sha256:stale"}
+	valid := WebhookAllowPublic{Name: "github", Source: absFixturePath("/city/packs/gh"), Digest: digest}
 
 	// Stale grant FIRST, valid re-consent SECOND → authorized (the shadowing bug:
 	// the stale first match used to cap the hook despite the later valid grant).
@@ -318,8 +320,8 @@ func TestWebhookPublicDenyReason_StaleGrantDoesNotShadowValid(t *testing.T) {
 	// Only stale duplicates (none pin the current digest) → capped, and the reason
 	// is the content-changed re-consent prompt (not the no-digest or no-match one).
 	onlyStale := []WebhookAllowPublic{
-		{Name: "github", Source: "/city/packs/gh", Digest: "sha256:stale-a"},
-		{Name: "github", Source: "/city/packs/gh", Digest: "sha256:stale-b"},
+		{Name: "github", Source: absFixturePath("/city/packs/gh"), Digest: "sha256:stale-a"},
+		{Name: "github", Source: absFixturePath("/city/packs/gh"), Digest: "sha256:stale-b"},
 	}
 	reason := webhookPublicDenyReason(w, cityRoot, onlyStale)
 	if reason == "" {
@@ -335,7 +337,10 @@ func TestWebhookPublicDenyReason_StaleGrantDoesNotShadowValid(t *testing.T) {
 // whose SourceDir merely ends in the same leaf segment as an operator grant must
 // NOT be authorized, or R3's provenance-scoped default-closed guard is defeated.
 func TestWebhookSourceMatches_CanonicalPathOnly(t *testing.T) {
-	const cityRoot = "/city"
+	// absFixturePath: matching is by canonical absolute path, and "/city" is
+	// not absolute on Windows without a volume prefix.
+	cityRoot := absFixturePath("/city")
+	abs := absFixturePath
 	cases := []struct {
 		name       string
 		sourceDir  string
@@ -343,15 +348,15 @@ func TestWebhookSourceMatches_CanonicalPathOnly(t *testing.T) {
 		wantMatch  bool
 		wantReason string
 	}{
-		{"exact absolute", "/city/packs/trusted/github", "/city/packs/trusted/github", true, "identical path"},
-		{"true subtree", "/city/packs/trusted/github", "/city/packs/trusted", true, "SourceDir under the granted dir"},
-		{"basename collision rejected", "/city/packs/evil/github", "/city/packs/trusted/github", false, "same leaf, different pack"},
-		{"suffix collision rejected", "/city/other/github", "/city/packs/trusted/github", false, "unanchored suffix must not match"},
-		{"sibling-prefix not subtree", "/city/packs/trusted-evil/github", "/city/packs/trusted", false, "prefix string but not a path subtree"},
-		{"relative grant resolves against city root", "/city/packs/trusted/github", "packs/trusted/github", true, "relative source joined to cityRoot"},
-		{"relative grant basename spoof rejected", "/city/packs/evil/github", "packs/trusted/github", false, "relative source must still be canonical"},
-		{"empty grant never matches", "/city/packs/trusted/github", "", false, "default-closed"},
-		{"empty source never matches", "", "/city/packs/trusted/github", false, "unstamped provenance is not trusted here"},
+		{"exact absolute", abs("/city/packs/trusted/github"), abs("/city/packs/trusted/github"), true, "identical path"},
+		{"true subtree", abs("/city/packs/trusted/github"), abs("/city/packs/trusted"), true, "SourceDir under the granted dir"},
+		{"basename collision rejected", abs("/city/packs/evil/github"), abs("/city/packs/trusted/github"), false, "same leaf, different pack"},
+		{"suffix collision rejected", abs("/city/other/github"), abs("/city/packs/trusted/github"), false, "unanchored suffix must not match"},
+		{"sibling-prefix not subtree", abs("/city/packs/trusted-evil/github"), abs("/city/packs/trusted"), false, "prefix string but not a path subtree"},
+		{"relative grant resolves against city root", abs("/city/packs/trusted/github"), "packs/trusted/github", true, "relative source joined to cityRoot"},
+		{"relative grant basename spoof rejected", abs("/city/packs/evil/github"), "packs/trusted/github", false, "relative source must still be canonical"},
+		{"empty grant never matches", abs("/city/packs/trusted/github"), "", false, "default-closed"},
+		{"empty source never matches", "", abs("/city/packs/trusted/github"), false, "unstamped provenance is not trusted here"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

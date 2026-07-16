@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -188,6 +189,9 @@ func TestAppendRigAndWriteSiteBindingsForEditRefusesUnparsableCity(t *testing.T)
 // restore writes back through the resolved target instead of replacing the
 // link with a regular file.
 func TestWriteCityAndRigSiteBindingsForEditRestoresSymlinkOnBindingFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod cannot revoke write access on Windows (ACLs rule)")
+	}
 	dir := t.TempDir()
 	checkoutDir := filepath.Join(dir, "checkout")
 	if err := os.MkdirAll(checkoutDir, 0o755); err != nil {
@@ -306,6 +310,9 @@ func TestWriteCityAndRigSiteBindingsForEditPreservesSiteTomlSymlinkOnBindingFail
 	}
 
 	t.Run("write fails at read-only link target", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod cannot revoke write access on Windows (ACLs rule)")
+		}
 		dir := t.TempDir()
 		checkoutDir := filepath.Join(dir, "checkout")
 		if err := os.MkdirAll(checkoutDir, 0o755); err != nil {
@@ -376,6 +383,9 @@ func TestWriteCityAndRigSiteBindingsForEditPreservesSiteTomlSymlinkOnBindingFail
 	})
 
 	t.Run("dangling link is not removed by rollback", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("chmod cannot revoke write access on Windows (ACLs rule)")
+		}
 		dir := t.TempDir()
 		checkoutDir := filepath.Join(dir, "checkout")
 		if err := os.MkdirAll(checkoutDir, 0o755); err != nil {

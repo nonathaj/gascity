@@ -7,22 +7,22 @@ import (
 )
 
 func TestResolveSessionSetupScriptPath_RelativeUsesSourceDir(t *testing.T) {
-	got := ResolveSessionSetupScriptPath("/home/user/city", "/home/user/city/packs/gastown", "scripts/setup.sh")
-	if got != "/home/user/city/packs/gastown/scripts/setup.sh" {
+	got := ResolveSessionSetupScriptPath(absFixturePath("/home/user/city"), absFixturePath("/home/user/city/packs/gastown"), "scripts/setup.sh")
+	if filepath.ToSlash(got) != absFixturePath("/home/user/city/packs/gastown/scripts/setup.sh") {
 		t.Errorf("got %q, want source-dir-relative absolute path", got)
 	}
 }
 
 func TestResolveSessionSetupScriptPath_DoubleSlashUsesCityRoot(t *testing.T) {
-	got := ResolveSessionSetupScriptPath("/home/user/city", "/home/user/city/packs/gastown", "//scripts/setup.sh")
-	if got != "/home/user/city/scripts/setup.sh" {
+	got := ResolveSessionSetupScriptPath(absFixturePath("/home/user/city"), absFixturePath("/home/user/city/packs/gastown"), "//scripts/setup.sh")
+	if filepath.ToSlash(got) != absFixturePath("/home/user/city/scripts/setup.sh") {
 		t.Errorf("got %q, want city-root path", got)
 	}
 }
 
 func TestResolveSessionSetupScriptPath_LegacyCityRelativeStillWorks(t *testing.T) {
-	got := ResolveSessionSetupScriptPath("/home/user/city", "/home/user/city/packs/gastown", "packs/gastown/scripts/setup.sh")
-	if got != "/home/user/city/packs/gastown/scripts/setup.sh" {
+	got := ResolveSessionSetupScriptPath(absFixturePath("/home/user/city"), absFixturePath("/home/user/city/packs/gastown"), "packs/gastown/scripts/setup.sh")
+	if filepath.ToSlash(got) != absFixturePath("/home/user/city/packs/gastown/scripts/setup.sh") {
 		t.Errorf("got %q, want legacy city-root-relative path to remain supported", got)
 	}
 }
@@ -48,8 +48,8 @@ func TestResolveSessionSetupScriptPath_LegacySharedCityRelativeFallback(t *testi
 }
 
 func TestResolveSessionSetupScriptPath_Absolute(t *testing.T) {
-	got := ResolveSessionSetupScriptPath("/home/user/city", "/home/user/city/packs/gastown", "/usr/local/bin/setup.sh")
-	if got != "/usr/local/bin/setup.sh" {
+	got := ResolveSessionSetupScriptPath(absFixturePath("/home/user/city"), absFixturePath("/home/user/city/packs/gastown"), absFixturePath("/usr/local/bin/setup.sh"))
+	if filepath.ToSlash(got) != absFixturePath("/usr/local/bin/setup.sh") {
 		t.Errorf("got %q, want unchanged absolute path", got)
 	}
 }

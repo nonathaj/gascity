@@ -7810,7 +7810,7 @@ func TestControlDispatcherStartCommandExecResolvesRuntimeTracePath(t *testing.T)
 		cityDir := t.TempDir()
 		tracePath, args := runControlDispatcherStartCommand(t, ControlDispatcherStartCommand, cityDir, nil)
 		wantTracePath := filepath.Join(cityDir, citylayout.RuntimeDataRoot, "control-dispatcher-trace.log")
-		if tracePath != wantTracePath {
+		if tracePath != filepath.ToSlash(wantTracePath) {
 			t.Fatalf("trace path = %q, want %q", tracePath, wantTracePath)
 		}
 		if args != "convoy control --serve --follow "+ControlDispatcherAgentName {
@@ -7828,7 +7828,7 @@ func TestControlDispatcherStartCommandExecResolvesRuntimeTracePath(t *testing.T)
 			"GC_CONTROL_DISPATCHER_TRACE_DEFAULT": filepath.Join(runtimeDir, "control-dispatcher-trace.log"),
 		})
 		wantTracePath := filepath.Join(runtimeDir, "control-dispatcher-trace.log")
-		if tracePath != wantTracePath {
+		if tracePath != filepath.ToSlash(wantTracePath) {
 			t.Fatalf("trace path = %q, want %q", tracePath, wantTracePath)
 		}
 		if args != "convoy control --serve --follow qcore/control-dispatcher" {
@@ -7847,7 +7847,7 @@ func TestControlDispatcherStartCommandExecResolvesRuntimeTracePath(t *testing.T)
 			"GC_CONTROL_DISPATCHER_TRACE_DEFAULT": injectedDefault,
 			"GC_WORKFLOW_TRACE":                   overrideTrace,
 		})
-		if tracePath != overrideTrace {
+		if tracePath != filepath.ToSlash(overrideTrace) {
 			t.Fatalf("trace path = %q, want explicit override %q", tracePath, overrideTrace)
 		}
 		if args != "convoy control --serve --follow "+ControlDispatcherAgentName {
@@ -7881,9 +7881,12 @@ printf 'TRACE=%%s\nARGS=%%s\n' "$GC_WORKFLOW_TRACE" "$*" > %q
 		t.Fatalf("write fake gc: %v", err)
 	}
 
-	cmd := testShellCommand(command, tmp, "GC_BIN="+gcPath, "GC_CITY="+cityDir)
+	// The start command is a POSIX sh line that derives the trace parent
+	// with "${GC_WORKFLOW_TRACE%/*}", so path-valued env vars must be
+	// slash-separated (a no-op on unix; required under msys sh on Windows).
+	cmd := testShellCommand(command, tmp, "GC_BIN="+filepath.ToSlash(gcPath), "GC_CITY="+filepath.ToSlash(cityDir))
 	for key, value := range extraEnv {
-		cmd.Env = append(cmd.Env, key+"="+value)
+		cmd.Env = append(cmd.Env, key+"="+filepath.ToSlash(value))
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("run control-dispatcher start command: %v\n%s", err, out)

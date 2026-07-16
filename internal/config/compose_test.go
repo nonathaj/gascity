@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -312,7 +313,7 @@ name = "mayor"
 	if len(prov.Sources) != 2 {
 		t.Errorf("len(Sources) = %d, want 2", len(prov.Sources))
 	}
-	if prov.Agents["mayor"] != "/city/pack.toml" {
+	if filepath.ToSlash(prov.Agents["mayor"]) != "/city/pack.toml" {
 		t.Errorf("mayor source = %q, want /city/pack.toml", prov.Agents["mayor"])
 	}
 }
@@ -355,7 +356,7 @@ dir = "project"
 	if prov.Agents["mayor"] != "/city/city.toml" {
 		t.Errorf("mayor source = %q, want root", prov.Agents["mayor"])
 	}
-	if prov.Agents["project/worker"] != "/city/agents/workers.toml" {
+	if filepath.ToSlash(prov.Agents["project/worker"]) != "/city/agents/workers.toml" {
 		t.Errorf("worker source = %q, want fragment", prov.Agents["project/worker"])
 	}
 	if len(prov.Sources) != 2 {
@@ -515,7 +516,7 @@ path = "/tmp/hw"
 	if prov.Rigs["project-a"] != "/city/city.toml" {
 		t.Errorf("project-a source = %q, want root", prov.Rigs["project-a"])
 	}
-	if prov.Rigs["hello-world"] != "/city/rigs/hw.toml" {
+	if filepath.ToSlash(prov.Rigs["hello-world"]) != "/city/rigs/hw.toml" {
 		t.Errorf("hello-world source = %q, want fragment", prov.Rigs["hello-world"])
 	}
 }
@@ -883,7 +884,7 @@ session_template = "custom-{{.Agent}}"
 	if prov.Workspace["name"] != "/city/city.toml" {
 		t.Errorf("name source = %q, want root", prov.Workspace["name"])
 	}
-	if prov.Workspace["provider"] != "/city/ws.toml" {
+	if filepath.ToSlash(prov.Workspace["provider"]) != "/city/ws.toml" {
 		t.Errorf("provider source = %q, want fragment", prov.Workspace["provider"])
 	}
 	// Collision warning for provider.
@@ -929,7 +930,7 @@ prompt_template = "prompts/worker.md"
 	// Fragment agent's path adjusted to city-root-relative.
 	// "prompts/worker.md" relative to /city/agents/ → "agents/prompts/worker.md"
 	want := "agents/prompts/worker.md"
-	if cfg.Agents[1].PromptTemplate != want {
+	if filepath.ToSlash(cfg.Agents[1].PromptTemplate) != want {
 		t.Errorf("worker prompt_template = %q, want %q",
 			cfg.Agents[1].PromptTemplate, want)
 	}
@@ -1038,14 +1039,14 @@ func TestResolveConfigPath(t *testing.T) {
 		want     string
 	}{
 		{"relative", "agents/mayor.toml", "/city", "/city", "/city/agents/mayor.toml"},
-		{"absolute", "/etc/config.toml", "/city", "/city", "/etc/config.toml"},
+		{"absolute", absFixturePath("/etc/config.toml"), "/city", "/city", absFixturePath("/etc/config.toml")},
 		{"city-root", "//prompts/mayor.md", "/city/agents", "/city", "/city/prompts/mayor.md"},
 		{"nested-relative", "sub/file.toml", "/city/agents", "/city", "/city/agents/sub/file.toml"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := resolveConfigPath(tt.p, tt.declDir, tt.cityRoot)
-			if got != tt.want {
+			if filepath.ToSlash(got) != tt.want {
 				t.Errorf("resolveConfigPath(%q, %q, %q) = %q, want %q",
 					tt.p, tt.declDir, tt.cityRoot, got, tt.want)
 			}
@@ -1062,7 +1063,7 @@ func TestAdjustFragmentPath(t *testing.T) {
 		want     string
 	}{
 		{"empty", "", "/city/agents", "/city", ""},
-		{"absolute", "/abs/path.md", "/city/agents", "/city", "/abs/path.md"},
+		{"absolute", absFixturePath("/abs/path.md"), "/city/agents", "/city", absFixturePath("/abs/path.md")},
 		{"city-root", "//prompts/foo.md", "/city/agents", "/city", "prompts/foo.md"},
 		{"relative", "prompts/foo.md", "/city/agents", "/city", "agents/prompts/foo.md"},
 		{"same-dir", "foo.md", "/city", "/city", "foo.md"},
@@ -1070,7 +1071,7 @@ func TestAdjustFragmentPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := adjustFragmentPath(tt.p, tt.fragDir, tt.cityRoot)
-			if got != tt.want {
+			if filepath.ToSlash(got) != tt.want {
 				t.Errorf("adjustFragmentPath(%q, %q, %q) = %q, want %q",
 					tt.p, tt.fragDir, tt.cityRoot, got, tt.want)
 			}
@@ -1200,13 +1201,16 @@ install_agent_hooks = ["gemini", "copilot"]
 		t.Errorf("InstallAgentHooks = %v, want [gemini copilot]", got)
 	}
 	// Provenance tracks the override.
-	if prov.Workspace["install_agent_hooks"] != "/city/frag.toml" {
+	if filepath.ToSlash(prov.Workspace["install_agent_hooks"]) != "/city/frag.toml" {
 		t.Errorf("provenance = %q, want frag.toml", prov.Workspace["install_agent_hooks"])
 	}
-	// Should produce a collision warning.
+	// Should produce a collision warning. The warning quotes the fragment
+	// path with %q, so build the expectation from the provenance value
+	// (native separators; %q doubles backslashes on Windows).
+	wantWarning := fmt.Sprintf("workspace.install_agent_hooks redefined by %q", prov.Workspace["install_agent_hooks"])
 	foundWarning := false
 	for _, w := range prov.Warnings {
-		if w == `workspace.install_agent_hooks redefined by "/city/frag.toml"` {
+		if w == wantWarning {
 			foundWarning = true
 		}
 	}
@@ -1362,10 +1366,10 @@ overlay_dir = "overlays/theme"
 	if len(agents) != 1 {
 		t.Fatalf("len(explicit agents) = %d, want 1", len(agents))
 	}
-	if agents[0].PromptTemplate != "fragments/prompts/theme.md" {
+	if filepath.ToSlash(agents[0].PromptTemplate) != "fragments/prompts/theme.md" {
 		t.Fatalf("PromptTemplate = %q, want fragments/prompts/theme.md", agents[0].PromptTemplate)
 	}
-	if agents[0].OverlayDir != "fragments/overlays/theme" {
+	if filepath.ToSlash(agents[0].OverlayDir) != "fragments/overlays/theme" {
 		t.Fatalf("OverlayDir = %q, want fragments/overlays/theme", agents[0].OverlayDir)
 	}
 }
@@ -1458,10 +1462,10 @@ scope = "city"
 	if len(agents) != 1 {
 		t.Fatalf("len(explicit agents) = %d, want 1", len(agents))
 	}
-	if agents[0].PromptTemplate != "prompts/local.md" {
+	if filepath.ToSlash(agents[0].PromptTemplate) != "prompts/local.md" {
 		t.Fatalf("PromptTemplate = %q, want prompts/local.md", agents[0].PromptTemplate)
 	}
-	if agents[0].OverlayDir != "overlays/local" {
+	if filepath.ToSlash(agents[0].OverlayDir) != "overlays/local" {
 		t.Fatalf("OverlayDir = %q, want overlays/local", agents[0].OverlayDir)
 	}
 }
@@ -1517,10 +1521,10 @@ overlay_dir = "overlays/base-worker"
 	if len(agents) != 1 {
 		t.Fatalf("len(explicit agents) = %d, want 1", len(agents))
 	}
-	if agents[0].PromptTemplate != "fragments/prompts/rig-worker.md" {
+	if filepath.ToSlash(agents[0].PromptTemplate) != "fragments/prompts/rig-worker.md" {
 		t.Fatalf("PromptTemplate = %q, want fragments/prompts/rig-worker.md", agents[0].PromptTemplate)
 	}
-	if agents[0].OverlayDir != "fragments/overlays/rig-worker" {
+	if filepath.ToSlash(agents[0].OverlayDir) != "fragments/overlays/rig-worker" {
 		t.Fatalf("OverlayDir = %q, want fragments/overlays/rig-worker", agents[0].OverlayDir)
 	}
 }
@@ -1637,11 +1641,11 @@ func TestAdjustAgentPaths_OverlayDirAdjusted(t *testing.T) {
 	adjustAgentPaths(agents, "/city/fragments", "/city")
 
 	// Relative path: resolved fragment-relative → city-root-relative.
-	if agents[0].OverlayDir != "fragments/overlays/worker" {
+	if filepath.ToSlash(agents[0].OverlayDir) != "fragments/overlays/worker" {
 		t.Errorf("worker overlay = %q, want fragments/overlays/worker", agents[0].OverlayDir)
 	}
 	// "//" path: resolved to city root.
-	if agents[1].OverlayDir != "overlays/global" {
+	if filepath.ToSlash(agents[1].OverlayDir) != "overlays/global" {
 		t.Errorf("boss overlay = %q, want overlays/global", agents[1].OverlayDir)
 	}
 	// Empty: unchanged.
@@ -1654,9 +1658,9 @@ func TestAdjustAgentOverridePaths_AllFields(t *testing.T) {
 	promptRel := "prompts/custom.md"
 	overlayRel := "overlays/custom"
 	scriptRel := "scripts/setup.sh"
-	promptAbs := "/abs/prompt.md"
-	overlayAbs := "/abs/overlay"
-	scriptAbs := "/abs/setup.sh"
+	promptAbs := absFixturePath("/abs/prompt.md")
+	overlayAbs := absFixturePath("/abs/overlay")
+	scriptAbs := absFixturePath("/abs/setup.sh")
 	promptCity := "//prompts/global.md"
 	overlayCity := "//overlays/global"
 
@@ -1673,30 +1677,30 @@ func TestAdjustAgentOverridePaths_AllFields(t *testing.T) {
 	adjustAgentOverridePaths(overrides, "/city/packs/mypack", "/city")
 
 	// Relative paths: prompt_template/overlay_dir → city-root-relative via adjustFragmentPath.
-	if *overrides[0].PromptTemplate != "packs/mypack/prompts/custom.md" {
+	if filepath.ToSlash(*overrides[0].PromptTemplate) != "packs/mypack/prompts/custom.md" {
 		t.Errorf("worker prompt = %q, want packs/mypack/prompts/custom.md", *overrides[0].PromptTemplate)
 	}
-	if *overrides[0].OverlayDir != "packs/mypack/overlays/custom" {
+	if filepath.ToSlash(*overrides[0].OverlayDir) != "packs/mypack/overlays/custom" {
 		t.Errorf("worker overlay = %q, want packs/mypack/overlays/custom", *overrides[0].OverlayDir)
 	}
 	// session_setup_script → absolute via resolveConfigPath.
-	if *overrides[0].SessionSetupScript != "/city/packs/mypack/scripts/setup.sh" {
+	if filepath.ToSlash(*overrides[0].SessionSetupScript) != "/city/packs/mypack/scripts/setup.sh" {
 		t.Errorf("worker script = %q, want /city/packs/mypack/scripts/setup.sh", *overrides[0].SessionSetupScript)
 	}
 
 	// Absolute paths unchanged.
-	if *overrides[1].PromptTemplate != "/abs/prompt.md" {
-		t.Errorf("abs prompt = %q, want /abs/prompt.md", *overrides[1].PromptTemplate)
+	if filepath.ToSlash(*overrides[1].PromptTemplate) != promptAbs {
+		t.Errorf("abs prompt = %q, want %q", *overrides[1].PromptTemplate, promptAbs)
 	}
-	if *overrides[1].OverlayDir != "/abs/overlay" {
-		t.Errorf("abs overlay = %q, want /abs/overlay", *overrides[1].OverlayDir)
+	if filepath.ToSlash(*overrides[1].OverlayDir) != overlayAbs {
+		t.Errorf("abs overlay = %q, want %q", *overrides[1].OverlayDir, overlayAbs)
 	}
 
 	// "//" paths resolve to city root.
-	if *overrides[2].PromptTemplate != "prompts/global.md" {
+	if filepath.ToSlash(*overrides[2].PromptTemplate) != "prompts/global.md" {
 		t.Errorf("city prompt = %q, want prompts/global.md", *overrides[2].PromptTemplate)
 	}
-	if *overrides[2].OverlayDir != "overlays/global" {
+	if filepath.ToSlash(*overrides[2].OverlayDir) != "overlays/global" {
 		t.Errorf("city overlay = %q, want overlays/global", *overrides[2].OverlayDir)
 	}
 
@@ -2084,8 +2088,10 @@ name = "reviewer"
 	}
 
 	// Use file:// protocol to reference the bare repo with //subpath.
-	remoteInclude := "file://" + bare + "//agents.toml"
-	cacheName := includeCacheName("file://" + bare)
+	// ToSlash: the URL is embedded in a TOML basic string below, where
+	// Windows backslashes would be parsed as escape sequences.
+	remoteInclude := "file://" + filepath.ToSlash(bare) + "//agents.toml"
+	cacheName := includeCacheName("file://" + filepath.ToSlash(bare))
 	cacheDir := filepath.Join(cityDir, ".gc", "cache", "includes", cacheName)
 	if err := clonePack(bare, cacheDir, ""); err != nil {
 		t.Fatalf("pre-clone cached include: %v", err)

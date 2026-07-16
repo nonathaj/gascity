@@ -34,8 +34,8 @@ func TestBuildProviderLaunchCommandAddsDefaultsAndSettings(t *testing.T) {
 	if got.SettingsPath != filepath.Join(dir, ".gc", "settings.json") {
 		t.Fatalf("SettingsPath = %q, want %q", got.SettingsPath, filepath.Join(dir, ".gc", "settings.json"))
 	}
-	if got.SettingsRel != filepath.Join(".gc", "settings.json") {
-		t.Fatalf("SettingsRel = %q, want %q", got.SettingsRel, filepath.Join(".gc", "settings.json"))
+	if got.SettingsRel != ".gc/settings.json" {
+		t.Fatalf("SettingsRel = %q, want %q", got.SettingsRel, ".gc/settings.json")
 	}
 }
 
@@ -191,8 +191,8 @@ func TestBuildProviderLaunchCommandWithoutOptionsSkipsDefaultsButKeepsSettings(t
 	if got.SettingsPath != filepath.Join(dir, ".gc", "settings.json") {
 		t.Fatalf("SettingsPath = %q, want %q", got.SettingsPath, filepath.Join(dir, ".gc", "settings.json"))
 	}
-	if got.SettingsRel != filepath.Join(".gc", "settings.json") {
-		t.Fatalf("SettingsRel = %q, want %q", got.SettingsRel, filepath.Join(".gc", "settings.json"))
+	if got.SettingsRel != ".gc/settings.json" {
+		t.Fatalf("SettingsRel = %q, want %q", got.SettingsRel, ".gc/settings.json")
 	}
 }
 

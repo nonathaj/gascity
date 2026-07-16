@@ -22,6 +22,7 @@
 ./internal/bootstrap/packs/core
 ./internal/cityinit
 ./internal/citywriteauth
+./internal/config
 ./internal/convergence
 ./internal/convoy
 ./internal/coordclass

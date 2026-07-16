@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -219,9 +220,13 @@ suspended = false
 	}
 }
 
+// containsWarningPrefix reports whether any warning starts with prefix.
+// Warnings are separator-normalized first: fragment paths inside them are
+// built with filepath.Join, so on Windows they carry backslashes while the
+// expected prefixes are written with forward slashes.
 func containsWarningPrefix(warnings []string, prefix string) bool {
 	for _, warning := range warnings {
-		if strings.HasPrefix(warning, prefix) {
+		if strings.HasPrefix(filepath.ToSlash(warning), prefix) {
 			return true
 		}
 	}

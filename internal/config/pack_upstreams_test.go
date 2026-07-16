@@ -330,8 +330,15 @@ name = "witness"
 // [providers], so lint-style tooling can inspect them instead of the loader
 // silently discarding the loaded map.
 func TestLoadPackForLint_SurfacesUpstreams(t *testing.T) {
+	// LoadPackForLint resolves the pack dir with filepath.Abs, which on
+	// Windows prepends the current drive to a rooted path — seed the fake
+	// fs under the already-absolute form so the lookup matches.
+	packDir, err := filepath.Abs("/packs/local")
+	if err != nil {
+		t.Fatalf("filepath.Abs: %v", err)
+	}
 	fs := fsys.NewFake()
-	fs.Files["/packs/local/pack.toml"] = []byte(`
+	fs.Files[filepath.Join(packDir, "pack.toml")] = []byte(`
 [pack]
 name = "local"
 schema = 2
@@ -345,7 +352,7 @@ api_key  = "$GASWORKS_API_KEY"
 GASWORKS_TRACE = "$GASWORKS_TRACE"
 `)
 
-	loaded, err := LoadPackForLint(fs, "/packs/local")
+	loaded, err := LoadPackForLint(fs, packDir)
 	if err != nil {
 		t.Fatalf("LoadPackForLint: %v", err)
 	}

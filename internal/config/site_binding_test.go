@@ -574,7 +574,7 @@ name = "fragment-city"
 	}
 	var found bool
 	for _, warning := range prov.Warnings {
-		if strings.Contains(warning, "/city/fragments/legacy.toml: workspace identity fields are deprecated in v2; move them to .gc/site.toml (workspace.name)") {
+		if strings.Contains(filepath.ToSlash(warning), "/city/fragments/legacy.toml: workspace identity fields are deprecated in v2; move them to .gc/site.toml (workspace.name)") {
 			found = true
 			break
 		}
@@ -606,7 +606,7 @@ path = "/legacy/frontend"
 	}
 	var found bool
 	for _, warning := range prov.Warnings {
-		if strings.Contains(warning, `/city/fragments/legacy.toml: rig.path is deprecated in v2; move it to .gc/site.toml for rig "frontend"`) {
+		if strings.Contains(filepath.ToSlash(warning), `/city/fragments/legacy.toml: rig.path is deprecated in v2; move it to .gc/site.toml for rig "frontend"`) {
 			found = true
 			break
 		}
