@@ -492,13 +492,13 @@ func TestLockFromCache(t *testing.T) {
 func TestPackCachePath(t *testing.T) {
 	got := PackCachePath("/city", "gastown", PackSource{Source: "url"})
 	want := "/city/.gc/cache/packs/gastown"
-	if got != want {
+	if filepath.ToSlash(got) != want {
 		t.Errorf("PackCachePath = %q, want %q", got, want)
 	}
 
 	got = PackCachePath("/city", "mono", PackSource{Source: "url", Path: "packages/topo"})
 	want = "/city/.gc/cache/packs/mono/packages/topo"
-	if got != want {
+	if filepath.ToSlash(got) != want {
 		t.Errorf("PackCachePath with Path = %q, want %q", got, want)
 	}
 }
@@ -630,10 +630,12 @@ func TestLoadPack_RemoteInclude(t *testing.T) {
 
 	// Use the cache dir as a local include (since it's now a local clone).
 	// This tests the full flow: loadPack reads the included pack.
+	// ToSlash: the path is embedded in a TOML basic string, where Windows
+	// backslashes would be parsed as escape sequences.
 	parentToml := `[pack]
 name = "parent"
 schema = 1
-includes = ["` + cacheDir + `"]
+includes = ["` + filepath.ToSlash(cacheDir) + `"]
 
 [[agent]]
 name = "boss"

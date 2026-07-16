@@ -824,12 +824,17 @@ func (a *Agent) effectiveOnDeath(includeEphemeralInProgress bool) string {
 	// If routed metadata is missing entirely, backfill the canonical
 	// gc.run_target route so reopened direct-assigned work does not stay
 	// invisible.
+	//
+	// tr -d '\r': native Windows jq emits CRLF line endings, so without it
+	// the trailing \r lands in the last read variable and an empty
+	// routed_to tests as non-empty — the backfill branch could never fire
+	// on Windows. On unix jq output has no \r, so this is a no-op.
 	return `{ ` +
 		`bd list --assignee=` + a.QualifiedName() +
 		` --status=in_progress --json 2>/dev/null | ` +
 		`jq -r '.[] | [.id, ` + jqMeta(beadmeta.RunTargetMetadataKey) + `, ` + jqMeta(beadmeta.RoutedToMetadataKey) + `] | @tsv' 2>/dev/null; ` +
 		ephemeralRead +
-		`} | ` +
+		`} | tr -d '\r' | ` +
 		`while IFS="$(printf '\t')" read -r id run_target routed_to; do ` +
 		`[ -z "$id" ] && continue; ` +
 		`if [ -n "$run_target" ] || [ -n "$routed_to" ]; then ` +

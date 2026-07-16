@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -243,7 +244,7 @@ name = "fragment-worker"
 		"move each agent to agents/<name>/agent.toml",
 		packV1MigrationDocsURL,
 	} {
-		if !strings.Contains(err.Error(), want) {
+		if !strings.Contains(filepath.ToSlash(err.Error()), want) {
 			t.Fatalf("error = %v, want substring %q", err, want)
 		}
 	}
@@ -279,7 +280,7 @@ source = "legacy-pack"
 		"/city/fragments/legacy.toml:4: unsupported PackV1 workspace.default_rig_includes",
 		packV1MigrationDocsURL,
 	} {
-		if !strings.Contains(err.Error(), want) {
+		if !strings.Contains(filepath.ToSlash(err.Error()), want) {
 			t.Fatalf("error = %v, want substring %q", err, want)
 		}
 	}
@@ -316,7 +317,7 @@ schema = 2
 		"/city/city.toml:5: unsupported PackV1 workspace.default_rig_includes",
 		packV1MigrationDocsURL,
 	} {
-		if !strings.Contains(err.Error(), want) {
+		if !strings.Contains(filepath.ToSlash(err.Error()), want) {
 			t.Fatalf("error = %v, want substring %q", err, want)
 		}
 	}
@@ -408,7 +409,7 @@ source = "./pack"
 		"city.toml:2: unsupported PackV1 workspace.includes",
 		"city.toml:3: unsupported PackV1 workspace.default_rig_includes",
 	} {
-		if !strings.Contains(err.Error(), want) {
+		if !strings.Contains(filepath.ToSlash(err.Error()), want) {
 			t.Fatalf("error = %v, want substring %q", err, want)
 		}
 	}

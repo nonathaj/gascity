@@ -80,7 +80,7 @@ func TestDiscoverPackCommands_RejectsEscapingOrAbsoluteRunPaths(t *testing.T) {
 		name string
 		run  string
 	}{
-		{name: "absolute", run: "/tmp/outside.sh"},
+		{name: "absolute", run: absFixturePath("/tmp/outside.sh")},
 		{name: "escape", run: "../../../outside.sh"},
 	}
 

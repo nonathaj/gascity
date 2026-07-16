@@ -230,7 +230,7 @@ contract = "`+builtinHealthzContract+`"
 	if cfg.Services[0].Workflow.Contract != builtinHealthzContract {
 		t.Errorf("workflow.contract = %q, want %q", cfg.Services[0].Workflow.Contract, builtinHealthzContract)
 	}
-	if got := cfg.Services[0].StateRootOrDefault(); got != ".gc/services/github-intake" {
+	if got := cfg.Services[0].StateRootOrDefault(); filepath.ToSlash(got) != ".gc/services/github-intake" {
 		t.Errorf("StateRootOrDefault() = %q, want %q", got, ".gc/services/github-intake")
 	}
 }

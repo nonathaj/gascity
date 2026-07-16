@@ -205,7 +205,7 @@ name = "test"
 	explicit := explicitAgents(cfg.Agents)
 	for _, a := range explicit {
 		if a.Name == "worker" {
-			if !strings.HasSuffix(a.PromptTemplate, "agents/worker/prompt.template.md") {
+			if !strings.HasSuffix(filepath.ToSlash(a.PromptTemplate), "agents/worker/prompt.template.md") {
 				t.Fatalf("worker PromptTemplate = %q, want scaffold path", a.PromptTemplate)
 			}
 			return
@@ -627,7 +627,7 @@ name = "test"
 
 [[rigs]]
 name = "mrig"
-path = "`+rigDir+`"
+path = "`+filepath.ToSlash(rigDir)+`"
 `)
 
 	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
@@ -672,7 +672,7 @@ name = "test"
 
 [[rigs]]
 name = "myrig"
-path = "`+rigDir+`"
+path = "`+filepath.ToSlash(rigDir)+`"
 `)
 
 	cfg, _, err := LoadWithIncludes(fsys.OSFS{}, filepath.Join(cityDir, "city.toml"))
