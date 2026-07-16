@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/shellquote"
 )
@@ -1998,8 +1998,8 @@ func TestDoRelaunchSession_LongPromptUsesFileExpansion(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	respawn := callsByMethod(t, ops, "respawnAgent", 1)[0]
-	if !strings.Contains(respawn.command, "$(cat") {
-		t.Errorf("respawnAgent command = %q, want $(cat ...) file expansion", respawn.command)
+	if script := longPromptScriptFromCommand(t, respawn.command); !strings.Contains(script, "$(cat") {
+		t.Errorf("respawnAgent script = %q, want $(cat ...) file expansion", script)
 	}
 }
 
@@ -2318,12 +2318,11 @@ func TestEnsureFreshSession_LongPromptSuffixUsesFileExpansion(t *testing.T) {
 	}
 
 	c := ops.calls[0]
-	// Should use sh -c with $(cat ...) expansion rather than inline.
-	if !strings.HasPrefix(c.command, "sh -c '") {
-		t.Errorf("long prompt should use sh -c wrapper, got %q", c.command)
-	}
-	if !strings.Contains(c.command, "$(cat ") {
-		t.Errorf("long prompt should use $(cat ...) file expansion, got %q", c.command)
+	// Should use a sh wrapper with $(cat ...) expansion rather than inline;
+	// the helper resolves the Windows .launch.sh wrapper transparently.
+	script := longPromptScriptFromCommand(t, c.command)
+	if !strings.Contains(script, "$(cat ") {
+		t.Errorf("long prompt should use $(cat ...) file expansion, got %q", script)
 	}
 }
 
@@ -2347,19 +2346,37 @@ func TestEnsureFreshSession_LongPromptWithFlagUsesFileExpansion(t *testing.T) {
 	}
 
 	c := ops.calls[0]
-	// Should use sh -c with $(cat ...) expansion.
-	if !strings.HasPrefix(c.command, "sh -c '") {
-		t.Fatalf("long prompt should use sh -c wrapper, got %q", c.command)
-	}
+	// Should use a sh wrapper with $(cat ...) expansion; the helper resolves
+	// the Windows .launch.sh wrapper transparently.
+	script := longPromptScriptFromCommand(t, c.command)
 	// The flag must appear as a separate token before the loaded prompt.
-	if !strings.Contains(c.command, `--prompt "$__gc_prompt"`) {
-		t.Errorf("flag-mode long prompt should pass the loaded prompt after --prompt, got %q", c.command)
+	if !strings.Contains(script, `--prompt "$__gc_prompt"`) {
+		t.Errorf("flag-mode long prompt should pass the loaded prompt after --prompt, got %q", script)
 	}
+}
+
+// setTestTempDir redirects os.TempDir for the test on every platform:
+// Unix reads TMPDIR; Windows reads TMP then TEMP and ignores TMPDIR.
+func setTestTempDir(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
 }
 
 func longPromptScriptFromCommand(t *testing.T, command string) string {
 	t.Helper()
 	args := shellquote.Split(command)
+	// On Windows production writes the script to a .launch.sh wrapper and
+	// hands the multiplexer `sh '<file>'` (psmux cannot survive the nested
+	// quoting of the inline form); the script contract lives in the file.
+	if len(args) == 2 && args[0] == "sh" && strings.HasSuffix(args[1], ".launch.sh") {
+		data, err := os.ReadFile(args[1])
+		if err != nil {
+			t.Fatalf("reading long-prompt launch wrapper %q: %v", args[1], err)
+		}
+		return string(data)
+	}
 	if len(args) != 3 || args[0] != "sh" || args[1] != "-c" {
 		t.Fatalf("long-prompt command should be sh -c <script>, got args %#v from %q", args, command)
 	}
@@ -2383,7 +2400,9 @@ func promptFileFromLongPromptCommand(t *testing.T, command string) string {
 	if len(args) != 1 {
 		t.Fatalf("long-prompt script has invalid prompt path expression %q parsed as %#v", script[start:start+end], args)
 	}
-	return args[0]
+	// Production embeds the path in slash form for sh; return the OS-native
+	// form so callers can compare against filepath.Join-built expectations.
+	return filepath.FromSlash(args[0])
 }
 
 func TestEnsureFreshSession_LongPromptRemovesPromptFileBeforeExec(t *testing.T) {
@@ -2402,12 +2421,19 @@ func TestEnsureFreshSession_LongPromptRemovesPromptFileBeforeExec(t *testing.T) 
 	c := ops.calls[0]
 	script := longPromptScriptFromCommand(t, c.command)
 	readIdx := strings.Index(script, "$(cat ")
-	rmIdx := strings.Index(script, "rm -f ")
-	execIdx := strings.Index(script, "exec ")
-	if readIdx < 0 || rmIdx < 0 || execIdx < 0 {
+	if readIdx < 0 {
+		t.Fatalf("long-prompt script missing prompt read: %q", script)
+	}
+	// Search the remove/exec sequence AFTER the read: the Windows launch
+	// wrapper's trust-seed prelude contains its own rm -f, which must not
+	// satisfy (or misorder) the prompt-file cleanup contract.
+	tail := script[readIdx:]
+	rmIdx := strings.Index(tail, "rm -f ")
+	execIdx := strings.Index(tail, "exec ")
+	if rmIdx < 0 || execIdx < 0 {
 		t.Fatalf("long-prompt script missing read/remove/exec sequence: %q", script)
 	}
-	if readIdx >= rmIdx || rmIdx >= execIdx {
+	if rmIdx >= execIdx {
 		t.Fatalf("prompt file must be read and removed before exec replaces the shell, got %q", script)
 	}
 }
@@ -2425,9 +2451,11 @@ func TestLongPromptCommandPreservesTrailingNewlines(t *testing.T) {
 		t.Fatalf("write prompt: %v", err)
 	}
 
-	receiver := "sh -c " + shellquote.Quote(`printf %s "$1" > "$0"`) + " " + shellquote.Quote(outFile)
+	// ToSlash the embedded path (backslashes are escapes in sh source) and
+	// resolve sh via execshim so the run works without sh on PATH.
+	receiver := "sh -c " + shellquote.Quote(`printf %s "$1" > "$0"`) + " " + shellquote.Quote(filepath.ToSlash(outFile))
 	command := longPromptCommand(receiver, "", promptFile)
-	cmd := exec.Command("sh", "-c", command)
+	cmd := execshim.ShellCommand(command)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("running long prompt command: %v\n%s", err, output)
 	}
@@ -2451,7 +2479,7 @@ func TestEnsureFreshSession_LongPromptShellWrapperQuotesScript(t *testing.T) {
 	if err := os.MkdirAll(tmpRoot, 0o700); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	t.Setenv("TMPDIR", tmpRoot)
+	setTestTempDir(t, tmpRoot)
 
 	cfg := runtime.Config{
 		WorkDir:      "",
@@ -2551,7 +2579,7 @@ func TestEnsureFreshSession_LongPromptUnusableWorkDirReturnsError(t *testing.T) 
 func TestEnsureFreshSession_LongPromptValidWorkDirUnusableTmpFallsBackToOSTemp(t *testing.T) {
 	ops := &fakeStartOps{}
 	tmpRoot := t.TempDir()
-	t.Setenv("TMPDIR", tmpRoot)
+	setTestTempDir(t, tmpRoot)
 
 	workDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workDir, ".gc"), []byte("not a dir"), 0o644); err != nil {
@@ -2585,7 +2613,7 @@ func TestEnsureFreshSession_LongPromptValidWorkDirUnusableTmpFallsBackToOSTemp(t
 func TestEnsureFreshSession_LongPromptEmptyWorkDirFallsBackToOSTemp(t *testing.T) {
 	ops := &fakeStartOps{}
 	tmpRoot := t.TempDir()
-	t.Setenv("TMPDIR", tmpRoot)
+	setTestTempDir(t, tmpRoot)
 
 	longPromptRaw := strings.Repeat("y", maxInlinePromptLen+100)
 	longPrompt := "'" + longPromptRaw + "'"
@@ -2600,9 +2628,6 @@ func TestEnsureFreshSession_LongPromptEmptyWorkDirFallsBackToOSTemp(t *testing.T
 	}
 
 	c := ops.calls[0]
-	if !strings.HasPrefix(c.command, "sh -c '") {
-		t.Fatalf("long prompt with empty workdir should use sh -c wrapper, got %q", c.command)
-	}
 	if strings.Contains(c.command, longPromptRaw) {
 		t.Errorf("raw prompt leaked into tmux command, command = %q", c.command)
 	}
@@ -2621,7 +2646,7 @@ func TestEnsureFreshSession_LongPromptFileWriteFailureDoesNotCreateSession(t *te
 	if err := os.WriteFile(regularFile, []byte("sentinel"), 0o644); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	t.Setenv("TMPDIR", regularFile)
+	setTestTempDir(t, regularFile)
 
 	cfg := runtime.Config{
 		WorkDir:      filepath.Join(regularFile, "worktree-that-cannot-exist"),
@@ -2657,11 +2682,12 @@ func TestEnsureFreshSession_LongPromptWorkDirPreferredOverOSTemp(t *testing.T) {
 	}
 
 	c := ops.calls[0]
-	// The prompt file path appears inside the sh -c wrapper. It should be
-	// rooted at workDir/.gc/tmp rather than os.TempDir.
+	// The prompt file inside the wrapper should be rooted at workDir/.gc/tmp
+	// rather than os.TempDir; the helper returns it in OS-native form.
+	promptFile := promptFileFromLongPromptCommand(t, c.command)
 	expectedDir := filepath.Join(workDir, ".gc", "tmp")
-	if !strings.Contains(c.command, expectedDir) {
-		t.Errorf("expected prompt file under %q, got command %q", expectedDir, c.command)
+	if !strings.HasPrefix(promptFile, expectedDir+string(os.PathSeparator)) {
+		t.Errorf("expected prompt file under %q, got %q", expectedDir, promptFile)
 	}
 }
 

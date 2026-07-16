@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	osexec "os/exec"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 	"slices"
 	"strconv"
 	"strings"
@@ -190,7 +192,14 @@ func TestFindAgentPane_WrappedPane(t *testing.T) {
 	// systemd-run spawning the agent. The fake executor reports the pane
 	// command as "systemd-run" with the test binary's PID, so only the
 	// descendant fallback can identify the agent pane.
-	agent := osexec.Command("sleep", "60")
+	// Resolve sleep via execshim so Git for Windows' sleep.exe is found off
+	// PATH; the process-tree walk strips ".exe", so the descendant still
+	// reports as "sleep" on every platform.
+	sleepPath, err := execshim.LookPath("sleep")
+	if err != nil {
+		t.Skipf("sleep not available: %v", err)
+	}
+	agent := osexec.Command(sleepPath, "60")
 	if err := agent.Start(); err != nil {
 		t.Fatalf("starting agent stand-in: %v", err)
 	}
@@ -276,7 +285,14 @@ func (e *wrappedWaitExecutor) executeCtx(_ context.Context, args []string) (stri
 func TestWaitForCommand_WrappedPane(t *testing.T) {
 	// Real process tree: the test binary spawns "sleep 60" standing in for
 	// the agent, as in TestFindAgentPane_WrappedPane.
-	agent := osexec.Command("sleep", "60")
+	// Resolve sleep via execshim so Git for Windows' sleep.exe is found off
+	// PATH; the process-tree walk strips ".exe", so the descendant still
+	// reports as "sleep" on every platform.
+	sleepPath, err := execshim.LookPath("sleep")
+	if err != nil {
+		t.Skipf("sleep not available: %v", err)
+	}
+	agent := osexec.Command(sleepPath, "60")
 	if err := agent.Start(); err != nil {
 		t.Fatalf("starting agent stand-in: %v", err)
 	}

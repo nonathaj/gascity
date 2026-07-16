@@ -947,6 +947,9 @@ func (o *tmuxStartOps) runSetupCommand(ctx context.Context, cmd string, env map[
 	if o.tm.cfg.SocketName != "" {
 		c.Env = append(c.Env, "GC_TMUX_SOCKET="+o.tm.cfg.SocketName)
 	}
+	// Setup commands run under sh and invoke coreutils; ensure the
+	// Git-for-Windows sh directory survives this env construction.
+	c.Env = execshim.EnvWithShellDir(c.Env)
 	stdout := newCommandOutputTail(setupCommandOutputLimit)
 	stderr := newCommandOutputTail(setupCommandOutputLimit)
 	c.Stdout = stdout
