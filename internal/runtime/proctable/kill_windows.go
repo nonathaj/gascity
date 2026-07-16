@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -30,8 +33,70 @@ import (
 // exit code that confirms death promptly) and unfixable without a Windows
 // start-time source.
 func KillByPID(pid int) error {
-	return killByPIDWith(pid, taskkillTree, pidutil.Alive,
+	// Snapshot the descendant PIDs BEFORE any kill. taskkill /T walks the
+	// live parent tree, but the graceful pass can kill the root first; a
+	// backgrounded grandchild (e.g. `sleep &` under sh) is then orphaned with
+	// a dead parent PID and falls out of the tree, so the forced /T pass can
+	// no longer reach it — Windows has no process-group kill like Unix. The
+	// captured set lets killByPIDWith force-kill any such survivors directly.
+	descendants := descendantPIDs(pid)
+	kill := func(root int, force bool) error {
+		err := taskkillTree(root, force)
+		// Force-sweep captured descendants on BOTH passes: the graceful tree
+		// kill can terminate the root (breaking the tree) while a backgrounded
+		// grandchild survives, and killByPIDWith would then see the root dead
+		// and return success without a forced pass. Stop means the whole
+		// managed session dies, so orphaned descendants are always force-killed.
+		for _, d := range descendants {
+			if pidutil.Alive(d) {
+				_ = taskkillTree(d, true)
+			}
+		}
+		return err
+	}
+	return killByPIDWith(pid, kill, pidutil.Alive,
 		runtime.ManagedProcessStopGrace, runtime.ManagedProcessReapGrace)
+}
+
+// descendantPIDs returns the transitive child PIDs of root, snapshotted from
+// the process table. Best-effort: a snapshot failure yields nil.
+func descendantPIDs(root int) []int {
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil
+	}
+	defer windows.CloseHandle(snapshot) //nolint:errcheck // read-only handle
+
+	children := map[int][]int{}
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil
+	}
+	for {
+		children[int(entry.ParentProcessID)] = append(children[int(entry.ParentProcessID)], int(entry.ProcessID))
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			break
+		}
+	}
+
+	var out []int
+	seen := map[int]bool{root: true}
+	queue := []int{root}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for _, c := range children[p] {
+			// ParentProcessID is not cleared when a parent dies, so PIDs can
+			// alias into cycles across recycling; the seen set bounds the walk.
+			if c > 1 && !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+				queue = append(queue, c)
+			}
+		}
+	}
+	return out
 }
 
 // killByPIDWith is the kill/confirm core with its process operations
