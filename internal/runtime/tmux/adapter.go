@@ -1516,13 +1516,27 @@ func longPromptCommand(command, promptFlag, promptFile string) string {
 			// project path in ~/.claude.json, so every fresh wisp worktree
 			// re-prompts and blocks the agent until a human presses Enter.
 			// Pre-seed trust for this workspace before exec'ing the CLI.
-			// Best effort: skipped when jq/cygpath are missing; temp+mv so a
-			// concurrent Claude rewrite of the config never sees a torn file.
+			// Best effort: skipped when jq/cygpath are missing.
+			// ~/.claude.json is global: shared with live Claude sessions and
+			// with every other concurrent launch. The scratch file must be
+			// unique per launch and validated before the rename. A fixed temp
+			// path lets two launches interleave into the same file and mv a
+			// torn result over the real config, which raises a corruption
+			// modal the agent can never clear — it hangs before reaching its
+			// prompt while tmux still reports it awake, so it holds a pool
+			// slot forever and no replacement spawns (gw-suv).
 			prelude = "if command -v jq >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then\n" +
 				"  __gc_proj=\"$(cygpath -m \"$PWD\")\"\n" +
 				"  __gc_cfg=\"$HOME/.claude.json\"\n" +
 				"  if [ -f \"$__gc_cfg\" ]; then\n" +
-				"    jq --arg p \"$__gc_proj\" '.projects[$p] = ((.projects[$p] // {}) + {hasTrustDialogAccepted: true})' \"$__gc_cfg\" > \"$__gc_cfg.gc-tmp\" && mv \"$__gc_cfg.gc-tmp\" \"$__gc_cfg\"\n" +
+				"    __gc_tmp=\"$(mktemp \"$__gc_cfg.gc-XXXXXX\" 2>/dev/null)\" || __gc_tmp=\"\"\n" +
+				"    if [ -n \"$__gc_tmp\" ]; then\n" +
+				"      if jq --arg p \"$__gc_proj\" '.projects[$p] = ((.projects[$p] // {}) + {hasTrustDialogAccepted: true})' \"$__gc_cfg\" > \"$__gc_tmp\" && [ -s \"$__gc_tmp\" ] && jq -e . \"$__gc_tmp\" >/dev/null 2>&1; then\n" +
+				"        mv \"$__gc_tmp\" \"$__gc_cfg\"\n" +
+				"      else\n" +
+				"        rm -f \"$__gc_tmp\"\n" +
+				"      fi\n" +
+				"    fi\n" +
 				"  fi\n" +
 				"fi\n"
 		}
