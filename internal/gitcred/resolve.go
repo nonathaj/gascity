@@ -3,9 +3,10 @@ package gitcred
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // DefaultUsername is the username sent to the remote when a rule omits one.
@@ -74,7 +75,7 @@ func RunCredentialCommand(command string, req Request) (Credential, bool, error)
 	if command == "" {
 		return Credential{}, false, nil
 	}
-	cmd := exec.Command("sh", "-c", command)
+	cmd := execshim.ShellCommand(command)
 	var stdin strings.Builder
 	writeRequestLine(&stdin, "protocol", req.Protocol)
 	writeRequestLine(&stdin, "host", req.Host)
@@ -128,7 +129,7 @@ func parseCredentialResponse(body string) (Credential, bool) {
 }
 
 func runHelper(command string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
+	cmd := execshim.ShellCommand(command)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("running credential helper %q: %w", command, err)

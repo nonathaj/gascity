@@ -3,6 +3,7 @@ package runtime
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 )
@@ -791,6 +792,9 @@ func TestHashPathContentMissingPath(t *testing.T) {
 }
 
 func TestHashPathContentUnreadableChild(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("chmod 0 does not revoke read access on Windows (ACLs rule)")
+	}
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "skills")
 	if err := os.MkdirAll(sub, 0o755); err != nil {

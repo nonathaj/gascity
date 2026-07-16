@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,9 +18,21 @@ import (
 
 // shortTempDir returns a temp directory short enough for Unix socket paths
 // (macOS limit is 104 bytes). t.TempDir() paths often exceed this.
+
+// shortTempBase returns the base directory for temp dirs that must stay
+// short enough for AF_UNIX socket paths. Unix pins /tmp because macOS
+// TMPDIR (/var/folders/...) is too long; the Windows temp dir is short
+// enough and "/tmp" may not exist there.
+func shortTempBase() string {
+	if goruntime.GOOS == "windows" {
+		return ""
+	}
+	return "/tmp"
+}
+
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "gc-t-")
+	dir, err := os.MkdirTemp(shortTempBase(), "gc-t-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +91,7 @@ func TestStartPersistsRuntimeMetadataForGetMeta(t *testing.T) {
 func TestStartLongSocketPathUsesShortSocketName(t *testing.T) {
 	// Use /tmp for a short base path — TMPDIR on macOS (/var/folders/...)
 	// is too long to find a depth where legacy > limit but short < limit.
-	root, err := os.MkdirTemp("/tmp", "gc-sock-")
+	root, err := os.MkdirTemp(shortTempBase(), "gc-sock-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
@@ -122,7 +135,7 @@ func TestStartLongSocketPathUsesShortSocketName(t *testing.T) {
 }
 
 func TestStartVeryLongSocketDirFallsBackToTempDir(t *testing.T) {
-	root, err := os.MkdirTemp("/tmp", "gc-sock-fallback-")
+	root, err := os.MkdirTemp(shortTempBase(), "gc-sock-fallback-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
@@ -216,7 +229,7 @@ func TestStopKillsProcessGroupDescendants(t *testing.T) {
 
 	p := newTestProvider(t)
 	if err := p.Start(context.Background(), "group-kill", runtime.Config{
-		Command: "sleep 3600 & echo $! > " + childPIDPath + "; wait",
+		Command: "sleep 3600 & echo $! > " + filepath.ToSlash(childPIDPath) + "; wait",
 		WorkDir: dir,
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -304,7 +317,7 @@ func TestEnvPassedToProcess(t *testing.T) {
 
 	p := newTestProvider(t)
 	err := p.Start(context.Background(), "env-test", runtime.Config{
-		Command: "echo $GC_TEST_VAR > " + marker,
+		Command: "echo $GC_TEST_VAR > " + filepath.ToSlash(marker),
 		Env:     map[string]string{"GC_TEST_VAR": "hello-from-subprocess"},
 	})
 	if err != nil {
@@ -331,9 +344,15 @@ func TestWorkDirSet(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "pwd.txt")
 
+	// Git-bash sh prints the msys mapping for plain pwd; -W prints the
+	// real Windows path with forward slashes.
+	pwdCmd := "pwd"
+	if goruntime.GOOS == "windows" {
+		pwdCmd = "pwd -W"
+	}
 	p := newTestProvider(t)
 	err := p.Start(context.Background(), "workdir-test", runtime.Config{
-		Command: "pwd > " + marker,
+		Command: pwdCmd + " > " + filepath.ToSlash(marker),
 		WorkDir: dir,
 	})
 	if err != nil {
@@ -349,6 +368,19 @@ func TestWorkDirSet(t *testing.T) {
 			// Canonicalize to handle macOS /var → /private/var symlink.
 			canonical, _ := filepath.EvalSymlinks(dir)
 			want := canonical + "\n"
+			if goruntime.GOOS == "windows" {
+				// pwd -W may print 8.3 short names (RUNNER~1);
+				// EvalSymlinks expands them to the long form, and drive
+				// letter case can differ, so compare case-insensitively.
+				reported := filepath.FromSlash(strings.TrimSpace(got))
+				if resolved, rerr := filepath.EvalSymlinks(reported); rerr == nil {
+					reported = resolved
+				}
+				if !strings.EqualFold(reported, canonical) {
+					t.Errorf("workdir = %q (resolved %q), want %q", got, reported, canonical)
+				}
+				return
+			}
 			if got != want {
 				t.Errorf("workdir = %q, want %q", got, want)
 			}

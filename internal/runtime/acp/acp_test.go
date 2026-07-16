@@ -9,7 +9,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,7 +25,13 @@ import (
 // (macOS limit is 104 bytes). t.TempDir() paths often exceed this.
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "gc-t-")
+	// Unix pins /tmp because macOS TMPDIR is too long for AF_UNIX paths;
+	// the Windows temp dir is short enough and "/tmp" may not exist there.
+	base := "/tmp"
+	if goruntime.GOOS == "windows" {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "gc-t-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +56,26 @@ func testName() string {
 	return fmt.Sprintf("gc-acp-test-%d", testCounter.Add(1))
 }
 
+// fakePythonExe resolves the interpreter for the fake ACP server. On Unix
+// the bare python3 works. On Windows, python3 usually resolves to a batch
+// shim (pyenv-win, Store alias) that mangles a multiline -c payload, so the
+// real executable is resolved via sys.executable (a one-liner survives the
+// shim) and exec'd by absolute path.
+var fakePythonExe = sync.OnceValue(func() string {
+	if goruntime.GOOS != "windows" {
+		return "python3"
+	}
+	for _, name := range []string{"python3", "python"} {
+		out, err := exec.Command(name, "-c", "import sys; print(sys.executable)").Output()
+		if err == nil {
+			if exe := strings.TrimSpace(string(out)); exe != "" {
+				return "\"" + filepath.ToSlash(exe) + "\""
+			}
+		}
+	}
+	return "python3"
+})
+
 // fakeACPCommand returns a shell command that runs a minimal ACP server
 // implemented as a Go test binary using the testdata/fakeacp program.
 // For unit tests, we use a simple shell script instead.
@@ -55,7 +83,7 @@ func fakeACPShellCommand() string {
 	// This script implements a minimal ACP server in shell:
 	// Reads JSON-RPC from stdin, responds to initialize and session/new,
 	// echoes session/prompt text as session/update notifications.
-	return `exec python3 -u -c '
+	return `exec ` + fakePythonExe() + ` -u -c '
 import sys, json
 
 def respond(id, result):

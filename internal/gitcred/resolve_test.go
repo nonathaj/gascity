@@ -33,6 +33,8 @@ func TestResolveHelperCustomUsername(t *testing.T) {
 func TestResolveTokenFileTildeExpansion(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// os.UserHomeDir reads USERPROFILE on Windows.
+	t.Setenv("USERPROFILE", home)
 	tokenPath := filepath.Join(home, "tok")
 	if err := os.WriteFile(tokenPath, []byte("  secret-token\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)

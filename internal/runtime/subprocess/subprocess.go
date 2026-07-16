@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -33,6 +32,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/processgroup"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/runtime/proctable"
@@ -115,7 +115,7 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 		command = "sh"
 	}
 
-	cmd := exec.Command("sh", "-c", command)
+	cmd := execshim.ShellCommand(command)
 	processgroup.StartCommandInNewGroup(cmd)
 	if cfg.WorkDir != "" {
 		cmd.Dir = cfg.WorkDir
@@ -625,9 +625,7 @@ func (p *Provider) stopBySocket(name string) error {
 }
 
 func isUnavailableSocketError(err error) bool {
-	return errors.Is(err, os.ErrNotExist) ||
-		errors.Is(err, syscall.ENOENT) ||
-		errors.Is(err, syscall.ECONNREFUSED)
+	return runtime.IsUnavailableSocketError(err)
 }
 
 // --- In-memory process helpers ---

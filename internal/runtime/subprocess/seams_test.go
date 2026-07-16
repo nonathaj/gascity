@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 	"time"
 
@@ -101,6 +102,13 @@ func TestSeamsLifecycle(t *testing.T) {
 // provider (SIGINT to the process group) rather than no-op'ing like its sibling
 // verbs: the session must die.
 func TestSeamsInterrupt(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// SignalProcessGroup(SIGINT) is unsupported on Windows (no signal
+		// delivery to a detached process; graceful stop goes through
+		// taskkill). A CTRL_BREAK-based interrupt is future work —
+		// WINDOWS_SUPPORT_PLAN §4.2.
+		t.Skip("SIGINT interrupt unsupported on Windows")
+	}
 	rt, tp := NewProviderWithDir(t.TempDir()).Seams()
 	ctx := context.Background()
 

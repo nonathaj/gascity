@@ -34,6 +34,7 @@
 ./internal/extmsg
 ./internal/gchome
 ./internal/git
+./internal/gitcred
 ./internal/githubmonitor
 ./internal/graphroute
 ./internal/graphv2
@@ -56,6 +57,8 @@
 ./internal/reliability
 ./internal/remotesource
 ./internal/reviewquorum
+./internal/runtime
+./internal/runtime/acp
 ./internal/runtime/auto
 ./internal/runtime/herdr
 ./internal/runtime/hybrid
@@ -63,6 +66,7 @@
 ./internal/runtime/registry
 ./internal/runtime/runtimetest
 ./internal/runtime/ssh
+./internal/runtime/subprocess
 ./internal/shellquote
 ./internal/sourceworkflow
 ./internal/storeref
