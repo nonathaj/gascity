@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,7 +37,7 @@ func withZeroDialogTimings(t *testing.T) {
 func TestAcceptStartupDialogsSharesBudgetAcrossClasses(t *testing.T) {
 	oldInterval := dialogPollInterval
 	oldFloor := minPerDialogPeekBudget
-	dialogPollInterval = 0             // spin without sleeping between peeks
+	dialogPollInterval = 0 // spin without sleeping between peeks
 	minPerDialogPeekBudget = time.Millisecond
 	t.Cleanup(func() {
 		dialogPollInterval = oldInterval
@@ -503,7 +504,7 @@ func TestParseExternalImportPaths(t *testing.T) {
 	t.Parallel()
 
 	got := parseExternalImportPaths(externalImportsDialogFixture())
-	want := []string{"/data/projects/gascity/AGENTS.md"}
+	want := []string{osAbsFixturePath("/data/projects/gascity/AGENTS.md")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("parseExternalImportPaths = %v, want %v", got, want)
 	}
@@ -546,7 +547,7 @@ func TestPathWithinTrustRoot(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := pathWithinTrustRoot(tc.importPath, tc.trustRoot); got != tc.want {
+			if got := pathWithinTrustRoot(osAbsFixturePath(tc.importPath), osAbsFixturePath(tc.trustRoot)); got != tc.want {
 				t.Fatalf("pathWithinTrustRoot(%q, %q) = %v, want %v", tc.importPath, tc.trustRoot, got, tc.want)
 			}
 		})
@@ -596,7 +597,7 @@ func TestExternalImportsTrusted(t *testing.T) {
 func TestImportPathFirstParty(t *testing.T) {
 	t.Parallel()
 
-	const root = "/data/projects/gascity"
+	root := osAbsFixturePath("/data/projects/gascity")
 	cases := []struct {
 		name       string
 		importPath string
@@ -615,7 +616,7 @@ func TestImportPathFirstParty(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := importPathFirstParty(tc.importPath, root); got != tc.want {
+			if got := importPathFirstParty(osAbsFixturePath(tc.importPath), root); got != tc.want {
 				t.Fatalf("importPathFirstParty(%q, %q) = %v, want %v", tc.importPath, root, got, tc.want)
 			}
 		})
@@ -625,7 +626,7 @@ func TestImportPathFirstParty(t *testing.T) {
 // trustedImportRootFixture is the repository root that contains the external
 // import in externalImportsDialogFixture (/data/projects/gascity/AGENTS.md), so
 // the import is first-party and auto-acceptance is allowed.
-const trustedImportRootFixture = "/data/projects/gascity"
+var trustedImportRootFixture = osAbsFixturePath("/data/projects/gascity")
 
 func TestAcceptStartupDialogsAcceptsExternalImportsDialog(t *testing.T) {
 	withZeroDialogTimings(t)
@@ -1249,11 +1250,21 @@ func mcpTrustDialogFixture() string {
 		"Enter to confirm · Esc to cancel"
 }
 
+// osAbsFixturePath makes a POSIX-style test path absolute on the current OS:
+// "/data/x" stays as-is on Unix but becomes "C:/data/x" (drive-rooted, which
+// filepath.IsAbs accepts) on Windows. Relative/empty paths pass through.
+func osAbsFixturePath(p string) string {
+	if goruntime.GOOS == "windows" && strings.HasPrefix(p, "/") {
+		return "C:" + p
+	}
+	return p
+}
+
 func externalImportsDialogFixture() string {
 	return "Allow external CLAUDE.md file imports?\n" +
 		"This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories.\n" +
 		"External imports:\n" +
-		"  /data/projects/gascity/AGENTS.md\n" +
+		"  " + osAbsFixturePath("/data/projects/gascity/AGENTS.md") + "\n" +
 		"Important: Only use Claude Code with files you trust...\n" +
 		"❯ 1. Yes, allow external imports\n" +
 		"  2. No, disable external imports\n" +

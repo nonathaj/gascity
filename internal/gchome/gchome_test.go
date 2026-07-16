@@ -35,7 +35,7 @@ func TestResolveHomeReportsBranchProvenanceWithoutPathGuessing(t *testing.T) {
 		{
 			name:          "user home",
 			userHome:      "/home/alice",
-			wantPath:      "/home/alice/.gc",
+			wantPath:      filepath.FromSlash("/home/alice/.gc"),
 			wantSource:    ProvenanceUserHome,
 			wantUserCalls: 1,
 			wantTempCalls: 0,
@@ -53,7 +53,7 @@ func TestResolveHomeReportsBranchProvenanceWithoutPathGuessing(t *testing.T) {
 			name:          "last resort fallback",
 			userHomeErr:   errNoHome,
 			temporaryErr:  errNoTemp,
-			wantPath:      "/var/tmp/gc-home-4242",
+			wantPath:      filepath.FromSlash("/var/tmp/gc-home-4242"),
 			wantSource:    ProvenanceLastResort,
 			wantUserCalls: 1,
 			wantTempCalls: 1,
@@ -110,7 +110,7 @@ func TestResolveHomeReadOnlyNeverCreatesFallback(t *testing.T) {
 	if tempCalls != 0 {
 		t.Fatalf("read-only resolve called MkdirTemp %d times", tempCalls)
 	}
-	if got.Path() != "/tmp/gc-home-99" || got.Provenance() != ProvenanceLastResort {
+	if got.Path() != filepath.FromSlash("/tmp/gc-home-99") || got.Provenance() != ProvenanceLastResort {
 		t.Fatalf("read-only resolve = (%q, %v), want deterministic last-resort candidate", got.Path(), got.Provenance())
 	}
 }

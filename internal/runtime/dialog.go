@@ -643,6 +643,22 @@ func externalImportsTrusted(content, trustRoot string) bool {
 // imports modal lists under its "External imports:" header. Each import renders
 // on its own line; collection stops at the first blank line after a path or at
 // the first non-absolute line (the trailing guidance text or numbered options).
+// looksLikeAbsImportPath reports whether a trimmed dialog line looks like an
+// absolute filesystem path listed under "External imports:". It accepts POSIX
+// roots ("/...") and Windows drive-absolute roots ("C:\..." or "C:/..."), so
+// the parser recognizes the paths Claude Code prints on either platform.
+func looksLikeAbsImportPath(s string) bool {
+	if strings.HasPrefix(s, "/") {
+		return true
+	}
+	if len(s) >= 3 && s[1] == ':' &&
+		((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= 'a' && s[0] <= 'z')) &&
+		(s[2] == '\\' || s[2] == '/') {
+		return true
+	}
+	return false
+}
+
 func parseExternalImportPaths(content string) []string {
 	const header = "External imports:"
 	idx := strings.Index(content, header)
@@ -658,7 +674,7 @@ func parseExternalImportPaths(content string) []string {
 			}
 			continue
 		}
-		if !strings.HasPrefix(trimmed, "/") {
+		if !looksLikeAbsImportPath(trimmed) {
 			break
 		}
 		paths = append(paths, trimmed)
@@ -672,9 +688,11 @@ func parseExternalImportPaths(content string) []string {
 // rejected after cleaning. Only absolute paths are trusted; anything else (a
 // "~"-relative or truncated path) fails closed.
 func pathWithinTrustRoot(importPath, trustRoot string) bool {
-	if !strings.HasPrefix(importPath, "/") {
-		return false
-	}
+	// filepath.IsAbs is the portable "absolute path" test: it accepts POSIX
+	// "/..." on Unix and drive-rooted "C:\..." on Windows. A prior
+	// strings.HasPrefix(importPath, "/") guard rejected every real Windows
+	// path (they start with a drive letter, not "/"), disabling the
+	// external-imports trust check entirely there.
 	root := filepath.Clean(trustRoot)
 	imp := filepath.Clean(importPath)
 	if !filepath.IsAbs(root) || !filepath.IsAbs(imp) {

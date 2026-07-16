@@ -3,7 +3,6 @@ package events
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -352,8 +351,8 @@ func TestWatchCloseReleasesArchiveBackfillReader(t *testing.T) {
 	if w.bfReader != nil {
 		t.Fatal("Close left the backfill reader open; archive fd leaks until GC")
 	}
-	if _, err := sr.f.Stat(); !errors.Is(err, os.ErrClosed) {
-		t.Fatalf("archive fd still open after Close: Stat err = %v, want os.ErrClosed", err)
+	if _, err := sr.f.Stat(); !statErrIsClosed(err) {
+		t.Fatalf("archive fd still open after Close: Stat err = %v, want closed-file error", err)
 	}
 }
 
