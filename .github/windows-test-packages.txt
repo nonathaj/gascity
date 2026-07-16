@@ -87,6 +87,7 @@
 ./internal/runtime/runtimetest
 ./internal/runtime/ssh
 ./internal/runtime/subprocess
+./internal/runtime/tmux
 ./internal/sdnotify
 ./internal/searchpath
 ./internal/session/sessiontest
