@@ -20,7 +20,10 @@ func writeSinkScript(t *testing.T, body string) string {
 
 func TestExecSinkRecordSuccessFeedsFactJSON(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out.jsonl")
-	s := NewExecSink(writeSinkScript(t, "cat >> "+out))
+	// The path is interpolated into a /bin/sh script; sh consumes
+	// backslashes as escapes, so a native Windows path must be written in
+	// forward-slash form (which sh accepts). ToSlash is a no-op on unix.
+	s := NewExecSink(writeSinkScript(t, "cat >> "+filepath.ToSlash(out)))
 	if err := s.Record(context.Background(), Fact{Kind: KindModel, RunID: "r1", InputTokens: 5}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
