@@ -95,6 +95,47 @@ func TestPersistRigSiteBindings_PreservesWorkspaceIdentity(t *testing.T) {
 	}
 }
 
+// A .gc/site.toml written as a [workspace] table (the form the city.toml->
+// site.toml v2 migration naturally reproduces) must still surface its pinned
+// prefix/name, not silently drop it — a dropped prefix pin re-derives an
+// unroutable prefix and wedges beads init on an existing store (bead gw-num).
+func TestLoadSiteBinding_HonorsWorkspaceTableForm(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files[SiteBindingPath("/city")] = []byte(
+		"[workspace]\nname = \"table-city\"\nprefix = \"gc\"\n\n" +
+			"[[rig]]\nname = \"frontend\"\npath = \"/tmp/frontend\"\n")
+
+	binding, err := LoadSiteBinding(fs, "/city")
+	if err != nil {
+		t.Fatalf("LoadSiteBinding: %v", err)
+	}
+	if binding.WorkspacePrefix != "gc" {
+		t.Fatalf("WorkspacePrefix = %q, want %q", binding.WorkspacePrefix, "gc")
+	}
+	if binding.WorkspaceName != "table-city" {
+		t.Fatalf("WorkspaceName = %q, want %q", binding.WorkspaceName, "table-city")
+	}
+	if len(binding.Rigs) != 1 || binding.Rigs[0].Name != "frontend" {
+		t.Fatalf("binding.Rigs = %+v, want the frontend rig", binding.Rigs)
+	}
+}
+
+// The canonical flat keys win over a [workspace] table when both are present,
+// so a file mid-migration never regresses to the table value.
+func TestLoadSiteBinding_FlatKeysWinOverWorkspaceTable(t *testing.T) {
+	fs := fsys.NewFake()
+	fs.Files[SiteBindingPath("/city")] = []byte(
+		"workspace_prefix = \"flat\"\n[workspace]\nprefix = \"table\"\n")
+
+	binding, err := LoadSiteBinding(fs, "/city")
+	if err != nil {
+		t.Fatalf("LoadSiteBinding: %v", err)
+	}
+	if binding.WorkspacePrefix != "flat" {
+		t.Fatalf("WorkspacePrefix = %q, want flat key to win", binding.WorkspacePrefix)
+	}
+}
+
 func TestPersistWorkspaceSiteBindingWritesThroughSiteTomlSymlink(t *testing.T) {
 	dir := t.TempDir()
 	targetDir := filepath.Join(dir, "checkout")

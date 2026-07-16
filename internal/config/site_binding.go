@@ -177,7 +177,38 @@ func LoadSiteBinding(fs fsys.FS, cityRoot string) (*SiteBinding, error) {
 	if _, err := toml.Decode(string(data), &binding); err != nil {
 		return nil, fmt.Errorf("parsing site binding %q: %w", path, err)
 	}
+	applyLegacyWorkspaceTableFallback(string(data), &binding)
 	return &binding, nil
+}
+
+// applyLegacyWorkspaceTableFallback honors workspace identity written as a
+// [workspace] table (mirroring city.toml's schema) when the canonical flat
+// keys (workspace_name / workspace_prefix, which PersistWorkspaceSiteBinding
+// emits) are absent. The v2 migration that moves prefix/name from city.toml to
+// .gc/site.toml (bead gc-dwsq) naturally reproduces the [workspace] table form,
+// which the flat-keyed SiteBinding struct silently drops — and a dropped prefix
+// pin re-derives an unroutable prefix from the city name, wedging beads init on
+// an existing store ("Refusing to destroy N issues", bead gw-num). Reading both
+// forms makes the pin robust regardless of which schema wrote the file.
+func applyLegacyWorkspaceTableFallback(data string, binding *SiteBinding) {
+	if binding.WorkspaceName != "" && binding.WorkspacePrefix != "" {
+		return
+	}
+	var tableForm struct {
+		Workspace struct {
+			Name   string `toml:"name"`
+			Prefix string `toml:"prefix"`
+		} `toml:"workspace"`
+	}
+	if _, err := toml.Decode(data, &tableForm); err != nil {
+		return
+	}
+	if binding.WorkspaceName == "" {
+		binding.WorkspaceName = strings.TrimSpace(tableForm.Workspace.Name)
+	}
+	if binding.WorkspacePrefix == "" {
+		binding.WorkspacePrefix = strings.TrimSpace(tableForm.Workspace.Prefix)
+	}
 }
 
 // ApplySiteBindings overlays .gc/site.toml onto cfg. Site bindings take
