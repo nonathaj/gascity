@@ -142,6 +142,23 @@ func LookPath(name string) (string, error) {
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
+// IsGoTestExecutable reports whether path looks like a `go test` binary.
+// Go names test binaries "<pkg>.test" on Unix and "<pkg>.test.exe" on
+// Windows; the comparison strips the Windows extension and ignores case
+// (Windows filesystems are case-insensitive). Guards that stop gc from
+// re-exec-ing "the gc binary" when it is really the test binary must use
+// this: matching only the bare ".test" suffix passed Windows test
+// binaries through, and a submit-poller spawn that re-ran the whole
+// suite per spawn fork-bombed the host (incident gw-8g5, 4,500
+// processes / ~246 GB commit in ~10 minutes). A false positive merely
+// refuses a spawn or keeps a test hermetic; a false negative detonates,
+// so the guard errs toward matching.
+func IsGoTestExecutable(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	base = strings.TrimSuffix(base, ".exe")
+	return strings.HasSuffix(base, ".test")
+}
+
 // EnvWithShellDir returns env (a KEY=VALUE slice as from os.Environ) with the
 // resolved sh interpreter's directory ensured on PATH. Scripts routed through
 // sh on Windows invoke coreutils (cat, grep, sed, ...) that ship in the same

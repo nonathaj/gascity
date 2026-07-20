@@ -127,4 +127,3 @@ func TestValidateArtifactDir_SymlinkInside(t *testing.T) {
 		t.Errorf("expected no error for internal symlink, got: %v", err)
 	}
 }
-

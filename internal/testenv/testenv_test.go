@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -107,6 +108,19 @@ func TestInitPassthroughPreservesNamed(t *testing.T) {
 	}
 }
 
+// fakeGCPath returns a temp path for a renamed copy of the test binary
+// whose base name lacks the `.test` suffix. Windows requires the `.exe`
+// extension to exec at all; isGoTestBinary strips it, so "gc.exe" still
+// simulates the testscript subcommand rename on every platform.
+func fakeGCPath(t *testing.T) string {
+	t.Helper()
+	name := "gc"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(t.TempDir(), name)
+}
+
 // TestInitSkipsScrubInTestscriptSubcommandMode verifies init() does NOT scrub
 // when the binary is invoked under a non-`.test` name, simulating the
 // testscript.Main subcommand re-invocation (e.g. binary copied to $PATH/bin/gc).
@@ -127,7 +141,7 @@ func TestInitSkipsScrubInTestscriptSubcommandMode(t *testing.T) {
 	}
 	// Copy the test binary to a non-`.test` name in a temp dir, so
 	// filepath.Base(os.Args[0]) lacks the `.test` suffix that triggers scrub.
-	fakeGC := filepath.Join(t.TempDir(), "gc")
+	fakeGC := fakeGCPath(t)
 	if err := copyFile(exe, fakeGC); err != nil {
 		t.Fatalf("copyFile: %v", err)
 	}
@@ -182,7 +196,7 @@ func TestInitRefusesProdDoltPort(t *testing.T) {
 	}
 	// Copy of the test binary under a non-`.test` name, simulating the
 	// testscript.Main subcommand re-invocation where the scrub is skipped.
-	fakeGC := filepath.Join(t.TempDir(), "gc")
+	fakeGC := fakeGCPath(t)
 	if err := copyFile(exe, fakeGC); err != nil {
 		t.Fatalf("copyFile: %v", err)
 	}

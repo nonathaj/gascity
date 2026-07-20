@@ -72,12 +72,16 @@ import (
 )
 
 // isGoTestBinary reports whether the current process looks like a Go-built
-// test binary. Go `go test` builds binaries named `<pkg>.test` (or
-// `<pkg>.test.exe` on Windows) and invokes them directly or via `exec`. A
-// testscript subcommand re-invocation renames the binary (e.g. to `gc`) so
-// its os.Args[0] will not have the `.test` suffix.
+// test binary (`<pkg>.test`, or `<pkg>.test.exe` on Windows). A testscript
+// subcommand re-invocation renames the binary (e.g. to `gc`) so its
+// os.Args[0] will not have the `.test` suffix.
+//
+// This duplicates execshim.IsGoTestExecutable deliberately: every test
+// directory blank-imports testenv (enforced by lint_test.go), so testenv
+// importing execshim would put execshim's own tests in an import cycle.
+// testenv must stay dependency-minimal; keep the two in sync.
 func isGoTestBinary() bool {
-	name := filepath.Base(os.Args[0])
+	name := strings.ToLower(filepath.Base(os.Args[0]))
 	name = strings.TrimSuffix(name, ".exe")
 	return strings.HasSuffix(name, ".test")
 }

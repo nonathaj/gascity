@@ -61,8 +61,11 @@ func main() {
 		if !strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
+		// ToSlash: filepath.Rel returns backslashes on Windows, and a raw
+		// compare would let the generator write a self-importing file
+		// into the testenv package itself.
 		rel, _ := filepath.Rel(root, filepath.Dir(path))
-		if rel == "internal/testenv" {
+		if filepath.ToSlash(rel) == "internal/testenv" {
 			return nil
 		}
 		fset := token.NewFileSet()

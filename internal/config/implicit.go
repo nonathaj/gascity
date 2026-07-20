@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 const implicitImportSchema = 1
@@ -76,8 +77,9 @@ func ImplicitGCHome() string {
 	if v := strings.TrimSpace(os.Getenv("GC_HOME")); v != "" {
 		return v
 	}
-	// Keep unit tests hermetic unless they explicitly opt into a GC_HOME.
-	if strings.HasSuffix(os.Args[0], ".test") {
+	// Keep unit tests hermetic unless they explicitly opt into a GC_HOME
+	// (".test" on Unix, ".test.exe" on Windows).
+	if execshim.IsGoTestExecutable(os.Args[0]) {
 		return ""
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {

@@ -53,8 +53,9 @@ func watchdogDeadline(env string, args []string) time.Duration {
 	return deadline
 }
 
-// testTimeoutFromArgs extracts the -test.timeout (or -timeout) flag
-// value from a test binary's argv.
+// testTimeoutFromArgs extracts the -test.timeout flag value from a test
+// binary's argv (`go test -timeout X` reaches the binary spelled as
+// -test.timeout=X; the bare -timeout spelling never appears there).
 func testTimeoutFromArgs(args []string) (time.Duration, bool) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]

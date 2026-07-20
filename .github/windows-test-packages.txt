@@ -44,6 +44,7 @@
 ./internal/events
 ./internal/events/exec
 ./internal/execenv
+./internal/execshim
 ./internal/extmsg
 ./internal/formula
 ./internal/fsys
@@ -94,7 +95,9 @@
 ./internal/runtime/tmux
 ./internal/sdnotify
 ./internal/searchpath
+./internal/session
 ./internal/session/sessiontest
+./internal/sessionlog
 ./internal/shellquote
 ./internal/sling
 ./internal/sourceworkflow
@@ -104,6 +107,7 @@
 ./internal/suspensionstate
 ./internal/telemetry
 ./internal/testpolicy/timingsummary
+./internal/testutil
 ./internal/testutil/providerledger
 ./internal/transcriptmeta
 ./internal/usage

@@ -50,8 +50,9 @@ func TestRequiresDedicatedTestenvImportFile(t *testing.T) {
 			return nil
 		}
 		// Skip the testenv package itself — it cannot import itself.
+		// (ToSlash: filepath.Rel returns backslashes on Windows.)
 		rel, _ := filepath.Rel(root, filepath.Dir(path))
-		if rel == "internal/testenv" {
+		if filepath.ToSlash(rel) == "internal/testenv" {
 			return nil
 		}
 		info := dirInfos[rel]

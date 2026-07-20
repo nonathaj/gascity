@@ -13,9 +13,14 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestMain(m *testing.M) {
+	// Hard lifetime bound so a killed `go test` run cannot orphan this
+	// binary on Windows (incident gw-qhs).
+	testutil.StartExitWatchdog()
+
 	_ = os.Unsetenv(ManagedCityHostEnv)
 	os.Exit(m.Run())
 }

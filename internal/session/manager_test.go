@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -4452,7 +4453,13 @@ func TestTranscriptPathClosedSessionSkipsAmbiguousHistoricalWorkDirFallback(t *t
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	codexPath := filepath.Join(dayDir, "rollout-current.jsonl")
-	meta := `{"type":"session_meta","payload":{"cwd":"` + workDir + `"}}`
+	// JSON-encode the cwd: a raw Windows workDir would inject invalid
+	// backslash escapes into the fixture and the reader would skip it.
+	cwdJSON, err := json.Marshal(workDir)
+	if err != nil {
+		t.Fatalf("Marshal cwd: %v", err)
+	}
+	meta := `{"type":"session_meta","payload":{"cwd":` + string(cwdJSON) + `}}`
 	if err := os.WriteFile(codexPath, []byte(meta+"\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -4486,7 +4493,13 @@ func TestTranscriptPathSameWorkDirDifferentProvidersUsesProviderSpecificFallback
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	codexPath := filepath.Join(dayDir, "rollout-current.jsonl")
-	meta := `{"type":"session_meta","payload":{"cwd":"` + workDir + `"}}`
+	// JSON-encode the cwd: a raw Windows workDir would inject invalid
+	// backslash escapes into the fixture and the reader would skip it.
+	cwdJSON, err := json.Marshal(workDir)
+	if err != nil {
+		t.Fatalf("Marshal cwd: %v", err)
+	}
+	meta := `{"type":"session_meta","payload":{"cwd":` + string(cwdJSON) + `}}`
 	if err := os.WriteFile(codexPath, []byte(meta+"\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
