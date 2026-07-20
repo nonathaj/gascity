@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -14,6 +15,12 @@ import (
 // allocation, nested runners) with fake systemd-run/systemctl binaries on a
 // fully controlled PATH.
 func TestSliceEnrollFallbackMatrix(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The self-test is a bash script exercising Linux user-systemd
+		// enrollment; the slice machinery is inert on Windows (see
+		// engdocs/design/windows-systemd-parity.md).
+		t.Skip("gascity-test.slice enrollment is a Linux user-systemd mechanism")
+	}
 	root := repoRoot(t)
 
 	cmd := exec.Command(filepath.Join(root, "scripts", "test-slice-enroll-test"))

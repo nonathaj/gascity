@@ -17,6 +17,7 @@ lives in the [Architecture](../architecture/index.md) section.
 | Document | Status | Notes |
 |---|---|---|
 | `machine-wide-supervisor-v0` | Accepted | Current supervisor direction |
+| `windows-systemd-parity` | Proposed | Windows-native analogues (Job Objects, Task Scheduler, pipe sd_notify) for every systemd capability |
 | `convoy-first-formulas-and-drain-v0` | Implemented | Convoy-first graph.v2 formula inputs and drain scatter semantics |
 | `api-ops-design` | Implemented | State-mutation API surface |
 | `agent-pools` | Implemented | Feature shipped before the current template existed |
