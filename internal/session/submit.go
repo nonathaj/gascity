@@ -7,7 +7,6 @@ import (
 	"github.com/gastownhall/gascity/internal/fslock"
 	"github.com/gastownhall/gascity/internal/processgroup"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/nudgepoller"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
@@ -608,8 +608,10 @@ func ensureSessionSubmitPoller(cityPath, agentName, sessionName string) error {
 		if isGoTestExecutable(exe) {
 			return fmt.Errorf("refusing to start nudge poller with Go test binary %q", exe)
 		}
-		cmd := exec.Command(exe, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
-		cmd.Env = execenv.WithUsageMetricsDisabled(os.Environ())
+		// execshim passes a real binary through untouched and routes a .sh
+		// helper through sh on Windows (tests substitute a script stand-in).
+		cmd := execshim.Command(exe, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
+		cmd.Env = execshim.EnvWithShellDir(execenv.WithUsageMetricsDisabled(os.Environ()))
 		logFile, err := os.OpenFile(sessionSubmitPollerLogPath(cityPath, sessionName, agentName), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
 			return err

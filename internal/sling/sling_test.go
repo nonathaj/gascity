@@ -21,6 +21,7 @@ import (
 	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/sourceworkflow"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // --- Test helpers ---
@@ -160,6 +161,10 @@ func init() {
 }
 
 func TestMain(m *testing.M) {
+	// Hard lifetime bound so a killed `go test` run cannot orphan this
+	// binary on Windows (incident gw-qhs).
+	testutil.StartExitWatchdog()
+
 	code := m.Run()
 	_ = os.RemoveAll(sharedTestFormulaDir)
 	_ = os.RemoveAll(sharedTestCityDir)

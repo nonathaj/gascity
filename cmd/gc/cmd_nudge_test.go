@@ -22,6 +22,7 @@ import (
 	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/internal/worker"
 )
 
@@ -3794,11 +3795,7 @@ func startPollerLikeProcess(t *testing.T, cityPath, agentName string) *exec.Cmd 
 	t.Helper()
 	const sessionName = "sess-worker"
 	scriptPath := filepath.Join(t.TempDir(), "gc-fake.sh")
-	// Self-expiring stand-in: an orphaned fake poller must die on its own
-	// (Windows never tears down process trees when a test run is killed),
-	// so bound its lifetime with a sleep loop instead of blocking on stdin.
-	script := "#!/bin/sh\nn=0\nwhile [ \"$n\" -lt 300 ]; do sleep 1; n=$((n+1)); done\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(testutil.SelfExpiringHoldScript), 0o755); err != nil {
 		t.Fatalf("WriteFile(fake poller): %v", err)
 	}
 	cmd := execshim.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)

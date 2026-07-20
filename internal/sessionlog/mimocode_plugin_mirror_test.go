@@ -43,6 +43,7 @@ func TestMimoCodePluginDefaultMirrorDirMatchesReaderSearchPath(t *testing.T) {
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	want := filepath.Join(append([]string{home}, mimoCodeMirrorSegments...)...)
 	got := DefaultMimoCodeSearchPaths()
 	if len(got) != 1 || got[0] != want {

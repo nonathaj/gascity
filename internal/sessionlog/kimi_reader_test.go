@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -212,8 +213,25 @@ func TestKimiSessionIDAndWorkDirHash(t *testing.T) {
 	if got := kimiWorkDirHash(""); got != "" {
 		t.Fatalf("kimiWorkDirHash(empty) = %q, want empty", got)
 	}
-	if got := kimiWorkDirHash("/tmp/gascity/phase1/kimi"); got != "5decc6790b1207964f31266c8258989e" {
-		t.Fatalf("kimiWorkDirHash() = %q, want Kimi CLI 1.42.0 lexical-path MD5", got)
+	// Per-platform goldens for Kimi CLI's session bucket, md5 of the
+	// lexical work-dir string. Verified against Kimi CLI source:
+	// kaos/local.py picks PureWindowsPath when os.name == "nt" and the
+	// work dir is str(Path.cwd()) with no normalization, so on Windows
+	// Kimi hashes the native backslash spelling (metadata.py:
+	// md5(self.path.encode("utf-8"))). kimiWorkDirHash's filepath.Clean
+	// reproduces exactly that per-platform spelling.
+	if runtime.GOOS == "windows" {
+		if got := kimiWorkDirHash(`D:\tmp\gascity\phase1\kimi`); got != "a58d00a174590626dd1ffec655f6fdd4" {
+			t.Fatalf("kimiWorkDirHash() = %q, want Kimi CLI native-Windows-path MD5", got)
+		}
+		// Forward-slash input cleans to the same backslash spelling.
+		if got := kimiWorkDirHash("D:/tmp/gascity/phase1/kimi"); got != "a58d00a174590626dd1ffec655f6fdd4" {
+			t.Fatalf("kimiWorkDirHash(forward-slash) = %q, want backslash-normalized MD5", got)
+		}
+	} else {
+		if got := kimiWorkDirHash("/tmp/gascity/phase1/kimi"); got != "5decc6790b1207964f31266c8258989e" {
+			t.Fatalf("kimiWorkDirHash() = %q, want Kimi CLI 1.42.0 lexical-path MD5", got)
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/runtime"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // TestProviderKind_PreferenceOrder exercises the metadata preference
@@ -816,13 +817,7 @@ func TestPollerKeyFromInfoMatchesBead(t *testing.T) {
 func startSubmitPollerLikeProcess(t *testing.T, cityPath, sessionName, agentName string) *exec.Cmd {
 	t.Helper()
 	scriptPath := filepath.Join(t.TempDir(), "gc-fake.sh")
-	// Self-expiring stand-in: an orphaned fake poller must die on its own.
-	// A killed test run leaves the child alive (Windows never tears down
-	// process trees), so the script bounds its lifetime with a sleep loop
-	// instead of blocking on stdin forever. (`read -t` is a bashism dash
-	// lacks; the loop is portable.)
-	script := "#!/bin/sh\nn=0\nwhile [ \"$n\" -lt 300 ]; do sleep 1; n=$((n+1)); done\n"
-	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte(testutil.SelfExpiringHoldScript), 0o755); err != nil {
 		t.Fatalf("WriteFile(fake poller): %v", err)
 	}
 	cmd := execshim.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)

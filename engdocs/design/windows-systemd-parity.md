@@ -153,9 +153,15 @@ launched outside the wrapper.
 Extend `agentSliceWrapper` (already probe-based with graceful
 fallback) with a Windows arm: when `GC_AGENT_SLICE` is set on
 Windows, instead of wrapping the pane command in `systemd-run`, the
-provider assigns the spawned pane's PID to job
-`Local\gascity-agents` (`winjob.Assign` post-spawn — psmux exposes
-pane PIDs). No command-string wrapping means no
+provider assigns the pane process to job `Local\gascity-agents`.
+Assignment must be race-free: a pane command forks immediately, and
+children spawned before `AssignProcessToJobObject` escape the job
+forever. Since psmux owns the spawn, the required sequence is
+**create-suspended → assign → resume** (`CREATE_SUSPENDED`, then
+`winjob.Assign`, then `ResumeThread`); descendants then inherit job
+membership by construction. Post-hoc `Assign` on an already-running
+PID is acceptable only for adopt/recovery paths, where the escape
+window is documented. No command-string wrapping means no
 `wrapperCommands`/descendant-walk changes on Windows. The probe
 becomes "can I create/open the named job", preserving the warn-once
 fallback contract. Resource pressure via `CPURateWeight`/`JobMemory`
@@ -189,11 +195,21 @@ baked env the unit template carries (`GC_HOME`, `PATH`,
   Therefore the task does NOT use Task Scheduler restarts; restart
   stays owned by gc (next bullet).
 
-**Auto-restart.** Keep restart in-process where exit-code judgment
-lives: the drift-check Direct branch (`taskkill` + `startDetached`)
-already works, and the health patrol/supervisor watchdog can respawn
-on unexpected death. `Restart=always` parity is explicitly
-approximated, not replicated — documented divergence.
+**Auto-restart.** `Restart=always` cannot be delegated to something
+running inside the supervisor (health patrol dies with it), and Task
+Scheduler restart-on-failure cannot see exit codes. The parity
+mechanism is a second, lightweight **keepalive task**: a repeating
+trigger (every 5 minutes, matching `RestartSec` intent if not
+latency) that runs `gc supervisor ensure` — a new idempotent command
+that (a) exits immediately if the control socket answers, (b) refuses
+to respawn while a port-collision sentinel from a recent exit-3 is
+present (the `RestartPreventExitStatus=3` analogue, judgment kept in
+gc), and (c) otherwise respawns via the existing `startDetached`
+path. The drift-check Direct branch continues to handle
+binary/pack-drift restarts on `gc start`. Residual divergence:
+restart latency is minutes, not `RestartSec=5s` — documented, and
+acceptable because the supervisor's own crash rate is the tail case
+the keepalive covers.
 
 **Readiness.** Add a Windows transport to `internal/sdnotify`: when
 `GC_NOTIFY_PIPE` is set, `Notify` writes the same state datagrams
@@ -251,8 +267,11 @@ its "cleanup unavailable" warning path on Windows.
   decision-matrix self-test `scripts/test-slice-enroll-test`.)
 - P1: install creates the task with correct action/env; drift guard
   refuses foreign binary without `--force`; stale-task sweep removes
-  vanished-`GC_HOME` tasks and spares live ones; sd_notify pipe
-  transport emits `READY→(RELOADING→READY)→STOPPING` (port of
+  vanished-`GC_HOME` tasks and spares live ones; `gc supervisor
+  ensure` no-ops on a healthy supervisor, refuses to respawn while
+  the exit-3 port-collision sentinel is fresh, and respawns a killed
+  supervisor; sd_notify pipe transport emits
+  `READY→(RELOADING→READY)→STOPPING` (port of
   `cmd_supervisor_sdnotify_test.go`, today unixgram+SIGHUP-bound).
 - P2: pane PID lands in the agents job when `GC_AGENT_SLICE` set;
   probe-failure warn-once fallback (port of

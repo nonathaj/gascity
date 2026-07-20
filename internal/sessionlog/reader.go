@@ -1616,7 +1616,14 @@ func addDarwinClaudePathAliases(path string, add func(string)) {
 // ProjectSlug converts an absolute path to the project directory slug
 // convention: all "/" and "." are replaced with "-".
 func ProjectSlug(absPath string) string {
+	// Mirror Claude Code's project-slug derivation: every path-structural
+	// character becomes '-'. On Windows that also means backslash separators
+	// and the drive-letter colon (C:\Users\x -> C--Users-x), so the slug is a
+	// valid single directory name and matches the folder Claude Code itself
+	// writes under ~/.claude/projects.
 	s := strings.ReplaceAll(absPath, "/", "-")
+	s = strings.ReplaceAll(s, `\`, "-")
+	s = strings.ReplaceAll(s, ":", "-")
 	s = strings.ReplaceAll(s, ".", "-")
 	return s
 }

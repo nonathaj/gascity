@@ -36,6 +36,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/test/dolttest"
 	"github.com/gastownhall/gascity/test/tmuxtest"
 )
@@ -86,6 +87,11 @@ const (
 
 // TestMain builds the gc binary and runs pre/post sweeps of orphan sessions.
 func TestMain(m *testing.M) {
+	// Hard lifetime bound armed before the deliberate hang helper below,
+	// so an orphaned helper self-expires instead of living forever when
+	// its parent test run is killed (incident gw-qhs).
+	testutil.StartExitWatchdog()
+
 	if os.Getenv("GC_INTEGRATION_SUPERVISOR_STOP_HELPER") == "1" {
 		select {}
 	}

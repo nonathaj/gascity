@@ -15,7 +15,8 @@ import (
 func TestProductMetricsDirectChildEnvSessionSubmitPoller(t *testing.T) {
 	dir := t.TempDir()
 	snapshot := filepath.Join(dir, "child.env")
-	spy := filepath.Join(dir, "gc-child-spy")
+	// ".sh" so execshim routes the stand-in through sh on Windows.
+	spy := filepath.Join(dir, "gc-child-spy.sh")
 	script := "#!/bin/sh\n" +
 		"printf '%s\\n' \"$GC_DISABLE_USAGE_METRICS\" \"$BD_DISABLE_METRICS\" \"$OTEL_SERVICE_NAME\" > \"$GC_TEST_PRODUCT_METRICS_CHILD_ENV_SPY\"\n"
 	if err := os.WriteFile(spy, []byte(script), 0o700); err != nil {

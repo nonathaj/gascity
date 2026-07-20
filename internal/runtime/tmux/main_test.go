@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/test/tmuxtest"
 )
 
@@ -16,6 +17,10 @@ import (
 // wrapping opt back in per-test with t.Setenv. This file is untagged so the
 // neutralization applies to every build of the package.
 func TestMain(m *testing.M) {
+	// Hard lifetime bound: this package spawns real tmux/psmux servers; a
+	// killed `go test` run orphans the binary on Windows (incident gw-qhs).
+	testutil.StartExitWatchdog()
+
 	_ = os.Unsetenv(AgentSliceEnv)
 
 	tmuxSocketParent, err := os.MkdirTemp("/tmp", "gct-")

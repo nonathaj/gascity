@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -37,8 +38,8 @@ func makeSessionDir(t *testing.T, dir, sessionID string) (parentPath, subagentsD
 }
 
 func TestAgentDir(t *testing.T) {
-	got := agentDir("/home/user/.claude/projects/slug/abc-123.jsonl")
-	want := "/home/user/.claude/projects/slug/abc-123/subagents"
+	got := agentDir(filepath.FromSlash("/home/user/.claude/projects/slug/abc-123.jsonl"))
+	want := filepath.FromSlash("/home/user/.claude/projects/slug/abc-123/subagents")
 	if got != want {
 		t.Errorf("agentDir = %q, want %q", got, want)
 	}
@@ -193,10 +194,7 @@ func TestFindAgentMappings_PropagatesReadErrors(t *testing.T) {
 
 	brokenPath := filepath.Join(subDir, "agent-broken.jsonl")
 	writeTestFile(t, brokenPath, `{"uuid":"a1","type":"system"}`+"\n")
-	if err := os.Chmod(brokenPath, 0); err != nil {
-		t.Fatalf("chmod broken agent transcript: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(brokenPath, 0o644) })
+	makeFileUnopenable(t, brokenPath)
 
 	_, err := FindAgentMappings(parentPath)
 	if err == nil {
@@ -350,6 +348,13 @@ func TestReadAgentSession_CorruptFile(t *testing.T) {
 }
 
 func TestReadAgentSession_StatError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// chmod 0o000 only toggles the read-only attribute on Windows and
+		// never denies the owner directory access, so a Stat error cannot be
+		// simulated this way; the permission-vs-not-found distinction is a
+		// unix-mode behavior.
+		t.Skip("cannot simulate a permission-denied Stat on Windows")
+	}
 	dir := t.TempDir()
 	parentPath, subDir := makeSessionDir(t, dir, "session-abc")
 

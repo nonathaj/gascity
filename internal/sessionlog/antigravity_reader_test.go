@@ -11,6 +11,7 @@ import (
 func TestDefaultAntigravitySearchPaths(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir reads USERPROFILE on Windows
 
 	got := DefaultAntigravitySearchPaths()
 	want := filepath.Join(tmpHome, ".gemini", "antigravity-cli", "brain")
@@ -22,6 +23,7 @@ func TestDefaultAntigravitySearchPaths(t *testing.T) {
 func TestFindAntigravitySessionFileByID(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir reads USERPROFILE on Windows
 
 	sessionID := "18e4eb9f-1b1d-4dbc-966b-c06e3646f3c4"
 	brainRoot := filepath.Join(tmpHome, ".gemini", "antigravity-cli", "brain")
@@ -70,6 +72,7 @@ func TestFindAntigravitySessionFileByIDRejectsTraversalSessionID(t *testing.T) {
 func TestFindAntigravitySessionFile(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir reads USERPROFILE on Windows
 
 	cliDir := filepath.Join(tmpHome, ".gemini", "antigravity-cli")
 	brainRoot := filepath.Join(cliDir, "brain")
@@ -279,6 +282,7 @@ func TestFindAntigravitySessionFileSingleTranscriptFallbackIsBrainRootBounded(t 
 func TestFindAntigravitySessionFileScansPastLargeHistoryRows(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome) // os.UserHomeDir reads USERPROFILE on Windows
 
 	cliDir := filepath.Join(tmpHome, ".gemini", "antigravity-cli")
 	brainRoot := filepath.Join(cliDir, "brain")

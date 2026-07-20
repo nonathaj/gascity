@@ -1116,6 +1116,16 @@ func TestProjectSlug(t *testing.T) {
 		{"/home/user/project", "-home-user-project"},
 		{"/data/projects/gascity", "-data-projects-gascity"},
 		{"/home/user/.hidden/dir", "-home-user--hidden-dir"},
+		// Windows spellings: every path-structural character ('\', ':')
+		// becomes '-' too, so the drive form C:\x yields the doubled
+		// dash (C--x) seen in real ~/.claude/projects dirs. Pure string
+		// manipulation — these cases run on every platform.
+		{`C:\Users\jane\dev\proj`, "C--Users-jane-dev-proj"},
+		{`D:\dev\gem-city\rigs\gascity-win`, "D--dev-gem-city-rigs-gascity-win"},
+		{`C:\Users\jane\my.proj`, "C--Users-jane-my-proj"},
+		// Unix paths may legally contain '\' or ':'; they slug as
+		// structural characters as well (deliberate cross-platform rule).
+		{`/home/user/we:ird\name`, "-home-user-we-ird-name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
