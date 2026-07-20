@@ -220,6 +220,13 @@ func refuseProdDoltPort(survives func(name string) bool) {
 }
 
 func init() {
+	if isGoTestBinary() {
+		// Contain this test binary's whole process tree (Windows only;
+		// no-op elsewhere). Runs for every test binary in the repo
+		// because every test directory blank-imports this package —
+		// containment is automatic, never something a caller remembers.
+		containTestProcessTree()
+	}
 	if !isGoTestBinary() {
 		// Testscript subcommand mode (e.g. this binary was copied to
 		// $PATH/bin/gc by testscript.Main). Testscript owns the child env

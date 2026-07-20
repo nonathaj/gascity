@@ -379,27 +379,27 @@ that invoke `go test` directly — `test-acceptance*`, `test-integration`,
 `test-integration-huma`, `test-worker-*`, `test-cover`, and similar — run
 unconfined even on slice-provisioned hosts.
 
-#### Windows: kill-on-close containment via `scripts/testjob`
+#### Windows: automatic kill-on-close containment (in-binary)
 
 Windows has no systemd and never tears down process trees: a killed
 `go test` run orphans its whole tree, and self-spawn bugs amplify
-unbounded (incidents gw-qhs, gw-8g5). The slice analogue is a shared
-kill-on-close Job Object (`internal/winjob`), entered through the
-wrapper:
+unbounded (incidents gw-qhs, gw-8g5). The slice analogue is a
+kill-on-close Job Object (`internal/winjob`) that every test binary
+enters **automatically**: `internal/testenv`'s init — which every test
+directory blank-imports, lint-enforced — places the binary in an
+anonymous kill-on-close job on Windows. There is nothing to remember
+and no wrapper to invoke; raw `go test`, IDE runners, Makefile targets,
+and agent-driven runs are all contained identically. When the test
+binary dies — cleanly, killed, or orphaned-then-watchdogged — its job
+handle closes and every descendant dies with it.
 
-    go run ./scripts/testjob -- go test ./internal/session/
-
-No process inside the job can outlive the wrapper — killing the wrapper
-(or the terminal, or the agent driving it) takes the entire tree down.
-The decision matrix mirrors the slice enrollment: `GC_TEST_NO_SLICE=1`
-opts out, existing job membership is never double-wrapped, and failures
-fall back to an unwrapped run with a warning. `GC_TEST_JOB_MEMORY`
-(bytes) overrides the job's committed-memory cap (default: 75% of
-available physical memory); `testjob -count` prints the recommended
-shard parallelism for the budget, mirroring
-`scripts/test-local-job-count`. On non-Windows hosts the wrapper is a
-plain pass-through. Agent sessions on Windows should route every
-`go test` invocation through the wrapper.
+Like the Linux slice enrollment it is best-effort (failure warns and
+the run proceeds) and honors the same `GC_TEST_NO_SLICE=1` opt-out.
+`GC_TEST_JOB_MEMORY` (bytes) optionally caps the tree's committed
+memory. Containment is pinned by
+`TestTestBinaryTreeIsContained` in `internal/testutil`. Packages that
+testenv itself depends on (`internal/winjob`) cannot import it and run
+uncontained — kept leaf-small for exactly that reason.
 
 ### 2. Testscript (`.txtar` files in `cmd/gc/testdata/`)
 

@@ -190,6 +190,22 @@ func (j *Job) Close() error {
 	return nil
 }
 
+// CurrentJobLimitFlags returns the basic limit flags of the job the
+// calling process belongs to. It fails when the process is in no job.
+func CurrentJobLimitFlags() (uint32, error) {
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if err := windows.QueryInformationJobObject(
+		0, // NULL job handle = the calling process's own job
+		windows.JobObjectExtendedLimitInformation,
+		uintptr(unsafe.Pointer(&info)),
+		uint32(unsafe.Sizeof(info)),
+		nil,
+	); err != nil {
+		return 0, fmt.Errorf("winjob: querying current job: %w", err)
+	}
+	return info.BasicLimitInformation.LimitFlags, nil
+}
+
 const jobObjectQueryAccess = 0x0004 // JOB_OBJECT_QUERY
 
 // InJob reports whether the current process is a member of the named

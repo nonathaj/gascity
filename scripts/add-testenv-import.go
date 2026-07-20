@@ -61,11 +61,13 @@ func main() {
 		if !strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		// ToSlash: filepath.Rel returns backslashes on Windows, and a raw
-		// compare would let the generator write a self-importing file
-		// into the testenv package itself.
+		// Skip testenv itself and its production dependencies: their
+		// test binaries cannot blank-import testenv (import cycle).
+		// Keep in sync with lint_test.go's testenvImportExemptDirs.
+		// (ToSlash: filepath.Rel returns backslashes on Windows.)
 		rel, _ := filepath.Rel(root, filepath.Dir(path))
-		if filepath.ToSlash(rel) == "internal/testenv" {
+		switch filepath.ToSlash(rel) {
+		case "internal/testenv", "internal/winjob":
 			return nil
 		}
 		fset := token.NewFileSet()

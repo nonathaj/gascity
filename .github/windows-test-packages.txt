@@ -120,7 +120,6 @@
 ./internal/worker/fake
 ./internal/workdir
 ./scripts/cipolicy
-./scripts/testjob
 ./test/acceptance
 ./test/acceptance/tier_b
 ./test/acceptance/tier_c

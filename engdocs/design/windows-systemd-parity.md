@@ -116,37 +116,39 @@ Notes:
 
 ### D2. Test containment — the `gascity-test.slice` analogue (gw-184, P0)
 
-A Go wrapper binary replaces the bash enrollment library on Windows.
-`scripts/lib/test-slice.sh` stays the Linux path unchanged; the two
-meet at the same decision-matrix contract.
+**Implemented as in-binary enrollment, not a wrapper.** (A wrapper
+script was built first and rejected: it required every caller to
+remember it, where the Linux slice's defining property is that
+enrollment happens automatically inside the entrypoints.) The repo
+already has a universal in-binary hook — every test directory
+blank-imports `internal/testenv` (lint-enforced by
+`TestRequiresDedicatedTestenvImportFile`), and testenv's `init()` runs
+in every test binary. On Windows that init places the binary in an
+**anonymous kill-on-close Job Object** (`internal/winjob`):
 
-**Shape:** `go run ./scripts/testjob -- <command …>` (or a prebuilt
-`testjob.exe` cached under `.gc/`), invoked by the Windows test
-entrypoints (and available to agents driving `go test` directly):
+1. Automatic and universal: raw `go test`, IDE runners, Makefile
+   targets, and agent-driven runs are contained identically — nothing
+   to remember. This is strictly stronger than Linux, where raw
+   `go test` outside the wrapped entrypoints runs unconfined.
+2. When the binary dies — cleanly, killed, or orphaned-then-
+   watchdogged — its job handle closes and every descendant dies with
+   it. Anonymous (per-binary) jobs mean one run's death reaps exactly
+   its own tree.
+3. Same contract as the slice: best-effort (failure warns, run
+   proceeds), `GC_TEST_NO_SLICE=1` opts out, `GC_TEST_JOB_MEMORY`
+   (bytes) optionally caps the tree's committed memory.
+   **Breakaway denied** is load-bearing: `startDetached` tries
+   `CREATE_BREAKAWAY_FROM_JOB` and already falls back to a
+   no-breakaway spawn, so test-spawned supervisors stay contained
+   with no production change.
+4. Import-cycle boundary: packages testenv itself depends on
+   (`internal/winjob`) cannot blank-import it and run uncontained;
+   they are exempted in the lint and kept leaf-small.
 
-1. Decision matrix, mirroring `gc_test_slice_should_wrap`:
-   - `GC_TEST_NO_SLICE=1` → run plain (same opt-out env).
-   - Already inside the gascity test job (`winjob.InJob`) → run plain
-     (nested-runner guard; the analogue of the `/proc/self/cgroup`
-     grep).
-   - Otherwise create/open job `Local\gascity-test`, assign self,
-     spawn the command as a child (inherits job membership), wait.
-2. Limits: `KillOnClose` + `DenyBreakaway` + `JobMemory` from
-   `GC_TEST_JOB_MEMORY` (default: 75% of `GlobalMemoryStatusEx`
-   available). **DenyBreakaway is load-bearing:** `startDetached`
-   deliberately uses `CREATE_BREAKAWAY_FROM_JOB` so real supervisors
-   escape terminal jobs (`cmd_daemon_windows.go`), and it already has
-   a no-breakaway fallback attr — denying breakaway in the test job
-   keeps test-spawned supervisors contained without any production
-   change.
-3. Job counting: `testjob -count` prints the recommended shard
-   parallelism from the job's memory budget
-   (`min(cpus, jobMemory/4GiB, 16)`) — the `test-local-job-count`
-   analogue, same constants.
-
-Layered defenses stay: the TestMain watchdog (25 min hard `os.Exit`,
-landed with gw-qhs) and the host reaper remain as backstops for runs
-launched outside the wrapper.
+Containment is pinned by `TestTestBinaryTreeIsContained`
+(`internal/testutil`). Layered defenses stay: the TestMain watchdog
+(deadline `max(25m, -test.timeout+2m)`) bounds the binary itself, and
+the host reaper remains the outer backstop.
 
 ### D3. Agent containment — `GC_AGENT_SLICE` analogue (P2)
 

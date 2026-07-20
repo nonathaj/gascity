@@ -21,6 +21,14 @@ const (
 	importFile = "testenv_import_test.go"
 )
 
+// testenvImportExemptDirs are testenv itself plus its own production
+// dependencies: their test binaries cannot blank-import testenv without
+// an import cycle. Keep in sync with scripts/add-testenv-import.go.
+var testenvImportExemptDirs = map[string]bool{
+	"internal/testenv": true,
+	"internal/winjob":  true, // testenv init uses winjob for test-tree containment
+}
+
 // TestRequiresDedicatedTestenvImportFile walks every test directory in the repo
 // and fails unless it contains an untagged testenv_import_test.go file with the
 // canonical blank import of internal/testenv. Parking the blank import in an
@@ -49,10 +57,11 @@ func TestRequiresDedicatedTestenvImportFile(t *testing.T) {
 		if !strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		// Skip the testenv package itself — it cannot import itself.
+		// Skip testenv itself and the packages it depends on — their
+		// test binaries cannot blank-import testenv (import cycle).
 		// (ToSlash: filepath.Rel returns backslashes on Windows.)
 		rel, _ := filepath.Rel(root, filepath.Dir(path))
-		if filepath.ToSlash(rel) == "internal/testenv" {
+		if testenvImportExemptDirs[filepath.ToSlash(rel)] {
 			return nil
 		}
 		info := dirInfos[rel]
