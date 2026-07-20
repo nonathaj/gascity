@@ -270,7 +270,10 @@ func TestClaudeProbeCommandEnvOmitsUnsetValues(t *testing.T) {
 
 func TestProviderProbeSearchDirsIncludesUserLocalAndLinuxDefaults(t *testing.T) {
 	homeDir := t.TempDir()
-	got := providerProbeSearchDirs(homeDir, "linux", "/usr/local/bin:/usr/bin:/bin")
+	// basePath is always host-formatted, so the fixture joins with the
+	// HOST list separator (searchpath.Expand's documented contract).
+	base := strings.Join([]string{"/usr/local/bin", "/usr/bin", "/bin"}, string(os.PathListSeparator))
+	got := providerProbeSearchDirs(homeDir, "linux", base)
 	want := []string{
 		filepath.Join(homeDir, ".local", "bin"),
 		filepath.Join(homeDir, "bin"),
@@ -288,7 +291,9 @@ func TestProviderProbeSearchDirsIncludesUserLocalAndLinuxDefaults(t *testing.T) 
 
 func TestProviderProbeSearchDirsIncludesMacUserLocalAndHomebrewPaths(t *testing.T) {
 	homeDir := t.TempDir()
-	got := providerProbeSearchDirs(homeDir, "darwin", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+	// Host-separator fixture; see the linux variant above.
+	base := strings.Join([]string{"/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"}, string(os.PathListSeparator))
+	got := providerProbeSearchDirs(homeDir, "darwin", base)
 	want := []string{
 		filepath.Join(homeDir, ".local", "bin"),
 		filepath.Join(homeDir, "bin"),
@@ -317,7 +322,7 @@ func TestFindProbeBinaryUsesUserLocalInstallDir(t *testing.T) {
 
 	originalPathEnv := providerProbePathEnv
 	originalGOOS := providerProbeGOOS
-	providerProbePathEnv = "/usr/local/bin:/usr/bin:/bin"
+	providerProbePathEnv = strings.Join([]string{"/usr/local/bin", "/usr/bin", "/bin"}, string(os.PathListSeparator))
 	providerProbeGOOS = "linux"
 	defer func() {
 		providerProbePathEnv = originalPathEnv
@@ -366,7 +371,7 @@ func TestProbeCommandEnvUsesCuratedProbePath(t *testing.T) {
 
 	originalPathEnv := providerProbePathEnv
 	originalGOOS := providerProbeGOOS
-	providerProbePathEnv = "/usr/local/bin:/usr/bin:/bin"
+	providerProbePathEnv = strings.Join([]string{"/usr/local/bin", "/usr/bin", "/bin"}, string(os.PathListSeparator))
 	providerProbeGOOS = "linux"
 	defer func() {
 		providerProbePathEnv = originalPathEnv
@@ -398,7 +403,7 @@ func TestProbeCommandEnvIncludesNVMInstallDir(t *testing.T) {
 
 	originalPathEnv := providerProbePathEnv
 	originalGOOS := providerProbeGOOS
-	providerProbePathEnv = "/usr/local/bin:/usr/bin:/bin"
+	providerProbePathEnv = strings.Join([]string{"/usr/local/bin", "/usr/bin", "/bin"}, string(os.PathListSeparator))
 	providerProbeGOOS = "darwin"
 	defer func() {
 		providerProbePathEnv = originalPathEnv

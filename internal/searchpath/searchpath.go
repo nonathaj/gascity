@@ -62,6 +62,11 @@ func Dedupe(dirs []string) []string {
 	return out
 }
 
+// splitPath splits basePath by the HOST list separator regardless of
+// the goos argument: goos selects the profile's default dirs, but
+// basePath is always the caller's host-formatted PATH (pinned by
+// TestExpandIncludesUserLocalAndBasePath; cross-goos test fixtures
+// must build basePath with os.PathListSeparator).
 func splitPath(basePath string) []string {
 	basePath = strings.TrimSpace(basePath)
 	if basePath == "" {
