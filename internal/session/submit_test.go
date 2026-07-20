@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/nudgepoller"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/pidutil"
@@ -814,22 +815,23 @@ func TestPollerKeyFromInfoMatchesBead(t *testing.T) {
 
 func startSubmitPollerLikeProcess(t *testing.T, cityPath, sessionName, agentName string) *exec.Cmd {
 	t.Helper()
-	scriptPath := filepath.Join(t.TempDir(), "gc-fake")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nread _hold\n"), 0o755); err != nil {
+	scriptPath := filepath.Join(t.TempDir(), "gc-fake.sh")
+	// Self-expiring stand-in: an orphaned fake poller must die on its own.
+	// A killed test run leaves the child alive (Windows never tears down
+	// process trees), so the script bounds its lifetime with a sleep loop
+	// instead of blocking on stdin forever. (`read -t` is a bashism dash
+	// lacks; the loop is portable.)
+	script := "#!/bin/sh\nn=0\nwhile [ \"$n\" -lt 300 ]; do sleep 1; n=$((n+1)); done\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile(fake poller): %v", err)
 	}
-	cmd := exec.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatalf("StdinPipe(fake poller): %v", err)
-	}
+	cmd := execshim.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
 		t.Fatalf("Start(fake poller): %v", err)
 	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_ = stdin.Close()
 		_ = cmd.Wait()
 	})
 	waitForSubmitPollerCmdline(t, cmd.Process.Pid, cityPath, sessionName, agentName)
@@ -1516,6 +1518,12 @@ func TestSubmitInterruptNowHardRestartsAndTruncatesPiPendingTurn(t *testing.T) {
 }
 
 func TestSubmitInterruptNowRestoresPiSessionWhenTranscriptResetFails(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// The failure is injected by chmod'ing the session dir read-only.
+		// NTFS governs directory writability by ACL, not mode bits, so the
+		// chmod is a no-op and the transcript reset unexpectedly succeeds.
+		t.Skip("read-only-directory error injection is a no-op on Windows")
+	}
 	store := beads.NewMemStore()
 	sp := runtime.NewFake()
 	mgr := NewManagerWithOptions(store, sp)

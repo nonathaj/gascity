@@ -24,6 +24,7 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/supervisor"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/test/tmuxtest"
 	"github.com/rogpeppe/go-internal/testscript"
 )
@@ -198,6 +199,13 @@ func (m cleanupTestingM) Run() int {
 }
 
 func TestMain(m *testing.M) {
+	// Hard lifetime bound: a killed `go test` run orphans this binary on
+	// Windows (no process-tree teardown), and one blocked on a subprocess
+	// Wait lives forever. Only a watchdog os.Exit reliably ends it
+	// (incident gw-qhs). Armed before the testscript re-exec branch so
+	// re-executed "gc"/"bd" invocations are bounded too.
+	testutil.StartExitWatchdog()
+
 	maybeRunProductMetricsDirectChildEnvSpy()
 
 	// testscript re-executes the test binary as "gc" or "bd" for each txtar

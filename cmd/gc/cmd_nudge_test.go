@@ -16,6 +16,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/nudgepoller"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/pidutil"
@@ -3676,7 +3677,13 @@ func TestExistingPollerPIDPreservesSameTargetAfterDifferentTarget(t *testing.T) 
 // refer to no live process for the duration of the test.
 func deadPID(t *testing.T) int {
 	t.Helper()
-	cmd := exec.Command("true")
+	// execshim.LookPath falls back to the Git-for-Windows coreutils dir,
+	// where bare "true" lives on Windows.
+	truePath, err := execshim.LookPath("true")
+	if err != nil {
+		t.Fatalf("LookPath(true): %v", err)
+	}
+	cmd := exec.Command(truePath)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start(true): %v", err)
 	}
@@ -3786,22 +3793,21 @@ func TestReapStaleNudgePollersMissingDirNoOp(t *testing.T) {
 func startPollerLikeProcess(t *testing.T, cityPath, agentName string) *exec.Cmd {
 	t.Helper()
 	const sessionName = "sess-worker"
-	scriptPath := filepath.Join(t.TempDir(), "gc-fake")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nread _hold\n"), 0o755); err != nil {
+	scriptPath := filepath.Join(t.TempDir(), "gc-fake.sh")
+	// Self-expiring stand-in: an orphaned fake poller must die on its own
+	// (Windows never tears down process trees when a test run is killed),
+	// so bound its lifetime with a sleep loop instead of blocking on stdin.
+	script := "#!/bin/sh\nn=0\nwhile [ \"$n\" -lt 300 ]; do sleep 1; n=$((n+1)); done\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile(fake poller): %v", err)
 	}
-	cmd := exec.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatalf("StdinPipe(fake poller): %v", err)
-	}
+	cmd := execshim.Command(scriptPath, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
 		t.Fatalf("Start(fake poller): %v", err)
 	}
 	t.Cleanup(func() {
 		_ = cmd.Process.Kill()
-		_ = stdin.Close()
 		_ = cmd.Wait()
 	})
 	waitForPollerCmdline(t, cmd.Process.Pid, cityPath, sessionName, agentName)
