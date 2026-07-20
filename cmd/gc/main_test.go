@@ -224,6 +224,16 @@ func TestMain(m *testing.M) {
 		return
 	}
 
+	// Fork-bomb backstop (incident gw-8g5): a test binary only ever
+	// receives -test.* flags. A positional argument here means some gc
+	// self-spawn path (nudge poller, supervisor start, sling, perf)
+	// resolved os.Executable to THIS binary and a refusal guard was
+	// missed — running the suite would re-detonate. Die loudly instead.
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		fmt.Fprintf(os.Stderr, "gc.test: refusing to run as %q (self-spawn re-exec guard, incident gw-8g5)\n", strings.Join(os.Args[1:], " "))
+		os.Exit(1)
+	}
+
 	clearProcessLiveEnvForTests()
 	if err := os.Setenv(managedDoltTestModeEnv, "1"); err != nil {
 		panic(err)

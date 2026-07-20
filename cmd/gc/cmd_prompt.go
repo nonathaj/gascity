@@ -353,6 +353,9 @@ func defaultSlingCaller(ctx context.Context, args []string) error {
 	if err != nil {
 		bin = os.Args[0]
 	}
+	if refuseTestBinarySelfSpawn(bin) {
+		return fmt.Errorf("refusing to invoke sling via Go test binary %q", bin)
+	}
 	cmd := exec.CommandContext(ctx, bin, append([]string{"sling"}, args...)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

@@ -524,6 +524,10 @@ func doSupervisorStartJSON(stdout, stderr io.Writer, jsonOut bool) int {
 		fmt.Fprintf(stderr, "gc supervisor start: finding executable: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}
+	if refuseTestBinarySelfSpawn(gcPath) {
+		fmt.Fprintf(stderr, "gc supervisor start: refusing to spawn supervisor from Go test binary %q\n", gcPath) //nolint:errcheck // best-effort stderr
+		return 1
+	}
 
 	logPath := supervisorLogPath()
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {

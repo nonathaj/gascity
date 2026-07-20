@@ -1603,6 +1603,9 @@ func ensureNudgePoller(cityPath, agentName, sessionName string) error {
 		if err != nil {
 			return err
 		}
+		if refuseTestBinarySelfSpawn(exe) {
+			return fmt.Errorf("refusing to start nudge poller with Go test binary %q", exe)
+		}
 		cmd := exec.Command(exe, nudgepoller.CommandArgs(cityPath, sessionName, agentName)...)
 		cmd.Env = os.Environ()
 		cmd.Stdout = io.Discard

@@ -19,7 +19,9 @@ import (
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
-const productMetricsDirectChildEnvSpyPath = "GC_TEST_PRODUCT_METRICS_DIRECT_CHILD_ENV_SPY_PATH"
+// Aliased to the production constant so the TestMain spy intercept, the
+// self-spawn refusal guards, and these tests can never drift apart.
+const productMetricsDirectChildEnvSpyPath = productMetricsChildEnvSpyPathEnv
 
 var productMetricsDirectChildObservedKeys = []string{
 	execenv.UsageMetricsDisableEnv,

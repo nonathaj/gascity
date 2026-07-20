@@ -101,6 +101,9 @@ func gcBinaryPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving gc binary: %w", err)
 	}
+	if refuseTestBinarySelfSpawn(path) {
+		return "", fmt.Errorf("refusing to run perf against Go test binary %q", path)
+	}
 	return path, nil
 }
 
