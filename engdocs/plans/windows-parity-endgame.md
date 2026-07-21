@@ -26,6 +26,26 @@ The pattern that held for every tranche so far — *each dark package
 contains at least one real production bug* — is the reason to finish
 this rather than gate-and-forget.
 
+## Tranche R0 — make the gate real (before everything)
+
+Review finding (2026-07-21): `windows-gate.yml` triggered only on
+`main` and the long-deleted `windows-port` branch — **no commit on the
+parity branch has ever run in CI**, so "134 green" was a dev-box
+claim, not a CI fact. Steps:
+
+1. Fix triggers: `main` + `fix/**` pushes (done alongside this plan
+   revision), keep `workflow_dispatch`.
+2. Let the trigger-fix push run the gate on this branch; triage
+   runner-vs-devbox deltas. Predictable ones: **no `dolt.exe` on
+   `windows-latest`** (dolt-dependent tests must self-skip when the
+   binary is absent — locally unverifiable because dolt is always
+   installed here), different Git-for-Windows footprint, no
+   `%GOPATH%\bin` tools.
+3. Adopt the policy: a package is only "green" once it passes **on
+   the runner**, and green-listing any package >~30 tests requires
+   two consecutive clean full runs (single `count=1` passes have
+   already lied — the FormulaFeed TTL flake).
+
 ## Tranche R — consolidation refactors (first; small; locks in doctrine)
 
 Debt accumulated while moving fast. Doing these first prevents churn in
@@ -49,7 +69,26 @@ patterns into named primitives.
    discovery's `portsByPID` (whose "yields nothing on Windows" TODO
    this closes — Windows dolt cleanup gains real port attribution).
 
-Exit: all four landed with tests; no behavior change on Linux
+5. **Doctrine lints (the maintainability keystone).** The doctrine is
+   prose; this repo enforces its invariants with lint-tests (testenv
+   import lint, env-baseline golden, worker-boundary import test).
+   Add a policy test in the same family that pattern-scans non-test
+   production sources for doctrine violations: bare `".test"` suffix
+   checks outside execshim (P6 — this exact miss fork-bombed the
+   host), raw `exec.LookPath`/`exec.Command` in packages already
+   swept to execshim (allowlist-based, like the worker boundary), and
+   `t.Setenv("HOME", …)` without a paired `USERPROFILE` in test files
+   (T1). This turns Linux/Windows co-maintenance from review-dependent
+   into self-policing.
+
+Rules for this tranche: R touches already-green packages (doctor,
+packregistry, sessionlog, eventexport) — every touched package reruns
+its full gate. `pidutil.TCPListenerPID` placement is a recorded
+decision: pid-centric lookup belongs in pidutil; a new one-function
+`netutil` package was rejected (KISS). When R1 lands, update the
+doctrine's P3 row to point at the pathutil helpers.
+
+Exit: all five landed with tests; no behavior change on Linux
 (cross-vet + affected-package runs).
 
 ## Tranche C — the 13 small packages (+3 free listings)
@@ -78,7 +117,24 @@ has real semantics; every skip names its mechanism; each package lands
 as its own commit with green-list addition; full-package rerun plus
 zero-leftover check every time.
 
-Exit: all 16 green-listed (150/157).
+Also in this tranche (parked-bead integration from the plan review):
+
+- **gw-ho3** — exec-provider watch-startup teardown orphans an sh
+  grandchild (live production Windows bug, doctrine P9). Production
+  item; land before or with the workspacesvc/worker packages it
+  touches.
+- **gw-3ic** — fsys rename-over-open + RemoveAll retry hardening
+  (production; rotation and worktree/pack cleanup paths).
+- **gw-l8d** — split the 7 test files using Unix-only syscalls behind
+  build tags, then upgrade the gate's cross-compile job to
+  `GOOS=windows go vet` (the gate header documents this intent) —
+  catches `_test.go` compile regressions no CI currently sees.
+- **gw-e0a** (conformance fixture slimming) and **gw-a8g** (proctable
+  nits) ride along where their packages are touched.
+- **gw-rdd** is stale (api and doctor are done) — close it.
+
+Exit: all 16 green-listed (150/157) **on the runner**, plus the
+parked production items above.
 
 ## Tranche A — the `cmd/gc` campaign
 
@@ -119,6 +175,13 @@ path in sh text where backslashes are eaten — `ToSlash` before
 quoting (doctrine P8). This fixes `TestProductMetricsDirectChildEnvHookWorkQuery`
 and, more importantly, every real hook work-query on Windows.
 
+Known landmine, pre-registered: cmd/gc's `TestMain` isolates its temp
+root by setting **only `TMPDIR`**, which `os.TempDir()` ignores on
+Windows (it reads `TMP`/`TEMP`) — so the package's temp isolation and
+orphan sweeps are partially void there. Expect this to explain a
+multi-failure cluster; fix is the established `setTestTempDir` class
+(set all three).
+
 ### A2. Suite-sharded inventory
 
 One contained full run, failures bucketed **by test file** (the suite
@@ -143,11 +206,14 @@ beads:
 The 32 txtars exec the real `gc` binary. Windows failure modes and
 their canonical handling:
 
-1. **Path-form assertions in golden output** → prefer making gc's
-   *output* canonical (slash-form for identifiers per P4) over
-   platform-forking goldens; where output is legitimately native, use
+1. **Path-form assertions in golden output** → the rule is sharper
+   than "prefer slash-form": *identifiers* (scope refs,
+   config-authored paths, slugs) are canonical slash-form on every
+   platform per P4; *user-facing filesystem paths* stay native —
+   that is correct Windows UX, and their goldens fork via
    testscript's built-in `[windows]`/`[!windows]` conditions inside
-   the txtar rather than duplicating files.
+   the txtar rather than duplicated files. Never normalize a real
+   path just to avoid a golden fork.
 2. **sh-dependent script steps** → testscript's `exec` runs through
    the harness; steps invoking coreutils get the same execshim
    treatment gc itself uses, or `[!windows]` gating when the step
@@ -181,6 +247,12 @@ skips; add a "Windows developer workflow" subsection to TESTING.md
 green-list `./scripts`. The gomod-replace guard is CI-side (Linux) —
 if we ever want it cross-platform it routes through
 `execshim.ShellCommand`, but that is not this tranche.
+
+Accepted deltas, stated explicitly: Windows developers lose the
+observable-run logging, the timing census, and slice memory budgeting
+that the bash entrypoints provide on Linux — containment (the safety
+property) is platform-neutral, the observability extras are not.
+(`make` is not in Git-Bash anyway, which closes the porting argument.)
 
 Exit: `./scripts` green-listed; TESTING.md section merged; gw-f2w
 closed citing the workflow decision.
@@ -221,8 +293,10 @@ Feature work, not test parity; already designed in
   recycling caveat in `proctable/kill_windows.go`).
 
 Sequenced last: they are additive capabilities whose test matrices are
-already written, and every prerequisite primitive (`winjob`,
-`pidutil.Cmdline`, TCP attribution) now exists.
+already written. Most prerequisite primitives (`winjob`,
+`pidutil.Cmdline`, TCP attribution) exist; the exception is
+creation-time PID identity (`GetProcessTimes` in `pidutil.StartTime`),
+which is P3's own first deliverable, not a preexisting input.
 
 ## Sequencing
 
@@ -241,7 +315,13 @@ into a short exclusion list in `windows-gate.yml`.
 - **Upstream drift** — every tranche touches upstream-owned files;
   keep patches minimal per AGENTS.md, and run
   `git range-diff upstream/main...HEAD` before starting A and after
-  finishing it.
+  finishing it. Sweep changes (the 63-site LookPath switch) land as
+  mechanical single-purpose commits so they cherry-pick/upstream
+  cleanly; **gw-gdh** (reconciling with the upstream
+  `feature/reconciler-win-*` branches) executes alongside this step.
+- **gw-9k7** (host commit-limit exhaustion) is likely resolved by the
+  containment work — recommend closing or re-scoping after a quiet
+  week rather than carrying it open indefinitely.
 - **testscript unknowns** — bounded by giving the txtar corpus its own
   session and its own strategy (A4) instead of folding it into suite
   sweeps.

@@ -41,9 +41,13 @@ the codebase stays coherent.
 ## Operational rules
 
 - The green list is `.github/windows-test-packages.txt` (header comment
-  explains its lifecycle). A package joins only when fully green; a
-  deliberate skip must name the mechanism it gates on and, where one
-  exists, the bead that will dissolve it.
+  explains its lifecycle). A package joins only when fully green **on
+  the windows-latest runner** (the dev box has tools — dolt, real
+  CLIs — the runner lacks; tool-dependent tests must self-skip when
+  the tool is absent), and green-listing a package over ~30 tests
+  requires two consecutive clean full runs. A deliberate skip must
+  name the mechanism it gates on and, where one exists, the bead that
+  will dissolve it.
 - New `GC_*` env reads must be added to
   `internal/testenv/testdata/gc_env_read_baseline.golden` (test-gated).
 - `internal/testenv` stays dependency-minimal: it is blank-imported by

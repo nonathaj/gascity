@@ -13,11 +13,14 @@
 # cross-compile job to vet once those are split.
 name: Windows Gate
 
+# Triggers: main, plus fix/** so parity-tranche branches validate on
+# every push (the deleted windows-port branch was dead config — the
+# gate silently never ran for months of branch work).
 on:
   push:
-    branches: [main, windows-port]
+    branches: [main, 'fix/**']
   pull_request:
-    branches: [main, windows-port]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
