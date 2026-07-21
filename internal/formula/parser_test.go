@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestParse_BasicFormula(t *testing.T) {
@@ -456,7 +458,9 @@ func TestDescriptionAssetRelPath(t *testing.T) {
 }
 
 func TestParseFileOversizedDescriptionFileWritesPromptReference(t *testing.T) {
-	dir := t.TempDir()
+	// Canonical: the prompt reference embeds a production-normalized
+	// path; a raw TempDir is 8.3 short-form on CI runners.
+	dir := testutil.CanonicalTempDir(t)
 	promptPath := filepath.Join(dir, "operator.md")
 	largePrompt := strings.Repeat("large prompt body\n", descriptionFileInlineMaxBytes/16+128)
 	if len([]byte(largePrompt)) <= descriptionFileInlineMaxBytes {

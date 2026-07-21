@@ -3,6 +3,8 @@ package citylayout
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestCityRuntimeEnv(t *testing.T) {
@@ -213,7 +215,9 @@ func TestControlDispatcherTraceDefaultPathForRuntimeDirAndName(t *testing.T) {
 }
 
 func TestTrustedAmbientCityRuntimeDirAcceptsLegacyCityRootAnchor(t *testing.T) {
-	cityRoot := t.TempDir()
+	// Canonical: production normalizes the returned dir; a raw TempDir
+	// is 8.3 short-form on CI runners and would mismatch.
+	cityRoot := testutil.CanonicalTempDir(t)
 	runtimeDir := filepath.Join(cityRoot, ".gc", "runtime")
 
 	t.Setenv("GC_CITY", "")

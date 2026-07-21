@@ -37,6 +37,8 @@ the codebase stays coherent.
 | T8 | Paths inside sh fixture scripts | `command -v cygpath >/dev/null 2>&1 && p=$(cygpath -u "$p")` — no-op off Windows. Git-Bash quirks: `curl` lives in `/mingw64/bin`, there is no `wget`, no `python3` |
 | T9 | Per-platform goldens (hashes over native paths) | Verify against the tool's actual source before pinning (the Kimi MD5 goldens are verified against kimi-cli's `PureWindowsPath` + `md5(str(path))`) — determinism-only assertions can pass while wrong |
 | T10 | Repo-path comparisons in lints/generators | `filepath.Rel` returns backslashes: `ToSlash` before comparing to slash literals (this bug hid in the testenv lint *and* its generator) |
+| T11 | 8.3 short names on CI runners | GitHub's TEMP is short-form (`C:\Users\RUNNER~1\…`); production canonicalization expands to the long form, so expectations built from raw `t.TempDir()` mismatch — **only on the runner** (short local usernames need no 8.3 alias). Use `testutil.CanonicalTempDir` (or inline `EvalSymlinks` where testutil would cycle) whenever a test compares canonicalized production output against fixture paths |
+| T12 | GitHub-runner environment deltas | No `dolt.exe`, ICMP blocked (`ping`-based slow-command fakes fail — use `powershell -NoProfile -Command Start-Sleep`), `timeout.exe` rejects redirected stdin, no `/tmp` (a bare `MkdirTemp("/tmp", …)` panics; use the default root on Windows) |
 
 ## Operational rules
 

@@ -136,6 +136,10 @@ func TestHandleStatusCacheExpiresOnTTL(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status #%d = %d, want 200", i, rec.Code)
 		}
+		// A nanosecond TTL only rolls the bucket when the wall clock
+		// advances; Windows time.Now() ticks at ~0.5ms granularity, so
+		// step past a tick or back-to-back requests share one bucket.
+		time.Sleep(2 * time.Millisecond)
 	}
 	if store.listCalls < 2 {
 		t.Fatalf("List calls with expiring TTL = %d, want >= 2 (each request should rebuild)", store.listCalls)

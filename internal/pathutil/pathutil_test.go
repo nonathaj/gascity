@@ -44,7 +44,14 @@ func TestSamePathSymlink(t *testing.T) {
 }
 
 func TestNormalizePathForCompareResolvesSymlinkAncestorForMissingLeaf(t *testing.T) {
+	// EvalSymlinks: CI runners hand out 8.3 short temp roots
+	// (RUNNER~1); the want must be long-form like production output.
+	// (Inline rather than testutil.CanonicalTempDir — testutil imports
+	// this package.)
 	root := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	realParent := filepath.Join(root, "real-parent")
 	if err := os.MkdirAll(realParent, 0o755); err != nil {
 		t.Fatal(err)

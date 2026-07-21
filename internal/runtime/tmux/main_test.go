@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/testutil"
@@ -23,7 +24,14 @@ func TestMain(m *testing.M) {
 
 	_ = os.Unsetenv(AgentSliceEnv)
 
-	tmuxSocketParent, err := os.MkdirTemp("/tmp", "gct-")
+	// /tmp keeps macOS socket paths under the 104-byte AF_UNIX limit;
+	// Windows has no /tmp (psmux uses named pipes, no length concern),
+	// so fall back to the default temp root there.
+	socketParentRoot := "/tmp"
+	if runtime.GOOS == "windows" {
+		socketParentRoot = ""
+	}
+	tmuxSocketParent, err := os.MkdirTemp(socketParentRoot, "gct-")
 	if err != nil {
 		panic("tmux tests: creating socket parent: " + err.Error())
 	}
