@@ -1741,6 +1741,11 @@ func managedDoltDoctorProcessOwnsRuntime(pid int, dataDir, configPath string) bo
 }
 
 func managedDoltDoctorProcCmdline(pid int) string {
+	// pidutil covers linux (/proc) and windows (PEB); the ps fallback
+	// below serves darwin.
+	if argv, err := pidutil.Cmdline(pid); err == nil && len(argv) > 0 {
+		return strings.Join(argv, " ")
+	}
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	if err == nil {
 		return strings.ReplaceAll(string(data), "\x00", " ")
@@ -1757,6 +1762,9 @@ func managedDoltDoctorProcCmdline(pid int) string {
 func managedDoltDoctorPortHolderPID(port int) int {
 	if port <= 0 {
 		return 0
+	}
+	if pid, checked := portHolderPIDPlatform(port); checked {
+		return pid
 	}
 	if pid, checked := managedDoltDoctorPortHolderFromProc(uint16(port)); checked {
 		return pid

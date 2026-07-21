@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -73,9 +74,13 @@ func StartTime(pid int) (string, error) {
 }
 
 // Cmdline returns a PID's command line from /proc, normalized through
-// NormalizeArgv. It returns an error on hosts without /proc cmdline support
-// or when the process record is unreadable.
+// NormalizeArgv. Hosts without /proc cmdline support (darwin) return
+// ErrCmdlineUnsupported so AliveWithCmdline can fall back to Alive; an
+// unreadable record on a /proc host is a real error and fails closed.
 func Cmdline(pid int) ([]string, error) {
+	if runtime.GOOS != "linux" {
+		return nil, ErrCmdlineUnsupported
+	}
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	if err != nil {
 		return nil, err

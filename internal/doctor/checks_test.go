@@ -2913,13 +2913,6 @@ func TestDoltNomsSizeCheck_IgnoresAmbientDataDirOverride(t *testing.T) {
 }
 
 func TestDoltNomsSizeCheck_UsesPublishedRuntimeDataDir(t *testing.T) {
-	if goruntime.GOOS == "windows" {
-		// validPublishedManagedDoltDoctorState confirms the state's PID
-		// owns the runtime via /proc cmdline/cwd (or lsof); the Windows
-		// arm needs pidutil's PEB command-line reader (gw-opy). Until
-		// then a published running state is never trusted on Windows.
-		t.Skip("published-state PID ownership check needs the pidutil PEB arm (gw-opy)")
-	}
 	dir := setupManagedDoltCity(t)
 	dataDir := filepath.Join(t.TempDir(), "relocated-dolt-data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {

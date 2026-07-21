@@ -507,8 +507,8 @@ func TestEnsureSessionSubmitPollerRejectsGoTestExecutable(t *testing.T) {
 }
 
 func TestExistingSessionSubmitPollerPIDRejectsUnrelatedLivePID(t *testing.T) {
-	if goruntime.GOOS != "linux" {
-		t.Skip("poller ownership check uses /proc on linux")
+	if goruntime.GOOS != "linux" && goruntime.GOOS != "windows" {
+		t.Skip("poller ownership check needs cmdline inspection (/proc or PEB)")
 	}
 	cityPath := t.TempDir()
 	pidPath := sessionSubmitPollerPIDPath(cityPath, "s-test", "session-id")
@@ -529,8 +529,8 @@ func TestExistingSessionSubmitPollerPIDRejectsUnrelatedLivePID(t *testing.T) {
 }
 
 func TestExistingSessionSubmitPollerPIDAcceptsMatchingCitySession(t *testing.T) {
-	if goruntime.GOOS != "linux" {
-		t.Skip("poller ownership check uses /proc on linux")
+	if goruntime.GOOS != "linux" && goruntime.GOOS != "windows" {
+		t.Skip("poller ownership check needs cmdline inspection (/proc or PEB)")
 	}
 	cityPath := t.TempDir()
 	sessionName := "s-test"
@@ -553,8 +553,8 @@ func TestExistingSessionSubmitPollerPIDAcceptsMatchingCitySession(t *testing.T) 
 }
 
 func TestExistingSessionSubmitPollerPIDRejectsDifferentCitySameSession(t *testing.T) {
-	if goruntime.GOOS != "linux" {
-		t.Skip("poller ownership check uses /proc on linux")
+	if goruntime.GOOS != "linux" && goruntime.GOOS != "windows" {
+		t.Skip("poller ownership check needs cmdline inspection (/proc or PEB)")
 	}
 	cityPath := t.TempDir()
 	otherCityPath := t.TempDir()
@@ -578,8 +578,8 @@ func TestExistingSessionSubmitPollerPIDRejectsDifferentCitySameSession(t *testin
 }
 
 func TestExistingSessionSubmitPollerPIDRejectsDifferentTargetSameCitySession(t *testing.T) {
-	if goruntime.GOOS != "linux" {
-		t.Skip("poller ownership check uses /proc on linux")
+	if goruntime.GOOS != "linux" && goruntime.GOOS != "windows" {
+		t.Skip("poller ownership check needs cmdline inspection (/proc or PEB)")
 	}
 	cityPath := t.TempDir()
 	sessionName := "s-test"

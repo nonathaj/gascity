@@ -2,9 +2,15 @@
 package pidutil
 
 import (
-	"runtime"
+	"errors"
 	"strings"
 )
+
+// ErrCmdlineUnsupported marks platforms where Cmdline has no
+// implementation (darwin). AliveWithCmdline treats it as "cannot
+// verify" and falls back to plain liveness; any other Cmdline error
+// fails closed.
+var ErrCmdlineUnsupported = errors.New("pidutil: cmdline inspection is not supported on this platform")
 
 // AliveWithStartTime reports whether pid is alive AND still the same process
 // identified by startTime. It closes the PID-reuse hole in Alive: during a
@@ -33,9 +39,12 @@ func AliveWithStartTime(pid int, startTime string) bool {
 	return current == startTime
 }
 
-// AliveWithCmdline reports whether a PID exists, is not a zombie, and its
-// command line satisfies match. On platforms without /proc cmdline support it
-// falls back to Alive so callers preserve existing non-Linux behavior.
+// AliveWithCmdline reports whether a PID exists, is not a zombie, and
+// its command line satisfies match. Verification is real on linux
+// (/proc) and windows (PEB); platforms without an implementation
+// (ErrCmdlineUnsupported, i.e. darwin) fall back to Alive so callers
+// preserve prior behavior there. Any other Cmdline failure fails
+// closed, matching an unreadable /proc record.
 func AliveWithCmdline(pid int, match func([]string) bool) bool {
 	if !Alive(pid) {
 		return false
@@ -43,11 +52,11 @@ func AliveWithCmdline(pid int, match func([]string) bool) bool {
 	if match == nil {
 		return false
 	}
-	if runtime.GOOS != "linux" {
-		return true
-	}
 	argv, err := Cmdline(pid)
 	if err != nil {
+		if errors.Is(err, ErrCmdlineUnsupported) {
+			return true
+		}
 		return false
 	}
 	return match(argv)
