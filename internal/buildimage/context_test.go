@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -263,7 +264,9 @@ name = "test-city"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	// Windows synthesizes 0666 for writable files; the copied mode is a
+	// Unix-bit behavior.
+	if got := info.Mode().Perm(); goruntime.GOOS != "windows" && got != 0o600 {
 		t.Fatalf("linked file mode = %v, want 0600", got)
 	}
 }

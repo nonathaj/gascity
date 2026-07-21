@@ -297,7 +297,10 @@ func TestLocalSourceReadsFileAndDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "registry.toml"), []byte(validCatalog), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	source, err := NormalizeSource(dir)
+	// Raw local paths must be portable (drive-letter paths are policy-
+	// rejected), so exercise the raw-path branch with a relative source.
+	t.Chdir(dir)
+	source, err := NormalizeSource(".")
 	if err != nil {
 		t.Fatalf("NormalizeSource: %v", err)
 	}
@@ -319,8 +322,11 @@ func TestLocalSourceReadsFileAndDirectory(t *testing.T) {
 
 type urlForTest struct{ path string }
 
+// String renders the sanctioned file URL form: three slashes, POSIX
+// path ("file:///C:/x" on Windows — "file://C:/x" would parse "C:" as
+// a host).
 func (u *urlForTest) String() string {
-	return "file://" + filepath.ToSlash(u.path)
+	return "file:///" + strings.TrimPrefix(filepath.ToSlash(u.path), "/")
 }
 
 func TestImmutableReleaseMetadata(t *testing.T) {
@@ -341,7 +347,7 @@ func TestRefreshRegistryRejectsUnreadablePriorCache(t *testing.T) {
 		t.Fatalf("WriteCatalogCache(invalid): %v", err)
 	}
 
-	_, err := RefreshRegistry(context.Background(), home, Registry{Name: "main", Source: sourceDir}, FetchOptions{})
+	_, err := RefreshRegistry(context.Background(), home, Registry{Name: "main", Source: (&urlForTest{path: sourceDir}).String()}, FetchOptions{})
 	if err == nil {
 		t.Fatal("RefreshRegistry succeeded with unreadable prior cache")
 	}

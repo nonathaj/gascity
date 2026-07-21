@@ -16,6 +16,10 @@ func TestPackContentHashUsesTrackedPackManifest(t *testing.T) {
 	writeContentHashFile(t, repo, "packs/demo/commands/run.sh", "#!/bin/sh\nexit 0\n", 0o755)
 	writeContentHashFile(t, repo, "packs/demo/untracked.txt", "ignored\n", 0o644)
 	runContentHashGit(t, repo, "add", "packs/demo/pack.toml", "packs/demo/commands/run.sh")
+	// The expected manifest pins run.sh at 0755. NTFS has no exec bit,
+	// so `git add` records 100644 there; set the tree mode explicitly to
+	// make the fixture deterministic on every platform.
+	runContentHashGit(t, repo, "update-index", "--chmod=+x", "packs/demo/commands/run.sh")
 	runContentHashGit(t, repo, "commit", "-m", "add demo pack")
 	commit := strings.TrimSpace(outputContentHashGit(t, repo, "rev-parse", "HEAD"))
 

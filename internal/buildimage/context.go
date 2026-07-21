@@ -37,7 +37,11 @@ type Manifest struct {
 }
 
 // excludedPaths returns true for paths that should never be baked.
+// Patterns are slash-form; callers hand in filepath.Rel output, which
+// is backslashed on Windows — normalize so runtime state, sockets, and
+// secrets are excluded on every platform.
 func excludedPath(rel string) bool {
+	rel = filepath.ToSlash(rel)
 	if rel == citylayout.RuntimeRoot {
 		return false
 	}

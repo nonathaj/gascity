@@ -25,6 +25,7 @@
 ./internal/beads/exec
 ./internal/bootstrap
 ./internal/bootstrap/packs/core
+./internal/buildimage
 ./internal/cityinit
 ./internal/citylayout
 ./internal/citywriteauth
@@ -71,8 +72,9 @@
 ./internal/orders
 ./internal/overlay
 ./internal/packman
-./internal/pgauth
+./internal/packregistry
 ./internal/pathutil
+./internal/pgauth
 ./internal/pidutil
 ./internal/pricing
 ./internal/processenv
@@ -92,6 +94,9 @@
 ./internal/runtime/hybrid
 ./internal/runtime/proctable
 ./internal/runtime/registry
+./internal/runtime/rppcheck
+./internal/runtime/runtimecapability
+./internal/runtime/runtimecontract
 ./internal/runtime/runtimetest
 ./internal/runtime/ssh
 ./internal/runtime/subprocess
@@ -119,9 +124,10 @@
 ./internal/webhooksink
 ./internal/webhookverify
 ./internal/winjob
+./internal/workdir
 ./internal/worker/builtin
 ./internal/worker/fake
-./internal/workdir
+./pkg/eventexport
 ./scripts/cipolicy
 ./test/acceptance
 ./test/acceptance/tier_b

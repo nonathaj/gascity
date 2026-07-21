@@ -533,5 +533,12 @@ func fileURLPath(u *url.URL) (string, error) {
 	if u.Host != "" && u.Host != "localhost" {
 		return "", fmt.Errorf("unsupported file registry host %q", u.Host)
 	}
-	return filepath.FromSlash(u.Path), nil
+	// file:///C:/x parses to Path "/C:/x"; strip the leading slash of a
+	// drive-lettered path so the sanctioned file:// escape hatch works
+	// on Windows too (bare drive paths stay rejected for portability).
+	p := u.Path
+	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+		p = p[1:]
+	}
+	return filepath.FromSlash(p), nil
 }

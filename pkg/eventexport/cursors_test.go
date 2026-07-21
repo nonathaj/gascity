@@ -77,18 +77,12 @@ func TestLoadCursors_NullFileErrors(t *testing.T) {
 // TestLoadCursors_UnreadableFileErrors proves an existing-but-unreadable cursor
 // file errors (permission), rather than being treated as a fresh start.
 func TestLoadCursors_UnreadableFileErrors(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root bypasses file permission checks")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cursor.json")
 	if err := os.WriteFile(path, []byte(`{"c1":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(path, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	makeFileUnreadable(t, path)
 	if _, err := LoadCursors(path); err == nil {
 		t.Fatal("unreadable file must error, got nil")
 	}
