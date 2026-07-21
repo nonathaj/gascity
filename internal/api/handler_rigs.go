@@ -2,12 +2,12 @@ package api
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	gitpkg "github.com/gastownhall/gascity/internal/git"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -45,7 +45,7 @@ func (s *Server) buildRigResponse(cfg *config.City, rig config.Rig, sp runtime.P
 		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
-		processNames := config.AgentProcessNames(cfg, a, exec.LookPath)
+		processNames := config.AgentProcessNames(cfg, a, execshim.LookPath)
 		expanded := expandAgent(a, cityName, tmpl, sp)
 		for _, ea := range expanded {
 			agentCount++
@@ -93,7 +93,7 @@ func (s *Server) rigSuspended(cfg *config.City, rig config.Rig, sp runtime.Provi
 		if workdirutil.ConfiguredRigName(cityPath, a, cfg.Rigs) != rig.Name {
 			continue
 		}
-		processNames := config.AgentProcessNames(cfg, a, exec.LookPath)
+		processNames := config.AgentProcessNames(cfg, a, execshim.LookPath)
 		expanded := expandAgent(a, cityName, tmpl, sp)
 		for _, ea := range expanded {
 			agentCount++

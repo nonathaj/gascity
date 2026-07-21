@@ -3,11 +3,11 @@ package api
 import (
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/processenv"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -289,7 +289,7 @@ func (s *Server) resolveSessionTemplateForCreate(template string) (*config.Resol
 	if !ok {
 		return nil, "", "", "", errSessionTemplateNotFound
 	}
-	resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		return nil, "", "", "", err
 	}
@@ -310,7 +310,7 @@ func (s *Server) resolveSessionTemplate(template string) (*config.ResolvedProvid
 	if !ok {
 		return nil, "", "", "", errSessionTemplateNotFound
 	}
-	resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		return nil, "", "", "", err
 	}
@@ -619,7 +619,7 @@ func (s *Server) resolveSessionRuntimeWithMetadata(info session.Info, metadata m
 		sessionKind := legacySessionKind(metadata)
 		if session.UseAgentTemplateForProviderResolution(sessionKind, metadata, info.Provider, agentCfg.Provider, agentFound) {
 			if agentFound {
-				candidate, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
+				candidate, err := config.ResolveProvider(&agentCfg, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 				if err == nil {
 					candidateWorkDir, workDirErr := s.resolveSessionWorkDir(agentCfg, agentCfg.QualifiedName())
 					if workDirErr == nil {
@@ -667,6 +667,6 @@ func (s *Server) resolveBareProvider(providerName string) (*config.ResolvedProvi
 		&config.Agent{Provider: providerName},
 		&cfg.Workspace,
 		cfg.Providers,
-		exec.LookPath,
+		execshim.LookPath,
 	)
 }

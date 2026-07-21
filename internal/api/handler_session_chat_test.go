@@ -240,10 +240,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -257,7 +257,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 	info := session.Info{
 		ID:        "gc-1",
 		Template:  "opencode",
-		Command:   "/bin/echo",
+		Command:   "echo",
 		Provider:  "opencode",
 		Transport: "acp",
 		WorkDir:   "/tmp/workdir",
@@ -267,7 +267,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -275,13 +275,13 @@ func TestBuildSessionResumeUsesStoredACPCommandForProviderSession(t *testing.T) 
 func TestBuildSessionResumeFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-		Command:   "/bin/echo",
+		Command:   "echo",
 		PathCheck: "true",
 	}
 
 	info := createTestSession(t, fs.cityBeadStore, fs.sp, "Chat")
 	info.Template = "myrig/worker"
-	info.Command = "/bin/echo --stored"
+	info.Command = "echo --stored"
 	if err := fs.cityBeadStore.SetMetadata(info.ID, "template_overrides", "{"); err != nil {
 		t.Fatalf("SetMetadata(template_overrides): %v", err)
 	}
@@ -291,7 +291,7 @@ func TestBuildSessionResumeFallsBackToStoredCommandWhenTemplateOverridesInvalid(
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo --stored"; got != want {
+	if got, want := cmd, "echo --stored"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -304,10 +304,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -317,7 +317,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "opencode",
-		Command:  "/bin/echo acp",
+		Command:  "echo acp",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -326,7 +326,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -339,10 +339,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -356,7 +356,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "opencode",
-		Command:  "/bin/echo acp",
+		Command:  "echo acp",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -365,7 +365,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionWithoutTr
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -378,10 +378,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionOnACPEnab
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
 				DisplayName: "Custom ACP",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -391,7 +391,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionOnACPEnab
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "custom-acp",
-		Command:  "/bin/echo acp",
+		Command:  "echo acp",
 		Provider: "custom-acp",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -400,7 +400,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyProviderSessionOnACPEnab
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -416,10 +416,10 @@ func TestBuildSessionResumeUsesStoredACPTransportForTemplateSession(t *testing.T
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -429,7 +429,7 @@ func TestBuildSessionResumeUsesStoredACPTransportForTemplateSession(t *testing.T
 	info := session.Info{
 		ID:        "gc-1",
 		Template:  "worker",
-		Command:   "/bin/echo",
+		Command:   "echo",
 		Provider:  "opencode",
 		Transport: "acp",
 		WorkDir:   "/tmp/workdir",
@@ -439,7 +439,7 @@ func TestBuildSessionResumeUsesStoredACPTransportForTemplateSession(t *testing.T
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -455,10 +455,10 @@ func TestBuildSessionResumeDoesNotInferConfiguredACPTransportForTemplateSessionW
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -468,7 +468,7 @@ func TestBuildSessionResumeDoesNotInferConfiguredACPTransportForTemplateSessionW
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "worker",
-		Command:  "/bin/echo",
+		Command:  "echo",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -477,19 +477,19 @@ func TestBuildSessionResumeDoesNotInferConfiguredACPTransportForTemplateSessionW
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
 
 func TestResolvedSessionTransportUsesResumeMetadataForLegacyACPWithSameCommand(t *testing.T) {
 	resolved := &config.ResolvedProvider{
-		Command:    "/bin/echo",
-		ACPCommand: "/bin/echo",
+		Command:    "echo",
+		ACPCommand: "echo",
 	}
 
 	got := resolvedSessionTransport(session.Info{
-		Command: "/bin/echo",
+		Command: "echo",
 	}, resolved, "acp", map[string]string{
 		"resume_flag": "--resume",
 	}, false)
@@ -500,11 +500,11 @@ func TestResolvedSessionTransportUsesResumeMetadataForLegacyACPWithSameCommand(t
 
 func TestLegacyACPTransportAmbiguousWithSameCommand(t *testing.T) {
 	resolved := &config.ResolvedProvider{
-		Command:    "/bin/echo",
-		ACPCommand: "/bin/echo",
+		Command:    "echo",
+		ACPCommand: "echo",
 	}
 
-	if !legacyACPTransportAmbiguous(resolved, "acp", "/bin/echo", nil) {
+	if !legacyACPTransportAmbiguous(resolved, "acp", "echo", nil) {
 		t.Fatal("legacyACPTransportAmbiguous() = false, want true")
 	}
 }
@@ -517,10 +517,10 @@ func TestBuildSessionResumeUsesStartedConfigHashForLegacyProviderACPWithSameComm
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
 				DisplayName: "Custom ACP",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 			},
 		},
 	}
@@ -564,7 +564,7 @@ args = ["{{.AgentName}}"]
 	_, hints, err := srv.buildSessionResume(session.Info{
 		ID:       bead.ID,
 		Template: "custom-acp",
-		Command:  "/bin/echo",
+		Command:  "echo",
 		Provider: "custom-acp",
 		WorkDir:  fs.cityPath,
 	})
@@ -587,10 +587,10 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyTemplateSessionWithoutTr
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -600,7 +600,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyTemplateSessionWithoutTr
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "worker",
-		Command:  "/bin/echo acp",
+		Command:  "echo acp",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -609,7 +609,7 @@ func TestBuildSessionResumeUsesStoredACPCommandForLegacyTemplateSessionWithoutTr
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -625,10 +625,10 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitTr
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -638,7 +638,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitTr
 	info := session.Info{
 		ID:       "gc-1",
 		Template: "worker",
-		Command:  "/bin/echo",
+		Command:  "echo",
 		Provider: "opencode",
 		WorkDir:  "/tmp/workdir",
 	}
@@ -647,7 +647,7 @@ func TestBuildSessionResumeKeepsDefaultCommandForLegacyTemplateWithoutExplicitTr
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -663,10 +663,10 @@ func TestBuildSessionResumeIgnoresMCPResolutionErrorForACPResume(t *testing.T) {
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -695,7 +695,7 @@ command = [broken
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 	if len(hints.MCPServers) != 0 {
@@ -713,7 +713,7 @@ func TestBuildSessionResumeIgnoresMCPResolutionErrorWithoutACPTransport(t *testi
 		Providers: map[string]config.ProviderSpec{
 			"stub": {
 				DisplayName: "Stub",
-				Command:     "/bin/echo",
+				Command:     "echo",
 			},
 		},
 	}
@@ -740,7 +740,7 @@ command = [broken
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo"; got != want {
+	if got, want := cmd, "echo"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 }
@@ -762,10 +762,10 @@ func TestBuildSessionResumeUsesStoredAgentNameForResumeMCPMaterialization(t *tes
 		Providers: map[string]config.ProviderSpec{
 			"opencode": {
 				DisplayName: "OpenCode",
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -798,7 +798,7 @@ args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if got, want := cmd, "/bin/echo acp"; got != want {
+	if got, want := cmd, "echo acp"; got != want {
 		t.Fatalf("resume command = %q, want %q", got, want)
 	}
 	if len(hints.MCPServers) != 1 {

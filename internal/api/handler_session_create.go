@@ -7,11 +7,11 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/worker"
 )
@@ -261,7 +261,7 @@ func (s *Server) createProviderSession(w http.ResponseWriter, r *http.Request, s
 		&config.Agent{Provider: providerName},
 		&cfg.Workspace,
 		cfg.Providers,
-		exec.LookPath,
+		execshim.LookPath,
 	)
 	if err != nil {
 		s.idem.unreserve(idemKey)

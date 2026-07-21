@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/api/apierr"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/sessionlog"
@@ -237,7 +237,7 @@ func (s *Server) humaCreateProviderSession(_ context.Context, store beads.Sessio
 		&config.Agent{Provider: providerName},
 		&cfg.Workspace,
 		cfg.Providers,
-		exec.LookPath,
+		execshim.LookPath,
 	)
 	if err != nil {
 		if errors.Is(err, config.ErrProviderNotInPATH) {

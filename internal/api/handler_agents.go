@@ -363,7 +363,7 @@ func (s *Server) findActiveBeadForAssigneesWithFreshness(rig string, live bool, 
 //  2. Raw city-level spec — fallback for Phase A configs without `base`.
 //  3. Builtin spec — covers pure-builtin providers with no city override.
 //  4. The provider name itself — last-resort sentinel so callers can
-//     still exec.LookPath something readable.
+//     still execshim.LookPath something readable.
 func providerPathCheck(providerName string, cfg *config.City) string {
 	if resolved, ok := config.ResolvedProviderCached(cfg, providerName); ok {
 		// ResolvedProvider.Command is fully inherited; PathCheck is

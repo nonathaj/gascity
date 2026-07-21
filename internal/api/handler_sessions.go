@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/worker"
@@ -777,7 +777,7 @@ func resolveProviderForSessionOptions(info session.Info, metadata map[string]str
 		if !agentFound {
 			return nil, fmt.Errorf("agent template %q not found", info.Template)
 		}
-		return config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, exec.LookPath)
+		return config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	}
 	var lastErr error
 	for _, providerName := range []string{info.Provider, info.Template} {
@@ -785,7 +785,7 @@ func resolveProviderForSessionOptions(info session.Info, metadata map[string]str
 		if providerName == "" {
 			continue
 		}
-		rp, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, exec.LookPath)
+		rp, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 		if err == nil {
 			return rp, nil
 		}

@@ -3,12 +3,12 @@ package api
 import (
 	"context"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/molecule"
 	"github.com/gastownhall/gascity/internal/rollout"
@@ -77,7 +77,7 @@ type Server struct {
 	// per per-city Server (the supervisor caches one Server per city).
 	rigIdem *rigIdemIndex
 
-	// lookPathCache caches exec.LookPath results with a short TTL to avoid
+	// lookPathCache caches execshim.LookPath results with a short TTL to avoid
 	// repeated filesystem scans on every GET /v0/agents request.
 	lookPathMu      sync.Mutex
 	lookPathEntries map[string]lookPathEntry
@@ -118,7 +118,7 @@ type Server struct {
 	// supervisor builds per-city servers.
 	dashboardBase func() string
 
-	// LookPathFunc can be overridden in tests. Defaults to exec.LookPath.
+	// LookPathFunc can be overridden in tests. Defaults to execshim.LookPath.
 	LookPathFunc func(string) (string, error)
 
 	// SlingRunnerFunc can be overridden in tests. When nil, uses a real
@@ -193,7 +193,7 @@ func (s *Server) cachedLookPath(binary string) bool {
 
 	lookPath := s.LookPathFunc
 	if lookPath == nil {
-		lookPath = exec.LookPath
+		lookPath = execshim.LookPath
 	}
 	_, err := lookPath(binary)
 	found := err == nil
@@ -210,7 +210,7 @@ func (s *Server) resolveTitleProvider() *config.ResolvedProvider {
 	}
 	lookPath := s.LookPathFunc
 	if lookPath == nil {
-		lookPath = exec.LookPath
+		lookPath = execshim.LookPath
 	}
 	rp, err := config.ResolveProvider(
 		&config.Agent{},
