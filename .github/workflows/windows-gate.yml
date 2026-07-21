@@ -8,9 +8,10 @@
 #      (.github/windows-test-packages.txt). Grows as Phase 2 of the
 #      Windows support plan lands.
 #
-# GOOS=windows go vet is intentionally absent: 7 test packages still use
-# unix-only syscalls (gw-l8d) and vet compiles test files. Upgrade the
-# cross-compile job to vet once those are split.
+# The cross-compile job also runs GOOS=windows go vet ./... — vet
+# compiles test files, so this catches _test.go compile regressions on
+# the _windows.go surface that no other CI sees (gw-l8d; the unix-only
+# test-syscall files are now build-tagged).
 name: Windows Gate
 
 # Triggers: main, plus fix/** so parity-tranche branches validate on
@@ -47,6 +48,12 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: '0'
         run: go build ./...
+      - name: Vet all packages for windows/amd64 (compiles test files)
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go vet ./...
 
   unit-green:
     name: Windows unit tests (green list)
