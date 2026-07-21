@@ -13,6 +13,7 @@
 ./examples/t3bridge-gastown
 ./internal/agent
 ./internal/agentutil
+./internal/api
 ./internal/api/apierr
 ./internal/api/dashboardbff
 ./internal/api/dashboardspa

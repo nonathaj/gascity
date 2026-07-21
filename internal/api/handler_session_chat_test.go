@@ -55,7 +55,7 @@ func TestBuildSessionResumeUsesResolvedProviderCommand(t *testing.T) {
 				DisplayName:       "Wrapped Gemini",
 				Command:           "aimux",
 				Args:              []string{"run", "gemini", "--", "--approval-mode", "yolo"},
-				PathCheck:         "true", // use /usr/bin/true so LookPath succeeds in CI
+				PathCheck:         "true", // use true so LookPath succeeds in CI
 				ReadyPromptPrefix: "> ",
 				Env: map[string]string{
 					"GC_HOME": "/tmp/gc-accept-home",
@@ -183,7 +183,7 @@ func TestBuildSessionResumePreservesStoredResolvedCommand(t *testing.T) {
 func TestBuildSessionResumeRebuildsBareStoredCommandForPoolClaudeAgent(t *testing.T) {
 	fs := newSessionFakeState(t)
 	claude := config.BuiltinProviders()["claude"]
-	claude.PathCheck = "true" // use /usr/bin/true so LookPath succeeds in CI
+	claude.PathCheck = "true" // use true so LookPath succeeds in CI
 	maxActive := 3
 	gcDir := filepath.Join(fs.cityPath, ".gc")
 	if err := os.MkdirAll(gcDir, 0o755); err != nil {

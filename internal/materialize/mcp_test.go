@@ -72,6 +72,40 @@ TOKEN = "{{.Token}}"
 	}
 }
 
+// TestLoadMCPDirEscapesTemplateValuesForTOML pins the Windows-critical
+// substitution rule: template values land inside TOML basic strings, so
+// a native Windows path (backslashes) must be escaped or the rendered
+// TOML fails to parse ("expected eight hexadecimal digits after '\U'").
+// A no-op for typical Unix values.
+func TestLoadMCPDirEscapesTemplateValuesForTOML(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "tool.template.toml"), `
+name = "tool"
+command = "uvx"
+args = ["--work-dir", "{{.WorkDir}}", "--label", "{{.Label}}"]
+`)
+
+	winPath := `C:\Users\jane\work dir`
+	servers, err := LoadMCPDir(dir, "city", map[string]string{
+		"WorkDir": winPath,
+		"Label":   `quote " and backslash \ survive`,
+	})
+	if err != nil {
+		t.Fatalf("LoadMCPDir: %v", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("len(servers)=%d, want 1", len(servers))
+	}
+	if got := servers[0].Args[1]; got != winPath {
+		t.Fatalf("Args[1]=%q, want %q round-tripped", got, winPath)
+	}
+	if got, want := servers[0].Args[3], `quote " and backslash \ survive`; got != want {
+		t.Fatalf("Args[3]=%q, want %q", got, want)
+	}
+}
+
 func TestLoadMCPDirRejectsDuplicateLogicalNames(t *testing.T) {
 	t.Parallel()
 

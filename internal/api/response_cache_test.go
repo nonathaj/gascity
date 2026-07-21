@@ -348,6 +348,10 @@ func TestHandleFormulaFeedCacheExpiresOnTTL(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("feed #%d = %d, want 200", i, rec.Code)
 		}
+		// A nanosecond TTL only rolls the bucket when the wall clock
+		// advances; Windows time.Now() ticks at ~0.5ms granularity, so
+		// step past a tick or back-to-back requests share one bucket.
+		time.Sleep(2 * time.Millisecond)
 	}
 	if rigStore.listCalls < 2 {
 		t.Fatalf("rig List calls with expiring TTL = %d, want >= 2", rigStore.listCalls)

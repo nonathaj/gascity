@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/config"
@@ -17,7 +18,14 @@ func putExecutableOnPath(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	body := "#!/bin/sh\nexit 0\n"
+	if goruntime.GOOS == "windows" {
+		// LookPath resolves through PATHEXT on Windows; an extensionless
+		// sh script is invisible to it.
+		path += ".bat"
+		body = "@exit /b 0\r\n"
+	}
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
 		t.Fatalf("write executable %s: %v", name, err)
 	}
 	t.Setenv("PATH", dir)

@@ -22,7 +22,7 @@ func TestResolvedSessionConfigForProviderBuildsNormalizedConfig(t *testing.T) {
 	}}
 	resolved := &config.ResolvedProvider{
 		Name:                   "stub",
-		Command:                "/bin/echo",
+		Command:                "echo",
 		ReadyPromptPrefix:      "stub-ready>",
 		ReadyDelayMs:           250,
 		ProcessNames:           []string{"echo"},
@@ -51,7 +51,7 @@ func TestResolvedSessionConfigForProviderBuildsNormalizedConfig(t *testing.T) {
 		t.Fatalf("resolvedSessionConfigForProvider: %v", err)
 	}
 
-	if got, want := cfg.Runtime.Command, "/bin/echo"; got != want {
+	if got, want := cfg.Runtime.Command, "echo"; got != want {
 		t.Fatalf("Runtime.Command = %q, want %q", got, want)
 	}
 	if got, want := cfg.Runtime.Provider, "stub"; got != want {
@@ -186,7 +186,7 @@ func TestResolvedSessionConfigForProviderSeedsCityRuntimeEnv(t *testing.T) {
 		nil,
 		&config.ResolvedProvider{
 			Name:    "stub",
-			Command: "/bin/echo",
+			Command: "echo",
 			Env: map[string]string{
 				"ANTHROPIC_BASE_URL": "https://resolved.example.test",
 				"PROVIDER_TOKEN":     "ok",
@@ -275,7 +275,7 @@ func TestResolvedSessionConfigForProviderCityAnchorsBeatConflictingProviderEnv(t
 		nil,
 		&config.ResolvedProvider{
 			Name:    "stub",
-			Command: "/bin/echo",
+			Command: "echo",
 			Env: map[string]string{
 				"GC_CITY":      "/wrong/city",
 				"GC_CITY_PATH": "/wrong/city",
@@ -336,7 +336,7 @@ func TestResolvedSessionConfigForProviderSkipsStoredMCPMetadataForTmuxTransport(
 		},
 		&config.ResolvedProvider{
 			Name:    "stub",
-			Command: "/bin/echo",
+			Command: "echo",
 		},
 		"",
 		"/tmp/workdir",

@@ -2136,10 +2136,10 @@ func TestHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testing.T
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	state := &stateWithSessionProvider{
@@ -2172,7 +2172,7 @@ func TestHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testing.T
 	if err != nil {
 		t.Fatalf("Get(%s): %v", success.Session.ID, err)
 	}
-	if got, want := bead.Metadata["command"], "/bin/echo acp"; got != want {
+	if got, want := bead.Metadata["command"], "echo acp"; got != want {
 		t.Fatalf("command metadata = %q, want %q", got, want)
 	}
 	if got, want := bead.Metadata["transport"], "acp"; got != want {
@@ -2187,10 +2187,10 @@ func TestHumaHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testi
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	state := &stateWithSessionProvider{
@@ -2222,7 +2222,7 @@ func TestHumaHandleSessionCreateUsesACPTransportCommandForAgentTemplate(t *testi
 	if err != nil {
 		t.Fatalf("Get(%s): %v", success.Session.ID, err)
 	}
-	if got, want := bead.Metadata["command"], "/bin/echo acp"; got != want {
+	if got, want := bead.Metadata["command"], "echo acp"; got != want {
 		t.Fatalf("command metadata = %q, want %q", got, want)
 	}
 	if got, want := bead.Metadata["transport"], "acp"; got != want {
@@ -2237,10 +2237,10 @@ func TestHandleSessionCreateRejectsACPAgentWithoutACPRouting(t *testing.T) {
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	srv := New(fs)
@@ -2265,7 +2265,7 @@ func TestHandleSessionCreateRejectsExplicitTmuxAgentWhenCitySessionProviderIsACP
 	fs.cfg.Agents[0].Session = "tmux"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 	}
 	state := &stateWithSessionProvider{
@@ -2301,10 +2301,10 @@ func TestHumaHandleSessionCreateRejectsACPAgentWithoutACPRouting(t *testing.T) {
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	srv := New(fs)
@@ -2327,7 +2327,7 @@ func TestHandleSessionCreateRejectsACPAgentWhenProviderLacksACP(t *testing.T) {
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["custom"] = config.ProviderSpec{
 		DisplayName: "Custom",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 	}
 	state := &stateWithSessionProvider{
@@ -2356,10 +2356,10 @@ func TestHumaHandleSessionCreatePropagatesMCPResolutionErrorForACPAgent(t *testi
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -2679,10 +2679,10 @@ func TestResolveAgentCreateContextUsesConcreteIdentityForMCPMaterialization(t *t
 	fs.cfg.NamedSessions = nil
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -2881,7 +2881,7 @@ func TestMaterializeNamedSessionSeedsCityRuntimeEnv(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
 		DisplayName: "Test Agent",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		Env: map[string]string{
 			"ANTHROPIC_BASE_URL": "https://resolved.example.test",
 			"GC_CITY":            "/wrong/city",
@@ -2950,10 +2950,10 @@ func TestMaterializeNamedSessionRejectsACPTemplateWithoutACPRouting(t *testing.T
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	srv := New(fs)
@@ -2986,10 +2986,10 @@ func TestMaterializeNamedSessionPersistsStoredMCPMetadata(t *testing.T) {
 	fs.cfg.Agents[0].Session = "acp"
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -3058,10 +3058,10 @@ func TestHandleProviderSessionCreateUsesACPTransportCommand(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	defaultSP := runtime.NewFake()
@@ -3093,7 +3093,7 @@ func TestHandleProviderSessionCreateUsesACPTransportCommand(t *testing.T) {
 	if start == nil {
 		t.Fatalf("LastStartConfig(%q) = nil", success.Session.SessionName)
 	}
-	if got, want := start.Command, "/bin/echo acp"; got != want {
+	if got, want := start.Command, "echo acp"; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	bead, err := fs.cityBeadStore.Get(success.Session.ID)
@@ -3113,10 +3113,10 @@ func TestHumaCreateProviderSessionUsesACPTransportCommand(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	defaultSP := runtime.NewFake()
@@ -3153,7 +3153,7 @@ func TestHumaCreateProviderSessionUsesACPTransportCommand(t *testing.T) {
 	if start == nil {
 		t.Fatalf("LastStartConfig(%q) = nil", sessionName)
 	}
-	if got, want := start.Command, "/bin/echo acp"; got != want {
+	if got, want := start.Command, "echo acp"; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	if got, want := bead.Metadata["transport"], "acp"; got != want {
@@ -3169,10 +3169,10 @@ func TestHandleProviderSessionCreateUsesACPTransportCapabilityProvider(t *testin
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	provider := &transportCapableProvider{Fake: runtime.NewFake()}
@@ -3203,7 +3203,7 @@ func TestHandleProviderSessionCreateUsesACPTransportCapabilityProvider(t *testin
 	if start == nil {
 		t.Fatalf("LastStartConfig(%q) = nil", success.Session.SessionName)
 	}
-	if got, want := start.Command, "/bin/echo acp"; got != want {
+	if got, want := start.Command, "echo acp"; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	bead, err := fs.cityBeadStore.Get(success.Session.ID)
@@ -3220,10 +3220,10 @@ func TestHandleProviderSessionCreateUsesPerSessionMCPIdentity(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -3294,10 +3294,10 @@ func TestHandleProviderSessionCreateRejectsACPProviderWithoutACPRouting(t *testi
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	srv := New(fs)
@@ -3320,10 +3320,10 @@ func TestHumaCreateProviderSessionRejectsACPProviderWithoutACPRouting(t *testing
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["opencode"] = config.ProviderSpec{
 		DisplayName: "OpenCode",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	srv := New(fs)

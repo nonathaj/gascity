@@ -25,7 +25,7 @@ func TestResolveWorkerSessionRuntimePreservesStoredResolvedCommandAndBackfillsCu
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:       "Resolved Worker",
-		Command:           "/bin/echo",
+		Command:           "echo",
 		ReadyPromptPrefix: "resolved-ready>",
 		ReadyDelayMs:      321,
 		ResumeFlag:        "--resume-resolved",
@@ -41,7 +41,7 @@ func TestResolveWorkerSessionRuntimePreservesStoredResolvedCommandAndBackfillsCu
 	info := session.Info{
 		ID:            "sess-1",
 		Template:      "myrig/worker",
-		Command:       "/bin/echo --composed",
+		Command:       "echo --composed",
 		Provider:      "persisted-provider",
 		WorkDir:       t.TempDir(),
 		ResumeFlag:    "--resume-persisted",
@@ -141,7 +141,7 @@ func TestResolveWorkerSessionRuntimeUsesResolvedCommandWhenPersistedCommandIsSta
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:       "Resolved Worker",
-		Command:           "/bin/echo",
+		Command:           "echo",
 		ReadyPromptPrefix: "resolved-ready>",
 		ReadyDelayMs:      321,
 		ResumeFlag:        "--resume-resolved",
@@ -169,7 +169,7 @@ func TestResolveWorkerSessionRuntimeUsesResolvedCommandWhenPersistedCommandIsSta
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntime() = nil")
 	}
-	if got, want := runtimeCfg.Command, "/bin/echo"; got != want {
+	if got, want := runtimeCfg.Command, "echo"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 	if got, want := runtimeCfg.Provider, info.Provider; got != want {
@@ -205,9 +205,9 @@ func TestResolveWorkerSessionRuntimeIncludesEffectiveMCPServers(t *testing.T) {
 	supportsACP := true
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName: "Resolved Worker",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -259,9 +259,9 @@ func TestResolveWorkerSessionRuntimeUsesStoredAgentNameForResumeMCPMaterializati
 	supportsACP := true
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName: "Resolved Worker",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -322,9 +322,9 @@ func TestResolveWorkerSessionRuntimeFallsBackToStoredMCPServersWhenCatalogBreaks
 	supportsACP := true
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName: "Resolved Worker",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -394,9 +394,9 @@ func TestResolveWorkerSessionRuntimeFallsBackToRuntimeMCPServersSnapshotWhenCata
 	supportsACP := true
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName: "Resolved Worker",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -476,9 +476,9 @@ func TestResolveWorkerSessionRuntimeFallsBackToSanitizedStoredMCPServersWhenRunt
 	supportsACP := true
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName: "Resolved Worker",
-		Command:     "/bin/echo",
+		Command:     "echo",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 	fs.cfg.PackMCPDir = filepath.Join(fs.cityPath, "mcp")
@@ -546,7 +546,7 @@ command = [broken
 func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverridesInvalid(t *testing.T) {
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-		Command:   "/bin/echo",
+		Command:   "echo",
 		PathCheck: "true",
 	}
 
@@ -554,7 +554,7 @@ func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverride
 	info := session.Info{
 		ID:       "sess-1",
 		Template: "myrig/worker",
-		Command:  "/bin/echo --stored",
+		Command:  "echo --stored",
 		WorkDir:  t.TempDir(),
 	}
 
@@ -567,7 +567,7 @@ func TestResolveWorkerSessionRuntimeFallsBackToStoredCommandWhenTemplateOverride
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, want := runtimeCfg.Command, "/bin/echo --stored"; got != want {
+	if got, want := runtimeCfg.Command, "echo --stored"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }
@@ -601,7 +601,7 @@ func TestResolveWorkerSessionRuntimeResolvesMouseOnlyForInteractiveResume(t *tes
 		t.Run(tc.name, func(t *testing.T) {
 			fs := newSessionFakeState(t)
 			fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-				Command:   "/bin/echo",
+				Command:   "echo",
 				PathCheck: "true",
 			}
 
@@ -628,10 +628,10 @@ func TestResolveWorkerSessionRuntimeUsesProviderACPDefaultWithoutTemplateSession
 	supportsACP := true
 	fs := newSessionFakeState(t)
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-		Command:     "/bin/echo",
+		Command:     "echo",
 		PathCheck:   "true",
 		SupportsACP: &supportsACP,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 		ACPArgs:     []string{"acp"},
 	}
 
@@ -646,7 +646,7 @@ func TestResolveWorkerSessionRuntimeUsesProviderACPDefaultWithoutTemplateSession
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, want := runtimeCfg.Command, "/bin/echo acp"; got != want {
+	if got, want := runtimeCfg.Command, "echo acp"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 }
@@ -739,12 +739,12 @@ func TestResolveWorkerSessionRuntimeProviderCollisionUsesPersistedProvider(t *te
 		Provider: "agent-provider",
 	}}
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-		Command:   "/bin/echo",
+		Command:   "echo",
 		Args:      []string{"provider-session"},
 		PathCheck: "true",
 	}
 	fs.cfg.Providers["agent-provider"] = config.ProviderSpec{
-		Command:   "/bin/echo",
+		Command:   "echo",
 		Args:      []string{"agent-template"},
 		PathCheck: "true",
 	}
@@ -763,7 +763,7 @@ func TestResolveWorkerSessionRuntimeProviderCollisionUsesPersistedProvider(t *te
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, wantPrefix := runtimeCfg.Command, "/bin/echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
+	if got, wantPrefix := runtimeCfg.Command, "echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
 		t.Fatalf("Command = %q, want prefix %q", got, wantPrefix)
 	}
 }
@@ -776,7 +776,7 @@ func TestResolveWorkerSessionRuntimeProviderNameCollisionUsesPersistedProvider(t
 		WorkDir:  ".gc/worktrees/agent-codex",
 	}}
 	fs.cfg.Providers["codex"] = config.ProviderSpec{
-		Command:   "/bin/echo",
+		Command:   "echo",
 		Args:      []string{"provider-session"},
 		PathCheck: "true",
 	}
@@ -796,7 +796,7 @@ func TestResolveWorkerSessionRuntimeProviderNameCollisionUsesPersistedProvider(t
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, wantPrefix := runtimeCfg.Command, "/bin/echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
+	if got, wantPrefix := runtimeCfg.Command, "echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
 		t.Fatalf("Command = %q, want prefix %q", got, wantPrefix)
 	}
 	if got, want := runtimeCfg.WorkDir, providerWorkDir; got != want {
@@ -813,10 +813,10 @@ func TestResolveWorkerSessionRuntimeLegacyProviderKindSkipsNameCollisionTemplate
 		WorkDir:  ".gc/worktrees/agent-codex",
 	}}
 	fs.cfg.Providers["codex"] = config.ProviderSpec{
-		Command:    "/bin/echo",
+		Command:    "echo",
 		Args:       []string{"provider-session"},
 		PathCheck:  "true",
-		ACPCommand: "/bin/echo",
+		ACPCommand: "echo",
 		ACPArgs:    []string{"agent-acp"},
 	}
 
@@ -834,7 +834,7 @@ func TestResolveWorkerSessionRuntimeLegacyProviderKindSkipsNameCollisionTemplate
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, wantPrefix := runtimeCfg.Command, "/bin/echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
+	if got, wantPrefix := runtimeCfg.Command, "echo provider-session"; !strings.HasPrefix(got, wantPrefix) {
 		t.Fatalf("Command = %q, want prefix %q", got, wantPrefix)
 	}
 }
@@ -847,7 +847,7 @@ func TestResolveWorkerSessionRuntimeLegacyManualAgentUsesTemplateWhenProviderMat
 		Provider: "test-agent",
 	}}
 	fs.cfg.Providers["test-agent"] = config.ProviderSpec{
-		Command:           "/bin/echo",
+		Command:           "echo",
 		Args:              []string{"agent-template"},
 		PathCheck:         "true",
 		ReadyPromptPrefix: "agent-ready>",
@@ -868,7 +868,7 @@ func TestResolveWorkerSessionRuntimeLegacyManualAgentUsesTemplateWhenProviderMat
 	if runtimeCfg == nil {
 		t.Fatal("resolveWorkerSessionRuntimeWithMetadata() = nil")
 	}
-	if got, want := runtimeCfg.Command, "/bin/echo agent-template"; got != want {
+	if got, want := runtimeCfg.Command, "echo agent-template"; got != want {
 		t.Fatalf("Command = %q, want %q", got, want)
 	}
 	if got, want := runtimeCfg.Hints.ReadyPromptPrefix, "agent-ready>"; got != want {
@@ -881,7 +881,7 @@ func TestWorkerFactorySessionByIDUsesResolvedTemplateRuntime(t *testing.T) {
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:       "Resolved Worker",
-		Command:           "/bin/echo",
+		Command:           "echo",
 		ReadyPromptPrefix: "resolved-ready>",
 		ReadyDelayMs:      321,
 		ResumeFlag:        "--resume-resolved",
@@ -912,7 +912,7 @@ func TestWorkerFactorySessionByIDUsesResolvedTemplateRuntime(t *testing.T) {
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --session-id-resolved "+info.SessionKey; got != want {
+	if got, want := start.Command, "echo --session-id-resolved "+info.SessionKey; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	if got, want := start.ReadyPromptPrefix, "resolved-ready>"; got != want {
@@ -928,13 +928,13 @@ func TestWorkerFactorySessionByIDPreservesStoredResolvedCommand(t *testing.T) {
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:   "Resolved Worker",
-		Command:       "/bin/echo",
+		Command:       "echo",
 		SessionIDFlag: "--session-id-resolved",
 	}
 
 	srv := New(fs)
 	mgr := session.NewManagerWithOptions(fs.cityBeadStore, fs.sp)
-	info, err := mgr.CreateSession(context.Background(), session.CreateOptions{BeadOnly: true, Template: "myrig/worker", Title: "Chat", Command: "/bin/echo --composed", WorkDir: t.TempDir(), Provider: "resolved-worker", Transport: "", Resume: session.ProviderResume{SessionIDFlag: "--stale-session-id"}})
+	info, err := mgr.CreateSession(context.Background(), session.CreateOptions{BeadOnly: true, Template: "myrig/worker", Title: "Chat", Command: "echo --composed", WorkDir: t.TempDir(), Provider: "resolved-worker", Transport: "", Resume: session.ProviderResume{SessionIDFlag: "--stale-session-id"}})
 	if err != nil {
 		t.Fatalf("CreateBeadOnly: %v", err)
 	}
@@ -955,7 +955,7 @@ func TestWorkerFactorySessionByIDPreservesStoredResolvedCommand(t *testing.T) {
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --composed --session-id-resolved "+info.SessionKey; got != want {
+	if got, want := start.Command, "echo --composed --session-id-resolved "+info.SessionKey; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 }
@@ -965,7 +965,7 @@ func TestWorkerFactorySessionByIDUsesResolvedCommandAndResumeSettingsOnResume(t 
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:   "Resolved Worker",
-		Command:       "/bin/echo",
+		Command:       "echo",
 		ResumeFlag:    "--resume-resolved",
 		ResumeStyle:   "flag",
 		SessionIDFlag: "--session-id-resolved",
@@ -1002,7 +1002,7 @@ func TestWorkerFactorySessionByIDUsesResolvedCommandAndResumeSettingsOnResume(t 
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --resume-resolved "+info.SessionKey; got != want {
+	if got, want := start.Command, "echo --resume-resolved "+info.SessionKey; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 }
@@ -1011,16 +1011,16 @@ func TestWorkerFactorySessionByIDAppliesTemplateOverridesToExplicitResumeCommand
 	fs := newSessionFakeStateWithOptions(t)
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	spec := fs.cfg.Providers["test-agent"]
-	spec.Command = "/bin/echo"
-	spec.ResumeCommand = "/bin/echo resume {{.SessionKey}} --skip-permissions"
+	spec.Command = "echo"
+	spec.ResumeCommand = "echo resume {{.SessionKey}} --skip-permissions"
 	spec.SessionIDFlag = "--session-id"
 	fs.cfg.Providers["resolved-worker"] = spec
 
 	srv := New(fs)
 	mgr := session.NewManagerWithOptions(fs.cityBeadStore, fs.sp)
 	info, err := mgr.CreateSession(
-		context.Background(), session.CreateOptions{Template: "myrig/worker", Title: "Chat", Command: "/bin/echo --skip-permissions", WorkDir: t.TempDir(), Provider: "resolved-worker", Env: nil, Resume: session.ProviderResume{
-			ResumeCommand: "/bin/echo resume {{.SessionKey}} --skip-permissions",
+		context.Background(), session.CreateOptions{Template: "myrig/worker", Title: "Chat", Command: "echo --skip-permissions", WorkDir: t.TempDir(), Provider: "resolved-worker", Env: nil, Resume: session.ProviderResume{
+			ResumeCommand: "echo resume {{.SessionKey}} --skip-permissions",
 			SessionIDFlag: "--session-id",
 		}, Hints: runtime.Config{}, ExtraMeta: map[string]string{"session_origin": "manual"}})
 	if err != nil {
@@ -1049,7 +1049,7 @@ func TestWorkerFactorySessionByIDAppliesTemplateOverridesToExplicitResumeCommand
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	want := "/bin/echo resume " + info.SessionKey + " --permission-mode plan --effort max"
+	want := "echo resume " + info.SessionKey + " --permission-mode plan --effort max"
 	if got := start.Command; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
@@ -1060,7 +1060,7 @@ func TestWorkerFactoryHandleForTargetUsesResolvedTemplateRuntimeForSessionMeta(t
 	fs.cfg.Agents[0].Provider = "resolved-worker"
 	fs.cfg.Providers["resolved-worker"] = config.ProviderSpec{
 		DisplayName:       "Resolved Worker",
-		Command:           "/bin/echo",
+		Command:           "echo",
 		ReadyPromptPrefix: "resolved-ready>",
 		ReadyDelayMs:      321,
 		ResumeFlag:        "--resume-resolved",
@@ -1094,7 +1094,7 @@ func TestWorkerFactoryHandleForTargetUsesResolvedTemplateRuntimeForSessionMeta(t
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --session-id-resolved "+info.SessionKey; got != want {
+	if got, want := start.Command, "echo --session-id-resolved "+info.SessionKey; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	if got, want := start.ReadyPromptPrefix, "resolved-ready>"; got != want {
@@ -1117,7 +1117,7 @@ func TestNewResolvedWorkerSessionHandleStartsResolvedSession(t *testing.T) {
 		Transport:    "acp",
 		Metadata:     map[string]string{"session_origin": "named"},
 		Runtime: worker.ResolvedRuntime{
-			Command:    "/bin/echo",
+			Command:    "echo",
 			WorkDir:    t.TempDir(),
 			Provider:   "resolved-worker",
 			SessionEnv: map[string]string{"API_RESOLVED_ENV": "present"},
@@ -1143,7 +1143,7 @@ func TestNewResolvedWorkerSessionHandleStartsResolvedSession(t *testing.T) {
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --session-id-resolved "+info.SessionKey; got != want {
+	if got, want := start.Command, "echo --session-id-resolved "+info.SessionKey; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 	if got, want := start.ReadyPromptPrefix, "resolved-ready>"; got != want {
@@ -1167,7 +1167,7 @@ func TestNewResolvedWorkerSessionHandleDerivesProviderFromCommand(t *testing.T) 
 		Template:     "myrig/worker",
 		Title:        "Worker Command Only",
 		Runtime: worker.ResolvedRuntime{
-			Command: "/bin/echo --print",
+			Command: "echo --print",
 			WorkDir: t.TempDir(),
 		},
 	})
@@ -1184,7 +1184,7 @@ func TestNewResolvedWorkerSessionHandleDerivesProviderFromCommand(t *testing.T) 
 	if start == nil {
 		t.Fatal("LastStartConfig() = nil")
 	}
-	if got, want := start.Command, "/bin/echo --print"; got != want {
+	if got, want := start.Command, "echo --print"; got != want {
 		t.Fatalf("start command = %q, want %q", got, want)
 	}
 
@@ -1192,7 +1192,7 @@ func TestNewResolvedWorkerSessionHandleDerivesProviderFromCommand(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Get(%q): %v", info.ID, err)
 	}
-	if got, want := bead.Metadata["provider"], "/bin/echo"; got != want {
+	if got, want := bead.Metadata["provider"], "echo"; got != want {
 		t.Fatalf("Metadata[provider] = %q, want %q", got, want)
 	}
 }
@@ -1207,7 +1207,7 @@ func TestWorkerFactoryRoutesWorkerOperationEventsToStateProvider(t *testing.T) {
 		Template:     "myrig/worker",
 		Title:        "Worker Events",
 		Runtime: worker.ResolvedRuntime{
-			Command:  "/bin/echo",
+			Command:  "echo",
 			WorkDir:  t.TempDir(),
 			Provider: "resolved-worker",
 			Resume: session.ProviderResume{

@@ -319,6 +319,18 @@ func expandMCPTemplate(data []byte, templateData map[string]string) ([]byte, err
 	if templateData == nil {
 		templateData = map[string]string{}
 	}
+	// Values are substituted inside TOML basic strings, so escape the
+	// two characters TOML treats specially there. Without this a native
+	// Windows path breaks the rendered document ("expected eight
+	// hexadecimal digits after '\U'"); Unix values pass through
+	// unchanged.
+	escaped := make(map[string]string, len(templateData))
+	for k, v := range templateData {
+		v = strings.ReplaceAll(v, `\`, `\\`)
+		v = strings.ReplaceAll(v, `"`, `\"`)
+		escaped[k] = v
+	}
+	templateData = escaped
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, templateData); err != nil {
 		return nil, err

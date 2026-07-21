@@ -17,6 +17,18 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 )
 
+// mustJSONBody marshals a request body so Windows paths in values are
+// properly escaped — raw string concatenation injected invalid `\U`
+// escapes and broke every request carrying an absolute path.
+func mustJSONBody(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+	return b
+}
+
 type fakeInitializer struct {
 	scaffoldReq    cityinit.InitRequest
 	scaffoldResult *cityinit.InitResult
@@ -102,7 +114,7 @@ func TestSupervisorCityCreateConflictsWhenTargetAlreadyInitialized(t *testing.T)
 			tc.setup(t, dir)
 
 			sm := newTestSupervisorMux(t, map[string]*fakeState{})
-			req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+dir+`","provider":"claude"}`))
+			req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": dir, "provider": "claude"}))))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-GC-Request", "test")
 			rec := httptest.NewRecorder()
@@ -122,6 +134,7 @@ func TestSupervisorCityCreateConflictsWhenTargetAlreadyInitialized(t *testing.T)
 func TestSupervisorCityCreateScaffoldsViaInitializer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := filepath.Join(home, "mc-city")
 	init := &fakeInitializer{
@@ -165,6 +178,7 @@ func TestSupervisorCityCreateScaffoldsViaInitializer(t *testing.T) {
 func TestSupervisorCityCreateScaffoldsWithStartCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := filepath.Join(home, "mc-city")
 	init := &fakeInitializer{
@@ -203,6 +217,7 @@ func TestSupervisorCityCreateScaffoldsWithStartCommand(t *testing.T) {
 func TestSupervisorCityCreateReturnsRequestID(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := filepath.Join(home, "mc-city")
 	init := &fakeInitializer{
@@ -237,6 +252,7 @@ func TestSupervisorCityCreateReturnsRequestID(t *testing.T) {
 func TestSupervisorCityCreateReturnsCurrentEventCursor(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := filepath.Join(home, "mc-city")
 	recorder := events.NewFake()
@@ -273,6 +289,7 @@ func TestSupervisorCityCreateReturnsCurrentEventCursor(t *testing.T) {
 func TestSupervisorCityCreateStoresPendingRequestForReconciler(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := filepath.Join(home, "mc-city")
 	resolver := &fakeCityResolver{
@@ -331,7 +348,7 @@ func TestSupervisorCityCreateRejectsDuplicatePendingRequest(t *testing.T) {
 	}
 	sm := NewSupervisorMux(resolver, init, false, "test", "", time.Now())
 
-	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+cityPath+`","provider":"claude"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": cityPath, "provider": "claude"}))))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GC-Request", "test")
 	rec := httptest.NewRecorder()
@@ -366,7 +383,7 @@ func TestSupervisorCityCreateEmitsFailedEventForPostRegisterFailure(t *testing.T
 	}
 	sm := NewSupervisorMux(resolver, init, false, "test", "", time.Now())
 
-	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+cityPath+`","provider":"claude"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": cityPath, "provider": "claude"}))))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GC-Request", "test")
 	rec := httptest.NewRecorder()
@@ -489,7 +506,7 @@ func TestSupervisorCityCreateMapsInitializerErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			init := &fakeInitializer{scaffoldErr: tc.err}
 			sm := newTestSupervisorMuxWithInitializer(t, init)
-			req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+cityPath+`","provider":"codex"}`))
+			req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": cityPath, "provider": "codex"}))))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-GC-Request", "test")
 			rec := httptest.NewRecorder()
@@ -508,7 +525,7 @@ func TestSupervisorCityCreateClearsPendingRequestOnScaffoldError(t *testing.T) {
 	resolver := &fakeCityResolver{cities: map[string]*fakeState{}, supervisorRecorder: events.NewFake()}
 	init := &fakeInitializer{scaffoldErr: errors.New("scaffold failed")}
 	sm := NewSupervisorMux(resolver, init, false, "test", "", time.Now())
-	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+cityPath+`","provider":"codex"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": cityPath, "provider": "codex"}))))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GC-Request", "test")
 	rec := httptest.NewRecorder()
@@ -528,7 +545,7 @@ func TestSupervisorCityCreateClearsPendingRequestOnScaffoldError(t *testing.T) {
 func TestSupervisorCityCreateWithoutInitializerReturns501(t *testing.T) {
 	sm := newTestSupervisorMux(t, map[string]*fakeState{})
 	cityPath := filepath.Join(t.TempDir(), "mc-city")
-	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(`{"dir":"`+cityPath+`","provider":"codex"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v0/city", strings.NewReader(string(mustJSONBody(t, map[string]string{"dir": cityPath, "provider": "codex"}))))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-GC-Request", "test")
 	rec := httptest.NewRecorder()

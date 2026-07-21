@@ -3,13 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 const (
@@ -53,7 +53,10 @@ func generateTitle(provider *config.ResolvedProvider, message, workDir string) s
 	ctx, cancel := context.WithTimeout(context.Background(), titleGenerateTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, provider.Command, args...)
+	// execshim: identical to exec.CommandContext except on Windows, where
+	// script-based provider commands (npm shims, test fakes) route
+	// through sh instead of failing to exec.
+	cmd := execshim.CommandContext(ctx, provider.Command, args...)
 	if workDir != "" {
 		cmd.Dir = workDir
 	}

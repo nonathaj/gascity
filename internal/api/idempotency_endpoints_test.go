@@ -108,7 +108,9 @@ func TestRigCreateIdempotentReplay(t *testing.T) {
 	fs := newFakeMutatorState(t)
 	h := newTestCityHandler(t, fs)
 
-	body := `{"name":"backend","path":"` + t.TempDir() + `"}`
+	// JSON-encode the body: a raw Windows temp path injects invalid
+	// backslash escapes.
+	body := string(mustJSONBody(t, map[string]string{"name": "backend", "path": t.TempDir()}))
 	first := postIdempotent(t, h, cityURL(fs, "/rigs"), "rig-create-1", body)
 	if first.Code != http.StatusCreated {
 		t.Fatalf("first create: status = %d, want 201; body = %s", first.Code, first.Body.String())

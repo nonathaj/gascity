@@ -21,7 +21,7 @@ func TestProviderSessionTransportUsesExplicitACPConfigOnCustomProvider(t *testin
 	transport, err := providerSessionTransport(&config.ResolvedProvider{
 		Name:        "custom-acp",
 		SupportsACP: true,
-		ACPCommand:  "/bin/echo",
+		ACPCommand:  "echo",
 	}, &createTransportCapableProvider{Fake: runtime.NewFake()})
 	if err != nil {
 		t.Fatalf("providerSessionTransport: %v", err)
@@ -86,10 +86,10 @@ func TestResolveSessionTemplateForCreateUsesProviderACPDefault(t *testing.T) {
 		}},
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -117,10 +117,10 @@ func TestResolveSessionTemplateUsesProviderACPDefaultForLegacyRuntimeTransport(t
 		}},
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -147,10 +147,10 @@ func TestConfiguredSessionTransportUsesProviderACPDefaultForAgentTemplates(t *te
 		}},
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -174,10 +174,10 @@ func TestBuildSessionResumeDoesNotInferProviderACPDefaultForStoppedLegacyTemplat
 		}},
 		Providers: map[string]config.ProviderSpec{
 			"custom-acp": {
-				Command:     "/bin/echo",
+				Command:     "echo",
 				PathCheck:   "true",
 				SupportsACP: &supportsACP,
-				ACPCommand:  "/bin/echo",
+				ACPCommand:  "echo",
 				ACPArgs:     []string{"acp"},
 			},
 		},
@@ -187,14 +187,14 @@ func TestBuildSessionResumeDoesNotInferProviderACPDefaultForStoppedLegacyTemplat
 	cmd, _, err := srv.buildSessionResume(session.Info{
 		ID:       "gc-1",
 		Template: "myrig/worker",
-		Command:  "/bin/echo",
+		Command:  "echo",
 		WorkDir:  "/tmp/workdir",
 	})
 	if err != nil {
 		t.Fatalf("buildSessionResume: %v", err)
 	}
-	if cmd != "/bin/echo" {
-		t.Fatalf("resume command = %q, want %q", cmd, "/bin/echo")
+	if cmd != "echo" {
+		t.Fatalf("resume command = %q, want %q", cmd, "echo")
 	}
 }
 
@@ -203,7 +203,7 @@ func TestResolvedSessionRuntimeCommandReplaysTemplateOverrides(t *testing.T) {
 	srv := New(fs)
 	resolved := &config.ResolvedProvider{
 		Name:    "custom",
-		Command: "/bin/echo",
+		Command: "echo",
 		OptionsSchema: []config.ProviderOption{{
 			Key:  "effort",
 			Type: "select",
@@ -217,14 +217,14 @@ func TestResolvedSessionRuntimeCommandReplaysTemplateOverrides(t *testing.T) {
 	command, err := srv.resolvedSessionRuntimeCommand(
 		resolved,
 		"",
-		"/bin/echo",
+		"echo",
 		map[string]string{"template_overrides": `{"effort":"high","initial_message":"hello"}`},
 	)
 	if err != nil {
 		t.Fatalf("resolvedSessionRuntimeCommand: %v", err)
 	}
-	if command != "/bin/echo --effort high" {
-		t.Fatalf("command = %q, want %q", command, "/bin/echo --effort high")
+	if command != "echo --effort high" {
+		t.Fatalf("command = %q, want %q", command, "echo --effort high")
 	}
 }
 

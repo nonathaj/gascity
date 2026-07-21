@@ -172,7 +172,7 @@ func TestComputeStoreHealthUsesDoltlitePathFromMetadata(t *testing.T) {
 	if got == nil {
 		t.Fatal("computeStoreHealth returned nil")
 	}
-	if !strings.HasSuffix(got.Path, "/.beads/doltlite") {
+	if !strings.HasSuffix(filepath.ToSlash(got.Path), "/.beads/doltlite") {
 		t.Fatalf("Path = %q, want .beads/doltlite suffix", got.Path)
 	}
 }
@@ -220,7 +220,7 @@ func TestBuildStatusBodyIncludesStoreHealth(t *testing.T) {
 	if body.StoreHealth.ThresholdMB != 1.0 {
 		t.Errorf("ThresholdMB = %v, want 1.0", body.StoreHealth.ThresholdMB)
 	}
-	if !strings.HasSuffix(body.StoreHealth.Path, "/.beads/dolt") {
+	if !strings.HasSuffix(filepath.ToSlash(body.StoreHealth.Path), "/.beads/dolt") {
 		t.Errorf("Path = %q, want .beads/dolt suffix", body.StoreHealth.Path)
 	}
 }
