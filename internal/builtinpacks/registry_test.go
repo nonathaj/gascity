@@ -279,6 +279,12 @@ schema = 1
 }
 
 func TestValidateSyntheticRepoRejectsTamperedMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Chmod 0600 is a no-op on NTFS (everything stats 0666), so mode
+		// is not a tamper signal there; the validator's content check
+		// (TestValidateSyntheticRepoRejectsTamperedContent) still runs.
+		t.Skip("file modes are not a tamper signal on Windows")
+	}
 	dst := materializeTestRepo(t)
 	target := filepath.Join(dst, "internal/bootstrap/packs/core/pack.toml")
 	if err := os.Chmod(target, 0o600); err != nil {

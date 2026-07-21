@@ -26,6 +26,7 @@
 ./internal/bootstrap
 ./internal/bootstrap/packs/core
 ./internal/buildimage
+./internal/builtinpacks
 ./internal/cityinit
 ./internal/citylayout
 ./internal/citywriteauth
