@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // RemoveAll removes path and any children using the provided filesystem.
@@ -18,10 +19,7 @@ func RemoveAll(fs FS, path string) error {
 		return err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		if err := fs.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return nil
+		return removeWithTransientRetry(fs, path)
 	}
 
 	entries, err := fs.ReadDir(path)
@@ -40,8 +38,27 @@ func RemoveAll(fs FS, path string) error {
 	if removeErr != nil {
 		return removeErr
 	}
-	if err := fs.Remove(path); err != nil && !os.IsNotExist(err) {
-		return err
+	return removeWithTransientRetry(fs, path)
+}
+
+// removeWithTransientRetry removes path, retrying briefly on the transient
+// Windows sharing class (ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION):
+// antivirus, the search indexer, or a just-exited process's not-yet-released
+// handle can hold a file or directory open for a few milliseconds, and NTFS
+// refuses the delete while they do. Reuses the rename classifier — the same
+// sharing errnos apply — so the retry is Windows-only in practice and a plain
+// pass-through on Unix. A not-exist result is success.
+func removeWithTransientRetry(fs FS, path string) error {
+	delay := time.Millisecond
+	for attempt := 0; ; attempt++ {
+		err := fs.Remove(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if attempt >= 8 || !isTransientRenameError(err) {
+			return err
+		}
+		time.Sleep(delay)
+		delay *= 2 // 1+2+...+128ms ≈ 255ms worst case
 	}
-	return nil
 }
