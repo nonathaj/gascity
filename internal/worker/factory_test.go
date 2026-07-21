@@ -7,13 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 func TestFactorySessionAndCatalogShareWorkerBoundary(t *testing.T) {
@@ -132,9 +132,9 @@ func TestFactoryAdapterUsesConfiguredSearchPaths(t *testing.T) {
 func TestFactoryTranscriptMethodsUseConfiguredSearchPaths(t *testing.T) {
 	searchBase := t.TempDir()
 	workDir := t.TempDir()
-	slug := strings.ReplaceAll(workDir, "/", "-")
-	slug = strings.ReplaceAll(slug, ".", "-")
-	transcriptDir := filepath.Join(searchBase, slug)
+	// Production slug derivation; a hand-rolled copy missed the Windows
+	// '\'/':' rules and joined an absolute workDir as a relative path.
+	transcriptDir := filepath.Join(searchBase, sessionlog.ProjectSlug(workDir))
 	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", transcriptDir, err)
 	}

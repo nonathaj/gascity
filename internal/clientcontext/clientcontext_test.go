@@ -3,6 +3,7 @@ package clientcontext
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 )
 
@@ -71,6 +72,11 @@ func TestSaveWritesOwnerOnlyPerms(t *testing.T) {
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
+	}
+	if goruntime.GOOS == "windows" {
+		// Mode bits are synthetic on Windows (os.Stat → 0666); NTFS ACLs
+		// govern access, so 0600 is not observable (doctrine P5).
+		return
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("perm = %o, want 600", perm)

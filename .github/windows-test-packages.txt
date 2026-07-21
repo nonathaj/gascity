@@ -8,6 +8,7 @@
 # "everything minus documented exclusions", at which point this file
 # inverts into an exclusion list or disappears.
 ./cmd/gc-write-mint
+./cmd/gen-command-census
 ./examples
 ./examples/swarm
 ./examples/t3bridge-gastown
@@ -33,6 +34,7 @@
 ./internal/citywriteauth
 ./internal/cliauth
 ./internal/clientauth
+./internal/clientcontext
 ./internal/clientgrant
 ./internal/commandcensus
 ./internal/config
@@ -81,6 +83,7 @@
 ./internal/pricing
 ./internal/processenv
 ./internal/processgroup
+./internal/productmetrics
 ./internal/promptmeta
 ./internal/promptsafe
 ./internal/reliability
@@ -92,6 +95,7 @@
 ./internal/runtime
 ./internal/runtime/acp
 ./internal/runtime/auto
+./internal/runtime/exec
 ./internal/runtime/herdr
 ./internal/runtime/hybrid
 ./internal/runtime/proctable
@@ -117,6 +121,7 @@
 ./internal/supervisor
 ./internal/suspensionstate
 ./internal/telemetry
+./internal/testenv
 ./internal/testpolicy/timingsummary
 ./internal/testutil
 ./internal/testutil/providerledger
@@ -128,8 +133,10 @@
 ./internal/webhookverify
 ./internal/winjob
 ./internal/workdir
+./internal/worker
 ./internal/worker/builtin
 ./internal/worker/fake
+./internal/worker/transcript
 ./pkg/eventexport
 ./scripts/cipolicy
 ./test/acceptance

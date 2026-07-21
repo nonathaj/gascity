@@ -183,7 +183,7 @@ func TestDiscoverPathCodexPrefersProviderSessionID(t *testing.T) {
 func TestDiscoverPathKimiPrefersSessionKey(t *testing.T) {
 	base := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
-	workHash := md5Hex(workDir)
+	workHash := md5Hex(filepath.Clean(workDir)) // Kimi hashes the OS-native cleaned path (T9)
 	keyed := filepath.Join(base, "sessions", workHash, "session-key", "context.jsonl")
 	if err := os.MkdirAll(filepath.Dir(keyed), 0o755); err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func samePath(a, b string) bool {
 func TestDiscoverPathKimiSessionKeyMissDoesNotUseNewestWorkdirTranscript(t *testing.T) {
 	base := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
-	workHash := md5Hex(workDir)
+	workHash := md5Hex(filepath.Clean(workDir)) // Kimi hashes the OS-native cleaned path (T9)
 	other := filepath.Join(base, "sessions", workHash, "newer-session", "context.jsonl")
 	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
 		t.Fatal(err)

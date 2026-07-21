@@ -1,7 +1,9 @@
 package productmetrics
 
 import (
+	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +94,13 @@ func TestSpawnThrottleCodecIsCanonicalBoundedAndSchemaClosed(t *testing.T) {
 
 func TestPrivateUploaderEnvironmentIsMinimalDeterministicAndPinsHome(t *testing.T) {
 	t.Parallel()
+	if goruntime.GOOS == "windows" {
+		// The private-uploader env model is Unix-shaped (XDG_*, LANG/LC_*,
+		// TMPDIR, /-absolute paths, cwd "/"); these fixtures assert Unix
+		// path passthrough. The security-critical scrub is covered on
+		// Windows by TestPrivateUploaderEnvironmentScrubsForbiddenClasses.
+		t.Skip("Unix-path env fixtures; Windows covered by the scrub test")
+	}
 
 	parent := []string{
 		"PATH=/secret/bin", "HOME=/home/alice", "GC_HOME=/wrong", "LANG=en_US.UTF-8", "LC_ALL=C",
@@ -128,8 +137,48 @@ func TestPrivateUploaderEnvironmentIsMinimalDeterministicAndPinsHome(t *testing.
 	}
 }
 
+func TestPrivateUploaderEnvironmentScrubsForbiddenClasses(t *testing.T) {
+	t.Parallel()
+	// Platform-independent security coverage: whatever the host, the
+	// private uploader env pins GC_HOME and drops every leak class. Uses
+	// a native-absolute home so it runs on Windows too.
+	home := filepath.Join(t.TempDir(), ".gc")
+	parent := []string{
+		"HTTPS_PROXY=http://proxy", "SSL_CERT_FILE=/secret/ca.pem", "API_TOKEN=secret",
+		"OTEL_EXPORTER_OTLP_HEADERS=secret", "GC_COST_MODEL=secret", "LC_SECRET=leak",
+		"LANG=en_US.UTF-8",
+	}
+	got, err := buildPrivateUploaderEnvironment(parent, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundGCHome, foundMarker := false, false
+	for _, entry := range got {
+		if entry == "GC_HOME="+filepath.Clean(home) {
+			foundGCHome = true
+		}
+		if entry == "GC_PRODUCT_METRICS_PRIVATE_UPLOADER=1" {
+			foundMarker = true
+		}
+		for _, forbidden := range []string{"PROXY", "CERT", "TOKEN", "OTEL", "COST", "LC_SECRET"} {
+			if strings.Contains(entry, forbidden) {
+				t.Fatalf("leaked forbidden class %q in %q", forbidden, entry)
+			}
+		}
+	}
+	if !foundGCHome {
+		t.Fatalf("GC_HOME not pinned to %q in %#v", filepath.Clean(home), got)
+	}
+	if !foundMarker {
+		t.Fatalf("private-uploader marker missing in %#v", got)
+	}
+}
+
 func TestPrivateUploaderEnvironmentBoundsAndNormalizesAllowedValues(t *testing.T) {
 	t.Parallel()
+	if goruntime.GOOS == "windows" {
+		t.Skip("Unix-path env fixtures; Windows covered by the scrub test")
+	}
 	tooLong := strings.Repeat("a", 65)
 	got, err := buildPrivateUploaderEnvironment([]string{
 		"HOME=relative", "TMPDIR=/private/tmp/alice/", "XDG_STATE_HOME=/home/alice/state/../state",
