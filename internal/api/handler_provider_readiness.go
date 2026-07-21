@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
-	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/searchpath"
 	"gopkg.in/yaml.v3"
 )
@@ -45,8 +45,8 @@ const (
 )
 
 var (
-	providerProbePathEnv        = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
-	providerProbeGOOS           = runtime.GOOS
+	providerProbePathEnv = "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+	providerProbeGOOS    = runtime.GOOS
 	// execshim: identical to exec.CommandContext except on Windows,
 	// where shebang/.sh probe targets (npm shims, test fakes) route
 	// through sh instead of failing to exec.
