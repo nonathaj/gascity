@@ -198,10 +198,12 @@ func bdBackupScopeLabel(cityPath, scopeRoot string) string {
 	if scopeRoot == cityPath {
 		return "city"
 	}
+	// ToSlash: scope labels are canonical slash-form identifiers
+	// ("rigs/demo") on every platform, matching bd scope refs.
 	if rel, err := filepath.Rel(cityPath, scopeRoot); err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return "scope " + rel
+		return "scope " + filepath.ToSlash(rel)
 	}
-	return "scope " + scopeRoot
+	return "scope " + filepath.ToSlash(scopeRoot)
 }
 
 // CanFix returns false. Backup cleanup has nontrivial atomicity

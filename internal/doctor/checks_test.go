@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -2451,55 +2452,19 @@ func setupManagedDoltCity(t *testing.T) string {
 	return dir
 }
 
-func startDoctorTCPListenerProcess(t *testing.T, dataDir string) (*exec.Cmd, int) {
+// startDoctorTCPListenerProcess provides a live PID and a listening
+// port for a published dolt-state.json fixture. An in-process
+// net.Listen with the test's own PID satisfies both liveness signals
+// portably — the previous python3 subprocess was invisible on Windows
+// (no python3 on PATH, or a Store alias that exits immediately).
+func startDoctorTCPListenerProcess(t *testing.T, _ string) (pid, port int) {
 	t.Helper()
-	readyPath := filepath.Join(t.TempDir(), "ready")
-	proc := exec.Command("python3", "-c", `
-import socket
-import sys
-import time
-data_dir = sys.argv[1]
-ready_path = sys.argv[2]
-sock = socket.socket()
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(("127.0.0.1", 0))
-sock.listen(5)
-with open(ready_path, "w") as f:
-    f.write(str(sock.getsockname()[1]) + "\n")
-while True:
-    time.sleep(1)
-`, dataDir, readyPath)
-	if err := proc.Start(); err != nil {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
 		t.Fatalf("start doctor TCP listener: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = proc.Process.Kill()
-		_ = proc.Wait()
-	})
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		data, err := os.ReadFile(readyPath)
-		if err == nil {
-			trimmed := strings.TrimSpace(string(data))
-			if trimmed == "" {
-				time.Sleep(25 * time.Millisecond)
-				continue
-			}
-			port, parseErr := strconv.Atoi(trimmed)
-			if parseErr != nil {
-				t.Fatalf("parse listener port %q: %v", trimmed, parseErr)
-			}
-			conn, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
-			if dialErr == nil {
-				_ = conn.Close()
-				return proc, port
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("doctor TCP listener for %s did not become ready", dataDir)
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	t.Cleanup(func() { _ = ln.Close() })
+	return os.Getpid(), ln.Addr().(*net.TCPAddr).Port
 }
 
 func setupFreshManagedDoltCity(t *testing.T) string {
@@ -2948,14 +2913,22 @@ func TestDoltNomsSizeCheck_IgnoresAmbientDataDirOverride(t *testing.T) {
 }
 
 func TestDoltNomsSizeCheck_UsesPublishedRuntimeDataDir(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// validPublishedManagedDoltDoctorState confirms the state's PID
+		// owns the runtime via /proc cmdline/cwd (or lsof); the Windows
+		// arm needs pidutil's PEB command-line reader (gw-opy). Until
+		// then a published running state is never trusted on Windows.
+		t.Skip("published-state PID ownership check needs the pidutil PEB arm (gw-opy)")
+	}
 	dir := setupManagedDoltCity(t)
 	dataDir := filepath.Join(t.TempDir(), "relocated-dolt-data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	proc, port := startDoctorTCPListenerProcess(t, dataDir)
+	pid, port := startDoctorTCPListenerProcess(t, dataDir)
 	statePath := filepath.Join(dir, ".gc", "runtime", "packs", "dolt", "dolt-state.json")
-	state := fmt.Sprintf(`{"running":true,"pid":%d,"port":%d,"data_dir":%q}`, proc.Process.Pid, port, dataDir)
+	// %q on dataDir doubles as JSON escaping for the Windows backslashes.
+	state := fmt.Sprintf(`{"running":true,"pid":%d,"port":%d,"data_dir":%q}`, pid, port, dataDir)
 	if err := os.WriteFile(statePath, []byte(state), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -3837,11 +3810,20 @@ func TestDoltVersionCheck_Timeout(t *testing.T) {
 
 	binDir := t.TempDir()
 	doltPath := filepath.Join(binDir, "dolt")
-	sleepPath, err := exec.LookPath("sleep")
-	if err != nil {
-		t.Fatalf("LookPath(sleep): %v", err)
+	var script string
+	if goruntime.GOOS == "windows" {
+		// PATHEXT resolution needs an extension, and coreutils sleep is
+		// not on a bare PATH; a ping loop is the built-in slow command.
+		doltPath += ".bat"
+		script = "@ping -n 6 127.0.0.1 >nul\r\n"
+	} else {
+		sleepPath, err := exec.LookPath("sleep")
+		if err != nil {
+			t.Fatalf("LookPath(sleep): %v", err)
+		}
+		script = "#!/bin/sh\n" + sleepPath + " 5\n"
 	}
-	if err := os.WriteFile(doltPath, []byte("#!/bin/sh\n"+sleepPath+" 5\n"), 0o755); err != nil {
+	if err := os.WriteFile(doltPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)

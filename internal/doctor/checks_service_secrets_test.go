@@ -3,11 +3,45 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/config"
 )
+
+// skipOnWindowsPermBits gates tests of the Unix-mode audit behavior:
+// on Windows the check reports not-applicable (mode bits are synthetic
+// there), pinned by TestServiceSecretsPermsCheckNotApplicableOnWindows.
+func skipOnWindowsPermBits(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("service-secrets perms audit is not applicable on Windows")
+	}
+}
+
+// TestServiceSecretsPermsCheckNotApplicableOnWindows pins the Windows
+// arm: every file would stat as 0666, so the check must report OK with
+// a not-applicable message instead of flagging the whole tree.
+func TestServiceSecretsPermsCheckNotApplicableOnWindows(t *testing.T) {
+	if goruntime.GOOS != "windows" {
+		t.Skip("Windows-only behavior")
+	}
+	cityPath := t.TempDir()
+	writeSecretFile(t, filepath.Join(cityPath, ".gc", "services", "bridge", "secrets", "bot-token.txt"), 0o644)
+
+	check := NewServiceSecretsPermsCheck(serviceSecretsTestConfig(), cityPath)
+	r := check.Run(&CheckContext{CityPath: cityPath})
+	if r.Status != StatusOK {
+		t.Fatalf("Status = %v, want OK (message %q)", r.Status, r.Message)
+	}
+	if !strings.Contains(r.Message, "not applicable") {
+		t.Fatalf("Message = %q, want not-applicable explanation", r.Message)
+	}
+	if err := check.Fix(&CheckContext{CityPath: cityPath}); err != nil {
+		t.Fatalf("Fix should be a no-op on Windows: %v", err)
+	}
+}
 
 func writeSecretFile(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
@@ -55,6 +89,7 @@ func TestServiceSecretsPermsCheckOKWhenNoSecretsDir(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckFlagsLooseFilesAndDirs(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	loose := filepath.Join(cityPath, ".gc", "services", "bridge", "secrets", "bot-token.txt")
 	writeSecretFile(t, loose, 0o644)
@@ -91,6 +126,7 @@ func TestServiceSecretsPermsCheckFlagsLooseFilesAndDirs(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckFixTightensPerms(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	loose := filepath.Join(cityPath, ".gc", "services", "bridge", "secrets", "bot-token.txt")
 	writeSecretFile(t, loose, 0o644)
@@ -136,6 +172,7 @@ func TestServiceSecretsPermsCheckNilConfig(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckWalkErrorStaysAdvisory(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: chmod 0000 does not block reads")
 	}
@@ -165,6 +202,7 @@ func TestServiceSecretsPermsCheckWalkErrorStaysAdvisory(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckFollowsSymlinkedSecretsDir(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	// A real directory holding a loose token, with the service's `secrets`
 	// path pointing at it through a symlink. Core follows such a link when
@@ -213,6 +251,7 @@ func TestServiceSecretsPermsCheckFollowsSymlinkedSecretsDir(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckSkipsOutOfCitySymlinkRoot(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	// A real secrets tree OUTSIDE the city holding a loose token, reachable
 	// only through a symlink at the service's in-city `secrets` path. Because
@@ -263,6 +302,7 @@ func TestServiceSecretsPermsCheckSkipsOutOfCitySymlinkRoot(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckSurfacesUnresolvableSymlinkRoot(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	// A dangling secrets symlink: the link exists but its target does not, so
 	// filepath.EvalSymlinks fails. The check must surface it rather than
@@ -332,6 +372,7 @@ func assertSkippedOutOfCityRoot(t *testing.T, cfg *config.City, cityPath, config
 }
 
 func TestServiceSecretsPermsCheckSkipsAbsoluteOutOfCityStateRoot(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	// An absolute state_root pointing entirely outside the city, with a real
 	// secrets dir and a loose token out there. state_root is not validated at
@@ -351,6 +392,7 @@ func TestServiceSecretsPermsCheckSkipsAbsoluteOutOfCityStateRoot(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckSkipsDotDotStateRootEscape(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	parent := t.TempDir()
 	cityPath := filepath.Join(parent, "city")
 	if err := os.MkdirAll(cityPath, 0o700); err != nil {
@@ -371,6 +413,7 @@ func TestServiceSecretsPermsCheckSkipsDotDotStateRootEscape(t *testing.T) {
 }
 
 func TestServiceSecretsPermsCheckSkipsAncestorSymlinkEscape(t *testing.T) {
+	skipOnWindowsPermBits(t)
 	cityPath := t.TempDir()
 	// The configured secrets path is lexically inside the city, but an ancestor
 	// directory (`.gc/services`) is a symlink pointing outside the city. The

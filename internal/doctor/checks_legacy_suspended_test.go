@@ -3,6 +3,7 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -291,7 +292,9 @@ func TestLegacySuspendedFieldCheck_Fix_PreservesFileMode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := info.Mode().Perm(); got != tc.perm {
+			// Windows synthesizes 0666 for writable files; mode
+			// preservation is a Unix-bit behavior.
+			if got := info.Mode().Perm(); goruntime.GOOS != "windows" && got != tc.perm {
 				t.Fatalf("post-fix mode = %04o, want %04o", got, tc.perm)
 			}
 			rewritten, err := os.ReadFile(path)

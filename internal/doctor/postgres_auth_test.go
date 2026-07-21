@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -121,6 +122,12 @@ func TestPostgresAuthCheck_StatusError_NoCredentials(t *testing.T) {
 // TestPostgresAuthCheck_StatusError_PermissiveMode exercises §3.3.4 —
 // scope-file mode is group/other readable.
 func TestPostgresAuthCheck_StatusError_PermissiveMode(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// pgauth deliberately reports no file as permissive on Windows
+		// (os.Stat synthesizes 0666; NTFS ACLs govern access), so the
+		// error branch under test cannot fire.
+		t.Skip("permissive-mode detection is a Unix mode-bit behavior")
+	}
 	scrubAmbientPostgresEnv(t)
 	cityPath := t.TempDir()
 	rigPath := filepath.Join(cityPath, "rigs", "pwu")

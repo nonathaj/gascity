@@ -84,8 +84,11 @@ func TestBdBackupStateCheck_LiveBackupRegistrationIsOK(t *testing.T) {
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Mirror dolt's slash-form file URL (file:///C:/x on Windows); raw
+	// native paths would also inject invalid JSON escapes.
+	backupURL := "file:///" + strings.TrimPrefix(filepath.ToSlash(backupDir), "/")
 	writeBackupStateFixture(t, city, map[string]string{
-		".beads/dolt-backup.json": `{"backup_url":"file://` + backupDir + `","backup_name":"default"}`,
+		".beads/dolt-backup.json": `{"backup_url":"` + backupURL + `","backup_name":"default"}`,
 	}, ".beads/dolt")
 
 	check := NewBdBackupStateCheckForScopeRoots(city, []string{city})

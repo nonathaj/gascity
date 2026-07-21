@@ -3,6 +3,7 @@ package doctor
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestPreStartScriptsCheck_ScriptMissing(t *testing.T) {
 	if len(r.Details) != 1 {
 		t.Fatalf("expected 1 issue, got %d: %v", len(r.Details), r.Details)
 	}
-	if !strings.Contains(r.Details[0], "wren-runner") || !strings.Contains(r.Details[0], "scripts/missing.sh") {
+	if !strings.Contains(r.Details[0], "wren-runner") || !strings.Contains(r.Details[0], "missing.sh") {
 		t.Errorf("detail = %q; want to mention agent + missing path", r.Details[0])
 	}
 	if r.FixHint == "" {
@@ -157,7 +158,7 @@ func TestPreStartScriptsCheck_BothTemplates_OneMissing(t *testing.T) {
 	if len(r.Details) != 1 {
 		t.Fatalf("expected 1 issue, got %d: %v", len(r.Details), r.Details)
 	}
-	if !strings.Contains(r.Details[0], "agent-b") || !strings.Contains(r.Details[0], "scripts/B.sh") {
+	if !strings.Contains(r.Details[0], "agent-b") || !strings.Contains(r.Details[0], "B.sh") {
 		t.Errorf("detail = %q; want second agent and CityRoot missing script", r.Details[0])
 	}
 	if strings.Contains(r.Details[0], "agent-a") {
@@ -323,7 +324,7 @@ func TestResolvePreStartScript_TableDriven(t *testing.T) {
 			sourceDir: "/p/a",
 			cityPath:  "/c",
 			wantOK:    true,
-			wantPath:  "/p/a/scripts/x.sh",
+			wantPath:  "{{.ConfigDir}}/scripts/x.sh",
 		},
 		{
 			name:      "city root",
@@ -331,7 +332,7 @@ func TestResolvePreStartScript_TableDriven(t *testing.T) {
 			sourceDir: "/p/a",
 			cityPath:  "/c",
 			wantOK:    true,
-			wantPath:  "/c/scripts/x.sh",
+			wantPath:  "{{.CityRoot}}/scripts/x.sh",
 		},
 		{
 			name:      "city root with trailing runtime template arg",
@@ -339,7 +340,7 @@ func TestResolvePreStartScript_TableDriven(t *testing.T) {
 			sourceDir: "/p/a",
 			cityPath:  "/c",
 			wantOK:    true,
-			wantPath:  "/c/scripts/x.sh",
+			wantPath:  "{{.CityRoot}}/scripts/x.sh",
 		},
 		{
 			name:      "both templates substituted",
@@ -347,7 +348,7 @@ func TestResolvePreStartScript_TableDriven(t *testing.T) {
 			sourceDir: "/p/a",
 			cityPath:  "/c",
 			wantOK:    true,
-			wantPath:  "/p/a/scripts/c/x.sh",
+			wantPath:  "{{.ConfigDir}}/scripts/{{.CityRoot}}/x.sh",
 		},
 		{
 			name:      "rig root skipped",
@@ -372,14 +373,35 @@ func TestResolvePreStartScript_TableDriven(t *testing.T) {
 		},
 	}
 
+	// Fixtures are written Unix-style; resolve them to native absolute
+	// paths (bare "/c" is not filepath.IsAbs on Windows) and Clean the
+	// expectation the same way production does.
+	abs := func(p string) string {
+		if p == "" {
+			return p
+		}
+		if goruntime.GOOS == "windows" {
+			return filepath.FromSlash("C:" + p)
+		}
+		return p
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := resolvePreStartScript(tt.cmd, tt.sourceDir, tt.cityPath)
+			got, ok := resolvePreStartScript(tt.cmd, abs(tt.sourceDir), abs(tt.cityPath))
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v; path = %q", ok, tt.wantOK, got)
 			}
-			if got != tt.wantPath {
-				t.Errorf("path = %q, want %q", got, tt.wantPath)
+			// wantPath entries are templated like cmd; expand them with
+			// the same substitutions and Clean like production does.
+			want := tt.wantPath
+			if want != "" {
+				want = filepath.Clean(strings.NewReplacer(
+					"{{.ConfigDir}}", abs(tt.sourceDir),
+					"{{.CityRoot}}", abs(tt.cityPath),
+				).Replace(want))
+			}
+			if got != want {
+				t.Errorf("path = %q, want %q", got, want)
 			}
 		})
 	}

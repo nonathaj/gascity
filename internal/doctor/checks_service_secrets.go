@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -232,6 +233,15 @@ func looseEntries(t secretsTarget) ([]string, error) {
 // not hide loose entries in the others — mirroring Fix's aggregation.
 func (c *ServiceSecretsPermsCheck) Run(_ *CheckContext) *CheckResult {
 	r := &CheckResult{Name: c.Name(), Severity: SeverityAdvisory}
+	if runtime.GOOS == "windows" {
+		// Unix permission bits are synthetic on Windows (os.Stat reports
+		// 0666 for every writable file), so every secrets file would be
+		// flagged loose and chmod cannot tighten anything — NTFS ACLs
+		// govern real access. Report not-applicable instead of noise.
+		r.Status = StatusOK
+		r.Message = "not applicable on Windows (NTFS ACLs govern secrets access, not Unix mode bits)"
+		return r
+	}
 	targets, skipped := c.secretsDirs()
 	var loose []string
 	var auditErrs []error
@@ -279,6 +289,10 @@ func (c *ServiceSecretsPermsCheck) Run(_ *CheckContext) *CheckResult {
 // not strand otherwise-fixable directories — and per-directory errors are
 // aggregated with errors.Join. Entries that vanish mid-walk are tolerated.
 func (c *ServiceSecretsPermsCheck) Fix(_ *CheckContext) error {
+	if runtime.GOOS == "windows" {
+		// Nothing to tighten: mode bits do not govern access on NTFS.
+		return nil
+	}
 	var errs []error
 	targets, _ := c.secretsDirs()
 	for _, t := range targets {

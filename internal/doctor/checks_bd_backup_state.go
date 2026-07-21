@@ -165,7 +165,13 @@ func staleBackupRegistration(label, beadsDir string) (string, bool) {
 	if err != nil || u.Scheme != "file" {
 		return "", false
 	}
-	backupPath := filepath.FromSlash(u.Path)
+	// file:///C:/x parses to Path "/C:/x"; strip the leading slash of a
+	// drive-lettered path so Stat sees a real Windows path.
+	urlPath := u.Path
+	if len(urlPath) >= 3 && urlPath[0] == '/' && urlPath[2] == ':' {
+		urlPath = urlPath[1:]
+	}
+	backupPath := filepath.FromSlash(urlPath)
 	if backupPath == "" {
 		return "", false
 	}

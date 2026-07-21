@@ -38,6 +38,7 @@
 ./internal/convoy
 ./internal/coordclass
 ./internal/deps
+./internal/doctor
 ./internal/doltauth
 ./internal/doltversion
 ./internal/emergency

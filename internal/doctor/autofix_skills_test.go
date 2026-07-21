@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 )
@@ -360,7 +361,9 @@ func TestDeprecatedAttachmentFieldsFixPreservesFileMode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := info.Mode().Perm(); got != perm {
+			// Windows synthesizes 0666 for writable files; mode
+			// preservation is a Unix-bit behavior.
+			if got := info.Mode().Perm(); goruntime.GOOS != "windows" && got != perm {
 				t.Fatalf("post-fix mode = %04o, want %04o", got, perm)
 			}
 		})

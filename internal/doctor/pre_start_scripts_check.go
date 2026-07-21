@@ -75,7 +75,10 @@ func (c *PreStartScriptsCheck) Run(ctx *CheckContext) *CheckResult {
 					rel = rr
 				}
 			}
-			issues = append(issues, fmt.Sprintf("agent %q: pre_start script %q not found", a.QualifiedName(), rel))
+			// ToSlash: pre_start commands are authored slash-form in config,
+			// so report the missing path in the same spelling on every
+			// platform.
+			issues = append(issues, fmt.Sprintf("agent %q: pre_start script %q not found", a.QualifiedName(), filepath.ToSlash(rel)))
 		}
 	}
 	if len(issues) == 0 {
