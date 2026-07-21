@@ -83,6 +83,9 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 	// expires, even if grandchild processes (e.g. sleep in a shell script)
 	// still hold them open.
 	cmd.WaitDelay = 2 * time.Second
+	// Cancel kills the whole tree so a sh-wrapped grandchild is reaped,
+	// not orphaned, on Windows (gw-ho3).
+	cmd.Cancel = cancelKillTree(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -277,6 +280,9 @@ func (p *Provider) startStartupWatch(
 	// Startup watchers are short-lived probes; tear them down quickly once the
 	// dialog helper is finished so Start cannot stall behind a sleeping wrapper.
 	cmd.WaitDelay = 250 * time.Millisecond
+	// Cancel kills the whole tree so the sh-wrapped watcher grandchild is
+	// reaped, not orphaned holding the stdout pipe, on Windows (gw-ho3).
+	cmd.Cancel = cancelKillTree(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -741,6 +747,9 @@ func (p *Provider) Exec(ctx context.Context, name string, argv []string) ([]byte
 
 	cmd := execshim.CommandContext(cmdCtx, p.script, "exec", name)
 	cmd.WaitDelay = 2 * time.Second
+	// Cancel kills the tree so a sh-wrapped exec grandchild is reaped on
+	// Windows (gw-ho3).
+	cmd.Cancel = cancelKillTree(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
