@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 // BdBackupStateCheck flags stale bd backup state that accumulates silently:
@@ -165,14 +166,10 @@ func staleBackupRegistration(label, beadsDir string) (string, bool) {
 	if err != nil || u.Scheme != "file" {
 		return "", false
 	}
-	// file:///C:/x parses to Path "/C:/x"; strip the leading slash of a
-	// drive-lettered path so Stat sees a real Windows path.
-	urlPath := u.Path
-	if len(urlPath) >= 3 && urlPath[0] == '/' && urlPath[2] == ':' {
-		urlPath = urlPath[1:]
-	}
-	backupPath := filepath.FromSlash(urlPath)
-	if backupPath == "" {
+	backupPath, perr := pathutil.LocalPathFromFileURL(u)
+	if perr != nil || backupPath == "" {
+		// A hosted file URL is not liveness-checkable from here; treat
+		// like a remote URL and never flag.
 		return "", false
 	}
 	if _, err := os.Stat(backupPath); errors.Is(err, fs.ErrNotExist) {

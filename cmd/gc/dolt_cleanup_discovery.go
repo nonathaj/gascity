@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
 // loadRigDoltPorts reads each rig's <rigRoot>/.beads/dolt-server.port file and
@@ -602,6 +603,12 @@ func looksLikeDoltSQLServer(argv []string) bool {
 // only protection).
 func portsByPID() map[int][]int {
 	out := map[int][]int{}
+	// Windows has neither /proc/net nor lsof; the shared TCP table
+	// attribution (GetExtendedTcpTable) is the platform equivalent and
+	// closes the previously-empty Windows port map.
+	if byPID, checked := pidutil.TCPListenerPortsByPID(); checked {
+		return byPID
+	}
 	listenInodes, checkedProcNet := listenInodesByPortChecked()
 	if len(listenInodes) == 0 {
 		if checkedProcNet {

@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/gchome"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 const (
@@ -530,15 +532,9 @@ func validatePackSource(source string, remote bool) error {
 }
 
 func fileURLPath(u *url.URL) (string, error) {
-	if u.Host != "" && u.Host != "localhost" {
+	path, err := pathutil.LocalPathFromFileURL(u)
+	if err != nil {
 		return "", fmt.Errorf("unsupported file registry host %q", u.Host)
 	}
-	// file:///C:/x parses to Path "/C:/x"; strip the leading slash of a
-	// drive-lettered path so the sanctioned file:// escape hatch works
-	// on Windows too (bare drive paths stay rejected for portability).
-	p := u.Path
-	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
-		p = p[1:]
-	}
-	return filepath.FromSlash(p), nil
+	return path, nil
 }

@@ -140,4 +140,5 @@
 ./test/integration/filebdshim
 ./test/packlint
 ./test/tmuxtest
+./test/winportlint
 ./test/workflows

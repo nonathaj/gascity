@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"io/fs"
 	"net"
 	"os"
@@ -16,9 +15,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/fslock"
+
 	"github.com/BurntSushi/toml"
-	"github.com/gastownhall/gascity/internal/deps"
 	"gopkg.in/yaml.v3"
+
+	"github.com/gastownhall/gascity/internal/deps"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -1763,7 +1766,7 @@ func managedDoltDoctorPortHolderPID(port int) int {
 	if port <= 0 {
 		return 0
 	}
-	if pid, checked := portHolderPIDPlatform(port); checked {
+	if pid, checked := pidutil.TCPListenerPID(port); checked {
 		return pid
 	}
 	if pid, checked := managedDoltDoctorPortHolderFromProc(uint16(port)); checked {
@@ -2740,7 +2743,7 @@ func (c *DoltVersionCheck) Run(_ *CheckContext) *CheckResult {
 	getOutput := c.versionOutput
 	if getOutput == nil {
 		getOutput = func() (string, error) {
-			path, lookErr := exec.LookPath("dolt")
+			path, lookErr := execshim.LookPath("dolt")
 			if lookErr != nil {
 				return "", lookErr
 			}

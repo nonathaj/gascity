@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // processStart is captured once at package init and used to derive the admin
@@ -261,7 +262,7 @@ func (p *Plane) probeLocalTools(ctx context.Context) localToolVersions {
 // exit, or unrecognizable version surfaces as unavailable with a reason —
 // never a fabricated version (probeVersion in version-probe.ts).
 func (p *Plane) probeSemverTool(ctx context.Context, cmd, sub string) localToolVersion {
-	path, err := exec.LookPath(cmd)
+	path, err := execshim.LookPath(cmd)
 	if err != nil {
 		return unavailable(cmd + " not found on PATH")
 	}
@@ -288,7 +289,7 @@ type gcVersionJSON struct {
 // so a local `dev` build surfaces as "dev" rather than collapsing to "no
 // recognizable version" (probeGcVersionJson in version-probe.ts).
 func (p *Plane) probeGCVersion(ctx context.Context) localToolVersion {
-	path, err := exec.LookPath("gc")
+	path, err := execshim.LookPath("gc")
 	if err != nil {
 		return unavailable("gc not found on PATH")
 	}

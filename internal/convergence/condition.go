@@ -45,7 +45,7 @@ func conditionPATH() string {
 		dirs = append(dirs, dir)
 	}
 	for _, name := range []string{"bd", "gc", "dolt", "jq"} {
-		if path, err := exec.LookPath(name); err == nil {
+		if path, err := execshim.LookPath(name); err == nil {
 			addDir(filepath.Dir(path))
 		}
 	}

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // writeTestFile is a test helper that writes a file and fails the test on error.
@@ -194,7 +196,7 @@ func TestFindAgentMappings_PropagatesReadErrors(t *testing.T) {
 
 	brokenPath := filepath.Join(subDir, "agent-broken.jsonl")
 	writeTestFile(t, brokenPath, `{"uuid":"a1","type":"system"}`+"\n")
-	makeFileUnopenable(t, brokenPath)
+	testutil.MakeFileUnopenable(t, brokenPath)
 
 	_, err := FindAgentMappings(parentPath)
 	if err == nil {

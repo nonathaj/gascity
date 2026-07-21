@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 const tmuxGuardCommandTimeout = 2 * time.Second
@@ -60,7 +62,7 @@ func ConfigureProcessEnv(socketRoot string) error {
 // RequireTmux skips the test if tmux is not installed.
 func RequireTmux(t testing.TB) {
 	t.Helper()
-	if _, err := exec.LookPath("tmux"); err != nil {
+	if _, err := execshim.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
 }

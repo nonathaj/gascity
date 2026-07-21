@@ -2,20 +2,18 @@ package main
 
 import (
 	"os"
-	"strings"
 
 	"github.com/gastownhall/gascity/internal/execshim"
 )
 
-// isTestBinary reports whether the current process is a Go test binary.
-// Go test binaries are named *.test (e.g., "gc.test"). Used by runtime
-// guards to prevent tests from accidentally hitting host infrastructure.
+// isTestBinary reports whether the current process is a Go test binary
+// (".test" on Unix, ".test.exe" on Windows — doctrine P6). Used by
+// runtime guards to keep tests from hitting host infrastructure.
 func isTestBinary() bool {
 	if len(os.Args) == 0 {
 		return false
 	}
-	return strings.HasSuffix(os.Args[0], ".test") ||
-		strings.Contains(os.Args[0], ".test")
+	return execshim.IsGoTestExecutable(os.Args[0])
 }
 
 // productMetricsChildEnvSpyPathEnv marks an intentional, contained test

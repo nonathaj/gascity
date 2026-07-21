@@ -1,18 +1,15 @@
 //go:build windows
 
-package sessionlog
+package testutil
 
-import (
-	"testing"
+import "golang.org/x/sys/windows"
 
-	"golang.org/x/sys/windows"
-)
-
-// makeFileUnopenable makes any subsequent os.Open of path fail for the
-// test's duration. Mode bits cannot deny the owner on NTFS, so the
-// Windows equivalent of chmod 0 is holding an exclusive no-share
-// handle: every later open fails with ERROR_SHARING_VIOLATION.
-func makeFileUnopenable(t *testing.T, path string) {
+// MakeFileUnopenable makes any subsequent open/read of path fail for
+// the test's duration (doctrine class T4). Mode bits cannot deny the
+// owner on NTFS, so the Windows equivalent of chmod 0 is holding an
+// exclusive no-share handle: every later open fails with
+// ERROR_SHARING_VIOLATION.
+func MakeFileUnopenable(t failer, path string) {
 	t.Helper()
 	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {

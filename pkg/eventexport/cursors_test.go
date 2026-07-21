@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestCursorsRoundTrip(t *testing.T) {
@@ -82,7 +84,7 @@ func TestLoadCursors_UnreadableFileErrors(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"c1":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	makeFileUnreadable(t, path)
+	testutil.MakeFileUnopenable(t, path)
 	if _, err := LoadCursors(path); err == nil {
 		t.Fatal("unreadable file must error, got nil")
 	}

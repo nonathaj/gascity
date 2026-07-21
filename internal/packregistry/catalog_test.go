@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 const validCatalog = `schema = 1
@@ -322,11 +324,9 @@ func TestLocalSourceReadsFileAndDirectory(t *testing.T) {
 
 type urlForTest struct{ path string }
 
-// String renders the sanctioned file URL form: three slashes, POSIX
-// path ("file:///C:/x" on Windows — "file://C:/x" would parse "C:" as
-// a host).
+// String renders the sanctioned file URL form via the shared helper.
 func (u *urlForTest) String() string {
-	return "file:///" + strings.TrimPrefix(filepath.ToSlash(u.path), "/")
+	return pathutil.FileURLForLocalPath(u.path)
 }
 
 func TestImmutableReleaseMetadata(t *testing.T) {

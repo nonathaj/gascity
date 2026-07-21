@@ -10,17 +10,17 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/citylayout"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
-// isTestBinary reports whether the current process is a Go test binary.
-// Go test binaries are named *.test (e.g., "supervisor.test").
+// isTestBinary reports whether the current process is a Go test binary
+// (".test" on Unix, ".test.exe" on Windows — doctrine P6).
 func isTestBinary() bool {
 	if len(os.Args) == 0 {
 		return false
 	}
-	return strings.HasSuffix(os.Args[0], ".test") ||
-		strings.Contains(os.Args[0], ".test")
+	return execshim.IsGoTestExecutable(os.Args[0])
 }
 
 // Config holds machine-wide supervisor configuration loaded from

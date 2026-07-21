@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 func writeBackupStateFixture(t *testing.T, root string, files map[string]string, dirs ...string) {
@@ -86,7 +88,7 @@ func TestBdBackupStateCheck_LiveBackupRegistrationIsOK(t *testing.T) {
 	}
 	// Mirror dolt's slash-form file URL (file:///C:/x on Windows); raw
 	// native paths would also inject invalid JSON escapes.
-	backupURL := "file:///" + strings.TrimPrefix(filepath.ToSlash(backupDir), "/")
+	backupURL := pathutil.FileURLForLocalPath(backupDir)
 	writeBackupStateFixture(t, city, map[string]string{
 		".beads/dolt-backup.json": `{"backup_url":"` + backupURL + `","backup_name":"default"}`,
 	}, ".beads/dolt")
