@@ -323,34 +323,37 @@ func TestMCPTemplateDataPreservesBranchAlias(t *testing.T) {
 func TestMCPPackSourcesForAgentOrdersAndDedupes(t *testing.T) {
 	t.Parallel()
 
+	// Native-form fixtures: production joins pack dirs with
+	// filepath.Join, so expectations must use the platform separator.
+	fp := filepath.FromSlash
 	cfg := &config.City{
-		BootstrapImportPackDirs: []string{"/packs/bootstrap", "/packs/shared"},
-		ImplicitImportPackDirs:  []string{"/packs/implicit"},
-		ExplicitImportPackDirs:  []string{"/packs/shared", "/packs/import"},
-		PackGraphOnlyDirs:       []string{"/packs/city"},
-		PackMCPDir:              "/packs/city/mcp",
+		BootstrapImportPackDirs: []string{fp("/packs/bootstrap"), fp("/packs/shared")},
+		ImplicitImportPackDirs:  []string{fp("/packs/implicit")},
+		ExplicitImportPackDirs:  []string{fp("/packs/shared"), fp("/packs/import")},
+		PackGraphOnlyDirs:       []string{fp("/packs/city")},
+		PackMCPDir:              fp("/packs/city/mcp"),
 		RigImportPackDirs: map[string][]string{
-			"rig": {"/packs/shared", "/packs/rig-import"},
+			"rig": {fp("/packs/shared"), fp("/packs/rig-import")},
 		},
 		RigPackGraphOnlyDirs: map[string][]string{
-			"rig": {"/packs/rig"},
+			"rig": {fp("/packs/rig")},
 		},
 	}
 	agent := &config.Agent{
 		Dir:    "rig",
-		MCPDir: "/packs/agent/mcp",
+		MCPDir: fp("/packs/agent/mcp"),
 	}
 
 	got := MCPPackSourcesForAgent(cfg, agent)
 	want := []MCPDirSource{
-		{Dir: "/packs/bootstrap/mcp", Label: "bootstrap", Origin: "bootstrap"},
-		{Dir: "/packs/implicit/mcp", Label: "implicit", Origin: "implicit"},
-		{Dir: "/packs/import/mcp", Label: "import", Origin: "import"},
-		{Dir: "/packs/city/mcp", Label: "city", Origin: "city"},
-		{Dir: "/packs/shared/mcp", Label: "rig-import", Origin: "rig-import"},
-		{Dir: "/packs/rig-import/mcp", Label: "rig-import", Origin: "rig-import"},
-		{Dir: "/packs/rig/mcp", Label: "rig", Origin: "rig"},
-		{Dir: "/packs/agent/mcp", Label: "agent", Origin: "agent"},
+		{Dir: fp("/packs/bootstrap/mcp"), Label: "bootstrap", Origin: "bootstrap"},
+		{Dir: fp("/packs/implicit/mcp"), Label: "implicit", Origin: "implicit"},
+		{Dir: fp("/packs/import/mcp"), Label: "import", Origin: "import"},
+		{Dir: fp("/packs/city/mcp"), Label: "city", Origin: "city"},
+		{Dir: fp("/packs/shared/mcp"), Label: "rig-import", Origin: "rig-import"},
+		{Dir: fp("/packs/rig-import/mcp"), Label: "rig-import", Origin: "rig-import"},
+		{Dir: fp("/packs/rig/mcp"), Label: "rig", Origin: "rig"},
+		{Dir: fp("/packs/agent/mcp"), Label: "agent", Origin: "agent"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("MCPPackSourcesForAgent()=%#v, want %#v", got, want)

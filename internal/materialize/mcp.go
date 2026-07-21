@@ -124,7 +124,13 @@ func LoadMCPDir(dir, label string, templateData map[string]string) ([]MCPServer,
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			// Windows also maps ReadDir on a regular file to not-exist;
+			// only a genuinely absent path is the benign no-mcp case. A
+			// present non-directory surfaces as the same hard error Unix
+			// reports via ENOTDIR.
+			if info, statErr := os.Stat(dir); statErr != nil || info.IsDir() {
+				return nil, nil
+			}
 		}
 		return nil, fmt.Errorf("reading mcp dir %q: %w", dir, err)
 	}

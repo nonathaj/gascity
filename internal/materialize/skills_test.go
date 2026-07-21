@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -838,7 +839,9 @@ func TestMaterializeAgentRelativeSymlinkLeftAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("user-rel removed: %v", err)
 	}
-	if tgt != "../../elsewhere" {
+	// ToSlash: Windows stores/reports the reparse target with
+	// backslashes; the invariant is the target's meaning, not spelling.
+	if filepath.ToSlash(tgt) != "../../elsewhere" {
 		t.Errorf("user-rel target rewritten: %q", tgt)
 	}
 	if !reflect.DeepEqual(res.Materialized, []string{"alpha"}) {
@@ -893,6 +896,25 @@ func TestCanonicalizePath(t *testing.T) {
 
 func TestTargetUnderOwnedRoot(t *testing.T) {
 	t.Parallel()
+	// The predicate receives canonicalized native paths; build fixtures
+	// in native form (drive-absolute on Windows — bare "/srv/..." is
+	// not even filepath.IsAbs there). Relative inputs stay relative.
+	abs := func(p string) string {
+		if !strings.HasPrefix(p, "/") {
+			return p
+		}
+		if goruntime.GOOS == "windows" {
+			return filepath.FromSlash("C:" + p)
+		}
+		return p
+	}
+	absAll := func(ps []string) []string {
+		out := make([]string, len(ps))
+		for i, p := range ps {
+			out[i] = abs(p)
+		}
+		return out
+	}
 	cases := []struct {
 		name   string
 		target string
@@ -911,7 +933,7 @@ func TestTargetUnderOwnedRoot(t *testing.T) {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if got := targetUnderOwnedRoot(c.target, c.roots); got != c.want {
+			if got := targetUnderOwnedRoot(abs(c.target), absAll(c.roots)); got != c.want {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}
 		})

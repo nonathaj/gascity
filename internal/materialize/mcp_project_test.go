@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -147,13 +148,7 @@ func TestApplyMCPProjectionClaudeWritesManagedFile(t *testing.T) {
 		t.Fatalf("remote type = %v, want http", got)
 	}
 
-	info, err := os.Stat(filepath.Join(dir, ".mcp.json"))
-	if err != nil {
-		t.Fatalf("stat .mcp.json: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf(".mcp.json perms = %o, want 600", got)
-	}
+	assertFileMode(t, filepath.Join(dir, ".mcp.json"), 0o600)
 	if _, err := os.Stat(filepath.Join(dir, ".gc", "mcp-managed", "claude.json")); err != nil {
 		t.Fatalf("managed marker missing: %v", err)
 	}
@@ -205,13 +200,7 @@ func TestApplyMCPProjectionCursorWritesManagedFile(t *testing.T) {
 		t.Fatalf("stdio server missing command: %+v", doc.MCPServers["alpha"])
 	}
 
-	info, err := os.Stat(filepath.Join(dir, ".cursor", "mcp.json"))
-	if err != nil {
-		t.Fatalf("stat .cursor/mcp.json: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf(".cursor/mcp.json perms = %o, want 600", got)
-	}
+	assertFileMode(t, filepath.Join(dir, ".cursor", "mcp.json"), 0o600)
 	if _, err := os.Stat(filepath.Join(dir, ".gc", "mcp-managed", "cursor.json")); err != nil {
 		t.Fatalf("managed marker missing: %v", err)
 	}
@@ -757,12 +746,23 @@ func TestApplyMCPProjectionNormalizesPermissionsOnRewrite(t *testing.T) {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	info, err := os.Stat(target)
+	assertFileMode(t, target, 0o600)
+}
+
+// assertFileMode asserts the Unix permission bits of path. On Windows
+// os.Stat synthesizes 0666/0444 (NTFS ACLs govern real access), so the
+// check reduces to "file exists".
+func assertFileMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
 	if err != nil {
-		t.Fatalf("stat target: %v", err)
+		t.Fatalf("stat %s: %v", path, err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("target perms = %o, want 600", got)
+	if goruntime.GOOS == "windows" {
+		return
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s perms = %o, want %o", path, got, want)
 	}
 }
 

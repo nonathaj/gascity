@@ -61,6 +61,7 @@
 ./internal/mail
 ./internal/mail/beadmail
 ./internal/mail/exec
+./internal/materialize
 ./internal/migrate
 ./internal/molecule
 ./internal/nudgepoller

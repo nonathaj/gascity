@@ -40,6 +40,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -789,6 +790,9 @@ func canonicalizePath(path string) (string, error) {
 // atomicSymlink creates or replaces a symlink at path pointing to
 // target via tmp-then-rename. POSIX rename(2) is atomic, so observers
 // never see a missing or partially-written symlink during replacement.
+// Windows cannot replace a directory-symlink reparse point via
+// MoveFileEx, so replacement there falls back to remove-then-rename —
+// a small non-atomic window that is unavoidable on that platform.
 func atomicSymlink(target, path string) error {
 	dir := filepath.Dir(path)
 	tmp, err := tempSymlinkPath(dir, filepath.Base(path))
@@ -799,6 +803,15 @@ func atomicSymlink(target, path string) error {
 		return fmt.Errorf("creating temp symlink %q: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
+		if runtime.GOOS == "windows" {
+			if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+				if rmErr := os.Remove(path); rmErr == nil {
+					if err2 := os.Rename(tmp, path); err2 == nil {
+						return nil
+					}
+				}
+			}
+		}
 		_ = os.Remove(tmp)
 		return fmt.Errorf("renaming temp symlink into place: %w", err)
 	}
