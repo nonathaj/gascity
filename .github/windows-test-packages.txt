@@ -43,6 +43,8 @@
 ./internal/convoy
 ./internal/coordclass
 ./internal/deps
+./internal/dispatch
+./internal/docgen
 ./internal/doctor
 ./internal/doltauth
 ./internal/doltversion
@@ -140,11 +142,13 @@
 ./pkg/eventexport
 ./scripts/cipolicy
 ./test/acceptance
+./test/acceptance/helpers
 ./test/acceptance/tier_b
 ./test/acceptance/tier_c
 ./test/acceptance/tutorial_goldens
 ./test/acceptance/worker_inference
 ./test/dashport
+./test/docsync
 ./test/integration
 ./test/integration/filebdshim
 ./test/packlint

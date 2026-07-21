@@ -8375,8 +8375,16 @@ func TestRunRalphCheckUsesStorePathForRelativeCheckAndSubjectEnv(t *testing.T) {
 	if result.Outcome != "pass" {
 		t.Fatalf("result.Outcome = %q, want pass (stderr=%q)", result.Outcome, result.Stderr)
 	}
+	// pwd is the sh builtin: on Windows (Git-Bash) it reports an
+	// MSYS-translated path (/tmp/.../frontend), not the native workDir,
+	// so assert cwd via the trailing segment rather than the full path
+	// spelling (doctrine T8). The env vars below are passed natively and
+	// printed verbatim, so they compare exactly.
+	if !strings.Contains(result.Stdout, "/"+filepath.Base(workDir)+"\n") &&
+		!strings.Contains(result.Stdout, string(filepath.Separator)+filepath.Base(workDir)+"\n") {
+		t.Fatalf("stdout = %q, want pwd to end in %q", result.Stdout, filepath.Base(workDir))
+	}
 	for _, want := range []string{
-		workDir,
 		"BEAD=run-1",
 		"CITY=" + cityPath,
 		"STORE=" + storePath,

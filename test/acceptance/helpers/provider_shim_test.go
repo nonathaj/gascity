@@ -3,6 +3,7 @@ package acceptancehelpers
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 )
 
@@ -17,7 +18,9 @@ func TestStageIdleProviderBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat staged provider: %v", err)
 	}
-	if info.Mode().Perm()&0o111 == 0 {
+	// The exec bit is synthetic on Windows (os.Stat → 0666, no 0o111);
+	// the staged shim runs via sh routing there, not the mode bit (P5).
+	if goruntime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("staged provider mode = %v, want executable", info.Mode())
 	}
 	body, err := os.ReadFile(path)

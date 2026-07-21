@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // Env builds an isolated environment for acceptance tests.
@@ -183,11 +184,14 @@ func RunGC(env *Env, dir string, args ...string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(gcPath, args...)
+	// execshim: routes a shebang/.sh gc stand-in through sh on Windows
+	// (a real gc.exe passes through untouched); EnvWithShellDir keeps
+	// sh's coreutils dir on the curated acceptance PATH.
+	cmd := execshim.Command(gcPath, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	cmd.Env = env.List()
+	cmd.Env = execshim.EnvWithShellDir(env.List())
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

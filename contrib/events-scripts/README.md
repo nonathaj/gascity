@@ -36,7 +36,7 @@ gc start my-city
 - `gc-events-seq` — counter ConfigMap tracking the latest sequence number
 - `gc-evt-0000000042` — one ConfigMap per event, with labels for type/actor
 
-See [docs/k8s-guide.md](../../docs/k8s-guide.md) for the full K8s setup
+See [contrib/k8s/](../k8s/) for the full K8s setup
 guide.
 
 ## Testing

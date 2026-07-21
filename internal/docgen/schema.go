@@ -53,6 +53,18 @@ func addGoCommentsFiltered(r *jsonschema.Reflector, module, root string) error {
 			return fmt.Errorf("extracting Go comments from %s: %w", entry.Name(), err)
 		}
 	}
+	// invopop/jsonschema builds CommentMap keys from filepath.Walk paths,
+	// so on Windows the package-path segment is backslashed
+	// (module\config.Agent.Name) while schema lookups use the forward-
+	// slash key — every description would come back empty. Normalize the
+	// keys to slash form (no-op on Unix); a library-level fix without a
+	// fork (doctrine P4).
+	for key, val := range r.CommentMap {
+		if slashed := filepath.ToSlash(key); slashed != key {
+			delete(r.CommentMap, key)
+			r.CommentMap[slashed] = val
+		}
+	}
 	return nil
 }
 
