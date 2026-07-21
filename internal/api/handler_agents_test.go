@@ -933,12 +933,13 @@ func TestAgentModelAndContext(t *testing.T) {
 	state.cfg.Agents = []config.Agent{
 		{Name: "worker", Dir: "myrig", Provider: "claude", MaxActiveSessions: intPtr(1)},
 	}
-	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: "/tmp/myrig"}}
+	rigDir := t.TempDir()
+	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: rigDir}}
 	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 
 	// Create a fake session JSONL file for the rig path.
 	searchDir := t.TempDir()
-	slug := sessionlog.ProjectSlug("/tmp/myrig")
+	slug := sessionlog.ProjectSlug(rigDir)
 	slugDir := filepath.Join(searchDir, slug)
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -986,11 +987,12 @@ func TestAgentActivityFromSessionLog(t *testing.T) {
 	state.cfg.Agents = []config.Agent{
 		{Name: "worker", Dir: "myrig", Provider: "claude", MaxActiveSessions: intPtr(1)},
 	}
-	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: "/tmp/myrig"}}
+	rigDir := t.TempDir()
+	state.cfg.Rigs = []config.Rig{{Name: "myrig", Path: rigDir}}
 	state.sp.Start(context.Background(), "myrig--worker", runtime.Config{}) //nolint:errcheck
 
 	searchDir := t.TempDir()
-	slug := sessionlog.ProjectSlug("/tmp/myrig")
+	slug := sessionlog.ProjectSlug(rigDir)
 	slugDir := filepath.Join(searchDir, slug)
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {
 		t.Fatal(err)

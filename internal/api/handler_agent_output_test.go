@@ -15,15 +15,16 @@ import (
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/sessionlog"
 )
 
 // writeSessionJSONL creates a JSONL session file at the slug path for
 // the given workDir.
 func writeSessionJSONL(t *testing.T, searchBase, workDir string, lines ...string) {
 	t.Helper()
-	slug := strings.ReplaceAll(workDir, "/", "-")
-	slug = strings.ReplaceAll(slug, ".", "-")
-	dir := filepath.Join(searchBase, slug)
+	// Use the production slug derivation: a hand-rolled copy here missed
+	// the Windows '\'/':' replacements and built invalid fixture paths.
+	dir := filepath.Join(searchBase, sessionlog.ProjectSlug(workDir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -316,8 +317,7 @@ func TestResolveAgentTranscriptUsesBeadSessionIDWhenRuntimeMetaMissing(t *testin
 	state.cfg.Agents[0].Provider = "claude/tmux-cli"
 
 	searchBase := t.TempDir()
-	slug := strings.NewReplacer("/", "-", ".", "-").Replace(workDir)
-	transcriptDir := filepath.Join(searchBase, slug)
+	transcriptDir := filepath.Join(searchBase, sessionlog.ProjectSlug(workDir))
 	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
 		t.Fatalf("mkdir transcript dir: %v", err)
 	}
@@ -455,9 +455,7 @@ func TestAgentOutputStreamNewTurns(t *testing.T) {
 	}
 
 	// Append a new entry to the session file.
-	slug := strings.ReplaceAll(rigDir, "/", "-")
-	slug = strings.ReplaceAll(slug, ".", "-")
-	sessionFile := filepath.Join(searchBase, slug, "test-session.jsonl")
+	sessionFile := filepath.Join(searchBase, sessionlog.ProjectSlug(rigDir), "test-session.jsonl")
 	f, err := os.OpenFile(sessionFile, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)

@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 func TestReadinessRegistrySync(t *testing.T) {
@@ -475,7 +476,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstPar
 	// This test mutates package probe globals; keep it serial and restore
 	// every override before returning.
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	providerProbeCache = newCachedProviderProbeStore()
 	providerProbeCacheTTL = time.Hour
 	defer func() {
@@ -569,7 +570,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstPar
 	originalCache := providerProbeCache
 	originalCacheTTL := providerProbeCacheTTL
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	providerProbeCache = newCachedProviderProbeStore()
 	providerProbeCacheTTL = time.Hour
 	defer func() {
@@ -624,7 +625,7 @@ func TestHandleProviderReadinessFreshBypassesCache(t *testing.T) {
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -762,7 +763,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstP
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -779,11 +780,13 @@ func TestHandleProviderReadinessForwardsClaudeOnlyEnvToClaudeProbe(t *testing.T)
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir bin: %v", err)
 	}
+	// Suffix-match the forwarded config dir: "$HOME/custom-claude" would
+	// mix separators on Windows (HOME is backslashed, '/' literal).
 	writeExecutable(t, binDir, "claude", `#!/bin/sh
-if [ "$CLAUDE_CONFIG_DIR" != "$HOME/custom-claude" ]; then
-	echo "missing CLAUDE_CONFIG_DIR" >&2
-	exit 1
-fi
+case "$CLAUDE_CONFIG_DIR" in
+*custom-claude) ;;
+*) echo "missing CLAUDE_CONFIG_DIR" >&2; exit 1 ;;
+esac
 if [ "$CLAUDE_CODE_OAUTH_TOKEN" != "sk-ant-oat-test" ]; then
 	echo "missing CLAUDE_CODE_OAUTH_TOKEN" >&2
 	exit 1
@@ -797,7 +800,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstP
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -822,7 +825,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"bedroc
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -847,7 +850,7 @@ printf '%s\n' '{"loggedIn":true,"authMethod":"apiKey","apiProvider":"firstParty"
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -872,7 +875,7 @@ printf '%s\n' '{"loggedIn":false,"authMethod":"claude.ai","apiProvider":"firstPa
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -897,7 +900,7 @@ printf '%s\n' 'not-json'
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
@@ -922,7 +925,7 @@ printf '%s\n' 'not-json'
 	originalPathEnv := providerProbePathEnv
 	originalCommandContext := providerProbeCommandContext
 	providerProbePathEnv = binDir
-	providerProbeCommandContext = exec.CommandContext
+	providerProbeCommandContext = execshim.CommandContext
 	defer func() {
 		providerProbePathEnv = originalPathEnv
 		providerProbeCommandContext = originalCommandContext
