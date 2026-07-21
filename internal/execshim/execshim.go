@@ -91,6 +91,11 @@ func Command(path string, args ...string) *exec.Cmd {
 		cmd.Env = EnvWithShellDir(os.Environ())
 		return cmd
 	}
+	if resolved, ok := resolveBareWindowsCommand(path); ok {
+		cmd := exec.Command(resolved, args...)
+		cmd.Env = EnvWithShellDir(os.Environ())
+		return cmd
+	}
 	return exec.Command(path, args...)
 }
 
@@ -101,7 +106,40 @@ func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd 
 		cmd.Env = EnvWithShellDir(os.Environ())
 		return cmd
 	}
+	if resolved, ok := resolveBareWindowsCommand(path); ok {
+		cmd := exec.CommandContext(ctx, resolved, args...)
+		cmd.Env = EnvWithShellDir(os.Environ())
+		return cmd
+	}
 	return exec.CommandContext(ctx, path, args...)
+}
+
+// resolveBareWindowsCommand resolves a bare command name (no path
+// separator) to a runnable path on Windows, so an invocation of "sh"
+// or a Git-for-Windows coreutil ("cat", "true", …) works where the
+// bare name is not on the Windows PATH. Returns ("", false) when no
+// resolution is needed: non-Windows, path-qualified names (handled by
+// needsShell), or names exec already resolves via PATH/PATHEXT.
+func resolveBareWindowsCommand(name string) (string, bool) {
+	if runtime.GOOS != "windows" {
+		return "", false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return "", false
+	}
+	if strings.EqualFold(filepath.Base(name), "sh") {
+		if sh := ShPath(); sh != name {
+			return sh, true
+		}
+		return "", false
+	}
+	if _, err := exec.LookPath(name); err == nil {
+		return "", false // exec already resolves it (real .exe/.bat on PATH)
+	}
+	if resolved, err := LookPath(name); err == nil {
+		return resolved, true // coreutils fallback found it
+	}
+	return "", false
 }
 
 // ShellCommand builds `sh -c command` with the resolved interpreter, so a

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/telemetry"
 )
 
@@ -93,14 +94,17 @@ func execCommandRunnerWithEnv(parent context.Context, env map[string]string) Com
 			defer slowTimer.Stop()
 		}
 
-		cmd := exec.CommandContext(ctx, name, args...)
+		// execshim: on Windows a bare "sh" resolves via the Git-for-
+		// Windows interpreter and a shebang script (a fake bd stand-in)
+		// routes through sh; a real bd.exe passes through untouched.
+		cmd := execshim.CommandContext(ctx, name, args...)
 		cmd.WaitDelay = 2 * time.Second
 		prepareCommandForTimeout(cmd)
 		cmd.Dir = dir
 		cmd.Cancel = func() error {
 			return killCommandTree(cmd)
 		}
-		cmd.Env = execEnvFor(name, processEnvSnapshotExcludingNativeDoltOpen(), env)
+		cmd.Env = execshim.EnvWithShellDir(execEnvFor(name, processEnvSnapshotExcludingNativeDoltOpen(), env))
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()

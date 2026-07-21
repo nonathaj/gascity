@@ -20,6 +20,7 @@
 ./internal/api/genclient
 ./internal/bdflags
 ./internal/beadmeta
+./internal/beads
 ./internal/beads/beadstest
 ./internal/beads/contract
 ./internal/beads/exec

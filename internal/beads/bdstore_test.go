@@ -8,13 +8,38 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
+
+// installFakeBDOnPath writes a fake `bd` executable running shBody (a
+// /bin/sh script) into binDir and prepends binDir to PATH. On Windows a
+// bare extensionless shebang script is unreachable via PATHEXT, so it
+// writes the script as bd.impl.sh plus a bd.bat shim that forwards
+// through sh (the same interpreter the production runner routes to);
+// EnvWithShellDir puts sh's dir on PATH so the shim resolves it.
+func installFakeBDOnPath(t *testing.T, binDir, shBody string) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		impl := filepath.Join(binDir, "bd.impl.sh")
+		if err := os.WriteFile(impl, []byte(shBody), 0o755); err != nil {
+			t.Fatalf("WriteFile fake bd impl: %v", err)
+		}
+		bat := fmt.Sprintf("@\"%s\" \"%s\" %%*\r\n", execshim.ShPath(), filepath.ToSlash(impl))
+		if err := os.WriteFile(filepath.Join(binDir, "bd.bat"), []byte(bat), 0o755); err != nil {
+			t.Fatalf("WriteFile fake bd.bat: %v", err)
+		}
+	} else if err := os.WriteFile(filepath.Join(binDir, "bd"), []byte(shBody), 0o755); err != nil {
+		t.Fatalf("WriteFile fake bd: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
 // fakeRunner returns a CommandRunner that returns canned output for specific
 // commands, or an error if the command is unrecognized.
@@ -2720,7 +2745,10 @@ func TestBdStorePurge(t *testing.T) {
 		gotEnv = env
 		return []byte(`{"purged_count": 5}`), nil
 	})
-	result, err := s.Purge("/city/rigs/fe/.beads", false)
+	// Native-form fixture: Purge computes the parent via filepath.Dir
+	// and BEADS_DIR via the OS separator.
+	beadsDir := filepath.FromSlash("/city/rigs/fe/.beads")
+	result, err := s.Purge(beadsDir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2738,13 +2766,13 @@ func TestBdStorePurge(t *testing.T) {
 		t.Errorf("args = %q, should not contain --dry-run", args)
 	}
 	// Dir should be parent of beads dir.
-	if gotDir != "/city/rigs/fe" {
-		t.Errorf("dir = %q, want %q", gotDir, "/city/rigs/fe")
+	if wantDir := filepath.FromSlash("/city/rigs/fe"); gotDir != wantDir {
+		t.Errorf("dir = %q, want %q", gotDir, wantDir)
 	}
 	// Env should contain BEADS_DIR.
 	foundBeadsDir := false
 	for _, e := range gotEnv {
-		if e == "BEADS_DIR=/city/rigs/fe/.beads" {
+		if e == "BEADS_DIR="+beadsDir {
 			foundBeadsDir = true
 		}
 	}
@@ -3217,8 +3245,7 @@ func TestBdStoreSetMetadataBatchCLINotFound(t *testing.T) {
 
 func TestBdStoreReadPathsSurfaceSilentFallbackMarkerPair(t *testing.T) {
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
-	script := `#!/bin/sh
+	installFakeBDOnPath(t, binDir, `#!/bin/sh
 echo "auto-importing 220929 bytes from .beads/issues.jsonl into empty database..." >&2
 case "$1" in
   show)
@@ -3232,11 +3259,7 @@ case "$1" in
     exit 2
     ;;
 esac
-`
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("WriteFile fake bd: %v", err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+`)
 	runner := beads.ExecCommandRunnerWithEnv(nil)
 	s := beads.NewBdStore(t.TempDir(), runner)
 
@@ -3250,8 +3273,7 @@ esac
 
 func TestBdStoreReadPathsRequireCompleteSilentFallbackMarkerPair(t *testing.T) {
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
-	script := `#!/bin/sh
+	installFakeBDOnPath(t, binDir, `#!/bin/sh
 echo "auto-importing schema into initialized local store" >&2
 case "$1" in
   show)
@@ -3265,11 +3287,7 @@ case "$1" in
     exit 2
     ;;
 esac
-`
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("WriteFile fake bd: %v", err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+`)
 	runner := beads.ExecCommandRunnerWithEnv(nil)
 	s := beads.NewBdStore(t.TempDir(), runner)
 
@@ -3889,16 +3907,11 @@ func TestExecCommandRunnerWithEnvOverridesInheritedValues(t *testing.T) {
 
 func TestExecCommandRunnerWithEnvSurfacesBdJSONErrorFromStdout(t *testing.T) {
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
-	script := `#!/bin/sh
+	installFakeBDOnPath(t, binDir, `#!/bin/sh
 printf '%s\n' 'bd warning before json'
 printf '%s\n' '{"error":"resolving dependency: no issue found bd-missing","schema_version":1}'
 exit 1
-`
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+`)
 
 	runner := beads.ExecCommandRunnerWithEnv(map[string]string{
 		"GC_CITY_PATH": "/city",
