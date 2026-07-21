@@ -15,3 +15,10 @@ internal/api/dashboardspa/dist/** -diff linguist-generated
 **/testdata/**/*.md text eol=lf
 **/testdata/**/*.jsonl text eol=lf
 *.golden text eol=lf
+
+# Generated OpenAPI spec artifacts are byte-compared against the live
+# server spec by TestOpenAPISpecInSync; an autocrlf checkout turns
+# every LF into CRLF (+1 byte per line) and fails the sync gate.
+internal/api/openapi.json text eol=lf
+docs/reference/schema/openapi.json text eol=lf
+docs/reference/schema/openapi.txt text eol=lf

@@ -3807,10 +3807,11 @@ func TestDoltVersionCheck_Timeout(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		// PATHEXT resolution needs an extension, and coreutils sleep is
 		// not on a bare PATH. powershell Start-Sleep is the portable
-		// slow command: ping is ICMP-blocked on GitHub-hosted runners,
-		// and timeout.exe rejects redirected stdin.
+		// slow command (ping is ICMP-blocked on GitHub-hosted runners,
+		// timeout.exe rejects redirected stdin) — invoked by absolute
+		// path because this test strips PATH down to the fixture dir.
 		doltPath += ".bat"
-		script = "@powershell -NoProfile -Command Start-Sleep -Seconds 6\r\n"
+		script = "@\"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -Command Start-Sleep -Seconds 6\r\n"
 	} else {
 		sleepPath, err := exec.LookPath("sleep")
 		if err != nil {
