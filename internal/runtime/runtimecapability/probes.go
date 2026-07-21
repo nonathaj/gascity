@@ -107,8 +107,11 @@ func probeTranscripts(ctx context.Context, r *runner, name string) (Status, stri
 	marker := "GC_CAPABILITY_TRANSCRIPTS_" + name
 	// Plant a transcript in the session's transcript source dir (in-session,
 	// via exec — for a remote runtime GC_TRANSCRIPTS_SRC is inside the sandbox).
-	plant := fmt.Sprintf("mkdir -p %s && printf '%%s' %q > %s/transcript.jsonl",
-		r.transcriptsSrc, marker, r.transcriptsSrc)
+	// ToSlash + quoting: the sh command must not eat Windows backslashes as
+	// escapes, and paths with spaces must survive word-splitting.
+	src := filepath.ToSlash(r.transcriptsSrc)
+	plant := fmt.Sprintf("mkdir -p %q && printf '%%s' %q > %q",
+		src, marker, src+"/transcript.jsonl")
 	_, code, unsupported := r.execIn(ctx, name, plant)
 	if unsupported {
 		return StatusFail, "declares env.transcripts but has no exec op to verify it"

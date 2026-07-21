@@ -1,6 +1,35 @@
 package execshim
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// TestResolveExecutable pins the path-qualified resolution rule: an
+// existing file resolves to itself even without a Windows-executable
+// extension (Command runs shebang scripts through sh), a directory or
+// missing path errors, and bare names go through LookPath.
+func TestResolveExecutable(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "provider")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	if got, err := ResolveExecutable(script); err != nil || got != script {
+		t.Fatalf("ResolveExecutable(existing extensionless) = %q, %v; want identity, nil", got, err)
+	}
+	if _, err := ResolveExecutable(filepath.Join(dir, "absent")); err == nil {
+		t.Fatal("ResolveExecutable(missing) = nil error, want error")
+	}
+	if _, err := ResolveExecutable(dir); err == nil {
+		t.Fatal("ResolveExecutable(directory) = nil error, want error")
+	}
+	if got, err := ResolveExecutable("true"); err != nil || got == "" {
+		t.Fatalf("ResolveExecutable(bare coreutil) = %q, %v; want LookPath resolution", got, err)
+	}
+}
 
 // TestIsGoTestExecutable pins the anti-re-exec guard across platform
 // binary spellings. On Windows test binaries end in ".test.exe", and a

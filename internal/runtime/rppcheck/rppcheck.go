@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -113,7 +114,7 @@ type startConfig struct {
 // (executable not found); protocol violations are recorded as failed
 // checks, never as errors.
 func Run(ctx context.Context, executable string, opts Options) (Result, error) {
-	path, err := exec.LookPath(executable)
+	path, err := execshim.ResolveExecutable(executable)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolving executable %q: %w", executable, err)
 	}
@@ -152,7 +153,7 @@ func (c *checker) runOpTimeout(ctx context.Context, timeout time.Duration, stdin
 	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(opCtx, c.path, args...)
+	cmd := execshim.CommandContext(opCtx, c.path, args...)
 	// Force pipe closure shortly after the deadline even when grandchild
 	// processes hold them open; a conformance run should report a hang,
 	// not inherit it.

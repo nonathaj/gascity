@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -64,7 +65,7 @@ func (o *Options) applyDefaults() {
 // only when the run cannot start (executable unresolvable); capability
 // violations are recorded as failed results.
 func Run(ctx context.Context, executable string, opts Options) (Report, error) {
-	path, err := exec.LookPath(executable)
+	path, err := execshim.ResolveExecutable(executable)
 	if err != nil {
 		return Report{}, fmt.Errorf("resolving executable %q: %w", executable, err)
 	}
@@ -255,9 +256,11 @@ func (r *runner) execIn(ctx context.Context, name, command string) (output strin
 func (r *runner) invoke(ctx context.Context, timeout time.Duration, stdin []byte, args ...string) (string, int, error) {
 	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(opCtx, r.path, args...)
+	cmd := execshim.CommandContext(opCtx, r.path, args...)
 	cmd.WaitDelay = 2 * time.Second
-	cmd.Env = r.opEnv()
+	// EnvWithShellDir: overriding Env would otherwise discard the sh-dir
+	// PATH injection sh-routed scripts need for coreutils on Windows.
+	cmd.Env = execshim.EnvWithShellDir(r.opEnv())
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

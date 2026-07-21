@@ -142,6 +142,26 @@ func LookPath(name string) (string, error) {
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
+// ResolveExecutable resolves name to a runnable path. Bare names go
+// through LookPath (PATH plus the coreutils fallback). Path-qualified
+// names resolve to themselves when they name an existing regular file:
+// exec.LookPath would reject an extensionless script there on Windows
+// (executability is PATHEXT-defined), but Command/CommandContext run
+// shebang scripts through sh, so existence is the right bar.
+func ResolveExecutable(name string) (string, error) {
+	if !strings.ContainsAny(name, `/\`) {
+		return LookPath(name)
+	}
+	info, err := os.Stat(name)
+	if err != nil {
+		return "", &exec.Error{Name: name, Err: err}
+	}
+	if info.IsDir() {
+		return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+	}
+	return name, nil
+}
+
 // IsGoTestExecutable reports whether path looks like a `go test` binary.
 // Go names test binaries "<pkg>.test" on Unix and "<pkg>.test.exe" on
 // Windows; the comparison strips the Windows extension and ignores case

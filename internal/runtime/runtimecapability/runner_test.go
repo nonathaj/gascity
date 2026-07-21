@@ -74,7 +74,11 @@ printf '#!/bin/sh\nif [ "$1" = ready ]; then [ -n "$GC_BEADS_API" ] || exit 1; c
 	// (GC_TRANSCRIPTS_SRC) to the controller-local destination (GC_TRANSCRIPTS_DEST),
 	// both from the PROCESS env (available at every op). Gated so a mutant can
 	// break exactly transcripts.
-	copyBack := `[ -n "$GC_TRANSCRIPTS_DEST" ] && [ -d "$GC_TRANSCRIPTS_SRC" ] && { mkdir -p "$GC_TRANSCRIPTS_DEST"; cp -a "$GC_TRANSCRIPTS_SRC/." "$GC_TRANSCRIPTS_DEST/" 2>/dev/null || true; }`
+	copyBack := `tsrc="$GC_TRANSCRIPTS_SRC"; tdst="$GC_TRANSCRIPTS_DEST"
+    if command -v cygpath >/dev/null 2>&1; then
+      [ -n "$tsrc" ] && tsrc=$(cygpath -u "$tsrc"); [ -n "$tdst" ] && tdst=$(cygpath -u "$tdst")
+    fi
+    [ -n "$tdst" ] && [ -d "$tsrc" ] && { mkdir -p "$tdst"; cp -a "$tsrc/." "$tdst/" 2>/dev/null || true; }`
 	if !cfg.copyBackTranscripts {
 		copyBack = `:` // transcript egress not wired (mutant)
 	}
@@ -83,6 +87,9 @@ printf '#!/bin/sh\nif [ "$1" = ready ]; then [ -n "$GC_BEADS_API" ] || exit 1; c
 S=%q
 op="$1"; name="$2"
 D="$S/$name"
+# Windows (Git-Bash): normalize drive-lettered paths to POSIX form so
+# mkdir/redirections/PATH entries work; no-op where cygpath is absent.
+command -v cygpath >/dev/null 2>&1 && D=$(cygpath -u "$D")
 case "$op" in
   protocol) printf '{"version":0,"capabilities":%s}\n' ;;
   start)
@@ -90,6 +97,10 @@ case "$op" in
     wd=$(printf '%%s' "$cfg" | sed -n 's/.*"work_dir":"\([^"]*\)".*/\1/p')
     sess=$(printf '%%s' "$cfg" | sed -n 's/.*"GC_SESSION":"\([^"]*\)".*/\1/p')
     led=$(printf '%%s' "$cfg" | sed -n 's/.*"GC_BEADS_API":"\([^"]*\)".*/\1/p')
+    # The JSON value carries escaped backslashes on Windows; fold them
+    # to slashes and normalize like $D.
+    wd=$(printf '%%s' "$wd" | sed 's|\\\\|/|g')
+    if [ -n "$wd" ] && command -v cygpath >/dev/null 2>&1; then wd=$(cygpath -u "$wd"); fi
     mkdir -p "$D"
     %s
     %s
@@ -102,8 +113,9 @@ case "$op" in
     . "$D/env" 2>/dev/null || true
     cd "$D/workdir" || exit 1
     # Controlled PATH so the "session" models an isolated sandbox: only the
-    # reference-installed tools ($D/bin) + base utils — host gc/bd do not leak.
-    PATH="$D/bin:/usr/bin:/bin" sh -c "$cmd"
+    # reference-installed tools ($D/bin) + base utils — host gc/bd do not
+    # leak. /mingw64/bin exists only under Git-Bash and carries its curl.
+    PATH="$D/bin:/usr/bin:/bin:/mingw64/bin" sh -c "$cmd"
     exit $?
     ;;
   stop)

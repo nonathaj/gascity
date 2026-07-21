@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -67,7 +68,7 @@ func (o *Options) applyDefaults() {
 // Run emits exactly one [Result] per [Catalog] requirement, in catalog
 // order (enforced by TestRunCoversEveryCatalogRequirement).
 func Run(ctx context.Context, executable string, opts Options) (Report, error) {
-	path, err := exec.LookPath(executable)
+	path, err := execshim.ResolveExecutable(executable)
 	if err != nil {
 		return Report{}, fmt.Errorf("resolving executable %q: %w", executable, err)
 	}
@@ -127,7 +128,7 @@ func (r *runner) opTimeout(ctx context.Context, timeout time.Duration, stdin []b
 	opCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(opCtx, r.path, args...)
+	cmd := execshim.CommandContext(opCtx, r.path, args...)
 	// Force pipe closure shortly after the deadline even when grandchild
 	// processes hold them open: a conformance run reports a hang, not
 	// inherits it.
