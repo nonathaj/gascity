@@ -734,6 +734,9 @@ func pathHasPrefix(path, prefix string) bool {
 	if path == prefix {
 		return true
 	}
-	return len(path) > len(prefix) && path[len(prefix)] == '/' &&
+	// NormalizePathForCompare returns native-separator paths, so the
+	// boundary is filepath.Separator ('\' on Windows) — a hardcoded '/'
+	// silently failed every rig-subdir lookup there (doctrine P4).
+	return len(path) > len(prefix) && path[len(prefix)] == filepath.Separator &&
 		path[:len(prefix)] == prefix
 }

@@ -3,10 +3,31 @@ package supervisor
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// absFixture makes a POSIX-style absolute fixture path OS-absolute:
+// unchanged on Unix, drive-rooted on Windows, where a bare "/custom/gc"
+// is not filepath.IsAbs and DefaultHome's normalization would prefix
+// the current drive.
+func absFixture(p string) string {
+	if goruntime.GOOS == "windows" {
+		return filepath.FromSlash("C:" + p)
+	}
+	return p
+}
+
+// setDefaultHomeEnv points both HOME and USERPROFILE at dir so
+// builtinDefaultHome resolves to dir/.gc on every platform
+// (os.UserHomeDir reads USERPROFILE on Windows, HOME elsewhere).
+func setDefaultHomeEnv(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
 
 func TestLoadConfigMissing(t *testing.T) {
 	cfg, err := LoadConfig("/nonexistent/supervisor.toml")
@@ -161,9 +182,10 @@ policy_ref = "platform-sso"
 }
 
 func TestDefaultHomeWithEnv(t *testing.T) {
-	t.Setenv("GC_HOME", "/custom/gc")
-	if got := DefaultHome(); got != "/custom/gc" {
-		t.Errorf("expected /custom/gc, got %s", got)
+	home := absFixture("/custom/gc")
+	t.Setenv("GC_HOME", home)
+	if got := DefaultHome(); got != home {
+		t.Errorf("expected %s, got %s", home, got)
 	}
 }
 
@@ -208,18 +230,20 @@ func TestDefaultHomeCanonicalizesRelativeOverride(t *testing.T) {
 }
 
 func TestRuntimeDirWithXDG(t *testing.T) {
-	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
-	if got := RuntimeDir(); got != "/run/user/1000/gc" {
-		t.Errorf("expected /run/user/1000/gc, got %s", got)
+	xdg := absFixture("/run/user/1000")
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+	want := filepath.Join(xdg, "gc")
+	if got := RuntimeDir(); got != want {
+		t.Errorf("expected %s, got %s", want, got)
 	}
 }
 
 func TestRuntimeDirUsesIsolatedGCHomeWhenOverrideDiffersFromDefault(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
-	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	t.Setenv("XDG_RUNTIME_DIR", absFixture("/run/user/1000"))
 	if got := RuntimeDir(); got != gcHome {
 		t.Fatalf("RuntimeDir() = %q, want isolated GC_HOME %q", got, gcHome)
 	}
@@ -227,17 +251,19 @@ func TestRuntimeDirUsesIsolatedGCHomeWhenOverrideDiffersFromDefault(t *testing.T
 
 func TestRuntimeDirUsesXDGWhenGCHomeMatchesDefaultHome(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
-	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
-	if got := RuntimeDir(); got != "/run/user/1000/gc" {
-		t.Fatalf("RuntimeDir() = %q, want /run/user/1000/gc", got)
+	xdg := absFixture("/run/user/1000")
+	t.Setenv("XDG_RUNTIME_DIR", xdg)
+	want := filepath.Join(xdg, "gc")
+	if got := RuntimeDir(); got != want {
+		t.Fatalf("RuntimeDir() = %q, want %q", got, want)
 	}
 }
 
 func TestUsesIsolatedGCHomeOverride(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "isolated-home"))
 	if !UsesIsolatedGCHomeOverride() {
 		t.Fatal("UsesIsolatedGCHomeOverride() = false, want true")
@@ -246,7 +272,7 @@ func TestUsesIsolatedGCHomeOverride(t *testing.T) {
 
 func TestUsesIsolatedGCHomeOverrideFalseForDefaultHome(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	if UsesIsolatedGCHomeOverride() {
 		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false")
@@ -263,7 +289,7 @@ func TestUsesIsolatedGCHomeOverrideFalseForSymlinkedDefaultHome(t *testing.T) {
 	if err := os.Symlink(defaultHome, symlinkHome); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", symlinkHome)
 	if UsesIsolatedGCHomeOverride() {
 		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false for symlinked default home")
@@ -288,7 +314,7 @@ func TestUsesIsolatedGCHomeOverrideFalseForRelativeDefaultHome(t *testing.T) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
-	t.Setenv("HOME", homeDir)
+	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", ".gc")
 	if UsesIsolatedGCHomeOverride() {
 		t.Fatal("UsesIsolatedGCHomeOverride() = true, want false for relative default home")
@@ -306,12 +332,16 @@ func TestRuntimeDirFallback(t *testing.T) {
 }
 
 func TestPublicationsPath(t *testing.T) {
-	t.Setenv("GC_HOME", "/custom/gc")
-	if got := PublicationsPath("/tmp/demo-city"); got != "/tmp/demo-city/.gc/supervisor/publications.json" {
-		t.Errorf("PublicationsPath(city) = %q, want /tmp/demo-city/.gc/supervisor/publications.json", got)
+	home := absFixture("/custom/gc")
+	t.Setenv("GC_HOME", home)
+	city := absFixture("/tmp/demo-city")
+	wantCity := filepath.Join(city, ".gc", "supervisor", "publications.json")
+	if got := PublicationsPath(city); got != wantCity {
+		t.Errorf("PublicationsPath(city) = %q, want %q", got, wantCity)
 	}
-	if got := PublicationsPath(""); got != "/custom/gc/supervisor/publications.json" {
-		t.Errorf("PublicationsPath(\"\") = %q, want /custom/gc/supervisor/publications.json", got)
+	wantDefault := filepath.Join(home, "supervisor", "publications.json")
+	if got := PublicationsPath(""); got != wantDefault {
+		t.Errorf("PublicationsPath(\"\") = %q, want %q", got, wantDefault)
 	}
 }
 

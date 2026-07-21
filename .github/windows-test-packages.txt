@@ -113,6 +113,7 @@
 ./internal/ssrf
 ./internal/storehealth
 ./internal/storeref
+./internal/supervisor
 ./internal/suspensionstate
 ./internal/telemetry
 ./internal/testpolicy/timingsummary

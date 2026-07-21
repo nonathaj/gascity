@@ -427,7 +427,10 @@ func TestRigUnregisterNotFound(t *testing.T) {
 
 func TestRegistryMutatorsRefuseHostRegistryDuringTests(t *testing.T) {
 	home := t.TempDir()
+	// os.UserHomeDir (the guard's host-home source) reads USERPROFILE on
+	// Windows, so HOME alone leaves the guard pointed at the real home.
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	hostRegistry := filepath.Join(home, ".gc", "cities.toml")
@@ -629,19 +632,25 @@ func TestRigReconcile(t *testing.T) {
 		}
 	}
 
+	// City paths are stored via resolveAbsPath, which drive-roots a
+	// bare "/city-a" on Windows — use native-absolute fixtures.
+	cityA := absFixture("/city-a")
+	cityB := absFixture("/city-b")
+	cityOld := absFixture("/city-old")
+
 	// Pre-populate: rig1 with explicit default, rig3 (will be removed).
-	if err := r.RegisterRig(rig1, "rig1", "/city-a"); err != nil {
+	if err := r.RegisterRig(rig1, "rig1", cityA); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.RegisterRig(rig3, "rig3", "/city-old"); err != nil {
+	if err := r.RegisterRig(rig3, "rig3", cityOld); err != nil {
 		t.Fatal(err)
 	}
 
 	// Reconcile: rig1 in city-a + city-b, rig2 in city-a only, rig3 gone.
 	mappings := []RigCityMapping{
-		{RigPath: rig1, RigName: "rig1", CityPath: "/city-a"},
-		{RigPath: rig1, RigName: "rig1", CityPath: "/city-b"},
-		{RigPath: rig2, RigName: "rig2", CityPath: "/city-a"},
+		{RigPath: rig1, RigName: "rig1", CityPath: cityA},
+		{RigPath: rig1, RigName: "rig1", CityPath: cityB},
+		{RigPath: rig2, RigName: "rig2", CityPath: cityA},
 	}
 	if err := r.ReconcileRigs(mappings); err != nil {
 		t.Fatal(err)
@@ -660,14 +669,14 @@ func TestRigReconcile(t *testing.T) {
 		rigMap[e.Name] = e
 	}
 
-	// rig1: in 2 cities, had default /city-a which is still valid — keep it.
-	if rigMap["rig1"].DefaultCity != "/city-a" {
-		t.Errorf("rig1 default: expected /city-a, got %s", rigMap["rig1"].DefaultCity)
+	// rig1: in 2 cities, had default city-a which is still valid — keep it.
+	if rigMap["rig1"].DefaultCity != cityA {
+		t.Errorf("rig1 default: expected %s, got %s", cityA, rigMap["rig1"].DefaultCity)
 	}
 
 	// rig2: in 1 city — auto-default.
-	if rigMap["rig2"].DefaultCity != "/city-a" {
-		t.Errorf("rig2 default: expected /city-a (auto), got %s", rigMap["rig2"].DefaultCity)
+	if rigMap["rig2"].DefaultCity != cityA {
+		t.Errorf("rig2 default: expected %s (auto), got %s", cityA, rigMap["rig2"].DefaultCity)
 	}
 
 	// rig3: not in mappings — should be removed.
@@ -685,13 +694,16 @@ func TestRigReconcileClearsStaleDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	cityA := absFixture("/city-a")
+	cityB := absFixture("/city-b")
+
 	// Rig was in city-a (default), now only in city-b.
-	if err := r.RegisterRig(rigPath, "myrig", "/city-a"); err != nil {
+	if err := r.RegisterRig(rigPath, "myrig", cityA); err != nil {
 		t.Fatal(err)
 	}
 
 	mappings := []RigCityMapping{
-		{RigPath: rigPath, RigName: "myrig", CityPath: "/city-b"},
+		{RigPath: rigPath, RigName: "myrig", CityPath: cityB},
 	}
 	if err := r.ReconcileRigs(mappings); err != nil {
 		t.Fatal(err)
@@ -702,8 +714,8 @@ func TestRigReconcileClearsStaleDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Only one city — auto-default should be city-b (old default was stale).
-	if rigs[0].DefaultCity != "/city-b" {
-		t.Errorf("expected /city-b, got %s", rigs[0].DefaultCity)
+	if rigs[0].DefaultCity != cityB {
+		t.Errorf("expected %s, got %s", cityB, rigs[0].DefaultCity)
 	}
 }
 
