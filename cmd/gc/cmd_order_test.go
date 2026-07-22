@@ -2554,7 +2554,11 @@ prefix = "fe"
 		Rig:      "frontend",
 		Trigger:  "cooldown",
 		Interval: "1m",
-		Exec:     fmt.Sprintf(`pwd > %q && printf '%%s\n%%s\n%%s\n%%s\n%%s\n%%s\n' "$BEADS_DIR" "$GC_STORE_ROOT" "$GC_STORE_SCOPE" "$GC_BEADS_PREFIX" "$GC_RIG" "$GC_RIG_ROOT" >> %q`, outPath, outPath),
+		// Verify the working directory by a filesystem side-effect (a marker
+		// created via a relative path lands in cwd) rather than `pwd`: MSYS sh's
+		// pwd reports a POSIX path (/tmp/.../frontend) that never equals the
+		// native rigDir on Windows. The gc-set env vars below are already native.
+		Exec: fmt.Sprintf(`: > cwd-marker && printf '%%s\n%%s\n%%s\n%%s\n%%s\n%%s\n' "$BEADS_DIR" "$GC_STORE_ROOT" "$GC_STORE_SCOPE" "$GC_BEADS_PREFIX" "$GC_RIG" "$GC_RIG_ROOT" > %q`, outPath),
 	}
 
 	var stdout, stderr bytes.Buffer
@@ -2562,34 +2566,34 @@ prefix = "fe"
 	if code != 0 {
 		t.Fatalf("doOrderRunExec = %d, want 0; stderr: %s", code, stderr.String())
 	}
+	if _, err := os.Stat(filepath.Join(rigDir, "cwd-marker")); err != nil {
+		t.Fatalf("cwd marker not in rig workdir %q: %v (exec did not run in the rig-scoped workdir)", rigDir, err)
+	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Fatalf("ReadFile(exec-env): %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	if len(lines) != 7 {
-		t.Fatalf("exec env lines = %d, want 7 (%q)", len(lines), string(data))
+	if len(lines) != 6 {
+		t.Fatalf("exec env lines = %d, want 6 (%q)", len(lines), string(data))
 	}
-	if lines[0] != rigDir {
-		t.Fatalf("pwd = %q, want %q", lines[0], rigDir)
+	if lines[0] != filepath.Join(rigDir, ".beads") {
+		t.Fatalf("BEADS_DIR = %q, want %q", lines[0], filepath.Join(rigDir, ".beads"))
 	}
-	if lines[1] != filepath.Join(rigDir, ".beads") {
-		t.Fatalf("BEADS_DIR = %q, want %q", lines[1], filepath.Join(rigDir, ".beads"))
+	if lines[1] != rigDir {
+		t.Fatalf("GC_STORE_ROOT = %q, want %q", lines[1], rigDir)
 	}
-	if lines[2] != rigDir {
-		t.Fatalf("GC_STORE_ROOT = %q, want %q", lines[2], rigDir)
+	if lines[2] != "rig" {
+		t.Fatalf("GC_STORE_SCOPE = %q, want rig", lines[2])
 	}
-	if lines[3] != "rig" {
-		t.Fatalf("GC_STORE_SCOPE = %q, want rig", lines[3])
+	if lines[3] != "fe" {
+		t.Fatalf("GC_BEADS_PREFIX = %q, want fe", lines[3])
 	}
-	if lines[4] != "fe" {
-		t.Fatalf("GC_BEADS_PREFIX = %q, want fe", lines[4])
+	if lines[4] != "frontend" {
+		t.Fatalf("GC_RIG = %q, want frontend", lines[4])
 	}
-	if lines[5] != "frontend" {
-		t.Fatalf("GC_RIG = %q, want frontend", lines[5])
-	}
-	if lines[6] != rigDir {
-		t.Fatalf("GC_RIG_ROOT = %q, want %q", lines[6], rigDir)
+	if lines[5] != rigDir {
+		t.Fatalf("GC_RIG_ROOT = %q, want %q", lines[5], rigDir)
 	}
 }
 

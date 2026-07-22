@@ -4,10 +4,33 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// noopTrueExecutable writes a tiny executable that exits 0 without reading
+// stdin — a cross-platform stand-in for /bin/true, which does not exist on
+// Windows. On Windows it is a .bat (exec runs it via the same path the fake-tool
+// launchers use); elsewhere a chmod +x shell script.
+func noopTrueExecutable(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		p := filepath.Join(dir, "true.bat")
+		if err := os.WriteFile(p, []byte("@exit /b 0\r\n"), 0o755); err != nil {
+			t.Fatalf("write true.bat: %v", err)
+		}
+		return p
+	}
+	p := filepath.Join(dir, "true.sh")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write true.sh: %v", err)
+	}
+	return p
+}
 
 // trackingReader counts how many bytes were read from the wrapped reader, so a
 // test can assert gc hook run fully consumed the provider's hook stdin.
@@ -35,7 +58,7 @@ func (t *trackingReader) Read(p []byte) (int, error) {
 // executable here is /bin/true, which exits 0 without reading stdin.
 func TestHookRunConsumesStdinWhenWrappedCommandIgnoresIt(t *testing.T) {
 	orig := hookRunExecutable
-	hookRunExecutable = func() (string, error) { return "/bin/true", nil }
+	hookRunExecutable = func() (string, error) { return noopTrueExecutable(t), nil }
 	t.Cleanup(func() { hookRunExecutable = orig })
 
 	payload := strings.Repeat("x", 8192)
@@ -85,7 +108,7 @@ func (b *blockingReader) Read(p []byte) (int, error) {
 // configured timeout instead of wedging before it spawns the child.
 func TestHookRunReturnsWithinTimeoutWhenStdinNeverEOFs(t *testing.T) {
 	orig := hookRunExecutable
-	hookRunExecutable = func() (string, error) { return "/bin/true", nil }
+	hookRunExecutable = func() (string, error) { return noopTrueExecutable(t), nil }
 	t.Cleanup(func() { hookRunExecutable = orig })
 
 	release := make(chan struct{})
@@ -144,7 +167,7 @@ func TestHookRunSkipsStdinDrainForTerminal(t *testing.T) {
 	}
 
 	orig := hookRunExecutable
-	hookRunExecutable = func() (string, error) { return "/bin/true", nil }
+	hookRunExecutable = func() (string, error) { return noopTrueExecutable(t), nil }
 	t.Cleanup(func() { hookRunExecutable = orig })
 
 	var stdout, stderr bytes.Buffer

@@ -15,6 +15,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func parseDoltStateOutput(t *testing.T, out string) map[string]string {
@@ -234,13 +235,25 @@ func TestRepairedManagedDoltRuntimeStateAcceptsSymlinkEquivalentDataDir(t *testi
 
 func TestDoltStateRuntimeLayoutCmdHonorsProjectedOverrides(t *testing.T) {
 	cityPath := t.TempDir()
-	t.Setenv("GC_CITY_RUNTIME_DIR", "/runtime-root")
-	t.Setenv("GC_DOLT_DATA_DIR", "/data-root")
-	t.Setenv("GC_DOLT_LOG_FILE", "/logs/dolt.log")
-	t.Setenv("GC_DOLT_STATE_FILE", "/state/dolt-provider-state.json")
-	t.Setenv("GC_DOLT_PID_FILE", "/state/dolt.pid")
-	t.Setenv("GC_DOLT_LOCK_FILE", "/state/dolt.lock")
-	t.Setenv("GC_DOLT_CONFIG_FILE", "/state/dolt-config.yaml")
+	// Native-absolute override roots: a POSIX "/state" sentinel is not portable
+	// (on the D:-rooted GitHub Windows runner it resolves to "D:\state", so the
+	// echoed value never matches the POSIX expectation). Build the roots under a
+	// canonical temp dir so input == output on every platform.
+	root := testutil.CanonicalTempDir(t)
+	runtimeRoot := filepath.Join(root, "runtime-root")
+	dataRoot := filepath.Join(root, "data-root")
+	logFile := filepath.Join(root, "logs", "dolt.log")
+	stateFile := filepath.Join(root, "state", "dolt-provider-state.json")
+	pidFile := filepath.Join(root, "state", "dolt.pid")
+	lockFile := filepath.Join(root, "state", "dolt.lock")
+	configFile := filepath.Join(root, "state", "dolt-config.yaml")
+	t.Setenv("GC_CITY_RUNTIME_DIR", runtimeRoot)
+	t.Setenv("GC_DOLT_DATA_DIR", dataRoot)
+	t.Setenv("GC_DOLT_LOG_FILE", logFile)
+	t.Setenv("GC_DOLT_STATE_FILE", stateFile)
+	t.Setenv("GC_DOLT_PID_FILE", pidFile)
+	t.Setenv("GC_DOLT_LOCK_FILE", lockFile)
+	t.Setenv("GC_DOLT_CONFIG_FILE", configFile)
 
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"dolt-state", "runtime-layout", "--city", cityPath}, &stdout, &stderr)
@@ -249,13 +262,13 @@ func TestDoltStateRuntimeLayoutCmdHonorsProjectedOverrides(t *testing.T) {
 	}
 	got := parseDoltRuntimeLayoutOutput(t, stdout.String())
 	want := map[string]string{
-		"GC_PACK_STATE_DIR":   filepath.Join("/runtime-root", "packs", "dolt"),
-		"GC_DOLT_DATA_DIR":    "/data-root",
-		"GC_DOLT_LOG_FILE":    "/logs/dolt.log",
-		"GC_DOLT_STATE_FILE":  "/state/dolt-provider-state.json",
-		"GC_DOLT_PID_FILE":    "/state/dolt.pid",
-		"GC_DOLT_LOCK_FILE":   "/state/dolt.lock",
-		"GC_DOLT_CONFIG_FILE": "/state/dolt-config.yaml",
+		"GC_PACK_STATE_DIR":   filepath.Join(runtimeRoot, "packs", "dolt"),
+		"GC_DOLT_DATA_DIR":    dataRoot,
+		"GC_DOLT_LOG_FILE":    logFile,
+		"GC_DOLT_STATE_FILE":  stateFile,
+		"GC_DOLT_PID_FILE":    pidFile,
+		"GC_DOLT_LOCK_FILE":   lockFile,
+		"GC_DOLT_CONFIG_FILE": configFile,
 	}
 	for key, wantValue := range want {
 		if got[key] != wantValue {
