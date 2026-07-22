@@ -246,7 +246,13 @@ func fakeWorkerBinary(t *testing.T) string {
 			fakeWorkerBinaryErr = err
 			return
 		}
-		fakeWorkerBinaryPath = filepath.Join(buildDir, "fake-worker")
+		fakeWorkerName := "fake-worker"
+		if goruntime.GOOS == "windows" {
+			// go build -o appends .exe on Windows; name the target to match so
+			// the later exec of fakeWorkerBinaryPath finds the built binary.
+			fakeWorkerName += ".exe"
+		}
+		fakeWorkerBinaryPath = filepath.Join(buildDir, fakeWorkerName)
 		cmd := exec.Command("go", "build", "-o", fakeWorkerBinaryPath, "./internal/worker/fakecmd")
 		cmd.Dir = root
 		var stderr bytes.Buffer

@@ -231,6 +231,7 @@ func mustLoadSnapshot(t *testing.T, profile Profile, fixtureRoot string) *Snapsh
 	t.Helper()
 
 	root := filepath.Clean(fixtureRoot)
+	root = stageWorkdirHashedFixture(t, profile, root)
 	snapshot, err := LoadSnapshot(profile, root)
 	if err != nil {
 		t.Fatalf("LoadSnapshot(%s, %s): %v", profile.ID, root, err)
