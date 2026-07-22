@@ -259,6 +259,16 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	testTempRootAliveSentinel = sentinel
+	// Resolve 8.3 short names to the long form before redirecting temp here.
+	// GitHub-hosted Windows runners hand out C:\Users\RUNNER~1\... as the temp
+	// root, but production canonicalizes paths to the long form
+	// (C:\Users\runneradmin\...), so every t.TempDir()-derived fixture path would
+	// otherwise mismatch canonicalized production output across the whole package.
+	// EvalSymlinks expands the short name (same mechanism as testutil.CanonicalTempDir);
+	// it is a no-op wherever the path needs no 8.3 alias (dev boxes, Linux).
+	if resolved, rerr := filepath.EvalSymlinks(testTempRoot); rerr == nil {
+		testTempRoot = resolved
+	}
 	// os.TempDir() honors TMPDIR on Unix but TMP/TEMP on Windows; set all three
 	// so os.MkdirTemp("")/t.TempDir() — and the re-exec'd gc/bd testscript
 	// children that inherit this env — isolate into testTempRoot on every
