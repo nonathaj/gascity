@@ -173,7 +173,9 @@ func NewFileRecorder(path string, stderr io.Writer, opts ...FileRecorderOption) 
 
 	// O_RDWR (not O_WRONLY): Windows LockFileEx requires read or write access
 	// on the handle, and Go maps O_WRONLY|O_APPEND to FILE_APPEND_DATA only.
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
+	// openEventLog additionally opens FILE_SHARE_DELETE on Windows so the live
+	// log can be rotated (rename) and deleted while open.
+	file, err := openEventLog(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening event log: %w", err)
 	}
