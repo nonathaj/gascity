@@ -2296,7 +2296,10 @@ func runProviderOpWithEnvContext(parent context.Context, script string, environ 
 	cmd.WaitDelay = 2 * time.Second
 	prepareProviderOpCommand(cmd)
 	if len(environ) > 0 {
-		cmd.Env = environ
+		// Preserve execshim's coreutils PATH injection: provider scripts run
+		// under sh and legitimately use dirname/sleep/mkdir, which live in Git
+		// for Windows' usr\bin off a normal PATH. Identity on Unix.
+		cmd.Env = execshim.EnvWithShellDir(environ)
 	}
 
 	var stderr bytes.Buffer

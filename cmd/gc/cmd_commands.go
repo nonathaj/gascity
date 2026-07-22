@@ -310,7 +310,9 @@ func runDiscoveredCommand(entry config.DiscoveredCommand, cityPath, cityName str
 	cmd.Stdin = stdinR
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = append(os.Environ(), citylayout.PackRuntimeEnv(cityPath, entry.PackName)...)
+	// cmd.Environ() (not os.Environ()) preserves execshim's coreutils PATH
+	// injection for pack command scripts running under sh on Windows.
+	cmd.Env = append(cmd.Environ(), citylayout.PackRuntimeEnv(cityPath, entry.PackName)...)
 	cmd.Env = append(cmd.Env,
 		"GC_PACK_DIR="+packDir,
 		"GC_PACK_NAME="+entry.PackName,
