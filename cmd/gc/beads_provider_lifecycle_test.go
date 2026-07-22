@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1127,12 +1128,18 @@ exit 0
 	if err != nil {
 		t.Fatalf("ReadFile(dolt-state.json): %v", err)
 	}
-	publishedText := string(published)
-	if !strings.Contains(publishedText, fmt.Sprintf("\"port\":%d", port)) {
-		t.Fatalf("published state missing port %d: %s", port, publishedText)
+	// Decode rather than substring-match: the data_dir path is JSON-escaped in
+	// the raw text, so a native Windows path (backslashes) never matches its
+	// escaped form byte-for-byte.
+	var publishedState doltRuntimeState
+	if err := json.Unmarshal(published, &publishedState); err != nil {
+		t.Fatalf("decode dolt-state.json: %v\n%s", err, published)
 	}
-	if !strings.Contains(publishedText, filepath.Join(cityPath, ".beads", "dolt")) {
-		t.Fatalf("published state missing data_dir: %s", publishedText)
+	if publishedState.Port != port {
+		t.Fatalf("published state port = %d, want %d: %s", publishedState.Port, port, published)
+	}
+	if got, want := filepath.Clean(publishedState.DataDir), filepath.Join(cityPath, ".beads", "dolt"); got != want {
+		t.Fatalf("published state data_dir = %q, want %q", got, want)
 	}
 	for _, dir := range []string{cityPath, rigPath} {
 		data, err := os.ReadFile(filepath.Join(dir, ".beads", "dolt-server.port"))
@@ -5574,6 +5581,13 @@ func TestNormalizeCanonicalBdScopeFilesSkipsInheritedCityPostgresRigWithEmptyMet
 }
 
 func TestGcBeadsBdInitTightensBeadsDirPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Doctrine P5: the 0700 tightening contract is Unix mode-bit security.
+		// NTFS mode bits are synthetic (MSYS stat reports emulated values and
+		// chmod 700 does not restrict access); the equivalent protection on
+		// Windows is ACL-based and not what this script exercises.
+		t.Skip("P5: .beads mode-bit tightening not applicable on Windows")
+	}
 	tests := []struct {
 		name             string
 		preexistingDir   bool
@@ -5695,6 +5709,10 @@ esac
 }
 
 func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Doctrine P5: same rationale as TestGcBeadsBdInitTightensBeadsDirPermissions.
+		t.Skip("P5: .beads mode-bit tightening not applicable on Windows")
+	}
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
