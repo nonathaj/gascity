@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2356,7 +2357,7 @@ func TestRunWorkflowServeWarnsOnLegacyTracePath(t *testing.T) {
 	if !strings.Contains(got, "change or unset GC_WORKFLOW_TRACE") {
 		t.Fatalf("stderr = %q, want explicit override guidance", got)
 	}
-	if !strings.Contains(got, filepath.Join(cityDir, ".gc", "runtime", "control-dispatcher-trace.log")) {
+	if !strings.Contains(got, strconv.Quote(filepath.Join(cityDir, ".gc", "runtime", "control-dispatcher-trace.log"))) {
 		t.Fatalf("stderr = %q, want canonical runtime trace path guidance", got)
 	}
 }
@@ -2402,10 +2403,10 @@ func TestRunWorkflowServeWarnsWhenLegacyTraceFileStillExists(t *testing.T) {
 	if !strings.Contains(got, "legacy control-dispatcher trace file") {
 		t.Fatalf("stderr = %q, want legacy-trace artifact warning", got)
 	}
-	if !strings.Contains(got, legacyTracePath) {
+	if !strings.Contains(got, strconv.Quote(legacyTracePath)) {
 		t.Fatalf("stderr = %q, want legacy trace path %q", got, legacyTracePath)
 	}
-	if !strings.Contains(got, filepath.Join(cityDir, ".gc", "runtime", "control-dispatcher-trace.log")) {
+	if !strings.Contains(got, strconv.Quote(filepath.Join(cityDir, ".gc", "runtime", "control-dispatcher-trace.log"))) {
 		t.Fatalf("stderr = %q, want canonical runtime trace path guidance", got)
 	}
 	if !strings.Contains(got, "restart or recycle the control-dispatcher session") {
@@ -2457,7 +2458,7 @@ func TestRunWorkflowServeWarnsWhenLegacyRigTraceFileStillExists(t *testing.T) {
 	}
 
 	got := stderr.String()
-	if !strings.Contains(got, legacyTracePath) {
+	if !strings.Contains(got, strconv.Quote(legacyTracePath)) {
 		t.Fatalf("stderr = %q, want legacy rig trace path %q", got, legacyTracePath)
 	}
 	if !strings.Contains(got, "legacy control-dispatcher trace file") {
@@ -2509,7 +2510,7 @@ func TestRunWorkflowServeWarnsWhenLegacyEnvRigTraceFileStillExistsOutsideConfigu
 	}
 
 	got := stderr.String()
-	if !strings.Contains(got, legacyTracePath) {
+	if !strings.Contains(got, strconv.Quote(legacyTracePath)) {
 		t.Fatalf("stderr = %q, want undeclared rig trace path %q", got, legacyTracePath)
 	}
 	if !strings.Contains(got, "legacy control-dispatcher trace file") {
@@ -2706,7 +2707,7 @@ func TestRunControlDispatcherWithStoreWarnsOnLegacyTracePath(t *testing.T) {
 	}
 
 	got := stderr.String()
-	if !strings.Contains(got, legacyTracePath) {
+	if !strings.Contains(got, strconv.Quote(legacyTracePath)) {
 		t.Fatalf("stderr = %q, want legacy trace path %q", got, legacyTracePath)
 	}
 	if !strings.Contains(got, "change or unset GC_WORKFLOW_TRACE") {
