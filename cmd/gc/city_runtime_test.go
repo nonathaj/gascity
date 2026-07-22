@@ -4837,10 +4837,25 @@ func TestCityRuntimeReloadDrainBoundedByTimeout(t *testing.T) {
 
 	writeCityRuntimeConfigWithShutdownTimeout(t, tomlPath, "fake", "1s")
 	lastProviderName := "fake"
+	// Warm the builtin-pack caches before timing: the first config load
+	// materializes the embedded packs to disk (seconds on NTFS with Defender),
+	// which is one-time setup cost, not the drain this test bounds. Warming via
+	// tryReloadConfig (not a full reloadConfig) leaves cr.od — the blocking
+	// dispatcher under test — untouched.
+	if _, err := tryReloadConfig(tomlPath, "test-city", cityPath); err != nil {
+		t.Fatalf("warm pack cache: %v", err)
+	}
 	start := time.Now()
 	cr.reloadConfig(context.Background(), &lastProviderName, cityPath)
 	elapsed := time.Since(start)
-	if elapsed < reloadOrderDrainTimeout || elapsed > reloadOrderDrainTimeout+500*time.Millisecond {
+	// Lower bound proves the drain actually waited (the blocking dispatcher only
+	// releases after this assertion, so a bounded drain must hit its full
+	// timeout). Upper bound proves reload is bounded, not hung — the generous
+	// headroom absorbs the incidental config-reload work (builtin-pack cache
+	// validation: hashing the embedded pack tree against disk), which is
+	// sub-millisecond on Linux tmpfs but a few hundred ms on NTFS with a live
+	// AV scanner. The drain itself is bounded by construction (a context timer).
+	if elapsed < reloadOrderDrainTimeout || elapsed > 3*reloadOrderDrainTimeout {
 		t.Fatalf("reload elapsed = %s, want bounded near %s", elapsed, reloadOrderDrainTimeout)
 	}
 	close(od.release)

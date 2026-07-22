@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"io"
 	"net"
 	"net/http"
@@ -20,6 +19,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gastownhall/gascity/internal/api"
