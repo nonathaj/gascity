@@ -1036,7 +1036,7 @@ base = "builtin:claude"
 
 [[rigs]]
 name = "patch-rig"
-path = "` + rigDir + `"
+path = ` + tomlQuote(rigDir) + `
 
 [[patches.agent]]
 dir = "patch-rig"
