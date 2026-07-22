@@ -445,7 +445,11 @@ func TestSweepOrphanRemovesDirWithFreeSentinel(t *testing.T) {
 // runners can isolate concurrent runs (ga-djbcqt).
 func TestCreateActiveTestTempRootHonorsTMPDIR(t *testing.T) {
 	parent := t.TempDir()
+	// os.TempDir() reads TMP/TEMP on Windows, TMPDIR on Unix; set all three so
+	// createActiveTestTempRoot roots under parent on every platform.
 	t.Setenv("TMPDIR", parent)
+	t.Setenv("TMP", parent)
+	t.Setenv("TEMP", parent)
 
 	root, sentinel, err := createActiveTestTempRoot("pfx")
 	if err != nil {

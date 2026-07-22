@@ -248,13 +248,25 @@ func TestMain(m *testing.M) {
 	// flock must stay held for the binary's lifetime: sweepers in other
 	// processes — including other PID namespaces — probe it instead of
 	// trusting PID visibility (ga-djbcqt).
+	// Capture the inherited temp root before redirecting temp allocation into
+	// the isolated test root: legacy PID-prefixed orphan dirs from prior or
+	// killed runs live there, so the orphan sweeps below must target it, not
+	// the (now-isolated) os.TempDir().
+	inheritedTmpRoot := os.TempDir()
 	testTempRoot, sentinel, err := createActiveTestTempRoot(cmdGCTestTempRootPrefix())
 	if err != nil {
 		panic(err)
 	}
 	testTempRootAliveSentinel = sentinel
-	if err := os.Setenv("TMPDIR", testTempRoot); err != nil {
-		panic(err)
+	// os.TempDir() honors TMPDIR on Unix but TMP/TEMP on Windows; set all three
+	// so os.MkdirTemp("")/t.TempDir() — and the re-exec'd gc/bd testscript
+	// children that inherit this env — isolate into testTempRoot on every
+	// platform. Without TMP/TEMP, Windows temp escapes to the ambient dir and
+	// this package's temp isolation and orphan sweeps are void.
+	for _, tmpKey := range []string{"TMPDIR", "TMP", "TEMP"} {
+		if err := os.Setenv(tmpKey, testTempRoot); err != nil {
+			panic(err)
+		}
 	}
 	tmuxSocketRoot, tmuxSocketCleanupRoot, err := cmdGCTmuxSocketRoot(testTempRoot)
 	if err != nil {
@@ -263,12 +275,11 @@ func TestMain(m *testing.M) {
 	if err := tmuxtest.ConfigureProcessEnv(tmuxSocketRoot); err != nil {
 		panic(err)
 	}
-	tmpRoot := os.TempDir()
-	sweepOrphanPIDPrefixedDirs(tmpRoot, testGCHomeDirPrefix)
-	sweepOrphanPIDPrefixedDirs(tmpRoot, testRuntimeDirPrefix)
-	sweepOrphanPIDPrefixedDirs(tmpRoot, testProviderStubDirPrefix)
-	sweepOrphanPIDPrefixedDirs(tmpRoot, testSlingFormulaDirPrefix)
-	sweepOrphanPIDPrefixedDirs(tmpRoot, testSlingCityDirPrefix)
+	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testGCHomeDirPrefix)
+	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testRuntimeDirPrefix)
+	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testProviderStubDirPrefix)
+	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testSlingFormulaDirPrefix)
+	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testSlingCityDirPrefix)
 	initSharedSlingTestFixtures(testTempRoot)
 
 	gcHome, err := os.MkdirTemp("", pidPrefixedTempPattern(testGCHomeDirPrefix))
