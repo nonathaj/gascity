@@ -658,11 +658,10 @@ dolt.auto-start: false
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-env.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
-  printf 'pwd=%s\n' "$PWD"
+  printf 'pwd=%s\n' "$(pwd -W 2>/dev/null || pwd)"
   printf 'args=%s\n' "$*"
   printf 'GC_STORE_ROOT=%s\n' "${GC_STORE_ROOT:-}"
   printf 'GC_STORE_SCOPE=%s\n' "${GC_STORE_SCOPE:-}"
@@ -675,9 +674,7 @@ set -eu
   printf 'GC_RIG=%s\n' "${GC_RIG:-}"
   printf 'GC_RIG_ROOT=%s\n' "${GC_RIG_ROOT:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("CAPTURE_PATH", capture)
@@ -768,8 +765,7 @@ func TestGcBdSuppressesBdAutoExportInChildEnv(t *testing.T) {
 	writeBuiltinImportsFixture(t, cityDir, "core", "bd")
 
 	binDir := t.TempDir()
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 if [ "${BD_EXPORT_AUTO:-}" != "false" ]; then
   echo "BD_EXPORT_AUTO=${BD_EXPORT_AUTO:-}" >&2
@@ -786,9 +782,7 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY_PATH", cityDir)
 	t.Setenv("BD_EXPORT_AUTO", "true")
@@ -841,13 +835,10 @@ name = "demo"
 	}
 
 	binDir := t.TempDir()
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 printf '[{"id":"gc-1","title":"ok"}]\n'
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY_PATH", cityDir)
 
@@ -899,20 +890,17 @@ prefix = "repo"
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-city-env.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
-  printf 'pwd=%s\n' "$PWD"
+  printf 'pwd=%s\n' "$(pwd -W 2>/dev/null || pwd)"
   printf 'args=%s\n' "$*"
   printf 'GC_STORE_ROOT=%s\n' "${GC_STORE_ROOT:-}"
   printf 'GC_STORE_SCOPE=%s\n' "${GC_STORE_SCOPE:-}"
   printf 'GC_BEADS_PREFIX=%s\n' "${GC_BEADS_PREFIX:-}"
   printf 'BEADS_DIR=%s\n' "${BEADS_DIR:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("CAPTURE_PATH", capture)
@@ -1118,17 +1106,14 @@ prefix = "fe"
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-mixed-provider.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
-  printf 'pwd=%s\n' "$PWD"
+  printf 'pwd=%s\n' "$(pwd -W 2>/dev/null || pwd)"
   printf 'args=%s\n' "$*"
   printf 'BEADS_DIR=%s\n' "${BEADS_DIR:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CAPTURE_PATH", capture)
 	t.Setenv("GC_CITY_PATH", cityDir)
@@ -1457,18 +1442,15 @@ name = "demo"
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-city.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
-  printf 'pwd=%s\n' "$PWD"
+  printf 'pwd=%s\n' "$(pwd -W 2>/dev/null || pwd)"
   printf 'args=%s\n' "$*"
   printf 'GC_STORE_ROOT=%s\n' "${GC_STORE_ROOT:-}"
   printf 'GC_STORE_SCOPE=%s\n' "${GC_STORE_SCOPE:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("CAPTURE_PATH", capture)
@@ -1540,19 +1522,16 @@ prefix = "fr"
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-rig.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
-  printf 'pwd=%s\n' "$PWD"
+  printf 'pwd=%s\n' "$(pwd -W 2>/dev/null || pwd)"
   printf 'args=%s\n' "$*"
   printf 'GC_STORE_ROOT=%s\n' "${GC_STORE_ROOT:-}"
   printf 'GC_STORE_SCOPE=%s\n' "${GC_STORE_SCOPE:-}"
   printf 'GC_RIG=%s\n' "${GC_RIG:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("CAPTURE_PATH", capture)
@@ -1629,16 +1608,13 @@ dolt.port: 3307
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "gc-bd-external-env.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
   printf 'GC_DOLT_HOST=%s\n' "${GC_DOLT_HOST:-}"
   printf 'GC_DOLT_PORT=%s\n' "${GC_DOLT_PORT:-}"
 } > "${CAPTURE_PATH}"
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("CAPTURE_PATH", capture)
@@ -1716,9 +1692,7 @@ name = "demo"
 	}
 
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "bd"), []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+origPath)
 	t.Setenv("GC_CITY_PATH", cityDir)
@@ -2372,9 +2346,7 @@ prefix = "fe"
 		"printf ' %s' \"$@\" >&2\n" +
 		"printf '\\n' >&2\n" +
 		"exit 2\n"
-	if err := os.WriteFile(filepath.Join(fakeBin, "bd"), []byte(fakeBD), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", fakeBD)
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	setCwd(t, cityDir)
 	t.Setenv("GC_CITY_PATH", cityDir)
