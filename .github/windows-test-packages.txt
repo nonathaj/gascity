@@ -139,6 +139,8 @@
 ./internal/worker/builtin
 ./internal/worker/fake
 ./internal/worker/transcript
+./internal/worker/workertest
+./internal/workspacesvc
 ./pkg/eventexport
 ./scripts/cipolicy
 ./test/acceptance
