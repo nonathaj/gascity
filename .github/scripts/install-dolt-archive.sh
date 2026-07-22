@@ -38,11 +38,20 @@ done
 case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux) os=linux ;;
+  MINGW*|MSYS*|CYGWIN*) os=windows ;;
   *)
     echo "Unsupported OS: $(uname -s)" >&2
     exit 1
     ;;
 esac
+
+# Dolt ships a .zip (not .tar.gz) for Windows and the binary is dolt.exe.
+archive_ext="tar.gz"
+bin_name="dolt"
+if [[ "$os" == windows ]]; then
+  archive_ext="zip"
+  bin_name="dolt.exe"
+fi
 
 case "$(uname -m)" in
   arm64|aarch64) arch=arm64 ;;
@@ -105,7 +114,7 @@ github_release_asset_sha() {
     | sed 's/^sha256://'
 }
 
-archive="dolt-${platform_tuple}.tar.gz"
+archive="dolt-${platform_tuple}.${archive_ext}"
 if [[ -z "$expected_sha" ]]; then
   expected_sha="$(github_release_asset_sha "dolthub/dolt" "v${version}" "$archive")"
   if [[ -z "$expected_sha" ]]; then
@@ -152,7 +161,7 @@ else
   bin_dir="${DOLT_INSTALL_BIN_DIR:-/usr/local/bin}"
 fi
 
-target="${bin_dir}/dolt"
+target="${bin_dir}/${bin_name}"
 if [[ -x "$target" ]]; then
   echo "Reusing cached Dolt ${version} at ${target}"
 else
@@ -167,8 +176,22 @@ else
     echo "actual:   $actual_sha" >&2
     exit 1
   fi
-  tar -xzf "${tmp}/${archive}" -C "$tmp"
-  src="${tmp}/dolt-${platform_tuple}/bin/dolt"
+  if [[ "$os" == windows ]]; then
+    unzip -q "${tmp}/${archive}" -d "$tmp"
+  else
+    tar -xzf "${tmp}/${archive}" -C "$tmp"
+  fi
+  # Locate the binary rather than assuming the archive layout: the tarballs
+  # place it at dolt-<tuple>/bin/dolt, but resolve it defensively so a layout
+  # change (or the Windows zip) does not silently break the install.
+  src="${tmp}/dolt-${platform_tuple}/bin/${bin_name}"
+  if [[ ! -f "$src" ]]; then
+    src="$(find "$tmp" -type f -name "$bin_name" -print -quit)"
+  fi
+  if [[ -z "$src" || ! -f "$src" ]]; then
+    echo "Could not locate ${bin_name} in the extracted Dolt archive" >&2
+    exit 1
+  fi
   if $use_cache; then
     install_binary "$src" "$target"
   else

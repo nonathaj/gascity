@@ -72,6 +72,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Install the SHA-pinned Dolt binary the same way Linux/mac CI does
+      # (setup-gascity-ubuntu -> install-dolt-archive.sh), so the managed-Dolt
+      # cmd/gc tests run on the runner instead of being skipped. --cache adds
+      # the bin dir to GITHUB_PATH. Kept in lockstep with ci.yml's DOLT_VERSION.
+      - name: Install Dolt
+        shell: bash
+        run: .github/scripts/install-dolt-archive.sh 2.1.7 --cache
+      - name: Verify Dolt on PATH
+        shell: pwsh
+        run: dolt version
       - name: Run green-list packages
         shell: pwsh
         env:
