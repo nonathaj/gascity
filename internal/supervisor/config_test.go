@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // absFixture makes a POSIX-style absolute fixture path OS-absolute:
@@ -190,7 +192,10 @@ func TestDefaultHomeWithEnv(t *testing.T) {
 }
 
 func TestDefaultHomeCanonicalizesSymlinkOverride(t *testing.T) {
-	homeDir := t.TempDir()
+	// CanonicalTempDir: DefaultHome canonicalizes (EvalSymlinks) to the
+	// long form; a raw TempDir is 8.3 short on CI runners (RUNNER~1) and
+	// the want would mismatch (T11).
+	homeDir := testutil.CanonicalTempDir(t)
 	canonicalHome := filepath.Join(homeDir, "canonical-gc")
 	if err := os.MkdirAll(canonicalHome, 0o755); err != nil {
 		t.Fatal(err)
@@ -206,7 +211,7 @@ func TestDefaultHomeCanonicalizesSymlinkOverride(t *testing.T) {
 }
 
 func TestDefaultHomeCanonicalizesRelativeOverride(t *testing.T) {
-	homeDir := t.TempDir()
+	homeDir := testutil.CanonicalTempDir(t) // long-form for the EvalSymlinks compare (T11)
 	canonicalHome := filepath.Join(homeDir, "relative-gc")
 	if err := os.MkdirAll(canonicalHome, 0o755); err != nil {
 		t.Fatal(err)
@@ -240,7 +245,9 @@ func TestRuntimeDirWithXDG(t *testing.T) {
 
 func TestRuntimeDirUsesIsolatedGCHomeWhenOverrideDiffersFromDefault(t *testing.T) {
 	homeDir := t.TempDir()
-	gcHome := filepath.Join(t.TempDir(), "isolated-home")
+	// RuntimeDir returns DefaultHome() (canonicalized) for an isolated
+	// override, so the gcHome base must be long-form to match on runners (T11).
+	gcHome := filepath.Join(testutil.CanonicalTempDir(t), "isolated-home")
 	setDefaultHomeEnv(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", absFixture("/run/user/1000"))

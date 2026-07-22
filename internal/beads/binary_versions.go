@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/doltversion"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // binaryVersionProbeTimeout bounds each `<binary> version` subprocess so a
@@ -45,7 +46,7 @@ func ProbeDoltVersion() (string, error) {
 // binary is driven for real work — and runs `<name> version` under a bounded
 // timeout, returning combined output.
 func probeBinaryVersion(name string) (string, error) {
-	path, err := exec.LookPath(name)
+	path, err := execshim.LookPath(name)
 	if err != nil {
 		return "", fmt.Errorf("locate %s: %w", name, err)
 	}

@@ -3,9 +3,10 @@ package acceptancehelpers
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // StageProviderBinary materializes a provider executable in binDir.
@@ -24,7 +25,7 @@ func StageProviderBinary(binDir, name, defaultShim string) error {
 		return os.WriteFile(dst, []byte(script), 0o755)
 	}
 
-	path, err := exec.LookPath(name)
+	path, err := execshim.LookPath(name)
 	if err != nil {
 		return err
 	}

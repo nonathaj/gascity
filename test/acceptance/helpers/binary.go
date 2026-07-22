@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // BuildGC compiles the gc binary to dir and returns its path.
@@ -63,7 +65,7 @@ func FindBD() string {
 			}
 		}
 	}
-	p, err := exec.LookPath("bd")
+	p, err := execshim.LookPath("bd")
 	if err != nil {
 		return ""
 	}
