@@ -96,3 +96,32 @@ jobs:
             Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') }
           Write-Host "Running $($pkgs.Count) packages"
           go test -count=1 -timeout 30m @pkgs
+
+  unit-green-cmdgc:
+    name: Windows unit tests (cmd/gc)
+    runs-on: windows-latest
+    # cmd/gc is one large package (~1,300 tests, many spawning managed Dolt);
+    # it does not fit the shared green-list job's 30m budget, so it runs on its
+    # own with generous headroom. Split into -run shards later if wall-clock
+    # becomes painful (the boundaries are analyzed on gw-6ph).
+    timeout-minutes: 75
+    steps:
+      - name: Preserve LF line endings on checkout
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Dolt
+        shell: bash
+        run: .github/scripts/install-dolt-archive.sh 2.1.7 --cache
+      - name: Verify Dolt on PATH
+        shell: pwsh
+        run: dolt version
+      - name: Run cmd/gc
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '1'
+          CGO_ENABLED: '0'
+        run: go test -count=1 -timeout 70m ./cmd/gc/
