@@ -5858,8 +5858,22 @@ esac
 	if err != nil {
 		t.Fatalf("read init.env: %v", err)
 	}
-	if got := strings.TrimSpace(string(data)); got != wantPinned {
-		t.Fatalf("init.env = %q, want %q", got, wantPinned)
+	// The script pins BEADS_DIR as "$scope/.beads" — sh appends with a forward
+	// slash, so on Windows the captured value is a mixed-separator spelling of
+	// the same path. Compare per-field with filepath.Clean.
+	got := strings.Split(strings.TrimSpace(string(data)), "|")
+	want := strings.Split(wantPinned, "|")
+	if len(got) != len(want) {
+		t.Fatalf("init.env = %q, want %q", strings.TrimSpace(string(data)), wantPinned)
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if i == len(want)-1 {
+			g, w = filepath.Clean(g), filepath.Clean(w)
+		}
+		if g != w {
+			t.Fatalf("init.env field %d = %q, want %q (full: %q)", i, got[i], want[i], strings.TrimSpace(string(data)))
+		}
 	}
 	if _, err := os.Stat(filepath.Join(captureDir, "config.env")); !os.IsNotExist(err) {
 		t.Fatalf("config.env exists after init; err=%v", err)

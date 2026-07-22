@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,6 +64,28 @@ func sanitizedBaseEnv(extra ...string) []string {
 	// execshim.Command would have (the cmd.Env overwrite discards its
 	// default injection). Identity on Unix.
 	return execshim.EnvWithShellDir(append(filtered, extra...))
+}
+
+// installFakeToolOnPath writes a fake sh tool (bd, dolt, gc, ...) into binDir
+// so BOTH invocation routes resolve it: the extensionless file serves sh PATH
+// lookup (provider scripts call `bd`/`dolt` from sh), and on Windows a .bat
+// launcher makes it visible to Go's exec.LookPath/CreateProcess PATHEXT
+// resolution — an extensionless script is invisible there, so the REAL tool on
+// the host PATH would silently take over (doctrine T3; same pattern as
+// internal/beads installFakeBDOnPath).
+func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) string {
+	t.Helper()
+	impl := filepath.Join(binDir, name)
+	if err := os.WriteFile(impl, []byte(shBody), 0o755); err != nil {
+		t.Fatalf("WriteFile fake %s: %v", name, err)
+	}
+	if runtime.GOOS == "windows" {
+		bat := fmt.Sprintf("@\"%s\" \"%s\" %%*\r\n", execshim.ShPath(), filepath.ToSlash(impl))
+		if err := os.WriteFile(filepath.Join(binDir, name+".bat"), []byte(bat), 0o755); err != nil {
+			t.Fatalf("WriteFile fake %s.bat: %v", name, err)
+		}
+	}
+	return impl
 }
 
 // shScriptPath renders p for splicing into sh script text: slash-separated
