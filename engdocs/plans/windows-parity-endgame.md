@@ -162,6 +162,35 @@ exemption list for sites where host-PATH-only is the semantic:
   mechanisms; instead of sweeping, give the checks not-applicable arms
   on Windows (P5-adjacent), mirroring the secrets-perms decision.
 
+Concrete non-test site inventory (snapshot 2026-07-21; `internal/*`
+green-listed sites already swept and lint-guarded):
+
+- **Sweep to `execshim.LookPath` — `LookPathFunc` injected into a
+  resolver** (provider/agent-binary resolution needs the coreutils +
+  PATHEXT fallback): `cmd/gc/adoption_barrier.go:361`,
+  `agent_build_params.go:117`, `city_runtime.go:2802`,
+  `cmd_doctor.go:{248,249}` (MCP checks), `cmd_internal_project_mcp.go:{57,82}`,
+  `cmd_mcp.go:{82,95}`, `cmd_nudge.go:1240`, `cmd_prime.go:306`,
+  `cmd_prompt.go:229`, `cmd_session.go:{194,264,1605,1618}`,
+  `cmd_sling.go:1514`, `cmd_start.go:794`, `cmd_supervisor.go:2607`,
+  `session_template_start.go:{117,277}`, `worker_handle.go:{865,875}`,
+  `init_provider_readiness.go:511` (`var initLookPath`),
+  `internal/doctor/checks.go:{381,389}`,
+  `internal/doctor/checks_rig_root_branch.go:23`.
+- **Sweep — direct guard for a tool that exists on Windows**:
+  `cmd/gc/beads_provider_lifecycle.go:137` (`gc`), `cmd_bd.go:298` (`bd`),
+  `main.go:1384` (`bd`), `doctor_pack_runtimes.go:81` (pack `rt.Command`),
+  `cmd_doctor.go:{275,276,277}` (`tmux`/`git`/`jq` via `NewBinaryCheck` —
+  `tmux` legitimately absent → the check reports missing, which is correct).
+- **Not-applicable arm on Windows (do NOT route to execshim; these tools
+  don't exist there)**: `cmd_doctor.go:{289,290}` (`pgrep`/`lsof`),
+  `dolt_cleanup_discovery.go:662`, `dolt_preflight_cleanup.go:96`,
+  `dolt_process_inspection.go:{90,240,307}` (all `lsof`; the Windows
+  port replaces lsof-based port attribution with `pidutil` GetExtendedTcpTable).
+- **Exempt (systemd, host-PATH-only; winportlint-allowlisted)**:
+  `cmd/gc/supervisor_systemd_delegate.go:98` (`systemctl`),
+  `internal/runtime/tmux/agent_slice.go:63` (`systemd-run`).
+
 Also in this phase: **gw-nsg** — the curated provider-probe base PATH
 gets a per-GOOS default. Windows list (computed lazily from env, never
 at init): `%SystemRoot%\System32` (cmd.exe runs `.cmd` shims),
