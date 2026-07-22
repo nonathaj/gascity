@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"log"
 	"net"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/beads/contract"
@@ -134,7 +135,7 @@ var resolveProviderLifecycleGCBinary = func() string {
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		return exe
 	}
-	if path, err := exec.LookPath("gc"); err == nil && path != "" {
+	if path, err := execshim.LookPath("gc"); err == nil && path != "" {
 		return path
 	}
 	return ""

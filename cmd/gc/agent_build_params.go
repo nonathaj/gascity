@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -114,7 +114,7 @@ func newAgentBuildParams(cityName, cityPath string, cfg *config.City, sp runtime
 		workspace:       &cfg.Workspace,
 		agents:          append([]config.Agent(nil), cfg.Agents...),
 		providers:       cfg.Providers,
-		lookPath:        exec.LookPath,
+		lookPath:        execshim.LookPath,
 		fs:              fsys.OSFS{},
 		sp:              sp,
 		rigs:            cfg.Rigs,

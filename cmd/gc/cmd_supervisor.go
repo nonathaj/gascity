@@ -6,12 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -20,6 +18,9 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -2604,7 +2605,7 @@ func prepareCityForSupervisor(cityPath, cityName string, cfg *config.City, stder
 	})
 
 	if err := runStep("projecting_mcp", func() error {
-		return runStage1MCPProjection(cityPath, cfg, exec.LookPath, stderr)
+		return runStage1MCPProjection(cityPath, cfg, execshim.LookPath, stderr)
 	}); err != nil {
 		return fmt.Errorf("project MCP: %w", err)
 	}

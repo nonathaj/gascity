@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/orders"
 	"github.com/gastownhall/gascity/internal/pathutil"
@@ -245,8 +246,8 @@ func buildDoctorChecks(cityPath string, cfg *config.City, cfgErr error, opts bui
 		register(newCodexHooksDriftCheck(cityPath, codexHookWorkDirs(cityPath, cfg)))
 		register(doctor.NewRigPackCoverageCheck(cfg, cityPath))
 		register(newPackRuntimesDoctorCheck(cfg))
-		register(newMCPConfigDoctorCheck(cityPath, cfg, exec.LookPath))
-		register(newMCPSharedTargetDoctorCheck(cityPath, cfg, exec.LookPath))
+		register(newMCPConfigDoctorCheck(cityPath, cfg, execshim.LookPath))
+		register(newMCPSharedTargetDoctorCheck(cityPath, cfg, execshim.LookPath))
 	}
 	if _, rawCfgErr := loadCityConfigForEditFS(fsys.OSFS{}, filepath.Join(cityPath, "city.toml")); rawCfgErr == nil {
 		register(newBuiltinImportDoctorCheck(cityPath))
@@ -272,9 +273,9 @@ func buildDoctorChecks(cityPath string, cfg *config.City, cfgErr error, opts bui
 	// Infrastructure checks — universal dependencies.
 	// dolt/bd/flock are checked by pack doctor scripts (check-bd.sh,
 	// check-dolt.sh) which also verify versions and service health.
-	register(doctor.NewBinaryCheck("tmux", "", exec.LookPath))
-	register(doctor.NewBinaryCheck("git", "", exec.LookPath))
-	register(doctor.NewBinaryCheck("jq", "", exec.LookPath))
+	register(doctor.NewBinaryCheck("tmux", "", execshim.LookPath))
+	register(doctor.NewBinaryCheck("git", "", execshim.LookPath))
+	register(doctor.NewBinaryCheck("jq", "", execshim.LookPath))
 	// pgrep/lsof are Unix tools with no Windows equivalents on PATH. The
 	// Windows port uses psmux/native process inspection instead of pgrep,
 	// and every lsof caller (dolt cleanup/preflight/port inspection) already

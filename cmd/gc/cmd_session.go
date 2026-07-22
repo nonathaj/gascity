@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
@@ -191,7 +191,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach, json
 	}
 
 	// Resolve the provider.
-	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "gc session new: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
@@ -261,7 +261,7 @@ func cmdSessionNew(args []string, alias, title, titleHint string, noAttach, json
 	// Resolve the workspace default provider for title generation. This
 	// mirrors api.Server.resolveTitleProvider: use an empty Agent so we
 	// get workspace-level title model settings, not the agent's own provider.
-	titleProvider, err := config.ResolveProvider(&config.Agent{}, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	titleProvider, err := config.ResolveProvider(&config.Agent{}, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		titleProvider = nil
 	}
@@ -1602,7 +1602,7 @@ func buildResumeCommand(cityPath string, cfg *config.City, info session.Info, se
 	found, foundAgent := resolveAgentIdentity(cfg, info.Template, "")
 	if session.UseAgentTemplateForProviderResolution(sessionKind, metadata, info.Provider, found.Provider, foundAgent) {
 		if foundAgent {
-			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
+			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, execshim.LookPath); err == nil {
 				return buildResolved(resolved)
 			}
 		}
@@ -1615,7 +1615,7 @@ func buildResumeCommand(cityPath string, cfg *config.City, info session.Info, se
 		if providerName == "" {
 			continue
 		}
-		if resolved, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
+		if resolved, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, execshim.LookPath); err == nil {
 			return buildResolved(resolved)
 		}
 	}

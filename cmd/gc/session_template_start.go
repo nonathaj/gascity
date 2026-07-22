@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/session"
 	workdirutil "github.com/gastownhall/gascity/internal/workdir"
 	"github.com/gastownhall/gascity/internal/worker"
@@ -114,7 +114,7 @@ func materializeSessionForTemplateWithOptions(
 			}
 		}
 
-		resolved, err := config.ResolveProvider(spec.Agent, &cfg.Workspace, cfg.Providers, exec.LookPath)
+		resolved, err := config.ResolveProvider(spec.Agent, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 		if err != nil {
 			return "", err
 		}
@@ -274,7 +274,7 @@ func materializeSessionForAgentConfig(cityPath string, cfg *config.City, store b
 		return "", fmt.Errorf("agent config unavailable")
 	}
 
-	resolved, err := config.ResolveProvider(agentCfg, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, err := config.ResolveProvider(agentCfg, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		return "", err
 	}

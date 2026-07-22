@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -1511,7 +1510,7 @@ func pokeSupervisor() error {
 }
 
 func buildSlingNudgeTarget(agent config.Agent, cityName, cityPath string, cfg *config.City, store beads.Store, sessionName string) nudgeTarget {
-	resolved, _ := config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, _ := config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	return withNudgeTargetFence(store, nudgeTarget{
 		cityPath:    cityPath,
 		cityName:    cityName,

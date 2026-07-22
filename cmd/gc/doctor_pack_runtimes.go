@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	sessionexec "github.com/gastownhall/gascity/internal/runtime/exec"
 )
@@ -78,7 +78,7 @@ func (c *packRuntimesDoctorCheck) Run(_ *doctor.CheckContext) *doctor.CheckResul
 // provider does at session start.
 func packRuntimeInstallFailure(rt config.DiscoveredRuntime) string {
 	if !runtimeCommandIsPath(runtime.GOOS, rt.Command) {
-		if _, err := exec.LookPath(rt.Command); err != nil {
+		if _, err := execshim.LookPath(rt.Command); err != nil {
 			return fmt.Sprintf("runtime %q (pack %q): %q not found on PATH", rt.Name, rt.PackName, rt.Command)
 		}
 		return ""

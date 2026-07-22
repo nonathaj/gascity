@@ -358,7 +358,7 @@ func readPackName(dir string) string {
 
 // --- Infrastructure checks ---
 
-// LookPathFunc is the function used to find binaries. Defaults to exec.LookPath.
+// LookPathFunc is the function used to find binaries. Defaults to execshim.LookPath.
 // Tests can override this.
 type LookPathFunc func(file string) (string, error)
 
@@ -378,7 +378,7 @@ type BinaryCheck struct {
 // the binary is not needed due to env config like GC_BEADS=file).
 func NewBinaryCheck(binary string, skipMsg string, lp LookPathFunc) *BinaryCheck {
 	if lp == nil {
-		lp = exec.LookPath
+		lp = execshim.LookPath
 	}
 	return &BinaryCheck{binary: binary, skipMsg: skipMsg, lookPath: lp}
 }
@@ -386,7 +386,7 @@ func NewBinaryCheck(binary string, skipMsg string, lp LookPathFunc) *BinaryCheck
 // NewVersionedBinaryCheck creates a check that also verifies minimum version.
 func NewVersionedBinaryCheck(binary, skipMsg string, lp LookPathFunc, minVersion string, getVersion func() (string, error), installURL string) *BinaryCheck {
 	if lp == nil {
-		lp = exec.LookPath
+		lp = execshim.LookPath
 	}
 	return &BinaryCheck{
 		binary:     binary,

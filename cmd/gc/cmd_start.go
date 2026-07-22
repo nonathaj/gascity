@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/hooks"
 	"github.com/gastownhall/gascity/internal/processenv"
@@ -791,7 +791,7 @@ func doStartStandalone(args []string, controllerMode bool, stdout, stderr io.Wri
 	// active runtime config surface. Conflicting shared targets or projection
 	// write failures must block startup before sessions launch against stale or
 	// ambiguous MCP state.
-	if err := runStage1MCPProjection(cityPath, cfg, exec.LookPath, stderr); err != nil {
+	if err := runStage1MCPProjection(cityPath, cfg, execshim.LookPath, stderr); err != nil {
 		fmt.Fprintf(stderr, "gc start: %v\n", err) //nolint:errcheck // best-effort stderr
 		return 1
 	}

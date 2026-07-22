@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/rollout/gate"
 	"github.com/gastownhall/gascity/internal/supervisor"
@@ -1381,7 +1381,7 @@ func openStoreResultAtForCityWithMode(storePath, cityPath string, modeOverride g
 			return openCompatibleFileStore(scopeRoot, runtimeCityPath)
 		},
 		OpenBdStore: func() (beads.Store, error) {
-			if _, err := exec.LookPath("bd"); err != nil {
+			if _, err := execshim.LookPath("bd"); err != nil {
 				return nil, fmt.Errorf("bd not found in PATH (install beads or set GC_BEADS=file)")
 			}
 			return openBdStoreAt(scopeRoot, runtimeCityPath)

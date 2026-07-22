@@ -15,6 +15,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/spf13/cobra"
 )
 
@@ -295,7 +296,7 @@ func doBd(args []string, stdout, stderr io.Writer) int {
 	reapStaleBdExportJSONL(target.ScopeRoot)
 	warnExternalBdOverrideDrift(stderr, cityPath, target)
 
-	bdPath, err := exec.LookPath("bd")
+	bdPath, err := execshim.LookPath("bd")
 	if err != nil {
 		fmt.Fprintln(stderr, "gc bd: bd not found in PATH") //nolint:errcheck // best-effort stderr
 		return 1

@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"io"
 	"os"
 	"os/exec"
@@ -17,6 +15,10 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/fslock"
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -1237,7 +1239,7 @@ func buildNudgeTarget(cityPath string, cfg *config.City, f nudgeTargetFields) nu
 		if target.transport == "" {
 			target.transport = found.Session
 		}
-		if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
+		if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, execshim.LookPath); err == nil {
 			if resolved.Name == "" {
 				resolved.Name = fallbackProviderName(found.Provider, cfg)
 				if resolved.Name == "" && target.resolved != nil {

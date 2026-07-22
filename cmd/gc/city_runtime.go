@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"runtime/debug"
@@ -21,6 +20,7 @@ import (
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
 	"github.com/gastownhall/gascity/internal/orders"
@@ -2799,7 +2799,7 @@ func sweepUndesiredPoolSessionBeads(
 		if agentCfg == nil || !isEphemeralSessionInfo(info) {
 			continue
 		}
-		processNames := config.AgentProcessNames(cfg, *agentCfg, exec.LookPath)
+		processNames := config.AgentProcessNames(cfg, *agentCfg, execshim.LookPath)
 		if running, err := poolSessionBeadRuntimeRunningInfo(info, sp, processNames); err == nil && running {
 			continue
 		}

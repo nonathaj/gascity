@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/git"
 )
 
@@ -20,7 +21,7 @@ type RigRootBranchCheck struct {
 
 // NewRigRootBranchCheck creates a rig root-branch check for the given rig.
 func NewRigRootBranchCheck(rig config.Rig) *RigRootBranchCheck {
-	return &RigRootBranchCheck{rig: rig, gitPath: exec.LookPath}
+	return &RigRootBranchCheck{rig: rig, gitPath: execshim.LookPath}
 }
 
 // Name returns the check identifier.

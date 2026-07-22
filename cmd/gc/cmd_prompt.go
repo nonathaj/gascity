@@ -17,6 +17,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/spf13/cobra"
 )
 
@@ -226,7 +227,7 @@ func runPromptSynth(ctx context.Context, opts promptSynthOpts, runner promptSynt
 
 	// Direct mode: resolve provider fully (need PrintArgs) and invoke
 	// the subprocess ourselves.
-	resolved, err := config.ResolveProvider(&config.Agent{Provider: providerKey}, &cfg.Workspace, cfg.Providers, exec.LookPath)
+	resolved, err := config.ResolveProvider(&config.Agent{Provider: providerKey}, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 	if err != nil {
 		return fmt.Errorf("resolve provider %q: %w", providerKey, err)
 	}

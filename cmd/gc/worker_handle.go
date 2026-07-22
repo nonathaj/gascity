@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
@@ -862,7 +862,7 @@ func resolveWorkerRuntimeProviderWithConfigAndMetadata(cfg *config.City, info se
 	found, foundAgent := resolveAgentIdentity(cfg, info.Template, "")
 	if session.UseAgentTemplateForProviderResolution(sessionKind, metadata, info.Provider, found.Provider, foundAgent) {
 		if foundAgent {
-			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, exec.LookPath); err == nil {
+			if resolved, err := config.ResolveProvider(&found, &cfg.Workspace, cfg.Providers, execshim.LookPath); err == nil {
 				return resolved, config.ResolveSessionCreateTransport(found.Session, resolved)
 			}
 		}
@@ -872,7 +872,7 @@ func resolveWorkerRuntimeProviderWithConfigAndMetadata(cfg *config.City, info se
 		if providerName == "" {
 			continue
 		}
-		resolved, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, exec.LookPath)
+		resolved, err := config.ResolveProvider(&config.Agent{Provider: providerName}, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 		if err == nil {
 			return resolved, strings.TrimSpace(resolved.ProviderSessionCreateTransport())
 		}

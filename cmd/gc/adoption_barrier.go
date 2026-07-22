@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/gastownhall/gascity/internal/agent"
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
 )
@@ -358,5 +358,5 @@ func processHints(cfg *config.City, a *config.Agent) []string {
 	if a == nil {
 		return nil
 	}
-	return config.AgentProcessNames(cfg, *a, exec.LookPath)
+	return config.AgentProcessNames(cfg, *a, execshim.LookPath)
 }

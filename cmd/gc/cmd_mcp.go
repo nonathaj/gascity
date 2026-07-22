@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/materialize"
 	"github.com/gastownhall/gascity/internal/shellquote"
 	"github.com/spf13/cobra"
@@ -79,7 +79,7 @@ func newMcpListCmd(stdout, stderr io.Writer) *cobra.Command {
 					fmt.Fprintf(stderr, "gc mcp list: %v\n", err) //nolint:errcheck // best-effort stderr
 					return errExit
 				}
-				view, err = resolveSessionMCPProjection(cityPath, cfg, cliSessionFrontDoor(store, cfg, cityPath), sessionID, exec.LookPath)
+				view, err = resolveSessionMCPProjection(cityPath, cfg, cliSessionFrontDoor(store, cfg, cityPath), sessionID, execshim.LookPath)
 			} else {
 				agent, ok := resolveAgentIdentity(cfg, agentName, currentRigContext(cfg))
 				if !ok {
@@ -92,7 +92,7 @@ func newMcpListCmd(stdout, stderr io.Writer) *cobra.Command {
 					fmt.Fprintf(stderr, "gc mcp list: unknown agent %q\n", agentName) //nolint:errcheck // best-effort stderr
 					return errExit
 				}
-				view, err = resolveDeterministicAgentMCPProjection(cityPath, cfg, cfgAgent, exec.LookPath)
+				view, err = resolveDeterministicAgentMCPProjection(cityPath, cfg, cfgAgent, execshim.LookPath)
 			}
 			if err != nil {
 				fmt.Fprintf(stderr, "gc mcp list: %v\n", err) //nolint:errcheck // best-effort stderr

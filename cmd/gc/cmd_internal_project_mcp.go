@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/spf13/cobra"
 )
@@ -54,7 +54,7 @@ func newInternalProjectMCPCmd(stdout, stderr io.Writer) *cobra.Command {
 				return errExit
 			}
 
-			resolved, err := config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, exec.LookPath)
+			resolved, err := config.ResolveProvider(&agent, &cfg.Workspace, cfg.Providers, execshim.LookPath)
 			if err != nil {
 				// A provider-resolution failure only blocks projection when this
 				// agent actually has effective MCP to project. Empty catalogs are a
@@ -79,7 +79,7 @@ func newInternalProjectMCPCmd(stdout, stderr io.Writer) *cobra.Command {
 			if projection.Provider == "" {
 				return nil
 			}
-			if err := validateStage2TargetClaimants(cityPath, cfg, &agent, projection, exec.LookPath); err != nil {
+			if err := validateStage2TargetClaimants(cityPath, cfg, &agent, projection, execshim.LookPath); err != nil {
 				fmt.Fprintf(stderr, "gc internal project-mcp: %v\n", err) //nolint:errcheck // best-effort stderr
 				return errExit
 			}

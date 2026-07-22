@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doltversion"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
@@ -506,9 +507,9 @@ type missingDep struct {
 	installHint string
 }
 
-// initLookPath is the exec.LookPath function used by checkHardDependencies.
+// initLookPath is the execshim.LookPath function used by checkHardDependencies.
 // Tests can override this to simulate missing binaries.
-var initLookPath = exec.LookPath
+var initLookPath = execshim.LookPath
 
 var initRunVersionCommandContext = exec.CommandContext
 
