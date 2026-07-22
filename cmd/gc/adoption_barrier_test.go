@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -21,10 +19,10 @@ import (
 func putExecutableOnPath(t *testing.T, name string) {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("write executable %s: %v", name, err)
-	}
+	// installFakeToolOnPath adds the .bat launcher Go's PATHEXT resolution
+	// needs on Windows (doctrine T3); the extensionless file alone is
+	// invisible to exec.LookPath there.
+	installFakeToolOnPath(t, dir, name, "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", dir)
 }
 
