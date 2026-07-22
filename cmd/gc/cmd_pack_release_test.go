@@ -92,7 +92,7 @@ func TestPackReleaseValidateRejectsHashMismatch(t *testing.T) {
 [[pack]]
 name = "demo"
 description = "Demo pack."
-source = "` + source + `"
+source = '` + source + `'
 source_kind = "git"
 `
 	text += `
@@ -125,7 +125,7 @@ func TestPackReleaseValidateSkipsWithdrawnByDefault(t *testing.T) {
 [[pack]]
 name = "demo"
 description = "Demo pack."
-source = "` + source + `"
+source = '` + source + `'
 source_kind = "git"
 
   [[pack.release]]

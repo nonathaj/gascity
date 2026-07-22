@@ -458,7 +458,7 @@ func TestOpenRigAwareStoreUsesProviderAwareRigStore(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"graph-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\nprefix = \"fe\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"graph-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\nprefix = \"fe\"\npath = '" + rigDir + "'\n"
 	writeRigAnywhereCityToml(t, cityDir, toml)
 	if err := ensureScopedFileStoreLayout(cityDir); err != nil {
 		t.Fatalf("ensureScopedFileStoreLayout: %v", err)
@@ -490,7 +490,7 @@ func TestOpenRigAwareStoreLegacyFileCityUsesSharedCityStore(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"graph-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\nprefix = \"fe\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"graph-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\nprefix = \"fe\"\npath = '" + rigDir + "'\n"
 	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
