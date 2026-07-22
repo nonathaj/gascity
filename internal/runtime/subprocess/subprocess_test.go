@@ -290,16 +290,6 @@ func TestStopKillsProcess(t *testing.T) {
 }
 
 func TestStopKillsProcessGroupDescendants(t *testing.T) {
-	if goruntime.GOOS == "windows" {
-		// Known gap (gw-say): a `sleep &` backgrounded under Git-bash sh gets a
-		// Windows ParentProcessId that is not sh (MSYS fork emulation reparents
-		// it to an already-dead helper), so no parent-tree walk — taskkill /T or
-		// a descendant snapshot — can reach it. The teardown needs a per-session
-		// Job Object (kill-on-close); until then this would fail reliably. The
-		// prior "pass" here was an artifact of recording $! (the cygwin PID)
-		// instead of the Windows PID, which pidutil.Alive never matched.
-		t.Skip("gw-say: Windows MSYS-backgrounded grandchild teardown needs a Job Object")
-	}
 	dir := t.TempDir()
 	childPIDPath := filepath.Join(dir, "child.pid")
 

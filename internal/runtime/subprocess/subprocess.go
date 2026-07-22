@@ -64,6 +64,7 @@ type sessionConn struct {
 	cmd      *exec.Cmd
 	done     chan struct{} // closed when process exits
 	listener net.Listener  // unix socket listener
+	job      *sessionJob   // Windows Job Object containment (nil elsewhere)
 }
 
 // Compile-time check.
@@ -169,7 +170,10 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 			env = append(env, k+"="+cfg.Env[k])
 		}
 	}
-	cmd.Env = env
+	// Session commands run under sh (execshim) and legitimately invoke Git for
+	// Windows coreutils (cat, dirname, ...); overwriting cmd.Env would discard
+	// execshim's coreutils PATH injection, so re-apply it. Identity on Unix.
+	cmd.Env = execshim.EnvWithShellDir(env)
 
 	// Validate immediately before process creation so hostile pre-creation
 	// fails without spawning a child or touching stale socket artifacts.
@@ -186,6 +190,14 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 	}
 	_ = nullFile.Close()
 
+	// Contain the session tree in a Job Object on Windows so Stop can kill
+	// MSYS-reparented grandchildren no parent-tree walk reaches (gw-say).
+	// nil on Unix and on best-effort failure.
+	var job *sessionJob
+	if cmd.Process != nil {
+		job = newSessionJob(cmd.Process.Pid)
+	}
+
 	// Create control socket for cross-process discovery.
 	done := make(chan struct{})
 	lis, err := p.startControlSocket(name, cmd, done, socketDir, euid)
@@ -193,6 +205,7 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 		// Socket creation failed — kill the process and bail.
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		job.terminateTree()
 		clearWorkDir()
 		return fmt.Errorf("creating control socket for %q: %w", name, err)
 	}
@@ -201,6 +214,7 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 		_ = p.removeSocketArtifactsAt(name, socketDir, euid)
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		job.terminateTree()
 		clearWorkDir()
 		return fmt.Errorf("storing metadata for %q: %w", name, err)
 	}
@@ -215,7 +229,7 @@ func (p *Provider) Start(_ context.Context, name string, cfg runtime.Config) err
 		close(done)
 	}()
 
-	p.procs[name] = &sessionConn{cmd: cmd, done: done, listener: lis}
+	p.procs[name] = &sessionConn{cmd: cmd, done: done, listener: lis, job: job}
 	return nil
 }
 
@@ -788,7 +802,12 @@ func isUnavailableSocketError(err error) bool {
 
 // terminateSessionConn sends SIGTERM then SIGKILL to an in-memory tracked process.
 func terminateSessionConn(sc *sessionConn) error {
-	return runtime.TerminateManagedProcess(sc.cmd, sc.done, runtime.ManagedProcessStopGrace)
+	err := runtime.TerminateManagedProcess(sc.cmd, sc.done, runtime.ManagedProcessStopGrace)
+	// The root is down; sweep the whole Job Object so grandchildren that
+	// survived the tree kill (MSYS reparenting breaks the parent links
+	// taskkill /T walks) die with the session (gw-say). No-op on Unix.
+	sc.job.terminateTree()
+	return err
 }
 
 // Capabilities reports subprocess provider capabilities. The subprocess
