@@ -2910,6 +2910,14 @@ func TestPrepareTemplateResolution_MaterializesFamilyOverlayForCustomProvider(t 
 	}
 
 	base := "builtin:pi"
+	// Explicit command so resolution does not depend on a real `pi` binary on
+	// PATH; base still yields BuiltinAncestor=pi. Point at a file that exists
+	// on every platform ("/bin/echo" does not exist on Windows, and a failed
+	// resolution would skip the overlay staging under test).
+	fakeCmd, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
 	cfg := &config.City{
 		Workspace: config.Workspace{Name: "test-city"},
 		Agents: []config.Agent{{
@@ -2924,9 +2932,7 @@ func TestPrepareTemplateResolution_MaterializesFamilyOverlayForCustomProvider(t 
 			// which would defeat the base="builtin:pi" family fallback.
 		}},
 		Providers: map[string]config.ProviderSpec{
-			// Explicit command so resolution does not depend on a real `pi`
-			// binary on PATH; base still yields BuiltinAncestor=pi.
-			"pi-vllm": {Base: &base, Command: "/bin/echo"},
+			"pi-vllm": {Base: &base, Command: fakeCmd},
 		},
 		Rigs:           []config.Rig{{Name: "myrig", Path: rigDir}},
 		RigOverlayDirs: map[string][]string{"myrig": {overlayDir}},
