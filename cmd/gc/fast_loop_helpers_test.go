@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 func skipSlowCmdGCTest(t *testing.T, reason string) {
@@ -31,9 +33,23 @@ func skipSlowCmdGCTest(t *testing.T, reason string) {
 // which silently overwrites user state on every run.
 // Regression for gastownhall/gascity#938.
 func sanitizedBaseEnv(extra ...string) []string {
+	// When the caller overrides PATH, drop the ambient entry so the child env
+	// carries exactly one PATH and EnvWithShellDir below patches the effective
+	// one (duplicate keys resolve last-wins on Windows, which would otherwise
+	// discard the injection).
+	overridesPath := false
+	for _, kv := range extra {
+		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
+			overridesPath = true
+			break
+		}
+	}
 	filtered := make([]string, 0, len(os.Environ()))
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "GC_") || strings.HasPrefix(kv, "BEADS_") {
+			continue
+		}
+		if overridesPath && len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
 			continue
 		}
 		filtered = append(filtered, kv)
@@ -42,7 +58,11 @@ func sanitizedBaseEnv(extra ...string) []string {
 		managedDoltTestModeEnv+"=1",
 		managedDoltTestParentPIDEnv+"="+strconv.Itoa(os.Getpid()),
 	)
-	return append(filtered, extra...)
+	// The scripts these envs feed run under sh via execshim; keep Git for
+	// Windows' coreutils (dirname, mkdir, ...) resolvable exactly as
+	// execshim.Command would have (the cmd.Env overwrite discards its
+	// default injection). Identity on Unix.
+	return execshim.EnvWithShellDir(append(filtered, extra...))
 }
 
 // writeTestScript creates a shell script that exits with the given code.

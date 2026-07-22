@@ -22,6 +22,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"gopkg.in/yaml.v3"
 )
@@ -593,7 +594,7 @@ func TestGcBeadsBdInitRejectsManagedProbeDatabaseName(t *testing.T) {
 				t.Fatal(err)
 			}
 			materializeBuiltinPacksForTest(t, cityPath)
-			cmd := exec.Command(gcBeadsBdScriptPath(cityPath), "init", scopePath, "fe", dbName)
+			cmd := execshim.Command(gcBeadsBdScriptPath(cityPath), "init", scopePath, "fe", dbName)
 			cmd.Env = sanitizedBaseEnv(
 				"GC_CITY_PATH="+cityPath,
 				"PATH="+os.Getenv("PATH"),
@@ -917,7 +918,7 @@ printf 'status=%s\n' "$status"
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("sh", harness)
+	cmd := execshim.Command("sh", harness)
 	cmd.Env = append(sanitizedBaseEnv(
 		"INVOCATION_FILE="+invocationFile,
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -995,7 +996,7 @@ printf 'status=%s\n' "$status"
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("sh", harness)
+	cmd := execshim.Command("sh", harness)
 	cmd.Env = append(sanitizedBaseEnv(
 		"INVOCATION_FILE="+invocationFile,
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
@@ -1064,7 +1065,7 @@ printf 'status=%%s\n' "$status"
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("sh", harness)
+	cmd := execshim.Command("sh", harness)
 	cmd.Env = sanitizedBaseEnv("PATH=" + os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -3670,7 +3671,7 @@ esac
 	}
 
 	rawDir := t.TempDir()
-	rawCmd := exec.Command(script, "init", rawDir, "raw")
+	rawCmd := execshim.Command(script, "init", rawDir, "raw")
 	rawCmd.Env = sanitizedBaseEnv()
 	rawOut, err := rawCmd.CombinedOutput()
 	if err != nil {
@@ -4401,7 +4402,7 @@ func TestGcBeadsBdStartUsesRootBeadsDataDir(t *testing.T) {
 
 	runScript := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command(script, args...)
+		cmd := execshim.Command(script, args...)
 		cmd.Env = scriptEnv
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -4410,7 +4411,7 @@ func TestGcBeadsBdStartUsesRootBeadsDataDir(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		cmd := exec.Command(script, "stop")
+		cmd := execshim.Command(script, "stop")
 		cmd.Env = scriptEnv
 		_ = cmd.Run()
 	})
@@ -4529,12 +4530,12 @@ exit 1
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
 	t.Cleanup(func() {
-		cmd := exec.Command(script, "stop")
+		cmd := execshim.Command(script, "stop")
 		cmd.Env = scriptEnv
 		_ = cmd.Run()
 	})
 
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = scriptEnv
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -5654,7 +5655,7 @@ esac
 				t.Fatal(err)
 			}
 
-			cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+			cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 			cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 				"GC_CITY_PATH="+cityPath,
 				"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -5736,7 +5737,7 @@ exec %q "$@"
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -5962,7 +5963,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+fakeGC,
@@ -6093,7 +6094,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+fakeGC,
@@ -6203,7 +6204,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+fakeGC,
@@ -6268,7 +6269,7 @@ exit 0
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -6415,7 +6416,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "gascity")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+fakeGC,
@@ -6581,7 +6582,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", strings.ToUpper(managedDoltProbeDatabase))
+	cmd := execshim.Command(script, "init", cityPath, "gc", strings.ToUpper(managedDoltProbeDatabase))
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+fakeGC,
@@ -6761,7 +6762,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc")
+	cmd := execshim.Command(script, "init", cityPath, "gc")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -6858,7 +6859,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -6983,7 +6984,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -7095,7 +7096,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -7223,7 +7224,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -7359,7 +7360,7 @@ esac
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
@@ -7400,7 +7401,7 @@ func TestGcBeadsBdInitDoltliteInitializesDelegatedBdWrites(t *testing.T) {
 	materializeBuiltinPacksForTest(t, cityPath)
 	script := gcBeadsBdScriptPath(cityPath)
 
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BEADS_BACKEND=doltlite",
@@ -7425,7 +7426,7 @@ func TestGcBeadsBdInitDoltliteInitializesDelegatedBdWrites(t *testing.T) {
 		}
 	}
 
-	create := exec.Command(bdPath, "create", "--json", "probe task")
+	create := execshim.Command(bdPath, "create", "--json", "probe task")
 	create.Dir = cityPath
 	create.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"BEADS_DIR="+filepath.Join(cityPath, ".beads"),
@@ -7462,7 +7463,7 @@ func TestGcBeadsBdInitDoltliteRejectsUnsafeCustomTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(repoRootForLint(t), "examples", "bd", "assets", "scripts", "gc-beads-bd.sh")
-	cmd := exec.Command(script, "init", cityPath, "gc", "hq")
+	cmd := execshim.Command(script, "init", cityPath, "gc", "hq")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BEADS_BACKEND=doltlite",
@@ -7833,7 +7834,7 @@ esac
 	)
 	runStart := func() {
 		t.Helper()
-		cmd := exec.Command(script, "start")
+		cmd := execshim.Command(script, "start")
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -7842,7 +7843,7 @@ esac
 	}
 	runStart()
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 		if compatListener != nil && compatListener.Process != nil {
@@ -8411,7 +8412,7 @@ esac
 
 	readyFile := filepath.Join(t.TempDir(), "holder-ready")
 	releaseFile := filepath.Join(t.TempDir(), "holder-release")
-	holder := exec.Command("sh", "-c", `
+	holder := execshim.Command("sh", "-c", `
 set -eu
 lock_file="$1"
 ready_file="$2"
@@ -8474,7 +8475,7 @@ while [ ! -f "$release_file" ]; do
 		"GC_FAKE_DOLT_INVOCATION_FILE="+invocationFile,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	exitCode := 0
@@ -8487,7 +8488,7 @@ while [ ! -f "$release_file" ]; do
 		}
 	}
 	if exitCode == 0 {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 		t.Fatalf("gc-beads-bd start unexpectedly succeeded while another process held the start lock\n%s", out)
@@ -8695,7 +8696,7 @@ esac
 	invokedDolt := filepath.Join(t.TempDir(), "dolt-invocation")
 
 	readyFile := filepath.Join(t.TempDir(), "holder-ready")
-	holder := exec.Command("sh", "-c", `
+	holder := execshim.Command("sh", "-c", `
 set -eu
 lock_file="$1"
 ready_file="$2"
@@ -8734,7 +8735,7 @@ sleep 1
 		"GC_FAKE_DOLT_INVOCATION_FILE="+invokedDolt,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -8939,7 +8940,7 @@ esac
 	invokedDolt := filepath.Join(t.TempDir(), "dolt-invocation")
 
 	readyFile := filepath.Join(t.TempDir(), "holder-ready")
-	holder := exec.Command("sh", "-c", `
+	holder := execshim.Command("sh", "-c", `
 set -eu
 lock_file="$1"
 ready_file="$2"
@@ -8979,7 +8980,7 @@ sleep 1
 		"GC_FAKE_DOLT_INVOCATION_FILE="+invokedDolt,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -9124,7 +9125,7 @@ esac
 	}
 
 	readyFile := filepath.Join(t.TempDir(), "holder-ready")
-	holder := exec.Command("sh", "-c", `
+	holder := execshim.Command("sh", "-c", `
 set -eu
 lock_file="$1"
 ready_file="$2"
@@ -9160,7 +9161,7 @@ sleep 5
 		"GC_BIN="+fakeGC,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	exitCode := 0
@@ -9210,14 +9211,14 @@ func TestGcBeadsBdStartUsesGCBinManagedConfigWriter(t *testing.T) {
 		"GC_BIN="+fakeGC,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gc-beads-bd start failed: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
@@ -9276,14 +9277,14 @@ func TestGcBeadsBdStartManagedHelperDoesNotInheritStartLockFD(t *testing.T) {
 		"GC_FAKE_FD9_STATUS_FILE="+fd9StatusFile,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gc-beads-bd start failed: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
@@ -9326,7 +9327,7 @@ func TestGcBeadsBdStopUsesGCBinStopManagedHelperWhenAvailable(t *testing.T) {
 		"GC_BIN="+fakeGC,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "stop")
+	cmd := execshim.Command(script, "stop")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -9388,7 +9389,7 @@ op_stop_impl
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("sh", harness)
+	cmd := execshim.Command("sh", harness)
 	cmd.Env = sanitizedBaseEnv("GC_TEST_LOG=" + logPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -9427,7 +9428,7 @@ func TestGcBeadsBdRecoverUsesGCBinRecoverManagedHelperWhenAvailable(t *testing.T
 		"GC_BIN="+fakeGC,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "recover")
+	cmd := execshim.Command(script, "recover")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -9465,7 +9466,7 @@ func TestGcBeadsBdRecoverHelperPreservesReadOnlyWarning(t *testing.T) {
 		"GC_FAKE_RECOVER_DIAGNOSED_READ_ONLY=true",
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "recover")
+	cmd := execshim.Command(script, "recover")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -9554,14 +9555,14 @@ esac
 		"GC_DOLT_LOGLEVEL=info",
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gc-beads-bd start failed: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
@@ -9710,7 +9711,7 @@ esac
 
 	runStart := func() {
 		t.Helper()
-		cmd := exec.Command(script, "start")
+		cmd := execshim.Command(script, "start")
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -9720,7 +9721,7 @@ esac
 
 	runStart()
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
@@ -9857,7 +9858,7 @@ esac
 
 	runStart := func() {
 		t.Helper()
-		cmd := exec.Command(script, "start")
+		cmd := execshim.Command(script, "start")
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -9867,7 +9868,7 @@ esac
 
 	runStart()
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
@@ -9994,7 +9995,7 @@ esac
 
 	runScript := func(env []string, args ...string) {
 		t.Helper()
-		cmd := exec.Command(script, args...)
+		cmd := execshim.Command(script, args...)
 		cmd.Env = env
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -10004,7 +10005,7 @@ esac
 
 	runScript(baseEnv, "start")
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = baseEnv
 		_ = stop.Run()
 	})
@@ -11106,7 +11107,7 @@ exec "$real_gc" "$@"
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(script, "init", rigPath, "fe", "fe")
+	cmd := execshim.Command(script, "init", rigPath, "fe", "fe")
 	cmd.Env = sanitizedBaseEnv(append(gcBeadsBdTestHomeEnv(t),
 		"GC_CITY_PATH="+cityPath,
 		"GC_BIN="+gcWrapper,
@@ -11238,14 +11239,14 @@ func TestGcBeadsBdStartFallsBackToShellManagedConfigWriterWhenGCBinUnset(t *test
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	)
-	cmd := exec.Command(script, "start")
+	cmd := execshim.Command(script, "start")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gc-beads-bd start failed: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		stop := exec.Command(script, "stop")
+		stop := execshim.Command(script, "stop")
 		stop.Env = env
 		_ = stop.Run()
 	})
