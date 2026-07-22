@@ -60,6 +60,13 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
+      # The Windows runner defaults to core.autocrlf=true, which rewrites
+      # every committed LF text file to CRLF on checkout — then every test
+      # that byte-compares a committed artifact against LF-generated content
+      # (schema/census freshness, goldens, OpenAPI, signed vectors) fails
+      # only here. Preserve LF so the runner matches Linux CI and dev boxes.
+      - name: Preserve LF line endings on checkout
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
