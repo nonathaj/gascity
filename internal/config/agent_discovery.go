@@ -91,7 +91,10 @@ func applyAgentConventionDefaults(fs fsys.FS, packDir string, agent *Agent) {
 		for _, promptName := range agentPromptConventionFilenames {
 			promptPath := filepath.Join(agentDir, promptName)
 			if _, pErr := fs.Stat(promptPath); pErr == nil {
-				agent.PromptTemplate = promptPath
+				// PromptTemplate is a config value; keep the slash form other
+				// config sources use (doctrine P4). Windows file IO accepts
+				// forward slashes, so downstream reads are unaffected.
+				agent.PromptTemplate = filepath.ToSlash(promptPath)
 				break
 			}
 		}

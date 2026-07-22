@@ -338,7 +338,7 @@ scope = "rig"
 		if a.SourceDir != importDir {
 			t.Errorf("SourceDir = %q, want %q", a.SourceDir, importDir)
 		}
-		if want := filepath.Join(importDir, "agents", "code-reviewer", "prompt.template.md"); a.PromptTemplate != want {
+		if want := filepath.ToSlash(filepath.Join(importDir, "agents", "code-reviewer", "prompt.template.md")); a.PromptTemplate != want {
 			t.Errorf("PromptTemplate = %q, want %q", a.PromptTemplate, want)
 		}
 		return

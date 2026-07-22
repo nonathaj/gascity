@@ -842,7 +842,7 @@ func TestDoAgentAddScaffoldsAgentDirectory(t *testing.T) {
 		t.Errorf("city.toml should not be rewritten:\n%s", fs.Files["/city/city.toml"])
 	}
 
-	promptPath := filepath.Join("/city", "agents", "worker", "prompt.template.md")
+	promptPath := "/city/agents/worker/prompt.template.md"
 	gotPrompt, ok := fs.Files[promptPath]
 	if !ok {
 		t.Fatalf("%s missing", promptPath)

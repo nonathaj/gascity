@@ -374,7 +374,7 @@ includes = ["../mypk"]
 		if a.Name != "mayor" {
 			continue
 		}
-		if !strings.HasSuffix(a.PromptTemplate, filepath.Join("mypk", "custom", "prompt.md")) {
+		if !strings.HasSuffix(filepath.ToSlash(a.PromptTemplate), "mypk/custom/prompt.md") {
 			t.Fatalf("mayor PromptTemplate = %q, want explicit custom prompt path", a.PromptTemplate)
 		}
 		if !strings.HasSuffix(a.OverlayDir, filepath.Join("agents", "mayor", "overlay")) {
@@ -602,7 +602,7 @@ schema = 2
 	explicit := explicitAgents(cfg.Agents)
 	for _, a := range explicit {
 		if a.Name == "ada" {
-			if !strings.HasSuffix(a.PromptTemplate, filepath.Join("agents", "ada", "prompt.template.md")) {
+			if !strings.HasSuffix(a.PromptTemplate, "agents/ada/prompt.template.md") {
 				t.Fatalf("ada PromptTemplate = %q, want root city-pack agents/ada/prompt.template.md", a.PromptTemplate)
 			}
 			return
@@ -658,7 +658,7 @@ base = "builtin:claude"
 		if a.Provider != "claude" {
 			t.Fatalf("ada Provider = %q, want claude", a.Provider)
 		}
-		if !strings.HasSuffix(a.PromptTemplate, filepath.Join("agents", "ada", "prompt.template.md")) {
+		if !strings.HasSuffix(a.PromptTemplate, "agents/ada/prompt.template.md") {
 			t.Fatalf("ada PromptTemplate = %q, want convention prompt path", a.PromptTemplate)
 		}
 		if !strings.HasSuffix(a.OverlayDir, filepath.Join("agents", "ada", "overlay")) {
