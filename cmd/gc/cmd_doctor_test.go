@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
@@ -243,7 +244,10 @@ prefix = "fe"
 func TestDoDoctorRegistersDoltBackupCheckOnlyForActiveManagedRigs(t *testing.T) {
 	clearInheritedBeadsEnv(t)
 
-	cityDir := t.TempDir()
+	// CanonicalTempDir: production resolves the rig data dir to the 8.3 long
+	// form (C:\Users\runneradmin\...) but a raw t.TempDir() is the short form
+	// (RUNNER~1) on CI, so the expectation must be canonicalized too.
+	cityDir := testutil.CanonicalTempDir(t)
 	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
 	}

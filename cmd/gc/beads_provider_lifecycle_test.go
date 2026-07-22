@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
@@ -3710,7 +3711,9 @@ esac
 }
 
 func TestRunProviderOpStripsAmbientGCDoltSkip(t *testing.T) {
-	cityDir := t.TempDir()
+	// CanonicalTempDir: the script records GC_CITY_PATH, which production sets
+	// to the canonicalized (8.3 long-form) city path on CI runners.
+	cityDir := testutil.CanonicalTempDir(t)
 	writeMinimalCityToml(t, cityDir)
 	logFile := filepath.Join(t.TempDir(), "env.log")
 	script := filepath.Join(t.TempDir(), "record-env.sh")
@@ -3771,7 +3774,7 @@ func TestInitBeadsForDirBuildsCanonicalBdInitProviderOp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cityDir := t.TempDir()
+			cityDir := testutil.CanonicalTempDir(t)
 			cityConfig := fmt.Sprintf(`[workspace]
 name = "demo"
 
@@ -4834,7 +4837,7 @@ dolt.user: city-user
 }
 
 func TestHealthBeadsProviderExecGcBeadsBdProjectsCanonicalExternalCityEnv(t *testing.T) {
-	cityPath := t.TempDir()
+	cityPath := testutil.CanonicalTempDir(t)
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -5002,7 +5005,7 @@ exit 2
 }
 
 func TestEnsureBeadsProviderExecGcBeadsBdProjectsCanonicalPackStateDir(t *testing.T) {
-	cityPath := t.TempDir()
+	cityPath := testutil.CanonicalTempDir(t)
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}

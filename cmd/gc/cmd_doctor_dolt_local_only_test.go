@@ -18,6 +18,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/internal/fsys"
 )
 
@@ -50,7 +51,9 @@ suspended = true
 func TestDoDoctorRegistersLocalOnlyRemoteCheckForActiveManagedRigs(t *testing.T) {
 	clearInheritedBeadsEnv(t)
 
-	cityDir := t.TempDir()
+	// CanonicalTempDir so the managed rig data dir expectation matches the
+	// production-canonicalized (8.3 long-form) path on CI runners.
+	cityDir := testutil.CanonicalTempDir(t)
 	if err := os.MkdirAll(filepath.Join(cityDir, ".gc"), 0o755); err != nil {
 		t.Fatal(err)
 	}
