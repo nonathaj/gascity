@@ -290,12 +290,28 @@ func TestStopKillsProcess(t *testing.T) {
 }
 
 func TestStopKillsProcessGroupDescendants(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// Known gap (gw-say): a `sleep &` backgrounded under Git-bash sh gets a
+		// Windows ParentProcessId that is not sh (MSYS fork emulation reparents
+		// it to an already-dead helper), so no parent-tree walk — taskkill /T or
+		// a descendant snapshot — can reach it. The teardown needs a per-session
+		// Job Object (kill-on-close); until then this would fail reliably. The
+		// prior "pass" here was an artifact of recording $! (the cygwin PID)
+		// instead of the Windows PID, which pidutil.Alive never matched.
+		t.Skip("gw-say: Windows MSYS-backgrounded grandchild teardown needs a Job Object")
+	}
 	dir := t.TempDir()
 	childPIDPath := filepath.Join(dir, "child.pid")
 
 	p := newTestProvider(t)
+	// $! is the shell's job PID: the real OS PID on Unix, but on Git-for-Windows
+	// it is the MSYS/cygwin PID, which is a different namespace from the Windows
+	// PID that pidutil.Alive checks. Translate through /proc/<cygpid>/winpid when
+	// it exists (MSYS) so childPID is the Windows PID on both platforms;
+	// otherwise pidutil.Alive checks an unrelated PID and the test is both flaky
+	// (false fail on collision) and blind to a real teardown miss (false pass).
 	if err := p.Start(context.Background(), "group-kill", runtime.Config{
-		Command: "sleep 3600 & echo $! > " + filepath.ToSlash(childPIDPath) + "; wait",
+		Command: "sleep 3600 & CHILD=$!; if [ -r /proc/$CHILD/winpid ]; then cat /proc/$CHILD/winpid; else echo $CHILD; fi > " + filepath.ToSlash(childPIDPath) + "; wait",
 		WorkDir: dir,
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
