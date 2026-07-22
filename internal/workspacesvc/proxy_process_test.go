@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,59 +23,6 @@ import (
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
-
-const proxyProcessPythonHelper = `
-import json
-import os
-import socketserver
-import sys
-from http.server import BaseHTTPRequestHandler
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/healthz":
-            self.send_response(204)
-            self.end_headers()
-            return
-        if self.path == "/env":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "GC_SERVICE_PUBLIC_URL": os.environ.get("GC_SERVICE_PUBLIC_URL", ""),
-            }).encode("utf-8"))
-            return
-        self.send_response(404)
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        return
-
-sock = os.environ["GC_SERVICE_SOCKET"]
-fail_once = os.environ.get("GC_SERVICE_FAIL_ONCE_FILE", "")
-if fail_once and os.path.exists(fail_once):
-    try:
-        os.unlink(fail_once)
-    except FileNotFoundError:
-        pass
-    sys.exit(1)
-try:
-    os.unlink(sock)
-except FileNotFoundError:
-    pass
-
-class Server(socketserver.UnixStreamServer):
-    allow_reuse_address = True
-
-Server(sock, Handler).serve_forever()
-`
-
-func requirePython3(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("python3"); err != nil {
-		t.Skip("python3 not in PATH")
-	}
-}
 
 // helperPassthroughForTests is the passthrough list proxy_process helper
 // subprocesses need through internal/testenv's scrub: the city identity vars
@@ -159,6 +105,14 @@ func TestProxyProcessHelper(t *testing.T) {
 	socketPath := os.Getenv("GC_SERVICE_SOCKET")
 	if socketPath == "" {
 		t.Fatal("GC_SERVICE_SOCKET not set")
+	}
+	// Fail-once: if the sentinel file exists, consume it and exit non-zero to
+	// simulate a service that dies on its first start and recovers on retry.
+	if failOnce := os.Getenv("GC_SERVICE_FAIL_ONCE_FILE"); failOnce != "" {
+		if _, err := os.Stat(failOnce); err == nil {
+			_ = os.Remove(failOnce)
+			os.Exit(1)
+		}
 	}
 	_ = os.Remove(socketPath)
 
@@ -496,7 +450,12 @@ func TestProxyProcessReloadRefreshesPublicationEnv(t *testing.T) {
 }
 
 func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testing.T) {
-	requirePython3(t)
+	t.Setenv("GC_SERVICE_HELPER", "1")
+	setHelperPassthrough(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
 	cityPath := t.TempDir()
 
 	rt := &testRuntime{
@@ -511,7 +470,7 @@ func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testin
 					Visibility: "public",
 				},
 				Process: config.ServiceProcessConfig{
-					Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+					Command:    []string{exe, "-test.run=^TestProxyProcessHelper$", "--"},
 					HealthPath: "/healthz",
 				},
 			}},
@@ -586,7 +545,12 @@ func TestProxyProcessTickRefreshesPublicationEnvFromAuthoritativeStore(t *testin
 }
 
 func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *testing.T) {
-	requirePython3(t)
+	t.Setenv("GC_SERVICE_HELPER", "1")
+	setHelperPassthrough(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
 	rt := &testRuntime{
 		cityPath: t.TempDir(),
 		cityName: "test-city",
@@ -599,7 +563,7 @@ func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *tes
 					Visibility: "public",
 				},
 				Process: config.ServiceProcessConfig{
-					Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+					Command:    []string{exe, "-test.run=^TestProxyProcessHelper$", "--"},
 					HealthPath: "/healthz",
 				},
 			}},
@@ -695,7 +659,12 @@ func TestProxyProcessTickRetriesPublicationRefreshWithoutLosingCurrentURL(t *tes
 }
 
 func TestNewProxyProcessInstanceCleansUpSocketDirOnStartFailure(t *testing.T) {
-	requirePython3(t)
+	t.Setenv("GC_SERVICE_HELPER", "1")
+	setHelperPassthrough(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("Executable: %v", err)
+	}
 	cityPath := t.TempDir()
 	failOnce := filepath.Join(cityPath, ".gc", "services", "bridge", "fail-once")
 	if err := os.MkdirAll(filepath.Dir(failOnce), 0o750); err != nil {
@@ -724,7 +693,7 @@ func TestNewProxyProcessInstanceCleansUpSocketDirOnStartFailure(t *testing.T) {
 		Name: "bridge",
 		Kind: "proxy_process",
 		Process: config.ServiceProcessConfig{
-			Command:    []string{"python3", "-c", proxyProcessPythonHelper},
+			Command:    []string{exe, "-test.run=^TestProxyProcessHelper$", "--"},
 			HealthPath: "/healthz",
 		},
 	}

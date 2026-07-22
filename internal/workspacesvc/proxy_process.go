@@ -15,12 +15,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/execenv"
+	"github.com/gastownhall/gascity/internal/fsys"
 )
 
 const (
@@ -393,10 +393,10 @@ func cleanupProxyProcessSocketPath(path string) error {
 	if filepath.Dir(dir) != root {
 		return nil
 	}
-	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) {
+	if err := fsys.RemoveDirIfEmpty(dir); err != nil {
 		return fmt.Errorf("remove socket dir: %w", err)
 	}
-	if err := os.Remove(root); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) {
+	if err := fsys.RemoveDirIfEmpty(root); err != nil {
 		return fmt.Errorf("remove socket root dir: %w", err)
 	}
 	return nil
