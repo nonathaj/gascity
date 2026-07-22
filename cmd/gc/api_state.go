@@ -1812,11 +1812,14 @@ func (cs *controllerState) ProvisionRigFromGit(ctx context.Context, r config.Rig
 		// Server-derived clone destination for git_url adds: rigs/<name> under
 		// the city dir. resolveStoreScopeRoot anchors it to the city, never CWD.
 		rawPath = filepath.Join("rigs", r.Name)
-	} else if filepath.IsAbs(rawPath) {
+	} else if filepath.IsAbs(rawPath) || strings.HasPrefix(rawPath, "/") || strings.HasPrefix(rawPath, `\`) {
 		// For a git_url add the clone destination is server-derived; a client must
 		// not pin an absolute path (it could point outside the city, and the G14
 		// rollback would then RemoveAll a caller-controlled directory). A relative
 		// path is still permitted but is contained under the city root below.
+		// The explicit "/" and "\" prefixes matter on Windows, where
+		// filepath.IsAbs rejects rootless paths like "/etc/evil" — which still
+		// resolve outside the city (current-volume root) and must not pass.
 		return config.Rig{}, fmt.Errorf("%w: git_url rig add must not specify an absolute path", configedit.ErrValidation)
 	}
 	r.Path = resolveStoreScopeRoot(cs.cityPath, rawPath)
