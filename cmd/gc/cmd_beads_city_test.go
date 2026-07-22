@@ -760,7 +760,9 @@ func TestSyncCityEndpointCompatConfigUsesAtomicWrite(t *testing.T) {
 	if !renamed {
 		t.Fatalf("fs calls = %+v, want atomic rename", fs.Calls)
 	}
-	if got := string(fs.Files[filepath.Join(cityDir, "city.toml")]); !strings.Contains(got, "[workspace]") {
+	// The fake FS canonicalizes keys to slash form; filepath.Join yields the
+	// native spelling on Windows and misses the entry.
+	if got := string(fs.Files["/city/city.toml"]); !strings.Contains(got, "[workspace]") {
 		t.Fatalf("city.toml = %q", got)
 	}
 }

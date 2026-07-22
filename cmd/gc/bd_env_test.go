@@ -1041,15 +1041,11 @@ dolt.auto-start: false
 
 	port := writeReachableProviderManagedDoltState(t, cityPath)
 
-	// Make the dolt state dir read-only to force publishManagedDoltRuntimeStateFromState
-	// to fail — it cannot write dolt-state.json to the read-only directory.
-	doltStateDir := filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt")
-	if err := os.Chmod(doltStateDir, 0o555); err != nil {
-		t.Fatalf("chmod state dir read-only: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(doltStateDir, 0o755)
-	})
+	// Make the dolt state dir unwritable to force
+	// publishManagedDoltRuntimeStateFromState to fail — it cannot write
+	// dolt-state.json there. denyDirWrites uses mode bits on Unix and an
+	// icacls deny on Windows (mode bits are synthetic there, doctrine P5).
+	denyDirWrites(t, filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt"))
 
 	target, ok, err := resolvedRuntimeCityDoltTarget(cityPath, true)
 	if err != nil {

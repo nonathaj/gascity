@@ -74,7 +74,7 @@ func TestOpenSourceWorkflowStoresSkipsBrokenRigs(t *testing.T) {
 	}
 
 	openStore := func(dir string) (beads.Store, error) {
-		if strings.Contains(dir, "rigs/broken") {
+		if strings.Contains(filepath.ToSlash(dir), "rigs/broken") {
 			return nil, fmt.Errorf("simulated broken rig store at %s", dir)
 		}
 		return beads.NewMemStore(), nil
@@ -88,7 +88,7 @@ func TestOpenSourceWorkflowStoresSkipsBrokenRigs(t *testing.T) {
 		t.Fatal("len(stores) = 0, want at least one store (city + alpha rig)")
 	}
 	for _, s := range stores {
-		if strings.Contains(s.path, "rigs/broken") {
+		if strings.Contains(filepath.ToSlash(s.path), "rigs/broken") {
 			t.Fatalf("broken rig should have been skipped, got path %q", s.path)
 		}
 	}
@@ -96,7 +96,7 @@ func TestOpenSourceWorkflowStoresSkipsBrokenRigs(t *testing.T) {
 	// Without this, singleton coverage silently degrades.
 	foundBrokenSkip := false
 	for _, skip := range skips {
-		if strings.Contains(skip.path, "rigs/broken") {
+		if strings.Contains(filepath.ToSlash(skip.path), "rigs/broken") {
 			foundBrokenSkip = true
 			break
 		}
@@ -105,7 +105,9 @@ func TestOpenSourceWorkflowStoresSkipsBrokenRigs(t *testing.T) {
 		t.Fatalf("skips = %#v, want an entry for the broken rig so callers can warn", skips)
 	}
 	msg := formatSourceWorkflowStoreSkips(skips)
-	if !strings.Contains(msg, "rigs/broken") || !strings.Contains(msg, "invisible") {
+	// The message prints the real store path (native separators on Windows);
+	// compare in slash form.
+	if !strings.Contains(filepath.ToSlash(msg), "rigs/broken") || !strings.Contains(msg, "invisible") {
 		t.Fatalf("format message = %q, want reference to broken rig and invisibility", msg)
 	}
 }

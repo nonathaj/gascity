@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"os"
 	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/beads"
 )
@@ -117,7 +118,10 @@ func (s *Store) run(stdinData []byte, args ...string) (string, error) {
 		}
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
-			errMsg = err.Error()
+			// No script output — the failure is the exec itself (missing script,
+			// timeout, ...). Wrap rather than flatten so callers can distinguish
+			// a launch failure from a script-reported result by error type.
+			return "", fmt.Errorf("exec beads %s %s: %w", s.script, strings.Join(args, " "), err)
 		}
 		return "", fmt.Errorf("exec beads %s %s: %s", s.script, strings.Join(args, " "), errMsg)
 	}
@@ -133,6 +137,14 @@ func readyExit2IsRejectedInvocation(args []string) bool {
 // bead was not found. Scripts signal this by exiting with code 1 and
 // including "not found" or "no issue found" in stderr.
 func isNotFoundError(err error) bool {
+	// A provider that failed to LAUNCH is not a lookup miss. Windows renders
+	// a missing script as `exec: "...": executable file not found in %PATH%`,
+	// which the substring match below would misread as bead-not-found and
+	// silently mask the provider failure.
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		return false
+	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "not found") || strings.Contains(msg, "no issue found")
 }

@@ -100,6 +100,29 @@ func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) string {
 	return impl
 }
 
+// denyDirWrites blocks file creation/writes in dir for the remainder of the
+// test. Unix uses mode bits (0o555); Windows mode bits are synthetic
+// (doctrine P5), so an explicit ACL deny for Everyone (SID S-1-1-0, locale
+// independent) on file-create/write is applied via icacls and removed on
+// cleanup so TempDir teardown can proceed.
+func denyDirWrites(t *testing.T, dir string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatalf("chmod dir read-only: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+		return
+	}
+	deny := exec.Command("icacls", dir, "/deny", "*S-1-1-0:(WD,AD,W)")
+	if out, err := deny.CombinedOutput(); err != nil {
+		t.Fatalf("icacls deny writes: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("icacls", dir, "/remove:d", "*S-1-1-0").Run()
+	})
+}
+
 // shScriptPath renders p for splicing into sh script text: slash-separated
 // (sh eats backslashes in unquoted words, so a native Windows path degrades
 // into a mangled relative filename) and single-quoted so temp-dir spaces
