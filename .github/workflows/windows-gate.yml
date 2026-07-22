@@ -82,6 +82,24 @@ jobs:
       - name: Verify Dolt on PATH
         shell: pwsh
         run: dolt version
+      # psmux is the tmux-compatible Windows multiplexer; its WinGet package
+      # installs a `tmux` shim, so the tmux runtime (internal/runtime/tmux) and
+      # the doctor tmux checks resolve `tmux` on Windows exactly as Linux CI's
+      # `apt-get install tmux` provides it. Kept in the shared job because
+      # internal/runtime/tmux and internal/runtime/proctable are green-listed.
+      - name: Install psmux (Windows tmux)
+        shell: pwsh
+        run: |
+          winget install --id marlocarlo.psmux --exact --source winget `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          # winget returns non-zero for benign states (already-installed, etc.);
+          # the "Verify tmux" step below is the real gate.
+          if ($LASTEXITCODE -ne 0) { Write-Host "winget exit $LASTEXITCODE (continuing; tmux is verified next)" }
+          $global:LASTEXITCODE = 0
+          "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Verify tmux (psmux) on PATH
+        shell: pwsh
+        run: tmux -V
       - name: Run green-list packages
         shell: pwsh
         env:
@@ -128,6 +146,19 @@ jobs:
       - name: Verify Dolt on PATH
         shell: pwsh
         run: dolt version
+      - name: Install psmux (Windows tmux)
+        shell: pwsh
+        run: |
+          winget install --id marlocarlo.psmux --exact --source winget `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          # winget returns non-zero for benign states (already-installed, etc.);
+          # the "Verify tmux" step below is the real gate.
+          if ($LASTEXITCODE -ne 0) { Write-Host "winget exit $LASTEXITCODE (continuing; tmux is verified next)" }
+          $global:LASTEXITCODE = 0
+          "$env:LOCALAPPDATA\Microsoft\WinGet\Links" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Verify tmux (psmux) on PATH
+        shell: pwsh
+        run: tmux -V
       - name: Run cmd/gc
         shell: pwsh
         env:
