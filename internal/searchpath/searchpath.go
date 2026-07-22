@@ -35,6 +35,8 @@ func Expand(homeDir, goos, basePath string) []string {
 			"/home/linuxbrew/.linuxbrew/bin",
 			"/home/linuxbrew/.linuxbrew/sbin",
 		)
+	case "windows":
+		dirs = append(dirs, windowsToolDirs()...)
 	}
 	return Dedupe(dirs)
 }
@@ -73,6 +75,32 @@ func splitPath(basePath string) []string {
 		return nil
 	}
 	return strings.Split(basePath, string(os.PathListSeparator))
+}
+
+// windowsToolDirs returns the Windows locations where provider CLIs land but a
+// bare PATH often does not expose them. Read lazily from the environment (never
+// cached at init) so per-process env changes are honored, mirroring how the
+// darwin/linux cases add their platform install roots. Missing env vars are
+// skipped rather than joined against an empty base. The provider probe searches
+// this order instead of the ambient PATH, so an npm-global CLI (claude.cmd
+// under %APPDATA%\npm) or gh (%ProgramFiles%\GitHub CLI) would otherwise read
+// as "not installed" on Windows.
+func windowsToolDirs() []string {
+	var dirs []string
+	if appData := os.Getenv("APPDATA"); appData != "" {
+		dirs = append(dirs, filepath.Join(appData, "npm"))
+	}
+	if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+		dirs = append(dirs, filepath.Join(programFiles, "GitHub CLI"))
+	}
+	if systemRoot := os.Getenv("SystemRoot"); systemRoot != "" {
+		dirs = append(dirs, filepath.Join(systemRoot, "System32"))
+	}
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		// Per-user "Programs" installs land one directory deep.
+		dirs = append(dirs, globExistingDirs(filepath.Join(localAppData, "Programs", "*"))...)
+	}
+	return dirs
 }
 
 func userManagedDirs(homeDir string) []string {

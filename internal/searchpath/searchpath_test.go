@@ -72,6 +72,38 @@ func TestExpandLinuxIncludesSnap(t *testing.T) {
 	}
 }
 
+func TestExpandWindowsIncludesToolDirs(t *testing.T) {
+	appData := filepath.Join(t.TempDir(), "Roaming")
+	programFiles := filepath.Join(t.TempDir(), "Program Files")
+	systemRoot := filepath.Join(t.TempDir(), "Windows")
+	t.Setenv("APPDATA", appData)
+	t.Setenv("ProgramFiles", programFiles)
+	t.Setenv("SystemRoot", systemRoot)
+
+	dirs := Expand("", "windows", "")
+	for _, want := range []string{
+		filepath.Join(appData, "npm"),             // npm global shims (claude.cmd)
+		filepath.Join(programFiles, "GitHub CLI"), // gh.exe
+		filepath.Join(systemRoot, "System32"),     // cmd.exe .cmd shim host
+	} {
+		if !slices.Contains(dirs, want) {
+			t.Errorf("windows PATH search order missing %q: %v", want, dirs)
+		}
+	}
+}
+
+func TestExpandWindowsSkipsEmptyEnv(t *testing.T) {
+	t.Setenv("APPDATA", "")
+	t.Setenv("ProgramFiles", "")
+	t.Setenv("SystemRoot", "")
+	t.Setenv("LOCALAPPDATA", "")
+	// No env-derived dirs, and no darwin/linux dirs, so the result is empty
+	// (empty homeDir and basePath contribute nothing).
+	if dirs := Expand("", "windows", ""); len(dirs) != 0 {
+		t.Fatalf("expected no dirs when Windows env is unset, got %v", dirs)
+	}
+}
+
 func TestExpandUnknownGOOS(t *testing.T) {
 	dirs := Expand("", "freebsd", "/usr/bin")
 	// Should not include darwin or linux specific dirs.
