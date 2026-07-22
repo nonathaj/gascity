@@ -66,30 +66,7 @@ func writeMinimalCity(t *testing.T, providerKey string, rigs ...config.Rig) stri
 	if err := os.WriteFile(filepath.Join(cityDir, "city.toml"), []byte(b.String()), 0o644); err != nil {
 		t.Fatalf("write city.toml: %v", err)
 	}
-	if providerKey != "" {
-		stubProviderCLI(t, providerKey)
-	}
 	return cityDir
-}
-
-// stubProviderCLI puts hermetic no-op fakes for the named providers' CLIs on
-// PATH so config.ResolveProvider's LookPath succeeds on runners without the real
-// binaries. The dev box and the Linux CI fleet carry a global `claude`; the
-// GitHub-hosted windows-latest runner does not (install-claude-cli=false), so
-// tests that only need the provider to *resolve* — the prompt-synth tests fake
-// the runner and never execute it — install a stub here. The .bat launcher that
-// installFakeToolOnPath writes makes the extensionless fake visible to PATHEXT.
-func stubProviderCLI(t *testing.T, providerKeys ...string) {
-	t.Helper()
-	binDir := t.TempDir()
-	for _, key := range providerKeys {
-		cmd := key
-		if spec, ok := config.BuiltinProviders()[key]; ok && spec.Command != "" {
-			cmd = spec.Command
-		}
-		installFakeToolOnPath(t, binDir, cmd, "#!/bin/sh\nexit 0\n")
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 // --- meta-prompt rendering ---
@@ -297,7 +274,6 @@ func appendBuiltinProviderAlias(t *testing.T, cityDir, providerKey string) {
 	if _, err := f.WriteString("\n[providers." + providerKey + "]\nbase = \"builtin:" + providerKey + "\"\n"); err != nil {
 		t.Fatalf("append provider alias: %v", err)
 	}
-	stubProviderCLI(t, providerKey)
 }
 
 func TestRunPromptSynthRejectsProviderWithoutPrintArgs(t *testing.T) {

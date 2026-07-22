@@ -100,6 +100,21 @@ jobs:
       - name: Verify tmux (psmux) on PATH
         shell: pwsh
         run: tmux -V
+      # Provider CLIs — the Windows-idiomatic equivalent of Linux CI's
+      # install-claude-native.sh (install-claude-cli defaults true). npm global
+      # installs drop the claude/codex command shims into the npm global bin
+      # (the provider-probe PATH, gw-nsg), so config.ResolveProvider's LookPath
+      # finds the real CLIs; the prompt-synth tests only need them to resolve.
+      - name: Install provider CLIs (claude, codex) via npm
+        shell: pwsh
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex
+          Join-Path $env:APPDATA 'npm' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Verify provider CLIs on PATH
+        shell: pwsh
+        run: |
+          Get-Command claude | Format-List Name, Source
+          Get-Command codex  | Format-List Name, Source
       - name: Run green-list packages
         shell: pwsh
         env:
@@ -159,6 +174,16 @@ jobs:
       - name: Verify tmux (psmux) on PATH
         shell: pwsh
         run: tmux -V
+      - name: Install provider CLIs (claude, codex) via npm
+        shell: pwsh
+        run: |
+          npm install -g @anthropic-ai/claude-code @openai/codex
+          Join-Path $env:APPDATA 'npm' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Verify provider CLIs on PATH
+        shell: pwsh
+        run: |
+          Get-Command claude | Format-List Name, Source
+          Get-Command codex  | Format-List Name, Source
       - name: Run cmd/gc
         shell: pwsh
         env:
