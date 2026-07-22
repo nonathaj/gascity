@@ -57,7 +57,7 @@ func FetchPacks(packs map[string]PackSource, cityRoot string) error {
 
 // clonePack clones a git repo and checks out the specified ref.
 func clonePack(source, cacheDir, ref string) error {
-	args := []string{"clone", "--quiet"}
+	args := append(git.LongPathConfigArgs(), "clone", "--quiet")
 	if ref != "" {
 		args = append(args, "--branch", ref)
 	}

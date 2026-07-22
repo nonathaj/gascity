@@ -285,7 +285,7 @@ func baseHardeningGitArgs() []string {
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "core.untrackedCache=false",
-	}, gitutil.UntrustedRemoteGitConfigArgs()...)
+	}, append(gitutil.UntrustedRemoteGitConfigArgs(), gitutil.LongPathConfigArgs()...)...)
 }
 
 // buildNetworkGitArgs assembles the full git argv for a network invocation:

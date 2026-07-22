@@ -297,6 +297,7 @@ func rigCloneHardeningArgs(opts CloneOptions) []string {
 	if !opts.RecurseSubmodules {
 		args = append(args, "-c", "submodule.recurse=false")
 	}
+	args = append(args, LongPathConfigArgs()...)
 	return args
 }
 

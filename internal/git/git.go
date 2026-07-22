@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -382,6 +383,18 @@ func HermeticEnv() []string {
 // still resolve to an internal one here. That residual is documented at the
 // pack SSRF fence (internal/api/pack_source_policy.go); pinning the resolved IP
 // is out of scope for this hardening.
+// LongPathConfigArgs returns the -c override that lets git materialize
+// working-tree paths beyond Windows' legacy 260-char MAX_PATH. Pack and rig
+// clones carry deep vendored trees that exceed it ("Filename too long"), and
+// per-repo config cannot help before the clone exists. Empty off Windows —
+// the knob only has meaning there.
+func LongPathConfigArgs() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	return []string{"-c", "core.longpaths=true"}
+}
+
 func UntrustedRemoteGitConfigArgs() []string {
 	return []string{
 		"-c", "http.followRedirects=false",
