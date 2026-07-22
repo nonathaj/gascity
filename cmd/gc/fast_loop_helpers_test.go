@@ -65,6 +65,14 @@ func sanitizedBaseEnv(extra ...string) []string {
 	return execshim.EnvWithShellDir(append(filtered, extra...))
 }
 
+// shScriptPath renders p for splicing into sh script text: slash-separated
+// (sh eats backslashes in unquoted words, so a native Windows path degrades
+// into a mangled relative filename) and single-quoted so temp-dir spaces
+// survive (doctrine P8). Identity-shaped on Unix paths.
+func shScriptPath(p string) string {
+	return "'" + filepath.ToSlash(p) + "'"
+}
+
 // writeTestScript creates a shell script that exits with the given code.
 // If stderrMsg is non-empty, the script writes it to stderr before exiting.
 func writeTestScript(t *testing.T, _ string, exitCode int, stderrMsg string) string {

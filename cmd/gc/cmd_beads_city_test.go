@@ -265,7 +265,7 @@ prefix = "fe"
 func TestDoBeadsCityUseExternalStopsManagedLocalProvider(t *testing.T) {
 	cityDir := t.TempDir()
 	callLog := filepath.Join(cityDir, "provider-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1|${GC_DOLT_HOST:-}|${GC_DOLT_PORT:-}\" >> "+callLog+"\nexit 0\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1|${GC_DOLT_HOST:-}|${GC_DOLT_PORT:-}\" >> "+shScriptPath(callLog)+"\nexit 0\n")
 
 	writeCityEndpointCityConfigWithCompat(t, cityDir, config.DoltConfig{}, nil)
 	writeRigEndpointMetadata(t, cityDir, "hq")
@@ -323,7 +323,7 @@ func TestDoBeadsCityUseExternalStopsManagedLocalProvider(t *testing.T) {
 func TestDoBeadsCityUseExternalValidationFailureDoesNotStopManagedLocalProvider(t *testing.T) {
 	cityDir := t.TempDir()
 	callLog := filepath.Join(cityDir, "provider-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n")
 
 	writeCityEndpointCityConfigWithCompat(t, cityDir, config.DoltConfig{}, nil)
 	writeRigEndpointMetadata(t, cityDir, "hq")
@@ -424,7 +424,7 @@ func TestDoBeadsCityUseExternalStopFailureKeepsExternalConfig(t *testing.T) {
 	if err := os.MkdirAll(inheritDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := writeManagedBdTestScript(t, "#!/bin/sh\n"+"echo \"$1\" >> "+callLog+"\n"+"if [ \"$1\" = \"stop\" ]; then\n"+"  echo stop-failed >&2\n"+"  exit 1\n"+"fi\n"+"exit 0\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\n"+"echo \"$1\" >> "+shScriptPath(callLog)+"\n"+"if [ \"$1\" = \"stop\" ]; then\n"+"  echo stop-failed >&2\n"+"  exit 1\n"+"fi\n"+"exit 0\n")
 
 	writeCityEndpointCityConfigWithCompat(t, cityDir, config.DoltConfig{}, []config.Rig{{Name: "frontend", Path: inheritDir, Prefix: "fe"}})
 	writeRigEndpointMetadata(t, cityDir, "hq")

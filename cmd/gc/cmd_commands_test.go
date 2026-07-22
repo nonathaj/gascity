@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -2864,12 +2865,22 @@ func TestRunDiscoveredCommand_MissingScriptFails(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit code = %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "no such file") {
+	// Unix renders ENOENT as "no such file"; Windows as "file does not exist".
+	// The contract under test is exit 1 + the missing path surfaced, not the
+	// OS's errno wording.
+	if !strings.Contains(stderr.String(), "no such file") && !strings.Contains(stderr.String(), "file does not exist") {
 		t.Fatalf("stderr missing missing-file message, got:\n%s", stderr.String())
 	}
 }
 
 func TestRunDiscoveredCommand_NonExecutableFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Doctrine P5: the executable bit is a Unix permission concept. On
+		// Windows mode 0o644 is synthetic and execshim routes .sh through sh,
+		// which runs any readable script — there is no "non-executable script"
+		// state to enforce, so the Unix-only contract is not applicable.
+		t.Skip("P5: exec-bit semantics not applicable on Windows")
+	}
 	dir := t.TempDir()
 	sourceDir := filepath.Join(dir, "commands", "nonexec")
 	if err := os.MkdirAll(sourceDir, 0o755); err != nil {

@@ -1332,7 +1332,7 @@ func TestEnsureBeadsProvider_bdAcceptsHealthyServerAfterStartError(t *testing.T)
 	}
 	content := "#!/bin/sh\n" +
 		"set -eu\n" +
-		"echo \"$1\" >> \"" + callLog + "\"\n" +
+		"echo \"$1\" >> " + shScriptPath(callLog) + "\n" +
 		"case \"${1:-}\" in\n" +
 		"  start)\n" +
 		"    : > \"" + marker + "\"\n" +
@@ -1374,7 +1374,7 @@ func TestEnsureBeadsProvider_execDoesNotMaskStartErrorWithHealth(t *testing.T) {
 	script := filepath.Join(dir, "provider.sh")
 	content := "#!/bin/sh\n" +
 		"set -eu\n" +
-		"echo \"$1\" >> \"" + callLog + "\"\n" +
+		"echo \"$1\" >> " + shScriptPath(callLog) + "\n" +
 		"case \"${1:-}\" in\n" +
 		"  start)\n" +
 		"    : > \"" + marker + "\"\n" +
@@ -1421,7 +1421,7 @@ func TestEnsureBeadsProvider_execDoesNotReclassifyProviderAfterStart(t *testing.
 	script := filepath.Join(dir, "provider.sh")
 	content := "#!/bin/sh\n" +
 		"set -eu\n" +
-		"echo \"$1\" >> \"" + callLog + "\"\n" +
+		"echo \"$1\" >> " + shScriptPath(callLog) + "\n" +
 		"case \"${1:-}\" in\n" +
 		"  start)\n" +
 		"    : > \"" + marker + "\"\n" +
@@ -10167,7 +10167,7 @@ func TestStartBeadsLifecycleFailsOnCanonicalCompatDoltDrift(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 2\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10558,7 +10558,7 @@ func TestHealthBeadsProviderDoesNotRecoverExternalLoopbackTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	scriptText := "#!/bin/sh\necho \"$1\" >> " + callLog + "\nif [ \"$1\" = \"health\" ]; then\n  echo \"health failed\" >&2\n  exit 1\nfi\nexit 0\n"
+	scriptText := "#!/bin/sh\necho \"$1\" >> " + shScriptPath(callLog) + "\nif [ \"$1\" = \"health\" ]; then\n  echo \"health failed\" >&2\n  exit 1\nfi\nexit 0\n"
 	if err := os.WriteFile(script, []byte(scriptText), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -10605,7 +10605,7 @@ func TestShutdownBeadsProviderSkipsExternalLoopbackTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10637,7 +10637,7 @@ func TestShutdownBeadsProviderExternalBdClearsStaleManagedRuntimeState(t *testin
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10688,7 +10688,7 @@ func TestShutdownBeadsProviderSkipsPostgresCity(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10751,7 +10751,7 @@ func TestStartBeadsLifecycleSkipsProviderForExternalHost(t *testing.T) {
 	// "start" should NOT be called (skipped by external host guard).
 	// "init" will be called but exits 2 (not needed).
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 2\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 2\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -10816,7 +10816,7 @@ port = 3307
 func TestStartBeadsLifecycleSkipsProviderForPostgresCity(t *testing.T) {
 	cityPath := t.TempDir()
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 99\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 99\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -10855,7 +10855,7 @@ dolt.auto-start: false
 func TestStartBeadsLifecyclePostgresCityPreservesManagedDoltArtifacts(t *testing.T) {
 	cityPath := t.TempDir()
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 99\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 99\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
