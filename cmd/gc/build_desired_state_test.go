@@ -1725,7 +1725,7 @@ func TestDefaultScaleCheckCountsReportsMissingRigStore(t *testing.T) {
 			Path: filepath.Join(cityPath, "repos", "repo"),
 		}},
 	}
-	agent := &config.Agent{Name: "worker", Dir: filepath.Join("repos", "repo")}
+	agent := &config.Agent{Name: "worker", Dir: "repos/repo"}
 	cityStore := beads.NewMemStore()
 	if _, err := cityStore.Create(beads.Bead{
 		Title:  "wrong-store routed work",
@@ -1775,7 +1775,7 @@ func TestBuildDesiredStateDefaultScaleCheckMissingRigStoreReportsZeroDemand(t *t
 		}},
 		Agents: []config.Agent{{
 			Name:              "worker",
-			Dir:               filepath.Join("repos", "repo"),
+			Dir:               "repos/repo",
 			StartCommand:      "true",
 			MinActiveSessions: intPtr(0),
 			MaxActiveSessions: intPtr(1),
