@@ -3110,9 +3110,8 @@ prefix = "tc"
 
 	logFile := filepath.Join(t.TempDir(), "bd.log")
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
 	script := fmt.Sprintf(`#!/bin/sh
-printf 'pwd=%%s BEADS_DIR=%%s args=%%s\n' "$PWD" "${BEADS_DIR:-}" "$*" >> %q
+printf 'pwd=%%s BEADS_DIR=%%s args=%%s\n' "$(pwd -W 2>/dev/null || pwd)" "${BEADS_DIR:-}" "$*" >> %q
 case "$1" in
   init)
     mkdir -p "${BEADS_DIR:-$PWD/.beads}"
@@ -3127,9 +3126,7 @@ case "$1" in
     ;;
 esac
 `, logFile)
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", script)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	if err := initBeadsForDir(cityDir, rigDir, "tc", "tc"); err != nil {
@@ -3140,9 +3137,11 @@ esac
 	if err != nil {
 		t.Fatalf("read bd log: %v", err)
 	}
-	// $PWD is captured by the shell, which on macOS resolves /tmp symlinks to
-	// /private/tmp; resolve rigDir the same way for the pwd= assertion. BEADS_DIR
-	// is the literal env value we pass (unresolved rigDir), so it keeps the
+	// pwd is captured by the shell, which on macOS resolves /tmp symlinks to
+	// /private/tmp; resolve rigDir the same way for the pwd= assertion. The
+	// script logs `pwd -W` on Git-bash — the Windows drive form with forward
+	// slashes — so compare in ToSlash form (identity on Unix). BEADS_DIR is
+	// the literal env value we pass (unresolved rigDir), so it keeps the
 	// original path — assert each against the form it actually takes.
 	realRigDir, _ := filepath.EvalSymlinks(rigDir)
 	if realRigDir == "" {
@@ -3150,7 +3149,7 @@ esac
 	}
 	log := string(logData)
 	for _, want := range []string{
-		"pwd=" + realRigDir,
+		"pwd=" + filepath.ToSlash(realRigDir),
 		"BEADS_DIR=" + filepath.Join(rigDir, ".beads"),
 		"init --server -p tc --skip-hooks --database tc",
 	} {
@@ -4588,7 +4587,6 @@ func TestGcBeadsBdInitRetriesRootStoreVerification(t *testing.T) {
 	}
 
 	listCountFile := filepath.Join(t.TempDir(), "bd-list-count")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 count_file="` + listCountFile + `"
@@ -4614,14 +4612,8 @@ case "$cmd" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	fakeDolt := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 0\n")
 
 	configureTestDoltIdentityEnv(t)
 	t.Setenv("GC_BEADS", "bd")
@@ -5453,7 +5445,6 @@ func TestInitAndHookDirAdoptsAlreadyInitializedDefaultRigBdStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	initArgsFile := filepath.Join(t.TempDir(), "bd-init-args")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -5471,9 +5462,7 @@ case "${1:-}" in
     ;;
 esac
 `, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 
@@ -5508,10 +5497,7 @@ func TestInitAndHookDirAdoptsAlreadyInitializedCanonicalExecBdStore(t *testing.T
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fakeBd := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(fakeBd, []byte("#!/bin/sh\nif [ \"${1:-}\" = list ]; then printf '[]\\n'; fi\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", "#!/bin/sh\nif [ \"${1:-}\" = list ]; then printf '[]\\n'; fi\nexit 0\n")
 
 	providerArgsFile := filepath.Join(t.TempDir(), "provider-init-args")
 	providerScript := filepath.Join(t.TempDir(), "gc-beads-bd")
@@ -5625,7 +5611,6 @@ func TestGcBeadsBdInitTightensBeadsDirPermissions(t *testing.T) {
 			}
 
 			initPermFile := filepath.Join(t.TempDir(), "bd-init-perm")
-			fakeBd := filepath.Join(binDir, "bd")
 			fakeBdScript := `#!/bin/sh
 set -eu
 perm_file="` + initPermFile + `"
@@ -5660,9 +5645,7 @@ JSON
     ;;
 esac
 `
-			if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-				t.Fatal(err)
-			}
+			installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 			fakeDolt := filepath.Join(binDir, "dolt")
 			if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
@@ -5746,10 +5729,7 @@ exec %q "$@"
 		t.Fatal(err)
 	}
 
-	fakeBd := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(fakeBd, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", "#!/bin/sh\nexit 0\n")
 	fakeDolt := filepath.Join(binDir, "dolt")
 	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -5786,7 +5766,6 @@ func TestGcBeadsBdInitPinsManagedDoltEnvForBdSubcommands(t *testing.T) {
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 capture_dir="` + captureDir + `"
@@ -5822,14 +5801,8 @@ case "$cmd" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	fakeDolt := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 0\n")
 
 	rigDir := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
@@ -5919,7 +5892,6 @@ func TestGcBeadsBdInitEnsuresProjectIdentityWhenMetadataExistsWithoutProjectID(t
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 capture_dir=%q
@@ -5941,9 +5913,7 @@ cmd="${1:-}"
     ;;
 esac
 `, captureDir)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeGC := filepath.Join(binDir, "gc-helper")
 	fakeGCScript := fmt.Sprintf(`#!/bin/sh
@@ -6047,7 +6017,6 @@ func TestGcBeadsBdInitUsesProjectIDHelperWithoutRepoIDMigration(t *testing.T) {
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 capture_dir=%q
@@ -6070,9 +6039,7 @@ case "$cmd" in
     ;;
 esac
 `, captureDir)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeGC := filepath.Join(binDir, "gc-helper")
 	fakeGCScript := fmt.Sprintf(`#!/bin/sh
@@ -6175,7 +6142,6 @@ func TestGcBeadsBdInitRunsProjectIDHelperWhenProjectIDAlreadyPresent(t *testing.
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 capture_dir="` + captureDir + `"
@@ -6204,9 +6170,7 @@ JSON
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeGC := filepath.Join(binDir, "gc-helper")
 	fakeGCScript := fmt.Sprintf(`#!/bin/sh
@@ -6275,7 +6239,6 @@ func TestGcBeadsBdInitUsesExplicitDoltDatabaseForRegistration(t *testing.T) {
 	}
 
 	sqlLog := filepath.Join(t.TempDir(), "dolt-sql.log")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -6287,9 +6250,7 @@ case "${1:-}" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := `#!/bin/sh
@@ -6345,7 +6306,6 @@ func TestGcBeadsBdInitFastPathNormalizesBeforeBdConfigAndProjectIDBackfill(t *te
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 capture_dir=%q
@@ -6370,9 +6330,7 @@ case "${1:-}" in
     ;;
 esac
 `, captureDir)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeGC := filepath.Join(binDir, "gc-helper")
 	fakeGCScript := fmt.Sprintf(`#!/bin/sh
@@ -6511,7 +6469,6 @@ func TestGcBeadsBdInitFastPathPreservesExistingManagedProbeDatabase(t *testing.T
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 capture_dir=%q
@@ -6536,9 +6493,7 @@ case "${1:-}" in
     ;;
 esac
 `, captureDir)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeGC := filepath.Join(binDir, "gc-helper")
 	fakeGCScript := fmt.Sprintf(`#!/bin/sh
@@ -6745,7 +6700,6 @@ func TestGcBeadsBdInitPreservesMetadataIdentityWhenCanonicalUnknownAndDatabaseMu
 	sqlLog := filepath.Join(t.TempDir(), "dolt-sql.log")
 	createdFile := filepath.Join(t.TempDir(), "created-gascity")
 
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -6757,9 +6711,7 @@ case "${1:-}" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := `#!/bin/sh
@@ -6854,7 +6806,6 @@ func TestGcBeadsBdInitFastPathRepairsRuntimeConfigDirectly(t *testing.T) {
 
 	initArgsFile := filepath.Join(t.TempDir(), "unexpected-bd-init-args")
 	sqlLogFile := filepath.Join(t.TempDir(), "dolt-sql-args")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 cmd="${1:-}"
@@ -6881,9 +6832,7 @@ case "$cmd" in
     ;;
 esac
 `, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >> %q\nexit 0\n", sqlLogFile)
@@ -6948,7 +6897,6 @@ func TestGcBeadsBdInitMetadataOnlyFallsThroughToForcedBdInitWithPinnedDatabaseWh
 	initArgsFile := filepath.Join(t.TempDir(), "bd-init-args")
 	initCountFile := filepath.Join(t.TempDir(), "bd-init-count")
 	sqlLogFile := filepath.Join(t.TempDir(), "dolt-sql-args")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 cmd="${1:-}"
@@ -6976,9 +6924,7 @@ case "$cmd" in
     ;;
 esac
 `, initCountFile, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := fmt.Sprintf(`#!/bin/sh
@@ -7063,7 +7009,6 @@ func TestGcBeadsBdInitWaitsForSchemaVisibilityBeforeRuntimeRepair(t *testing.T) 
 	}
 
 	probeCountFile := filepath.Join(t.TempDir(), "schema-probe-count")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -7075,9 +7020,7 @@ case "${1:-}" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := fmt.Sprintf(`#!/bin/sh
@@ -7166,7 +7109,6 @@ func TestGcBeadsBdInitRetriesPlainInitWhenSchemaStillMissingAfterSuccess(t *test
 
 	initCountFile := filepath.Join(t.TempDir(), "bd-init-count")
 	initArgsFile := filepath.Join(t.TempDir(), "bd-init-args")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -7188,9 +7130,7 @@ case "${1:-}" in
     ;;
 esac
 `, initCountFile, initCountFile, initCountFile, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := fmt.Sprintf(`#!/bin/sh
@@ -7313,7 +7253,6 @@ func TestGcBeadsBdInitDropsMetadataBeforeRetryingInitAfterForcedFallback(t *test
 	initCountFile := filepath.Join(t.TempDir(), "bd-init-count")
 	initArgsFile := filepath.Join(t.TempDir(), "bd-init-args")
 	initStateFile := filepath.Join(t.TempDir(), "bd-init-state")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -7340,9 +7279,7 @@ case "${1:-}" in
     ;;
 esac
 `, initCountFile, initCountFile, initCountFile, initStateFile, initStateFile, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	fakeDoltScript := fmt.Sprintf(`#!/bin/sh
@@ -8236,7 +8173,8 @@ system_variables:
   dolt_stats_paused: "ON"
 EOF
     printf '12345\n' > "$pid_file"
-    printf '{"running":true,"pid":12345,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$port" "$data_dir" > "$state_file"
+    json_data_dir=$(printf '%%s' "$data_dir" | sed 's/\\/\\\\/g')
+    printf '{"running":true,"pid":12345,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$port" "$json_data_dir" > "$state_file"
     printf 'ready\ttrue\n'
     printf 'pid\t12345\n'
     printf 'port\t%%s\n' "$port"
@@ -11056,7 +10994,6 @@ prefix = "fe"
 	}
 
 	probeLog := filepath.Join(t.TempDir(), "dolt-probe.log")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -11097,9 +11034,7 @@ YAML
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	fakeBd := installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	fakeDolt := filepath.Join(binDir, "dolt")
 	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
