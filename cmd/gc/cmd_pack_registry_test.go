@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/packregistry"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 const packRegistryTestCatalog = `schema = 1
@@ -336,7 +337,7 @@ func TestPackRegistryAddNoValidateInvalidatesReusedNameCache(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := doPackRegistryAdd("main", filepath.Join(t.TempDir(), "missing"), true, false, &stdout, &stderr); code != 0 {
+	if code := doPackRegistryAdd("main", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), true, false, &stdout, &stderr); code != 0 {
 		t.Fatalf("re-add main --no-validate: %d %s", code, stderr.String())
 	}
 
@@ -384,7 +385,7 @@ func TestPackRegistrySearchPartialReachabilityWarns(t *testing.T) {
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := doPackRegistryAdd("bad", filepath.Join(t.TempDir(), "missing"), true, false, &stdout, &stderr); code != 0 {
+	if code := doPackRegistryAdd("bad", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), true, false, &stdout, &stderr); code != 0 {
 		t.Fatalf("add bad: %d %s", code, stderr.String())
 	}
 
@@ -403,7 +404,7 @@ func TestPackRegistrySearchAllCachesUnavailableFails(t *testing.T) {
 	t.Setenv("GC_HOME", home)
 	writeEmptyRegistryConfig(t, home)
 	var stdout, stderr bytes.Buffer
-	if code := doPackRegistryAdd("bad", filepath.Join(t.TempDir(), "missing"), true, false, &stdout, &stderr); code != 0 {
+	if code := doPackRegistryAdd("bad", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), true, false, &stdout, &stderr); code != 0 {
 		t.Fatalf("add bad: %d %s", code, stderr.String())
 	}
 
@@ -444,9 +445,9 @@ func TestPackRegistrySearchRefreshFallsBackToCache(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GC_HOME", home)
 	writeEmptyRegistryConfig(t, home)
-	catalogDir := writeRegistryCatalog(t, packRegistryTestCatalog)
+	catalogSrc, catalogDir := writeRegistryCatalogDir(t, packRegistryTestCatalog)
 	var stdout, stderr bytes.Buffer
-	if code := doPackRegistryAdd("main", catalogDir, false, false, &stdout, &stderr); code != 0 {
+	if code := doPackRegistryAdd("main", catalogSrc, false, false, &stdout, &stderr); code != 0 {
 		t.Fatalf("add main: %d %s", code, stderr.String())
 	}
 	if err := os.Remove(filepath.Join(catalogDir, "registry.toml")); err != nil {
@@ -474,7 +475,7 @@ func TestPackRegistryShowUnqualifiedFailsClosedWithUnavailableRegistry(t *testin
 	}
 	stdout.Reset()
 	stderr.Reset()
-	if code := doPackRegistryAdd("bad", filepath.Join(t.TempDir(), "missing"), true, false, &stdout, &stderr); code != 0 {
+	if code := doPackRegistryAdd("bad", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), true, false, &stdout, &stderr); code != 0 {
 		t.Fatalf("add bad: %d %s", code, stderr.String())
 	}
 
@@ -592,13 +593,27 @@ func TestPackRegistryLiveGascityPacksCatalog(t *testing.T) {
 	}
 }
 
+// writeRegistryCatalog writes a registry catalog to a temp dir and returns
+// the sanctioned file:// source URL for it. Registry sources must be portable:
+// NormalizeSource rejects bare Windows drive-letter paths (a bare POSIX path
+// is a Linux-only convenience), so tests pass file:///... on every platform —
+// exactly the form a cross-platform user would use. Callers that must also
+// touch the catalog files on disk use writeRegistryCatalogDir.
 func writeRegistryCatalog(t *testing.T, body string) string {
 	t.Helper()
-	dir := t.TempDir()
+	source, _ := writeRegistryCatalogDir(t, body)
+	return source
+}
+
+// writeRegistryCatalogDir is writeRegistryCatalog that also returns the native
+// directory, for tests that read or mutate the catalog files directly.
+func writeRegistryCatalogDir(t *testing.T, body string) (source, dir string) {
+	t.Helper()
+	dir = t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "registry.toml"), []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile(registry.toml): %v", err)
 	}
-	return dir
+	return pathutil.FileURLForLocalPath(dir), dir
 }
 
 func writeEmptyRegistryConfig(t *testing.T, home string) {

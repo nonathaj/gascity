@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/pathutil"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -39,7 +40,7 @@ func TestPackRegistryJSONOutputMatchesSchemasForFlagCombinations(t *testing.T) {
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "search", "light", "--limit", "1", "--json"})
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "search", "light", "--all", "--json"})
 
-	missing := filepath.Join(t.TempDir(), "missing")
+	missing := pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing"))
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "bad", missing, "--no-validate", "--json"})
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "search", "light", "--refresh", "--json"})
 }
@@ -53,7 +54,7 @@ func TestPackRegistryJSONFailureMatchesFailureSchema(t *testing.T) {
 
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "main", catalogDir, "--json"})
 	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "other", otherDir, "--json"})
-	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "bad", filepath.Join(t.TempDir(), "missing"), "--no-validate", "--json"})
+	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "bad", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), "--no-validate", "--json"})
 
 	for _, tc := range []struct {
 		name string
@@ -76,7 +77,7 @@ func TestPackRegistryRefreshJSONAllFailuresUsesResultSchemaWithNonzeroExit(t *te
 	home := t.TempDir()
 	t.Setenv("GC_HOME", home)
 	writeEmptyRegistryConfig(t, home)
-	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "bad", filepath.Join(t.TempDir(), "missing"), "--no-validate", "--json"})
+	runPackRegistryJSONAndValidate(t, []string{"pack", "registry", "add", "bad", pathutil.FileURLForLocalPath(filepath.Join(t.TempDir(), "missing")), "--no-validate", "--json"})
 	runPackRegistryJSONAndValidateExitCode(t, []string{"pack", "registry", "refresh", "--json"}, 1)
 }
 

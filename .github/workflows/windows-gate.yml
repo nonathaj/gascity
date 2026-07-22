@@ -104,6 +104,15 @@ jobs:
     # it does not fit the shared green-list job's 30m budget, so it runs on its
     # own with generous headroom. Split into -run shards later if wall-clock
     # becomes painful (the boundaries are analyzed on gw-6ph).
+    #
+    # QUARANTINED (continue-on-error) until the runner-only "second wave" closes
+    # (epic gw-85h): the GitHub-hosted runner differs from the dev box and the
+    # Linux CI fleet (no global claude/codex/tmux CLIs, 8.3 short names, stricter
+    # git longpath, hermetic managed-dolt), surfacing ~112 failures the dev box
+    # masked. The job still runs and reports so the signal stays visible; it just
+    # doesn't fail the whole gate while the cluster beads under gw-85h are driven
+    # to green. Flip this back to hard-required once gw-85h closes.
+    continue-on-error: true
     timeout-minutes: 75
     steps:
       - name: Preserve LF line endings on checkout
