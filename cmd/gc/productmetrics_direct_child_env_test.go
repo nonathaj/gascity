@@ -76,7 +76,11 @@ func TestProductMetricsDirectChildEnvHookWorkQuery(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = shellWorkQueryWithEnv(shellquote.Quote(binary), "", nil)
+		// os.Executable() is a native path; on Windows shellquote leaves its
+		// backslashes unquoted and /usr/bin/sh eats them as escapes
+		// ("C:Users..."). Present the path in sh's slash form so it execs
+		// (doctrine T8: native paths inside sh syntax go through ToSlash).
+		_, err = shellWorkQueryWithEnv(shellquote.Quote(filepath.ToSlash(binary)), "", nil)
 		return err
 	})
 	assertProductMetricsDirectChildEnv(t, entries)
