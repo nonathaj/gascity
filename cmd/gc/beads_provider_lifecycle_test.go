@@ -290,8 +290,8 @@ func TestProviderLifecycleProcessEnvPropagatesArchiveLevel(t *testing.T) {
 	normPath := normalizePathForCompare(cityPath)
 
 	level := 1
-	cityDoltConfigs.Store(normPath, config.DoltConfig{ArchiveLevel: &level})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{ArchiveLevel: &level})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	env := map[string]string{}
@@ -311,8 +311,8 @@ func TestProviderLifecycleProcessEnvPropagatesAutoGCEnabled(t *testing.T) {
 	normPath := normalizePathForCompare(cityPath)
 
 	autoGC := false
-	cityDoltConfigs.Store(normPath, config.DoltConfig{AutoGCEnabled: &autoGC})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{AutoGCEnabled: &autoGC})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	env := map[string]string{}
@@ -331,8 +331,8 @@ func TestProviderLifecycleProcessEnvOmitsAutoGCEnabledWhenNil(t *testing.T) {
 	cityPath := t.TempDir()
 	normPath := normalizePathForCompare(cityPath)
 
-	cityDoltConfigs.Store(normPath, config.DoltConfig{})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	for _, entry := range envEntries {
@@ -346,12 +346,12 @@ func TestProviderLifecycleProcessEnvPropagatesManagedDoltListenerOverrides(t *te
 	cityPath := t.TempDir()
 	normPath := normalizePathForCompare(cityPath)
 
-	cityDoltConfigs.Store(normPath, config.DoltConfig{
+	registerCityDoltConfig(normPath, config.DoltConfig{
 		ReadTimeoutMillis:  300000,
 		WriteTimeoutMillis: 600000,
 		MaxConnections:     1024,
 	})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	env := map[string]string{}
@@ -376,8 +376,8 @@ func TestProviderLifecycleProcessEnvPropagatesDoltLockReleaseTimeout(t *testing.
 	cityPath := t.TempDir()
 	normPath := normalizePathForCompare(cityPath)
 
-	cityDoltConfigs.Store(normPath, config.DoltConfig{DoltLockReleaseTimeout: "90s"})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{DoltLockReleaseTimeout: "90s"})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	env := map[string]string{}
@@ -396,8 +396,8 @@ func TestProviderLifecycleProcessEnvOmitsDoltLockReleaseTimeoutWhenUnset(t *test
 	cityPath := t.TempDir()
 	normPath := normalizePathForCompare(cityPath)
 
-	cityDoltConfigs.Store(normPath, config.DoltConfig{})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	for _, entry := range envEntries {
@@ -442,8 +442,8 @@ func TestProviderLifecycleProcessEnvOmitsArchiveLevelWhenNil(t *testing.T) {
 	cityPath := t.TempDir()
 	normPath := normalizePathForCompare(cityPath)
 
-	cityDoltConfigs.Store(normPath, config.DoltConfig{})
-	t.Cleanup(func() { cityDoltConfigs.Delete(normPath) })
+	registerCityDoltConfig(normPath, config.DoltConfig{})
+	t.Cleanup(func() { clearCityDoltConfig(normPath) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, cityPath, "exec:"+gcBeadsBdScriptPath(cityPath))
 	for _, entry := range envEntries {
@@ -2137,8 +2137,8 @@ func TestSyncConfiguredDoltPortFilesCanonicalizesExternalAndExplicitScopes(t *te
 		}
 	}
 
-	cityDoltConfigs.Store(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityDir) })
+	registerCityDoltConfig(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityDir) })
 
 	requireSyncConfiguredDoltPortFiles(t, cityDir, "bd", config.DoltConfig{Host: "db.example.com", Port: 3307}, "gc", []config.Rig{
 		{Name: "fe", Path: inheritedRigDir},
@@ -2835,8 +2835,8 @@ dolt.auto-start: true
 		}
 	}
 
-	cityDoltConfigs.Store(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityDir) })
+	registerCityDoltConfig(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityDir) })
 
 	requireSyncConfiguredDoltPortFiles(t, cityDir, "bd", config.DoltConfig{Host: "db.example.com", Port: 3307}, "gc", []config.Rig{
 		{Name: "fe", Path: inheritedRigDir},
@@ -2896,8 +2896,8 @@ dolt.auto-start: true
 		}
 	}
 
-	cityDoltConfigs.Store(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityDir) })
+	registerCityDoltConfig(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityDir) })
 
 	requireSyncConfiguredDoltPortFiles(t, cityDir, "bd", config.DoltConfig{Host: "db.example.com", Port: 3307}, "gc", []config.Rig{{Name: "fe", Path: inheritedRigDir}})
 
@@ -7511,8 +7511,8 @@ func TestIsExternalDoltWithConfig(t *testing.T) {
 			_ = os.Unsetenv("GC_DOLT_HOST")
 			cityPath := t.TempDir()
 			if tt.cfg.Host != "" || tt.cfg.Port != 0 {
-				cityDoltConfigs.Store(cityPath, tt.cfg)
-				t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+				registerCityDoltConfig(cityPath, tt.cfg)
+				t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 			}
 			if got := isExternalDolt(cityPath); got != tt.want {
 				t.Errorf("isExternalDolt(%q) with cfg=%+v = %v, want %v", cityPath, tt.cfg, got, tt.want)
@@ -7525,8 +7525,8 @@ func TestIsExternalDoltWithConfig(t *testing.T) {
 
 func TestDoltHostForCityPrefersConfiguredTargetOverEnv(t *testing.T) {
 	cityPath := t.TempDir()
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "config-host.example.com", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "config-host.example.com", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	t.Setenv("GC_DOLT_HOST", "user-override.example.com")
 
@@ -7537,8 +7537,8 @@ func TestDoltHostForCityPrefersConfiguredTargetOverEnv(t *testing.T) {
 
 func TestDoltHostForCityFallsBackToConfig(t *testing.T) {
 	cityPath := t.TempDir()
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "mini2.hippo-tilapia.ts.net", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "mini2.hippo-tilapia.ts.net", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	t.Setenv("GC_DOLT_HOST", "")
 	_ = os.Unsetenv("GC_DOLT_HOST")
@@ -7550,8 +7550,8 @@ func TestDoltHostForCityFallsBackToConfig(t *testing.T) {
 
 func TestDoltPortForCityPrefersConfiguredTargetOverEnv(t *testing.T) {
 	cityPath := t.TempDir()
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	t.Setenv("GC_DOLT_PORT", "9999")
 
@@ -7562,8 +7562,8 @@ func TestDoltPortForCityPrefersConfiguredTargetOverEnv(t *testing.T) {
 
 func TestDoltPortForCityFallsBackToConfig(t *testing.T) {
 	cityPath := t.TempDir()
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	t.Setenv("GC_DOLT_PORT", "")
 	_ = os.Unsetenv("GC_DOLT_PORT")
@@ -7587,8 +7587,8 @@ dolt.port: 3307
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	host, port, ok := configuredCityDoltTarget(cityPath)
 	if !ok {
@@ -7617,8 +7617,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	if host, port, ok := configuredCityDoltTarget(cityPath); ok {
 		t.Fatalf("configuredCityDoltTarget() = (%q, %q, %v), want no external target", host, port, ok)
@@ -7646,8 +7646,8 @@ dolt.port: 3311
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	host, port, ok := configuredCityDoltTarget(cityPath)
 	if !ok {
@@ -7668,8 +7668,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	host, port, ok := configuredCityDoltTarget(cityPath)
 	if !ok {
@@ -10186,8 +10186,8 @@ dolt.port: 3307
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	if host, port, ok := configuredCityDoltTarget(cityPath); ok {
 		t.Fatalf("configuredCityDoltTarget() = (%q, %q, %v), want no target for invalid canonical city origin", host, port, ok)
@@ -10275,8 +10275,8 @@ dolt.port: 3307
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	if host, port, ok := configuredCityDoltTarget(cityPath); ok {
 		t.Fatalf("configuredCityDoltTarget() = (%q, %q, %v), want no target for invalid managed canonical city", host, port, ok)
@@ -10363,7 +10363,7 @@ func TestStartBeadsLifecycleRegistersDoltConfig(t *testing.T) {
 	if err := startBeadsLifecycle(cityPath, "test-city", cfg, io.Discard); err != nil {
 		t.Fatalf("startBeadsLifecycle: %v", err)
 	}
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	// Config should be registered for this city.
 	if got := doltHostForCity(cityPath); got != "mini2.hippo-tilapia.ts.net" {
@@ -10393,7 +10393,7 @@ func TestStartBeadsLifecycleRegistersArchiveLevelOnlyDoltConfig(t *testing.T) {
 	if err := startBeadsLifecycle(aliasCity, "test-city", cfg, io.Discard); err != nil {
 		t.Fatalf("startBeadsLifecycle: %v", err)
 	}
-	t.Cleanup(func() { cityDoltConfigs.Delete(normalizePathForCompare(realCity)) })
+	t.Cleanup(func() { clearCityDoltConfig(normalizePathForCompare(realCity)) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, realCity, "exec:"+gcBeadsBdScriptPath(realCity))
 	env := map[string]string{}
@@ -10434,7 +10434,7 @@ func TestStartBeadsLifecycleRegistersAutoGCOnlyDoltConfig(t *testing.T) {
 	if err := startBeadsLifecycle(aliasCity, "test-city", cfg, io.Discard); err != nil {
 		t.Fatalf("startBeadsLifecycle: %v", err)
 	}
-	t.Cleanup(func() { cityDoltConfigs.Delete(normalizePathForCompare(realCity)) })
+	t.Cleanup(func() { clearCityDoltConfig(normalizePathForCompare(realCity)) })
 
 	envEntries := mustProviderLifecycleProcessEnv(t, realCity, "exec:"+gcBeadsBdScriptPath(realCity))
 	env := map[string]string{}
@@ -10752,7 +10752,7 @@ port = 3307
 		Workspace: config.Workspace{Name: "test-city"},
 		Dolt:      config.DoltConfig{Host: "mini2.hippo-tilapia.ts.net", Port: 3307},
 	}
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	if err := startBeadsLifecycle(cityPath, "test-city", cfg, io.Discard); err != nil {
 		t.Fatalf("startBeadsLifecycle with external host: %v", err)

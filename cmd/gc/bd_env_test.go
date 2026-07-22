@@ -1128,8 +1128,8 @@ dolt.host: canonical-db.example.com
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	_, err := bdRuntimeEnvWithError(cityPath)
 	requireErrorContains(t, err, "city_canonical config requires dolt.port")
@@ -1155,8 +1155,8 @@ dolt.host: canonical-db.example.com
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	_, err := cityRuntimeProcessEnvWithError(cityPath)
 	requireErrorContains(t, err, "city_canonical config requires dolt.port")
@@ -1183,8 +1183,8 @@ dolt.port: 3307
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	_, err := bdRuntimeEnvWithError(cityPath)
 	requireErrorContains(t, err, "explicit endpoint origin is invalid for city scope")
@@ -1212,8 +1212,8 @@ dolt.user: stale-user
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	_, err := bdRuntimeEnvWithError(cityPath)
 	requireErrorContains(t, err, "managed city config must not track dolt.host, dolt.port, or dolt.user")
@@ -1245,8 +1245,8 @@ dolt.user: canonical-user
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustBdRuntimeEnv(t, cityPath)
 	if got := env["GC_DOLT_HOST"]; got != "canonical-db.example.com" {
@@ -1317,8 +1317,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustSessionBackendEnv(t, cityPath, "", nil)
 	if got := env["GC_DOLT_HOST"]; got != "compat-db.example.com" {
@@ -1348,8 +1348,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustSessionBackendEnv(t, cityPath, rigDir, []config.Rig{{Name: "repo", Path: rigDir}})
 	if got := env["GC_DOLT_HOST"]; got != "compat-db.example.com" {
@@ -1428,8 +1428,8 @@ dolt.user: canonical-user
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustSessionBackendEnv(t, cityPath, "", nil)
 	if got := env["GC_DOLT_HOST"]; got != "canonical-db.example.com" {
@@ -1676,8 +1676,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustBdRuntimeEnv(t, cityPath)
 	if got := env["GC_DOLT_HOST"]; got != "compat-db.example.com" {
@@ -1709,8 +1709,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustCityRuntimeProcessEnv(t, cityPath)
 	got := map[string]string{}
@@ -1754,8 +1754,8 @@ dolt.user: canonical-user
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustCityRuntimeProcessEnv(t, cityPath)
 	got := map[string]string{}
@@ -2550,8 +2550,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityDir, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityDir) })
+	registerCityDoltConfig(cityDir, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityDir) })
 
 	rigDir := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(rigDir, ".beads"), 0o700); err != nil {
@@ -2679,8 +2679,8 @@ dolt.auto-start: false
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustBdRuntimeEnvForRig(t, cityPath, &config.City{Rigs: []config.Rig{{Name: "repo", Path: rigDir}}}, rigDir)
 	if got := env["GC_DOLT_HOST"]; got != "compat-db.example.com" {
@@ -3474,8 +3474,8 @@ dolt.auto-start: false
 	if err := os.WriteFile(filepath.Join(cityPath, ".beads", ".env"), []byte("BEADS_DOLT_PASSWORD=city-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cityDoltConfigs.Store(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityPath) })
+	registerCityDoltConfig(cityPath, config.DoltConfig{Host: "compat-db.example.com", Port: 4406})
+	t.Cleanup(func() { clearCityDoltConfig(cityPath) })
 
 	env := mustSessionBackendEnv(t, cityPath, "", nil)
 	if got := env["GC_DOLT_PASSWORD"]; got != "city-secret" {

@@ -719,8 +719,8 @@ dolt.auto-start: false
 
 func TestSeedDeferredManagedBeadsUsesRegisteredExternalCityTarget(t *testing.T) {
 	cityDir := t.TempDir()
-	cityDoltConfigs.Store(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
-	t.Cleanup(func() { cityDoltConfigs.Delete(cityDir) })
+	registerCityDoltConfig(cityDir, config.DoltConfig{Host: "db.example.com", Port: 3307})
+	t.Cleanup(func() { clearCityDoltConfig(cityDir) })
 
 	seedDeferredManagedBeads(cityDir, cityDir, "gc", "hq")
 
