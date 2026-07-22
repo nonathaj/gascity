@@ -3381,8 +3381,9 @@ esac
 func writeFakeDoltSQLBinary(t *testing.T, binDir, invocationFile, body string) {
 	t.Helper()
 	script := strings.ReplaceAll(body, "$INVOCATION_FILE", invocationFile)
-	path := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("WriteFile(fake dolt): %v", err)
-	}
+	// installFakeToolOnPath also writes a .bat launcher on Windows, so the fake
+	// dolt is visible to PATHEXT; without it LookPath("dolt") misses the
+	// extensionless sh script and the dolt-state commands fall back to a real
+	// MySQL TCP connection (dial tcp 127.0.0.1:PORT: refused).
+	installFakeToolOnPath(t, binDir, "dolt", script)
 }
