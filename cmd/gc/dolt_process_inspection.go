@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/processgroup"
 )
 
 const (
@@ -82,6 +84,14 @@ func findPortHolderPID(port string) int {
 	}
 	if pid, checked := findPortHolderPIDFromProc(port); checked {
 		return pid
+	}
+	// Windows has no /proc and no lsof; the TCP table (GetExtendedTcpTable via
+	// pidutil) is the authoritative port-to-PID source there. checked=false on
+	// Unix, which falls through to lsof as before (doctrine P7).
+	if portNum, err := strconv.ParseUint(port, 10, 16); err == nil {
+		if pid, checked := pidutil.TCPListenerPID(int(portNum)); checked {
+			return pid
+		}
 	}
 	return findPortHolderPIDFromLsof(port)
 }
