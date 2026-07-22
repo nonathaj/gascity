@@ -73,5 +73,8 @@ func pathWithinScope(path, scopeRoot string) bool {
 	if path == scopeRoot {
 		return true
 	}
-	return len(path) > len(scopeRoot) && strings.HasPrefix(path, scopeRoot) && path[len(scopeRoot)] == '/'
+	// normalizePathForCompare yields native separators, so the boundary check
+	// must use filepath.Separator ('\' on Windows), not a hardcoded '/', or a
+	// cwd inside a rig never matches on Windows (doctrine P4).
+	return len(path) > len(scopeRoot) && strings.HasPrefix(path, scopeRoot) && path[len(scopeRoot)] == filepath.Separator
 }
