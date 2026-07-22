@@ -3733,7 +3733,7 @@ func TestCityRuntimeTickRunsOnDeathWithCanonicalRigEnv(t *testing.T) {
 	}
 	prevPoolRunning := map[string]bool{}
 	for sessionName, info := range handlers {
-		info.Command = "printf '%s|%s|%s' \"${GC_DOLT_PORT:-}\" \"${GC_DOLT_USER:-}\" \"${GC_DOLT_PASSWORD:-}\" > " + outFile
+		info.Command = "printf '%s|%s|%s' \"${GC_DOLT_PORT:-}\" \"${GC_DOLT_USER:-}\" \"${GC_DOLT_PASSWORD:-}\" > " + shScriptPath(outFile)
 		handlers[sessionName] = info
 		prevPoolRunning[sessionName] = true
 		break

@@ -2272,8 +2272,7 @@ dolt.port: 3307
 
 	binDir := t.TempDir()
 	capture := filepath.Join(t.TempDir(), "bd-env.txt")
-	script := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(script, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, binDir, "bd", `#!/bin/sh
 set -eu
 {
   printf 'GC_DOLT_HOST=%s\n' "${GC_DOLT_HOST:-}"
@@ -2284,9 +2283,7 @@ set -eu
   printf 'GC_RIG_ROOT=%s\n' "${GC_RIG_ROOT:-}"
 } > "${CAPTURE_PATH}"
 exit 0
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CAPTURE_PATH", capture)
 	t.Setenv("BEADS_DOLT_SERVER_HOST", "stale-city.example.com")

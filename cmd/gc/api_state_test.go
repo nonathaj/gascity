@@ -3930,13 +3930,10 @@ func TestBuildStoresBdProviderUsesPassedConfigForRigEnv(t *testing.T) {
 
 	capturePath := filepath.Join(t.TempDir(), "bd.env")
 	binDir := t.TempDir()
-	fakeBD := filepath.Join(binDir, "bd")
 	script := "#!/bin/sh\n" +
 		"printf 'GC_RIG=%s\\nGC_RIG_ROOT=%s\\nBEADS_DIR=%s\\n' \"${GC_RIG:-}\" \"${GC_RIG_ROOT:-}\" \"${BEADS_DIR:-}\" > \"$BD_ENV_CAPTURE\"\n" +
 		"printf '[]\\n'\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", script)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("BD_ENV_CAPTURE", capturePath)
 	t.Setenv("GC_BEADS", "bd")
