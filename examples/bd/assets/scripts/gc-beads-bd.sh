@@ -703,8 +703,12 @@ save_state() {
     mkdir -p "$(dirname "$STATE_FILE")"
     local tmp
     tmp=$(mktemp "$STATE_FILE.tmp.XXXXXX")
+    # JSON-escape backslashes: on Windows DATA_DIR is a native path (C:\...)
+    # and a raw backslash is an invalid JSON string escape.
+    local json_data_dir
+    json_data_dir=$(printf '%s' "$DATA_DIR" | sed 's/\\/\\\\/g')
     printf '{"running":%s,"pid":%s,"port":%s,"data_dir":"%s","started_at":"%s"}\n' \
-        "$running" "$pid" "$DOLT_PORT" "$DATA_DIR" \
+        "$running" "$pid" "$DOLT_PORT" "$json_data_dir" \
         "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$tmp"
     mv "$tmp" "$STATE_FILE"
 }
@@ -2149,9 +2153,6 @@ op_start() {
     ensure_dolt_identity
 
     # Check for required tools before attempting anything.
-    if ! command -v flock >/dev/null 2>&1; then
-        die "flock is required but not installed. Install: brew install flock (macOS) or apt install util-linux (Linux)"
-    fi
     if ! command -v dolt >/dev/null 2>&1; then
         die "dolt is required but not installed. Install: https://github.com/dolthub/dolt/releases"
     fi
@@ -2160,21 +2161,46 @@ op_start() {
     mkdir -p "$DATA_DIR" "$(dirname "$LOCK_FILE")"
 
     # Acquire exclusive start lock (prevents concurrent starts).
-    # Use fd 9 for the lock and keep retrying on the same inode. Deleting and
+    # With flock: use fd 9 and keep retrying on the same inode. Deleting and
     # recreating the lock file after retry exhaustion is unsafe because flock
     # attaches to the inode, not the pathname, so a second starter could bypass
     # a live holder by acquiring a brand-new file.
-    exec 9>"$LOCK_FILE"
+    # Without flock (Git for Windows ships none): an atomic mkdir lock with
+    # PID-based stale detection — mkdir is atomic on NTFS and POSIX alike, a
+    # crashed holder leaves its PID behind for the next starter to reclaim,
+    # and release happens via EXIT trap instead of fd lifetime (nothing is
+    # inherited by the dolt server child).
     local lock_acquired=false
     local attempt=0
-    while [ "$attempt" -lt 6 ]; do
-        if flock -n 9 2>/dev/null; then
-            lock_acquired=true
-            break
-        fi
-        sleep 0.5 2>/dev/null || sleep 1
-        attempt=$((attempt + 1))
-    done
+    if [ "$FLOCK_AVAILABLE" = "true" ]; then
+        exec 9>"$LOCK_FILE"
+        while [ "$attempt" -lt 6 ]; do
+            if flock -n 9 2>/dev/null; then
+                lock_acquired=true
+                break
+            fi
+            sleep 0.5 2>/dev/null || sleep 1
+            attempt=$((attempt + 1))
+        done
+    else
+        START_LOCK_DIR="$LOCK_FILE.d"
+        local lock_holder
+        while [ "$attempt" -lt 6 ]; do
+            if mkdir "$START_LOCK_DIR" 2>/dev/null; then
+                printf '%s\n' "$$" > "$START_LOCK_DIR/pid"
+                trap 'rm -rf "${START_LOCK_DIR:?}"' EXIT
+                lock_acquired=true
+                break
+            fi
+            lock_holder=$(cat "$START_LOCK_DIR/pid" 2>/dev/null || true)
+            if [ -n "$lock_holder" ] && ! kill -0 "$lock_holder" 2>/dev/null; then
+                rm -rf "$START_LOCK_DIR" 2>/dev/null || true
+            else
+                sleep 0.5 2>/dev/null || sleep 1
+            fi
+            attempt=$((attempt + 1))
+        done
+    fi
     if [ "$lock_acquired" = "false" ]; then
         if wait_for_concurrent_start_ready; then
             exit 0
