@@ -32,7 +32,6 @@ func withTestStdin(t *testing.T, input string, fn func()) {
 
 func writeFakeBdBridgeScript(t *testing.T, binDir, envFile, argsFile string) {
 	t.Helper()
-	path := filepath.Join(binDir, "bd")
 	script := `#!/bin/sh
 set -eu
 printf 'BEADS_DIR=%s
@@ -94,9 +93,7 @@ JSON
     ;;
 esac
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", script)
 }
 
 func TestBdStoreBridgeCreateCmdProjectsCanonicalEnvAndClearsAmbientAuthority(t *testing.T) {
@@ -144,8 +141,10 @@ func TestBdStoreBridgeCreateCmdProjectsCanonicalEnvAndClearsAmbientAuthority(t *
 		t.Fatalf("ReadFile(env): %v", err)
 	}
 	envMap := readExecCaptureEnv(t, envFile)
-	if got := envMap["BEADS_DIR"]; got != filepath.Join(scopeDir, ".beads") {
-		t.Fatalf("BEADS_DIR = %q, want %q", got, filepath.Join(scopeDir, ".beads"))
+	// The bridge appends "/.beads" with a forward slash; on Windows that is a
+	// mixed-separator spelling of the same path — compare Clean forms.
+	if got := filepath.Clean(envMap["BEADS_DIR"]); got != filepath.Join(scopeDir, ".beads") {
+		t.Fatalf("BEADS_DIR = %q, want %q", envMap["BEADS_DIR"], filepath.Join(scopeDir, ".beads"))
 	}
 	if got := envMap["GC_DOLT_HOST"]; got != "db.example.internal" {
 		t.Fatalf("GC_DOLT_HOST = %q, want db.example.internal", got)
