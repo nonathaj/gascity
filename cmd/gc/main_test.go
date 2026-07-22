@@ -20,6 +20,7 @@ import (
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
@@ -350,6 +351,14 @@ func newTestscriptParams(t *testing.T, files ...string) testscript.Params {
 			}
 			env.Setenv("GC_HOME", gcHome)
 			env.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+			// testscript `exec grep|sh|mkdir|ln|...` needs the Git for Windows
+			// coreutils, which a bare Windows PATH does not expose. Prepend the
+			// resolved sh interpreter's directory (usr\bin ships the coreutils).
+			// filepath.Dir of a bare "sh" is not absolute, so this is a no-op
+			// where the shell dir cannot be resolved (and harmless on Unix).
+			if shDir := filepath.Dir(execshim.ShPath()); filepath.IsAbs(shDir) {
+				env.Setenv("PATH", shDir+string(os.PathListSeparator)+env.Getenv("PATH"))
+			}
 			return nil
 		},
 	}
