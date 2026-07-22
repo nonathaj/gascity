@@ -431,7 +431,7 @@ func TestResolveCommandContextSlashlessRigDirResolvesToCity(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityPath, toml)
 	registerCityForRigResolution(t, os.Getenv("GC_HOME"), cityPath, "demo-city")
 
@@ -464,7 +464,7 @@ func TestResolveStopCityPathSlashlessRigDirResolvesToCity(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"stop-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"stop-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityPath, toml)
 	registerCityForRigResolution(t, os.Getenv("GC_HOME"), cityPath, "stop-demo-city")
 
@@ -495,7 +495,7 @@ func TestResolveStartDirSlashlessRigDirResolvesToCity(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"start-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"start-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityPath, toml)
 	registerCityForRigResolution(t, os.Getenv("GC_HOME"), cityPath, "start-demo-city")
 
@@ -527,7 +527,7 @@ func TestRestartTargetSlashlessRigDirResolvesToCity(t *testing.T) {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"restart-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"restart-demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityPath, toml)
 	registerCityForRigResolution(t, os.Getenv("GC_HOME"), cityPath, "restart-demo-city")
 
@@ -646,7 +646,7 @@ func setupSlashlessRigDirCollision(t *testing.T) string {
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityA, toml)
 	registerCityForRigResolution(t, gcHome, cityA, "demo-city")
 
@@ -722,7 +722,7 @@ func TestResolveCommandContextSlashlessRigDirSameRegisteredCityResolves(t *testi
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	toml := "[workspace]\nname = \"frontend\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"frontend\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, city, toml)
 	registerCityForRigResolution(t, gcHome, city, "frontend")
 
@@ -751,7 +751,7 @@ func TestResolveCommandContextSlashlessUnknownFromInsideRigResolvesToOwningCity(
 	gcHome := os.Getenv("GC_HOME")
 	cityPath := setupCity(t, "demo-city")
 	rigDir := t.TempDir()
-	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = \"" + rigDir + "\"\n"
+	toml := "[workspace]\nname = \"demo-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"frontend\"\npath = " + tomlQuote(rigDir) + "\n"
 	writeRigAnywhereCityToml(t, cityPath, toml)
 	registerCityForRigResolution(t, gcHome, cityPath, "demo-city")
 

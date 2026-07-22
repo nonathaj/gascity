@@ -66,6 +66,18 @@ func sanitizedBaseEnv(extra ...string) []string {
 	return execshim.EnvWithShellDir(append(filtered, extra...))
 }
 
+// absFixture turns a rootless POSIX fixture path ("/city") into a genuinely
+// absolute path on every platform. On Windows "/city" is NOT absolute (no
+// volume), so production path resolution treats it as relative and joins it
+// under other roots, silently changing what the test exercises (doctrine T2;
+// same helper as internal/supervisor).
+func absFixture(p string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.FromSlash("C:" + p)
+	}
+	return p
+}
+
 // installFakeToolOnPath writes a fake sh tool (bd, dolt, gc, ...) into binDir
 // so BOTH invocation routes resolve it: the extensionless file serves sh PATH
 // lookup (provider scripts call `bd`/`dolt` from sh), and on Windows a .bat

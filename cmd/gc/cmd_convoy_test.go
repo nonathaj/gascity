@@ -640,13 +640,13 @@ func TestConvoyStoreCandidatesPreferRigPrefixOnBd(t *testing.T) {
 	cfg := &config.City{
 		Rigs: []config.Rig{{
 			Name:   "hello-world",
-			Path:   "/rigs/hello-world",
+			Path:   absFixture("/rigs/hello-world"),
 			Prefix: "HW",
 		}},
 	}
 
-	got := convoyStoreCandidates(cfg, "/city", "HW-42")
-	want := []string{"/rigs/hello-world", "/city"}
+	got := convoyStoreCandidates(cfg, absFixture("/city"), "HW-42")
+	want := []string{absFixture("/rigs/hello-world"), absFixture("/city")}
 	if len(got) != len(want) {
 		t.Fatalf("convoyStoreCandidates len = %d, want %d (%v)", len(got), len(want), got)
 	}
@@ -755,15 +755,15 @@ func TestResolveConvoyStoreFindsUnprefixedRigConvoy(t *testing.T) {
 	cfg := &config.City{
 		Rigs: []config.Rig{{
 			Name:   "hello-world",
-			Path:   "/rigs/hello-world",
+			Path:   absFixture("/rigs/hello-world"),
 			Prefix: "HW",
 		}},
 	}
 	openStore := func(dir string) (beads.Store, error) {
 		switch dir {
-		case "/city":
+		case absFixture("/city"):
 			return cityStore, nil
-		case "/rigs/hello-world":
+		case absFixture("/rigs/hello-world"):
 			return rigStore, nil
 		default:
 			t.Fatalf("unexpected store dir %q", dir)
@@ -771,7 +771,7 @@ func TestResolveConvoyStoreFindsUnprefixedRigConvoy(t *testing.T) {
 		}
 	}
 
-	store, err := resolveConvoyStore(convoy.ID, cfg, "/city", openStore)
+	store, err := resolveConvoyStore(convoy.ID, cfg, absFixture("/city"), openStore)
 	if err != nil {
 		t.Fatalf("resolveConvoyStore: %v", err)
 	}
