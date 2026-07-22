@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/overlay"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // stageWorkdirHashedFixture makes a workdir-hash-keyed transcript fixture
@@ -45,7 +46,12 @@ func stageWorkdirHashedFixture(t *testing.T, profile Profile, fixtureRoot string
 		return fixtureRoot // ambiguous/empty layout: let discovery report it
 	}
 
-	staged := t.TempDir()
+	// CanonicalTempDir (not raw t.TempDir): the Kimi reader EvalSymlinks the
+	// discovered transcript path, so on a runner with an 8.3 short temp root
+	// (RUNNER~1) the staged root must be the resolved long form too, or the
+	// TranscriptPathHint (filepath.Rel of root vs resolved path) picks up a
+	// ..\.. traversal and diverges between the fresh/continued fixtures.
+	staged := testutil.CanonicalTempDir(t)
 	src := filepath.Join(sessionsDir, committed[0].Name())
 	dst := filepath.Join(staged, "sessions", want)
 	if err := os.MkdirAll(dst, 0o750); err != nil {
