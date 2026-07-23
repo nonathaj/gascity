@@ -134,11 +134,9 @@ func TestProbeDetachedWork_Timeout(t *testing.T) {
 func installFakeTmux(t *testing.T, body string) {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "tmux")
-	script := "#!/bin/sh\n" + body + "\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake tmux: %v", err)
-	}
+	// installFakeToolOnPath adds the .bat launcher so PATHEXT finds the fake on
+	// Windows (T3) — an extensionless script would let the real psmux tmux run.
+	installFakeToolOnPath(t, dir, "tmux", "#!/bin/sh\n"+body+"\n")
 	pathEnv := dir
 	if existing := os.Getenv("PATH"); strings.TrimSpace(existing) != "" {
 		pathEnv += string(os.PathListSeparator) + existing
