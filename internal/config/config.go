@@ -16,6 +16,7 @@ import (
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/orders"
+	"github.com/gastownhall/gascity/internal/pathutil"
 	"github.com/gastownhall/gascity/internal/pricing"
 	"github.com/gastownhall/gascity/internal/remotesource"
 	"github.com/gastownhall/gascity/internal/rollout/gate"
@@ -953,7 +954,9 @@ func legacyImportSourceFor(include string, packs map[string]PackSource) string {
 		}
 		return source
 	}
-	if looksLikeLegacyLocalImportPath(include) && !strings.HasPrefix(include, "./") && !strings.HasPrefix(include, "../") && !filepath.IsAbs(include) {
+	// IsPortableAbs, not filepath.IsAbs: config-authored POSIX-absolute sources
+	// ("/x") must not be rewritten to "./"-relative on Windows (P4).
+	if looksLikeLegacyLocalImportPath(include) && !strings.HasPrefix(include, "./") && !strings.HasPrefix(include, "../") && !pathutil.IsPortableAbs(include) {
 		return "./" + include
 	}
 	return include

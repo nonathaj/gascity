@@ -1589,7 +1589,9 @@ func writeInitAgentPrompts(fs fsys.FS, cityPath string, cfg *config.City, stderr
 // initFromSkip returns true for files and directories that should be excluded
 // when copying a city template directory via --from. Skips .gc/ runtime state.
 func initFromSkip(relPath string, isDir bool) bool {
-	top, _, _ := strings.Cut(relPath, string(filepath.Separator))
+	// Rel paths arrive native from filepath.Walk callers and slash-form from
+	// io/fs walkers; normalize so the top-segment cut works for both (P4).
+	top, _, _ := strings.Cut(filepath.ToSlash(relPath), "/")
 	if top == ".gc" {
 		return true
 	}
@@ -1611,7 +1613,7 @@ func initFromSkipForSourceFS(srcFS fsys.FS, srcDir string) overlay.SkipFunc {
 	skipTopLevelScripts := shouldSkipLegacyTopLevelScripts(srcFS, srcDir)
 	return func(relPath string, isDir bool) bool {
 		if skipTopLevelScripts {
-			top, _, _ := strings.Cut(relPath, string(filepath.Separator))
+			top, _, _ := strings.Cut(filepath.ToSlash(relPath), "/")
 			if top == "scripts" {
 				return true
 			}
