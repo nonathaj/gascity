@@ -4016,6 +4016,10 @@ func TestFindQueuedNudgeBead_ReturnsVisibleOpenBeadBeforeLookupLimit(t *testing.
 	store := beads.NudgesStore{Store: beads.NewMemStore()}
 	var newest beads.Bead
 	for i := 0; i < nudgequeue.NudgeLookupLimit+1; i++ {
+		// The (created_at, lexicographic-id) total order matches the SQL
+		// backends; "newest wins" here needs strictly increasing timestamps.
+		// Windows time.Now() ticks at ~0.5ms (T6), so step past a tick.
+		time.Sleep(2 * time.Millisecond)
 		created, err := store.Create(beads.Bead{
 			Type:   nudgeBeadType,
 			Labels: []string{nudgeBeadLabel, "nudge:test"},
@@ -4087,6 +4091,8 @@ func TestFindAnyQueuedNudgeBead_ReturnsVisibleTerminalBeforeLookupLimit(t *testi
 	store := beads.NudgesStore{Store: beads.NewMemStore()}
 	var newestTerminal beads.Bead
 	for i := 0; i < nudgequeue.NudgeLookupLimit+1; i++ {
+		// Strictly increasing timestamps; Windows time.Now() ticks ~0.5ms (T6).
+		time.Sleep(2 * time.Millisecond)
 		created, err := store.Create(beads.Bead{
 			Type:   nudgeBeadType,
 			Labels: []string{nudgeBeadLabel, "nudge:test"},
