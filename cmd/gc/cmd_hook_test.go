@@ -2000,17 +2000,18 @@ dir = "myrig"
 	// The fake bd answers with one ready row ONLY when queried against the
 	// CITY store; every rig-scoped query sees []. This simulates a root-only
 	// bead assigned to the rig-scoped agent.
+	// Normalize BEADS_DIR to slash form before the case match: on Windows the
+	// env value is a native path whose backslashes sh's case patterns eat (P8).
+	// installFakeToolOnPath adds the .bat launcher so PATHEXT finds the fake (T3).
 	cityBeads := filepath.Join(cityDir, ".beads")
-	fakeBD := filepath.Join(fakeBin, "bd")
 	script := fmt.Sprintf(`#!/bin/sh
-case "$BEADS_DIR" in
+dir=$(printf '%%s' "$BEADS_DIR" | tr '\\\\' '/')
+case "$dir" in
   %s*) printf '[{"id":"td-city1","status":"open","assignee":"myrig/worker","title":"root-only city work"}]' ;;
   *) printf '[]' ;;
 esac
-`, cityBeads)
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`, filepath.ToSlash(cityBeads))
+	installFakeToolOnPath(t, fakeBin, "bd", script)
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
