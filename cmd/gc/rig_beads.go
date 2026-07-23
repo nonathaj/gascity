@@ -37,7 +37,10 @@ func generateRoutesFor(from rigRoute, all []rigRoute) ([]routeEntry, error) {
 			return nil, fmt.Errorf("computing relative path from %q to %q: %w",
 				from.AbsDir, to.AbsDir, err)
 		}
-		routes = append(routes, routeEntry{Prefix: to.Prefix, Path: rel})
+		// Route paths are persisted routing identifiers in routes.jsonl and must be
+		// slash-form on every platform (P4): filepath.Rel yields backslashes on
+		// Windows, which would diverge from the same route written on Unix.
+		routes = append(routes, routeEntry{Prefix: to.Prefix, Path: filepath.ToSlash(rel)})
 	}
 	return routes, nil
 }
