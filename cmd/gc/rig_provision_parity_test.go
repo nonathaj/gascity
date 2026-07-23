@@ -242,5 +242,14 @@ func assertCityFileParity(t *testing.T, cityA, cityB, rel string) {
 // packs.lock fetch timestamp with <TS>, leaving only provisioning-logic content.
 func normalizeArtifact(content, cityPath string) string {
 	content = strings.ReplaceAll(content, cityPath, "<CITY>")
+	// TOML basic strings escape backslashes, so on Windows the city root also
+	// appears in the doubled form (C:\\Users\\...); normalize that spelling too.
+	if escaped := strings.ReplaceAll(cityPath, `\`, `\\`); escaped != cityPath {
+		content = strings.ReplaceAll(content, escaped, "<CITY>")
+	}
+	// Slash-form (P4 output) spelling of the same root.
+	if slash := filepath.ToSlash(cityPath); slash != cityPath {
+		content = strings.ReplaceAll(content, slash, "<CITY>")
+	}
 	return packsLockFetchedTS.ReplaceAllString(content, `fetched = "<TS>"`)
 }
