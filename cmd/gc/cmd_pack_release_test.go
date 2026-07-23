@@ -31,7 +31,7 @@ func TestPackReleaseHashCommandPrintsContentHash(t *testing.T) {
 }
 
 func TestPackReleaseHashRemoteRootWithExplicitPath(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	repo, commit := initPackReleaseRepo(t)
 	source := "file://" + repo
 

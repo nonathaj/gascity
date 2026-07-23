@@ -524,7 +524,7 @@ func assertPublicGastownSyntheticCache(t *testing.T, gcHome string) {
 }
 
 func TestEffectiveCityNameHydratesLockedImportCacheBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -540,7 +540,7 @@ func TestEffectiveCityNameHydratesLockedImportCacheBeforeLoad(t *testing.T) {
 }
 
 func TestLoadSupervisorCityConfigHydratesLockedImportCacheBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -556,7 +556,7 @@ func TestLoadSupervisorCityConfigHydratesLockedImportCacheBeforeLoad(t *testing.
 }
 
 func TestLoadStartCityConfigInstallsLockedBundledRemoteImportBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -572,7 +572,7 @@ func TestLoadStartCityConfigInstallsLockedBundledRemoteImportBeforeLoad(t *testi
 }
 
 func TestLoadCityConfigInstallsLockedBundledRemoteImportBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -588,7 +588,7 @@ func TestLoadCityConfigInstallsLockedBundledRemoteImportBeforeLoad(t *testing.T)
 }
 
 func TestLoadStartCityConfigBuiltinGastownMayorHasNoStartupNudge(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -624,7 +624,7 @@ func TestLoadStartCityConfigBuiltinGastownMayorHasNoStartupNudge(t *testing.T) {
 }
 
 func TestLoadSlingCityConfigHydratesLockedImportCacheBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -640,7 +640,7 @@ func TestLoadSlingCityConfigHydratesLockedImportCacheBeforeLoad(t *testing.T) {
 }
 
 func TestLoadConfigCommandCityConfigHydratesLockedImportCacheBeforeLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -656,7 +656,7 @@ func TestLoadConfigCommandCityConfigHydratesLockedImportCacheBeforeLoad(t *testi
 }
 
 func TestRegisterCityWithSupervisorInstallsLockedBundledRemoteImportBeforeNameLoad(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)
@@ -680,7 +680,7 @@ func TestRegisterCityWithSupervisorInstallsLockedBundledRemoteImportBeforeNameLo
 }
 
 func TestRegisterCityWithSupervisorNameOverrideHydratesLockedImportCache(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
 	t.Setenv("GC_HOME", gcHome)
 	cityPath := writeCityWithLockedPublicGastownImport(t)

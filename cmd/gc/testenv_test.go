@@ -353,7 +353,7 @@ func configureTestDoltIdentityEnv(t *testing.T) {
 	if err := writeTestDoltIdentity(homeDir); err != nil {
 		t.Fatalf("write test dolt identity: %v", err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(homeDir, ".gitconfig"))
 	t.Setenv("DOLT_ROOT_PATH", homeDir)
 }

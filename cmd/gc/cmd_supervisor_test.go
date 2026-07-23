@@ -238,7 +238,7 @@ func TestSupervisorAliveIgnoresSharedXDGSocketForIsolatedGCHome(t *testing.T) {
 	homeDir := shortTempDir(t, "home-")
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 
@@ -412,7 +412,7 @@ func TestRenderSupervisorSystemdTemplateUsesPreserveEnvFromData(t *testing.T) {
 
 func TestBuildSupervisorServiceDataTreatsPreserveSignalEnvAsFixed(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", supervisorPreserveSessionsOnSignalEnv)
@@ -450,7 +450,7 @@ func TestBuildSupervisorServiceDataTreatsPreserveSignalEnvAsFixed(t *testing.T) 
 // units. The variable is not captured from the shell automatically.
 func TestBuildSupervisorServiceDataDoesNotPersistLogTeeByDefault(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", "")
@@ -471,7 +471,7 @@ func TestBuildSupervisorServiceDataDoesNotPersistLogTeeByDefault(t *testing.T) {
 // for operators who hand-edit the generated unit's output redirection.
 func TestBuildSupervisorServiceDataPersistsLogTeeViaSupervisorEnvOptIn(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", supervisorLogTeeEnv)
@@ -504,7 +504,7 @@ func TestBuildSupervisorServiceDataPersistsLogTeeViaSupervisorEnvOptIn(t *testin
 
 func TestBuildSupervisorServiceDataIncludesProviderEnv(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -554,7 +554,7 @@ func TestBuildSupervisorServiceDataIncludesProviderEnv(t *testing.T) {
 
 func TestBuildSupervisorServiceDataOmitsProviderEnvWhenOptedOut(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -630,7 +630,7 @@ func writeSupervisorSecretsEnvFile(t *testing.T, content string) {
 // present only in the file is honored.
 func TestBuildSupervisorServiceDataMergesSecretsEnvFile(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", "CUSTOM_PROVIDER_TOKEN")
@@ -669,7 +669,7 @@ UNRELATED_SECRET=do-not-persist
 // over the same key in ${GC_HOME}/secrets.env.
 func TestBuildSupervisorServiceDataShellEnvWinsOverSecretsFile(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "sk-from-shell")
@@ -692,7 +692,7 @@ func TestBuildSupervisorServiceDataShellEnvWinsOverSecretsFile(t *testing.T) {
 // from the secrets file.
 func TestBuildSupervisorServiceDataSecretsFileRespectsOmitProviderCreds(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
@@ -715,7 +715,7 @@ func TestBuildSupervisorServiceDataSecretsFileRespectsOmitProviderCreds(t *testi
 // absence of ${GC_HOME}/secrets.env is the normal case and does not fail.
 func TestBuildSupervisorServiceDataMissingSecretsFileIsNotAnError(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 
@@ -731,7 +731,7 @@ func TestBuildSupervisorServiceDataMissingSecretsFileIsNotAnError(t *testing.T) 
 // through.
 func TestBuildSupervisorServiceDataMalformedSecretsFileDegradesGracefully(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
@@ -753,7 +753,7 @@ func TestBuildSupervisorServiceDataMalformedSecretsFileDegradesGracefully(t *tes
 // coverage; this test covers the supervisor integration boundary.
 func TestBuildSupervisorServiceDataForwardsRepresentativeProviderPrefixes(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -795,7 +795,7 @@ func TestBuildSupervisorServiceDataForwardsRepresentativeProviderPrefixes(t *tes
 
 func TestBuildSupervisorServiceDataForwardsCuratedProviderCredentialEnvKeys(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -849,7 +849,7 @@ func TestBuildSupervisorServiceDataForwardsCuratedProviderCredentialEnvKeys(t *t
 
 func TestBuildSupervisorServiceDataReadsAllowlistedDoltCredentialKeysFromLaunchctl(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -884,7 +884,7 @@ func TestBuildSupervisorServiceDataReadsAllowlistedDoltCredentialKeysFromLaunchc
 
 func TestBuildSupervisorServiceDataSkipsDoltEndpointEnvUnlessExplicitlyOptedIn(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -933,7 +933,7 @@ func TestBuildSupervisorServiceDataSkipsDoltEndpointEnvUnlessExplicitlyOptedIn(t
 
 func TestBuildSupervisorServiceDataPrefersOSEnvOverLaunchctl(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_DOLT_LOGLEVEL", "trace")
@@ -960,7 +960,7 @@ func TestBuildSupervisorServiceDataPrefersOSEnvOverLaunchctl(t *testing.T) {
 
 func TestBuildSupervisorServiceDataReadsExplicitEnvOptInFromLaunchctl(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", "GC_DOLT_DATA_DIR")
@@ -989,7 +989,7 @@ func TestBuildSupervisorServiceDataReadsExplicitEnvOptInFromLaunchctl(t *testing
 
 func TestBuildSupervisorServiceDataDeduplicatesLaunchctlFallbackProbes(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("GC_SUPERVISOR_ENV", "GC_DOLT_LOGLEVEL CUSTOM_ONLY")
@@ -1066,7 +1066,7 @@ func TestBuildSupervisorServiceDataExpandsUserManagedPath(t *testing.T) {
 	if err := os.MkdirAll(nvmBin, 0o755); err != nil {
 		t.Fatalf("mkdir nvm bin: %v", err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -1107,7 +1107,7 @@ func TestEmitSupervisorLoadCityConfigWarningsOncePerCity(t *testing.T) {
 func TestBuildSupervisorServiceDataOmitsXDGRuntimeDirForIsolatedGCHome(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
 
@@ -1133,7 +1133,7 @@ func TestBuildSupervisorServiceDataCanonicalizesIsolatedGCHome(t *testing.T) {
 	if err := os.Symlink(canonicalHome, symlinkHome); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", symlinkHome)
 
 	data, err := buildSupervisorServiceData()
@@ -1163,7 +1163,7 @@ func TestRenderSupervisorTemplateUsesCanonicalRelativeGCHome(t *testing.T) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", "isolated-home")
 
 	data, err := buildSupervisorServiceData()
@@ -1190,7 +1190,7 @@ func TestRenderSupervisorTemplateUsesCanonicalRelativeGCHome(t *testing.T) {
 
 func TestSupervisorLaunchdPlistPathUsesIsolatedLabelForIsolatedGCHome(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "isolated-home"))
 
 	label := supervisorLaunchdLabel()
@@ -1208,7 +1208,7 @@ func TestSupervisorLaunchdPlistPathUsesIsolatedLabelForIsolatedGCHome(t *testing
 
 func TestSupervisorServiceSuffixUsesFullGCHomePath(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	first := filepath.Join(t.TempDir(), "isolated-home")
 	second := filepath.Join(t.TempDir(), "isolated-home")
 
@@ -1241,7 +1241,7 @@ func TestSupervisorServiceSuffixNormalizesEquivalentGCHomePaths(t *testing.T) {
 	if err := os.Symlink(canonicalHome, symlinkHome); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 
 	t.Setenv("GC_HOME", canonicalHome)
 	canonicalName := supervisorSystemdServiceName()
@@ -1277,7 +1277,7 @@ func TestSupervisorServiceSuffixNormalizesRelativeGCHomePaths(t *testing.T) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 
 	t.Setenv("GC_HOME", canonicalHome)
 	canonicalName := supervisorSystemdServiceName()
@@ -1297,7 +1297,7 @@ func TestSupervisorServiceSuffixNormalizesRelativeGCHomePaths(t *testing.T) {
 
 func TestSupervisorServiceSuffixDoesNotFallBackWhenBasenameSanitizesEmpty(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "---"))
 
 	if got := supervisorSystemdServiceName(); got == defaultSupervisorSystemdUnit {
@@ -1357,7 +1357,7 @@ func TestInstallSupervisorSystemdWarmRefreshGracefullySignalsMainPIDWhenUnitChan
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -1436,7 +1436,7 @@ func TestInstallSupervisorSystemdWarmRefreshRefusesActivePrePreserveSupervisor(t
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -1502,7 +1502,7 @@ func TestInstallSupervisorSystemdWarmRefreshFallsBackToKillWhenGracefulSignalDoe
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -1561,7 +1561,7 @@ func TestInstallSupervisorSystemdWarmRefreshFallsBackToKillWhenGracefulSignalDoe
 func TestCleanupSupervisorWorkspaceServicesForSupervisorStartSkipsMissingProc(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	cityPath := filepath.Join(t.TempDir(), "city")
@@ -1589,7 +1589,7 @@ func TestCleanupSupervisorWorkspaceServicesForSupervisorStartSkipsMissingProc(t 
 func TestCleanupSupervisorWorkspaceServicesForSupervisorStartWarnsWhenProcCleanupUnsupported(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	cityPath := filepath.Join(t.TempDir(), "city")
@@ -1766,7 +1766,7 @@ func TestInstallSupervisorSystemdWarmRefreshPreservesNewUnitWhenStartFails(t *te
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -1861,7 +1861,7 @@ func TestInstallSupervisorSystemdWarmRefreshPreservesNewUnitWhenCleanupFails(t *
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	data := &supervisorServiceData{
@@ -1959,7 +1959,7 @@ func TestInstallSupervisorSystemdWritesPrivateUnitFile(t *testing.T) {
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -2003,7 +2003,7 @@ func TestInstallSupervisorSystemdStartsInactiveService(t *testing.T) {
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{
@@ -2047,7 +2047,7 @@ func TestInstallSupervisorSystemdUsesIsolatedUnitNameForIsolatedGCHome(t *testin
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	isolatedHome := filepath.Join(t.TempDir(), "isolated-home")
 	t.Setenv("GC_HOME", isolatedHome)
 
@@ -2114,7 +2114,7 @@ func TestUnloadSupervisorServiceSkipsDefaultUnitForIsolatedGCHome(t *testing.T) 
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "isolated-home"))
 	logFile := installFakeSystemctl(t)
 
@@ -2138,7 +2138,7 @@ func TestUnloadSupervisorServiceUsesIsolatedUnitWhenPresent(t *testing.T) {
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(t.TempDir(), "isolated-home"))
 	logFile := installFakeSystemctl(t)
 
@@ -2167,7 +2167,7 @@ func TestUnloadSupervisorServiceStopsMatchingLegacyDefaultUnitForIsolatedGCHome(
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	logFile := installFakeSystemctl(t)
 
@@ -2190,7 +2190,7 @@ func TestUnloadSupervisorServiceStopsMatchingLegacyDefaultUnitForIsolatedGCHome(
 func TestLegacySupervisorTargetsCurrentHomeLaunchdDecodesEscapedGC_HOME(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated&home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorLaunchdPlistPath()
@@ -2222,7 +2222,7 @@ func TestLegacySupervisorTargetsCurrentHomeRequiresExactSystemdGC_HOMEMatch(t *t
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorSystemdServicePath()
@@ -2263,7 +2263,7 @@ func TestLegacySupervisorTargetsCurrentHomeMatchesEquivalentSystemdHomePaths(t *
 	if err := os.Symlink(canonicalHome, symlinkHome); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", symlinkHome)
 
 	legacyPath := legacySupervisorSystemdServicePath()
@@ -2295,7 +2295,7 @@ func TestInstallSupervisorSystemdRemovesMatchingLegacyDefaultUnitForIsolatedGCHo
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := filepath.Join(homeDir, ".local", "share", "systemd", "user", defaultSupervisorSystemdUnit)
@@ -2356,7 +2356,7 @@ func TestInstallSupervisorSystemdIgnoresLegacyStopDisableFailures(t *testing.T) 
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorSystemdServicePath()
@@ -2410,7 +2410,7 @@ func TestInstallSupervisorSystemdKeepsLegacyUnitWhenNewServiceFails(t *testing.T
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorSystemdServicePath()
@@ -2486,7 +2486,7 @@ func TestInstallSupervisorSystemdKeepsLegacyUnitWhenEarlySetupFails(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			homeDir := t.TempDir()
 			gcHome := filepath.Join(t.TempDir(), "isolated-home")
-			t.Setenv("HOME", homeDir)
+			setTestHome(t, homeDir)
 			t.Setenv("GC_HOME", gcHome)
 
 			legacyPath := legacySupervisorSystemdServicePath()
@@ -2557,7 +2557,7 @@ func TestInstallSupervisorSystemdRestoresPreviousCurrentUnitWhenUpdateFails(t *t
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := supervisorSystemdServicePath()
@@ -2629,7 +2629,7 @@ func TestUninstallSupervisorSystemdRemovesMatchingLegacyDefaultUnitForIsolatedGC
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := filepath.Join(homeDir, ".local", "share", "systemd", "user", supervisorSystemdServiceName())
@@ -2682,7 +2682,7 @@ func TestUninstallSupervisorSystemdIgnoresLegacyStopDisableFailures(t *testing.T
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := filepath.Join(homeDir, ".local", "share", "systemd", "user", supervisorSystemdServiceName())
@@ -2727,7 +2727,7 @@ func TestUninstallSupervisorSystemdRefusesActiveServiceWithoutControlSocket(t *t
 	}
 	homeDir := t.TempDir()
 	gcHome := shortTempDir(t, "gc-home-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
@@ -2777,7 +2777,7 @@ func TestUninstallSupervisorSystemdUsesControlSocketWhenServiceActive(t *testing
 	}
 	homeDir := t.TempDir()
 	gcHome := shortTempDir(t, "gc-home-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
@@ -2858,7 +2858,7 @@ func TestUninstallSupervisorSystemdUsesControlSocketWhenServiceActive(t *testing
 func TestInstallSupervisorLaunchdRemovesMatchingLegacyDefaultPlistForIsolatedGCHome(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := filepath.Join(homeDir, "Library", "LaunchAgents", defaultSupervisorLaunchdLabel+".plist")
@@ -2921,7 +2921,7 @@ func TestInstallSupervisorLaunchdRemovesMatchingLegacyDefaultPlistForIsolatedGCH
 func TestInstallSupervisorLaunchdWritesPrivatePlist(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	data := &supervisorServiceData{
@@ -2960,7 +2960,7 @@ func TestInstallSupervisorLaunchdWritesPrivatePlist(t *testing.T) {
 func TestInstallSupervisorLaunchdEnablesAndKickstartsLoadedService(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	label := supervisorLaunchdLabel()
@@ -3008,7 +3008,7 @@ func TestInstallSupervisorLaunchdEnablesAndKickstartsLoadedService(t *testing.T)
 func TestInstallSupervisorLaunchdIgnoresLegacyUnloadFailures(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorLaunchdPlistPath()
@@ -3061,7 +3061,7 @@ func TestInstallSupervisorLaunchdIgnoresLegacyUnloadFailures(t *testing.T) {
 func TestInstallSupervisorLaunchdKeepsLegacyPlistWhenNewServiceFails(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorLaunchdPlistPath()
@@ -3132,7 +3132,7 @@ func TestInstallSupervisorLaunchdKeepsLegacyPlistWhenNewServiceFails(t *testing.
 func TestInstallSupervisorLaunchdRestoresLegacyPlistWhenEnableFails(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorLaunchdPlistPath()
@@ -3214,7 +3214,7 @@ func TestInstallSupervisorLaunchdRestoresLegacyPlistWhenEnableFails(t *testing.T
 func TestInstallSupervisorLaunchdRestoresLegacyPlistWhenKickstartFails(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	legacyPath := legacySupervisorLaunchdPlistPath()
@@ -3286,7 +3286,7 @@ func TestInstallSupervisorLaunchdRestoresLegacyPlistWhenKickstartFails(t *testin
 func TestInstallSupervisorLaunchdRestoresPreviousCurrentPlistWhenUpdateFails(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := filepath.Join(homeDir, "Library", "LaunchAgents", supervisorLaunchdLabel()+".plist")
@@ -3363,7 +3363,7 @@ func TestInstallSupervisorLaunchdRestoresPreviousCurrentPlistWhenUpdateFails(t *
 func TestInstallSupervisorLaunchdSkipsReloadWhenUnchangedAndSupervisorAlive(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	data := &supervisorServiceData{
@@ -3414,7 +3414,7 @@ func TestInstallSupervisorLaunchdSkipsReloadWhenUnchangedAndSupervisorAlive(t *t
 func TestInstallSupervisorLaunchdReloadsWhenUnchangedButSupervisorStopped(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	data := &supervisorServiceData{
@@ -3468,7 +3468,7 @@ func TestInstallSupervisorLaunchdReloadsWhenUnchangedButSupervisorStopped(t *tes
 func TestUninstallSupervisorLaunchdRemovesMatchingLegacyDefaultPlistForIsolatedGCHome(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := filepath.Join(homeDir, "Library", "LaunchAgents", supervisorLaunchdLabel()+".plist")
@@ -3531,7 +3531,7 @@ func TestUninstallSupervisorLaunchdRemovesMatchingLegacyDefaultPlistForIsolatedG
 func TestUninstallSupervisorLaunchdUsesControlSocketWhenSupervisorRunning(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := shortTempDir(t, "gc-home-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
@@ -3617,7 +3617,7 @@ func TestUninstallSupervisorLaunchdUsesControlSocketWhenSupervisorRunning(t *tes
 func TestUninstallSupervisorLaunchdRefusesActiveServiceWithoutControlSocket(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := shortTempDir(t, "gc-home-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
@@ -3664,7 +3664,7 @@ func TestUninstallSupervisorLaunchdRefusesActiveServiceWithoutControlSocket(t *t
 func TestUninstallSupervisorLaunchdIgnoresLegacyUnloadFailures(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	currentPath := filepath.Join(homeDir, "Library", "LaunchAgents", supervisorLaunchdLabel()+".plist")
@@ -3722,7 +3722,7 @@ func TestDoSupervisorStartRejectsHomeOverride(t *testing.T) {
 	if err != nil || strings.TrimSpace(lookup.HomeDir) == "" {
 		t.Skip("user lookup home unavailable")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	t.Setenv("GC_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 
@@ -3746,7 +3746,7 @@ func TestDoSupervisorInstallRejectsHomeOverride(t *testing.T) {
 	if err != nil || strings.TrimSpace(lookup.HomeDir) == "" {
 		t.Skip("user lookup home unavailable")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	t.Setenv("GC_HOME", t.TempDir())
 
 	var stdout, stderr bytes.Buffer
@@ -3769,7 +3769,7 @@ func TestEnsureSupervisorRunningRejectsHomeOverride(t *testing.T) {
 	if err != nil || strings.TrimSpace(lookup.HomeDir) == "" {
 		t.Skip("user lookup home unavailable")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	if code := ensureSupervisorRunning(&stdout, &stderr); code != 1 {
@@ -3833,7 +3833,7 @@ func TestWaitForSupervisorReadySucceedsWhenAlreadyReadyEvenWithZeroTimeout(t *te
 
 func TestDoSupervisorStartAlreadyRunning(t *testing.T) {
 	if lu, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil && strings.TrimSpace(lu.HomeDir) != "" {
-		t.Setenv("HOME", lu.HomeDir) // prevent HOME-override guard from firing before the already-running check
+		setTestHome(t, lu.HomeDir) // prevent HOME-override guard from firing before the already-running check
 	}
 	t.Setenv("GC_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
@@ -3856,7 +3856,7 @@ func TestDoSupervisorStartAlreadyRunning(t *testing.T) {
 
 func TestDoSupervisorStartDetectsSupervisorOnFallbackSocket(t *testing.T) {
 	if lu, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil && strings.TrimSpace(lu.HomeDir) != "" {
-		t.Setenv("HOME", lu.HomeDir) // prevent HOME-override guard from firing before the already-running check
+		setTestHome(t, lu.HomeDir) // prevent HOME-override guard from firing before the already-running check
 	}
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
@@ -3908,7 +3908,7 @@ func TestRunSupervisorRejectsSupervisorOnFallbackSocket(t *testing.T) {
 func TestRunSupervisorSIGTERMPreservesSessionsEndToEnd(t *testing.T) {
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
-	t.Setenv("HOME", filepath.Dir(gcHome))
+	setTestHome(t, filepath.Dir(gcHome))
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 	t.Setenv("GC_BEADS", "file")
@@ -5156,7 +5156,7 @@ func TestStopSupervisorWithWaitStopsSystemdServiceAfterAckBeforeDone(t *testing.
 	}
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
-	t.Setenv("HOME", filepath.Dir(gcHome))
+	setTestHome(t, filepath.Dir(gcHome))
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 
@@ -5621,7 +5621,7 @@ func TestBuildSupervisorServiceDataPrefersUserLocalBinExecPath(t *testing.T) {
 		t.Skip("symlink behavior not exercised on windows here")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/gc-run")
@@ -5662,7 +5662,7 @@ func TestInstallSupervisorSystemdRefreshesStaleTmpExecStart(t *testing.T) {
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	runningExe, err := os.Executable()
@@ -5814,7 +5814,7 @@ func TestInstallSupervisorSystemdBailsCleanlyWhenUserManagerMissing(t *testing.T
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	stubSupervisorSystemctlUserAvailable(t, false)
@@ -5869,7 +5869,7 @@ func TestInstallSupervisorSystemdCreatesLogDirBeforeStartingService(t *testing.T
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "fresh-gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	stubSupervisorSystemctlUserAvailable(t, true)
@@ -5914,7 +5914,7 @@ func TestInstallSupervisorSystemdCreatesLogDirBeforeStartingService(t *testing.T
 func TestInstallSupervisorLaunchdCreatesLogDirBeforeLoadingService(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "fresh-gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	label := supervisorLaunchdLabel()
@@ -6089,7 +6089,7 @@ func TestInstallSupervisorSystemdEnablesLinger(t *testing.T) {
 		t.Skip("systemd path only applies on linux")
 	}
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	data := &supervisorServiceData{

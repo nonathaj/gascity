@@ -55,7 +55,7 @@ func writeStaleSweepSystemdUnit(t *testing.T, dir, unit, gcHome string) string {
 func TestSweepStaleIsolatedSupervisorLaunchdRemovesOnlyStale(t *testing.T) {
 	homeDir := t.TempDir()
 	ownGCHome := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", ownGCHome)
 	oldGOOS := supervisorRuntimeGOOS
 	supervisorRuntimeGOOS = "darwin"
@@ -130,7 +130,7 @@ func TestSweepStaleIsolatedSupervisorLaunchdRemovesOnlyStale(t *testing.T) {
 func TestSweepStaleIsolatedSupervisorSystemdRemovesOnlyStale(t *testing.T) {
 	homeDir := t.TempDir()
 	ownGCHome := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", ownGCHome)
 	oldGOOS := supervisorRuntimeGOOS
 	supervisorRuntimeGOOS = "linux"
@@ -194,7 +194,7 @@ func TestSweepStaleIsolatedSupervisorSystemdRemovesOnlyStale(t *testing.T) {
 func TestSweepStaleIsolatedSupervisorSystemdNoStaleMakesNoSystemctlCalls(t *testing.T) {
 	homeDir := t.TempDir()
 	ownGCHome := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", ownGCHome)
 	oldGOOS := supervisorRuntimeGOOS
 	supervisorRuntimeGOOS = "linux"
@@ -228,7 +228,7 @@ func TestSweepStaleIsolatedSupervisorSystemdNoStaleMakesNoSystemctlCalls(t *test
 
 func TestSweepStaleIsolatedSupervisorServicesMissingDirIsNoop(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", t.TempDir())
 	oldGOOS := supervisorRuntimeGOOS
 	t.Cleanup(func() { supervisorRuntimeGOOS = oldGOOS })
@@ -246,7 +246,7 @@ func TestSweepStaleIsolatedSupervisorServicesMissingDirIsNoop(t *testing.T) {
 func TestInstallSupervisorLaunchdSweepsStaleSiblings(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "isolated-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	oldGOOS := supervisorRuntimeGOOS
 	supervisorRuntimeGOOS = "darwin"
@@ -286,7 +286,7 @@ func TestInstallSupervisorLaunchdSweepsStaleSiblings(t *testing.T) {
 func TestUninstallSupervisorLaunchdSweepsStaleSiblings(t *testing.T) {
 	homeDir := t.TempDir()
 	gcHome := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	oldGOOS := supervisorRuntimeGOOS
 	supervisorRuntimeGOOS = "darwin"

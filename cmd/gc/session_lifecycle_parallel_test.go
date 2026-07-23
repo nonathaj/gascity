@@ -7112,7 +7112,7 @@ func TestSessionTranscriptProvider(t *testing.T) {
 
 func TestStaleResumeKeyProbe(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	// os.UserHomeDir consults USERPROFILE first on some platforms; clear it so
 	// the test is reproducible.

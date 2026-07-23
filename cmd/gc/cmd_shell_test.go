@@ -187,7 +187,7 @@ func TestGenerateCompletion_Unsupported(t *testing.T) {
 func TestShellInstall(t *testing.T) {
 	// Override HOME so we don't touch real RC files.
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	// Create a .zshrc to install into.
@@ -231,7 +231,7 @@ func TestShellInstall(t *testing.T) {
 
 func TestShellRemove(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	// Set up installed state.
@@ -266,7 +266,7 @@ func TestShellRemove(t *testing.T) {
 
 func TestShellInstallFishCreatesConfigDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	root := newRootCmd(os.Stdout, os.Stderr)
@@ -288,7 +288,7 @@ func TestShellInstallFishCreatesConfigDir(t *testing.T) {
 
 func TestShellStatusTracksBashProfileInstall(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	root := newRootCmd(os.Stdout, os.Stderr)
@@ -324,7 +324,7 @@ func TestShellStatusTracksBashProfileInstall(t *testing.T) {
 
 func TestShellRemoveRemovesBashProfileHookAfterBashrcAppears(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	root := newRootCmd(os.Stdout, os.Stderr)
@@ -357,7 +357,7 @@ func TestShellRemoveRemovesBashProfileHookAfterBashrcAppears(t *testing.T) {
 
 func TestShellReinstallUpdatesExistingBashProfileHookAfterBashrcAppears(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	root := newRootCmd(os.Stdout, os.Stderr)
@@ -400,7 +400,7 @@ func TestShellReinstallPreservesRCFileMode(t *testing.T) {
 		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	rc := filepath.Join(home, ".zshrc")
@@ -437,7 +437,7 @@ func TestShellRemovePreservesRCFileMode(t *testing.T) {
 		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	rc := filepath.Join(home, ".zshrc")
@@ -471,7 +471,7 @@ func TestShellRemovePreservesRCFileMode(t *testing.T) {
 
 func TestShellStatus_NotInstalled(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	// Create RC files so shellRCFile doesn't fall through.
 	shellTestWriteFile(t, filepath.Join(home, ".bashrc"), "")
@@ -488,7 +488,7 @@ func TestShellStatus_NotInstalled(t *testing.T) {
 
 func TestShellStatus_Installed(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	// Create installed state for zsh.
@@ -508,7 +508,7 @@ func TestShellStatus_Installed(t *testing.T) {
 
 func TestShellStatusJSON(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	shellTestWriteFile(t, filepath.Join(home, ".bashrc"), "")
 	shellTestWriteFile(t, filepath.Join(home, ".zshrc"), "")
@@ -544,7 +544,7 @@ func TestShellStatusJSON(t *testing.T) {
 
 func TestShellCmd_ViaCLI(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	shellTestWriteFile(t, filepath.Join(home, ".zshrc"), "")
 

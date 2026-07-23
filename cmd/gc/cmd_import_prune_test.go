@@ -33,7 +33,7 @@ func writePruneCacheClone(t *testing.T, cacheRoot, name string, mtime time.Time)
 // have run so GC_HOME (the supervisor registry home) is isolated separately.
 func pruneTestCacheRoot(t *testing.T) string {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	root, err := packman.RepoCacheRoot()
 	if err != nil {
 		t.Fatalf("RepoCacheRoot: %v", err)

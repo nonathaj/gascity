@@ -230,3 +230,13 @@ func writeDoltState(cityPath string, state doltRuntimeState) error {
 		state.Running, state.PID, state.Port, state.DataDir, state.StartedAt)
 	return os.WriteFile(filepath.Join(stateDir, "dolt-state.json"), []byte(data), 0o644)
 }
+
+// setTestHome pins the test's home directory on every platform: os.UserHomeDir
+// reads HOME on Unix but USERPROFILE on Windows (doctrine T1), so setting only
+// HOME leaves Windows tests operating on the real user profile — the launchd
+// plist tests were writing under the developer's actual ~/Library/LaunchAgents.
+func setTestHome(t testing.TB, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}

@@ -104,7 +104,7 @@ func TestEmitSupervisorStartedIncludesDetailReason(t *testing.T) {
 func TestRunSupervisorEmitsStartedEventWithRestartCause(t *testing.T) {
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
-	t.Setenv("HOME", filepath.Dir(gcHome))
+	setTestHome(t, filepath.Dir(gcHome))
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 	t.Setenv("GC_BEADS", "file")

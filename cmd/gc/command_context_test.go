@@ -123,7 +123,7 @@ func TestResolveCommandContextPathValidatesExactCityRootAtHomeBoundary(t *testin
 	resetFlags(t)
 
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	cityPath := homeDir
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
 		t.Fatal(err)

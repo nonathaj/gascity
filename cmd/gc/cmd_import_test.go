@@ -1601,7 +1601,7 @@ func TestDoImportListTreeShowsDependencyGraph(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	stubCmdCachedPackGit(t)
 
@@ -1845,7 +1845,7 @@ func TestDoImportListWithRigShowsOnlyRigScopedClosure(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	stubCmdCachedPackGit(t)
 
@@ -2049,7 +2049,7 @@ func TestDoImportWhyExplainsTransitiveImport(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	stubCmdCachedPackGit(t)
 
@@ -2141,7 +2141,7 @@ func TestDoImportAddRemoteEndToEndLoadsImportedPack(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	repo := initImportBarePackRepo(t, "remote-pack", "v1.2.3", `
@@ -2187,7 +2187,7 @@ func TestDoImportAddRemoteSubpathEndToEndLoadsImportedPack(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	repo := initImportBarePackRepo(t, "mono", "v1.2.3", `
@@ -2249,7 +2249,7 @@ func TestDoImportAddRemoteSHAPinEndToEndLoadsImportedPack(t *testing.T) {
 	clearGCEnv(t)
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 
 	repo := initImportBarePackRepo(t, "sha-pack", "", `

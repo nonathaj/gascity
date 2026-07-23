@@ -323,7 +323,7 @@ func TestFinalizeInitFetchesRemotePacksBeforeProviderReadiness(t *testing.T) {
 func TestFinalizeInitChecksRemoteImportProvidersAfterInstall(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
 	t.Setenv("GC_DOLT", "skip")
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	configureIsolatedRuntimeEnv(t)
 	disableBootstrapForTests(t)
 	stubInitDependencyChecks(t)

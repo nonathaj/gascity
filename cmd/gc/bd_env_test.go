@@ -2908,7 +2908,7 @@ func TestDoltAutoStartSuppressedInAllEnvPaths(t *testing.T) {
 
 func TestCityForStoreDirHonoursGCCity(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	cityDir := filepath.Join(homeDir, "mycity")
@@ -2935,7 +2935,7 @@ func TestCityForStoreDirHonoursGCCityOverDiscoveredCity(t *testing.T) {
 	// filesystem discovery. Callers that have already resolved --city must
 	// pass that city through directly instead of using this helper.
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	envCity := filepath.Join(homeDir, "envcity")
@@ -2963,7 +2963,7 @@ func TestCityForStoreDirHonoursGCCityOverDiscoveredCity(t *testing.T) {
 
 func TestOpenCityStoreAtUsesExplicitCityOverGCCity(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("GC_BEADS", "bd")
 
@@ -3000,7 +3000,7 @@ func TestOpenCityStoreAtUsesExplicitCityOverGCCity(t *testing.T) {
 
 func TestCityForStoreDirFallsBackToFindCity(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 	// Unset GC_CITY so cityForStoreDir falls back to findCity.
@@ -3028,7 +3028,7 @@ func TestCityForStoreDirFallsBackToFindCity(t *testing.T) {
 
 func TestCityForStoreDirFallsBackToDirWhenNoCityFound(t *testing.T) {
 	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 	t.Setenv("GC_CITY", "")
 
@@ -4078,7 +4078,7 @@ func clearAmbientPostgresEnv(t *testing.T) {
 	}
 	t.Setenv("BEADS_CREDENTIALS_FILE", "")
 	_ = os.Unsetenv("BEADS_CREDENTIALS_FILE")
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 }
 
 func TestApplyResolvedScopePostgresEnv_HappyPath(t *testing.T) {

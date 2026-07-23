@@ -14,7 +14,7 @@ import (
 
 func TestEnsureBundledLockedRemoteImportsCachedHydratesBundledLockEntry(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := t.TempDir()
 	source := config.PublicGastownPackSource
@@ -36,7 +36,7 @@ func TestEnsureBundledLockedRemoteImportsCachedHydratesBundledLockEntry(t *testi
 
 func TestEnsureBundledLockedRemoteImportsCachedValidatesWarmCacheWithoutWriteLock(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := t.TempDir()
 	commit := strings.TrimPrefix(config.PublicGastownPackVersion, "sha:")
@@ -82,7 +82,7 @@ func TestEnsureBundledLockedRemoteImportsCachedValidatesWarmCacheWithoutWriteLoc
 }
 
 func TestEnsureBundledLockedRemoteImportsCachedRejectsBundledLockEntryWithoutCommit(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	cityPath := t.TempDir()
 	source := config.PublicGastownPackSource
 	writePreflightImportLock(t, cityPath, "")
@@ -98,7 +98,7 @@ func TestEnsureBundledLockedRemoteImportsCachedRejectsBundledLockEntryWithoutCom
 
 func TestEnsureBundledLockedRemoteImportsCachedSkipsNonBundledLockEntries(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := t.TempDir()
 	lockToml := `schema = 1
@@ -144,7 +144,7 @@ fetched = "2026-01-01T00:00:00Z"
 // owns fetching it).
 func TestEnsureBundledLockedRemoteImportsCachedSkipsNonCanonicalBundledPin(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
 	cityPath := t.TempDir()
 	writePreflightImportLock(t, cityPath, "0123456789abcdef0123456789abcdef01234567")

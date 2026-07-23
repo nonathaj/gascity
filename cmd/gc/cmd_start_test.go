@@ -752,7 +752,7 @@ func TestPassthroughEnvOmitsUnsetDoltVars(t *testing.T) {
 }
 
 func TestPassthroughEnvIncludesClaudeAuthContext(t *testing.T) {
-	t.Setenv("HOME", "/tmp/gc-home")
+	setTestHome(t, "/tmp/gc-home")
 	t.Setenv("USER", "gcuser")
 	t.Setenv("LOGNAME", "gcuser")
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/gc-home/.config")
@@ -834,7 +834,7 @@ func TestPassthroughEnvIncludesProviderCredentialEnv(t *testing.T) {
 }
 
 func TestPassthroughEnvXDGFallbackFromHOME(t *testing.T) {
-	t.Setenv("HOME", "/tmp/gc-home")
+	setTestHome(t, "/tmp/gc-home")
 	// Explicitly unset XDG vars so fallback logic fires.
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_STATE_HOME", "")

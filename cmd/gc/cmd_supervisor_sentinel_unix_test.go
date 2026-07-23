@@ -74,7 +74,7 @@ func TestInstallSupervisorSystemdWarmRefreshStopsWorkspaceServicesBeforeStart(t 
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	data := &supervisorServiceData{
@@ -196,7 +196,7 @@ func TestInstallSupervisorSystemdWarmRefreshLeavesUnregisteredWorkspaceServices(
 	}
 	homeDir := t.TempDir()
 	gcHome := filepath.Join(t.TempDir(), "gc-home")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 
 	registeredCity := filepath.Join(t.TempDir(), "registered-city")

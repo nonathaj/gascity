@@ -220,7 +220,7 @@ func TestEvaluatePoolNewDemandErrorFallsBackToZero(t *testing.T) {
 
 func TestFindPreferredBinary_SkipsTestscriptShim(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("HOME", filepath.Join(root, "home"))
+	setTestHome(t, filepath.Join(root, "home"))
 	shimDir := filepath.Join(root, "testscript-main123", "bin")
 	realDir := filepath.Join(root, "real-bin")
 	for _, dir := range []string{shimDir, realDir} {

@@ -1253,7 +1253,7 @@ func TestSupervisorUninstallWarnsAndSkipsDelegatedUnit(t *testing.T) {
 	if goruntime.GOOS != "linux" {
 		t.Skip("systemd path only applies on linux")
 	}
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	t.Setenv("GC_HOME", t.TempDir())
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
@@ -1301,7 +1301,7 @@ func TestUninstallSupervisorSystemdUnderDelegationStopsOwnUnitViaSocket(t *testi
 	}
 	homeDir := t.TempDir()
 	gcHome := shortTempDir(t, "gc-home-")
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("GC_HOME", gcHome)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	setDelegationEnvForTest(t, "gascity-prod.service", "")

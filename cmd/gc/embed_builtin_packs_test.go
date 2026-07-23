@@ -1078,7 +1078,7 @@ func TestConfigLoadBoundarySkipsWithoutGCHome(t *testing.T) {
 	// the developer's real ~/.gc.
 	t.Setenv("GC_HOME", "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	dir := t.TempDir()
 	if err := writeBuiltinPackLoadTestCity(dir); err != nil {

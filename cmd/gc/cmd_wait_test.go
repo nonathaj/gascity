@@ -2592,7 +2592,7 @@ func setupFreshManagedBdWaitTestCity(t *testing.T) (string, string) {
 	if err := writeWaitTestDoltIdentity(homeDir); err != nil {
 		t.Fatalf("writeWaitTestDoltIdentity: %v", err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("DOLT_ROOT_PATH", homeDir)
 	t.Setenv("PATH", strings.Join([]string{filepath.Dir(bdPath), filepath.Dir(doltPath), os.Getenv("PATH")}, string(os.PathListSeparator)))
 
@@ -2652,7 +2652,7 @@ func setupManagedBdWaitTestCity(t *testing.T) (string, string) {
 	if err := writeWaitTestDoltIdentity(homeDir); err != nil {
 		t.Fatalf("writeWaitTestDoltIdentity: %v", err)
 	}
-	t.Setenv("HOME", homeDir)
+	setTestHome(t, homeDir)
 	t.Setenv("DOLT_ROOT_PATH", homeDir)
 	t.Setenv("PATH", strings.Join([]string{filepath.Dir(bdPath), filepath.Dir(doltPath), os.Getenv("PATH")}, string(os.PathListSeparator)))
 

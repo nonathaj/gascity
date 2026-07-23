@@ -45,7 +45,7 @@ func TestInstallSupervisorSystemdBinaryMismatchGuard(t *testing.T) {
 			homeDir := t.TempDir()
 			gcHome := filepath.Join(homeDir, ".gc")
 			currentBinary := filepath.Join(homeDir, "bin", "gc")
-			t.Setenv("HOME", homeDir)
+			setTestHome(t, homeDir)
 			t.Setenv("GC_HOME", gcHome)
 			setSupervisorInstallForceForTest(t, tc.force)
 
@@ -152,7 +152,7 @@ func TestInstallSupervisorLaunchdBinaryMismatchGuard(t *testing.T) {
 			homeDir := t.TempDir()
 			gcHome := filepath.Join(homeDir, ".gc")
 			currentBinary := filepath.Join(homeDir, "bin", "gc")
-			t.Setenv("HOME", homeDir)
+			setTestHome(t, homeDir)
 			t.Setenv("GC_HOME", gcHome)
 			setSupervisorInstallForceForTest(t, tc.force)
 

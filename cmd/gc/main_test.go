@@ -543,7 +543,7 @@ func TestFindCity(t *testing.T) {
 		// without climbing into /tmp or $HOME, which may have a live .gc/ on
 		// the host (e.g. a running city at /tmp/.gc or $HOME/.gc).
 		dir := t.TempDir()
-		t.Setenv("HOME", dir)
+		setTestHome(t, dir)
 
 		_, err := findCity(dir)
 		if err == nil {
@@ -556,7 +556,7 @@ func TestFindCity(t *testing.T) {
 
 	t.Run("checks_home_ceiling_dir_last", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		setTestHome(t, homeDir)
 		t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 		if err := os.WriteFile(filepath.Join(homeDir, "city.toml"), []byte("[workspace]\nname = \"stray\"\n"), 0o644); err != nil {
@@ -578,7 +578,7 @@ func TestFindCity(t *testing.T) {
 
 	t.Run("not_found_ignores_supervisor_home_runtime_root", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		setTestHome(t, homeDir)
 		t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 		if err := os.MkdirAll(filepath.Join(homeDir, ".gc"), 0o755); err != nil {
@@ -600,7 +600,7 @@ func TestFindCity(t *testing.T) {
 
 	t.Run("nested_city_below_home_boundary_still_found", func(t *testing.T) {
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		setTestHome(t, homeDir)
 		t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 		cityDir := filepath.Join(homeDir, "cities", "alpha")
@@ -631,7 +631,7 @@ func TestFindCity(t *testing.T) {
 		// fired before the starting dir was checked. The ceiling should
 		// only bound upward traversal, not the dir the user is in.
 		homeDir := t.TempDir()
-		t.Setenv("HOME", homeDir)
+		setTestHome(t, homeDir)
 		t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 		if err := os.WriteFile(filepath.Join(homeDir, "city.toml"), []byte("[workspace]\nname = \"home-city\"\n"), 0o644); err != nil {
@@ -653,7 +653,7 @@ func TestFindCity(t *testing.T) {
 		if err := os.MkdirAll(homeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("HOME", homeDir)
+		setTestHome(t, homeDir)
 		t.Setenv("GC_HOME", filepath.Join(homeDir, ".gc"))
 
 		if err := os.WriteFile(filepath.Join(root, "city.toml"), []byte("[workspace]\nname = \"root\"\n"), 0o644); err != nil {
