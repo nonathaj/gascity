@@ -58,10 +58,18 @@ func classifySignalExitStatus(msg string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if code < 129 || code > 159 {
-		return "", false
+	if code >= 129 && code <= 159 {
+		return fmt.Sprintf("work query terminated by signal (exit status %d)", code), true
 	}
-	return fmt.Sprintf("work query terminated by signal (exit status %d)", code), true
+	// MSYS sh (Git for Windows) reports a signal death as signal<<8 in the
+	// Windows exit code (kill -9 → 2304). Unix exit statuses never exceed 255,
+	// so recognizing the shifted form is safe on every platform.
+	if code >= 256 && code%256 == 0 {
+		if sig := code / 256; sig >= 1 && sig <= 31 {
+			return fmt.Sprintf("work query terminated by signal %d (exit status %d)", sig, code), true
+		}
+	}
+	return "", false
 }
 
 // emitCityWorkQueryFailure records a work-query failure against the city event

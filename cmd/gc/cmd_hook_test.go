@@ -169,8 +169,11 @@ work_query = "kill -9 $$"
 	if payload.Template != "worker" {
 		t.Fatalf("payload Template = %q, want current session template", payload.Template)
 	}
-	if payload.Reason != "work query killed (signal: killed)" {
-		t.Fatalf("payload Reason = %q, want work query killed (signal: killed)", payload.Reason)
+	// Unix reports the kill as "signal: killed"; MSYS sh (Windows) reports the
+	// shifted exit status (9<<8 = 2304), classified as "terminated by signal 9".
+	if payload.Reason != "work query killed (signal: killed)" &&
+		payload.Reason != "work query terminated by signal 9 (exit status 2304)" {
+		t.Fatalf("payload Reason = %q, want a SIGKILL classification", payload.Reason)
 	}
 }
 
@@ -1839,7 +1842,10 @@ max = 5
 	}
 
 	fakeBD := filepath.Join(fakeBin, "bd")
-	script := "#!/bin/sh\nprintf 'pwd=%s\nstore_root=%s\nstore_scope=%s\nprefix=%s\nrig=%s\nrig_root=%s\nargs=%s\n' \"$PWD\" \"${GC_STORE_ROOT:-}\" \"${GC_STORE_SCOPE:-}\" \"${GC_BEADS_PREFIX:-}\" \"${GC_RIG:-}\" \"${GC_RIG_ROOT:-}\" \"$*\"\n"
+	// cygpath -m renders MSYS's POSIX $PWD (/tmp/...) in mixed Windows form
+	// (C:/Users/...) so the Go side can compare against ToSlash(rigDir); no-op
+	// on Unix where cygpath is absent (doctrine T8).
+	script := "#!/bin/sh\ncwd=$(command -v cygpath >/dev/null 2>&1 && cygpath -m \"$PWD\" || printf '%s' \"$PWD\")\nprintf 'pwd=%s\nstore_root=%s\nstore_scope=%s\nprefix=%s\nrig=%s\nrig_root=%s\nargs=%s\n' \"$cwd\" \"${GC_STORE_ROOT:-}\" \"${GC_STORE_SCOPE:-}\" \"${GC_BEADS_PREFIX:-}\" \"${GC_RIG:-}\" \"${GC_RIG_ROOT:-}\" \"$*\"\n"
 	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1864,7 +1870,7 @@ max = 5
 		t.Fatalf("cmdHook() = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "pwd="+rigDir) {
+	if !strings.Contains(out, "pwd="+filepath.ToSlash(rigDir)) {
 		t.Fatalf("stdout = %q, want command to run from rig root %q", out, rigDir)
 	}
 	if !strings.Contains(out, "store_root="+rigDir) {
@@ -2237,7 +2243,7 @@ max = 5
 	}
 
 	fakeBD := filepath.Join(fakeBin, "bd")
-	script := "#!/bin/sh\nprintf 'pwd=%s\\nargs=%s\\n' \"$PWD\" \"$*\"\n"
+	script := "#!/bin/sh\ncwd=$(command -v cygpath >/dev/null 2>&1 && cygpath -m \"$PWD\" || printf '%s' \"$PWD\")\nprintf 'pwd=%s\\nargs=%s\\n' \"$cwd\" \"$*\"\n"
 	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -2263,7 +2269,7 @@ max = 5
 		t.Fatalf("cmdHook() = %d, want 0; stderr=%s", code, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "pwd="+rigDir) {
+	if !strings.Contains(out, "pwd="+filepath.ToSlash(rigDir)) {
 		t.Fatalf("stdout = %q, want command to run from rig root %q", out, rigDir)
 	}
 	// Tiered query: first tier checks in_progress assigned to session name.
