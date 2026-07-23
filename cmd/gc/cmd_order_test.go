@@ -2577,11 +2577,15 @@ prefix = "fe"
 	if len(lines) != 6 {
 		t.Fatalf("exec env lines = %d, want 6 (%q)", len(lines), string(data))
 	}
-	if lines[0] != filepath.Join(rigDir, ".beads") {
-		t.Fatalf("BEADS_DIR = %q, want %q", lines[0], filepath.Join(rigDir, ".beads"))
+	// Order-exec env path values are slash-form on Windows (P8: sh eats
+	// backslashes), so compare against the slash form of the native rig dir.
+	wantBeads := filepath.ToSlash(filepath.Join(rigDir, ".beads"))
+	wantRig := filepath.ToSlash(rigDir)
+	if lines[0] != wantBeads {
+		t.Fatalf("BEADS_DIR = %q, want %q", lines[0], wantBeads)
 	}
-	if lines[1] != rigDir {
-		t.Fatalf("GC_STORE_ROOT = %q, want %q", lines[1], rigDir)
+	if lines[1] != wantRig {
+		t.Fatalf("GC_STORE_ROOT = %q, want %q", lines[1], wantRig)
 	}
 	if lines[2] != "rig" {
 		t.Fatalf("GC_STORE_SCOPE = %q, want rig", lines[2])
@@ -2592,8 +2596,8 @@ prefix = "fe"
 	if lines[4] != "frontend" {
 		t.Fatalf("GC_RIG = %q, want frontend", lines[4])
 	}
-	if lines[5] != rigDir {
-		t.Fatalf("GC_RIG_ROOT = %q, want %q", lines[5], rigDir)
+	if lines[5] != wantRig {
+		t.Fatalf("GC_RIG_ROOT = %q, want %q", lines[5], wantRig)
 	}
 }
 
@@ -2793,9 +2797,9 @@ prefix = "ct"
 		"host=<external.example.internal>",
 		"port=<4406>",
 		"pack_state=<>",
-		"data=<" + externalRoot + ">",
-		"config=<" + filepath.Join(externalRoot, "dolt-config.yaml") + ">",
-		"state=<" + filepath.Join(externalRoot, "dolt-state.json") + ">",
+		"data=<" + filepath.ToSlash(externalRoot) + ">",
+		"config=<" + filepath.ToSlash(filepath.Join(externalRoot, "dolt-config.yaml")) + ">",
+		"state=<" + filepath.ToSlash(filepath.Join(externalRoot, "dolt-state.json")) + ">",
 	}, "\n")
 	if got != want {
 		t.Fatalf("order exec env:\ngot:\n%s\nwant:\n%s", got, want)
@@ -2871,8 +2875,8 @@ prefix = "ct"
 	want := strings.Join([]string{
 		"managed=<1>",
 		"port=<" + port + ">",
-		"data=<" + dataDir + ">",
-		"config=<" + configFile + ">",
+		"data=<" + filepath.ToSlash(dataDir) + ">",
+		"config=<" + filepath.ToSlash(configFile) + ">",
 	}, "\n")
 	if got != want {
 		t.Fatalf("order exec env:\ngot:\n%s\nwant:\n%s", got, want)

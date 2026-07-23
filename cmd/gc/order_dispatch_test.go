@@ -2986,7 +2986,9 @@ func TestOrderDispatchExecRigUsesScopedWorkdirAndStoreEnv(t *testing.T) {
 		"ORDER_DIR":       "/city/orders",
 	}
 	for key, want := range checks {
-		entry := key + "=" + want
+		// Order-exec path env is slash-form on Windows (P8); ToSlash is a no-op
+		// for the non-path checks and matches the emitted separator for paths.
+		entry := key + "=" + filepath.ToSlash(want)
 		if !slicesContain(gotEnv, entry) {
 			t.Fatalf("missing %s in env: %v", entry, gotEnv)
 		}
@@ -6495,7 +6497,12 @@ func orderDispatchTestEnv(t *testing.T, envCh <-chan []string) map[string]string
 		for _, entry := range entries {
 			key, value, ok := strings.Cut(entry, "=")
 			if ok {
-				env[key] = value
+				// Order-exec path env is slash-form on Windows (P8); these dispatch
+				// tests assert the resolved directory (via native filepath.Join),
+				// not the separator form, so normalize back to native for the
+				// comparison. The actual slash-form the order script sees is pinned
+				// by TestOrderRunExec*, which reads the real exec environment.
+				env[key] = filepath.FromSlash(value)
 			}
 		}
 		return env

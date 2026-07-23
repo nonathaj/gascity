@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -239,6 +240,18 @@ func orderExecEnvWithError(cityPath string, cfg *config.City, target execStoreTa
 	// R4); the static [order.env] guard above is unchanged.
 	for k, v := range vars {
 		env[k] = v
+	}
+	// Order Exec commands run under sh (MSYS) on Windows, which eats backslashes
+	// in unquoted words (P8), so a native path in the env reaches the order script
+	// corrupted. Normalize path-bearing env values to slash-form; forward-slash
+	// paths resolve fine for the script. Only backslash-bearing values are
+	// touched, and this is a no-op on Unix.
+	if runtime.GOOS == "windows" {
+		for k, v := range env {
+			if strings.Contains(v, `\`) {
+				env[k] = filepath.ToSlash(v)
+			}
+		}
 	}
 	return mergeRuntimeEnv(nil, env), nil
 }
