@@ -13,6 +13,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/packman"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 func TestDoImportAddRemoteWritesConfigAndLock(t *testing.T) {
@@ -2153,7 +2154,7 @@ schema = 1
 name = "polecat"
 scope = "city"
 `)
-	source := "file://" + repo
+	source := pathutil.FileURLForLocalPath(repo)
 
 	cityDir := filepath.Join(dir, "city")
 	if err := os.MkdirAll(cityDir, 0o755); err != nil {
@@ -2216,7 +2217,7 @@ scope = "city"
 	mustGitImport(t, workDir, "tag", "-f", "-a", "v1.2.3", "-m", "release v1.2.3")
 	mustGitImport(t, workDir, "push", "--force", "--tags", "origin", "HEAD:master")
 
-	source := "file://" + repo + "//packs/base"
+	source := pathutil.FileURLForLocalPath(repo) + "//packs/base"
 	cityDir := filepath.Join(dir, "city")
 	if err := os.MkdirAll(cityDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -2262,7 +2263,7 @@ name = "sentinel"
 scope = "city"
 `)
 	commit := gitOutputImport(t, repo, "rev-parse", "HEAD")
-	source := "file://" + repo
+	source := pathutil.FileURLForLocalPath(repo)
 
 	cityDir := filepath.Join(dir, "city")
 	if err := os.MkdirAll(cityDir, 0o755); err != nil {
@@ -3149,7 +3150,6 @@ func stageCmdCachedPack(t *testing.T, source, commit, packToml string) {
 func stubCmdCachedPackGit(t *testing.T) {
 	t.Helper()
 	binDir := t.TempDir()
-	gitPath := filepath.Join(binDir, "git")
 	script := `#!/bin/sh
 set -eu
 dir="$PWD"
@@ -3186,9 +3186,10 @@ esac
 printf 'unexpected git command: %s\n' "$*" >&2
 exit 1
 `
-	if err := os.WriteFile(gitPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("WriteFile(fake git): %v", err)
-	}
+	// installFakeToolOnPath adds the .bat launcher so PATHEXT finds the fake on
+	// Windows (T3); an extensionless script would let the real git run against
+	// the synthetic cache ("not a git repository").
+	installFakeToolOnPath(t, binDir, "git", script)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

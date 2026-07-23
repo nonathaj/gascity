@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/gitcred"
 	"github.com/gastownhall/gascity/internal/packregistry"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 func TestPackReleaseHashCommandPrintsContentHash(t *testing.T) {
@@ -33,7 +34,7 @@ func TestPackReleaseHashCommandPrintsContentHash(t *testing.T) {
 func TestPackReleaseHashRemoteRootWithExplicitPath(t *testing.T) {
 	setTestHome(t, t.TempDir())
 	repo, commit := initPackReleaseRepo(t)
-	source := "file://" + repo
+	source := pathutil.FileURLForLocalPath(repo)
 
 	var stdout, stderr bytes.Buffer
 	code := doPackReleaseHash(source, "packs/demo", commit, &stdout, &stderr)

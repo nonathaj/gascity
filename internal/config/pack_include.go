@@ -516,11 +516,15 @@ func validateLockedRemoteCache(source, cacheDir, commit string) error {
 }
 
 func defaultRunRepoCacheGit(dir string, args ...string) (string, error) {
-	cmdArgs := append([]string{
+	// LongPathConfigArgs: the packman clone writes the cache with
+	// core.longpaths=true on Windows, so deep pack trees exceed MAX_PATH; this
+	// reader must use the same setting or status/rev-parse fail on the very
+	// objects the clone just wrote ("bad object HEAD" / "Filename too long").
+	cmdArgs := append(append([]string{
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "core.untrackedCache=false",
-	}, args...)
+	}, gitutil.LongPathConfigArgs()...), args...)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Env = gitutil.HermeticEnv()
