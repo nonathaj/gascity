@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	slashpath "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -230,19 +231,22 @@ func plainLsofPath(fields []string) string {
 	return normalizeLsofReportedPath(strings.Join(fields[8:], " "))
 }
 
-func normalizeLsofReportedPath(path string) string {
-	path = filepath.Clean(strings.TrimSpace(path))
+func normalizeLsofReportedPath(p string) string {
+	// lsof reports POSIX paths regardless of the host; use slashpath (not
+	// filepath, which would rewrite the separators to backslashes on Windows and
+	// break the /private/tmp normalization the cross-platform parser tests pin).
+	p = slashpath.Clean(strings.TrimSpace(p))
 	switch {
-	case path == "/private/tmp":
+	case p == "/private/tmp":
 		return "/tmp"
-	case strings.HasPrefix(path, "/private/tmp/"):
-		return "/tmp/" + strings.TrimPrefix(path, "/private/tmp/")
-	case path == "/private/var":
+	case strings.HasPrefix(p, "/private/tmp/"):
+		return "/tmp/" + strings.TrimPrefix(p, "/private/tmp/")
+	case p == "/private/var":
 		return "/var"
-	case strings.HasPrefix(path, "/private/var/"):
-		return "/var/" + strings.TrimPrefix(path, "/private/var/")
+	case strings.HasPrefix(p, "/private/var/"):
+		return "/var/" + strings.TrimPrefix(p, "/private/var/")
 	default:
-		return path
+		return p
 	}
 }
 
