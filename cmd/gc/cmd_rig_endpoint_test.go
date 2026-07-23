@@ -948,7 +948,7 @@ func TestWriteDoltPortFileStrictUsesAtomicWrite(t *testing.T) {
 	if !renamed {
 		t.Fatalf("fs calls = %+v, want atomic rename", fs.Calls)
 	}
-	if got := strings.TrimSpace(string(fs.Files[filepath.Join(dir, ".beads", "dolt-server.port")])); got != "3311" {
+	if got := strings.TrimSpace(string(fs.Files[filepath.ToSlash(filepath.Join(dir, ".beads", "dolt-server.port"))])); got != "3311" {
 		t.Fatalf("port file = %q, want %q", got, "3311")
 	}
 }
@@ -1043,7 +1043,7 @@ func TestRemoveDoltPortFileStrictClearsThroughSymlink(t *testing.T) {
 func TestSyncRigEndpointCompatConfigUsesAtomicWrite(t *testing.T) {
 	fs := fsys.NewFake()
 	cityDir := "/city"
-	fs.Dirs[cityDir] = true
+	fs.Dirs[filepath.ToSlash(cityDir)] = true
 	cfg := &config.City{Workspace: config.Workspace{Name: "test-city"}, Rigs: []config.Rig{{Name: "frontend", Path: "/city/frontend", Prefix: "fe", DoltHost: "old-db.example.com", DoltPort: "3307"}}}
 	if err := syncRigEndpointCompatConfig(fs, cityDir, cfg, "frontend", contract.ConfigState{DoltHost: "new-db.example.com", DoltPort: "4406"}); err != nil {
 		t.Fatalf("syncRigEndpointCompatConfig: %v", err)
@@ -1058,7 +1058,7 @@ func TestSyncRigEndpointCompatConfigUsesAtomicWrite(t *testing.T) {
 	if !renamed {
 		t.Fatalf("fs calls = %+v, want atomic rename", fs.Calls)
 	}
-	if got := string(fs.Files[filepath.Join(cityDir, "city.toml")]); !strings.Contains(got, "new-db.example.com") || !strings.Contains(got, "4406") {
+	if got := string(fs.Files[filepath.ToSlash(filepath.Join(cityDir, "city.toml"))]); !strings.Contains(got, "new-db.example.com") || !strings.Contains(got, "4406") {
 		t.Fatalf("city.toml = %q", got)
 	}
 }

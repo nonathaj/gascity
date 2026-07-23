@@ -149,11 +149,11 @@ func configureSupervisorHooksForTests() {
 }
 
 func markFakeCityScaffold(f *fsys.Fake, cityPath string) {
-	f.Dirs[filepath.Join(cityPath, citylayout.RuntimeRoot)] = true
-	f.Dirs[filepath.Join(cityPath, citylayout.CacheRoot)] = true
-	f.Dirs[filepath.Join(cityPath, citylayout.SystemRoot)] = true
-	f.Dirs[filepath.Join(cityPath, citylayout.RuntimeRoot, "runtime")] = true
-	f.Files[filepath.Join(cityPath, citylayout.RuntimeRoot, "events.jsonl")] = nil
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, citylayout.RuntimeRoot))] = true
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, citylayout.CacheRoot))] = true
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, citylayout.SystemRoot))] = true
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, citylayout.RuntimeRoot, "runtime"))] = true
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, citylayout.RuntimeRoot, "events.jsonl"))] = nil
 }
 
 func explicitAgents(agents []config.Agent) []config.Agent {
@@ -1140,7 +1140,7 @@ func TestDoRigAddWithoutGit(t *testing.T) {
 
 func TestDoRigListConfigLoadFails(t *testing.T) {
 	f := fsys.NewFake()
-	f.Errors[filepath.Join("/city", "city.toml")] = fmt.Errorf("no such file")
+	f.Errors[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = fmt.Errorf("no such file")
 
 	var stderr bytes.Buffer
 	code := doRigList(f, "/city", false, &bytes.Buffer{}, &stderr)
@@ -2753,10 +2753,10 @@ func TestDoInitSuccess(t *testing.T) {
 	}
 
 	// Verify .gc/ and the new city-root conventions were created (no rigs/ — created on demand by gc rig add).
-	if !f.Dirs[filepath.Join("/bright-lights", ".gc")] {
+	if !f.Dirs[filepath.ToSlash(filepath.Join("/bright-lights", ".gc"))] {
 		t.Error(".gc/ not created")
 	}
-	if f.Dirs[filepath.Join("/bright-lights", "rigs")] {
+	if f.Dirs[filepath.ToSlash(filepath.Join("/bright-lights", "rigs"))] {
 		t.Error("rigs/ should not be created by init")
 	}
 	for _, dir := range []string{
@@ -2769,26 +2769,26 @@ func TestDoInitSuccess(t *testing.T) {
 		"overlays",
 		"assets",
 	} {
-		if !f.Dirs[filepath.Join("/bright-lights", dir)] {
+		if !f.Dirs[filepath.ToSlash(filepath.Join("/bright-lights", dir))] {
 			t.Errorf("%s/ not created", dir)
 		}
 	}
 	for _, dir := range []string{"packs", "prompts"} {
-		if f.Dirs[filepath.Join("/bright-lights", dir)] {
+		if f.Dirs[filepath.ToSlash(filepath.Join("/bright-lights", dir))] {
 			t.Errorf("%s/ should not be created by init", dir)
 		}
 	}
 
 	// Verify only the explicit init agent prompt template was written.
-	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "mayor", "prompt.template.md")]; !ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "agents", "mayor", "prompt.template.md"))]; !ok {
 		t.Error("agents/mayor/prompt.template.md not written")
 	}
-	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "worker", "prompt.template.md")]; ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "agents", "worker", "prompt.template.md"))]; ok {
 		t.Error("agents/worker/prompt.template.md should not be written by default init")
 	}
 
 	// Verify pack.toml was written.
-	packToml := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
+	packToml := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))])
 	if !strings.Contains(packToml, `name = "bright-lights"`) {
 		t.Errorf("pack.toml missing pack name:\n%s", packToml)
 	}
@@ -2817,10 +2817,10 @@ func TestDoInitSuccess(t *testing.T) {
 	if explicit[0].Name != "mayor" {
 		t.Errorf("explicitAgents[0].Name = %q, want %q", explicit[0].Name, "mayor")
 	}
-	if !strings.HasSuffix(explicit[0].PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md")) {
-		t.Errorf("explicitAgents[0].PromptTemplate = %q, want suffix %q", explicit[0].PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md"))
+	if !strings.HasSuffix(explicit[0].PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md"))) {
+		t.Errorf("explicitAgents[0].PromptTemplate = %q, want suffix %q", explicit[0].PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md")))
 	}
-	if _, ok := f.Files[filepath.Join("/bright-lights", "formulas", "mol-scoped-work.toml")]; ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "formulas", "mol-scoped-work.toml"))]; ok {
 		t.Fatal("doInit should not seed builtin formulas into city-local formulas/")
 	}
 }
@@ -2839,7 +2839,7 @@ func TestDoInitWritesExpectedTOML(t *testing.T) {
 	// "gc") so rigs added to the city inherit the role agents the built-in
 	// formulas route to (gascity#3832). Builtin packs compose via pinned
 	// [imports] in pack.toml; workspace.name lives in .gc/site.toml.
-	got := string(f.Files[filepath.Join("/bright-lights", "city.toml")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))])
 	want := `[workspace]
 
 [defaults]
@@ -2864,7 +2864,7 @@ version = "` + config.PublicGascityPackVersion + `"
 	// sessions; the fresh mayor scaffold comes from agents/<name>/ discovery,
 	// while the control dispatcher is an explicit city-owned alias for the
 	// core import's deterministic dispatcher template.
-	packGot := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
+	packGot := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))])
 	packWant := `[pack]
 name = "bright-lights"
 schema = 2
@@ -2898,7 +2898,7 @@ func TestDoInitGastownWritesCanonicalPackV2Shape(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	cityToml := string(f.Files[filepath.Join("/bright-lights", "city.toml")])
+	cityToml := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))])
 	if strings.Contains(cityToml, "default_rig_includes") {
 		t.Fatalf("city.toml should not keep legacy default_rig_includes in fresh init:\n%s", cityToml)
 	}
@@ -2906,7 +2906,7 @@ func TestDoInitGastownWritesCanonicalPackV2Shape(t *testing.T) {
 		t.Fatalf("city.toml missing canonical default-rig import:\n%s", cityToml)
 	}
 
-	packToml := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
+	packToml := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))])
 	if !strings.Contains(packToml, "[imports.gastown]") || !strings.Contains(packToml, `source = "`+config.PublicGastownPackSource+`"`) {
 		t.Fatalf("pack.toml missing gastown import:\n%s", packToml)
 	}
@@ -2948,9 +2948,9 @@ func TestDoInitAlreadyInitialized(t *testing.T) {
 
 func TestCityAlreadyInitializedFSIgnoresSupervisorHomeState(t *testing.T) {
 	f := fsys.NewFake()
-	f.Dirs[filepath.Join("/home", citylayout.RuntimeRoot)] = true
-	f.Files[filepath.Join("/home", citylayout.RuntimeRoot, "events.jsonl")] = nil
-	f.Files[filepath.Join("/home", citylayout.RuntimeRoot, "cities.toml")] = []byte("[[city]]\n")
+	f.Dirs[filepath.ToSlash(filepath.Join("/home", citylayout.RuntimeRoot))] = true
+	f.Files[filepath.ToSlash(filepath.Join("/home", citylayout.RuntimeRoot, "events.jsonl"))] = nil
+	f.Files[filepath.ToSlash(filepath.Join("/home", citylayout.RuntimeRoot, "cities.toml"))] = []byte("[[city]]\n")
 
 	if cityAlreadyInitializedFS(f, "/home") {
 		t.Fatal("cityAlreadyInitializedFS should ignore global supervisor state without a city scaffold")
@@ -2960,7 +2960,7 @@ func TestCityAlreadyInitializedFSIgnoresSupervisorHomeState(t *testing.T) {
 func TestDoInitBootstrapsExistingCityToml(t *testing.T) {
 	f := fsys.NewFake()
 	original := []byte("[workspace]\nname = \"city\"\n")
-	f.Files[filepath.Join("/city", "city.toml")] = original
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = original
 
 	var stdout, stderr bytes.Buffer
 	code := doInit(f, "/city", defaultWizardConfig(), "", &stdout, &stderr, false)
@@ -2970,23 +2970,23 @@ func TestDoInitBootstrapsExistingCityToml(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Bootstrapped city") {
 		t.Errorf("stdout = %q, want bootstrap message", stdout.String())
 	}
-	if got := string(f.Files[filepath.Join("/city", "city.toml")]); got != string(original) {
+	if got := string(f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))]); got != string(original) {
 		t.Errorf("city.toml overwritten:\ngot:\n%s\nwant:\n%s", got, original)
 	}
-	if !f.Dirs[filepath.Join("/city", ".gc")] {
+	if !f.Dirs[filepath.ToSlash(filepath.Join("/city", ".gc"))] {
 		t.Error(".gc/ should be created during bootstrap")
 	}
-	if _, ok := f.Files[filepath.Join("/city", ".gc", "settings.json")]; !ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/city", ".gc", "settings.json"))]; !ok {
 		t.Error(".gc/settings.json should be created during bootstrap")
 	}
-	if _, ok := f.Files[filepath.Join("/city", "hooks", "claude.json")]; ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/city", "hooks", "claude.json"))]; ok {
 		t.Error("hooks/claude.json should not be created during bootstrap")
 	}
 }
 
 func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 	f := fsys.NewFake()
-	f.Files[filepath.Join("/city", "city.toml")] = []byte("[workspace]\nname = \"old-name\"\n")
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = []byte("[workspace]\nname = \"old-name\"\n")
 
 	var stdout, stderr bytes.Buffer
 	code := doInit(f, "/city", defaultWizardConfig(), "new-name", &stdout, &stderr, false)
@@ -2996,7 +2996,7 @@ func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 	if !strings.Contains(stdout.String(), "new-name") {
 		t.Errorf("stdout = %q, want name override in output", stdout.String())
 	}
-	data := f.Files[filepath.Join("/city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing updated city.toml: %v", err)
@@ -3008,7 +3008,7 @@ func TestDoInitBootstrapWithNameOverride(t *testing.T) {
 
 func TestDoInitMkdirGCFails(t *testing.T) {
 	f := fsys.NewFake()
-	f.Errors[filepath.Join("/city", ".gc")] = fmt.Errorf("permission denied")
+	f.Errors[filepath.ToSlash(filepath.Join("/city", ".gc"))] = fmt.Errorf("permission denied")
 
 	var stderr bytes.Buffer
 	code := doInit(f, "/city", defaultWizardConfig(), "", &bytes.Buffer{}, &stderr, false)
@@ -3022,7 +3022,7 @@ func TestDoInitMkdirGCFails(t *testing.T) {
 
 func TestDoInitWriteFails(t *testing.T) {
 	f := fsys.NewFake()
-	f.Errors[filepath.Join("/city", "city.toml")] = fmt.Errorf("read-only fs")
+	f.Errors[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = fmt.Errorf("read-only fs")
 
 	var stderr bytes.Buffer
 	code := doInit(f, "/city", defaultWizardConfig(), "", &bytes.Buffer{}, &stderr, false)
@@ -3044,14 +3044,14 @@ func TestDoInitCreatesSettings(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	settingsPath := filepath.Join("/bright-lights", ".gc", "settings.json")
-	data, ok := f.Files[settingsPath]
+	data, ok := f.Files[filepath.ToSlash(settingsPath)]
 	if !ok {
 		t.Fatal(".gc/settings.json not created")
 	}
 	if len(data) == 0 {
 		t.Fatal(".gc/settings.json is empty")
 	}
-	if _, ok := f.Files[filepath.Join("/bright-lights", "hooks", "claude.json")]; ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "hooks", "claude.json"))]; ok {
 		t.Fatal("hooks/claude.json should not be created on fresh install")
 	}
 }
@@ -3064,7 +3064,7 @@ func TestDoInitSettingsIsValidJSON(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	settingsPath := filepath.Join("/bright-lights", ".gc", "settings.json")
-	data := f.Files[settingsPath]
+	data := f.Files[filepath.ToSlash(settingsPath)]
 
 	var parsed map[string]any
 	if err := json.Unmarshal(data, &parsed); err != nil {
@@ -3093,21 +3093,21 @@ func TestDoInitDoesNotOverwriteExistingSettings(t *testing.T) {
 	// doInit will see .gc/ exists and return "already initialized".
 	// So test installClaudeHooks directly instead.
 	settingsPath := filepath.Join("/city", "hooks", "claude.json")
-	f.Dirs[filepath.Join("/city", "hooks")] = true
-	f.Files[settingsPath] = []byte(`{"custom": true}`)
+	f.Dirs[filepath.ToSlash(filepath.Join("/city", "hooks"))] = true
+	f.Files[filepath.ToSlash(settingsPath)] = []byte(`{"custom": true}`)
 
 	code := installClaudeHooks(f, "/city", &bytes.Buffer{})
 	if code != 0 {
 		t.Fatalf("installClaudeHooks = %d, want 0", code)
 	}
-	got := string(f.Files[settingsPath])
+	got := string(f.Files[filepath.ToSlash(settingsPath)])
 	if !strings.Contains(got, `"custom": true`) {
 		t.Errorf("custom hook key was lost: %q", got)
 	}
 	if !strings.Contains(got, "SessionStart") {
 		t.Errorf("default hooks were not merged into hook file: %q", got)
 	}
-	if runtime := string(f.Files[filepath.Join("/city", ".gc", "settings.json")]); runtime != got {
+	if runtime := string(f.Files[filepath.ToSlash(filepath.Join("/city", ".gc", "settings.json"))]); runtime != got {
 		t.Errorf("runtime settings were not mirrored from existing hooks file: %q", runtime)
 	}
 }
@@ -3455,7 +3455,7 @@ func TestDoInitWithWizardConfig(t *testing.T) {
 	// Verify written raw city.toml keeps the provider (runtime-local) and
 	// the composed config (city.toml + pack.toml) still surfaces the mayor
 	// agent from the scaffolded agents/<name>/ tree.
-	data := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))]
 	raw, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3483,14 +3483,14 @@ func TestDoInitWithWizardConfig(t *testing.T) {
 	if explicit[0].Name != "mayor" {
 		t.Errorf("explicitAgents[0].Name = %q, want %q", explicit[0].Name, "mayor")
 	}
-	if !strings.HasSuffix(explicit[0].PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md")) {
-		t.Errorf("explicitAgents[0].PromptTemplate = %q, want suffix %q", explicit[0].PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md"))
+	if !strings.HasSuffix(explicit[0].PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md"))) {
+		t.Errorf("explicitAgents[0].PromptTemplate = %q, want suffix %q", explicit[0].PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md")))
 	}
 	// Verify provider appears in TOML.
 	if !strings.Contains(string(data), `provider = "claude"`) {
 		t.Errorf("city.toml missing provider:\n%s", data)
 	}
-	packToml := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
+	packToml := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))])
 	if strings.Contains(packToml, "[providers.") {
 		t.Errorf("pack.toml should not contain generated provider aliases:\n%s", packToml)
 	}
@@ -3513,7 +3513,7 @@ func TestDoInitWithCustomCommand(t *testing.T) {
 	// Verify raw city.toml carries start_command and no provider; the
 	// composed config then surfaces the mayor agent from convention
 	// discovery.
-	data := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))]
 	raw, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3554,7 +3554,7 @@ func TestDoInitWithGastownTemplate(t *testing.T) {
 	}
 
 	// Verify written config has gastown shape.
-	data := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3572,7 +3572,7 @@ func TestDoInitWithGastownTemplate(t *testing.T) {
 	if len(cfg.Agents) != 0 {
 		t.Errorf("len(Agents) = %d, want 0 (agents come from pack)", len(cfg.Agents))
 	}
-	packToml := string(f.Files[filepath.Join("/bright-lights", "pack.toml")])
+	packToml := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))])
 	if !strings.Contains(packToml, "[imports.gastown]") || !strings.Contains(string(data), "[defaults.rig.imports.gastown]") {
 		t.Errorf("pack.toml missing gastown pack wiring:\n%s", packToml)
 	}
@@ -3596,7 +3596,7 @@ func TestDoInitWithCustomTemplate(t *testing.T) {
 	}
 
 	// Custom template creates an empty providerless scaffold.
-	data := f.Files[filepath.Join("/my-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/my-city", "city.toml"))]
 	raw, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3636,7 +3636,7 @@ func TestDoInitWithProviderFlagAndBootstrapProfile(t *testing.T) {
 		t.Errorf("stdout missing provider message: %q", out)
 	}
 
-	data := f.Files[filepath.Join("/hosted-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/hosted-city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3672,7 +3672,7 @@ func TestDoInitWithOpenCodeProviderInstallsWorkspaceHooks(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	data := f.Files[filepath.Join("/open-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/open-city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3701,7 +3701,7 @@ func TestDoInitWithKiroProviderInstallsWorkspaceHooks(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	data := f.Files[filepath.Join("/kiro-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/kiro-city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3730,7 +3730,7 @@ func TestDoInitWithKimiProviderInstallsWorkspaceHooks(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	data := f.Files[filepath.Join("/kimi-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/kimi-city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -3759,7 +3759,7 @@ func TestDoInitWithClaudeProviderLeavesWorkspaceHooksEmpty(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	data := f.Files[filepath.Join("/claude-city", "city.toml")]
+	data := f.Files[filepath.ToSlash(filepath.Join("/claude-city", "city.toml"))]
 	cfg, err := config.Parse(data)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -4051,8 +4051,8 @@ scale_check = "echo 3"
 	if *worker.MaxActiveSessions != 5 {
 		t.Errorf("worker.MaxActiveSessions = %d, want 5", *worker.MaxActiveSessions)
 	}
-	if !strings.HasSuffix(mayor.PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md")) {
-		t.Errorf("mayor.PromptTemplate = %q, want suffix %q", mayor.PromptTemplate, filepath.Join("agents", "mayor", "prompt.template.md"))
+	if !strings.HasSuffix(mayor.PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md"))) {
+		t.Errorf("mayor.PromptTemplate = %q, want suffix %q", mayor.PromptTemplate, filepath.ToSlash(filepath.Join("agents", "mayor", "prompt.template.md")))
 	}
 
 	packData, err := os.ReadFile(filepath.Join(cityPath, "pack.toml"))
@@ -4176,7 +4176,7 @@ func TestCmdInitFromTOMLFileAlreadyInitialized(t *testing.T) {
 
 func TestCmdInitFromTOMLFileAlreadyInitializedByCityToml(t *testing.T) {
 	f := fsys.NewFake()
-	f.Files[filepath.Join("/city", "city.toml")] = []byte("[workspace]\nname = \"city\"\n")
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = []byte("[workspace]\nname = \"city\"\n")
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "config.toml")
@@ -4333,11 +4333,11 @@ func TestCmdInitFromTOMLFilePreserveExistingBlockedByScaffold(t *testing.T) {
 	// A fully-initialized runtime scaffold should still cause init to refuse,
 	// even with --preserve-existing. Only committed config files are meant to
 	// be tolerated; an active runtime indicates the city is already live.
-	f.Files[filepath.Join(cityPath, ".gc", "events.jsonl")] = []byte("")
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, ".gc", "events.jsonl"))] = []byte("")
 	for _, sub := range []string{"cache", "runtime", "system"} {
-		f.Dirs[filepath.Join(cityPath, ".gc", sub)] = true
+		f.Dirs[filepath.ToSlash(filepath.Join(cityPath, ".gc", sub))] = true
 	}
-	f.Dirs[filepath.Join(cityPath, ".gc")] = true
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, ".gc"))] = true
 
 	dir := t.TempDir()
 	src := filepath.Join(dir, "config.toml")
@@ -4360,7 +4360,7 @@ func TestWriteInitFile_PreserveExistingStatError(t *testing.T) {
 	// to the caller instead of being silently treated as "does not exist".
 	f := fsys.NewFake()
 	target := "/city/pack.toml"
-	f.Errors[target] = errors.New("permission denied")
+	f.Errors[filepath.ToSlash(target)] = errors.New("permission denied")
 
 	wrote, err := writeInitFile(f, target, []byte("new"), true)
 	if err == nil {
@@ -4382,7 +4382,7 @@ func TestWriteInitFile_PreserveFalseOverwrites(t *testing.T) {
 	// an existing file — mirroring the pre-flag default behavior.
 	f := fsys.NewFake()
 	target := "/city/pack.toml"
-	f.Files[target] = []byte("existing")
+	f.Files[filepath.ToSlash(target)] = []byte("existing")
 
 	wrote, err := writeInitFile(f, target, []byte("replacement"), false)
 	if err != nil {
@@ -4391,7 +4391,7 @@ func TestWriteInitFile_PreserveFalseOverwrites(t *testing.T) {
 	if !wrote {
 		t.Errorf("wrote = false; want true when preserve=false")
 	}
-	if got := string(f.Files[target]); got != "replacement" {
+	if got := string(f.Files[filepath.ToSlash(target)]); got != "replacement" {
 		t.Errorf("file contents = %q, want %q", got, "replacement")
 	}
 }
@@ -5728,10 +5728,10 @@ func TestInitFromSkipForSourceFSUsesProvidedLegacyOrigins(t *testing.T) {
 	}
 
 	fs := fsys.NewFake()
-	fs.Files[filepath.Join(srcDir, "pack.toml")] = []byte("[pack]\nname = \"modern\"\nschema = 2\n")
-	fs.Files[filepath.Join(srcDir, "assets", "scripts", "run.sh")] = []byte("#!/bin/sh\necho shim\n")
-	fs.Dirs[filepath.Join(srcDir, "assets")] = true
-	fs.Dirs[filepath.Join(srcDir, "assets", "scripts")] = true
+	fs.Files[filepath.ToSlash(filepath.Join(srcDir, "pack.toml"))] = []byte("[pack]\nname = \"modern\"\nschema = 2\n")
+	fs.Files[filepath.ToSlash(filepath.Join(srcDir, "assets", "scripts", "run.sh"))] = []byte("#!/bin/sh\necho shim\n")
+	fs.Dirs[filepath.ToSlash(filepath.Join(srcDir, "assets"))] = true
+	fs.Dirs[filepath.ToSlash(filepath.Join(srcDir, "assets", "scripts"))] = true
 
 	if got := initFromSkipForSourceFS(fs, srcDir)("scripts", true); !got {
 		t.Fatalf("initFromSkipForSourceFS() should skip legacy shim scripts when assets/scripts only exists in provided FS")
@@ -5902,7 +5902,7 @@ func TestDoAgentAddSuccess(t *testing.T) {
 	}
 
 	// Verify the scaffolded agent directory is visible through config load.
-	if _, ok := f.Files[filepath.Join("/city", "agents", "worker", "prompt.template.md")]; !ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/city", "agents", "worker", "prompt.template.md"))]; !ok {
 		t.Fatal("agents/worker/prompt.template.md not written")
 	}
 	got, err := loadCityConfigFS(f, filepath.Join("/city", "city.toml"))
@@ -5944,7 +5944,7 @@ func TestDoAgentAddDuplicate(t *testing.T) {
 
 func TestDoAgentAddLoadFails(t *testing.T) {
 	f := fsys.NewFake()
-	f.Files[filepath.Join("/city", "city.toml")] = []byte(`[workspace]
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = []byte(`[workspace]
 name = "test"
 `)
 
@@ -6066,7 +6066,7 @@ func TestResolveAgentChoiceUnknown(t *testing.T) {
 
 func TestDoAgentAddWithPromptTemplate(t *testing.T) {
 	f := v2CityWithPack(t)
-	f.Files[filepath.Join("/city", "templates", "worker.md")] = []byte("prompt")
+	f.Files[filepath.ToSlash(filepath.Join("/city", "templates", "worker.md"))] = []byte("prompt")
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentAdd(f, "/city", "worker", "templates/worker.md", "", false, &stdout, &stderr)
@@ -6074,7 +6074,7 @@ func TestDoAgentAddWithPromptTemplate(t *testing.T) {
 		t.Fatalf("doAgentAdd = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	got, ok := f.Files[filepath.Join("/city", "agents", "worker", "prompt.template.md")]
+	got, ok := f.Files[filepath.ToSlash(filepath.Join("/city", "agents", "worker", "prompt.template.md"))]
 	if !ok {
 		t.Fatal("agents/worker/prompt.template.md missing")
 	}
@@ -7744,7 +7744,7 @@ func TestDoAgentAddWithDirRejectsSchema2ConventionAgent(t *testing.T) {
 	if !strings.Contains(stderr.String(), "schema-2 convention agents are city-scoped") {
 		t.Fatalf("stderr = %q, want schema-2 city-scoped validation message", stderr.String())
 	}
-	if _, ok := f.Files[filepath.Join("/city", "agents", "builder", "agent.toml")]; ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join("/city", "agents", "builder", "agent.toml"))]; ok {
 		t.Fatal("agents/builder/agent.toml was created for rejected input")
 	}
 }
@@ -7758,7 +7758,7 @@ func TestDoAgentAddWithSuspended(t *testing.T) {
 		t.Fatalf("doAgentAdd = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	agentToml, ok := f.Files[filepath.Join("/city", "agents", "builder", "agent.toml")]
+	agentToml, ok := f.Files[filepath.ToSlash(filepath.Join("/city", "agents", "builder", "agent.toml"))]
 	if !ok {
 		t.Fatal("agents/builder/agent.toml missing")
 	}
@@ -7803,7 +7803,7 @@ func TestDoAgentSuspend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentSuspend(f, "/city", "builder", &stdout, &stderr)
@@ -7815,7 +7815,7 @@ func TestDoAgentSuspend(t *testing.T) {
 	}
 
 	// Verify config was updated.
-	written := f.Files[filepath.Join("/city", "city.toml")]
+	written := f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))]
 	got, err := config.Parse(written)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -7836,7 +7836,7 @@ func TestDoAgentSuspendNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 
 	var stderr bytes.Buffer
 	code := doAgentSuspend(f, "/city", "nonexistent", &bytes.Buffer{}, &stderr)
@@ -7863,7 +7863,7 @@ func TestDoAgentResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 
 	var stdout, stderr bytes.Buffer
 	code := doAgentResume(f, "/city", "builder", &stdout, &stderr)
@@ -7875,7 +7875,7 @@ func TestDoAgentResume(t *testing.T) {
 	}
 
 	// Verify config was updated.
-	written := f.Files[filepath.Join("/city", "city.toml")]
+	written := f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))]
 	got, err := config.Parse(written)
 	if err != nil {
 		t.Fatalf("parsing written config: %v", err)
@@ -7896,7 +7896,7 @@ func TestDoAgentResumeNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 
 	var stderr bytes.Buffer
 	code := doAgentResume(f, "/city", "nonexistent", &bytes.Buffer{}, &stderr)

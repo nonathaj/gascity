@@ -26,7 +26,7 @@ func TestSuspendResume(t *testing.T) {
 	}
 	cityPath := "/city"
 	cityTOMLPath := filepath.Join(cityPath, "city.toml")
-	f.Files[cityTOMLPath] = data
+	f.Files[filepath.ToSlash(cityTOMLPath)] = data
 	originalTOML := append([]byte(nil), data...)
 
 	// Suspend.
@@ -41,9 +41,9 @@ func TestSuspendResume(t *testing.T) {
 
 	// city.toml must stay byte-for-byte identical: suspension lives in
 	// .gc/runtime/suspension-state.json, never in committed config.
-	if !bytes.Equal(f.Files[cityTOMLPath], originalTOML) {
+	if !bytes.Equal(f.Files[filepath.ToSlash(cityTOMLPath)], originalTOML) {
 		t.Errorf("city.toml mutated by suspend; want byte-identical:\n got:  %s\n want: %s",
-			f.Files[cityTOMLPath], originalTOML)
+			f.Files[filepath.ToSlash(cityTOMLPath)], originalTOML)
 	}
 	st, err := suspensionstate.Load(f, cityPath)
 	if err != nil {
@@ -63,9 +63,9 @@ func TestSuspendResume(t *testing.T) {
 	if !strings.Contains(stdout.String(), "City resumed") {
 		t.Errorf("stdout = %q, want resume message", stdout.String())
 	}
-	if !bytes.Equal(f.Files[cityTOMLPath], originalTOML) {
+	if !bytes.Equal(f.Files[filepath.ToSlash(cityTOMLPath)], originalTOML) {
 		t.Errorf("city.toml mutated by resume; want byte-identical:\n got:  %s\n want: %s",
-			f.Files[cityTOMLPath], originalTOML)
+			f.Files[filepath.ToSlash(cityTOMLPath)], originalTOML)
 	}
 	st, err = suspensionstate.Load(f, cityPath)
 	if err != nil {
@@ -87,7 +87,7 @@ func TestSuspendJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	cityPath := "/city"
-	f.Files[filepath.Join(cityPath, "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))] = data
 
 	var stdout, stderr bytes.Buffer
 	code := doSuspendCity(f, cityPath, true, true, &stdout, &stderr)
@@ -118,7 +118,7 @@ func TestSuspendAlreadySuspended(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 	want := true
 	if err := suspensionstate.SetCitySuspended(f, "/city", &want); err != nil {
 		t.Fatalf("pre-suspend: %v", err)
@@ -140,7 +140,7 @@ func TestResumeAlreadyResumed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Files[filepath.Join("/city", "city.toml")] = data
+	f.Files[filepath.ToSlash(filepath.Join("/city", "city.toml"))] = data
 
 	var stdout, stderr bytes.Buffer
 	code := doSuspendCity(f, "/city", false, false, &stdout, &stderr)

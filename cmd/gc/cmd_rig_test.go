@@ -60,13 +60,13 @@ func writeSchema2RigCity(t *testing.T, cityPath, workspaceName, cityToml, siteTo
 
 func writeSchema2RigCityFS(t *testing.T, f *fsys.Fake, cityPath, workspaceName, cityToml string) {
 	t.Helper()
-	f.Dirs[cityPath] = true
-	f.Dirs[filepath.Join(cityPath, ".gc")] = true
-	f.Files[filepath.Join(cityPath, "pack.toml")] = []byte(fmt.Sprintf("[pack]\nname = %q\nschema = 2\n", workspaceName))
+	f.Dirs[filepath.ToSlash(cityPath)] = true
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, ".gc"))] = true
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, "pack.toml"))] = []byte(fmt.Sprintf("[pack]\nname = %q\nschema = 2\n", workspaceName))
 	if cityToml == "" {
 		cityToml = "[workspace]\n"
 	}
-	f.Files[filepath.Join(cityPath, "city.toml")] = []byte(cityToml)
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))] = []byte(cityToml)
 	f.Files[config.SiteBindingPath(cityPath)] = []byte(fmt.Sprintf("workspace_name = %q\n", workspaceName))
 }
 
@@ -835,7 +835,7 @@ func TestDoRigAdd_ConfigUnchangedOnInfraFailure(t *testing.T) {
 	f := fsys.NewFake()
 	writeSchema2RigCityFS(t, f, cityPath, "test", originalToml)
 	f.Dirs["/fake-rig"] = true
-	f.Errors[filepath.Join("/fake-rig", ".beads")] = os.ErrPermission
+	f.Errors[filepath.ToSlash(filepath.Join("/fake-rig", ".beads"))] = os.ErrPermission
 
 	var stdout, stderr bytes.Buffer
 	code := doRigAdd(f, cityPath, "/fake-rig", nil, "", "", "", false, false, &stdout, &stderr)
@@ -858,8 +858,8 @@ func TestDoRigAdd_RootPackDefaultRigImportsErrorDoesNotMutateRig(t *testing.T) {
 	cityPath := "/city"
 	rigPath := "/rigs/my-project"
 	writeSchema2RigCityFS(t, f, cityPath, "test", "[workspace]\n")
-	originalToml := string(f.Files[filepath.Join(cityPath, "city.toml")])
-	f.Errors[filepath.Join(cityPath, "pack.toml")] = errors.New("read denied")
+	originalToml := string(f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))])
+	f.Errors[filepath.ToSlash(filepath.Join(cityPath, "pack.toml"))] = errors.New("read denied")
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -872,10 +872,10 @@ func TestDoRigAdd_RootPackDefaultRigImportsErrorDoesNotMutateRig(t *testing.T) {
 	if !strings.Contains(stderr.String(), "gc rig add: loading root pack defaults: loading city pack.toml") {
 		t.Fatalf("stderr should mention root pack defaults load failure, got: %s", stderr.String())
 	}
-	if f.Dirs[rigPath] {
+	if f.Dirs[filepath.ToSlash(rigPath)] {
 		t.Fatalf("rig directory should not be created before root pack defaults load succeeds")
 	}
-	if got := string(f.Files[filepath.Join(cityPath, "city.toml")]); got != originalToml {
+	if got := string(f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))]); got != originalToml {
 		t.Fatalf("city.toml changed unexpectedly:\n%s", got)
 	}
 }
@@ -955,7 +955,7 @@ func TestDoRigAdd_CreateMissingRigDirectoryError(t *testing.T) {
 	cityPath := "/city"
 	rigPath := "/rigs/my-project"
 	writeSchema2RigCityFS(t, base, cityPath, "test", "[workspace]\n")
-	originalToml := string(base.Files[filepath.Join(cityPath, "city.toml")])
+	originalToml := string(base.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))])
 	mkdirErr := errors.New("mkdir denied")
 
 	f := mkdirAllErrorFS{FS: base, path: rigPath, err: mkdirErr}
@@ -971,10 +971,10 @@ func TestDoRigAdd_CreateMissingRigDirectoryError(t *testing.T) {
 	if !strings.Contains(stderr.String(), "gc rig add: creating "+rigPath+": mkdir denied") {
 		t.Fatalf("stderr should mention rig directory create failure, got: %s", stderr.String())
 	}
-	if base.Dirs[rigPath] {
+	if base.Dirs[filepath.ToSlash(rigPath)] {
 		t.Fatalf("rig directory should not be recorded after MkdirAll failure")
 	}
-	if got := string(base.Files[filepath.Join(cityPath, "city.toml")]); got != originalToml {
+	if got := string(base.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))]); got != originalToml {
 		t.Fatalf("city.toml changed unexpectedly:\n%s", got)
 	}
 }
@@ -2325,8 +2325,8 @@ func TestDoRigAdd_ExistingBeadsStatErrorFailsClosed(t *testing.T) {
 	beadsPath := filepath.Join(rigPath, ".beads")
 
 	writeSchema2RigCityFS(t, f, cityPath, "my-city", "[workspace]\n")
-	f.Dirs[rigPath] = true
-	f.Errors[beadsPath] = os.ErrPermission
+	f.Dirs[filepath.ToSlash(rigPath)] = true
+	f.Errors[filepath.ToSlash(beadsPath)] = os.ErrPermission
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -2340,7 +2340,7 @@ func TestDoRigAdd_ExistingBeadsStatErrorFailsClosed(t *testing.T) {
 	if !strings.Contains(errMsg, "checking "+beadsPath) {
 		t.Fatalf("stderr should identify the .beads stat failure, got: %s", errMsg)
 	}
-	if _, ok := f.Files[filepath.Join(cityPath, "city.toml")]; !ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))]; !ok {
 		t.Fatal("city.toml missing from fake filesystem")
 	}
 }
@@ -2352,11 +2352,11 @@ func TestDoRigAdd_ExistingBeadsMarkerStatErrorFailsClosed(t *testing.T) {
 	beadsPath := filepath.Join(rigPath, ".beads")
 	markerPath := filepath.Join(beadsPath, "metadata.json")
 
-	f.Dirs[filepath.Join(cityPath, ".gc")] = true
-	f.Dirs[rigPath] = true
-	f.Dirs[beadsPath] = true
-	f.Files[filepath.Join(cityPath, "city.toml")] = []byte("[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n")
-	f.Errors[markerPath] = os.ErrPermission
+	f.Dirs[filepath.ToSlash(filepath.Join(cityPath, ".gc"))] = true
+	f.Dirs[filepath.ToSlash(rigPath)] = true
+	f.Dirs[filepath.ToSlash(beadsPath)] = true
+	f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))] = []byte("[workspace]\nname = \"my-city\"\n\n[[agent]]\nname = \"mayor\"\n")
+	f.Errors[filepath.ToSlash(markerPath)] = os.ErrPermission
 
 	t.Setenv("GC_DOLT", "skip")
 	t.Setenv("GC_BEADS", "file")
@@ -2370,7 +2370,7 @@ func TestDoRigAdd_ExistingBeadsMarkerStatErrorFailsClosed(t *testing.T) {
 	if !strings.Contains(errMsg, "checking "+markerPath) {
 		t.Fatalf("stderr should identify the marker stat failure, got: %s", errMsg)
 	}
-	if _, ok := f.Files[filepath.Join(cityPath, "city.toml")]; !ok {
+	if _, ok := f.Files[filepath.ToSlash(filepath.Join(cityPath, "city.toml"))]; !ok {
 		t.Fatal("city.toml missing from fake filesystem")
 	}
 }

@@ -68,7 +68,7 @@ func TestDoInitDefaultTemplateImportsGascityPack(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	packData := f.Files[filepath.Join("/bright-lights", "pack.toml")]
+	packData := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))]
 	packCfg, err := config.Parse(packData)
 	if err != nil {
 		t.Fatalf("parsing pack.toml: %v", err)
@@ -87,7 +87,7 @@ func TestDoInitExplicitMinimalTemplateDoesNotImportGascityPack(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	packData := f.Files[filepath.Join("/bright-lights", "pack.toml")]
+	packData := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))]
 	packCfg, err := config.Parse(packData)
 	if err != nil {
 		t.Fatalf("parsing pack.toml: %v", err)
@@ -114,7 +114,7 @@ func TestDoInitWithGascityTemplate(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	packData := f.Files[filepath.Join("/bright-lights", "pack.toml")]
+	packData := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "pack.toml"))]
 	packCfg, err := config.Parse(packData)
 	if err != nil {
 		t.Fatalf("parsing pack.toml: %v", err)
@@ -152,7 +152,7 @@ func TestDoInitGascityTemplateSeedsRolesDefaultRigImport(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	cityData := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	cityData := f.Files[filepath.ToSlash(filepath.Join("/bright-lights", "city.toml"))]
 	cityCfg, err := config.Parse(cityData)
 	if err != nil {
 		t.Fatalf("parsing city.toml: %v", err)

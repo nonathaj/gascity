@@ -19,7 +19,7 @@ func TestEnsureGitignoreEntries_CreatesNewFile(t *testing.T) {
 		t.Fatalf("ensureGitignoreEntries: %v", err)
 	}
 
-	got := string(f.Files[filepath.Join("/city", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))])
 	for _, want := range cityGitignoreEntries {
 		if !strings.Contains(got, want) {
 			t.Errorf(".gitignore missing %q; got:\n%s", want, got)
@@ -43,7 +43,7 @@ func TestEnsureGitignoreEntries_RigEntriesKeepBeadsRuntimeIgnored(t *testing.T) 
 		t.Fatalf("ensureGitignoreEntries: %v", err)
 	}
 
-	got := string(f.Files[filepath.Join("/rig", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/rig", ".gitignore"))])
 	for _, want := range rigGitignoreEntries {
 		if !strings.Contains(got, want) {
 			t.Errorf("rig .gitignore missing %q; got:\n%s", want, got)
@@ -108,13 +108,13 @@ func runGit(t *testing.T, dir string, args ...string) string {
 
 func TestEnsureGitignoreEntries_SkipsExisting(t *testing.T) {
 	f := fsys.NewFake()
-	f.Files[filepath.Join("/city", ".gitignore")] = []byte(".gc/\n.beads/\n/.beads/\n!.beads/config.yaml\n!.beads/metadata.json\nnode_modules/\n")
+	f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))] = []byte(".gc/\n.beads/\n/.beads/\n!.beads/config.yaml\n!.beads/metadata.json\nnode_modules/\n")
 
 	if err := ensureGitignoreEntries(f, "/city", cityGitignoreEntries); err != nil {
 		t.Fatalf("ensureGitignoreEntries: %v", err)
 	}
 
-	got := string(f.Files[filepath.Join("/city", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))])
 	// .gc/ should appear only once (the original).
 	if strings.Count(got, ".gc/") != 1 {
 		t.Errorf(".gc/ appears %d times, want 1; got:\n%s", strings.Count(got, ".gc/"), got)
@@ -147,7 +147,7 @@ func TestEnsureGitignoreEntries_Idempotent(t *testing.T) {
 		}
 	}
 
-	got := string(f.Files[filepath.Join("/city", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))])
 	for _, entry := range entries {
 		if strings.Count(got, entry) != 1 {
 			t.Errorf("%q appears %d times after 3 passes, want 1; got:\n%s",
@@ -159,13 +159,13 @@ func TestEnsureGitignoreEntries_Idempotent(t *testing.T) {
 func TestEnsureGitignoreEntries_NoOpWhenAllPresent(t *testing.T) {
 	f := fsys.NewFake()
 	original := ".gc/\n.beads/*\n!.beads/identity.toml\nhooks/\n"
-	f.Files[filepath.Join("/city", ".gitignore")] = []byte(original)
+	f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))] = []byte(original)
 
 	if err := ensureGitignoreEntries(f, "/city", cityGitignoreEntries); err != nil {
 		t.Fatalf("ensureGitignoreEntries: %v", err)
 	}
 
-	got := string(f.Files[filepath.Join("/city", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/city", ".gitignore"))])
 	if got != original {
 		t.Errorf("file was modified when it shouldn't have been;\nwant: %q\ngot:  %q", original, got)
 	}
@@ -181,7 +181,7 @@ func TestDoInit_WritesGitignoreEntries(t *testing.T) {
 	}
 
 	gitignorePath := filepath.Join("/bright-lights", ".gitignore")
-	data, ok := f.Files[gitignorePath]
+	data, ok := f.Files[filepath.ToSlash(gitignorePath)]
 	if !ok {
 		t.Fatal(".gitignore not created by doInit")
 	}
@@ -202,14 +202,14 @@ func TestDoInit_GitignoreIdempotent(t *testing.T) {
 		t.Fatalf("first doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	first := string(f.Files[filepath.Join("/bright-lights", ".gitignore")])
+	first := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", ".gitignore"))])
 
 	// Run ensureGitignoreEntries again (simulating a second init-like operation).
 	if err := ensureGitignoreEntries(f, "/bright-lights", cityGitignoreEntries); err != nil {
 		t.Fatalf("second ensureGitignoreEntries: %v", err)
 	}
 
-	second := string(f.Files[filepath.Join("/bright-lights", ".gitignore")])
+	second := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", ".gitignore"))])
 	if first != second {
 		t.Errorf("gitignore changed on second pass;\nfirst:  %q\nsecond: %q", first, second)
 	}
@@ -234,7 +234,7 @@ func TestEnsureGitignoreEntries_IdentityTomlNegationPresent(t *testing.T) {
 			if err := ensureGitignoreEntries(f, tc.dir, tc.entries); err != nil {
 				t.Fatalf("ensureGitignoreEntries: %v", err)
 			}
-			got := string(f.Files[filepath.Join(tc.dir, ".gitignore")])
+			got := string(f.Files[filepath.ToSlash(filepath.Join(tc.dir, ".gitignore"))])
 			if !strings.Contains(got, "!.beads/identity.toml") {
 				t.Errorf("%s .gitignore missing %q; got:\n%s", tc.name, "!.beads/identity.toml", got)
 			}
@@ -262,7 +262,7 @@ func TestEnsureGitignoreEntries_IdentityTomlNegationAfterGlob(t *testing.T) {
 			if err := ensureGitignoreEntries(f, tc.dir, tc.entries); err != nil {
 				t.Fatalf("ensureGitignoreEntries: %v", err)
 			}
-			got := string(f.Files[filepath.Join(tc.dir, ".gitignore")])
+			got := string(f.Files[filepath.ToSlash(filepath.Join(tc.dir, ".gitignore"))])
 			globIdx := strings.Index(got, ".beads/*")
 			negIdx := strings.Index(got, "!.beads/identity.toml")
 			if globIdx < 0 {
@@ -283,7 +283,7 @@ func TestDoInit_GitignorePreservesUserEntries(t *testing.T) {
 	f := fsys.NewFake()
 	// Pre-populate a .gitignore with user content.
 	userContent := "node_modules/\n*.log\n"
-	f.Files[filepath.Join("/bright-lights", ".gitignore")] = []byte(userContent)
+	f.Files[filepath.ToSlash(filepath.Join("/bright-lights", ".gitignore"))] = []byte(userContent)
 	// Pre-populate city.toml so doInit sees it as existing city (bootstrap path).
 	// Instead, just test ensureGitignoreEntries directly since doInit won't
 	// run on a directory that already has a scaffold.
@@ -291,7 +291,7 @@ func TestDoInit_GitignorePreservesUserEntries(t *testing.T) {
 		t.Fatalf("ensureGitignoreEntries: %v", err)
 	}
 
-	got := string(f.Files[filepath.Join("/bright-lights", ".gitignore")])
+	got := string(f.Files[filepath.ToSlash(filepath.Join("/bright-lights", ".gitignore"))])
 	if !strings.Contains(got, "node_modules/") {
 		t.Error("user entry 'node_modules/' was lost")
 	}
