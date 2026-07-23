@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -91,8 +92,14 @@ func TestManagedDoltDataDirLockHolderDetectsHeldLockUnderGlobMetacharPath(t *tes
 	// treated as a pattern: an unmatched `[` makes filepath.Glob error out
 	// (silently dropping the probe) and `?`/`*` match the wrong paths —
 	// either way the guard would miss a held LOCK and re-open the #3174
-	// race for any city at such a path.
-	dataDir := filepath.Join(t.TempDir(), "city [prod ?*")
+	// race for any city at such a path. Windows filenames cannot contain
+	// `?`/`*`, so the fixture there keeps only the legal metachar (`[` —
+	// still enough to error an unguarded filepath.Glob).
+	metacharName := "city [prod ?*"
+	if runtime.GOOS == "windows" {
+		metacharName = "city [prod"
+	}
+	dataDir := filepath.Join(t.TempDir(), metacharName)
 	nomsDir := filepath.Join(dataDir, "dolt", ".dolt", "noms")
 	if err := os.MkdirAll(nomsDir, 0o755); err != nil {
 		t.Fatalf("mkdir noms dir: %v", err)

@@ -310,13 +310,9 @@ func TestRegistryLoginStoresVerifiedToken(t *testing.T) {
 	if token != "gcr_manual_token" {
 		t.Fatalf("stored token = %q", token)
 	}
-	info, err := os.Stat(configPath)
-	if err != nil {
-		t.Fatalf("Stat config: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("config mode = %o, want 0600", got)
-	}
+	// Mode bits on Unix; owner-only ACL on Windows (saveRegistryCLIConfig
+	// applies winsec.RestrictToOwner there).
+	assertOwnerRestricted(t, configPath, 0o600)
 }
 
 func TestDoRegistryPublishUsesStoredLoginToken(t *testing.T) {

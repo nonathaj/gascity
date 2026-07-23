@@ -6777,11 +6777,9 @@ func TestDoPrimeStrictUnreadableTemplateFile(t *testing.T) {
 	if err := os.WriteFile(templatePath, []byte("mayor prompt"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Strip read permission so the file exists (Stat succeeds) but cannot be read.
-	if err := os.Chmod(templatePath, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(templatePath, 0o644) })
+	// Make the file exist (Stat succeeds) but be unreadable: chmod on Unix, an
+	// exclusive no-share handle on Windows where chmod cannot deny the owner (T4).
+	testutil.MakeFileUnopenable(t, templatePath)
 
 	toml := `[workspace]
 name = "test-city"

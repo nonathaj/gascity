@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"maps"
+	slashpath "path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -566,7 +567,9 @@ func normalizedTraceTemplate(v string) string {
 	if v == "" {
 		return ""
 	}
-	return strings.TrimSpace(filepath.Clean(v))
+	// Trace scope values are slash-form identifiers (rig/template), not native
+	// paths: clean with slashpath so Windows does not rewrite "/" to "\" (P4).
+	return strings.TrimSpace(slashpath.Clean(v))
 }
 
 func newTraceID(prefix string) string {
