@@ -268,6 +268,21 @@ func benignManagedDeletedInodeTarget(target string) bool {
 	return strings.HasSuffix(clean, string(filepath.Separator)+".dolt"+string(filepath.Separator)+"noms"+string(filepath.Separator)+"LOCK")
 }
 
+// processHasDeletedDataInodes reports whether the process pid holds an open
+// handle to a deleted data file under dataDir — the managed-Dolt corruption
+// where the store keeps operating on files that were unlinked out from under it.
+// It reads /proc/<pid>/fd (and falls back to lsof) for the "(deleted)" marker
+// Linux keeps on such handles.
+//
+// On Windows it always returns false, and that is correct rather than a stub: the
+// failure mode cannot occur. Windows refuses to delete a file that is open
+// without FILE_SHARE_DELETE, and Dolt opens its data files without it — verified
+// empirically, a live `dolt sql-server`'s chunk file cannot be removed ("the
+// process cannot access the file because it is being used by another process").
+// So a running managed-Dolt process can never hold a deleted data file here.
+// (Even the artificial share-delete case is unrecoverable: modern Windows moves a
+// delete-pending file to \$Extend\$Deleted\<file-id>, severing the original path
+// needed to scope it to dataDir or tell the benign noms LOCK from real data.)
 func processHasDeletedDataInodes(pid int, dataDir string) bool {
 	if pid <= 0 {
 		return false

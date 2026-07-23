@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"bytes"
 	"errors"
 	"fmt"
@@ -986,6 +987,9 @@ func TestDoltStateInspectManagedCmdUsesPIDFileAndStateOwnership(t *testing.T) {
 }
 
 func TestDoltStateInspectManagedCmdDetectsDeletedInodes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("deleted-inode detection is Linux-specific: Windows refuses to delete a file open without FILE_SHARE_DELETE, and Dolt opens its data files without it, so a running managed-Dolt process can never hold a deleted data file (verified against a live dolt sql-server) — see processHasDeletedDataInodes")
+	}
 	cityPath := t.TempDir()
 	layout, err := resolveManagedDoltRuntimeLayout(cityPath)
 	if err != nil {
@@ -1866,6 +1870,9 @@ func processHoldsDeletedPath(pid int, targetPath string) bool {
 }
 
 func TestProcessHasDeletedDataInodesIgnoresDeletedNomsLock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("deleted-inode detection is Linux-specific: Windows refuses to delete a file open without FILE_SHARE_DELETE, and Dolt opens its data files without it, so a running managed-Dolt process can never hold a deleted data file (verified against a live dolt sql-server) — see processHasDeletedDataInodes")
+	}
 	cityPath := t.TempDir()
 	layout, err := resolveManagedDoltRuntimeLayout(cityPath)
 	if err != nil {
@@ -2422,6 +2429,9 @@ esac
 }
 
 func TestDoltStateWaitReadyCmdDetectsDeletedInodes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("deleted-inode detection is Linux-specific: Windows refuses to delete a file open without FILE_SHARE_DELETE, and Dolt opens its data files without it, so a running managed-Dolt process can never hold a deleted data file (verified against a live dolt sql-server) — see processHasDeletedDataInodes")
+	}
 	cityPath := t.TempDir()
 	layout, err := resolveManagedDoltRuntimeLayout(cityPath)
 	if err != nil {
