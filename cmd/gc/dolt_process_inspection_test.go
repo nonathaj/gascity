@@ -68,10 +68,7 @@ dolt    %d user   12u  IPv4 0x1234      0t0  TCP *:3306 (LISTEN)
 
 func TestProcessCWDFromLsofParsesNameRecord(t *testing.T) {
 	binDir := t.TempDir()
-	lsofPath := filepath.Join(binDir, "lsof")
-	if err := os.WriteFile(lsofPath, []byte("#!/bin/sh\nprintf 'p123\\nfcwd\\nn/private/var/folders/example/.beads/dolt\\n'\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile(lsof): %v", err)
-	}
+	installFakeToolOnPath(t, binDir, "lsof", "#!/bin/sh\nprintf 'p123\\nfcwd\\nn/private/var/folders/example/.beads/dolt\\n'\n")
 	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 
 	cwd, ok := processCWDFromLsof(123)
@@ -111,10 +108,7 @@ dolt      123 user  cwd    DIR   1,4       96  42 /tmp/my city/.beads/dolt
 
 func TestDeletedDataInodeTargetsFromLsofParsesNameRecords(t *testing.T) {
 	binDir := t.TempDir()
-	lsofPath := filepath.Join(binDir, "lsof")
-	if err := os.WriteFile(lsofPath, []byte("#!/bin/sh\nprintf 'p123\\nn/private/var/folders/example/.beads/dolt/held.db (deleted)\\nn/private/var/folders/example/.beads/dolt/hq/.dolt/noms/LOCK (deleted)\\n'\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile(lsof): %v", err)
-	}
+	installFakeToolOnPath(t, binDir, "lsof", "#!/bin/sh\nprintf 'p123\\nn/private/var/folders/example/.beads/dolt/held.db (deleted)\\nn/private/var/folders/example/.beads/dolt/hq/.dolt/noms/LOCK (deleted)\\n'\n")
 	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 
 	targets := deletedDataInodeTargetsFromLsof(123)
