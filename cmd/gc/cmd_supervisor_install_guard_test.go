@@ -199,10 +199,16 @@ func TestInstallSupervisorLaunchdBinaryMismatchGuard(t *testing.T) {
 				if !bytes.Equal(got, original) {
 					t.Fatalf("refused install rewrote plist:\n got: %q\nwant: %q", got, original)
 				}
-				for _, want := range []string{"existing plist", "/opt/gascity/bin/gc", currentBinary, "--force"} {
+				// The message %q-quotes paths, so a native Windows binary path
+				// appears with doubled backslashes; accept either spelling.
+				escapedBinary := strings.ReplaceAll(currentBinary, `\`, `\\`)
+				for _, want := range []string{"existing plist", "/opt/gascity/bin/gc", "--force"} {
 					if !strings.Contains(stderr.String(), want) {
 						t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 					}
+				}
+				if !strings.Contains(stderr.String(), currentBinary) && !strings.Contains(stderr.String(), escapedBinary) {
+					t.Fatalf("stderr = %q, want current binary %q", stderr.String(), currentBinary)
 				}
 				return
 			}

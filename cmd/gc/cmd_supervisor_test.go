@@ -1044,11 +1044,9 @@ func TestSupervisorLaunchctlGetenvStripsDarwinOutputNewline(t *testing.T) {
 
 	binDir := t.TempDir()
 	logFile := filepath.Join(t.TempDir(), "launchctl.log")
-	script := filepath.Join(binDir, "launchctl")
 	content := "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$GC_TEST_LAUNCHCTL_LOG\"\nif [ \"$1\" = \"getenv\" ] && [ \"$2\" = \"GC_DOLT_LOGLEVEL\" ]; then\n  printf '  debug  \\n'\n  exit 0\nfi\nexit 1\n"
-	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
-		t.Fatalf("WriteFile(%q): %v", script, err)
-	}
+	// installFakeToolOnPath adds the .bat launcher so PATHEXT finds the fake (T3).
+	installFakeToolOnPath(t, binDir, "launchctl", content)
 	t.Setenv("GC_TEST_LAUNCHCTL_LOG", logFile)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -2952,7 +2950,8 @@ func TestInstallSupervisorLaunchdWritesPrivatePlist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(%q): %v", path, err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); goruntime.GOOS != "windows" && got != 0o600 {
+		// P5: NTFS mode bits are synthetic; the launchd path is macOS production.
 		t.Fatalf("launchd plist mode = %03o, want 600", got)
 	}
 }
@@ -3341,7 +3340,8 @@ func TestInstallSupervisorLaunchdRestoresPreviousCurrentPlistWhenUpdateFails(t *
 	if err != nil {
 		t.Fatalf("Stat(%q): %v", currentPath, err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); goruntime.GOOS != "windows" && got != 0o600 {
+		// P5: NTFS mode bits are synthetic; the launchd path is macOS production.
 		t.Fatalf("restored launchd plist mode = %03o, want 600", got)
 	}
 	if loadCalls != 2 {
@@ -5513,9 +5513,9 @@ func TestResolveStableSupervisorBinaryPath(t *testing.T) {
 				if err := os.MkdirAll(binDir, 0o755); err != nil {
 					t.Fatalf("mkdir local bin: %v", err)
 				}
-				symlink := filepath.Join(binDir, "gc")
+				symlink := filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS))
 				if err := os.Symlink(running, symlink); err != nil {
-					t.Fatalf("symlink: %v", err)
+					t.Skipf("symlink unavailable: %v", err)
 				}
 				return homeDir, "", running, symlink
 			},
@@ -5529,7 +5529,7 @@ func TestResolveStableSupervisorBinaryPath(t *testing.T) {
 				if err := os.MkdirAll(binDir, 0o755); err != nil {
 					t.Fatalf("mkdir local bin: %v", err)
 				}
-				hardlink := filepath.Join(binDir, "gc")
+				hardlink := filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS))
 				if err := os.Link(running, hardlink); err != nil {
 					t.Skipf("os.Link not supported on this filesystem: %v", err)
 				}
@@ -5546,7 +5546,7 @@ func TestResolveStableSupervisorBinaryPath(t *testing.T) {
 				if err := os.MkdirAll(binDir, 0o755); err != nil {
 					t.Fatalf("mkdir gopath bin: %v", err)
 				}
-				symlink := filepath.Join(binDir, "gc")
+				symlink := filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS))
 				if err := os.Symlink(running, symlink); err != nil {
 					t.Fatalf("symlink: %v", err)
 				}
@@ -5596,7 +5596,7 @@ func TestResolveStableSupervisorBinaryPath(t *testing.T) {
 				if err := os.MkdirAll(binDir, 0o755); err != nil {
 					t.Fatalf("mkdir local bin: %v", err)
 				}
-				if err := os.WriteFile(filepath.Join(binDir, "gc"), []byte{}, 0o644); err != nil {
+				if err := os.WriteFile(filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS)), []byte{}, 0o644); err != nil {
 					t.Fatalf("write non-executable: %v", err)
 				}
 				return homeDir, "", running, running
@@ -5634,7 +5634,7 @@ func TestBuildSupervisorServiceDataPrefersUserLocalBinExecPath(t *testing.T) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir local bin: %v", err)
 	}
-	stable := filepath.Join(binDir, "gc")
+	stable := filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS))
 	if err := os.Symlink(runningExe, stable); err != nil {
 		t.Fatalf("symlink stable path: %v", err)
 	}
@@ -5673,7 +5673,7 @@ func TestInstallSupervisorSystemdRefreshesStaleTmpExecStart(t *testing.T) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatalf("mkdir local bin: %v", err)
 	}
-	stable := filepath.Join(binDir, "gc")
+	stable := filepath.Join(binDir, supervisorBinaryFileName(goruntime.GOOS))
 	if err := os.Symlink(runningExe, stable); err != nil {
 		t.Fatalf("symlink stable: %v", err)
 	}

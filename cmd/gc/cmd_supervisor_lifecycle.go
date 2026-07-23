@@ -1673,6 +1673,13 @@ func systemdSupervisorHome(data []byte) (string, bool) {
 		if unquoted, err := strconv.Unquote(value); err == nil {
 			return filepath.Clean(unquoted), true
 		}
+		// The unit template writes GC_HOME="{{.GCHome}}" with plain quotes, and
+		// strconv.Unquote rejects Windows backslash paths (\U is not a valid Go
+		// escape) — strip the surrounding quotes verbatim so the fallback does
+		// not Stat a path with a leading quote character.
+		if len(value) >= 2 && strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`) {
+			value = value[1 : len(value)-1]
+		}
 		return filepath.Clean(value), true
 	}
 	return "", false
