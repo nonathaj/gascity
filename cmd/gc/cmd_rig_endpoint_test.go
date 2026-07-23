@@ -1307,10 +1307,9 @@ func TestDoRigSetEndpointCompatCityTomlFailureRollsBackCanonicalFiles(t *testing
 		DoltPort:       "3307",
 	})
 	cityTomlPath := filepath.Join(cityDir, "city.toml")
-	if err := os.Chmod(cityDir, 0o555); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chmod(cityDir, 0o755) }()
+	// denyDirWrites: chmod 0o555 cannot deny the owner on NTFS (T4); the helper
+	// uses an icacls write-deny on Windows and chmod elsewhere.
+	denyDirWrites(t, cityDir)
 
 	beforeCity := mustReadFile(t, cityTomlPath)
 	beforeMeta := mustReadFile(t, filepath.Join(rigDir, ".beads", "metadata.json"))
