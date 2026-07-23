@@ -243,7 +243,9 @@ func collectLintPromptTargets(packDir string, loaded *config.LintPackLoad) ([]li
 			continue
 		}
 		seenRender[key] = struct{}{}
-		seenPath[sourcePath] = struct{}{}
+		// Slash-form key: promptTemplateSourcePath returns slash-form while the
+		// WalkDir below yields native paths (P4).
+		seenPath[filepath.ToSlash(sourcePath)] = struct{}{}
 		targets = append(targets, lintPromptTarget{
 			templatePath: agentCfg.PromptTemplate,
 			sourcePath:   sourcePath,
@@ -268,10 +270,10 @@ func collectLintPromptTargets(packDir string, loaded *config.LintPackLoad) ([]li
 		if !isPromptTemplatePath(entry.Name()) {
 			return nil
 		}
-		if _, ok := seenPath[path]; ok {
+		if _, ok := seenPath[filepath.ToSlash(path)]; ok {
 			return nil
 		}
-		seenPath[path] = struct{}{}
+		seenPath[filepath.ToSlash(path)] = struct{}{}
 		rel, err := filepath.Rel(packDir, path)
 		if err != nil {
 			diagnostics = append(diagnostics, diagnosticFromError(path, err))

@@ -820,11 +820,13 @@ func TestOrderCheckWithStoresResolverUsesLegacyCityStore(t *testing.T) {
 func TestOrderCheckConditionUsesCityScope(t *testing.T) {
 	cityDir := t.TempDir()
 	orderDir := filepath.Join(cityDir, "packs", "workflows", "orders")
+	// Slash-form: the order-exec env is slash-form on Windows (P8) and sh eats
+	// backslashes in the comparison literals.
 	check := fmt.Sprintf(
 		`test "$GC_CITY_PATH" = '%s' && test "$GC_STORE_ROOT" = '%s' && test "$GC_STORE_SCOPE" = city && test "$ORDER_DIR" = '%s'`,
-		cityDir,
-		cityDir,
-		orderDir,
+		filepath.ToSlash(cityDir),
+		filepath.ToSlash(cityDir),
+		filepath.ToSlash(orderDir),
 	)
 	aa := []orders.Order{{
 		Name:    "pr-review-router",
