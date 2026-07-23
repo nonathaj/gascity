@@ -12,6 +12,14 @@ import (
 	"github.com/gastownhall/gascity/internal/shellquote"
 )
 
+// containsJSONEscaped reports whether raw JSON file bytes contain want in
+// either its literal or JSON-escaped (doubled-backslash) spelling — native
+// Windows paths appear escaped inside the hooks.json command strings.
+func containsJSONEscaped(raw, want string) bool {
+	return strings.Contains(raw, want) ||
+		strings.Contains(raw, strings.ReplaceAll(want, `\`, `\\`))
+}
+
 func TestCodexHooksDriftCheckReportsManagedMissingPreCompact(t *testing.T) {
 	dir := t.TempDir()
 	writeCodexHooksForDoctorTest(t, dir, `{
@@ -155,10 +163,10 @@ func TestCodexHooksDriftCheckFixBindsAgentWorkDirToCityRoot(t *testing.T) {
 	if !strings.Contains(got, `gc --city `) {
 		t.Fatalf("fixed hooks missing explicit --city binding:\n%s", got)
 	}
-	if !strings.Contains(got, shellquote.Quote(cityDir)) {
+	if !containsJSONEscaped(got, shellquote.Quote(cityDir)) {
 		t.Fatalf("fixed hooks missing city root %q:\n%s", cityDir, got)
 	}
-	if strings.Contains(got, shellquote.Quote(agentDir)) {
+	if containsJSONEscaped(got, shellquote.Quote(agentDir)) {
 		t.Fatalf("fixed hooks rebound to agent workdir %q:\n%s", agentDir, got)
 	}
 }
@@ -218,7 +226,7 @@ func TestCodexHooksDriftCheckFixRebindsManagedWrongCityBinding(t *testing.T) {
 		t.Fatalf("read hooks: %v", err)
 	}
 	got := string(data)
-	if !strings.Contains(got, shellquote.Quote(cityDir)) {
+	if !containsJSONEscaped(got, shellquote.Quote(cityDir)) {
 		t.Fatalf("fixed hooks missing city root %q:\n%s", cityDir, got)
 	}
 	if strings.Contains(got, "/old/city") {

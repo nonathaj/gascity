@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -41,7 +42,7 @@ func codexHookWorkDirs(cityPath string, cfg *config.City) []string {
 		suspended := suspensionstate.EffectiveRigSuspended(suspState, rig.Name, rig.EffectiveSuspendedOnStart())
 		if suspended || strings.TrimSpace(rig.Path) == "" {
 			if suspended && strings.TrimSpace(rig.Path) != "" {
-				suspendedRigPaths[filepath.Clean(rig.Path)] = true
+				suspendedRigPaths[cleanCodexHookDirPath(rig.Path)] = true
 			}
 			continue
 		}
@@ -69,12 +70,22 @@ func cleanCodexHookDirs(dirs []string) []string {
 	return cleaned
 }
 
+// cleanCodexHookDirPath lexically cleans a work dir while preserving its
+// authored separator form: filepath.Clean rewrites slash-form config dirs
+// (/a) to backslash on Windows (P4), which would re-key every hook entry.
+func cleanCodexHookDirPath(dir string) string {
+	if !strings.Contains(dir, `\`) {
+		return slashpath.Clean(dir)
+	}
+	return filepath.Clean(dir)
+}
+
 func addCodexHookDir(dirs *[]string, dir string) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return
 	}
-	dir = filepath.Clean(dir)
+	dir = cleanCodexHookDirPath(dir)
 	for _, existing := range *dirs {
 		if existing == dir {
 			return
