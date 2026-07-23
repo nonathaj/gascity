@@ -83,6 +83,13 @@ func staleManagedDoltSocketPaths() []string {
 }
 
 func fileOpenedByAnyProcess(path string) (bool, error) {
+	// Windows has no /proc and no lsof; probe the open state natively (an
+	// exclusive open fails with a sharing violation when another process holds
+	// the file). checked=false on Unix, which falls through to the proc/lsof
+	// paths below.
+	if open, checked, err := platformFileOpenState(path); checked {
+		return open, err
+	}
 	if open, checked := unixSocketOpenStateFromTable(path); checked {
 		return open, nil
 	}

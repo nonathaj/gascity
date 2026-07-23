@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"context"
 	"errors"
 	"net"
@@ -61,6 +62,9 @@ func TestFileOpenedByAnyProcessWithoutLsofReturnsClosedOrUnknown(t *testing.T) {
 }
 
 func TestFileOpenedByAnyProcessBoundsLsof(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("lsof-timeout bounding is Unix-specific: on Windows fileOpenedByAnyProcess uses the native exclusive-open probe (platformFileOpenState) and never invokes lsof")
+	}
 	path := filepath.Join(t.TempDir(), "LOCK")
 	if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
 		t.Fatal(err)
