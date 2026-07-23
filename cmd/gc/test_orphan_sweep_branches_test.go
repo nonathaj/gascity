@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -76,6 +77,14 @@ func TestCmdGCTmuxSocketRootUsesShortPath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(cleanupRoot) })
 
+	if runtime.GOOS == "windows" {
+		// The short-/tmp/104-byte constraint is the Unix AF_UNIX sun_path limit;
+		// psmux sockets are named pipes, so only require a usable root.
+		if info, err := os.Stat(root); err != nil || !info.IsDir() {
+			t.Fatalf("tmux socket root %q not usable: %v", root, err)
+		}
+		return
+	}
 	if !strings.HasPrefix(root, "/tmp/gct-") {
 		t.Fatalf("tmux socket root = %q, want short /tmp/gct-* root", root)
 	}

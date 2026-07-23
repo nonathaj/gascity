@@ -168,9 +168,7 @@ func TestRuntimeCommandIsPath(t *testing.T) {
 
 func TestPackRuntimesDoctorCheck_BarePathNameHandshakes(t *testing.T) {
 	binDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(binDir, "gc-runtime-probe"), []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "gc-runtime-probe", "#!/bin/sh\nexit 2\n")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cfg := &config.City{Runtimes: map[string]config.DiscoveredRuntime{
 		"probe": {Name: "probe", Command: "gc-runtime-probe", PackName: "p"},
