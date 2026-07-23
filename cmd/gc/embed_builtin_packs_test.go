@@ -7,12 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/builtinpacks"
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/packman"
 )
@@ -174,7 +176,7 @@ func TestDoltSyncRejectsManagedProbeDatabaseFilter(t *testing.T) {
 	} {
 		t.Run(dbName, func(t *testing.T) {
 			dir := t.TempDir()
-			cmd := exec.Command(script, "--db", dbName)
+			cmd := execshim.Command(script, "--db", dbName)
 			cmd.Env = sanitizedBaseEnv("GC_CITY_PATH="+dir, "GC_PACK_DIR="+packDir)
 			out, err := cmd.CombinedOutput()
 			if err == nil {
@@ -203,8 +205,8 @@ func TestBuiltinDoltDoctorAllowsAtMinimumVersionWhenProbeSucceeds(t *testing.T) 
 	}
 
 	script := filepath.Join(bundledPackDirForTest(t, "dolt"), "doctor", "check-dolt", "run.sh")
-	cmd := exec.Command(script)
-	cmd.Env = append(sanitizedBaseEnv(), "PATH="+binDir+":"+os.Getenv("PATH"))
+	cmd := execshim.Command(script)
+	cmd.Env = sanitizedBaseEnv("PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("check-dolt unexpectedly rejected Dolt probe at minimum: %v\n%s", err, out)
@@ -239,11 +241,10 @@ func TestBuiltinDoltDoctorBoundsVersionProbe(t *testing.T) {
 	}
 
 	script := filepath.Join(bundledPackDirForTest(t, "dolt"), "doctor", "check-dolt", "run.sh")
-	cmd := exec.Command(script)
-	cmd.Env = append(
-		sanitizedBaseEnv(),
-		"PATH="+binDir+":"+os.Getenv("PATH"),
-		"TIMEOUT_CAPTURE="+capturePath,
+	cmd := execshim.Command(script)
+	cmd.Env = sanitizedBaseEnv(
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"TIMEOUT_CAPTURE="+filepath.ToSlash(capturePath),
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -278,8 +279,8 @@ func TestBuiltinDoltDoctorReportsTimedOutVersionProbe(t *testing.T) {
 	}
 
 	script := filepath.Join(bundledPackDirForTest(t, "dolt"), "doctor", "check-dolt", "run.sh")
-	cmd := exec.Command(script)
-	cmd.Env = append(sanitizedBaseEnv(), "PATH="+binDir+":"+os.Getenv("PATH"))
+	cmd := execshim.Command(script)
+	cmd.Env = sanitizedBaseEnv("PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("check-dolt unexpectedly accepted timed out version probe:\n%s", out)
@@ -290,6 +291,9 @@ func TestBuiltinDoltDoctorReportsTimedOutVersionProbe(t *testing.T) {
 }
 
 func TestBuiltinDoltDoctorFailsClosedWithoutBoundedRunner(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cannot construct a PATH without a bounded runner on Windows: sh scripts require the Git for Windows coreutils dir on PATH (P2 injection), and that dir ships a real timeout binary")
+	}
 	binDir := t.TempDir()
 	bashPath, err := exec.LookPath("bash")
 	if err != nil {
@@ -312,8 +316,8 @@ func TestBuiltinDoltDoctorFailsClosedWithoutBoundedRunner(t *testing.T) {
 	}
 
 	script := filepath.Join(bundledPackDirForTest(t, "dolt"), "doctor", "check-dolt", "run.sh")
-	cmd := exec.Command(script)
-	cmd.Env = append(sanitizedBaseEnv(), "PATH="+binDir)
+	cmd := execshim.Command(script)
+	cmd.Env = sanitizedBaseEnv("PATH=" + binDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("check-dolt unexpectedly succeeded without bounded runner:\n%s", out)
@@ -694,7 +698,9 @@ func TestEnsureBuiltinRuntimeAssetsHydratesCacheAndShim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(shim): %v", err)
 	}
-	if info.Mode()&0o111 == 0 {
+	// P5: mode bits are synthetic on Windows; fsys.IsExecutableMode carries the
+	// per-platform meaning (any regular file is executable there).
+	if !fsys.IsExecutableMode(info.Mode()) {
 		t.Errorf("shim not executable: mode %v", info.Mode())
 	}
 	shim, err := os.ReadFile(shimPath)
@@ -704,7 +710,8 @@ func TestEnsureBuiltinRuntimeAssetsHydratesCacheAndShim(t *testing.T) {
 	if !strings.HasPrefix(string(shim), "#!/bin/sh") {
 		t.Errorf("shim missing shebang:\n%s", shim)
 	}
-	if !strings.Contains(string(shim), target) {
+	// The shim embeds the target in slash form (sh eats backslashes, P8).
+	if !strings.Contains(string(shim), filepath.ToSlash(target)) {
 		t.Errorf("shim does not exec bundled target %s:\n%s", target, shim)
 	}
 

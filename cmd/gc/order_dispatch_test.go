@@ -1479,7 +1479,7 @@ schema = 2
 source = "./packs/ops"
 
 [imports.dolt]
-source = "`+doltDir+`"
+source = '`+doltDir+`'
 `)
 
 	cfg, err := loadCityConfig(cityDir)
