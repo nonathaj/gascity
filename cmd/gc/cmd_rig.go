@@ -484,22 +484,27 @@ func prepareRigAdoptProviderState(cityPath, rigPath string) error {
 // prefix matching so that subdirectories of a rig are recognized.
 func findEnclosingRig(dir string, rigs []config.Rig) (name, rigPath string, found bool) {
 	cleanDir := normalizePathForCompare(dir)
-	bestName, bestPath := "", ""
+	bestName, bestClean, bestOrig := "", "", ""
 	for _, r := range rigs {
 		if strings.TrimSpace(r.Path) == "" {
 			continue
 		}
 		cleanRig := normalizePathForCompare(r.Path)
 		if pathWithinScope(cleanDir, cleanRig) {
-			if len(cleanRig) > len(bestPath) {
+			if len(cleanRig) > len(bestClean) {
 				bestName = r.Name
-				bestPath = cleanRig
+				bestClean = cleanRig
+				// Return the config-authored path, not the normalized comparison
+				// form: normalization is native-absolute (a POSIX-authored
+				// /projects/alpha becomes D:\projects\alpha on Windows), while the
+				// rig's identity stays as authored (P4).
+				bestOrig = r.Path
 				found = true
 			}
 		}
 	}
 	if found {
-		return bestName, bestPath, true
+		return bestName, bestOrig, true
 	}
 	return "", "", false
 }
