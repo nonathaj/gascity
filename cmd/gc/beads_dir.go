@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/winsec"
 )
 
 // beadsDirPerm is the permission bd recommends for .beads/ directories.
@@ -27,6 +28,15 @@ func ensureBeadsDir(fs fsys.FS, path string) error {
 	}
 	if err := fs.Chmod(path, beadsDirPerm); err != nil {
 		log.Printf("warning: chmod %s to %o: %v (continuing with existing permissions)", path, beadsDirPerm, err)
+	}
+	// os.Chmod cannot revoke access on Windows — it only toggles the read-only
+	// bit — so restrict the .beads directory (which holds the managed Dolt
+	// database) to the owner via ACL there. Only for the real filesystem;
+	// in-memory test FSes have no OS path to secure. No-op on Unix.
+	if _, ok := fs.(fsys.OSFS); ok {
+		if err := winsec.RestrictToOwner(path); err != nil {
+			log.Printf("warning: restrict %s: %v (continuing with existing permissions)", path, err)
+		}
 	}
 	return nil
 }
