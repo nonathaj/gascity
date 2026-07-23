@@ -1,17 +1,41 @@
 package main
 
 import (
-	"runtime"
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/winsec"
 )
 
-func TestEnforceGCPermissions_TightensLooseDir(t *testing.T) {
+// assertOwnerRestricted asserts path is restricted to its owner using the
+// platform's native mechanism: Unix mode bits, or a protected owner-only DACL
+// on Windows (os.Chmod cannot revoke access there, so enforceGCPermissions
+// applies an ACL instead — see internal/winsec).
+func assertOwnerRestricted(t *testing.T, path string, unixPerm os.FileMode) {
+	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+		ok, err := winsec.IsRestrictedToOwner(path)
+		if err != nil {
+			t.Fatalf("IsRestrictedToOwner(%q): %v", path, err)
+		}
+		if !ok {
+			t.Errorf("%q is not restricted to owner (expected a protected owner-only DACL)", path)
+		}
+		return
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", path, err)
+	}
+	if perm := info.Mode().Perm(); perm != unixPerm {
+		t.Errorf("%q perm = %o, want %o", path, perm, unixPerm)
+	}
+}
+
+func TestEnforceGCPermissions_TightensLooseDir(t *testing.T) {
 	cityPath := t.TempDir()
 	gcDir := filepath.Join(cityPath, ".gc")
 	secretsPath := filepath.Join(gcDir, secretsDir)
@@ -23,18 +47,12 @@ func TestEnforceGCPermissions_TightensLooseDir(t *testing.T) {
 
 	var stderr bytes.Buffer
 	enforceGCPermissions(cityPath, &stderr)
-
-	// Verify .gc/ is tightened.
-	info, _ := os.Stat(gcDir)
-	if perm := info.Mode().Perm(); perm != gcDirPerm {
-		t.Errorf(".gc/ perm = %o, want %o", perm, gcDirPerm)
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
 	}
 
-	// Verify .gc/secrets/ is tightened.
-	info, _ = os.Stat(secretsPath)
-	if perm := info.Mode().Perm(); perm != secretsDirPerm {
-		t.Errorf(".gc/secrets/ perm = %o, want %o", perm, secretsDirPerm)
-	}
+	assertOwnerRestricted(t, gcDir, gcDirPerm)
+	assertOwnerRestricted(t, secretsPath, secretsDirPerm)
 }
 
 func TestEnforceGCPermissions_NoErrorWhenMissing(t *testing.T) {
@@ -48,9 +66,6 @@ func TestEnforceGCPermissions_NoErrorWhenMissing(t *testing.T) {
 }
 
 func TestEnforceGCPermissions_AlreadyCorrect(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
-	}
 	cityPath := t.TempDir()
 	gcDir := filepath.Join(cityPath, ".gc")
 	if err := os.MkdirAll(gcDir, gcDirPerm); err != nil {
@@ -59,9 +74,9 @@ func TestEnforceGCPermissions_AlreadyCorrect(t *testing.T) {
 
 	var stderr bytes.Buffer
 	enforceGCPermissions(cityPath, &stderr)
-
-	info, _ := os.Stat(gcDir)
-	if perm := info.Mode().Perm(); perm != gcDirPerm {
-		t.Errorf(".gc/ perm = %o, want %o", perm, gcDirPerm)
+	if stderr.Len() > 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
 	}
+
+	assertOwnerRestricted(t, gcDir, gcDirPerm)
 }
