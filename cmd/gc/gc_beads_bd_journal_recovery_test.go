@@ -143,7 +143,10 @@ func (e journalRecoveryEnv) run(t *testing.T, harness string, extraEnv ...string
 }
 
 func prodRepoState(backupDir string) string {
-	return `{"head":"refs/heads/main","backups":{"prod-backup":{"name":"prod-backup","url":"file://` + backupDir + `","fetch_specs":[],"params":{}}}}`
+	// Slash-form: a raw backslash path makes \U an invalid JSON escape (jq then
+	// fails the parse and recovery sees "no usable backup"), and sh consumes the
+	// url after stripping file:// (P8).
+	return `{"head":"refs/heads/main","backups":{"prod-backup":{"name":"prod-backup","url":"file://` + filepath.ToSlash(backupDir) + `","fetch_specs":[],"params":{}}}}`
 }
 
 func TestJournalRecoveryRestoresCorruptDBFromLocalBackup(t *testing.T) {
