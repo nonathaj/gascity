@@ -450,7 +450,10 @@ func TestDoRigAddWritesSiteBindingInsteadOfPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(cityData), rigPath) {
+	// TOML basic strings escape backslashes, so a native Windows path appears
+	// as C:\\Users\\... in the file; match either the raw or the escaped form.
+	tomlEscapedRigPath := strings.ReplaceAll(rigPath, `\`, `\\`)
+	if strings.Contains(string(cityData), rigPath) || strings.Contains(string(cityData), tomlEscapedRigPath) {
 		t.Fatalf("city.toml should not persist rig path after writeCityConfigForEditFS:\n%s", cityData)
 	}
 
@@ -458,7 +461,8 @@ func TestDoRigAddWritesSiteBindingInsteadOfPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading .gc/site.toml: %v", err)
 	}
-	if !strings.Contains(string(siteData), "my-frontend") || !strings.Contains(string(siteData), rigPath) {
+	if !strings.Contains(string(siteData), "my-frontend") ||
+		(!strings.Contains(string(siteData), rigPath) && !strings.Contains(string(siteData), tomlEscapedRigPath)) {
 		t.Fatalf(".gc/site.toml = %q, want rig binding for %q", siteData, rigPath)
 	}
 }
@@ -507,7 +511,10 @@ func TestDoRigAddRouteFailureRollsBackConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading .gc/site.toml after rollback: %v", err)
 	}
-	if !strings.Contains(string(siteData), brokenRigFile) {
+	// TOML basic strings escape backslashes, so the native Windows path appears
+	// in the escaped form the %q seed wrote; match either spelling.
+	if !strings.Contains(string(siteData), brokenRigFile) &&
+		!strings.Contains(string(siteData), strings.ReplaceAll(brokenRigFile, `\`, `\\`)) {
 		t.Fatalf(".gc/site.toml should restore the original broken rig binding after rollback:\n%s", siteData)
 	}
 }
