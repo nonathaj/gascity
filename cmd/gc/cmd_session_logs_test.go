@@ -21,7 +21,12 @@ import (
 
 func writeTestSession(t *testing.T, searchBase, workDir string, lines ...string) {
 	t.Helper()
+	// Mirror sessionlog's project-dir slug (reader.go): it also replaces
+	// backslashes and colons, which native Windows workDirs contain — without
+	// that, the fixture dir embeds "C:" and is an invalid Windows path.
 	slug := strings.ReplaceAll(workDir, "/", "-")
+	slug = strings.ReplaceAll(slug, `\`, "-")
+	slug = strings.ReplaceAll(slug, ":", "-")
 	slug = strings.ReplaceAll(slug, ".", "-")
 	dir := filepath.Join(searchBase, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -36,7 +41,12 @@ func writeTestSession(t *testing.T, searchBase, workDir string, lines ...string)
 
 func writeNamedTestSession(t *testing.T, searchBase, workDir, fileName string, lines ...string) string {
 	t.Helper()
+	// Mirror sessionlog's project-dir slug (reader.go): it also replaces
+	// backslashes and colons, which native Windows workDirs contain — without
+	// that, the fixture dir embeds "C:" and is an invalid Windows path.
 	slug := strings.ReplaceAll(workDir, "/", "-")
+	slug = strings.ReplaceAll(slug, `\`, "-")
+	slug = strings.ReplaceAll(slug, ":", "-")
 	slug = strings.ReplaceAll(slug, ".", "-")
 	dir := filepath.Join(searchBase, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
