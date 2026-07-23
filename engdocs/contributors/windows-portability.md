@@ -8,6 +8,34 @@ paths into other syntaxes, or checks permissions.** Most "new" Windows
 failures are instances of a class below; fix them the catalogued way so
 the codebase stays coherent.
 
+## Settled: two-tier nativeness (decided 2026-07-23)
+
+Pack portability is a **requirement**: packs authored on Linux must run
+on a Windows city as-is. That decision fixes the architecture of the
+port into two tiers — do not relitigate it per-fix:
+
+- **Tier 1 — SDK mechanisms are Windows-native.** Everywhere the SDK
+  itself touches the OS, use real Windows mechanisms, never emulation:
+  `pidutil` (TCP table, PEB) not `/proc`/`lsof`/`pgrep`, `winjob` Job
+  Objects not process groups, `winsec` ACLs not chmod, native
+  exclusive-open probes not lsof, Task Scheduler (gw-x1k) not
+  systemd/launchd.
+- **Tier 2 — user/pack-supplied executable content is POSIX sh.**
+  Pack scripts, order `Exec` strings, condition checks, and setup
+  scripts are written once, in sh, and run on Windows through Git for
+  Windows' `sh` (`internal/execshim`). sh here is an *interpreter
+  dependency*, not OS emulation — exactly like a pack tool written in
+  Python. Git for Windows is a first-class prerequisite of GasCity on
+  Windows (git already is one: rigs are git repos, pack fetch is git
+  clone; the standard Windows git distribution ships sh + coreutils).
+  POSIX coreutil paths inside that contract (`/bin/echo`) resolve to
+  the sh distribution's coreutils (`execshim.LookPath`).
+
+A per-platform variant escape hatch (e.g. a pack shipping `setup.ps1`
+beside `setup.sh`, or `exec_windows` on an order) is a legitimate
+*future, config-level* feature; forking the builtin packs or the exec
+contract per-OS is not.
+
 ## Production classes
 
 | # | Class | Canonical fix |
