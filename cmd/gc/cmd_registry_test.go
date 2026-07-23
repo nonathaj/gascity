@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1046,6 +1047,9 @@ func TestRegistryCLIConfigPathUsesGCHome(t *testing.T) {
 }
 
 func TestSaveRegistryCLIConfigAtomicallyTightensPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "registry.json")
 	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {

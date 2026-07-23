@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -921,6 +922,9 @@ func TestSeedDeferredManagedBeadsPreservesExistingDoltDatabaseWhenCanonicalUnkno
 // spams agent pod output and is treated as a hard failure by the
 // controller's collectAssignedWorkBeads stderr-as-error path (hl-39km).
 func TestSeedDeferredManagedBeadsCreatesDirWith0700(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	dir := t.TempDir()
 
 	seedDeferredManagedBeads(dir, dir, "gc", "test")
@@ -939,6 +943,9 @@ func TestSeedDeferredManagedBeadsCreatesDirWith0700(t *testing.T) {
 // Required because persistent volumes carry directories created by older
 // gascity versions that used 0o755.
 func TestSeedDeferredManagedBeadsTightensExistingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	dir := t.TempDir()
 	beadsDir := filepath.Join(dir, ".beads")
 	if err := os.MkdirAll(beadsDir, 0o755); err != nil {

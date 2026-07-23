@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -395,6 +396,9 @@ func TestShellReinstallUpdatesExistingBashProfileHookAfterBashrcAppears(t *testi
 }
 
 func TestShellReinstallPreservesRCFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
@@ -429,6 +433,9 @@ func TestShellReinstallPreservesRCFileMode(t *testing.T) {
 }
 
 func TestShellRemovePreservesRCFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))

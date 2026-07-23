@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -8,6 +9,9 @@ import (
 )
 
 func TestEnforceGCPermissions_TightensLooseDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	cityPath := t.TempDir()
 	gcDir := filepath.Join(cityPath, ".gc")
 	secretsPath := filepath.Join(gcDir, secretsDir)
@@ -44,6 +48,9 @@ func TestEnforceGCPermissions_NoErrorWhenMissing(t *testing.T) {
 }
 
 func TestEnforceGCPermissions_AlreadyCorrect(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("P5: Unix mode-bit enforcement is not applicable on Windows (NTFS mode bits are synthetic)")
+	}
 	cityPath := t.TempDir()
 	gcDir := filepath.Join(cityPath, ".gc")
 	if err := os.MkdirAll(gcDir, gcDirPerm); err != nil {
