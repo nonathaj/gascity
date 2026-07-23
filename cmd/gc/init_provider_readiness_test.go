@@ -1696,10 +1696,7 @@ func TestCheckDoltAuthorIdentityReportsProbeErrorsSeparately(t *testing.T) {
 
 func TestInitRunDoltConfigGetReportsExitStderrAsProbeError(t *testing.T) {
 	binDir := t.TempDir()
-	doltPath := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(doltPath, []byte("#!/bin/sh\necho 'unreadable global config' >&2\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\necho 'unreadable global config' >&2\nexit 1\n")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	value, err := initRunDoltConfigGet("user.name")
@@ -1719,10 +1716,7 @@ func TestInitRunDoltConfigGetReportsExitStderrAsProbeError(t *testing.T) {
 
 func TestInitRunDoltConfigGetTreatsSilentEmptyExitAsMissingKey(t *testing.T) {
 	binDir := t.TempDir()
-	doltPath := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(doltPath, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 1\n")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	value, err := initRunDoltConfigGet("user.name")

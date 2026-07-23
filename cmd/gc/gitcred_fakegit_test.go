@@ -20,7 +20,7 @@ func installFakeGit(t *testing.T, mode string) string {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
 	script := "#!/bin/sh\n" +
-		"printf '%s\\n' \"$@\" > '" + argvFile + "'\n"
+		"printf '%s\\n' \"$@\" > '" + filepath.ToSlash(argvFile) + "'\n"
 	switch mode {
 	case "authfail":
 		script += "echo \"fatal: could not read Username for 'https://github.com': terminal prompts disabled\" 1>&2\n" +
@@ -28,10 +28,7 @@ func installFakeGit(t *testing.T, mode string) string {
 	default:
 		script += "exit 0\n"
 	}
-	gitPath := filepath.Join(dir, "git")
-	if err := os.WriteFile(gitPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake git: %v", err)
-	}
+	installFakeToolOnPath(t, dir, "git", script)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }

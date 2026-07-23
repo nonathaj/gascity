@@ -11,11 +11,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -228,21 +230,18 @@ func TestFindPreferredBinary_SkipsTestscriptShim(t *testing.T) {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
-	shimPath := filepath.Join(shimDir, "bd")
-	realPath := filepath.Join(realDir, "bd")
-	for _, candidate := range []string{shimPath, realPath} {
-		if err := os.WriteFile(candidate, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatalf("write %s: %v", candidate, err)
-		}
-	}
+	installFakeToolOnPath(t, shimDir, "bd", "#!/bin/sh\nexit 0\n")
+	installFakeToolOnPath(t, realDir, "bd", "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", strings.Join([]string{shimDir, realDir}, string(os.PathListSeparator)))
 
 	got, err := findPreferredBinary("bd")
 	if err != nil {
 		t.Fatalf("findPreferredBinary: %v", err)
 	}
-	if got != realPath {
-		t.Fatalf("findPreferredBinary = %q, want %q", got, realPath)
+	// On Windows LookPath resolves the .bat launcher, so compare the directory:
+	// the point is that the testscript shim dir was skipped for the real one.
+	if filepath.Dir(got) != realDir {
+		t.Fatalf("findPreferredBinary = %q, want a binary in %q", got, realDir)
 	}
 }
 
@@ -1368,6 +1367,15 @@ func findPreferredBinary(name string, preferred ...string) (string, error) {
 		}
 		candidates = append(candidates, filepath.Join(dir, name))
 	}
+	// Windows binaries carry extensions (real bd is bd.exe; test fakes get a
+	// .bat launcher), so try those spellings for every candidate too.
+	if goruntime.GOOS == "windows" {
+		withExt := make([]string, 0, len(candidates)*3)
+		for _, candidate := range candidates {
+			withExt = append(withExt, candidate, candidate+".exe", candidate+".bat")
+		}
+		candidates = withExt
+	}
 	for _, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" || isTestscriptShim(candidate) {
@@ -1381,7 +1389,9 @@ func findPreferredBinary(name string, preferred ...string) (string, error) {
 		if err != nil || info.IsDir() {
 			continue
 		}
-		if info.Mode()&0o111 == 0 {
+		// P5: exec bits are synthetic on Windows; IsExecutableMode carries the
+		// per-platform meaning.
+		if !fsys.IsExecutableMode(info.Mode()) {
 			continue
 		}
 		return candidate, nil
