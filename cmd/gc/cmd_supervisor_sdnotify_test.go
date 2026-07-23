@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -18,6 +19,13 @@ import (
 // healthy reconcile cycle, RELOADING=1 followed by READY=1 around a
 // reload-triggered reconcile, and STOPPING=1 when shutdown begins.
 func TestRunSupervisorEmitsSdNotifyLifecycle(t *testing.T) {
+	// sd_notify is a systemd protocol over a unixgram (AF_UNIX datagram) socket,
+	// which Windows does not support ("address incompatible with the requested
+	// protocol"). The supervisor uses systemd only on Linux; Windows service
+	// hosting is Task Scheduler (gw-x1k), covered separately.
+	if runtime.GOOS != "linux" {
+		t.Skip("sd_notify unixgram socket is Linux-only")
+	}
 	gcHome := shortTempDir(t, "gc-home-")
 	runtimeDir := shortTempDir(t, "gc-run-")
 	t.Setenv("GC_HOME", gcHome)
