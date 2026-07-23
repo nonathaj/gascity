@@ -999,7 +999,7 @@ func TestDoRigList_WithRigs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\nprefix = \"fe\"\ndefault_branch = \"develop\"\n"
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = '" + rigPath + "'\nprefix = \"fe\"\ndefault_branch = \"develop\"\n"
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1041,7 +1041,7 @@ func TestDoRigListJSONShowsDefaultBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = \"" + rigPath + "\"\ndefault_branch = \"develop\"\n"
+	cityToml := "[workspace]\nname = \"test-city\"\n\n[[agent]]\nname = \"mayor\"\n\n[[rigs]]\nname = \"my-frontend\"\npath = '" + rigPath + "'\ndefault_branch = \"develop\"\n"
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(cityToml), 0o644); err != nil {
 		t.Fatal(err)
 	}

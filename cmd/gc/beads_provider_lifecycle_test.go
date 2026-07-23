@@ -3259,14 +3259,14 @@ func TestInitBeadsForDirExecSetsBEADSDIR(t *testing.T) {
 			name:       "gc-beads-bd canonical",
 			scriptBase: "gc-beads-bd",
 			cityToml: func(rigRel string) string {
-				return "[workspace]\nname = \"demo\"\n\n[[rigs]]\nname = \"r\"\npath = \"" + rigRel + "\"\nprefix = \"rg\"\n"
+				return "[workspace]\nname = \"demo\"\n\n[[rigs]]\nname = \"r\"\npath = '" + rigRel + "'\nprefix = \"rg\"\n"
 			},
 		},
 		{
 			name:       "generic legacy exec",
 			scriptBase: "record-env",
 			cityToml: func(rigRel string) string {
-				return "[workspace]\nname = \"demo\"\n\n[[rigs]]\nname = \"r\"\npath = \"" + rigRel + "\"\nprefix = \"rg\"\n"
+				return "[workspace]\nname = \"demo\"\n\n[[rigs]]\nname = \"r\"\npath = '" + rigRel + "'\nprefix = \"rg\"\n"
 			},
 		},
 	} {
