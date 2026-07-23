@@ -169,8 +169,18 @@ func LookPath(name string) (string, error) {
 	}
 	dir := filepath.Dir(ShPath())
 	if filepath.IsAbs(dir) {
-		cand := filepath.Join(dir, name)
-		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(name), ".exe") {
+		base := name
+		// On Windows a POSIX absolute coreutil path (/bin/echo, /usr/bin/true)
+		// does not exist, but the tool ships in Git for Windows' coreutils dir
+		// (the same dir sh lives in). Map such paths to the bare tool name so
+		// portable configs and test stubs resolve there, like a bare name does.
+		if runtime.GOOS == "windows" {
+			if slash := filepath.ToSlash(name); strings.HasPrefix(slash, "/bin/") || strings.HasPrefix(slash, "/usr/bin/") {
+				base = slash[strings.LastIndexByte(slash, '/')+1:]
+			}
+		}
+		cand := filepath.Join(dir, base)
+		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(base), ".exe") {
 			cand += ".exe"
 		}
 		if info, err := os.Stat(cand); err == nil && !info.IsDir() {
