@@ -214,10 +214,15 @@ func renderPromptWithMeta(fs fsys.FS, cityPath, cityName, templatePath string, c
 }
 
 func promptTemplateSourcePath(cityPath, templatePath string) string {
-	if filepath.IsAbs(templatePath) {
+	// Recognize POSIX-absolute template paths too: config-stored PromptTemplate
+	// values are slash-form (P4), and on Windows filepath.IsAbs is false for
+	// "/city/...", which would wrongly re-join an already-absolute path under
+	// cityPath. A relative path joins in slash-form so it matches the store's
+	// forward-slash keys and resolves for os.ReadFile on Windows.
+	if filepath.IsAbs(templatePath) || strings.HasPrefix(templatePath, "/") {
 		return templatePath
 	}
-	return filepath.Join(cityPath, templatePath)
+	return filepath.ToSlash(filepath.Join(cityPath, templatePath))
 }
 
 func promptSourcePackRoot(cityPath, sourcePath string) string {
