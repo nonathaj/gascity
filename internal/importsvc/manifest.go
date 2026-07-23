@@ -317,7 +317,10 @@ func resolveRigPaths(cityPath string, rigs []config.Rig) {
 		if strings.TrimSpace(rigs[i].Path) == "" {
 			continue
 		}
-		if !filepath.IsAbs(rigs[i].Path) {
+		// IsPortableAbs, not filepath.IsAbs: config-authored rig paths may be
+		// POSIX-absolute (/home/user/x), which Windows filepath.IsAbs treats as
+		// relative and would corrupt by joining under the city root (P4).
+		if !pathutil.IsPortableAbs(rigs[i].Path) {
 			rigs[i].Path = filepath.Join(cityPath, rigs[i].Path)
 		}
 	}

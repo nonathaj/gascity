@@ -32,3 +32,21 @@ func LocalPathFromFileURL(u *url.URL) (string, error) {
 func FileURLForLocalPath(path string) string {
 	return "file:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
 }
+
+// IsPortableAbs reports whether a config-authored path is absolute in either
+// spelling: native (filepath.IsAbs) or POSIX/slash-form ("/home/x", "C:/x").
+// Config-authored paths are slash-form on every platform (doctrine P4), and on
+// Windows filepath.IsAbs alone is false for "/home/x" — code that joins
+// "relative" paths under a root would silently corrupt a POSIX-absolute config
+// value there. Centralized after the same bug appeared in three resolvers
+// (session setup scripts, rig paths in cmd/gc and importsvc).
+func IsPortableAbs(path string) bool {
+	if filepath.IsAbs(path) {
+		return true
+	}
+	p := filepath.ToSlash(path)
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	return len(p) >= 3 && p[1] == ':' && p[2] == '/'
+}

@@ -26,6 +26,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doctor"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/pathutil"
 	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
@@ -759,7 +760,10 @@ func resolveRigPaths(cityPath string, rigs []config.Rig) {
 		if strings.TrimSpace(rigs[i].Path) == "" {
 			continue
 		}
-		if !filepath.IsAbs(rigs[i].Path) {
+		// IsPortableAbs, not filepath.IsAbs: config-authored rig paths may be
+		// POSIX-absolute (/home/user/x), which Windows filepath.IsAbs treats as
+		// relative and would corrupt by joining under the city root (P4).
+		if !pathutil.IsPortableAbs(rigs[i].Path) {
 			rigs[i].Path = filepath.Join(cityPath, rigs[i].Path)
 		}
 	}

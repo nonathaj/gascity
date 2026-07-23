@@ -5,6 +5,8 @@ import (
 	slashpath "path"
 	"path/filepath"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 // ResolveSessionSetupScriptPath resolves a session_setup_script path for
@@ -50,13 +52,10 @@ func ResolveSessionSetupScriptPath(cityPath, sourceDir, script string) string {
 	return slashpath.Join(cityPath, script)
 }
 
-// isSlashAbs reports whether a slash-form path is absolute: a POSIX root ("/x")
-// or a Windows drive-absolute path ("C:/x").
+// isSlashAbs reports whether a slash-form path is absolute (POSIX root or
+// Windows drive-absolute). Delegates to the centralized pathutil.IsPortableAbs.
 func isSlashAbs(p string) bool {
-	if strings.HasPrefix(p, "/") {
-		return true
-	}
-	return len(p) >= 3 && p[1] == ':' && p[2] == '/'
+	return pathutil.IsPortableAbs(p)
 }
 
 func sessionSetupScriptPathExists(path string) bool {
