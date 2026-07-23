@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/git"
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 // ErrCloneFailed wraps a git-clone failure on the rig-add path so callers can
@@ -168,10 +168,12 @@ func validateRequest(req ProvisionRequest) error {
 	if req.Path == "" {
 		return errors.New("rig: ProvisionRequest.Path is required")
 	}
-	if !filepath.IsAbs(req.Path) {
+	if !pathutil.IsPortableAbs(req.Path) {
 		// The caller resolves any CWD-relative input; an absolute path keeps a
 		// server-side provisioner from resolving client input against the daemon
 		// CWD. The CLI always passes an absolute path (resolveRigAddPath).
+		// IsPortableAbs, not filepath.IsAbs: config-authored slash-form absolute
+		// paths (/rigs/x) are rooted, not CWD-relative, on every platform (P4).
 		return errors.New("rig: ProvisionRequest.Path must be absolute")
 	}
 	return nil
