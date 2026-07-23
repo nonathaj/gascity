@@ -169,7 +169,9 @@ provider = "sqlite"
 
 	logFile := filepath.Join(t.TempDir(), "bd.log")
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
+	// ToSlash the log path inside the sh script (P8: sh eats backslashes) and
+	// installFakeToolOnPath so the fake bd gets a .bat launcher on Windows (T3 —
+	// an extensionless script is invisible to PATHEXT and the real bd would run).
 	script := fmt.Sprintf(`#!/bin/sh
 printf 'pwd=%%s BEADS_DIR=%%s args=%%s\n' "$PWD" "${BEADS_DIR:-}" "$*" >> %q
 case "$1" in
@@ -188,10 +190,8 @@ case "$1" in
     exit 0
     ;;
 esac
-`, logFile)
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`, filepath.ToSlash(logFile))
+	installFakeToolOnPath(t, binDir, "bd", script)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var stdout, stderr bytes.Buffer
