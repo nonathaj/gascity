@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/gchome"
+	"github.com/gastownhall/gascity/internal/winsec"
 	"github.com/spf13/cobra"
 )
 
@@ -208,6 +209,10 @@ func saveRegistryCLIConfig(path string, cfg registryCLIConfig) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating registry config directory: %w", err)
 	}
+	// os.Chmod/0o700 cannot revoke access on Windows; restrict the directory to
+	// the owner via ACL there (no-op on Unix). Best-effort for the directory —
+	// the config file below carries the authoritative, fail-closed restriction.
+	_ = winsec.RestrictToOwner(dir)
 	// A fresh 0600 temp file renamed over the target keeps the write atomic
 	// and sheds any looser permissions from a pre-existing config file.
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
@@ -226,6 +231,12 @@ func saveRegistryCLIConfig(path string, cfg registryCLIConfig) error {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		_ = os.Remove(tmp.Name())
 		return fmt.Errorf("writing registry config: %w", err)
+	}
+	// The config holds registry credentials; on Windows the 0600 temp mode does
+	// not restrict access, so apply an owner-only ACL and fail closed if it does
+	// not stick rather than leave credentials world-readable. No-op on Unix.
+	if err := winsec.RestrictToOwner(path); err != nil {
+		return fmt.Errorf("restricting registry config permissions: %w", err)
 	}
 	return nil
 }
