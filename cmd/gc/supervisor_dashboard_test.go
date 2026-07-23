@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"net/http"
+	"os"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,9 +91,20 @@ func TestDashboardDepsModulesCoreOnly(t *testing.T) {
 }
 
 func TestRunCwdAllowedRootsFromEnv(t *testing.T) {
-	t.Setenv("RUN_CWD_ALLOWED_ROOTS", "/srv/a:/srv/b: :relative:/srv/c")
+	// Use platform-native absolute roots and the OS list separator: the parser
+	// splits on filepath.SplitList (';' on Windows) and keeps filepath.IsAbs
+	// entries, so a POSIX "/srv/a:/srv/b" fixture is neither split nor absolute
+	// there. Blank and relative entries must still be dropped.
+	abs := func(name string) string {
+		if runtime.GOOS == "windows" {
+			return `C:\srv\` + name
+		}
+		return "/srv/" + name
+	}
+	want := []string{abs("a"), abs("b"), abs("c")}
+	sep := string(os.PathListSeparator)
+	t.Setenv("RUN_CWD_ALLOWED_ROOTS", strings.Join([]string{want[0], want[1], " ", "relative", want[2]}, sep))
 	got := runCwdAllowedRootsFromEnv()
-	want := []string{"/srv/a", "/srv/b", "/srv/c"}
 	if len(got) != len(want) {
 		t.Fatalf("roots = %v, want %v (relative/blank entries dropped)", got, want)
 	}
