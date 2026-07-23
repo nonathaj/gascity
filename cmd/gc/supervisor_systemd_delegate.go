@@ -111,7 +111,10 @@ func guardDelegatedSystemctlPath(resolved string) {
 	if !isTestBinary() {
 		return
 	}
-	dir := filepath.Dir(resolved) + string(filepath.Separator)
+	// Compare in slash form: hostSystemctlDirs are POSIX literals and
+	// filepath.Dir rewrites separators to backslashes on Windows (P4), which
+	// would silently disarm this fail-safe there.
+	dir := filepath.ToSlash(filepath.Dir(resolved)) + "/"
 	for _, sys := range hostSystemctlDirs {
 		if dir == sys {
 			panic("delegated systemctl exec: refusing to run host systemctl (" + resolved + ") from a test binary; install a fake via installFakeDelegatedSystemctl or unset " + supervisorSystemdUnitEnv)
