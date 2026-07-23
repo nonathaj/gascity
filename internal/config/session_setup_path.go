@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"strings"
 )
@@ -10,32 +11,52 @@ import (
 // runtime and validation. Paths prefixed with "//" resolve against cityPath.
 // Relative paths resolve against sourceDir when present, with legacy
 // city-root-relative strings still supported during the transition.
+//
+// Pack config script paths are slash-form (portable), so resolution runs in
+// slash-form (P4): a POSIX-absolute script is recognized as absolute on Windows
+// too, and the result is slash-separated on every platform. Forward-slash paths
+// still resolve for os.Stat/exec on Windows, so callers are unaffected.
 func ResolveSessionSetupScriptPath(cityPath, sourceDir, script string) string {
-	if strings.HasPrefix(script, "//") {
-		return filepath.Join(cityPath, strings.TrimPrefix(script, "//"))
+	if script == "" {
+		return ""
 	}
-	if script == "" || filepath.IsAbs(script) {
+	cityPath = filepath.ToSlash(cityPath)
+	sourceDir = filepath.ToSlash(sourceDir)
+	script = filepath.ToSlash(script)
+
+	if strings.HasPrefix(script, "//") {
+		return slashpath.Join(cityPath, strings.TrimPrefix(script, "//"))
+	}
+	if isSlashAbs(script) {
 		return script
 	}
 	if sourceDir != "" {
-		relSource, err := filepath.Rel(cityPath, sourceDir)
-		if err == nil {
-			relSource = filepath.Clean(relSource)
-			cleanScript := filepath.Clean(script)
+		if relSource, err := filepath.Rel(cityPath, sourceDir); err == nil {
+			relSource = filepath.ToSlash(filepath.Clean(relSource))
+			cleanScript := slashpath.Clean(script)
 			if relSource != "." && relSource != "" && !strings.HasPrefix(relSource, "..") &&
-				(cleanScript == relSource || strings.HasPrefix(cleanScript, relSource+string(os.PathSeparator))) {
-				return filepath.Join(cityPath, cleanScript)
+				(cleanScript == relSource || strings.HasPrefix(cleanScript, relSource+"/")) {
+				return slashpath.Join(cityPath, cleanScript)
 			}
 		}
 
-		sourceCandidate := filepath.Join(sourceDir, script)
-		cityCandidate := filepath.Join(cityPath, filepath.Clean(script))
+		sourceCandidate := slashpath.Join(sourceDir, script)
+		cityCandidate := slashpath.Join(cityPath, slashpath.Clean(script))
 		if sessionSetupScriptPathExists(cityCandidate) && !sessionSetupScriptPathExists(sourceCandidate) {
 			return cityCandidate
 		}
 		return sourceCandidate
 	}
-	return filepath.Join(cityPath, script)
+	return slashpath.Join(cityPath, script)
+}
+
+// isSlashAbs reports whether a slash-form path is absolute: a POSIX root ("/x")
+// or a Windows drive-absolute path ("C:/x").
+func isSlashAbs(p string) bool {
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	return len(p) >= 3 && p[1] == ':' && p[2] == '/'
 }
 
 func sessionSetupScriptPathExists(path string) bool {

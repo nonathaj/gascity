@@ -42,7 +42,8 @@ func TestResolveSessionSetupScriptPath_LegacySharedCityRelativeFallback(t *testi
 	}
 
 	got := ResolveSessionSetupScriptPath(cityPath, sourceDir, "packs/shared/scripts/setup.sh")
-	if got != cityScript {
+	// The resolver returns slash-form paths (P4); compare against the slash form.
+	if got != filepath.ToSlash(cityScript) {
 		t.Errorf("got %q, want legacy shared city-root-relative path to remain supported", got)
 	}
 }
