@@ -2390,6 +2390,11 @@ dir = "myrig"
 
 func TestCmdNudgeStatusJSON(t *testing.T) {
 	t.Setenv("GC_BEADS", "file")
+	// Subprocess runtime: status materializes the named session, and on the
+	// default tmux/psmux runtime the multiplexer server keeps the city dir as
+	// its cwd, which Windows cannot delete at TempDir cleanup. The agent's
+	// start_command (echo) exits immediately under subprocess.
+	t.Setenv("GC_SESSION", "subprocess")
 	cityDir := t.TempDir()
 	writeNamedSessionCityTOML(t, cityDir)
 	t.Setenv("GC_CITY", cityDir)
