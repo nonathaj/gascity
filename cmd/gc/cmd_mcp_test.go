@@ -76,7 +76,8 @@ API_TOKEN = "super-secret"
 	out := stdout.String()
 	for _, want := range []string{
 		"Provider: gemini",
-		filepath.ToSlash(filepath.Join(cityDir, ".gemini", "settings.json")),
+		// Target is a machine-local file path, displayed natively.
+		filepath.Join(cityDir, ".gemini", "settings.json"),
 		"notes",
 		"stdio",
 		"mcp/notes.toml",
@@ -255,7 +256,8 @@ Authorization = "Bearer top-secret"
 	out := stdout.String()
 	for _, want := range []string{
 		"Provider: claude",
-		filepath.ToSlash(filepath.Join(sessionDir, ".mcp.json")),
+		// Target is a machine-local file path, displayed natively.
+		filepath.Join(sessionDir, ".mcp.json"),
 		"https://example.com/ops/mayor-2",
 		"mcp/remote.template.toml",
 		"Authorization",
