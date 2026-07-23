@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+// assertUnixMode checks the mode reported in a PermissivePermissionError on Unix.
+// On Windows os.Stat synthesizes 0666 for every file, so the specific mode is not
+// meaningful — the rejection itself (asserted by the caller via errors.As) is the
+// parity-relevant behavior, driven by the NTFS ACL gate (winsec.HasBroadAccess).
+func assertUnixMode(t *testing.T, perm *PermissivePermissionError, want os.FileMode) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if perm.Mode.Perm() != want {
+		t.Fatalf("Mode = %o, want %o", perm.Mode.Perm(), want)
+	}
+}
+
 // clearProcessEnv zeroes the process-env tiers so each test starts from a
 // known empty state. Tests opt into a non-empty value by re-setting the
 // specific env they exercise.
@@ -50,6 +64,7 @@ func writeStorePasswordWithMode(t *testing.T, scopeRoot, password string, mode o
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatalf("Chmod(.env, %o): %v", mode, err)
 	}
+	applyUnixModeAsWindowsACL(t, path, mode)
 	return path
 }
 
@@ -78,6 +93,7 @@ func writeCredentialsFileWithMode(t *testing.T, host, port, password string, mod
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatalf("Chmod(credentials, %o): %v", mode, err)
 	}
+	applyUnixModeAsWindowsACL(t, path, mode)
 	return path
 }
 
@@ -318,9 +334,6 @@ func TestResolveFromEnv_NilEnvSkipsTiers1And2(t *testing.T) {
 }
 
 func TestResolveFromEnv_PermissiveScopeFileStopsChain(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
-	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	envPath := writeStorePasswordWithMode(t, scopeRoot, "tier4-blocked", 0o644)
@@ -338,19 +351,16 @@ func TestResolveFromEnv_PermissiveScopeFileStopsChain(t *testing.T) {
 	if perm.Path != envPath {
 		t.Fatalf("Path = %q, want %q", perm.Path, envPath)
 	}
-	if perm.Mode.Perm() != 0o644 {
-		t.Fatalf("Mode = %o, want 0644", perm.Mode.Perm())
-	}
-	want := fmt.Sprintf("credentials file %s has mode 0644; refuse to read (require 0600 or 0400; owner-executable modes such as 0700 are rejected)", envPath)
-	if err.Error() != want {
-		t.Fatalf("err = %q, want %q", err.Error(), want)
+	assertUnixMode(t, perm, 0o644)
+	if runtime.GOOS != "windows" { // the message embeds the (synthetic) mode on Windows
+		want := fmt.Sprintf("credentials file %s has mode 0644; refuse to read (require 0600 or 0400; owner-executable modes such as 0700 are rejected)", envPath)
+		if err.Error() != want {
+			t.Fatalf("err = %q, want %q", err.Error(), want)
+		}
 	}
 }
 
 func TestResolveFromEnv_OwnerExecutableScopeFileExplainsRejection(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
-	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	writeStorePasswordWithMode(t, scopeRoot, "tier4-blocked", 0o700)
@@ -363,18 +373,13 @@ func TestResolveFromEnv_OwnerExecutableScopeFileExplainsRejection(t *testing.T) 
 	if !errors.As(err, &perm) {
 		t.Fatalf("err = %v, want *PermissivePermissionError", err)
 	}
-	if perm.Mode.Perm() != 0o700 {
-		t.Fatalf("Mode = %o, want 0700", perm.Mode.Perm())
-	}
+	assertUnixMode(t, perm, 0o700)
 	if !strings.Contains(err.Error(), "owner-executable modes such as 0700 are rejected") {
 		t.Fatalf("err = %q, want owner-executable rejection detail", err.Error())
 	}
 }
 
 func TestResolveFromEnv_PermissiveCredentialsFileStopsChain(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
-	}
 	clearProcessEnv(t)
 	credPath := writeCredentialsFileWithMode(t, "127.0.0.1", "5433", "tier6-blocked", 0o604)
 	t.Setenv("BEADS_CREDENTIALS_FILE", credPath)
@@ -392,9 +397,7 @@ func TestResolveFromEnv_PermissiveCredentialsFileStopsChain(t *testing.T) {
 	if perm.Path != credPath {
 		t.Fatalf("Path = %q, want %q", perm.Path, credPath)
 	}
-	if perm.Mode.Perm() != 0o604 {
-		t.Fatalf("Mode = %o, want 0604", perm.Mode.Perm())
-	}
+	assertUnixMode(t, perm, 0o604)
 }
 
 func TestResolveFromEnv_MalformedCredentialsFileStopsChain(t *testing.T) {
@@ -697,9 +700,6 @@ func TestReadStoreLocalPassword_ReturnsValueOnHappyPath(t *testing.T) {
 }
 
 func TestReadStoreLocalPassword_PermissiveModeReturnsTypedError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permissive unix modes cannot be expressed on Windows; the mode gate is unix-only (NTFS ACLs govern access there)")
-	}
 	clearProcessEnv(t)
 	scopeRoot := t.TempDir()
 	envPath := writeStorePasswordWithMode(t, scopeRoot, "store-secret", 0o644)
@@ -715,9 +715,7 @@ func TestReadStoreLocalPassword_PermissiveModeReturnsTypedError(t *testing.T) {
 	if perm.Path != envPath {
 		t.Fatalf("Path = %q, want %q", perm.Path, envPath)
 	}
-	if perm.Mode.Perm() != 0o644 {
-		t.Fatalf("Mode = %o, want 0644", perm.Mode.Perm())
-	}
+	assertUnixMode(t, perm, 0o644)
 }
 
 func TestReadStoreLocalPassword_AbsentFileReturnsEmptyNoError(t *testing.T) {

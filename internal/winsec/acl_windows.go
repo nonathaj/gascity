@@ -84,8 +84,31 @@ func IsRestrictedToOwner(path string) (bool, error) {
 	if control&windows.SE_DACL_PROTECTED == 0 {
 		return false, nil
 	}
-	// SDDL is the stable serialization of the descriptor; a restricted DACL must
-	// not name any broad principal, in either short-form or full-SID spelling.
+	return !daclNamesBroadPrincipal(sd), nil
+}
+
+// HasBroadAccess reports whether path's effective DACL grants access to a broad
+// principal (Everyone, Authenticated Users, or the Users group) — the Windows
+// equivalent of a Unix credentials file whose mode permits group/other read.
+// Unlike IsRestrictedToOwner it does not require a protected DACL: a credentials
+// file that is owner-only purely by inheritance (e.g. under %APPDATA%) is still
+// safe to read. Used to gate reading credential files on Windows.
+func HasBroadAccess(path string) (bool, error) {
+	sd, err := windows.GetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+	)
+	if err != nil {
+		return false, fmt.Errorf("reading security info for %q: %w", path, err)
+	}
+	return daclNamesBroadPrincipal(sd), nil
+}
+
+// daclNamesBroadPrincipal reports whether the descriptor's DACL names any broad
+// principal. SDDL is the stable serialization; the DACL clause ("D:...") is
+// scanned for the short-alias and canonical-SID spellings of each broad group.
+func daclNamesBroadPrincipal(sd *windows.SECURITY_DESCRIPTOR) bool {
 	sddl := sd.String()
 	dacl := sddl
 	if idx := strings.Index(sddl, "D:"); idx >= 0 {
@@ -96,10 +119,10 @@ func IsRestrictedToOwner(path string) (bool, error) {
 	}
 	for _, broad := range broadPrincipals {
 		if strings.Contains(dacl, broad) {
-			return false, nil
+			return true
 		}
 	}
-	return true, nil
+	return false
 }
 
 // broadPrincipals are the SDDL spellings (short alias and canonical SID) of the

@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/winsec"
 )
 
 // Endpoint identifies the Postgres target a resolution applies to.
@@ -213,14 +215,18 @@ func storeLocalEnvPath(scopeRoot string) string {
 	return filepath.Join(scopeRoot, ".beads", ".env")
 }
 
-// isPermissive returns true when mode permits group/other read/write/execute
-// or owner execute. Windows has no Unix permission bits — os.Stat synthesizes
-// 0666 for every writable file, so the check would reject every credentials
-// file there; access control on Windows comes from NTFS ACLs instead, and the
-// mode gate is skipped.
-func isPermissive(mode os.FileMode) bool {
+// isPermissive returns true when path is readable by more than its owner. On
+// Unix that is a mode permitting group/other read/write/execute or owner
+// execute. On Windows os.Stat synthesizes 0666 for every file, so the mode is
+// meaningless; consult the NTFS ACL instead — a credentials file whose DACL
+// grants a broad principal (Everyone/Authenticated Users/Users) is permissive.
+// If the ACL cannot be read the file is not rejected: the default %APPDATA%
+// credentials location is owner-restricted by inheritance, so failing closed
+// there would reject legitimately-protected files.
+func isPermissive(path string, mode os.FileMode) bool {
 	if runtime.GOOS == "windows" {
-		return false
+		broad, err := winsec.HasBroadAccess(path)
+		return err == nil && broad
 	}
 	return mode.Perm()&0o177 != 0
 }
@@ -239,7 +245,7 @@ func readEnvValueChecked(path, key string) (string, error) {
 		}
 		return "", err
 	}
-	if isPermissive(info.Mode()) {
+	if isPermissive(path, info.Mode()) {
 		return "", &PermissivePermissionError{Path: path, Mode: info.Mode()}
 	}
 	f, err := os.Open(path) //nolint:gosec // path is derived from scope roots
@@ -292,7 +298,7 @@ func readCredentialsFilePassword(path, host, port string) (string, error) {
 		}
 		return "", err
 	}
-	if isPermissive(info.Mode()) {
+	if isPermissive(path, info.Mode()) {
 		return "", &PermissivePermissionError{Path: path, Mode: info.Mode()}
 	}
 	f, err := os.Open(path) //nolint:gosec // path is derived from env or os.UserHomeDir

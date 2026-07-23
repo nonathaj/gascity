@@ -11,3 +11,8 @@ func RestrictToOwner(string) error { return nil }
 // is expressed and verified through Unix mode bits there, so this ACL-oriented
 // check is not the relevant assertion and never fails a caller.
 func IsRestrictedToOwner(string) (bool, error) { return true, nil }
+
+// HasBroadAccess reports false on non-Windows platforms: the Unix mode gate is
+// the relevant permissiveness check there, not the ACL. Callers apply the mode
+// check directly on Unix and only consult this on Windows.
+func HasBroadAccess(string) (bool, error) { return false, nil }
