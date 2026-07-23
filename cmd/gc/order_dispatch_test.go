@@ -7234,9 +7234,11 @@ func TestOrderDispatchConditionUsesScopedEnv(t *testing.T) {
 	}
 	check := fmt.Sprintf(
 		`test "$GC_CITY_PATH" = '%s' && test "$GC_STORE_ROOT" = '%s' && test "$GC_STORE_SCOPE" = city && test "$(pwd -P)" = "$(cd '%s' && pwd -P)" && test -f scoped-marker`,
-		cityDir,
-		cityDir,
-		cityDir,
+		// GC_CITY_PATH/GC_STORE_ROOT are slash-form in the order-exec env (P8), and
+		// sh eats backslashes in the cd argument, so use slash-form throughout.
+		filepath.ToSlash(cityDir),
+		filepath.ToSlash(cityDir),
+		filepath.ToSlash(cityDir),
 	)
 	ran := make(chan struct{}, 1)
 	fakeExec := func(_ context.Context, _, _ string, _ []string) ([]byte, error) {
