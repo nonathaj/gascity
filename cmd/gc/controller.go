@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,7 +101,25 @@ func controllerSocketPath(cityPath string) string {
 		return legacy
 	}
 	sum := sha256.Sum256([]byte(canonicalCityPath))
-	return filepath.Join("/tmp", "gascity-controller", fmt.Sprintf("%x.sock", sum[:16]))
+	return filepath.Join(shortSocketRoot(), "gascity-controller", fmt.Sprintf("%x.sock", sum[:16]))
+}
+
+// shortSocketRoot returns a short, always-present per-user root for hash-named
+// control sockets whose legacy path would exceed the AF_UNIX sun_path limit.
+// Unix keeps the historical /tmp; on Windows \tmp usually does not exist (the
+// listener's MkdirAll fails on hosted runners), so use LOCALAPPDATA — per-user
+// and short enough (~38 chars) to keep socket paths under the limit.
+func shortSocketRoot() string {
+	if goruntime.GOOS != "windows" {
+		return "/tmp"
+	}
+	if root := os.Getenv("LOCALAPPDATA"); root != "" {
+		return root
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, "AppData", "Local")
+	}
+	return os.TempDir()
 }
 
 // acquireControllerLock takes an exclusive flock on .gc/controller.lock.

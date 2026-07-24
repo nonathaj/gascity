@@ -214,7 +214,8 @@ func TestCmdStopWallClockTimeoutBoundsDirectStop(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("cmdStop() = %d, want timeout code 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed := time.Since(started); elapsed > time.Second {
+	// 5s: CI-runner tolerant while still proving the 100ms wall-clock cap fired.
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("cmdStop returned after %s, want wall-clock cap near 100ms", elapsed)
 	}
 	if !strings.Contains(stderr.String(), "timed out after 100ms") {

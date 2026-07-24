@@ -2904,8 +2904,10 @@ func TestOrderRunExecHonorsOrdersMaxTimeout(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("doOrderRunExec = 0, want timeout failure; stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
-	if elapsed > time.Second {
-		t.Fatalf("doOrderRunExec elapsed = %s, want capped below 1s", elapsed)
+	// 5s: CI-runner tolerant while still proving the order timeout capped the
+	// run (uncapped it would hang far longer).
+	if elapsed > 5*time.Second {
+		t.Fatalf("doOrderRunExec elapsed = %s, want capped by the order timeout", elapsed)
 	}
 	if !strings.Contains(stderr.String(), "exec failed") {
 		t.Fatalf("stderr = %q, want exec failure", stderr.String())

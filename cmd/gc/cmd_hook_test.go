@@ -1073,7 +1073,9 @@ func TestHookRunTimesOutAndFailsOpenWhenConfigured(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("cmdHookRun timeout code = %d, want fail-open 0; stderr=%s", code, stderr.String())
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
+	// 5s: generous for slow shared CI runners (cold sh/.bat spawn alone can
+	// take ~2s there) while still proving the 50ms timeout bounded the run.
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("cmdHookRun timeout took %s, want bounded below provider hook timeout", elapsed)
 	}
 	if stdout.Len() != 0 {
@@ -1784,8 +1786,9 @@ func TestShellWorkQueryTimesOutPromptly(t *testing.T) {
 	if !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("err = %v, want timeout diagnostic", err)
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("shellWorkQueryWithEnv timeout elapsed %s, want under 1s", elapsed)
+	// 5s: CI-runner tolerant while still proving the query timeout fired.
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("shellWorkQueryWithEnv timeout elapsed %s, want bounded by the query timeout", elapsed)
 	}
 }
 

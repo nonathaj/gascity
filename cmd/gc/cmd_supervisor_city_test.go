@@ -1821,7 +1821,10 @@ shutdown_timeout = "100ms"
 	var stdout, stderr bytes.Buffer
 	reconcileCities(reg, cr, supervisor.PublicationConfig{}, &stdout, &stderr)
 
-	sockPath := filepath.Join(canonicalTestPath(cityPath), ".gc", "controller.sock")
+	// Assert where the controller actually listens: controllerSocketPath
+	// hash-falls-back to a short per-user root when the legacy path exceeds
+	// the AF_UNIX sun_path limit (always the case for deep CI temp roots).
+	sockPath := controllerSocketPath(canonicalTestPath(cityPath))
 	if _, err := os.Stat(sockPath); err != nil {
 		t.Fatalf("controller.sock not created at %s after reconcileCities: %v", sockPath, err)
 	}

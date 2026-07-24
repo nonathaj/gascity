@@ -544,7 +544,7 @@ func (p *Provider) fallbackLeaf() string {
 }
 
 func privateFallbackRoot(euid int) string {
-	return filepath.Join(shortSocketTempRoot, fmt.Sprintf("%s-%d", fallbackSocketDirName, euid))
+	return platformPrivateFallbackRoot(euid)
 }
 
 func (p *Provider) privateFallbackDir(euid int) string {
