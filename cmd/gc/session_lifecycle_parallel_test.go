@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -7114,9 +7115,12 @@ func TestStaleResumeKeyProbe(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
 	t.Setenv("GC_HOME", filepath.Join(home, ".gc"))
-	// os.UserHomeDir consults USERPROFILE first on some platforms; clear it so
-	// the test is reproducible.
-	t.Setenv("USERPROFILE", "")
+	// setTestHome pins HOME and USERPROFILE to home. On Unix, also clear
+	// USERPROFILE so HOME is unambiguously authoritative; on Windows
+	// os.UserHomeDir REQUIRES USERPROFILE, so leave the pinned value in place.
+	if goruntime.GOOS != "windows" {
+		t.Setenv("USERPROFILE", "")
+	}
 
 	workDir := "/tmp/projects/example_one"
 	key := "11111111-2222-3333-4444-555555555555"
