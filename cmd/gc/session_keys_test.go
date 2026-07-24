@@ -34,22 +34,10 @@ func TestSessionKeyRoundTrip(t *testing.T) {
 	if pathErr != nil {
 		t.Fatalf("sessionKeyPath: %v", pathErr)
 	}
-	info, err := os.Stat(keyPath)
-	if err != nil {
-		t.Fatalf("stat key file: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != secretFilePerm {
-		t.Errorf("key file perm = %o, want %o", perm, secretFilePerm)
-	}
-
-	// Verify secrets dir permissions.
-	dirInfo, err := os.Stat(filepath.Join(cityPath, ".gc", secretsDir))
-	if err != nil {
-		t.Fatalf("stat secrets dir: %v", err)
-	}
-	if perm := dirInfo.Mode().Perm(); perm != secretsDirPerm {
-		t.Errorf("secrets dir perm = %o, want %o", perm, secretsDirPerm)
-	}
+	// Mode bits on Unix; owner-only ACL on Windows (writeSessionKey applies
+	// winsec.RestrictToOwner there — mode bits are synthetic, P5).
+	assertOwnerRestricted(t, keyPath, secretFilePerm)
+	assertOwnerRestricted(t, filepath.Join(cityPath, ".gc", secretsDir), secretsDirPerm)
 }
 
 func TestReadSessionKey_NotFound(t *testing.T) {

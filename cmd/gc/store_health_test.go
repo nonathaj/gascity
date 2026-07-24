@@ -77,7 +77,9 @@ func TestRenderStoreHealthBlockWarning(t *testing.T) {
 	out := buf.String()
 	for _, want := range []string{
 		"Store health:",
-		"Path:        /c/.beads/dolt",
+		// StorePath returns a native local path (operator display); derive the
+		// expectation rather than hardcoding the slash form.
+		"Path:        " + storehealth.StorePath("/c"),
 		"Size:        11.2 GB",
 		"Live rows:   221",
 		"MB/row",

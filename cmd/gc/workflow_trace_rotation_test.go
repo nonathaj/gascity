@@ -114,16 +114,10 @@ func TestWorkflowTracefWarnsOnceWhenRotationFails(t *testing.T) {
 
 	workflowTracef("first generation line")
 
-	// Make the directory read-only so the rotation rename fails while
-	// appends to the existing file still succeed.
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatalf("chmod trace dir: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chmod(dir, 0o755); err != nil {
-			t.Errorf("restore trace dir perms: %v", err)
-		}
-	})
+	// Make the directory unwritable so the rotation rename fails while appends
+	// to the existing file still succeed. denyDirWrites uses mode bits on Unix
+	// and an icacls deny on Windows (chmod cannot deny the owner on NTFS, T4).
+	denyDirWrites(t, dir)
 
 	var stderr bytes.Buffer
 	restoreWarnings := useWorkflowTraceWarnings(&stderr)

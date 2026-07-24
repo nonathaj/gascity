@@ -61,16 +61,20 @@ var ShPath = sync.OnceValue(func() string {
 	if runtime.GOOS != "windows" {
 		return "sh"
 	}
-	git, err := exec.LookPath("git")
-	if err != nil {
-		return "sh"
+	// Candidate Git-for-Windows roots. Prefer the one derived from git on PATH,
+	// but ALSO probe the well-known install locations: ShPath is a process-wide
+	// sync.OnceValue, so if the first caller happens to run while a test has
+	// narrowed PATH (no git), a PATH-only probe would cache the unresolved "sh"
+	// for the whole binary and poison every later /bin/<coreutil> resolution.
+	var roots []string
+	if git, err := exec.LookPath("git"); err == nil {
+		roots = append(roots,
+			filepath.Dir(filepath.Dir(git)),               // <GitRoot>\cmd -> <GitRoot>
+			filepath.Dir(filepath.Dir(filepath.Dir(git))), // <GitRoot>\mingw64\bin -> <GitRoot>
+		)
 	}
-	// git.exe lives at <GitRoot>\cmd\git.exe or <GitRoot>\mingw64\bin\git.exe;
-	// probe both possible roots for the sh.exe locations Git for Windows ships.
-	for _, root := range []string{
-		filepath.Dir(filepath.Dir(git)),               // <GitRoot>\cmd -> <GitRoot>
-		filepath.Dir(filepath.Dir(filepath.Dir(git))), // <GitRoot>\mingw64\bin -> <GitRoot>
-	} {
+	roots = append(roots, wellKnownGitForWindowsRoots()...)
+	for _, root := range roots {
 		for _, rel := range []string{
 			filepath.Join("usr", "bin", "sh.exe"),
 			filepath.Join("bin", "sh.exe"),
@@ -83,6 +87,37 @@ var ShPath = sync.OnceValue(func() string {
 	}
 	return "sh"
 })
+
+// wellKnownGitForWindowsRoots returns the standard Git for Windows install
+// directories so sh resolution does not depend on git being on the current
+// PATH (see ShPath's memoization note).
+func wellKnownGitForWindowsRoots() []string {
+	var roots []string
+	seen := map[string]struct{}{}
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		roots = append(roots, p)
+	}
+	for _, base := range []string{
+		os.Getenv("ProgramFiles"),
+		os.Getenv("ProgramFiles(x86)"),
+		os.Getenv("ProgramW6432"),
+		os.Getenv("LOCALAPPDATA"), // scoop / winget per-user installs live here
+	} {
+		if base == "" {
+			continue
+		}
+		add(filepath.Join(base, "Git"))
+		add(filepath.Join(base, "Programs", "Git"))
+	}
+	return roots
+}
 
 // Command is exec.Command with .sh routing on Windows.
 func Command(path string, args ...string) *exec.Cmd {

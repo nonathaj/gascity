@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/winsec"
 )
 
 // secretsDir is the subdirectory under .gc/ for session key storage.
@@ -48,8 +50,16 @@ func writeSessionKey(cityPath, sessionID, key string) error {
 	if err := os.Chmod(dir, secretsDirPerm); err != nil {
 		return fmt.Errorf("setting secrets dir permissions: %w", err)
 	}
+	// On Windows mode bits are advisory (P5); the resume-token dir holds
+	// secrets, so lock it to the owner via an NTFS ACL. No-op on Unix.
+	if err := winsec.RestrictToOwner(dir); err != nil {
+		return fmt.Errorf("restricting secrets dir permissions: %w", err)
+	}
 	if err := os.WriteFile(path, []byte(key), secretFilePerm); err != nil {
 		return fmt.Errorf("writing session key %s: %w", sessionID, err)
+	}
+	if err := winsec.RestrictToOwner(path); err != nil {
+		return fmt.Errorf("restricting session key permissions: %w", err)
 	}
 	return nil
 }

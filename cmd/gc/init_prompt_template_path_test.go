@@ -19,7 +19,9 @@ import (
 // case exercises exactly that path shape and fails on the pre-fix code on
 // Windows while passing on all platforms after the fix.
 func TestInitPromptTemplatePath(t *testing.T) {
-	wantMayor := filepath.Join("agents", "mayor", "prompt.template.md")
+	// PromptTemplate is a config-authored identifier written into pack.toml, so
+	// initPromptTemplatePath emits it slash-form on every platform (P4).
+	wantMayor := "agents/mayor/prompt.template.md"
 
 	tests := []struct {
 		name     string
