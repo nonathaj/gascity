@@ -261,9 +261,15 @@ func TestStartReusesDeadName(t *testing.T) {
 	if err := p.Start(context.Background(), "reuse", runtime.Config{Command: "true"}); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
-	if p.IsRunning("reuse") {
-		t.Fatal("expected process to have exited")
+	// Poll for exit: `true` runs through sh and exits immediately, but spawn +
+	// exit + reap can take a few seconds on a loaded shared CI runner, so a
+	// fixed short sleep races the reaper.
+	deadline := time.Now().Add(15 * time.Second)
+	for p.IsRunning("reuse") {
+		if time.Now().After(deadline) {
+			t.Fatal("expected process to have exited")
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 
 	if err := p.Start(context.Background(), "reuse", runtime.Config{Command: "sleep 3600"}); err != nil {

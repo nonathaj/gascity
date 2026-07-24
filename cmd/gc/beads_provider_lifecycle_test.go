@@ -4318,7 +4318,11 @@ func waitForProviderTestNonEmptyFile(t *testing.T, path string, timeout time.Dur
 
 func waitForProviderTestPIDExit(t *testing.T, pid int, label string) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// 15s: the kill is issued synchronously, but Windows Job Object teardown +
+	// process exit + the PID clearing the process table can lag several seconds
+	// on a loaded shared CI runner. The wait proves the tree dies; it does not
+	// gate on how fast.
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if err := platformKill(pid, 0); errors.Is(err, syscall.ESRCH) {
 			return
