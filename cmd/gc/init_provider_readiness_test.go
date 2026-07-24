@@ -269,7 +269,9 @@ func TestFinalizeInitFetchesRemotePacksBeforeProviderReadiness(t *testing.T) {
 		`base = "builtin:claude"`,
 		"",
 		"[packs.remote-pack]",
-		`source = "` + remote + `"`,
+		// Single-quote TOML literal: a native Windows path in a basic string
+		// makes \U an invalid escape (B).
+		`source = '` + remote + `'`,
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(configText), 0o644); err != nil {
