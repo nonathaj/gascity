@@ -397,11 +397,10 @@ func TestRunManagedDoltSQLTimesOut(t *testing.T) {
 func TestRunManagedDoltSQLIncludesConfiguredPasswordFlag(t *testing.T) {
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	fakeDolt := filepath.Join(binDir, "dolt")
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\n", argsFile)
-	if err := os.WriteFile(fakeDolt, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// installFakeToolOnPath: PATHEXT launcher (T3) — an extensionless fake let
+	// the real dolt dial 127.0.0.1:3311. ToSlash the args file for sh (P8).
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\n", filepath.ToSlash(argsFile))
+	installFakeToolOnPath(t, binDir, "dolt", script)
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_DOLT_PASSWORD", "secret")

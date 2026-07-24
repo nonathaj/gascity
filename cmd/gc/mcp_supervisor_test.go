@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -137,13 +139,24 @@ func TestRunStage1MCPProjectionPropagatesManagedDirReadErrors(t *testing.T) {
 	if err := os.MkdirAll(markersDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Revoke read permission so ReadDir returns EACCES.
-	if err := os.Chmod(markersDir, 0o000); err != nil {
-		t.Fatal(err)
+	// Revoke read permission so ReadDir fails: chmod on Unix; an icacls
+	// list-folder deny on Windows (chmod cannot deny the owner on NTFS, T4).
+	if runtime.GOOS == "windows" {
+		deny := exec.Command("icacls", markersDir, "/deny", "*S-1-1-0:(RD)")
+		if out, err := deny.CombinedOutput(); err != nil {
+			t.Fatalf("icacls deny read: %v\n%s", err, out)
+		}
+		t.Cleanup(func() {
+			_ = exec.Command("icacls", markersDir, "/remove:d", "*S-1-1-0").Run()
+		})
+	} else {
+		if err := os.Chmod(markersDir, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = os.Chmod(markersDir, 0o755)
+		})
 	}
-	t.Cleanup(func() {
-		_ = os.Chmod(markersDir, 0o755)
-	})
 
 	cfg := &config.City{Session: config.SessionConfig{Provider: "tmux"}}
 	err := runStage1MCPProjection(cityPath, cfg, stubLookPath, &bytes.Buffer{})
