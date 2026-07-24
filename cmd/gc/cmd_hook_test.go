@@ -1335,10 +1335,9 @@ case "$*" in
     printf '[]'
     ;;
 esac
-`, logPath)
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`, filepath.ToSlash(logPath))
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY", cityDir)
@@ -1399,9 +1398,8 @@ name = "worker"
 	}
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nprintf '[]'\n", logPath)
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY", cityDir)
@@ -1453,10 +1451,9 @@ case "$*" in
   *"--metadata-field gc.routed_to=worker"*) printf '[{"id":"hw-1","title":"routed work"}]' ;;
   *) printf '[]' ;;
 esac
-`, logPath)
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`, filepath.ToSlash(logPath))
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY", cityDir)
@@ -1846,9 +1843,8 @@ max = 5
 	// (C:/Users/...) so the Go side can compare against ToSlash(rigDir); no-op
 	// on Unix where cygpath is absent (doctrine T8).
 	script := "#!/bin/sh\ncwd=$(command -v cygpath >/dev/null 2>&1 && cygpath -m \"$PWD\" || printf '%s' \"$PWD\")\nprintf 'pwd=%s\nstore_root=%s\nstore_scope=%s\nprefix=%s\nrig=%s\nrig_root=%s\nargs=%s\n' \"$cwd\" \"${GC_STORE_ROOT:-}\" \"${GC_STORE_SCOPE:-}\" \"${GC_BEADS_PREFIX:-}\" \"${GC_RIG:-}\" \"${GC_RIG_ROOT:-}\" \"$*\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -1930,9 +1926,8 @@ dir = "myrig"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'beads_dir=%s\\nrig_root=%s\\nrig=%s\\n' \"$BEADS_DIR\" \"$GC_RIG_ROOT\" \"$GC_RIG\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -2072,9 +2067,8 @@ dir = "myrig"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'beads_dir=%s\\nrig_root=%s\\nrig=%s\\n' \"$BEADS_DIR\" \"$GC_RIG_ROOT\" \"$GC_RIG\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -2131,9 +2125,8 @@ work_query = "bd {{.CityName}} {{.Rig}} {{.AgentBase}}"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'args=%s\\n' \"$*\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_CITY", cityDir)
@@ -2180,9 +2173,8 @@ dir = "workdir"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'beads_dir=%s\\nrig_root=%s\\n' \"$BEADS_DIR\" \"$GC_RIG_ROOT\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -2244,9 +2236,8 @@ max = 5
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\ncwd=$(command -v cygpath >/dev/null 2>&1 && cygpath -m \"$PWD\" || printf '%s' \"$PWD\")\nprintf 'pwd=%s\\nargs=%s\\n' \"$cwd\" \"$*\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -2320,9 +2311,8 @@ name = "worker"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'agent=%s\\nsession=%s\\nargs=%s\\n' \"$GC_AGENT\" \"$GC_SESSION_NAME\" \"$*\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
@@ -2377,9 +2367,8 @@ dir = "myrig"
 
 	fakeBD := filepath.Join(fakeBin, "bd")
 	script := "#!/bin/sh\nprintf 'agent=%s\\nsession=%s\\nargs=%s\\n' \"$GC_AGENT\" \"$GC_SESSION_NAME\" \"$*\"\n"
-	if err := os.WriteFile(fakeBD, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, fakeBin, "bd", script)
+	_ = fakeBD
 
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+origPath)
