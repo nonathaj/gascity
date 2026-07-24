@@ -31,7 +31,9 @@ func TestPrefixedWorkQueryForProbe_UsesNamedSessionRuntimeName(t *testing.T) {
 	}
 
 	command := prefixedWorkQueryForProbe(cfg, cityPath, "test-city", nil, nil, &cfg.Agents[0], nil)
-	if !strings.Contains(command, `select((.metadata["gc.routed_to"] // "") == $target)`) || !strings.Contains(command, "-- demo/witness") {
+	// probe_pool_demand is the post-merge default-query shape; "-- demo/witness"
+	// is the positional route target derived from the named-session identity.
+	if !strings.Contains(command, "probe_pool_demand") || !strings.Contains(command, "-- demo/witness") {
 		t.Fatalf("prefixedWorkQueryForProbe() = %q, want demo/witness route argument", command)
 	}
 }
