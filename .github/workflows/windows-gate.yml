@@ -131,22 +131,23 @@ jobs:
           go test -count=1 -timeout 30m @pkgs
 
   unit-green-cmdgc:
-    name: Windows unit tests (cmd/gc)
+    name: Windows unit tests (cmd/gc ${{ matrix.shard }} of 6)
     runs-on: windows-latest
-    # cmd/gc is one large package (~1,300 tests, many spawning managed Dolt);
-    # it does not fit the shared green-list job's 30m budget, so it runs on its
-    # own with generous headroom. Split into -run shards later if wall-clock
-    # becomes painful (the boundaries are analyzed on gw-6ph).
+    # cmd/gc is one large package (~1,300 tests, many spawning managed Dolt).
+    # Sharded 6 ways like Linux CI's test-cover-cmdgc-shard (round-robin over
+    # `go test -list`, gw-6ph): unsharded it ran 40-75m on the hosted runner,
+    # sharded each slice fits well under 25m. GC_TEST_SHARD_INDEX/TOTAL feed
+    # cmd/gc's TestMain shard-aware temp-root prefix.
     #
     # QUARANTINED (continue-on-error) until the runner-only "second wave" closes
-    # (epic gw-85h): the GitHub-hosted runner differs from the dev box and the
-    # Linux CI fleet (no global claude/codex/tmux CLIs, 8.3 short names, stricter
-    # git longpath, hermetic managed-dolt), surfacing ~112 failures the dev box
-    # masked. The job still runs and reports so the signal stays visible; it just
-    # doesn't fail the whole gate while the cluster beads under gw-85h are driven
-    # to green. Flip this back to hard-required once gw-85h closes.
+    # (epic gw-85h). The job still runs and reports so the signal stays visible;
+    # flip this back to hard-required once gw-85h closes.
     continue-on-error: true
-    timeout-minutes: 75
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Preserve LF line endings on checkout
         run: git config --global core.autocrlf false
@@ -184,9 +185,42 @@ jobs:
         run: |
           Get-Command claude | Format-List Name, Source
           Get-Command codex  | Format-List Name, Source
-      - name: Run cmd/gc
+      - name: Run cmd/gc shard ${{ matrix.shard }} of 6
         shell: pwsh
         env:
           GC_FAST_UNIT: '1'
           CGO_ENABLED: '0'
-        run: go test -count=1 -timeout 70m ./cmd/gc/
+          GC_TEST_SHARD_INDEX: ${{ matrix.shard }}
+          GC_TEST_SHARD_TOTAL: '6'
+        run: |
+          # Round-robin partition of `go test -list` output, mirroring
+          # scripts/test-go-test-shard (the Linux CI sharder).
+          $all = go test -list 'Test.*' ./cmd/gc/ | Where-Object { $_ -like 'Test*' }
+          if ($LASTEXITCODE -ne 0 -or -not $all) { throw "go test -list failed or found no tests" }
+          $shard = [int]${{ matrix.shard }}
+          $total = 6
+          $selected = @()
+          for ($i = 0; $i -lt $all.Count; $i++) {
+            if (($i % $total) -eq ($shard - 1)) { $selected += $all[$i] }
+          }
+          if (-not $selected) { throw "no tests selected for shard $shard" }
+          Write-Host "shard $shard of ${total}: $($selected.Count) tests"
+          # Windows caps a command line at 32K chars; a full-shard alternation is
+          # ~65KB/6, so run the shard in sub-batches that stay under the limit.
+          # The test binary is compiled once and cached across invocations.
+          $batch = @()
+          $len = 0
+          $batches = @()
+          foreach ($name in $selected) {
+            if ($len + $name.Length + 1 -gt 24000 -and $batch) {
+              $batches += ,@($batch); $batch = @(); $len = 0
+            }
+            $batch += $name; $len += $name.Length + 1
+          }
+          if ($batch) { $batches += ,@($batch) }
+          Write-Host "running $($batches.Count) sub-batch(es)"
+          foreach ($b in $batches) {
+            $regex = '^(' + ($b -join '|') + ')$'
+            go test -count=1 -timeout 20m -run $regex ./cmd/gc/
+            if ($LASTEXITCODE -ne 0) { throw "shard $shard sub-batch failed" }
+          }
