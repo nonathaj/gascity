@@ -54,7 +54,40 @@ func needsShell(path string) bool {
 // because typical installs expose only mingw64\bin (git.exe) on PATH while
 // sh.exe lives in <GitRoot>\usr\bin and <GitRoot>\bin. Falls back to "sh" so
 // exec surfaces the original not-found error when nothing resolves.
-var ShPath = sync.OnceValue(func() string {
+func ShPath() string {
+	return shPathMemo.resolve()
+}
+
+// shPathMemo memoizes the resolved sh path but ONLY caches a successful
+// resolution. The unresolved "sh" fallback is never cached, so a call made
+// while PATH is transiently narrowed (e.g. a test that scoped PATH via
+// t.Setenv and happened to trigger the first resolution) cannot poison every
+// later /bin/<coreutil> lookup for the whole process — the next call with a
+// healthy environment re-resolves. (A plain sync.OnceValue would freeze the
+// failure permanently.)
+var shPathMemo shPathResolver
+
+type shPathResolver struct {
+	mu       sync.Mutex
+	resolved string
+}
+
+func (r *shPathResolver) resolve() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.resolved != "" {
+		return r.resolved
+	}
+	p := resolveShPath()
+	// Only cache a real, absolute interpreter; leave the "sh" fallback
+	// uncached so a later, healthier call can still resolve.
+	if p != "sh" {
+		r.resolved = p
+	}
+	return p
+}
+
+func resolveShPath() string {
 	if p, err := exec.LookPath("sh"); err == nil {
 		return p
 	}
@@ -62,10 +95,8 @@ var ShPath = sync.OnceValue(func() string {
 		return "sh"
 	}
 	// Candidate Git-for-Windows roots. Prefer the one derived from git on PATH,
-	// but ALSO probe the well-known install locations: ShPath is a process-wide
-	// sync.OnceValue, so if the first caller happens to run while a test has
-	// narrowed PATH (no git), a PATH-only probe would cache the unresolved "sh"
-	// for the whole binary and poison every later /bin/<coreutil> resolution.
+	// but ALSO probe the well-known install locations so a narrowed PATH (no
+	// git) still resolves.
 	var roots []string
 	if git, err := exec.LookPath("git"); err == nil {
 		roots = append(roots,
@@ -86,7 +117,7 @@ var ShPath = sync.OnceValue(func() string {
 		}
 	}
 	return "sh"
-})
+}
 
 // wellKnownGitForWindowsRoots returns the standard Git for Windows install
 // directories so sh resolution does not depend on git being on the current
@@ -202,17 +233,23 @@ func LookPath(name string) (string, error) {
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
-	dir := filepath.Dir(ShPath())
-	if filepath.IsAbs(dir) {
-		base := name
-		// On Windows a POSIX absolute coreutil path (/bin/echo, /usr/bin/true)
-		// does not exist, but the tool ships in Git for Windows' coreutils dir
-		// (the same dir sh lives in). Map such paths to the bare tool name so
-		// portable configs and test stubs resolve there, like a bare name does.
-		if runtime.GOOS == "windows" {
-			if slash := filepath.ToSlash(name); strings.HasPrefix(slash, "/bin/") || strings.HasPrefix(slash, "/usr/bin/") {
-				base = slash[strings.LastIndexByte(slash, '/')+1:]
-			}
+	base := name
+	// On Windows a POSIX absolute coreutil path (/bin/echo, /usr/bin/true)
+	// does not exist, but the tool ships in Git for Windows' coreutils dir
+	// (the same dir sh lives in). Map such paths to the bare tool name so
+	// portable configs and test stubs resolve there, like a bare name does.
+	if runtime.GOOS == "windows" {
+		if slash := filepath.ToSlash(name); strings.HasPrefix(slash, "/bin/") || strings.HasPrefix(slash, "/usr/bin/") {
+			base = slash[strings.LastIndexByte(slash, '/')+1:]
+		}
+	}
+	// Probe every candidate coreutils directory: the resolved sh interpreter's
+	// dir first, then the well-known Git for Windows usr\bin / bin dirs. The
+	// latter make resolution independent of ShPath being resolved at this
+	// moment, so a transiently narrowed PATH cannot make /bin/<coreutil> fail.
+	for _, dir := range coreutilDirs() {
+		if !filepath.IsAbs(dir) {
+			continue
 		}
 		cand := filepath.Join(dir, base)
 		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(base), ".exe") {
@@ -223,6 +260,19 @@ func LookPath(name string) (string, error) {
 		}
 	}
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
+// coreutilDirs returns the directories that may hold Git for Windows coreutils,
+// most-preferred first: the resolved sh interpreter's own directory, then the
+// well-known install roots' usr\bin and bin.
+func coreutilDirs() []string {
+	dirs := []string{filepath.Dir(ShPath())}
+	if runtime.GOOS == "windows" {
+		for _, root := range wellKnownGitForWindowsRoots() {
+			dirs = append(dirs, filepath.Join(root, "usr", "bin"), filepath.Join(root, "bin"))
+		}
+	}
+	return dirs
 }
 
 // ResolveExecutable resolves name to a runnable path. Bare names go
