@@ -421,6 +421,9 @@ func TestResolveTemplatePreservesLogicalAgentNameWhenSessionBeadExists(t *testin
 }
 
 func TestResolveTemplateUsesCanonicalRigTargetAndPinsHome(t *testing.T) {
+	// The passthrough forwards HOME only when the parent has it; Windows
+	// processes carry USERPROFILE, not HOME, so pin both for the assertion.
+	setTestHome(t, t.TempDir())
 	cityPath := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt"), 0o755); err != nil {
 		t.Fatal(err)
