@@ -5432,8 +5432,10 @@ func TestDoInitFromDirPreservesPermissionsForLegacyTopLevelScripts(t *testing.T)
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("permissions = %o, want 755", info.Mode().Perm())
+	// P5: exec bits are synthetic on Windows; IsExecutableMode carries the
+	// per-platform meaning of "the copied script stayed executable".
+	if !fsys.IsExecutableMode(info.Mode()) {
+		t.Errorf("permissions = %o, want executable (0755 on Unix)", info.Mode().Perm())
 	}
 }
 
@@ -5476,8 +5478,10 @@ func TestDoInitFromDirPreservesRealTopLevelScriptsForPackV2Template(t *testing.T
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("permissions = %o, want 755", info.Mode().Perm())
+	// P5: exec bits are synthetic on Windows; IsExecutableMode carries the
+	// per-platform meaning of "the copied script stayed executable".
+	if !fsys.IsExecutableMode(info.Mode()) {
+		t.Errorf("permissions = %o, want executable (0755 on Unix)", info.Mode().Perm())
 	}
 }
 

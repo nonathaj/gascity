@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -249,6 +250,12 @@ func TestCWDStateFromLink_NonDefinitiveStatErrorIsUnknown(t *testing.T) {
 	// destructive force-mode cleanup must not act on ambiguous evidence.
 	if os.Geteuid() == 0 {
 		t.Skip("running as root bypasses directory permission checks")
+	}
+	if runtime.GOOS == "windows" {
+		// T4: chmod 0o000 cannot deny the owner on NTFS, and even an explicit
+		// deny-traverse ACL is bypassed by the default SeChangeNotifyPrivilege,
+		// so a parent-permission stat error cannot be constructed here.
+		t.Skip("cannot construct a non-definitive stat error via parent permissions on Windows")
 	}
 	parent := filepath.Join(t.TempDir(), "locked")
 	if err := os.Mkdir(parent, 0o755); err != nil {
