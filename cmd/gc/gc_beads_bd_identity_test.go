@@ -6,8 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // TestEnsureDoltIdentityErrorMessages exercises the ensure_dolt_identity
@@ -20,9 +23,7 @@ import (
 func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 	t.Parallel()
 
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available; skipping shell-function test")
-	}
+	bashPath := resolveShellHarnessBash(t)
 
 	root := repoRootForLint(t)
 	scriptPath := filepath.Join(root, "examples", "bd", "assets", "scripts", "gc-beads-bd.sh")
@@ -112,7 +113,7 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 				"die() { printf '%s\\n' \"$*\" >&2; exit 1; }\n" +
 				"ensure_dolt_identity\n"
 
-			cmd := exec.Command("bash", "-c", script)
+			cmd := exec.Command(bashPath, "-c", script)
 			cmd.Env = append(os.Environ(),
 				"PATH="+binDir+string(os.PathListSeparator)+origPath,
 				"FAKE_DOLT_LOG="+doltLog,
@@ -156,6 +157,35 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 			}
 		})
 	}
+}
+
+// resolveShellHarnessBash returns a POSIX bash for running the pack's shell
+// functions, skipping the test when none is available. On Windows it MUST be
+// Git for Windows' bash (next to the sh execshim resolves) — the runner's
+// System32\bash.exe is the WSL launcher, which runs in a separate Linux
+// filesystem namespace and cannot see the Windows temp-dir fake git/dolt on
+// PATH, so the harness would exec the real tools (or fail) instead of the stubs.
+func resolveShellHarnessBash(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		shDir := filepath.Dir(execshim.ShPath())
+		if filepath.IsAbs(shDir) {
+			if cand := filepath.Join(shDir, "bash.exe"); fileExists(cand) {
+				return cand
+			}
+		}
+		t.Skip("Git for Windows bash not found; skipping shell-function test (System32 bash.exe is WSL and cannot see Windows PATH fakes)")
+	}
+	if p, err := exec.LookPath("bash"); err == nil {
+		return p
+	}
+	t.Skip("bash not available; skipping shell-function test")
+	return ""
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func extractShellFunction(t *testing.T, script, name string) string {
