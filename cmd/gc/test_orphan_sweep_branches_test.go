@@ -38,6 +38,11 @@ func backdatePastSweepAge(t *testing.T, path string) {
 }
 
 func TestCmdGCTempRootPrefixKeepsControllerSocketLegacy(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The pinned length budget is the Unix /tmp testscript layout; Windows
+		// has no /tmp and controllerSocketPath hash-falls-back there anyway.
+		t.Skip("legacy /tmp controller-socket length budget is Unix-specific")
+	}
 	root, err := os.MkdirTemp("/tmp", pidPrefixedTempPattern(testCmdGCTempRootPrefix))
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)

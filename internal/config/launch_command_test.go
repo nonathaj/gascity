@@ -27,7 +27,7 @@ func TestBuildProviderLaunchCommandAddsDefaultsAndSettings(t *testing.T) {
 		t.Fatalf("BuildProviderLaunchCommand: %v", err)
 	}
 
-	wantCommand := fmt.Sprintf("claude --dangerously-skip-permissions --effort max --settings %q", filepath.Join(dir, ".gc", "settings.json"))
+	wantCommand := fmt.Sprintf("claude --dangerously-skip-permissions --effort max --settings %q", filepath.ToSlash(filepath.Join(dir, ".gc", "settings.json")))
 	if got.Command != wantCommand {
 		t.Fatalf("Command = %q, want %q", got.Command, wantCommand)
 	}
@@ -184,7 +184,7 @@ func TestBuildProviderLaunchCommandWithoutOptionsSkipsDefaultsButKeepsSettings(t
 		t.Fatalf("BuildProviderLaunchCommandWithoutOptions: %v", err)
 	}
 
-	wantCommand := fmt.Sprintf("claude --settings %q", filepath.Join(dir, ".gc", "settings.json"))
+	wantCommand := fmt.Sprintf("claude --settings %q", filepath.ToSlash(filepath.Join(dir, ".gc", "settings.json")))
 	if got.Command != wantCommand {
 		t.Fatalf("Command = %q, want %q", got.Command, wantCommand)
 	}
@@ -219,7 +219,7 @@ func TestBuildProviderLaunchCommandWithoutOptionsUsesBuiltinAncestorForSettings(
 		t.Fatalf("BuildProviderLaunchCommandWithoutOptions: %v", err)
 	}
 
-	if want := fmt.Sprintf("--settings %q", settingsPath); !strings.Contains(got.Command, want) {
+	if want := fmt.Sprintf("--settings %q", filepath.ToSlash(settingsPath)); !strings.Contains(got.Command, want) {
 		t.Fatalf("Command = %q, want settings arg %q", got.Command, want)
 	}
 	if count := strings.Count(got.Command, "--settings"); count != 1 {

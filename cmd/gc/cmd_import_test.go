@@ -14,6 +14,7 @@ import (
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/packman"
 	"github.com/gastownhall/gascity/internal/pathutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestDoImportAddRemoteWritesConfigAndLock(t *testing.T) {
@@ -2361,6 +2362,10 @@ scope = "city"
 
 func TestDoImportAddLocalGitRepoWithTagsWritesDefaultConstraint(t *testing.T) {
 	clearGCEnv(t)
+	// Short GC_HOME: the import cache's 64-hex .git under a deep test home
+	// exceeds git-for-windows' '$GIT_DIR' limit on hosted runners; real homes
+	// are short.
+	t.Setenv("GC_HOME", testutil.ShortTempDir(t, "gcih-"))
 	dir := t.TempDir()
 	writeCityToml(t, dir, "[workspace]\nname = \"demo\"\n")
 	packDir := initImportWorktreePackRepo(t, "local-tagged-pack", "v1.2.3", `

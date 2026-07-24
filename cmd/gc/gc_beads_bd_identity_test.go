@@ -232,9 +232,10 @@ func emitGetIf(value string) string {
 
 func writeExecutable(t *testing.T, path, body string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
+	// installFakeToolOnPath also writes the .bat launcher so any invoker that
+	// resolves through PATHEXT (rather than bash's own lookup) still finds the
+	// fake instead of the real tool (T3).
+	installFakeToolOnPath(t, filepath.Dir(path), filepath.Base(path), body)
 }
 
 func logContains(path, want string) bool {

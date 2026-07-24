@@ -24,6 +24,7 @@ import (
 	"github.com/gastownhall/gascity/internal/overlay"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 type waitErrorStore struct {
@@ -809,7 +810,7 @@ prefix = "fe"
 func managedBdWaitTestTemplate(t *testing.T, bdPath, doltPath string) string {
 	t.Helper()
 	managedBdWaitTemplateOnce.Do(func() {
-		cityPath, err := os.MkdirTemp("/tmp", "gc-bd-template-city-")
+		cityPath, err := os.MkdirTemp(testutil.ShortTempDir(t, "gcw-"), "gc-bd-template-city-")
 		if err != nil {
 			managedBdWaitTemplateErr = fmt.Errorf("MkdirTemp(template city): %w", err)
 			return
@@ -824,7 +825,7 @@ func managedBdWaitTestTemplate(t *testing.T, bdPath, doltPath string) string {
 			return
 		}
 		script := gcBeadsBdScriptPath(cityPath)
-		homeDir, err := os.MkdirTemp("/tmp", "gc-bd-template-home-")
+		homeDir, err := os.MkdirTemp(testutil.ShortTempDir(t, "gcw-"), "gc-bd-template-home-")
 		if err != nil {
 			managedBdWaitTemplateErr = fmt.Errorf("MkdirTemp(template home): %w", err)
 			return

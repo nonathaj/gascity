@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -31,8 +32,20 @@ func AssertSamePath(t *testing.T, got, want string) {
 func ShortTempDir(t *testing.T, prefix string) string {
 	t.Helper()
 	root := os.TempDir()
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		root = "/tmp"
+	case "windows":
+		// os.TempDir here is the deep per-package test root (TestMain redirects
+		// TMP), which pushes AF_UNIX socket paths past the sun_path limit and
+		// hosted runners have no \tmp. LOCALAPPDATA is short (~38 chars) and
+		// always present.
+		if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+			short := filepath.Join(lad, "gct")
+			if err := os.MkdirAll(short, 0o700); err == nil {
+				root = short
+			}
+		}
 	}
 	dir, err := os.MkdirTemp(root, prefix)
 	if err != nil {

@@ -1,12 +1,12 @@
 package main
 
 import (
-	"runtime"
 	"context"
 	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -14,6 +14,12 @@ import (
 )
 
 func TestStaleManagedDoltSocketPathsExcludesMysqlSock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The sweep collects dolt's Unix domain sockets from /tmp — a mechanism
+		// that does not exist on Windows (dolt uses TCP; hosted runners have no
+		// 	mp to seed).
+		t.Skip("unix /tmp socket sweep is Unix-specific")
+	}
 	tmpSock, err := os.CreateTemp("/tmp", "dolt-preflight-cleanup-*.sock")
 	if err != nil {
 		t.Fatal(err)

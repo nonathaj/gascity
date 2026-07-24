@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -33,7 +34,14 @@ func shortSocketTempDir(t *testing.T, prefix string) string {
 }
 
 func cmdGCTmuxSocketRoot(testTempRoot string) (string, string, error) {
-	parent, err := os.MkdirTemp("/tmp", "gct-")
+	shortRoot := "/tmp"
+	if runtime.GOOS == "windows" {
+		if lad := os.Getenv("LOCALAPPDATA"); lad != "" {
+			shortRoot = filepath.Join(lad, "gct")
+			_ = os.MkdirAll(shortRoot, 0o700)
+		}
+	}
+	parent, err := os.MkdirTemp(shortRoot, "gct-")
 	if err != nil {
 		root := filepath.Join(testTempRoot, "tmux")
 		if err := os.MkdirAll(root, 0o700); err != nil {

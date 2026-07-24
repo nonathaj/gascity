@@ -12,6 +12,7 @@ import (
 	"github.com/gastownhall/gascity/internal/gitcred"
 	"github.com/gastownhall/gascity/internal/packregistry"
 	"github.com/gastownhall/gascity/internal/pathutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestPackReleaseHashCommandPrintsContentHash(t *testing.T) {
@@ -32,7 +33,10 @@ func TestPackReleaseHashCommandPrintsContentHash(t *testing.T) {
 }
 
 func TestPackReleaseHashRemoteRootWithExplicitPath(t *testing.T) {
-	setTestHome(t, t.TempDir())
+	// Short home: the registry-release cache lives under ~/.gc and a deep test
+	// home pushes the 64-hex cache .git past git-for-windows limits
+	// ("'$GIT_DIR' too big"). Real homes are short.
+	setTestHome(t, testutil.ShortTempDir(t, "gcprh-"))
 	repo, commit := initPackReleaseRepo(t)
 	source := pathutil.FileURLForLocalPath(repo)
 
