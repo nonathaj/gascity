@@ -139,10 +139,11 @@ jobs:
     # sharded each slice fits well under 25m. GC_TEST_SHARD_INDEX/TOTAL feed
     # cmd/gc's TestMain shard-aware temp-root prefix.
     #
-    # QUARANTINED (continue-on-error) until the runner-only "second wave" closes
-    # (epic gw-85h). The job still runs and reports so the signal stays visible;
-    # flip this back to hard-required once gw-85h closes.
-    continue-on-error: true
+    # HARD-REQUIRED as of the gw-85h "second wave" close: the runner-only failure
+    # cohort (8.3 paths, execshim/ShPath resolution, ACLs, longpath git, socket
+    # roots, MSYS/git-bash harness, timing tolerance, os/exec version-probe crash)
+    # is fixed and this job runs fully green. Re-quarantine only as a deliberate,
+    # documented step if a regression needs triage — not as a default.
     timeout-minutes: 25
     strategy:
       fail-fast: false
