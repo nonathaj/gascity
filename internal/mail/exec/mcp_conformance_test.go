@@ -447,7 +447,7 @@ func mcpMockCurl(stateDir string) string {
 	return `#!/usr/bin/env bash
 set -euo pipefail
 
-STATE_DIR="` + stateDir + `"
+STATE_DIR="` + filepath.ToSlash(stateDir) + `"
 
 next_id() {
   local id
