@@ -578,7 +578,13 @@ command = "/bin/mcp"
 args = ["{{.AgentName}}", "{{.WorkDir}}", "{{.TemplateName}}"]
 `)
 
-	sockPath := filepath.Join(cityDir, ".gc", "controller.sock")
+	// Listen where the client will dial: controllerSocketPath hash-falls-back
+	// under the temp root when the legacy path exceeds the AF_UNIX sun_path
+	// limit (always the case for Windows temp-rooted cities).
+	sockPath := controllerSocketPath(cityDir)
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(sock dir): %v", err)
+	}
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatalf("Listen(%q): %v", sockPath, err)
@@ -2362,7 +2368,13 @@ func TestCmdSessionNew_AllowsReservedNamedAliasWithController(t *testing.T) {
 		t.Fatalf("MkdirAll(.gc): %v", err)
 	}
 
-	sockPath := filepath.Join(cityDir, ".gc", "controller.sock")
+	// Listen where the client will dial: controllerSocketPath hash-falls-back
+	// under the temp root when the legacy path exceeds the AF_UNIX sun_path
+	// limit (always the case for Windows temp-rooted cities).
+	sockPath := controllerSocketPath(cityDir)
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(sock dir): %v", err)
+	}
 	lis, err := net.Listen("unix", sockPath)
 	if err != nil {
 		t.Fatalf("Listen(%q): %v", sockPath, err)
