@@ -114,10 +114,15 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 				"ensure_dolt_identity\n"
 
 			cmd := exec.Command(bashPath, "-c", script)
-			cmd.Env = append(os.Environ(),
-				"PATH="+binDir+string(os.PathListSeparator)+origPath,
-				"FAKE_DOLT_LOG="+doltLog,
-			)
+			// Override PATH in place: os.Environ() carries Windows' canonical
+			// "Path=" entry, and appending an uppercase "PATH=" leaves BOTH keys,
+			// so CreateProcess resolves the original (binDir-less) one and runs
+			// the real git/dolt instead of the fakes. envWithOverrides drops any
+			// case-insensitive PATH before adding ours.
+			cmd.Env = envWithOverrides(os.Environ(), map[string]string{
+				"PATH":          binDir + string(os.PathListSeparator) + origPath,
+				"FAKE_DOLT_LOG": doltLog,
+			})
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -194,6 +199,35 @@ func resolveShellHarnessBash(t *testing.T) string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// envWithOverrides returns base with the given keys set, replacing any existing
+// entry for each key CASE-INSENSITIVELY. This matters on Windows where the
+// environment is case-insensitive: os.Environ() yields "Path=..." and a naive
+// append of "PATH=..." would leave a duplicate that CreateProcess resolves to
+// the wrong value.
+func envWithOverrides(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, kv := range base {
+		key := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			key = kv[:i]
+		}
+		skip := false
+		for ok := range overrides {
+			if strings.EqualFold(key, ok) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, kv)
+		}
+	}
+	for k, v := range overrides {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 func extractShellFunction(t *testing.T, script, name string) string {
