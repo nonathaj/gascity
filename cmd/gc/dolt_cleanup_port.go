@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -93,7 +94,13 @@ func ResolveDoltPort(in PortResolverInput) PortResolution {
 	res.Tried = append(res.Tried, attempt)
 
 	for _, rig := range orderRigsHQFirst(in.Rigs) {
+		// Preserve the rig path's authored separator form in the derived
+		// Source identifier (P4): filepath.Join would rewrite a slash-form
+		// config path to backslashes on Windows. Reads resolve either form.
 		path := filepath.Join(rig.Path, ".beads", "dolt-server.port")
+		if !strings.Contains(rig.Path, `\`) {
+			path = slashpath.Join(rig.Path, ".beads", "dolt-server.port")
+		}
 		attempt, port, ok := tryRigPortFile(in.FS, path)
 		res.Tried = append(res.Tried, attempt)
 		if ok {

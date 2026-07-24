@@ -3129,7 +3129,7 @@ func TestSettingsArgsClaude(t *testing.T) {
 	// Must be absolute so K8s command remapping converts cityPath → /workspace.
 	// A relative path breaks agents whose workingDir differs from the city root.
 	// Path is quoted to handle spaces in city paths.
-	want := fmt.Sprintf("--settings %q", filepath.Join(dir, ".gc", "settings.json"))
+	want := fmt.Sprintf("--settings %q", filepath.ToSlash(filepath.Join(dir, ".gc", "settings.json")))
 	if got != want {
 		t.Errorf("settingsArgs(claude) = %q, want %q", got, want)
 	}
@@ -3151,8 +3151,10 @@ func TestSettingsArgsRemapping(t *testing.T) {
 	sa := settingsArgs(dir, "claude")
 	command := "claude " + sa
 
-	// Simulate K8s pod.go remapping: replace cityPath with /workspace.
-	remapped := strings.ReplaceAll(command, dir, "/workspace")
+	// Simulate K8s pod.go remapping: replace cityPath with /workspace. The
+	// command embeds the settings path slash-form (P8), and the remapper
+	// compares slash-form (remapControllerPathToPod), so replace that spelling.
+	remapped := strings.ReplaceAll(command, filepath.ToSlash(dir), "/workspace")
 	want := fmt.Sprintf("claude --settings %q", "/workspace/.gc/settings.json")
 	if remapped != want {
 		t.Errorf("remapped command = %q, want %q", remapped, want)
@@ -3188,7 +3190,7 @@ func TestSettingsArgsHookWithoutRuntimeFile(t *testing.T) {
 	}
 
 	got := settingsArgs(dir, "claude")
-	want := fmt.Sprintf("--settings %q", filepath.Join(dir, "hooks", "claude.json"))
+	want := fmt.Sprintf("--settings %q", filepath.ToSlash(filepath.Join(dir, "hooks", "claude.json")))
 	if got != want {
 		t.Errorf("settingsArgs(claude, hook only) = %q, want %q", got, want)
 	}

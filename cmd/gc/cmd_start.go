@@ -1042,7 +1042,10 @@ func settingsArgs(cityPath, providerName string) string {
 	if settingsPath == "" {
 		return ""
 	}
-	return fmt.Sprintf("--settings %q", settingsPath)
+	// Slash-form (P8): the command string is remapped for Linux pods
+	// (remapControllerPathToPod) and parsed by sh-adjacent launchers; a native
+	// backslash path breaks both, and claude accepts C:/-form locally.
+	return fmt.Sprintf("--settings %q", filepath.ToSlash(settingsPath))
 }
 
 // settingsArgsIfReadable is the stricter variant used by best-effort fallback
@@ -1062,7 +1065,7 @@ func settingsArgsIfReadable(cityPath, providerName string) string {
 	if _, err := os.ReadFile(settingsPath); err != nil {
 		return ""
 	}
-	return fmt.Sprintf("--settings %q", settingsPath)
+	return fmt.Sprintf("--settings %q", filepath.ToSlash(settingsPath))
 }
 
 func resolvedProviderLaunchFamily(resolved *config.ResolvedProvider) string {

@@ -39,8 +39,12 @@ func remapControllerPathToPod(val, ctrlCity string) string {
 	if val == "" || ctrlCity == "" {
 		return val
 	}
-	if val == ctrlCity || strings.HasPrefix(val, ctrlCity+"/") {
-		return "/workspace" + val[len(ctrlCity):]
+	// Compare in slash form so a Windows controller's native city path still
+	// remaps command-embedded slash-form references (P4/P8).
+	slashVal := filepath.ToSlash(val)
+	slashCity := filepath.ToSlash(ctrlCity)
+	if slashVal == slashCity || strings.HasPrefix(slashVal, slashCity+"/") {
+		return "/workspace" + slashVal[len(slashCity):]
 	}
 	return val
 }

@@ -231,11 +231,14 @@ func displayPackPath(packPath string) string {
 }
 
 func runRegistryGitBytes(dir string, args ...string) ([]byte, error) {
-	cmdArgs := append([]string{
+	// LongPathConfigArgs: the registry cache clone writes with core.longpaths=true
+	// on Windows (deep 64-hex cache paths exceed MAX_PATH); this reader must use
+	// the same setting or tree reads fail on the objects the clone just wrote.
+	cmdArgs := append(append([]string{
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "core.untrackedCache=false",
-	}, args...)
+	}, git.LongPathConfigArgs()...), args...)
 	cmd := exec.Command("git", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Env = git.HermeticEnv()

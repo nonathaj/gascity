@@ -346,11 +346,14 @@ func packReleaseRepoCacheRoot() (string, error) {
 }
 
 func runPackReleaseGitCommand(dir string, args ...string) error {
-	cmdArgs := append([]string{
+	// LongPathConfigArgs: reset/clean read the same over-MAX_PATH cache objects
+	// the network clone wrote with core.longpaths=true (see
+	// runPackReleaseNetworkGitCommand).
+	cmdArgs := append(append([]string{
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "core.untrackedCache=false",
-	}, args...)
+	}, git.LongPathConfigArgs()...), args...)
 	cmd := exec.Command("git", cmdArgs...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -376,11 +379,14 @@ func runPackReleaseNetworkGitCommand(cloneURL, dir string, args ...string) error
 	if err != nil {
 		return fmt.Errorf("loading git credentials for %s: %w", gitcred.RedactUserinfo(cloneURL), err)
 	}
-	cmdArgs := append([]string{
+	// LongPathConfigArgs: the registry-release cache path (64-hex key +
+	// .git/objects) exceeds MAX_PATH on Windows ("Filename too long" during
+	// clone), same as the packman/import caches.
+	cmdArgs := append(append([]string{
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "core.untrackedCache=false",
-	}, inj.CfgArgs...)
+	}, git.LongPathConfigArgs()...), inj.CfgArgs...)
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command("git", cmdArgs...)
 	if dir != "" {

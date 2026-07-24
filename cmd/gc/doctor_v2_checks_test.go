@@ -241,7 +241,7 @@ interval = "5m"
 		"orders/heartbeat/order.toml",
 		"orders/heartbeat.toml",
 	} {
-		if !strings.Contains(got.Message+strings.Join(got.Details, "\n")+got.FixHint, want) {
+		if text := got.Message + strings.Join(got.Details, "\n") + got.FixHint; !strings.Contains(text, want) && !strings.Contains(text, filepath.FromSlash(want)) {
 			t.Fatalf("result %+v missing %q", got, want)
 		}
 	}
@@ -333,7 +333,8 @@ trigger = "manual"
 		"flows/orders/heartbeat/order.toml",
 		"orders/heartbeat.toml",
 	} {
-		if !strings.Contains(resultText, want) {
+		if !strings.Contains(resultText, want) && !strings.Contains(resultText, filepath.FromSlash(want)) {
+			// Details embed native absolute paths; accept either separator form.
 			t.Fatalf("result %+v missing %q", got, want)
 		}
 	}
@@ -416,7 +417,7 @@ trigger = "manual"
 		"packs/root-default/orders/default-order/order.toml",
 		"packs/nested-import/orders/nested-order/order.toml",
 	} {
-		if !strings.Contains(strings.Join(got.Details, "\n"), want) {
+		if text := strings.Join(got.Details, "\n"); !strings.Contains(text, want) && !strings.Contains(text, filepath.FromSlash(want)) {
 			t.Fatalf("details missing %q: %+v", want, got.Details)
 		}
 	}
@@ -569,7 +570,7 @@ trigger = "manual"
 		"packs/rig-import/orders/import-order/order.toml",
 		"packs/rig-nested/orders/nested-order/order.toml",
 	} {
-		if !strings.Contains(strings.Join(got.Details, "\n"), want) {
+		if text := strings.Join(got.Details, "\n"); !strings.Contains(text, want) && !strings.Contains(text, filepath.FromSlash(want)) {
 			t.Fatalf("details missing %q: %+v", want, got.Details)
 		}
 	}
