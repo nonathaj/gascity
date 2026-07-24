@@ -349,7 +349,14 @@ func TestTestscriptCommandInvocationDoesNotLeakTempRoot(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			commandPath := filepath.Join(dir, tt.command)
+			// Windows requires an executable extension for exec; the testscript
+			// dispatch strips .exe (isTestscriptCommandInvocation), so gc.exe
+			// still routes to the "gc" command.
+			command := tt.command
+			if runtime.GOOS == "windows" {
+				command += ".exe"
+			}
+			commandPath := filepath.Join(dir, command)
 			if err := os.Symlink(self, commandPath); err != nil {
 				t.Fatalf("Symlink: %v", err)
 			}

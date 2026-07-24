@@ -219,8 +219,14 @@ jobs:
           }
           if ($batch) { $batches += ,@($batch) }
           Write-Host "running $($batches.Count) sub-batch(es)"
+          # Run every sub-batch even if an earlier one fails, so ONE gate run
+          # surfaces ALL of this shard's failures instead of only the first
+          # sub-batch's (which previously made deterministic failures look like
+          # they rotated one-per-cycle). Fail the step at the end if any failed.
+          $failed = 0
           foreach ($b in $batches) {
             $regex = '^(' + ($b -join '|') + ')$'
             go test -count=1 -timeout 20m -run $regex ./cmd/gc/
-            if ($LASTEXITCODE -ne 0) { throw "shard $shard sub-batch failed" }
+            if ($LASTEXITCODE -ne 0) { $failed++ }
           }
+          if ($failed -ne 0) { throw "shard $shard: $failed sub-batch(es) failed" }
