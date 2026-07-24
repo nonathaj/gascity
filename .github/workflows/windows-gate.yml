@@ -229,4 +229,4 @@ jobs:
             go test -count=1 -timeout 20m -run $regex ./cmd/gc/
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
-          if ($failed -ne 0) { throw "shard $shard: $failed sub-batch(es) failed" }
+          if ($failed -ne 0) { throw "shard ${shard}: $failed sub-batch(es) failed" }
