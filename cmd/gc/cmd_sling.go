@@ -21,6 +21,7 @@ import (
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/formula"
 	"github.com/gastownhall/gascity/internal/graphroute"
+	"github.com/gastownhall/gascity/internal/pathutil"
 	"github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/shellquote"
@@ -1209,7 +1210,9 @@ func workflowStoreRefForDir(storeDir, cityPath, cityName string, cfg *config.Cit
 	}
 	for _, rig := range cfg.Rigs {
 		rigPath := rig.Path
-		if !filepath.IsAbs(rigPath) {
+		// IsPortableAbs, not filepath.IsAbs: config-authored POSIX-absolute rig
+		// paths must not be re-joined under the city on Windows (P4).
+		if !pathutil.IsPortableAbs(rigPath) {
 			rigPath = filepath.Join(cityPath, rigPath)
 		}
 		if samePath(rigPath, storeDir) {

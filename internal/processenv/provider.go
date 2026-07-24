@@ -4,6 +4,7 @@ package processenv
 
 import (
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -155,15 +156,24 @@ func ProviderProcessPassthroughEnv() map[string]string {
 	if m["LANG"] == "" && m["LC_ALL"] == "" && m["LC_CTYPE"] == "" {
 		m["LANG"] = "en_US.UTF-8"
 	}
+	// Preserve HOME's authored separator form in the derived XDG fallbacks
+	// (P4): filepath.Join would rewrite a slash-form HOME to backslashes on
+	// Windows, and these values feed sh-launched providers (P8).
+	joinHome := func(home string, parts ...string) string {
+		if strings.Contains(home, `\`) {
+			return filepath.Join(append([]string{home}, parts...)...)
+		}
+		return slashpath.Join(append([]string{home}, parts...)...)
+	}
 	if v := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); v != "" {
 		m["XDG_CONFIG_HOME"] = v
 	} else if home := os.Getenv("HOME"); home != "" {
-		m["XDG_CONFIG_HOME"] = filepath.Join(home, ".config")
+		m["XDG_CONFIG_HOME"] = joinHome(home, ".config")
 	}
 	if v := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); v != "" {
 		m["XDG_STATE_HOME"] = v
 	} else if home := os.Getenv("HOME"); home != "" {
-		m["XDG_STATE_HOME"] = filepath.Join(home, ".local", "state")
+		m["XDG_STATE_HOME"] = joinHome(home, ".local", "state")
 	}
 	for _, entry := range os.Environ() {
 		key, val, ok := strings.Cut(entry, "=")
