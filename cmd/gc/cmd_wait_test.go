@@ -3100,6 +3100,11 @@ func TestRouteWaitList_ThreeRungByteIdentical(t *testing.T) {
 		}
 	}
 	seed()
+	// Step past a clock tick so the two waits get distinct sub-second CreatedAt:
+	// Windows time.Now() resolution is coarse (~0.5-15ms, T6), so back-to-back
+	// seeds can otherwise land on the identical nanosecond, making the same-second
+	// tie the test needs unresolvable on every rung.
+	time.Sleep(20 * time.Millisecond)
 	seed()
 
 	// Read the persisted waits back the way the local rung will (reopened store),
