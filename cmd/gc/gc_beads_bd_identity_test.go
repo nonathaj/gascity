@@ -102,25 +102,23 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			binDir := t.TempDir()
-			writeFakeDolt(t, binDir, tc.dolt.name, tc.dolt.email)
-			writeFakeGit(t, binDir, tc.git.name, tc.git.email)
+			doltLog := filepath.Join(t.TempDir(), "dolt-set.log")
 
-			doltLog := filepath.Join(binDir, "dolt-set.log")
-			origPath := os.Getenv("PATH")
-
-			script := fnSrc + "\n" +
+			// Define git/dolt as shell FUNCTIONS prepended to the script rather
+			// than fake executables on PATH. Functions unconditionally shadow
+			// PATH lookups on every platform, so this is immune to MSYS/git-bash
+			// executable-resolution heuristics — a Go-written extensionless
+			// "0o755" script is NOT seen as executable by git-bash, so it fell
+			// through to the real git.exe (which on the runner has no global
+			// user.name → empty → "identity incomplete"). Functions never do.
+			script := fakeGitFunc(tc.git.name, tc.git.email) +
+				fakeDoltFunc(tc.dolt.name, tc.dolt.email) +
+				fnSrc + "\n" +
 				"die() { printf '%s\\n' \"$*\" >&2; exit 1; }\n" +
 				"ensure_dolt_identity\n"
 
 			cmd := exec.Command(bashPath, "-c", script)
-			// Override PATH in place: os.Environ() carries Windows' canonical
-			// "Path=" entry, and appending an uppercase "PATH=" leaves BOTH keys,
-			// so CreateProcess resolves the original (binDir-less) one and runs
-			// the real git/dolt instead of the fakes. envWithOverrides drops any
-			// case-insensitive PATH before adding ours.
 			cmd.Env = envWithOverrides(os.Environ(), map[string]string{
-				"PATH":          binDir + string(os.PathListSeparator) + origPath,
 				"FAKE_DOLT_LOG": doltLog,
 			})
 			var stdout, stderr bytes.Buffer
@@ -130,15 +128,8 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 
 			if tc.want.exitOK {
 				if runErr != nil {
-					// Runner-only flake diagnostics (gw-85h.21): dump everything
-					// needed to see why the harness exited non-zero when it
-					// passes locally — the resolved bash, whether the fakes exist,
-					// and both output streams.
-					_, gitStat := os.Stat(filepath.Join(binDir, "git"))
-					_, doltStat := os.Stat(filepath.Join(binDir, "dolt"))
-					t.Fatalf("expected success, got %v\nbash=%q\nbinDir=%q git-exists=%v dolt-exists=%v\nstdout:\n%s\nstderr:\n%s\ndolt-log:\n%s",
-						runErr, bashPath, binDir, gitStat == nil, doltStat == nil,
-						stdout.String(), stderr.String(), readFile(doltLog))
+					t.Fatalf("expected success, got %v\nbash=%q\nstdout:\n%s\nstderr:\n%s\ndolt-log:\n%s",
+						runErr, bashPath, stdout.String(), stderr.String(), readFile(doltLog))
 				}
 			} else {
 				if runErr == nil {
@@ -243,70 +234,64 @@ func extractShellFunction(t *testing.T, script, name string) string {
 	return script[loc[0]:loc[1]]
 }
 
-func writeFakeDolt(t *testing.T, dir, name, email string) {
-	t.Helper()
-	body := `#!/usr/bin/env bash
-# Stub: only handles "config --global --get|--add user.name|user.email".
-set -e
-log_file=${FAKE_DOLT_LOG:-/dev/null}
-case "$1 $2" in
-  "config --global")
-    case "$3" in
-      --get)
-        case "$4" in
-          user.name)
-` + emitGetIf(name) + `
-            ;;
-          user.email)
-` + emitGetIf(email) + `
-            ;;
-        esac
-        ;;
-      --add)
-        echo "set $4 $5" >> "$log_file"
-        exit 0
-        ;;
-    esac
-    ;;
-esac
-exit 0
+// fakeDoltFunc returns a `dolt() { ... }` shell-function definition that stubs
+// the `config --global --get|--add user.name|user.email` surface
+// ensure_dolt_identity uses, logging `--add`s to $FAKE_DOLT_LOG. Uses return,
+// not exit, so it never terminates the enclosing script.
+func fakeDoltFunc(name, email string) string {
+	return `dolt() {
+  log_file=${FAKE_DOLT_LOG:-/dev/null}
+  case "$1 $2" in
+    "config --global")
+      case "$3" in
+        --get)
+          case "$4" in
+            user.name) ` + emitGetIf(name) + ` ;;
+            user.email) ` + emitGetIf(email) + ` ;;
+          esac
+          ;;
+        --add)
+          echo "set $4 $5" >> "$log_file"
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+  return 0
+}
 `
-	writeExecutable(t, filepath.Join(dir, "dolt"), body)
 }
 
-func writeFakeGit(t *testing.T, dir, name, email string) {
-	t.Helper()
-	body := `#!/usr/bin/env bash
-set -e
-case "$1 $2" in
-  "config --global")
-    case "$3" in
-      user.name)
-` + emitGetIf(name) + `
-        ;;
-      user.email)
-` + emitGetIf(email) + `
-        ;;
-    esac
-    ;;
-esac
-exit 0
+// fakeGitFunc returns a `git() { ... }` shell-function definition that stubs the
+// `config --global user.name|user.email` reads ensure_dolt_identity performs.
+func fakeGitFunc(name, email string) string {
+	return `git() {
+  case "$1 $2" in
+    "config --global")
+      case "$3" in
+        user.name) ` + emitGetIf(name) + ` ;;
+        user.email) ` + emitGetIf(email) + ` ;;
+      esac
+      ;;
+  esac
+  return 0
+}
 `
-	writeExecutable(t, filepath.Join(dir, "git"), body)
 }
 
 func emitGetIf(value string) string {
 	if value == "" {
-		return "            exit 1"
+		return "return 1"
 	}
-	return "            echo " + value + "; exit 0"
+	return "echo " + value + "; return 0"
 }
 
+// writeExecutable writes a fake tool script via installFakeToolOnPath (which
+// also emits a .bat launcher for PATHEXT-resolving invokers). Callers that run
+// the fake through git-bash should prefer a shell-function stub instead —
+// git-bash does not treat a Go-written extensionless script as executable.
 func writeExecutable(t *testing.T, path, body string) {
 	t.Helper()
-	// installFakeToolOnPath also writes the .bat launcher so any invoker that
-	// resolves through PATHEXT (rather than bash's own lookup) still finds the
-	// fake instead of the real tool (T3).
 	installFakeToolOnPath(t, filepath.Dir(path), filepath.Base(path), body)
 }
 
