@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -268,7 +269,8 @@ func TestRunDoltCleanup_PurgeReportsUnexpectedFilesystemErrors(t *testing.T) {
 	if r.Summary.ErrorsTotal != 1 {
 		t.Fatalf("Summary.ErrorsTotal = %d, want 1; errors=%+v", r.Summary.ErrorsTotal, r.Errors)
 	}
-	if len(r.Errors) != 1 || r.Errors[0].Stage != "purge" || r.Errors[0].Name != root || !strings.Contains(r.Errors[0].Error, "permission") {
+	// The walk cleans names to native separators; compare cleaned forms.
+	if len(r.Errors) != 1 || r.Errors[0].Stage != "purge" || filepath.Clean(r.Errors[0].Name) != filepath.Clean(root) || !strings.Contains(r.Errors[0].Error, "permission") {
 		t.Fatalf("Errors = %+v, want purge filesystem permission error for %s", r.Errors, root)
 	}
 }

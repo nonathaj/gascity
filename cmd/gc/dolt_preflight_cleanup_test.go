@@ -31,7 +31,9 @@ func TestStaleManagedDoltSocketPathsExcludesMysqlSock(t *testing.T) {
 	}
 	found := false
 	for _, path := range paths {
-		if path == tmpSock.Name() {
+		// Glob cleans to native separators while CreateTemp("/tmp", ...) keeps
+		// the slash-form input; compare cleaned forms.
+		if filepath.Clean(path) == filepath.Clean(tmpSock.Name()) {
 			found = true
 			break
 		}
