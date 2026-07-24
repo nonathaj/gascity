@@ -2,8 +2,10 @@ package api
 
 import (
 	"log"
+	"os"
 
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // componentVersions holds the versions of the external binaries the
@@ -27,6 +29,17 @@ func (s *Server) resolveComponentVersions() componentVersions {
 	s.componentVersionsOnce.Do(func() {
 		if s.componentVersionsProbe != nil {
 			s.componentVersionsValue = s.componentVersionsProbe()
+			return
+		}
+		// A test binary that reaches the status/config path without injecting a
+		// probe must NOT spawn the real `dolt version` / `bd version`
+		// subprocesses: unit tests spawning external binaries is a hygiene
+		// violation, and doing so concurrently under the api suite's
+		// parallelism has tripped a Go runtime crash on Windows ("found pointer
+		// to free object" inside os/exec). Leave versions empty — the same
+		// result a host without dolt/bd would produce. Production is unaffected.
+		if len(os.Args) > 0 && execshim.IsGoTestExecutable(os.Args[0]) {
+			s.componentVersionsValue = componentVersions{}
 			return
 		}
 		s.componentVersionsValue = probeComponentVersions(beads.ProbeDoltVersion, beads.ProbeBDVersion)
