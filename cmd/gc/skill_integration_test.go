@@ -68,8 +68,11 @@ func TestAgentScopeRoot(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			got := agentScopeRoot(&c.agent, "/city", rigs)
-			if got != c.want {
-				t.Fatalf("agentScopeRoot(%+v) = %q, want %q", c.agent, got, c.want)
+			// agentScopeRoot canonicalises to a native absolute path (it names a
+			// real filesystem scope dir); canonicalise the expected raw path the
+			// same way so the comparison holds on Windows too.
+			if want := canonicaliseFilePath(c.want, "/city"); got != want {
+				t.Fatalf("agentScopeRoot(%+v) = %q, want %q", c.agent, got, want)
 			}
 		})
 	}

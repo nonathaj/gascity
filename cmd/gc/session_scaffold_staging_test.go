@@ -106,8 +106,12 @@ func TestPrepareStartCandidateStagesScaffoldInResolvedTaskWorkDirWhenCWDIsShared
 	if len(prepared.cfg.PreStart) != 1 {
 		t.Fatalf("PreStart = %v, want materialize-skills entry", prepared.cfg.PreStart)
 	}
-	if !strings.Contains(prepared.cfg.PreStart[0], "--workdir "+targetWorkDir) {
-		t.Errorf("materialize-skills PreStart = %q, want resolved target workdir %q", prepared.cfg.PreStart[0], targetWorkDir)
+	// The builder shell-quotes the workdir; a native Windows path (colon +
+	// backslashes) gets single-quoted where a POSIX path would not, so match
+	// the shell-quoted form rather than the raw path.
+	wantWorkdirArg := "--workdir " + shellquote.Join([]string{targetWorkDir})
+	if !strings.Contains(prepared.cfg.PreStart[0], wantWorkdirArg) {
+		t.Errorf("materialize-skills PreStart = %q, want %q", prepared.cfg.PreStart[0], wantWorkdirArg)
 	}
 	if strings.Contains(prepared.cfg.PreStart[0], leakedWorkDir) {
 		t.Errorf("materialize-skills PreStart still targets shared-cwd bead slug %q: %q", leakedWorkDir, prepared.cfg.PreStart[0])
