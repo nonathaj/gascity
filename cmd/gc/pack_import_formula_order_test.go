@@ -158,7 +158,7 @@ name = "wrapper"
 schema = 2
 
 [imports.gastown]
-source = "`+gastownPackDir+`"
+source = '`+gastownPackDir+`'
 `)
 
 	cfg, err := loadCityConfig(cityDir)

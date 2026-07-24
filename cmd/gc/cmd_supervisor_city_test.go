@@ -415,7 +415,7 @@ func TestRegisterCityWithSupervisorFetchesRemotePacksBeforeLoadingIncludes(t *te
 		`includes = ["remote-pack"]`,
 		"",
 		"[packs.remote-pack]",
-		`source = "` + remote + `"`,
+		`source = '` + remote + `'`,
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(cityPath, "city.toml"), []byte(configText), 0o644); err != nil {

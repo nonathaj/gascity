@@ -1003,7 +1003,7 @@ name = "legacy-city"
 
 [[rigs]]
 name = "frontend"
-path = "`+rigPath+`"
+path = '`+rigPath+`'
 `)
 
 	var buf bytes.Buffer
@@ -1061,12 +1061,12 @@ name = "legacy-city"
 
 [[rigs]]
 name = "frontend"
-path = "`+rigPath+`"
+path = '`+rigPath+`'
 `)
 	writeDoctorFile(t, cityDir, ".gc/site.toml", `
 [[rig]]
 name = "backend"
-path = "`+orphanPath+`"
+path = '`+orphanPath+`'
 `)
 
 	err := (v2RigPathSiteBindingCheck{}).Fix(&doctor.CheckContext{CityPath: cityDir})
@@ -1200,7 +1200,7 @@ includes = ["legacy-pack"]
 		"conf/legacy.toml",
 		"unsupported PackV1 workspace.includes",
 	} {
-		if !strings.Contains(got.Message, want) {
+		if !strings.Contains(got.Message, want) && !strings.Contains(got.Message, filepath.FromSlash(want)) {
 			t.Fatalf("message = %q, want substring %q", got.Message, want)
 		}
 	}
@@ -1282,7 +1282,8 @@ trigger = "manual"
 		"unsupported PackV1 order path",
 		"packs/ops/orders/nightly/order.toml",
 	} {
-		if !strings.Contains(got.Message, want) {
+		// The message embeds a native absolute path; accept either separator.
+		if !strings.Contains(got.Message, want) && !strings.Contains(got.Message, filepath.FromSlash(want)) {
 			t.Fatalf("message = %q, want substring %q", got.Message, want)
 		}
 	}
@@ -1549,7 +1550,7 @@ func TestV2DeprecationChecksWarnOnLegacyTemplateSuffix(t *testing.T) {
 	if !strings.Contains(out, "v2-prompt-template-suffix") {
 		t.Fatalf("doctor output missing prompt-template warning:\n%s", out)
 	}
-	if !strings.Contains(out, "prompts/mayor.md.tmpl") {
+	if !strings.Contains(out, "prompts/mayor.md.tmpl") && !strings.Contains(out, filepath.FromSlash("prompts/mayor.md.tmpl")) {
 		t.Fatalf("doctor output missing legacy prompt path:\n%s", out)
 	}
 	if !strings.Contains(out, ".template.md") {
