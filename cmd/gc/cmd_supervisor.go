@@ -323,7 +323,9 @@ const supervisorExitCodePortInUse = 3
 // already bound (EADDRINUSE) — the signature of a second supervisor competing
 // for the shared API port, as opposed to any other listen failure.
 func supervisorAddrInUse(err error) bool {
-	return errors.Is(err, syscall.EADDRINUSE)
+	// platformAddrInUse: Windows reports WSAEADDRINUSE (10048), which
+	// errors.Is(err, syscall.EADDRINUSE) does not match there.
+	return errors.Is(err, syscall.EADDRINUSE) || platformAddrInUse(err)
 }
 
 // supervisorPortInUseMessage returns the loud, actionable diagnostic emitted
