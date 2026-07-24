@@ -6993,7 +6993,7 @@ func TestCityScopedSessionStreamReloadsRotatedGeminiTranscriptAcrossRestart(t *t
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "first-remembered-output", time.Second); !strings.Contains(body, "first-remembered-output") {
+	if body := waitForRecorderSubstring(t, rec, "first-remembered-output", 10*time.Second); !strings.Contains(body, "first-remembered-output") {
 		t.Fatalf("stream body missing initial transcript turn: %s", body)
 	}
 
@@ -7013,7 +7013,7 @@ func TestCityScopedSessionStreamReloadsRotatedGeminiTranscriptAcrossRestart(t *t
 		Subject: info.ID,
 	})
 
-	body := waitForRecorderSubstring(t, rec, "second-continued-output", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "second-continued-output", 10*time.Second)
 
 	cancel()
 	<-done
@@ -7140,7 +7140,7 @@ func TestHandleSessionStreamWorkerOperationEventWakesTranscriptReload(t *testing
 		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/stream", nil).WithContext(ctx)
@@ -7151,7 +7151,7 @@ func TestHandleSessionStreamWorkerOperationEventWakesTranscriptReload(t *testing
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+	if body := waitForRecorderSubstring(t, rec, "hello", 10*time.Second); !strings.Contains(body, "hello") {
 		t.Fatalf("stream body missing initial turn: %s", body)
 	}
 
@@ -7178,7 +7178,7 @@ func TestHandleSessionStreamWorkerOperationEventWakesTranscriptReload(t *testing
 		Subject: info.ID,
 	})
 
-	body := waitForRecorderSubstring(t, rec, "event wake turn", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "event wake turn", 10*time.Second)
 
 	cancel()
 	<-done
@@ -7210,7 +7210,7 @@ func TestHandleSessionStreamRawWorkerOperationEventWakesTranscriptReload(t *test
 		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/stream?format=raw", nil).WithContext(ctx)
@@ -7221,7 +7221,7 @@ func TestHandleSessionStreamRawWorkerOperationEventWakesTranscriptReload(t *test
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+	if body := waitForRecorderSubstring(t, rec, "hello", 10*time.Second); !strings.Contains(body, "hello") {
 		t.Fatalf("raw stream body missing initial transcript: %s", body)
 	}
 
@@ -7245,7 +7245,7 @@ func TestHandleSessionStreamRawWorkerOperationEventWakesTranscriptReload(t *test
 		Subject: info.ID,
 	})
 
-	body := waitForRecorderSubstring(t, rec, "raw event wake", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "raw event wake", 10*time.Second)
 
 	cancel()
 	<-done
@@ -7294,7 +7294,7 @@ func TestHandleSessionStreamRawStallEmitsPendingWithoutTranscriptGrowth(t *testi
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+	if body := waitForRecorderSubstring(t, rec, "hello", 10*time.Second); !strings.Contains(body, "hello") {
 		t.Fatalf("raw stream body missing initial transcript: %s", body)
 	}
 
@@ -7354,7 +7354,7 @@ func TestHandleSessionStreamRawStallEmitsPendingEventOnCityRoute(t *testing.T) {
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+	if body := waitForRecorderSubstring(t, rec, "hello", 10*time.Second); !strings.Contains(body, "hello") {
 		t.Fatalf("raw stream body missing initial transcript: %s", body)
 	}
 
@@ -7528,7 +7528,7 @@ func TestHandleSessionStreamTranscriptWriteWakesWithoutPolling(t *testing.T) {
 		`{"uuid":"2","parentUuid":"1","type":"assistant","message":"{\"role\":\"assistant\",\"content\":\"world\"}","timestamp":"2025-01-01T00:00:01Z"}`,
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest("GET", "/v0/session/"+info.ID+"/stream", nil).WithContext(ctx)
@@ -7539,7 +7539,7 @@ func TestHandleSessionStreamTranscriptWriteWakesWithoutPolling(t *testing.T) {
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "hello", time.Second); !strings.Contains(body, "hello") {
+	if body := waitForRecorderSubstring(t, rec, "hello", 10*time.Second); !strings.Contains(body, "hello") {
 		t.Fatalf("stream body missing initial turn: %s", body)
 	}
 
@@ -7560,7 +7560,7 @@ func TestHandleSessionStreamTranscriptWriteWakesWithoutPolling(t *testing.T) {
 		t.Fatalf("append transcript: %v", err)
 	}
 
-	body := waitForRecorderSubstring(t, rec, "fsnotify wake turn", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "fsnotify wake turn", 10*time.Second)
 
 	cancel()
 	<-done

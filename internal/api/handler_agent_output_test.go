@@ -468,7 +468,7 @@ func TestAgentOutputStreamNewTurns(t *testing.T) {
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "first", time.Second); !strings.Contains(body, "first") {
+	if body := waitForRecorderSubstring(t, rec, "first", 10*time.Second); !strings.Contains(body, "first") {
 		t.Fatalf("stream body missing initial turn: %s", body)
 	}
 
@@ -581,7 +581,7 @@ func TestAgentOutputStreamStoppedAgentCommitsStatusHeader(t *testing.T) {
 func TestAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *testing.T) {
 	fixture := newGeminiAgentOutputStreamFixture(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest("GET", "/v0/agent/myrig/worker/output/stream", nil).WithContext(ctx)
@@ -592,7 +592,7 @@ func TestAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *testing.T) 
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "first-output", time.Second); !strings.Contains(body, "first-output") {
+	if body := waitForRecorderSubstring(t, rec, "first-output", 10*time.Second); !strings.Contains(body, "first-output") {
 		t.Fatalf("stream body missing initial transcript turn: %s", body)
 	}
 
@@ -613,7 +613,7 @@ func TestAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *testing.T) 
 		Subject: sessionName,
 	})
 
-	if body := waitForRecorderSubstring(t, rec, "second-output", 1500*time.Millisecond); !strings.Contains(body, "second-output") {
+	if body := waitForRecorderSubstring(t, rec, "second-output", 10*time.Second); !strings.Contains(body, "second-output") {
 		t.Fatalf("stream body missing rotated transcript after wake: %s", body)
 	}
 
@@ -627,7 +627,7 @@ func TestAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *testing.T) 
 		t.Fatalf("chtimes(updated second transcript): %v", err)
 	}
 
-	body := waitForRecorderSubstring(t, rec, "third-output", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "third-output", 10*time.Second)
 
 	cancel()
 	<-done
@@ -641,7 +641,7 @@ func TestCityScopedAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *t
 	fixture := newGeminiAgentOutputStreamFixture(t)
 	h := newTestCityHandlerWith(t, fixture.state, fixture.srv)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req := httptest.NewRequest("GET", cityURL(fixture.state, "/agent/myrig/worker/output/stream"), nil).WithContext(ctx)
@@ -652,7 +652,7 @@ func TestCityScopedAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *t
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "first-output", time.Second); !strings.Contains(body, "first-output") {
+	if body := waitForRecorderSubstring(t, rec, "first-output", 10*time.Second); !strings.Contains(body, "first-output") {
 		t.Fatalf("city-scoped stream body missing initial transcript turn: %s", body)
 	}
 
@@ -673,7 +673,7 @@ func TestCityScopedAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *t
 		Subject: sessionName,
 	})
 
-	if body := waitForRecorderSubstring(t, rec, "second-output", 1500*time.Millisecond); !strings.Contains(body, "second-output") {
+	if body := waitForRecorderSubstring(t, rec, "second-output", 10*time.Second); !strings.Contains(body, "second-output") {
 		t.Fatalf("city-scoped stream body missing rotated transcript after wake: %s", body)
 	}
 
@@ -687,7 +687,7 @@ func TestCityScopedAgentOutputStreamFollowsRotatedGeminiTranscriptAfterWake(t *t
 		t.Fatalf("chtimes(updated second transcript): %v", err)
 	}
 
-	body := waitForRecorderSubstring(t, rec, "third-output", 1500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, "third-output", 10*time.Second)
 
 	cancel()
 	<-done

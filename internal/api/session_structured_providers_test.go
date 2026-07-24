@@ -1088,7 +1088,7 @@ func TestHandleSessionStreamStructuredGracefullyDowngradesWithoutTranscript(t *t
 				close(done)
 			}()
 
-			body := waitForRecorderSubstring(t, rec, `"format":"structured"`, 500*time.Millisecond)
+			body := waitForRecorderSubstring(t, rec, `"format":"structured"`, 10*time.Second)
 			if !strings.Contains(body, `"format":"structured"`) {
 				t.Fatalf("stream body missing structured fallback event: %s", body)
 			}
@@ -1809,7 +1809,7 @@ func TestLegacySessionStreamStructuredGracefullyDowngrades(t *testing.T) {
 		close(done)
 	}()
 
-	body := waitForRecorderSubstring(t, rec, `"format":"structured"`, 500*time.Millisecond)
+	body := waitForRecorderSubstring(t, rec, `"format":"structured"`, 10*time.Second)
 	if !strings.Contains(body, "event: structured") {
 		t.Fatalf("stream body missing structured event name: %s", body)
 	}

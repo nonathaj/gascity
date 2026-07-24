@@ -118,8 +118,12 @@ func RunProviderTests(t *testing.T, newProvider func(t *testing.T) (events.Provi
 		if got[0].Ts.IsZero() {
 			t.Error("Ts is zero, want auto-filled")
 		}
-		if time.Since(got[0].Ts).Abs() > 5*time.Second {
-			t.Errorf("Ts = %v, want within 5s of now", got[0].Ts)
+		// 2 minutes, not 5 seconds: this asserts the timestamp was AUTO-FILLED
+		// (vs zero/epoch/garbage), and a wrong fill is off by years, not seconds.
+		// The exec provider shells out per call, which on Windows (sh + a fresh
+		// subprocess each time) can exceed a 5s window on a loaded machine.
+		if time.Since(got[0].Ts).Abs() > 2*time.Minute {
+			t.Errorf("Ts = %v, want auto-filled near now", got[0].Ts)
 		}
 	})
 
