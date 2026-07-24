@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	slashpath "path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -690,15 +691,24 @@ func probeCommandEnv(homeDir string) []string {
 			env = append(env, key+"="+value)
 		}
 	}
+	// Preserve HOME's authored separator form in the derived XDG fallbacks
+	// (P4): filepath.Join would rewrite a slash-form HOME to backslashes on
+	// Windows, and these values feed sh-launched provider probes (P8).
+	joinHome := func(parts ...string) string {
+		if strings.Contains(homeDir, `\`) {
+			return filepath.Join(append([]string{homeDir}, parts...)...)
+		}
+		return slashpath.Join(append([]string{homeDir}, parts...)...)
+	}
 	if xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdgConfigHome != "" {
 		env = append(env, "XDG_CONFIG_HOME="+xdgConfigHome)
 	} else {
-		env = append(env, "XDG_CONFIG_HOME="+filepath.Join(homeDir, ".config"))
+		env = append(env, "XDG_CONFIG_HOME="+joinHome(".config"))
 	}
 	if xdgStateHome := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); xdgStateHome != "" {
 		env = append(env, "XDG_STATE_HOME="+xdgStateHome)
 	} else {
-		env = append(env, "XDG_STATE_HOME="+filepath.Join(homeDir, ".local", "state"))
+		env = append(env, "XDG_STATE_HOME="+joinHome(".local", "state"))
 	}
 	return env
 }
