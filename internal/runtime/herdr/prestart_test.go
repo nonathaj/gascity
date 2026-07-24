@@ -32,8 +32,13 @@ func TestRunPreStartRunsCommandsInOrder(t *testing.T) {
 	p := newTestProvider(t, 10*time.Second)
 	cfg := runtime.Config{
 		PreStart: []string{
-			"printf one >> " + filepath.Join(dir, "order.txt"),
-			"printf two >> " + filepath.Join(dir, "order.txt"),
+			// ToSlash: PreStart entries are shell command TEXT, and sh treats
+			// backslashes as escapes — a native Windows path collapses (the
+			// separators vanish) and sh then creates that mangled name as a
+			// literal relative file in the CWD, polluting the package dir.
+			// Forward slashes work on Windows too (doctrine P8).
+			"printf one >> " + filepath.ToSlash(filepath.Join(dir, "order.txt")),
+			"printf two >> " + filepath.ToSlash(filepath.Join(dir, "order.txt")),
 		},
 	}
 	if err := p.runPreStart(context.Background(), cfg); err != nil {
@@ -54,7 +59,7 @@ func TestRunPreStartUsesGCDirAsCwd(t *testing.T) {
 	p := newTestProvider(t, 10*time.Second)
 	cfg := runtime.Config{
 		Env:      map[string]string{"GC_DIR": dir},
-		PreStart: []string{"pwd > pwd.txt"},
+		PreStart: []string{pwdCommand("pwd.txt")},
 	}
 	if err := p.runPreStart(context.Background(), cfg); err != nil {
 		t.Fatalf("runPreStart: %v", err)
@@ -64,7 +69,7 @@ func TestRunPreStartUsesGCDirAsCwd(t *testing.T) {
 		t.Fatalf("pre_start did not run in GC_DIR: %v", err)
 	}
 	// macOS resolves TempDir through /private; compare suffix.
-	if !strings.HasSuffix(strings.TrimSpace(string(got)), strings.TrimPrefix(dir, "/private")) {
+	if !strings.HasSuffix(normalizeCwd(string(got)), normalizeCwd(strings.TrimPrefix(dir, "/private"))) {
 		t.Errorf("cwd = %q, want it to be GC_DIR %q", strings.TrimSpace(string(got)), dir)
 	}
 }
@@ -142,7 +147,7 @@ func TestRunPreStartToleratesMissingGCDir(t *testing.T) {
 	p := New("gctest-prestart-missing", t.TempDir(), cityRoot, 10*time.Second)
 	cfg := runtime.Config{
 		Env:      map[string]string{"GC_DIR": filepath.Join(cityRoot, "does", "not", "exist")},
-		PreStart: []string{"pwd > cwd.txt"},
+		PreStart: []string{pwdCommand("cwd.txt")},
 	}
 	if err := p.runPreStart(context.Background(), cfg); err != nil {
 		t.Fatalf("runPreStart with missing GC_DIR = %v, want nil (cwd fallback)", err)
@@ -151,7 +156,22 @@ func TestRunPreStartToleratesMissingGCDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected fallback cwd = cityRoot: %v", err)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(string(got)), strings.TrimPrefix(cityRoot, "/private")) {
+	if !strings.HasSuffix(normalizeCwd(string(got)), normalizeCwd(strings.TrimPrefix(cityRoot, "/private"))) {
 		t.Errorf("cwd = %q, want cityRoot %q", strings.TrimSpace(string(got)), cityRoot)
 	}
+}
+
+// pwdCommand builds a pre_start command that records the shell's cwd in a
+// Windows-comparable form: git-bash `pwd` prints an MSYS path (/tmp/...) that
+// never matches a native C:\... expectation, so prefer `cygpath -m` when it is
+// available. On Unix there is no cygpath and this is a plain `pwd` (T8).
+func pwdCommand(outFile string) string {
+	return "{ command -v cygpath >/dev/null 2>&1 && cygpath -m \"$PWD\" || pwd; } > " + outFile
+}
+
+// normalizeCwd puts a recorded cwd and an expected path in the same shape for
+// comparison: trimmed, forward-slashed, and case-folded (Windows paths are
+// case-insensitive and the drive letter's case varies by producer).
+func normalizeCwd(p string) string {
+	return strings.ToLower(filepath.ToSlash(strings.TrimSpace(p)))
 }
