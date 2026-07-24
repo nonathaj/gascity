@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	slashpath "path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -777,7 +778,9 @@ func initPromptTemplatePath(templatePath string) (string, bool) {
 	if base == "" {
 		return "", false
 	}
-	return filepath.Join("agents", base, "prompt.template.md"), true
+	// PromptTemplate is a config-authored identifier, slash-form on every
+	// platform (P4) — filepath.Join would write backslashes into pack.toml.
+	return slashpath.Join("agents", base, "prompt.template.md"), true
 }
 
 func rewriteInitPromptTemplates(cfg *config.City) {
