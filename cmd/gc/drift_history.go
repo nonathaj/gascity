@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
@@ -69,21 +70,11 @@ func saveDriftRestartHistory(path string, attempts []time.Time) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	// fsys.WriteFileAtomic, not a hand-rolled temp+rename: concurrent `gc start`
+	// invocations replace the same file, and on Windows a rename racing another
+	// replace fails with a transient sharing error — the shared writer carries
+	// the bounded retry (renameWithTransientRetry) plus dead-temp sweeping.
+	return fsys.WriteFileAtomic(fsys.OSFS{}, path, data, 0o600)
 }
 
 // pruneRestartHistory drops entries older than (now - window) from the
