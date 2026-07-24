@@ -235,8 +235,8 @@ func TestControllerSocketFallbackUsesShortPathForLongCityPath(t *testing.T) {
 	if fallback == legacy {
 		t.Fatalf("controllerSocketPath(%q) = %q, want fallback path", cityPath, fallback)
 	}
-	if !strings.HasPrefix(fallback, filepath.Join("/tmp", "gascity-controller")+string(filepath.Separator)) {
-		t.Fatalf("controllerSocketPath(%q) = %q, want /tmp/gascity-controller fallback", cityPath, fallback)
+	if !strings.HasPrefix(fallback, filepath.Join(shortSocketRoot(), "gascity-controller")+string(filepath.Separator)) {
+		t.Fatalf("controllerSocketPath(%q) = %q, want short-root gascity-controller fallback", cityPath, fallback)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

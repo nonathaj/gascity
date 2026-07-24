@@ -92,7 +92,10 @@ func TestSanitizedBaseEnv_AppendsExtras(t *testing.T) {
 	if gotCity != "GC_CITY_PATH=/tmp/explicit/city" {
 		t.Errorf("GC_CITY_PATH extra not appended: got %q", gotCity)
 	}
-	if gotPath != "PATH=/opt/bin:/usr/bin" {
+	// On Windows EnvWithShellDir prepends Git's coreutils dir to the effective
+	// PATH so sh-routed children keep sed/cat/mkdir; require the extra as a
+	// suffix rather than exact equality.
+	if gotPath != "PATH=/opt/bin:/usr/bin" && !strings.HasSuffix(gotPath, ";/opt/bin:/usr/bin") {
 		t.Errorf("PATH extra not appended: got %q", gotPath)
 	}
 }

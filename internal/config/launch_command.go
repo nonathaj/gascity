@@ -161,7 +161,9 @@ func unquoteSessionKeyTemplate(command string) string {
 func appendProviderSettings(cityPath, providerName, command string) ProviderLaunchCommand {
 	settingsPath, settingsRel := ProviderSettingsSource(cityPath, providerName)
 	if settingsPath != "" {
-		command = command + " " + fmt.Sprintf("--settings %q", settingsPath)
+		// Slash-form (P8): the launch command is remapped for Linux pods and
+		// parsed by sh-adjacent launchers; claude accepts C:/-form locally.
+		command = command + " " + fmt.Sprintf("--settings %q", filepath.ToSlash(settingsPath))
 	}
 
 	return ProviderLaunchCommand{

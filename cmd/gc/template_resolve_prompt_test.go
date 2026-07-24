@@ -985,7 +985,7 @@ func TestResolveTemplateWrappedClaudeProjectsSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveTemplate: %v", err)
 	}
-	wantSettings := fmt.Sprintf("--settings %q", filepath.Join(cityPath, ".gc", "settings.json"))
+	wantSettings := fmt.Sprintf("--settings %q", filepath.ToSlash(filepath.Join(cityPath, ".gc", "settings.json")))
 	if !strings.Contains(tp.Command, wantSettings) {
 		t.Fatalf("wrapped Claude command missing settings:\n  got:  %s\n  want: ...%s...", tp.Command, wantSettings)
 	}

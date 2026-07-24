@@ -1004,8 +1004,8 @@ func TestBuildResumeCommandIncludesSettingsAndDefaultArgs(t *testing.T) {
 
 	cmd, _ := buildResumeCommand(cityDir, cfg, info, "", nil, io.Discard)
 
-	// Must include --settings pointing to .gc/settings.json.
-	wantSettings := fmt.Sprintf("--settings %q", filepath.Join(gcDir, "settings.json"))
+	// Must include --settings pointing to .gc/settings.json (slash-form, P8).
+	wantSettings := fmt.Sprintf("--settings %q", filepath.ToSlash(filepath.Join(gcDir, "settings.json")))
 	if !strings.Contains(cmd, "--settings") {
 		t.Fatalf("resume command missing --settings:\n  got: %s", cmd)
 	}
@@ -1048,7 +1048,7 @@ func TestBuildResumeCommandUsesBuiltinAncestorForClaudeSettings(t *testing.T) {
 
 	cmd, _ := buildResumeCommand(cityDir, cfg, info, "", nil, io.Discard)
 
-	wantSettings := fmt.Sprintf("--settings %q", filepath.Join(cityDir, ".gc", "settings.json"))
+	wantSettings := fmt.Sprintf("--settings %q", filepath.ToSlash(filepath.Join(cityDir, ".gc", "settings.json")))
 	if !strings.Contains(cmd, wantSettings) {
 		t.Fatalf("wrapped Claude resume command missing settings:\n  got:  %s\n  want: ...%s...", cmd, wantSettings)
 	}
@@ -2906,7 +2906,7 @@ func TestResolvedSessionCommandIncludesDefaultsAndSettings(t *testing.T) {
 	if !strings.Contains(got, "--effort max") {
 		t.Fatalf("command %q should include effort=max default", got)
 	}
-	wantSettings := `--settings "` + settingsPath + `"`
+	wantSettings := `--settings "` + filepath.ToSlash(settingsPath) + `"`
 	if !strings.Contains(got, wantSettings) {
 		t.Fatalf("command %q should include %s", got, wantSettings)
 	}
