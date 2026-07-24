@@ -125,7 +125,15 @@ func TestEnsureDoltIdentityErrorMessages(t *testing.T) {
 
 			if tc.want.exitOK {
 				if runErr != nil {
-					t.Fatalf("expected success, got %v\nstderr:\n%s", runErr, stderr.String())
+					// Runner-only flake diagnostics (gw-85h.21): dump everything
+					// needed to see why the harness exited non-zero when it
+					// passes locally — the resolved bash, whether the fakes exist,
+					// and both output streams.
+					_, gitStat := os.Stat(filepath.Join(binDir, "git"))
+					_, doltStat := os.Stat(filepath.Join(binDir, "dolt"))
+					t.Fatalf("expected success, got %v\nbash=%q\nbinDir=%q git-exists=%v dolt-exists=%v\nstdout:\n%s\nstderr:\n%s\ndolt-log:\n%s",
+						runErr, bashPath, binDir, gitStat == nil, doltStat == nil,
+						stdout.String(), stderr.String(), readFile(doltLog))
 				}
 			} else {
 				if runErr == nil {
