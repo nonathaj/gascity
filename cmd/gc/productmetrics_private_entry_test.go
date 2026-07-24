@@ -88,7 +88,10 @@ func TestPrivateProductMetricsEntrypointChecksExactMarkerBeforeRunner(t *testing
 					return nil
 				}
 			}
-			handled, code := privateProductMetricsEntrypoint(args)
+			// Drive the platform-parameterized variant as "linux": the private
+			// uploader is deliberately linux/darwin-only (unix storage backend),
+			// and this test pins the marker/factory gating, not the platform gate.
+			handled, code := privateProductMetricsEntrypointForPlatform(args, "linux")
 			if !handled || code != test.wantCode || factorySelections != test.wantCalls || runnerCalls != test.wantCalls {
 				t.Fatalf("private entry = handled:%t code:%d factory selections:%d runner calls:%d, want true/%d/%d/%d",
 					handled, code, factorySelections, runnerCalls, test.wantCode, test.wantCalls, test.wantCalls)
