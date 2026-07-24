@@ -412,8 +412,8 @@ func TestDoStartSession_FullSequence(t *testing.T) {
 	if create.workDir != "/proj" {
 		t.Errorf("createSession workDir = %q, want %q", create.workDir, "/proj")
 	}
-	if create.command != "claude" {
-		t.Errorf("createSession command = %q, want %q", create.command, "claude")
+	if create.command != "env -u CI -u NO_COLOR claude" {
+		t.Errorf("createSession command = %q, want %q", create.command, "env -u CI -u NO_COLOR claude")
 	}
 	if create.env["GC_AGENT"] != "mayor" {
 		t.Errorf("createSession env = %v, want GC_AGENT=mayor", create.env)
@@ -1011,8 +1011,8 @@ func TestShouldAcceptStartupDialogsProviderResolution(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldAcceptStartupDialogs(tt.cfg); got != tt.want {
-				t.Fatalf("shouldAcceptStartupDialogs() = %v, want %v", got, tt.want)
+			if got := runtime.ShouldAcceptStartupDialogs(tt.cfg); got != tt.want {
+				t.Fatalf("runtime.ShouldAcceptStartupDialogs() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -1930,8 +1930,8 @@ func TestDoRelaunchSession_RespawnsThenOrchestrates(t *testing.T) {
 	if respawn.workDir != "/proj" {
 		t.Errorf("respawnAgent workDir = %q, want %q", respawn.workDir, "/proj")
 	}
-	if respawn.command != "claude" {
-		t.Errorf("respawnAgent command = %q, want %q", respawn.command, "claude")
+	if respawn.command != "env -u CI -u NO_COLOR claude" {
+		t.Errorf("respawnAgent command = %q, want %q", respawn.command, "env -u CI -u NO_COLOR claude")
 	}
 }
 
@@ -2030,8 +2030,8 @@ func TestEnsureFreshSession_Success(t *testing.T) {
 	if c.workDir != "/proj" {
 		t.Errorf("workDir = %q, want %q", c.workDir, "/proj")
 	}
-	if c.command != "claude" {
-		t.Errorf("command = %q, want %q", c.command, "claude")
+	if c.command != "env -u CI -u NO_COLOR claude" {
+		t.Errorf("command = %q, want %q", c.command, "env -u CI -u NO_COLOR claude")
 	}
 	if c.env["GC_AGENT"] != "mayor" {
 		t.Errorf("env = %v, want GC_AGENT=mayor", c.env)
@@ -2626,7 +2626,6 @@ func TestEnsureFreshSession_LongPromptEmptyWorkDirFallsBackToOSTemp(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
 	c := ops.calls[0]
 	if strings.Contains(c.command, longPromptRaw) {
 		t.Errorf("raw prompt leaked into tmux command, command = %q", c.command)

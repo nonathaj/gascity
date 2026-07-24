@@ -33,12 +33,7 @@ func shortTempBase() string {
 
 func shortTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(shortTempBase(), "gc-t-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
+	return testutil.ShortTempDir(t, "gc-t-")
 }
 
 func newTestProvider(t *testing.T) *Provider {
