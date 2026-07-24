@@ -344,7 +344,11 @@ func (p *gatedStopProvider) releaseInterrupt(name string) {
 func (p *gatedStopProvider) waitForStops(t *testing.T, n int) []string {
 	t.Helper()
 	var names []string
-	timeout := time.After(3 * time.Second)
+	// 30s: the controller's shutdown drain is what delivers these stops, and it
+	// runs slowly on Windows — measured ~15-19s locally, right at a 20s edge
+	// (one run overshot to 25s). 30s clears that variance with margin; the wait
+	// is a cap, not a fixed delay, so a fast drain still returns immediately.
+	timeout := time.After(30 * time.Second)
 	for len(names) < n {
 		select {
 		case name := <-p.stopSignals:
