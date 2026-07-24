@@ -78,6 +78,12 @@ jobs:
       # the bin dir to GITHUB_PATH. Kept in lockstep with ci.yml's DOLT_VERSION.
       - name: Install Dolt
         shell: bash
+        env:
+          # Authenticate the release-metadata API call: unauthenticated GitHub
+          # API is 60 req/hr, and 7 concurrent jobs (green-list + 6 shards) each
+          # calling it (with retries) blow that limit and get 403s. The workflow
+          # token raises it to 5000 req/hr.
+          GITHUB_TOKEN: ${{ github.token }}
         run: .github/scripts/install-dolt-archive.sh 2.1.7 --cache
       - name: Verify Dolt on PATH
         shell: pwsh
@@ -159,6 +165,12 @@ jobs:
           cache: true
       - name: Install Dolt
         shell: bash
+        env:
+          # Authenticate the release-metadata API call: unauthenticated GitHub
+          # API is 60 req/hr, and 7 concurrent jobs (green-list + 6 shards) each
+          # calling it (with retries) blow that limit and get 403s. The workflow
+          # token raises it to 5000 req/hr.
+          GITHUB_TOKEN: ${{ github.token }}
         run: .github/scripts/install-dolt-archive.sh 2.1.7 --cache
       - name: Verify Dolt on PATH
         shell: pwsh
