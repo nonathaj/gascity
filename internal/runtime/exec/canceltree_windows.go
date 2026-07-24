@@ -5,6 +5,7 @@ package exec
 import (
 	"os/exec"
 	"strconv"
+	"sync/atomic"
 )
 
 // cancelKillTree returns a cmd.Cancel that terminates the whole process
@@ -23,5 +24,22 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 		// non-fatal — the caller's WaitDelay still closes the pipes.
 		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
 		return cmd.Process.Kill()
+	}
+}
+
+// cancelAdapter is the cmd.Cancel the adapter runner installs. Windows has no
+// cross-process SIGINT (see signal_windows.go), so the cooperative interrupt
+// upstream uses on Unix cannot run here: the tree kill IS the cancellation
+// action. Mark it accepted so the caller treats cancellation — not the
+// adapter's incidental exit status — as the observed outcome, matching the
+// Unix contract.
+func cancelAdapter(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
+	kill := cancelKillTree(cmd)
+	return func() error {
+		err := kill()
+		if err == nil && accepted != nil {
+			accepted.Store(true)
+		}
+		return err
 	}
 }

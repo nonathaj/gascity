@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1302,6 +1303,15 @@ func TestUnknownOperation_exit2(t *testing.T) {
 }
 
 func TestProvider_StartCancellationInterruptsCooperativeScript(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// Cooperative cancellation requires delivering SIGINT to the adapter so
+		// its INT trap can run. Windows has no cross-process SIGINT (see
+		// signal_windows.go), so cancellation there is a taskkill /T tree kill
+		// by design — the trap cannot run and the script's chosen exit status
+		// is not observable. The Windows contract (tree reaped, no orphaned
+		// grandchild, Start returns) is covered by TestStartFallsBackToPeek*.
+		t.Skip("cooperative INT-trap cancellation has no Windows equivalent")
+	}
 	for _, interruptExitCode := range []int{0, 2} {
 		t.Run(fmt.Sprintf("interrupt_exit_%d", interruptExitCode), func(t *testing.T) {
 			dir := t.TempDir()
@@ -1375,6 +1385,15 @@ esac
 // ran and the resource the adapter created would leak. Signaling the process
 // group unblocks the child so the trap runs inside the grace window.
 func TestProvider_StartCancellationInterruptsForegroundChild(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		// Cooperative cancellation requires delivering SIGINT to the adapter so
+		// its INT trap can run. Windows has no cross-process SIGINT (see
+		// signal_windows.go), so cancellation there is a taskkill /T tree kill
+		// by design — the trap cannot run and the script's chosen exit status
+		// is not observable. The Windows contract (tree reaped, no orphaned
+		// grandchild, Start returns) is covered by TestStartFallsBackToPeek*.
+		t.Skip("cooperative INT-trap cancellation has no Windows equivalent")
+	}
 	dir := t.TempDir()
 	readyFile := filepath.Join(dir, "ready")
 	interruptFile := filepath.Join(dir, "interrupted")

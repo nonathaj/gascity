@@ -90,14 +90,15 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 	// resource the adapter already created (e.g. a Docker container).
 	setProcessGroup(cmd)
 	var cancellationAccepted atomic.Bool
-	cmd.Cancel = interruptThenKill(cmd, &cancellationAccepted)
 	// WaitDelay ensures Go forcibly closes I/O pipes after the context
 	// expires, even if grandchild processes (e.g. sleep in a shell script)
 	// still hold them open.
 	cmd.WaitDelay = 2 * time.Second
-	// Cancel kills the whole tree so a sh-wrapped grandchild is reaped,
-	// not orphaned, on Windows (gw-ho3).
-	cmd.Cancel = cancelKillTree(cmd)
+	// Single, platform-composed Cancel: cooperative interrupt-then-kill on Unix;
+	// on Windows (no cross-process SIGINT) a taskkill /T tree kill so a
+	// sh-wrapped grandchild is reaped, not orphaned (gw-ho3). Assigning
+	// cmd.Cancel twice here would silently drop whichever came first.
+	cmd.Cancel = cancelAdapter(cmd, &cancellationAccepted)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
