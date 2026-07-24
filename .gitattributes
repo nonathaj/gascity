@@ -22,3 +22,10 @@ internal/api/dashboardspa/dist/** -diff linguist-generated
 internal/api/openapi.json text eol=lf
 docs/reference/schema/openapi.json text eol=lf
 docs/reference/schema/openapi.txt text eol=lf
+# The typed Go API client under internal/api/genclient/client_gen.go is emitted by
+# oapi-codegen (its header says "DO NOT EDIT") from the OpenAPI spec. Treat it as
+# generated output like the SPA bundle above: skip textual diffing and the
+# whitespace lint on the machine-generated source, and do not attribute its shape
+# to authored complexity. Drift is still caught by content-based build/regeneration
+# gates, since a blob-hash change is detected even with -diff.
+internal/api/genclient/client_gen.go -diff linguist-generated

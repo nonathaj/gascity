@@ -2,7 +2,10 @@
 
 package exec
 
-import "os/exec"
+import (
+	"os/exec"
+	"sync/atomic"
+)
 
 // cancelKillTree returns a cmd.Cancel matching exec's default (kill the
 // process). On Unix the provider script runs directly (no sh wrapper),
@@ -15,4 +18,14 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 		}
 		return cmd.Process.Kill()
 	}
+}
+
+// cancelAdapter is the cmd.Cancel the adapter runner installs. On Unix the
+// adapter runs in its own process group, so cancellation is COOPERATIVE:
+// interrupt the group first (letting an INT trap run its rollback) and only
+// escalate to Kill if that fails. Composing here — rather than assigning
+// cmd.Cancel twice — is what keeps the cooperative path from being silently
+// overwritten by the tree-kill fallback.
+func cancelAdapter(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
+	return interruptThenKill(cmd, accepted)
 }

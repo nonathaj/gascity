@@ -1206,9 +1206,10 @@ func TestGastownCity(t *testing.T) {
 func TestGascityCitySeedsRolesDefaultRigImport(t *testing.T) {
 	c := GascityCityWithProviders("bright-lights", "claude", []string{"claude"})
 
-	// City-scope formulas/skills import is unchanged.
-	if len(c.Imports) != 1 || c.Imports["gascity"].Source != PublicGascityPackSource || c.Imports["gascity"].Version != PublicGascityPackVersion {
-		t.Errorf("Imports = %v, want gascity=%s %s", c.Imports, PublicGascityPackSource, PublicGascityPackVersion)
+	// City-scope formulas, skills, and commands use the gc binding expected by
+	// role prompts such as `gc gc claim`.
+	if len(c.Imports) != 1 || c.Imports["gc"].Source != PublicGascityPackSource || c.Imports["gc"].Version != PublicGascityPackVersion {
+		t.Errorf("Imports = %v, want gc=%s %s", c.Imports, PublicGascityPackSource, PublicGascityPackVersion)
 	}
 
 	// Roles ride along as a default rig import, bound "gc" so the formula's
@@ -5988,6 +5989,46 @@ name = "a"
 	}
 	if got := cfg.Session.DisplayMsOrDefault(); got != 8000 {
 		t.Errorf("DisplayMsOrDefault() = %d, want 8000", got)
+	}
+}
+
+func TestParseSessionNudgePollInterval(t *testing.T) {
+	toml := `
+[workspace]
+name = "test"
+
+[session]
+nudge_poll_interval = "15s"
+
+[[agent]]
+name = "a"
+`
+	cfg, err := Parse([]byte(toml))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := cfg.Session.NudgePollIntervalDuration(); got != 15*time.Second {
+		t.Errorf("NudgePollIntervalDuration() = %v, want 15s", got)
+	}
+}
+
+func TestNudgePollIntervalDurationUnsetOrInvalid(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		{"unset", ""},
+		{"unparseable", "banana"},
+		{"zero", "0s"},
+		{"negative", "-5s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &SessionConfig{NudgePollInterval: tc.value}
+			if got := s.NudgePollIntervalDuration(); got != 0 {
+				t.Errorf("NudgePollIntervalDuration() = %v, want 0 (unconfigured)", got)
+			}
+		})
 	}
 }
 

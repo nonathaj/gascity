@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,17 +25,25 @@ func TestMain(m *testing.M) {
 
 	_ = os.Unsetenv(AgentSliceEnv)
 
-	// /tmp keeps macOS socket paths under the 104-byte AF_UNIX limit;
-	// Windows has no /tmp (psmux uses named pipes, no length concern),
-	// so fall back to the default temp root there.
+	// NewSocketParentDir sweeps orphaned siblings left by a prior SIGKILL'd
+	// run before creating this run's own dir. tmuxSocketAliveSentinel must
+	// stay referenced for the process lifetime: the runtime finalizes
+	// unreachable os.Files, which would close the descriptor and release
+	// the lock, letting a concurrent sibling's sweep reclaim this still-
+	// active directory (ga-djbcqt).
+	//
+	// /tmp keeps macOS socket paths under the 104-byte AF_UNIX limit; Windows
+	// has no /tmp (psmux uses named pipes, so there is no length concern), so
+	// pass the default temp root there instead.
 	socketParentRoot := "/tmp"
 	if runtime.GOOS == "windows" {
-		socketParentRoot = ""
+		socketParentRoot = os.TempDir()
 	}
-	tmuxSocketParent, err := os.MkdirTemp(socketParentRoot, "gct-")
+	tmuxSocketParent, sentinel, err := tmuxtest.NewSocketParentDir(socketParentRoot, io.Discard)
 	if err != nil {
 		panic("tmux tests: creating socket parent: " + err.Error())
 	}
+	tmuxSocketAliveSentinel = sentinel
 	tmuxSocketRoot := filepath.Join(tmuxSocketParent, "tmux")
 	if err := tmuxtest.ConfigureProcessEnv(tmuxSocketRoot); err != nil {
 		_ = os.RemoveAll(tmuxSocketParent)
@@ -51,6 +60,10 @@ func TestMain(m *testing.M) {
 	_ = os.RemoveAll(tmuxSocketParent)
 	os.Exit(code)
 }
+
+// tmuxSocketAliveSentinel pins the alive-sentinel flock on this process's
+// tmux socket parent dir for the binary's lifetime; see TestMain.
+var tmuxSocketAliveSentinel *os.File
 
 type mainTB struct{ testing.TB }
 

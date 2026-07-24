@@ -76,12 +76,22 @@ func TestCmdGCTestTempRootPrefixUsesShardPrefix(t *testing.T) {
 func TestCmdGCTmuxSocketRootUsesShortPath(t *testing.T) {
 	longMacRoot := filepath.Join("/private/var/folders/pm/cmklcsfj60nd7nfc79g8xmbc0000gn/T", "gcx12345-1234567890")
 
-	root, cleanupRoot, err := cmdGCTmuxSocketRoot(longMacRoot)
+	root, cleanupRoot, sentinel, err := cmdGCTmuxSocketRoot(longMacRoot, "/tmp")
 	if err != nil {
 		t.Fatalf("cmdGCTmuxSocketRoot: %v", err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(cleanupRoot) })
+	t.Cleanup(func() {
+		if sentinel != nil {
+			_ = sentinel.Close()
+		}
+		_ = os.RemoveAll(cleanupRoot)
+	})
 
+	// The sentinel contract is cross-platform, so assert it before the
+	// Unix-only path-shape checks below.
+	if sentinel == nil {
+		t.Fatal("cmdGCTmuxSocketRoot: sentinel = nil, want held alive sentinel")
+	}
 	if runtime.GOOS == "windows" {
 		// The short-/tmp/104-byte constraint is the Unix AF_UNIX sun_path limit;
 		// psmux sockets are named pipes, so only require a usable root.
