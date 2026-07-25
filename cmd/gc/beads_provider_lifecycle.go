@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/winsec"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/beads/contract"
@@ -878,7 +879,30 @@ func initBeadsForDir(cityPath, dir, prefix, doltDatabase string) error {
 
 type providerOpExecutor func(script string, environ []string, args ...string) error
 
+// initBeadsForDirWithExecutor initializes the scope's beads store and then
+// enforces the store directory's access contract on every platform.
+//
+// The bd pack script tightens .beads with chmod 700, which is ADVISORY on NTFS
+// (doctrine P5): without the winsec step below, Unix got real 0700 protection
+// while Windows left the entire beads store readable by whatever the parent
+// directory's ACL allows. winsec.RestrictToOwner is a no-op off Windows, so this
+// converges the two platforms instead of leaving one unprotected.
 func initBeadsForDirWithExecutor(cityPath, dir, prefix, doltDatabase string, execute providerOpExecutor) error {
+	if err := initBeadsForDirWithExecutorInner(cityPath, dir, prefix, doltDatabase, execute); err != nil {
+		return err
+	}
+	beadsDir := filepath.Join(dir, ".beads")
+	if _, statErr := os.Stat(beadsDir); statErr != nil {
+		// Nothing was created (deferred/seeded paths); nothing to harden.
+		return nil
+	}
+	if err := winsec.RestrictToOwner(beadsDir); err != nil {
+		return fmt.Errorf("restricting beads store permissions %q: %w", beadsDir, err)
+	}
+	return nil
+}
+
+func initBeadsForDirWithExecutorInner(cityPath, dir, prefix, doltDatabase string, execute providerOpExecutor) error {
 	if cityUsesBdStoreContract(cityPath) && gcDoltSkip() {
 		if err := seedDeferredManagedBeadsErr(cityPath, dir, prefix, doltDatabase); err != nil {
 			return err

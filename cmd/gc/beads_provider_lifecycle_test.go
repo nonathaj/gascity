@@ -5732,11 +5732,11 @@ esac
 				}
 			}
 
-			// Unix: the script's chmod 700 is the protection, so assert it.
-			// Windows: this .beads is created by the PACK SCRIPT, whose chmod is
-			// a no-op for access on NTFS, and nothing on this path applies an
-			// owner-only ACL — a real gap tracked separately, not something the
-			// test should paper over by asserting a weaker property.
+			// This test invokes the pack script DIRECTLY, so it can only assert
+			// what the script itself guarantees: chmod 700, which is advisory on
+			// NTFS. gc's platform-independent enforcement lives one layer up in
+			// initBeadsForDirWithExecutor and is asserted by
+			// TestInitBeadsForDirRestrictsBeadsStoreToOwner below.
 			if goruntime.GOOS != "windows" {
 				info, err := os.Stat(filepath.Join(cityPath, ".beads"))
 				if err != nil {
@@ -11803,4 +11803,41 @@ func publishRejectingManagedDoltRuntimeForTest(t *testing.T, cityPath string) fu
 		_ = ln.Close()
 		<-done
 	}
+}
+
+// TestInitBeadsForDirRestrictsBeadsStoreToOwner pins the access contract for the
+// beads store: gc itself must restrict .beads, because the bd pack script's
+// chmod 700 is advisory on NTFS.
+//
+// SCOPE LIMIT (verified by negative control): on Windows this is a SMOKE test,
+// not a guard. t.TempDir() already inherits an owner-only ACL from the user temp
+// dir, so the assertion still passes when gc's winsec step is removed. Making it
+// a true guard requires creating .beads under a deliberately broad-ACL parent
+// (see internal/winsec's grantEveryoneRead test helper) and asserting gc
+// tightens it — tracked as a follow-up. On Unix the 0700 check is a real guard.
+func TestInitBeadsForDirRestrictsBeadsStoreToOwner(t *testing.T) {
+	cityPath := t.TempDir()
+	writeCityToml(t, cityPath, `[workspace]
+name = "perm-city"
+
+[beads]
+provider = "exec:/bin/true"
+`)
+
+	dir := t.TempDir()
+	// Stand in for the script: create .beads the way init does, without any
+	// platform-specific hardening, so the assertion exercises gc's own step.
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executed := false
+	execute := func(string, []string, ...string) error { executed = true; return nil }
+
+	if err := initBeadsForDirWithExecutor(cityPath, dir, "pc", "", execute); err != nil {
+		t.Fatalf("initBeadsForDirWithExecutor: %v", err)
+	}
+	if !executed {
+		t.Fatal("executor was never invoked; test no longer exercises the exec init path")
+	}
+	assertOwnerRestricted(t, filepath.Join(dir, ".beads"), beadsDirPerm)
 }
