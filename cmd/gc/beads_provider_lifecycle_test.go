@@ -11809,12 +11809,16 @@ func publishRejectingManagedDoltRuntimeForTest(t *testing.T, cityPath string) fu
 // beads store: gc itself must restrict .beads, because the bd pack script's
 // chmod 700 is advisory on NTFS.
 //
-// SCOPE LIMIT (verified by negative control): on Windows this is a SMOKE test,
-// not a guard. t.TempDir() already inherits an owner-only ACL from the user temp
-// dir, so the assertion still passes when gc's winsec step is removed. Making it
-// a true guard requires creating .beads under a deliberately broad-ACL parent
-// (see internal/winsec's grantEveryoneRead test helper) and asserting gc
-// tightens it — tracked as a follow-up. On Unix the 0700 check is a real guard.
+// The scope dir is given a deliberately broad ACL before init so the assertion
+// cannot be satisfied by an inherited-restrictive parent.
+//
+// WHAT IS AND IS NOT PROVEN (measured, not assumed): a negative control that
+// disables the winsec step in initBeadsForDirWithExecutor still passes, so this
+// test does NOT isolate that specific step. The likely reason is that gc already
+// hardens .beads elsewhere on this path (ensureBeadsDir applies
+// winsec.RestrictToOwner and is called from several points in
+// beads_provider_lifecycle.go). Read this as "gc ends up with an owner-only
+// .beads", not as a guard on any one call site.
 func TestInitBeadsForDirRestrictsBeadsStoreToOwner(t *testing.T) {
 	cityPath := t.TempDir()
 	writeCityToml(t, cityPath, `[workspace]
@@ -11825,6 +11829,9 @@ provider = "exec:/bin/true"
 `)
 
 	dir := t.TempDir()
+	// Broad ACL on the scope dir so .beads inherits it: this is what makes the
+	// assertion below meaningful instead of passing on inherited restriction.
+	grantBroadDirAccess(t, dir)
 	// Stand in for the script: create .beads the way init does, without any
 	// platform-specific hardening, so the assertion exercises gc's own step.
 	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {

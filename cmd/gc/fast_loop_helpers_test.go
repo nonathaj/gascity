@@ -240,3 +240,32 @@ func setTestHome(t testing.TB, dir string) {
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
 }
+
+// grantBroadDirAccess makes dir readable/writable by a broad principal so a test
+// can prove that production TIGHTENS a directory rather than merely inheriting a
+// restrictive parent ACL. Without this, a Windows ACL assertion under t.TempDir()
+// passes even when the production hardening is removed (t.TempDir() already
+// inherits an owner-only ACL from the user profile's temp dir), which makes the
+// assertion a smoke test instead of a guard.
+//
+// Unix widens the mode bits for the same reason. Returns after applying, and
+// restores on cleanup.
+func grantBroadDirAccess(t *testing.T, dir string) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(dir, 0o777); err != nil {
+			t.Fatalf("chmod dir world-writable: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+		return
+	}
+	// *S-1-1-0 = Everyone. (OI)(CI) so children inherit the broad grant, which
+	// is what would otherwise mask a missing tighten step.
+	grant := exec.Command("icacls", dir, "/grant", "*S-1-1-0:(OI)(CI)(F)")
+	if out, err := grant.CombinedOutput(); err != nil {
+		t.Fatalf("icacls grant Everyone: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		_ = exec.Command("icacls", dir, "/remove:g", "*S-1-1-0").Run()
+	})
+}
