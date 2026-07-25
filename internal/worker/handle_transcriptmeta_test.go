@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/sessionlog"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/internal/transcriptmeta"
 	"github.com/gastownhall/gascity/pkg/eventexport"
 )
@@ -19,11 +21,13 @@ import (
 // keyed transcript path.
 func claudeKeyedFixture(t *testing.T) (*SessionHandle, string, string) {
 	t.Helper()
-	const (
-		workDir    = "/tmp/gascity/phase1/claude"
-		slug       = "-tmp-gascity-phase1-claude" // a claudeProjectSlugCandidates(workDir) entry
-		sessionKey = "keyed-session-xyz"
-	)
+	const sessionKey = "keyed-session-xyz"
+	// AbsFixture: production runs the work dir through filepath.Abs before
+	// slugging, so a rootless "/tmp/..." becomes "D:\tmp\..." on Windows and the
+	// slug stops matching. Derive the slug rather than hardcoding it so the
+	// fixture tracks whatever the production derivation produces per platform.
+	workDir := testutil.AbsFixture("/tmp/gascity/phase1/claude")
+	slug := sessionlog.ProjectSlug(workDir)
 	root := t.TempDir()
 	dir := filepath.Join(root, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -129,10 +133,12 @@ func TestSessionHandleWritesCodexSidecarByID(t *testing.T) {
 	transcriptmeta.SetEnabled(true)
 	t.Cleanup(func() { transcriptmeta.SetEnabled(false) })
 
-	const (
-		workDir = "/work/codex-by-id"
-		uuid    = "019e9966-bbbb-7000-8000-26a2dd7e15b3" // synthetic; never collides with a real rollout
-	)
+	const uuid = "019e9966-bbbb-7000-8000-26a2dd7e15b3" // synthetic; never collides with a real rollout
+	// Absolute on every platform: FindCodexSessionFileByID confirms the rollout's
+	// session_meta cwd against the session's work dir after filepath.Abs, so a
+	// rootless "/work/..." would be compared as "D:\work\..." on Windows and never
+	// match what this fixture writes.
+	workDir := testutil.AbsFixture("/work/codex-by-id")
 	root := t.TempDir()
 	// Codex rollout named "rollout-<localtime>-<uuid>.jsonl" under YYYY/MM/DD,
 	// dated ~now (within the [CreatedAt±1day] keyed window), with session_meta
@@ -192,10 +198,9 @@ func TestSessionHandleCodexSidecarIgnoresOutOfWindowDuplicate(t *testing.T) {
 	transcriptmeta.SetEnabled(true)
 	t.Cleanup(func() { transcriptmeta.SetEnabled(false) })
 
-	const (
-		workDir = "/work/codex-dup"
-		uuid    = "019e9966-cccc-7000-8000-26a2dd7e15b3" // synthetic; never collides with a real rollout
-	)
+	const uuid = "019e9966-cccc-7000-8000-26a2dd7e15b3" // synthetic; never collides with a real rollout
+	// Absolute on every platform — see the note in the by-id test above.
+	workDir := testutil.AbsFixture("/work/codex-dup")
 	root := t.TempDir()
 
 	// writeRollout drops a codex rollout named "rollout-<localtime>-<uuid>.jsonl"

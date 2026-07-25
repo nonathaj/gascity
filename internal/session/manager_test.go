@@ -4451,8 +4451,18 @@ func TestTranscriptPathCodexSessionKeyBeatsAmbiguousWorkDirFallback(t *testing.T
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	keyedPath := filepath.Join(dayDir, "rollout-"+now.Format("2006-01-02T15-04-05")+"-"+sessionID+".jsonl")
-	meta := `{"type":"session_meta","payload":{"id":"` + sessionID + `","cwd":"` + workDir + `"}}`
-	if err := os.WriteFile(keyedPath, []byte(meta+"\n"), 0o644); err != nil {
+	// Marshal rather than concatenate: workDir is a real OS path, and on Windows
+	// its backslashes are invalid JSON escapes ("C:\Users" -> \U), so a
+	// hand-built string yields a rollout whose session_meta never parses and the
+	// keyed lookup silently finds nothing.
+	meta, err := json.Marshal(map[string]any{
+		"type":    "session_meta",
+		"payload": map[string]string{"id": sessionID, "cwd": workDir},
+	})
+	if err != nil {
+		t.Fatalf("marshal session_meta: %v", err)
+	}
+	if err := os.WriteFile(keyedPath, append(meta, '\n'), 0o644); err != nil {
 		t.Fatalf("WriteFile keyed: %v", err)
 	}
 

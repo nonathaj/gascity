@@ -1,12 +1,12 @@
 package main
 
 import (
-	"runtime"
 	"bytes"
 	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )

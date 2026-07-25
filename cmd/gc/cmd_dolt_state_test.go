@@ -1,13 +1,13 @@
 package main
 
 import (
-	"runtime"
 	"bytes"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"

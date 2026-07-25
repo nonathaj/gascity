@@ -5767,19 +5767,27 @@ func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T
 		t.Fatal(err)
 	}
 
-	realChmod, err := exec.LookPath("chmod")
+	// execshim.LookPath so Git for Windows' coreutils resolve the same way the
+	// script's own PATH lookup will (doctrine P2); exec.LookPath only sees Go's
+	// PATH view.
+	realChmod, err := execshim.LookPath("chmod")
 	if err != nil {
 		t.Fatalf("LookPath(chmod): %v", err)
 	}
+	// The script chmods "$dir/.beads", so on Windows the argument arrives mixed
+	// ("C:\...\002/.beads") — matching it against a filepath.Join form never
+	// fires, the real chmod runs, and the test silently stops exercising the
+	// failure path. Compare in slash space on both sides (doctrine P8).
 	fakeChmod := filepath.Join(binDir, "chmod")
 	fakeChmodScript := fmt.Sprintf(`#!/bin/sh
 set -eu
-if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$2" = %q ]; then
+target=$(printf '%%s' "${2:-}" | tr '\\' '/')
+if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$target" = %q ]; then
   echo "chmod blocked" >&2
   exit 1
 fi
 exec %q "$@"
-`, filepath.Join(cityPath, ".beads"), realChmod)
+`, filepath.ToSlash(filepath.Join(cityPath, ".beads")), filepath.ToSlash(realChmod))
 	if err := os.WriteFile(fakeChmod, []byte(fakeChmodScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -5802,8 +5810,11 @@ exec %q "$@"
 	if err == nil {
 		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s", out)
 	}
-	if !strings.Contains(string(out), "failed to set "+filepath.Join(cityPath, ".beads")+" permissions to 700") {
-		t.Fatalf("init error = %q, want chmod failure", string(out))
+	// The die message embeds the script's own "$dir/.beads" spelling, so compare
+	// in slash space here too.
+	wantDie := filepath.ToSlash("failed to set " + filepath.Join(cityPath, ".beads") + " permissions to 700")
+	if !strings.Contains(filepath.ToSlash(string(out)), wantDie) {
+		t.Fatalf("init error = %q, want %q", string(out), wantDie)
 	}
 }
 
@@ -5824,10 +5835,9 @@ func TestGcBeadsBdInitPinsManagedDoltEnvForBdSubcommands(t *testing.T) {
 	}
 
 	captureDir := t.TempDir()
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := `#!/bin/sh
 set -eu
-capture_dir="` + captureDir + `"
+capture_dir="` + filepath.ToSlash(captureDir) + `"
 cmd="${1:-}"
 record() {
   name="$1"
@@ -5860,14 +5870,13 @@ case "$cmd" in
     ;;
 esac
 `
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	fakeDolt := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// installFakeToolOnPath rather than a bare write: sh resolves an extensionless
+	// "bd" fine, but the Go side of init also shells out to bd (store readiness
+	// after the script returns) and Windows CreateProcess only resolves names with
+	// a PATHEXT extension. Without the .bat launcher the real bd on the host PATH
+	// serves those calls, so "list" is never recorded here (doctrine T3).
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 0\n")
 
 	rigDir := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(rigDir, 0o755); err != nil {
@@ -5896,7 +5905,9 @@ esac
 	if err != nil {
 		t.Fatalf("read init.env: %v", err)
 	}
-	if got := strings.TrimSpace(string(data)); got != wantPinned {
+	// BEADS_DIR is re-exported by the script as "$dir/.beads", so the captured
+	// value is slash-joined even on Windows; compare separator-insensitively.
+	if got := strings.TrimSpace(string(data)); !samePathText(got, wantPinned) {
 		t.Fatalf("init.env = %q, want %q", got, wantPinned)
 	}
 	if _, err := os.Stat(filepath.Join(captureDir, "config.env")); !os.IsNotExist(err) {
@@ -5913,7 +5924,7 @@ esac
 	if parts[0] != "rig-db.example.com" || parts[1] != "3307" {
 		t.Fatalf("list.env host/port = %q|%q, want rig-db.example.com|3307", parts[0], parts[1])
 	}
-	if parts[4] != filepath.Join(rigDir, ".beads") {
+	if !samePathText(parts[4], filepath.Join(rigDir, ".beads")) {
 		t.Fatalf("list.env BEADS_DIR = %q, want %q", parts[4], filepath.Join(rigDir, ".beads"))
 	}
 }
@@ -11812,13 +11823,18 @@ func publishRejectingManagedDoltRuntimeForTest(t *testing.T, cityPath string) fu
 // The scope dir is given a deliberately broad ACL before init so the assertion
 // cannot be satisfied by an inherited-restrictive parent.
 //
-// WHAT IS AND IS NOT PROVEN (measured, not assumed): a negative control that
-// disables the winsec step in initBeadsForDirWithExecutor still passes, so this
-// test does NOT isolate that specific step. The likely reason is that gc already
-// hardens .beads elsewhere on this path (ensureBeadsDir applies
-// winsec.RestrictToOwner and is called from several points in
-// beads_provider_lifecycle.go). Read this as "gc ends up with an owner-only
-// .beads", not as a guard on any one call site.
+// WHAT IS PROVEN (measured by negative control): disabling the winsec step in
+// initBeadsForDirWithExecutor makes this test FAIL, with .beads left carrying an
+// inherited Everyone ACE and no SE_DACL_PROTECTED. So the assertion does isolate
+// that step. ensureBeadsDir — the other place gc hardens .beads — is NOT reached
+// on this path (verified with a stack trace): the exec-provider branches that
+// return straight after running the script never call it. That is exactly why
+// the wrapper has to exist.
+//
+// Note for anyone adding a control here: cmd/gc's TestMain unsets inherited GC_*
+// vars unless they match preserveTestControlEnv (GC_TEST_* and a small
+// allowlist). A control switch named outside that prefix is silently stripped,
+// which makes a broken control look like a passing one.
 func TestInitBeadsForDirRestrictsBeadsStoreToOwner(t *testing.T) {
 	cityPath := t.TempDir()
 	writeCityToml(t, cityPath, `[workspace]
@@ -11847,4 +11863,38 @@ provider = "exec:/bin/true"
 		t.Fatal("executor was never invoked; test no longer exercises the exec init path")
 	}
 	assertOwnerRestricted(t, filepath.Join(dir, ".beads"), beadsDirPerm)
+}
+
+// TestInitBeadsForDirRestrictsPreexistingDoltDataDir pins the access contract for
+// the managed Dolt data dir (<scope>/.beads/dolt) — the actual issue database.
+//
+// The bd pack script creates it with a bare `mkdir -p` and no chmod of its own
+// (gc-beads-bd.sh: "mkdir -p \"$db_dir\"" / "$DATA_DIR"), so its protection comes
+// entirely from .beads. On Unix that is 0700 on the parent; on Windows it has to
+// come from the parent's inheritable DACL, and the data dir already exists by the
+// time gc hardens .beads. This asserts the hardening reaches a PRE-EXISTING child
+// rather than only newly created ones.
+func TestInitBeadsForDirRestrictsPreexistingDoltDataDir(t *testing.T) {
+	cityPath := t.TempDir()
+	writeCityToml(t, cityPath, `[workspace]
+name = "perm-city"
+
+[beads]
+provider = "exec:/bin/true"
+`)
+
+	dir := t.TempDir()
+	grantBroadDirAccess(t, dir)
+	// Stand in for the script: .beads plus the data dir underneath it, both
+	// unhardened, as `mkdir -p` leaves them.
+	dataDir := filepath.Join(dir, ".beads", "dolt")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	execute := func(string, []string, ...string) error { return nil }
+
+	if err := initBeadsForDirWithExecutor(cityPath, dir, "pc", "", execute); err != nil {
+		t.Fatalf("initBeadsForDirWithExecutor: %v", err)
+	}
+	assertNotBroadlyAccessible(t, dataDir)
 }

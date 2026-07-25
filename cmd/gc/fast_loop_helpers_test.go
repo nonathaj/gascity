@@ -123,6 +123,18 @@ func denyDirWrites(t *testing.T, dir string) {
 	})
 }
 
+// samePathText reports whether two strings name the same path ignoring
+// separator flavor. Pack scripts are Tier-2 POSIX sh and join paths with "/"
+// ("$dir/.beads" in gc-beads-bd.sh), so a value that round-trips through a
+// script arrives mixed ("C:\...\repo/.beads") even when Go passed it as
+// filepath.Join form. Everything downstream is Go or a Windows API, both of
+// which accept either separator, so the mixed form is correct — only literal
+// string equality is wrong (doctrine P4). Use this for assertions on paths that
+// crossed a script boundary; keep exact equality for Go-only values.
+func samePathText(a, b string) bool {
+	return filepath.ToSlash(a) == filepath.ToSlash(b)
+}
+
 // shScriptPath renders p for splicing into sh script text: slash-separated
 // (sh eats backslashes in unquoted words, so a native Windows path degrades
 // into a mangled relative filename) and single-quoted so temp-dir spaces

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/bootstrap/packs/core"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // mimoCodePluginPackPath is the embedded MiMo Code plugin location inside the
@@ -42,8 +43,7 @@ func TestMimoCodePluginDefaultMirrorDirMatchesReaderSearchPath(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home) // os.UserHomeDir reads USERPROFILE on Windows
+	testutil.SetTestHome(t, home)
 	want := filepath.Join(append([]string{home}, mimoCodeMirrorSegments...)...)
 	got := DefaultMimoCodeSearchPaths()
 	if len(got) != 1 || got[0] != want {
@@ -69,7 +69,7 @@ func TestMimoCodePluginMirrorsTranscriptByDefault(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	workDir := filepath.Join(home, "project")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatalf("mkdir workDir: %v", err)
@@ -127,9 +127,13 @@ await hooks.event({ event: { type: "session.idle", properties: { sessionID } } }
 	const sessionID = "ses_default_mirror"
 	cmd := exec.Command(nodeBin, driverPath, filepath.Join(stage, "gascity.js"), workDir, sessionID)
 	// Hermetic env: HOME drives the plugin's default mirror directory, and
-	// GC_MIMOCODE_TRANSCRIPT_DIR is deliberately absent.
+	// GC_MIMOCODE_TRANSCRIPT_DIR is deliberately absent. USERPROFILE must be
+	// pinned too — node's os.homedir() reads it on Windows (doctrine T1), so
+	// passing HOME alone sent the mirror into the developer's REAL profile while
+	// the Go-side assertion read the same real profile and agreed, hiding it.
 	cmd.Env = []string{
 		"HOME=" + home,
+		"USERPROFILE=" + home,
 		"PATH=" + os.Getenv("PATH"),
 	}
 	out, err := cmd.CombinedOutput()

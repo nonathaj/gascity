@@ -9,6 +9,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/sessionlog"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // writeCodexRolloutForAnchor writes a minimal Codex rollout transcript whose
@@ -42,7 +43,7 @@ func writeCodexRolloutForAnchor(t *testing.T, root, workDir, sessionID string, s
 // exists to recover.
 func TestResolveCodexTranscriptBySessionOrderAnchorsOnAwakeStartedAt(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/myproject"
+	workDir := testutil.AbsFixture("/data/projects/myproject")
 	const provider = "codex"
 
 	// Target session A rolled out at startA; a later sibling B fixes A's window
@@ -69,7 +70,7 @@ func TestResolveCodexTranscriptBySessionOrderAnchorsOnAwakeStartedAt(t *testing.
 
 func TestResolveKeyedTranscriptPathCodexUsesExactSessionKey(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/keyed-codex"
+	workDir := testutil.AbsFixture("/data/projects/keyed-codex")
 	startedAt := time.Date(2026, 7, 15, 14, 30, 0, 0, time.UTC)
 	const (
 		targetKey = "019e9966-aaaa-7000-8000-26a2dd7e15b3"
@@ -94,7 +95,7 @@ func TestResolveKeyedTranscriptPathCodexUsesExactSessionKey(t *testing.T) {
 
 func TestResolveKeyedTranscriptPathsResolvesCodexPageByExactSessionKey(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/keyed-codex-page"
+	workDir := testutil.AbsFixture("/data/projects/keyed-codex-page")
 	startedAt := time.Date(2026, 7, 15, 14, 30, 0, 0, time.UTC)
 	const (
 		firstKey  = "019e9966-1111-7000-8000-26a2dd7e15b3"
@@ -123,7 +124,7 @@ func TestResolveKeyedTranscriptPathsResolvesCodexPageByExactSessionKey(t *testin
 
 func TestResolveKeyedTranscriptPathsUsesFallbackProvider(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/keyed-codex-workspace-default"
+	workDir := testutil.AbsFixture("/data/projects/keyed-codex-workspace-default")
 	startedAt := time.Date(2026, 7, 15, 14, 30, 0, 0, time.UTC)
 	const sessionKey = "019e9966-3333-7000-8000-26a2dd7e15b3"
 	want := writeCodexRolloutForAnchor(t, root, workDir, sessionKey, startedAt)
@@ -143,7 +144,7 @@ func TestResolveKeyedTranscriptPathsUsesFallbackProvider(t *testing.T) {
 
 func TestResolveKeyedTranscriptPathDoesNotFallBack(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/keyed-no-fallback"
+	workDir := testutil.AbsFixture("/data/projects/keyed-no-fallback")
 	startedAt := time.Date(2026, 7, 15, 15, 0, 0, 0, time.UTC)
 	const decoyKey = "019e9966-cccc-7000-8000-26a2dd7e15b3"
 	writeCodexRolloutForAnchor(t, root, workDir, decoyKey, startedAt)
@@ -193,7 +194,7 @@ func TestResolveKeyedTranscriptPathDoesNotFallBack(t *testing.T) {
 
 func TestResolveKeyedTranscriptPathUsesGenericKeyedDiscovery(t *testing.T) {
 	root := t.TempDir()
-	workDir := "/data/projects/keyed-claude"
+	workDir := testutil.AbsFixture("/data/projects/keyed-claude")
 	const sessionKey = "019e9966-eeee-7000-8000-26a2dd7e15b3"
 	slugDir := filepath.Join(root, sessionlog.ProjectSlug(workDir))
 	if err := os.MkdirAll(slugDir, 0o755); err != nil {

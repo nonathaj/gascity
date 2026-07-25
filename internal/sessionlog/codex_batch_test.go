@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestFindCodexSessionFilesByIDPreservesScalarSemantics(t *testing.T) {
@@ -274,14 +276,12 @@ func TestFindCodexSessionFilesByIDPreservesScalarSemantics(t *testing.T) {
 
 	t.Run("relative and absolute root aliases identify one physical rollout", func(t *testing.T) {
 		root := t.TempDir()
-		cwd, err := os.Getwd()
-		if err != nil {
-			t.Fatalf("os.Getwd: %v", err)
-		}
-		relRoot, err := filepath.Rel(cwd, root)
-		if err != nil {
-			t.Fatalf("filepath.Rel: %v", err)
-		}
+		// Derive the relative root by making root's parent the working directory.
+		// Computing it from the package's own cwd cannot work on Windows, where
+		// the repo and TEMP routinely sit on different volumes and filepath.Rel
+		// has no relative form to return ("can't make C:\... relative to D:\...").
+		t.Chdir(filepath.Dir(root))
+		relRoot := filepath.Base(root)
 		const (
 			workDir   = "/work/batch-path-alias"
 			sessionID = "019e9966-aaaa-4000-8000-26a2dd7e1508"
@@ -415,7 +415,7 @@ func TestFindCodexSessionFilesByIDReadsEachRootDayOnce(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDSharesCandidateInspectionAcrossDuplicateSessionIDs(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 	const (
@@ -529,7 +529,7 @@ func TestFindCodexSessionFilesByIDCapsDayReadsPerRoot(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDCapsRequestDayUnion(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatalf("MkdirAll default Codex root: %v", err)
@@ -571,7 +571,7 @@ func TestFindCodexSessionFilesByIDCapsRequestDayUnion(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDRejectsPartiallyPlannedTarget(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 
@@ -623,7 +623,7 @@ func TestFindCodexSessionFilesByIDRejectsPartiallyPlannedTarget(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDCapsReadDirAcrossRoots(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 	const (
@@ -670,7 +670,7 @@ func TestFindCodexSessionFilesByIDCapsReadDirAcrossRoots(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDSkipsRootsWithoutEligibleYear(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 	const (
@@ -727,7 +727,7 @@ func TestFindCodexSessionFilesByIDSkipsRootsWithoutEligibleYear(t *testing.T) {
 
 func TestFindCodexSessionFilesByIDIgnoresRegularFileNamedAsEligibleYear(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, home)
 	root := filepath.Join(home, ".codex", "sessions")
 	now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 	const (
@@ -757,7 +757,7 @@ func TestFindCodexSessionFilesByIDFailsClosedOnReadDirError(t *testing.T) {
 	newFixture := func(t *testing.T) (string, string, time.Time, CodexSessionTarget) {
 		t.Helper()
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		testutil.SetTestHome(t, home)
 		root := filepath.Join(home, ".codex", "sessions")
 		now := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 		extraRoot := filepath.Join(t.TempDir(), "extra-root")

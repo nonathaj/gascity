@@ -10,6 +10,37 @@ import (
 	"github.com/gastownhall/gascity/internal/winsec"
 )
 
+// assertNotBroadlyAccessible asserts path is unreachable by broad principals
+// without requiring path to carry the restriction itself. Use it for paths whose
+// protection legitimately comes from their parent: a directory created inside an
+// already-hardened parent inherits the restriction, so it will NOT be
+// SE_DACL_PROTECTED and assertOwnerRestricted would wrongly fail it.
+//
+// Windows checks the effective DACL for broad ACEs (winsec.HasBroadAccess). Unix
+// has no per-child inheritance: protection comes from the parent denying
+// traversal, so that is what is asserted there.
+func assertNotBroadlyAccessible(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		broad, err := winsec.HasBroadAccess(path)
+		if err != nil {
+			t.Fatalf("HasBroadAccess(%q): %v", path, err)
+		}
+		if broad {
+			t.Errorf("%q grants access to a broad principal (Everyone/Authenticated Users/Users)", path)
+		}
+		return
+	}
+	parent := filepath.Dir(path)
+	info, err := os.Stat(parent)
+	if err != nil {
+		t.Fatalf("Stat(%q): %v", parent, err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("parent %q perm = %o, want no group/other access so %q is unreachable", parent, perm, path)
+	}
+}
+
 // assertOwnerRestricted asserts path is restricted to its owner using the
 // platform's native mechanism: Unix mode bits, or a protected owner-only DACL
 // on Windows (os.Chmod cannot revoke access there, so enforceGCPermissions
