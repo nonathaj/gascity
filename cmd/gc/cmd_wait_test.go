@@ -21,6 +21,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/api"
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/overlay"
 	"github.com/gastownhall/gascity/internal/runtime"
 	sessionpkg "github.com/gastownhall/gascity/internal/session"
@@ -822,7 +823,7 @@ func managedBdWaitTestTemplate(t *testing.T, bdPath, doltPath string) string {
 			"PATH":           strings.Join([]string{filepath.Dir(bdPath), filepath.Dir(doltPath), os.Getenv("PATH")}, string(os.PathListSeparator)),
 		})
 		runScript := func(args ...string) error {
-			cmd := exec.Command(script, args...)
+			cmd := execshim.Command(script, args...)
 			cmd.Env = env
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -842,7 +843,7 @@ func managedBdWaitTestTemplate(t *testing.T, bdPath, doltPath string) string {
 			managedBdWaitTemplateErr = err
 			return
 		}
-		stopCmd := exec.Command(script, "stop")
+		stopCmd := execshim.Command(script, "stop")
 		stopCmd.Env = env
 		if out, err := stopCmd.CombinedOutput(); err != nil {
 			managedBdWaitTemplateErr = fmt.Errorf("stop template city: %w\n%s", err, out)
@@ -2792,7 +2793,7 @@ func setupManagedBdWaitTestCity(t *testing.T) (string, string) {
 	)
 	runScript := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command(script, args...)
+		cmd := execshim.Command(script, args...)
 		cmd.Env = scriptEnv
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -2800,7 +2801,7 @@ func setupManagedBdWaitTestCity(t *testing.T) (string, string) {
 		}
 	}
 	t.Cleanup(func() {
-		cmd := exec.Command(script, "stop")
+		cmd := execshim.Command(script, "stop")
 		cmd.Env = scriptEnv
 		_, _ = cmd.CombinedOutput()
 	})

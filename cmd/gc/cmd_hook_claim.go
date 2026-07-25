@@ -10,12 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/winsec"
 )
 
 const hookClaimCommandName = "hook"
@@ -707,6 +709,19 @@ func runMapDirSafeToPublish(dir string) bool {
 	if err != nil || !info.IsDir() {
 		return false
 	}
+	// Windows has no group/other mode bits: os.Stat synthesizes 0777 for any
+	// directory, so the CWE-732 test below would refuse EVERY publish there
+	// (doctrine P5 — mode bits are advisory; NTFS ACLs govern access). Fall back
+	// to the ACL question that actually matters: is the dir writable by a broad
+	// principal? winsec.HasBroadAccess answers that; a probe error is treated as
+	// unsafe so this stays fail-closed.
+	if goruntime.GOOS == "windows" {
+		broad, err := winsec.HasBroadAccess(dir)
+		if err != nil {
+			return false
+		}
+		return !broad
+	}
 	// Group- and other-write are gated identically: either bit lets a non-owner
 	// create, rename, or delete the <session>.json the proxy trusts, so a
 	// group-writable dir is no safer than a world-writable one (CWE-732).
@@ -930,6 +945,17 @@ func runMapDirPrunable(dir string) bool {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return false
+	}
+	// Same P5 caveat as runMapDirSafeToPublish: Windows synthesizes 0777 for
+	// every directory, so the group/other-write test would make pruning a
+	// permanent no-op there (stale entries accumulate forever). Ask the ACL
+	// question instead; a probe error stays fail-closed.
+	if goruntime.GOOS == "windows" {
+		broad, err := winsec.HasBroadAccess(dir)
+		if err != nil {
+			return false
+		}
+		return !broad
 	}
 	return info.Mode().Perm()&0o022 == 0
 }
