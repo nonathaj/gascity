@@ -3183,9 +3183,8 @@ prefix = "tc"
 
 	logFile := filepath.Join(t.TempDir(), "bd.log")
 	binDir := t.TempDir()
-	bdPath := filepath.Join(binDir, "bd")
 	script := fmt.Sprintf(`#!/bin/sh
-printf 'pwd=%%s BEADS_DIR=%%s args=%%s\n' "$PWD" "${BEADS_DIR:-}" "$*" >> %q
+printf 'pwd=%%s BEADS_DIR=%%s args=%%s\n' "$(command -v cygpath >/dev/null 2>&1 && cygpath -m "$PWD" || printf %%s "$PWD")" "${BEADS_DIR:-}" "$*" >> %q
 case "$1" in
   init)
     mkdir -p "${BEADS_DIR:-$PWD/.beads}"
@@ -3200,9 +3199,7 @@ case "$1" in
     ;;
 esac
 `, logFile)
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", script)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	if err := initBeadsForDir(cityDir, rigDir, "tc", "tc"); err != nil {
@@ -3221,10 +3218,15 @@ esac
 	if realRigDir == "" {
 		realRigDir = rigDir
 	}
-	log := string(logData)
+	// Compare in slash space: the fake records the cwd sh reports, and under Git
+	// for Windows that is an MSYS path (/tmp/... via the mount table), not the
+	// Windows form (doctrine T8). ToSlash on both sides makes the separator
+	// flavor irrelevant; the fake emits cygpath -m output so the volume is
+	// present on Windows.
+	log := filepath.ToSlash(string(logData))
 	for _, want := range []string{
-		"pwd=" + realRigDir,
-		"BEADS_DIR=" + filepath.Join(rigDir, ".beads"),
+		"pwd=" + filepath.ToSlash(realRigDir),
+		"BEADS_DIR=" + filepath.ToSlash(filepath.Join(rigDir, ".beads")),
 		"init --server -p tc --skip-hooks --database tc",
 	} {
 		if !strings.Contains(log, want) {
@@ -5498,7 +5500,6 @@ func TestInitAndHookDirAdoptsAlreadyInitializedDefaultRigBdStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	initArgsFile := filepath.Join(t.TempDir(), "bd-init-args")
-	fakeBd := filepath.Join(binDir, "bd")
 	fakeBdScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 case "${1:-}" in
@@ -5516,9 +5517,7 @@ case "${1:-}" in
     ;;
 esac
 `, initArgsFile)
-	if err := os.WriteFile(fakeBd, []byte(fakeBdScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeToolOnPath(t, binDir, "bd", fakeBdScript)
 
 	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
 
@@ -8303,7 +8302,7 @@ system_variables:
   dolt_stats_paused: "ON"
 EOF
     printf '12345\n' > "$pid_file"
-    printf '{"running":true,"pid":12345,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$port" "$data_dir" > "$state_file"
+    printf '{"running":true,"pid":12345,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$port" "$(printf %%s "$data_dir" | sed 's/\\/\\\\/g')" > "$state_file"
     printf 'ready\ttrue\n'
     printf 'pid\t12345\n'
     printf 'port\t%%s\n' "$port"
@@ -8349,7 +8348,7 @@ EOF
     done
     printf 'gc dolt-state write-provider\n' >> "$invocation_file"
     mkdir -p "$(dirname "$state_file")"
-    printf '{"running":%%s,"pid":%%s,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$running" "$pid" "$port" "$data_dir" > "$state_file"
+    printf '{"running":%%s,"pid":%%s,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}\n' "$running" "$pid" "$port" "$(printf %%s "$data_dir" | sed 's/\\/\\\\/g')" > "$state_file"
     ;;
   dolt-state\ *cleanup*|dolt-state\ *preflight*|dolt-state\ *quarantine*|dolt-state\ *stale*)
     printf 'gc %%s\n' "$subcmd" >> "$invocation_file"
@@ -8796,7 +8795,7 @@ case "$subcmd" in
 ' >> "$invocation_file"
     mkdir -p "$(dirname "$state_file")"
     printf '{"running":%%s,"pid":%%s,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}
-' "$running" "$pid" "$port" "$data_dir" > "$state_file"
+' "$running" "$pid" "$port" "$(printf %%s "$data_dir" | sed 's/\\/\\\\/g')" > "$state_file"
     ;;
   *)
     echo "unexpected gc args: $subcmd $*" >&2
@@ -9067,7 +9066,7 @@ case "$subcmd" in
 ' >> "$invocation_file"
     mkdir -p "$(dirname "$state_file")"
     printf '{"running":%%s,"pid":%%s,"port":%%s,"data_dir":"%%s","started_at":"2026-04-14T00:00:00Z"}
-' "$running" "$pid" "$port" "$data_dir" > "$state_file"
+' "$running" "$pid" "$port" "$(printf %%s "$data_dir" | sed 's/\\/\\\\/g')" > "$state_file"
     ;;
   *)
     echo "unexpected gc args: $subcmd $*" >&2
