@@ -2367,6 +2367,19 @@ func setTestTempDir(t *testing.T, dir string) {
 func longPromptScriptFromCommand(t *testing.T, command string) string {
 	t.Helper()
 	args := shellquote.Split(command)
+	// Skip a leading `env [-u VAR|VAR=VAL]...` prefix: the color-forcing
+	// wrapper (env -u CI -u NO_COLOR ...) sits in front of the sh invocation,
+	// and the long-prompt contract this helper checks is about what sh runs.
+	for len(args) > 0 && args[0] == "env" {
+		args = args[1:]
+		for len(args) > 0 && (args[0] == "-u" || strings.Contains(args[0], "=")) {
+			if args[0] == "-u" && len(args) > 1 {
+				args = args[2:]
+				continue
+			}
+			args = args[1:]
+		}
+	}
 	// On Windows production writes the script to a .launch.sh wrapper and
 	// hands the multiplexer `sh '<file>'` (psmux cannot survive the nested
 	// quoting of the inline form); the script contract lives in the file.

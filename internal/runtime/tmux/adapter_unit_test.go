@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"errors"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -49,8 +50,16 @@ func TestBuildLaunchCommandColorWrapsLongPromptCommand(t *testing.T) {
 	if promptFile == "" {
 		t.Fatal("long prompt did not create a prompt file")
 	}
-	if !strings.HasPrefix(got, "env -u CI -u NO_COLOR sh -c ") {
-		t.Fatalf("command = %q, want env wrapper around final sh -c command", got)
+	// The env wrapper is cross-platform; the sh form is not. On Windows the
+	// long-prompt script goes to a .launch.sh wrapper invoked as `sh '<file>'`
+	// because psmux's parser cannot survive the inline form's nested quoting
+	// (see buildLaunchCommand); elsewhere it stays `sh -c <script>`.
+	wantPrefix := "env -u CI -u NO_COLOR sh -c "
+	if goruntime.GOOS == "windows" {
+		wantPrefix = "env -u CI -u NO_COLOR sh "
+	}
+	if !strings.HasPrefix(got, wantPrefix) {
+		t.Fatalf("command = %q, want env wrapper around final sh command (prefix %q)", got, wantPrefix)
 	}
 }
 
