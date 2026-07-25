@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -5722,17 +5723,28 @@ esac
 				if len(got) > 3 {
 					got = got[len(got)-3:]
 				}
-				if got != tc.wantInitPerm {
+				// The script's stat reports SYNTHETIC bits on Windows (NTFS has
+				// no Unix mode; git-bash shows 755/777 regardless of the ACL), so
+				// the value carries no information there. Its ownership is
+				// asserted below via the ACL-aware helper (P5).
+				if goruntime.GOOS != "windows" && got != tc.wantInitPerm {
 					t.Fatalf("bd init saw .beads perm %q, want effective bits %q", strings.TrimSpace(string(data)), tc.wantInitPerm)
 				}
 			}
 
-			info, err := os.Stat(filepath.Join(cityPath, ".beads"))
-			if err != nil {
-				t.Fatalf("stat .beads: %v", err)
-			}
-			if got := info.Mode().Perm(); got != beadsDirPerm {
-				t.Fatalf(".beads perm = %o, want %o", got, beadsDirPerm)
+			// Unix: the script's chmod 700 is the protection, so assert it.
+			// Windows: this .beads is created by the PACK SCRIPT, whose chmod is
+			// a no-op for access on NTFS, and nothing on this path applies an
+			// owner-only ACL — a real gap tracked separately, not something the
+			// test should paper over by asserting a weaker property.
+			if goruntime.GOOS != "windows" {
+				info, err := os.Stat(filepath.Join(cityPath, ".beads"))
+				if err != nil {
+					t.Fatalf("stat .beads: %v", err)
+				}
+				if got := info.Mode().Perm(); got != beadsDirPerm {
+					t.Fatalf(".beads perm = %o, want %o", got, beadsDirPerm)
+				}
 			}
 		})
 	}
