@@ -1310,6 +1310,15 @@ write_config_yaml() {
             fi
             ;;
     esac
+    # data_dir must be a SINGLE-quoted YAML scalar. In a double-quoted scalar
+    # YAML processes escapes, so a Windows data dir ("C:\Users\...") makes \U an
+    # 8-hex-digit unicode escape and the whole config fails to parse ("did not
+    # find expected hexdecimal number") — dolt then cannot start. Single-quoted
+    # scalars treat backslash literally; '' is the only escape, so double any
+    # embedded quote. (The gc-helper path above is unaffected: it emits Go %q,
+    # whose \\ escaping is already valid YAML.)
+    local data_dir_yaml
+    data_dir_yaml=$(printf '%s' "$DATA_DIR" | sed "s/'/''/g")
     local tmp
     tmp=$(mktemp "$CONFIG_FILE.tmp.XXXXXX")
     cat > "$tmp" <<YAML
@@ -1329,7 +1338,7 @@ listener:
   read_timeout_millis: $read_timeout_millis
   write_timeout_millis: $write_timeout_millis
 
-data_dir: "$DATA_DIR"
+data_dir: '$data_dir_yaml'
 
 # Incremental auto-GC bounds the noms journal so it never reaches GB scale,
 # shrinking both the unclean-stop corruption window and the recovery blast

@@ -1021,11 +1021,18 @@ exit 0
 		t.Fatalf("ReadFile(dolt-state.json): %v", err)
 	}
 	publishedText := string(published)
-	if !strings.Contains(publishedText, fmt.Sprintf("\"port\":%d", port)) {
-		t.Fatalf("published state missing port %d: %s", port, publishedText)
+	// Decode rather than substring-match: this is JSON, so a Windows data dir is
+	// stored with escaped separators ("C:\\Users\\...") and a raw filepath.Join
+	// needle can never appear in the text.
+	var publishedRuntime doltRuntimeState
+	if err := json.Unmarshal(published, &publishedRuntime); err != nil {
+		t.Fatalf("decode published state: %v: %s", err, publishedText)
 	}
-	if !strings.Contains(publishedText, filepath.Join(cityPath, ".beads", "dolt")) {
-		t.Fatalf("published state missing data_dir: %s", publishedText)
+	if publishedRuntime.Port != port {
+		t.Fatalf("published state port = %d, want %d: %s", publishedRuntime.Port, port, publishedText)
+	}
+	if wantDir := filepath.Join(cityPath, ".beads", "dolt"); !samePath(publishedRuntime.DataDir, wantDir) {
+		t.Fatalf("published state data_dir = %q, want %q", publishedRuntime.DataDir, wantDir)
 	}
 	for _, dir := range []string{cityPath, rigPath} {
 		data, err := os.ReadFile(filepath.Join(dir, ".beads", "dolt-server.port"))
@@ -10219,7 +10226,7 @@ func TestStartBeadsLifecycleFailsOnCanonicalCompatDoltDrift(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 2\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10535,7 +10542,7 @@ func TestHealthBeadsProviderDoesNotRecoverExternalLoopbackTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	scriptText := "#!/bin/sh\necho \"$1\" >> " + callLog + "\nif [ \"$1\" = \"health\" ]; then\n  echo \"health failed\" >&2\n  exit 1\nfi\nexit 0\n"
+	scriptText := "#!/bin/sh\necho \"$1\" >> " + shScriptPath(callLog) + "\nif [ \"$1\" = \"health\" ]; then\n  echo \"health failed\" >&2\n  exit 1\nfi\nexit 0\n"
 	if err := os.WriteFile(script, []byte(scriptText), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -10582,7 +10589,7 @@ func TestShutdownBeadsProviderSkipsExternalLoopbackTarget(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10614,7 +10621,7 @@ func TestShutdownBeadsProviderExternalBdClearsStaleManagedRuntimeState(t *testin
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10665,7 +10672,7 @@ func TestShutdownBeadsProviderSkipsPostgresCity(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
@@ -10728,7 +10735,7 @@ func TestStartBeadsLifecycleSkipsProviderForExternalHost(t *testing.T) {
 	// "start" should NOT be called (skipped by external host guard).
 	// "init" will be called but exits 2 (not needed).
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 2\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 2\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -10793,7 +10800,7 @@ port = 3307
 func TestStartBeadsLifecycleSkipsProviderForPostgresCity(t *testing.T) {
 	cityPath := t.TempDir()
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 99\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 99\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -10832,7 +10839,7 @@ dolt.auto-start: false
 func TestStartBeadsLifecyclePostgresCityPreservesManagedDoltArtifacts(t *testing.T) {
 	cityPath := t.TempDir()
 	callLog := filepath.Join(cityPath, "op-calls.log")
-	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+callLog+"\nexit 99\n")
+	script := writeManagedBdTestScript(t, "#!/bin/sh\necho \"$1\" >> "+shScriptPath(callLog)+"\nexit 99\n")
 	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
