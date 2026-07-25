@@ -94,8 +94,8 @@ func TestPreflightBlocksNativeOnContextDisagreement(t *testing.T) {
 func TestPreflightEligibleOnUnreachableBDContextWhenIdentityVerified(t *testing.T) {
 	scope := "/city"
 	fs := fsys.NewFake()
-	fs.Dirs[filepath.Join(scope, ".beads")] = true
-	fs.Files[filepath.Join(scope, ".beads", "metadata.json")] = []byte(`{
+	fs.Dirs[fsys.FakeKey(filepath.Join(scope, ".beads"))] = true
+	fs.Files[fsys.FakeKey(filepath.Join(scope, ".beads", "metadata.json"))] = []byte(`{
 		"backend": "dolt",
 		"dolt_mode": "server",
 		"dolt_database": "gascity",
@@ -138,8 +138,8 @@ func TestPreflightEligibleOnUnreachableBDContextWhenIdentityVerified(t *testing.
 func TestPreflightDegradesOnUnreachableBDContextWithoutIdentityProof(t *testing.T) {
 	scope := "/city"
 	fs := fsys.NewFake()
-	fs.Dirs[filepath.Join(scope, ".beads")] = true
-	fs.Files[filepath.Join(scope, ".beads", "metadata.json")] = []byte(`{
+	fs.Dirs[fsys.FakeKey(filepath.Join(scope, ".beads"))] = true
+	fs.Files[fsys.FakeKey(filepath.Join(scope, ".beads", "metadata.json"))] = []byte(`{
 		"backend": "dolt",
 		"dolt_mode": "server",
 		"dolt_database": "gascity",
@@ -384,8 +384,8 @@ func TestPreflightUnreadableScopeReturnsError(t *testing.T) {
 func testPreflightChecker(metadata string, ctx PreflightBDContext, dbProjectID string) PreflightChecker {
 	scope := "/city"
 	fs := fsys.NewFake()
-	fs.Dirs[filepath.Join(scope, ".beads")] = true
-	fs.Files[filepath.Join(scope, ".beads", "metadata.json")] = []byte(metadata)
+	fs.Dirs[fsys.FakeKey(filepath.Join(scope, ".beads"))] = true
+	fs.Files[fsys.FakeKey(filepath.Join(scope, ".beads", "metadata.json"))] = []byte(metadata)
 	if ctx.BDVersion == "" {
 		ctx.BDVersion = "1.0.4"
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,14 @@ func (e journalRecoveryEnv) run(t *testing.T, harness string, extraEnv ...string
 func TestRunWithTimeoutCapturedOutputDoesNotWaitForWatchdogSleep(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available; skipping shell-function test")
+	}
+	if goruntime.GOOS == "windows" {
+		// Not a portability gap in run_with_timeout itself — this harness hands
+		// the shell four inherited descriptors via cmd.ExtraFiles, which os/exec
+		// documents as unsupported on Windows (Start fails outright with
+		// "not supported by windows"). Restructuring the handshake to happen
+		// inside sh would make it portable; tracked separately.
+		t.Skip("cmd.ExtraFiles is unsupported on Windows; harness needs an in-shell handshake")
 	}
 
 	root := repoRootForLint(t)

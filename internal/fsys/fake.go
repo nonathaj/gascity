@@ -21,6 +21,16 @@ func fakeClean(p string) string {
 	return slashpath.Clean(filepath.ToSlash(p))
 }
 
+// FakeKey returns the canonical [Fake] map-key form for p. Use it whenever a
+// test indexes Files/Dirs/Modes/Symlinks directly with a path built by
+// filepath.Join: the Fake's own methods normalize through fakeClean, but raw
+// map indexing does not, so a filepath.Join key misses on Windows (backslash)
+// against the slash-form key actually stored. On Unix it is identity for
+// already-clean paths.
+func FakeKey(p string) string {
+	return fakeClean(p)
+}
+
 // Fake is an in-memory [FS] for testing. It records all calls (spy) and
 // simulates filesystem state (fake). Pre-populate Dirs, Files, Symlinks,
 // and Errors before calling methods. ModTimes is optional unless a test needs

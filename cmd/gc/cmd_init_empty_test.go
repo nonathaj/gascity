@@ -85,7 +85,7 @@ func TestDoInitEmptyTemplateScaffoldsBareBootableCity(t *testing.T) {
 		t.Fatalf("doInit = %d, want 0; stderr: %s", code, stderr.String())
 	}
 
-	cityData := f.Files[filepath.Join("/bright-lights", "city.toml")]
+	cityData := f.Files[fsys.FakeKey(filepath.Join("/bright-lights", "city.toml"))]
 	cityCfg, err := config.Parse(cityData)
 	if err != nil {
 		t.Fatalf("parsing city.toml: %v", err)
@@ -103,7 +103,7 @@ func TestDoInitEmptyTemplateScaffoldsBareBootableCity(t *testing.T) {
 		t.Fatalf("empty city.toml should seed no default rig imports, got %v:\n%s", cityCfg.Defaults.Rig.Imports, cityData)
 	}
 
-	packData := f.Files[filepath.Join("/bright-lights", "pack.toml")]
+	packData := f.Files[fsys.FakeKey(filepath.Join("/bright-lights", "pack.toml"))]
 	packCfg, err := config.Parse(packData)
 	if err != nil {
 		t.Fatalf("parsing pack.toml: %v", err)
@@ -128,7 +128,7 @@ func TestDoInitEmptyTemplateScaffoldsBareBootableCity(t *testing.T) {
 
 	// No bundled agent prompt scaffolds: empty declares no agents, so init
 	// must not materialize a mayor prompt the way the default template does.
-	if _, ok := f.Files[filepath.Join("/bright-lights", "agents", "mayor", "prompt.template.md")]; ok {
+	if _, ok := f.Files[fsys.FakeKey(filepath.Join("/bright-lights", "agents", "mayor", "prompt.template.md"))]; ok {
 		t.Fatalf("empty template must not scaffold a mayor prompt")
 	}
 }

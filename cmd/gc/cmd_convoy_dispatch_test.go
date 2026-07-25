@@ -194,7 +194,7 @@ func TestCollectSourceWorkflowMatchesSkipsNonSourceListFailure(t *testing.T) {
 	if len(matches) != 1 || len(matches[0].roots) != 1 || matches[0].roots[0].ID != root.ID {
 		t.Fatalf("matches = %#v, want healthy root %s", matches, root.ID)
 	}
-	if len(skips) != 1 || !strings.Contains(skips[0].path, "rigs/stale") || !errors.Is(skips[0].err, staleErr) {
+	if len(skips) != 1 || !strings.Contains(filepath.ToSlash(skips[0].path), "rigs/stale") || !errors.Is(skips[0].err, staleErr) {
 		t.Fatalf("skips = %#v, want stale rig list failure", skips)
 	}
 	if warning := formatSourceWorkflowStoreSkips(skips); !strings.Contains(warning, "revision") || !strings.Contains(warning, "invisible") {
@@ -295,7 +295,7 @@ func TestUnscannedSourceWorkflowStoreSkipsExcludesRecoveredSelectedStore(t *test
 	if !selectedRecovered {
 		t.Fatal("selectedRecovered = false, want already-open selected store to repair its reopen skip")
 	}
-	if len(unscanned) != 1 || !strings.Contains(unscanned[0].path, "rigs/stale") {
+	if len(unscanned) != 1 || !strings.Contains(filepath.ToSlash(unscanned[0].path), "rigs/stale") {
 		t.Fatalf("unscanned skips = %#v, want only stale non-selected rig", unscanned)
 	}
 }

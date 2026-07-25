@@ -387,8 +387,8 @@ func TestOpenStoreAtForCityEmbeddedStampMarkerStillBlocksNativeStore(t *testing.
 
 func factoryPreflightChecker(scope, metadata string, ctx contract.PreflightBDContext) contract.PreflightChecker {
 	files := fsys.NewFake()
-	files.Dirs[filepath.Join(scope, ".beads")] = true
-	files.Files[filepath.Join(scope, ".beads", "metadata.json")] = []byte(metadata)
+	files.Dirs[fsys.FakeKey(filepath.Join(scope, ".beads"))] = true
+	files.Files[fsys.FakeKey(filepath.Join(scope, ".beads", "metadata.json"))] = []byte(metadata)
 	if ctx.BDVersion == "" {
 		ctx.BDVersion = "1.0.4"
 	}

@@ -338,7 +338,7 @@ func TestLoadPackForLint_SurfacesUpstreams(t *testing.T) {
 		t.Fatalf("filepath.Abs: %v", err)
 	}
 	fs := fsys.NewFake()
-	fs.Files[filepath.Join(packDir, "pack.toml")] = []byte(`
+	fs.Files[fsys.FakeKey(filepath.Join(packDir, "pack.toml"))] = []byte(`
 [pack]
 name = "local"
 schema = 2
