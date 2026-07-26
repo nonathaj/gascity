@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -196,7 +197,14 @@ func (h *charHarness) captureLane(t *testing.T, lane charLane, cmd charCommand) 
 	// canonicalizing — DefaultRules deliberately does not touch temp paths, so a
 	// path-emitting command (rig list, status) would otherwise flake per run.
 	c := chartest.NewCanonicalizer(chartest.DefaultRules()...)
+	// JSON output carries the path with its separators escaped, so on Windows the
+	// captured bytes hold C:\\Users\\... while h.cityPath is C:\Users\... —
+	// replacing only the raw form leaves the real temp path in the golden and the
+	// test flakes every run. Redact the JSON-escaped spelling too. On Unix the
+	// escaped form is identical to the raw one, so this is a no-op there.
+	jsonEscapedCityPath := strings.ReplaceAll(h.cityPath, `\`, `\\`)
 	redactCanon := func(b []byte) []byte {
+		b = bytes.ReplaceAll(b, []byte(jsonEscapedCityPath), []byte("<CITY>"))
 		return c.Canonicalize(bytes.ReplaceAll(b, []byte(h.cityPath), []byte("<CITY>")))
 	}
 	return chartest.Capture{

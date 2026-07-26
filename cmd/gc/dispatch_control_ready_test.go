@@ -378,7 +378,6 @@ func TestTryControlReadyFromCacheOrFallbackUsesSingleBatchedBDCallWhenCacheUnava
 
 	tmp := t.TempDir()
 	logPath := filepath.Join(tmp, "bd.log")
-	bdPath := filepath.Join(tmp, "bd")
 	target := "gascity/control-dispatcher"
 	script := fmt.Sprintf(`#!/bin/sh
 set -eu
@@ -397,9 +396,7 @@ case "$*" in
     ;;
 esac
 `, logPath, controlReadyFallbackLimit, target)
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+	installFakeToolOnPath(t, tmp, "bd", script)
 	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_BEADS", "bd")
 
@@ -453,11 +450,8 @@ func TestControlReadyFallbackReadyLogsWhenResultHitsLimit(t *testing.T) {
 	if err := os.WriteFile(payloadPath, payload, 0o644); err != nil {
 		t.Fatalf("write payload: %v", err)
 	}
-	bdPath := filepath.Join(tmp, "bd")
 	script := fmt.Sprintf("#!/bin/sh\ncat %q\n", payloadPath)
-	if err := os.WriteFile(bdPath, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+	installFakeToolOnPath(t, tmp, "bd", script)
 	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_BEADS", "bd")
 
@@ -487,10 +481,7 @@ func TestControlReadyFallbackReadyLogsWhenResultHitsLimit(t *testing.T) {
 func TestControlReadyFallbackReadyNoWarningBelowLimit(t *testing.T) {
 	configureIsolatedRuntimeEnv(t)
 	tmp := t.TempDir()
-	bdPath := filepath.Join(tmp, "bd")
-	if err := os.WriteFile(bdPath, []byte("#!/bin/sh\nprintf '[{\"id\":\"ga-fallback-only\"}]'\n"), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+	installFakeToolOnPath(t, tmp, "bd", "#!/bin/sh\nprintf '[{\"id\":\"ga-fallback-only\"}]'\n")
 	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GC_BEADS", "bd")
 
@@ -512,12 +503,9 @@ func TestControlReadyFallbackReadyNoWarningBelowLimit(t *testing.T) {
 
 func TestNextWorkflowServeBeadsNonControlQueryUsesOriginalShellPath(t *testing.T) {
 	tmp := t.TempDir()
-	bdPath := filepath.Join(tmp, "bd")
-	if err := os.WriteFile(bdPath, []byte(`#!/bin/sh
+	installFakeToolOnPath(t, tmp, "bd", `#!/bin/sh
 printf '[{"id":"ga-plain"}]'
-`), 0o755); err != nil {
-		t.Fatalf("write fake bd: %v", err)
-	}
+`)
 	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	got, err := nextWorkflowServeBeads("bd ready --json --limit=20", t.TempDir(), nil)
