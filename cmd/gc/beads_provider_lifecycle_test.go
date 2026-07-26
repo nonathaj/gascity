@@ -4360,6 +4360,23 @@ func waitForProviderLifecycleCancel(t *testing.T, cancelCh <-chan context.Cancel
 	}
 }
 
+// waitForProviderTestChildPID reads the pid a provider-op fixture's child wrote
+// and returns it in the numbering space the Go-side probes use.
+//
+// The fixtures record "$$" from a POSIX shell. Under Git for Windows that is an
+// MSYS pid, which is a DIFFERENT numbering space from the Windows pids
+// pidutil.Alive/platformKill operate on. Probing it unmapped made these tests
+// vacuous: pidutil.Alive(msysPid) is almost always false, so
+// waitForProviderTestPIDExit returned immediately and never verified that
+// cancellation killed anything. Measured on one run: sh reported 10782, which was
+// not a live Windows pid, while the child's real WINPID was 239116 and alive. The
+// failure mode is worse than the vacuum — when an MSYS pid number happens to
+// collide with an unrelated live Windows process the test fails for no reason,
+// which is how CI reported "provider child pid 1749 survived".
+//
+// ps -W lists native processes with the MSYS pid in column 1 and the Windows pid
+// in column 4, so it is the mapping. Identity on Unix, where $$ is already the
+// pid every probe uses.
 func waitForProviderTestChildPID(t *testing.T, path string) int {
 	t.Helper()
 	pidText := waitForProviderTestNonEmptyFile(t, path, 5*time.Second)
@@ -4367,7 +4384,33 @@ func waitForProviderTestChildPID(t *testing.T, path string) int {
 	if err != nil {
 		t.Fatalf("parse child pid: %v", err)
 	}
-	return pid
+	if goruntime.GOOS != "windows" {
+		return pid
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if winPID, ok := windowsPIDForShellPID(pid); ok {
+			return winPID
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("could not map MSYS pid %d to a Windows pid via ps -W; the child pid is "+
+		"unusable for pidutil probes and the assertion would be vacuous", pid)
+	return 0
+}
+
+// windowsPIDForShellPID maps an MSYS pid to its Windows pid using ps -W.
+func windowsPIDForShellPID(shellPID int) (int, bool) {
+	out, err := execshim.Command("sh", "-c",
+		"ps -W 2>/dev/null | awk -v p="+strconv.Itoa(shellPID)+" 'NR>1 && $1==p {print $4}'").Output()
+	if err != nil {
+		return 0, false
+	}
+	winPID, convErr := strconv.Atoi(strings.TrimSpace(string(out)))
+	if convErr != nil || winPID <= 0 {
+		return 0, false
+	}
+	return winPID, true
 }
 
 func waitForProviderTestNonEmptyFile(t *testing.T, path string, timeout time.Duration) string {

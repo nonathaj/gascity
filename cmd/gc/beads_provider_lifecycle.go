@@ -2382,7 +2382,16 @@ func runProviderOpWithEnvContext(parent context.Context, script string, environ 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	// Start/Wait rather than Run so the child can be placed in a containment job
+	// between the two: on Windows the provider script backgrounds its work, and the
+	// resulting grandchild is not reliably reachable from the direct child's process
+	// tree at cancellation time. No-op off Windows, where Setpgid already covers it.
+	err := cmd.Start()
+	if err == nil {
+		releaseContainment := containProviderOpProcess(cmd)
+		err = cmd.Wait()
+		releaseContainment()
+	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("exec beads %s: %w", args[0], ctxErr)
