@@ -398,3 +398,64 @@ Windows, which is exactly what a contract test should look like.
 Phase 1 lands when 1, 2, 3, 4, 5, 6 and 8 are green on the Windows gate **and** Linux,
 with 7 still red and referenced from the Phase 3 bead. Every one of 1, 4 and 7 must be
 demonstrated failing before its fix, for the reason this document exists.
+
+## 12. Implementation findings (Phase 1, in progress)
+
+**The contract test is written and DEMONSTRATED FAILING** through the real start path
+(`TestManagedDoltStatePIDIsNativeAfterShellFallbackStart`):
+
+```
+dolt-state.json pid 49126 is not live per pidutil.Alive, the probe production uses.
+The script recorded a pid in a different numbering space than Go reads it in (gw-dbm)
+```
+
+Three fixture facts worth keeping, each cost a debugging cycle:
+
+1. The fake `dolt` must be **subcommand-aware**. Start also runs
+   `dolt config --global --get user.*`, `dolt version`, and — with `GC_BIN` unset — a
+   `dolt --host … sql` query probe. A blanket long-lived fake blocks identity setup
+   rather than standing in for the server.
+2. This path **cannot** use the prelude-override harness the other script tests use:
+   the env→globals initialisation (`DATA_DIR`, `LOCK_FILE`, …) lives in the script's
+   **Main** section, so `op_start` against the prelude alone leaves them empty and the
+   script dies in `mkdir -p '' .`.
+3. Readiness is satisfied by binding the port from Go **after** the spawn. Binding
+   first makes the script treat the port as already-served and adopt instead of spawn,
+   which is not the path under test.
+
+**Test tier:** it lives behind `skipSlowChoiceCmdGCTest`-style gating because it spawns
+processes, and the Windows gate sets `GC_FAST_UNIT=1`. So this contract is enforced by
+`make test-cmd-gc-process`, **not** by the gate. State that plainly rather than
+assuming gate-green implies the contract holds.
+
+### The finding that changes the wire design
+
+**Go reads the PID FILE as well as the state file** —
+`dolt_process_inspection.go:53/68` `managedPIDFromPIDFile(layout.PIDFile)`. So *both*
+`$PID_FILE` and `state.pid` cross the boundary and both must be native.
+
+That has a consequence the earlier plan missed. sh's own polling reads a pid too:
+`graceful_stop_owned_pid` (script `:1224`) polls `pid_alive` in a 60-iteration loop and
+its callers pass pids sourced from the persisted files (`:2254`, `:2293`, `:2310`,
+`:3200`). If those files hold *native* pids, every one of those polls falls through to
+`ps -W` at 560ms — reintroducing exactly the ~34s regression the two-field design was
+meant to avoid.
+
+**So the two-field design must be stated more strongly:** it is not enough to add
+`shell_pid` alongside a native `pid`. sh must be **rerouted to read `shell_pid`** for
+its own liveness/kill work, and the native `pid`/`$PID_FILE` becomes Go-only. Until
+that rerouting is complete the space is half-converted, which this document already
+argues is worse than consistently wrong.
+
+Concretely, Phase 1 is:
+
+1. `native_pid_of()` in the script (one `ps -W` at spawn).
+2. `save_state` emits `pid` (native) **and** `shell_pid`; `$PID_FILE` becomes native.
+3. Go's `doltRuntimeState` gains `ShellPID` (read-only; Go never uses it).
+4. **Reroute** the four `graceful_stop_owned_pid` call sites and the `:1820`
+   `$PID_FILE` read to the shell-space value, so no sh polling loop touches a native
+   pid.
+5. `pid_kill()` for the cases where sh must terminate a native pid anyway.
+
+Step 4 is the load-bearing one and the reason Phase 1 was not landed in the same
+session as the test: getting it half-right is the documented worse outcome.

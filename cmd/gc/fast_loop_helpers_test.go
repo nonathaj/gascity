@@ -123,6 +123,27 @@ func denyDirWrites(t *testing.T, dir string) {
 	})
 }
 
+// prependPathDir moves dir to the FRONT of env's PATH. Call it after
+// sanitizedBaseEnv when a test installs a fake that must shadow a Git for Windows
+// coreutil, or must win over a real tool of the same name.
+//
+// sanitizedBaseEnv finishes by calling execshim.EnvWithShellDir, which PREPENDS
+// Git's usr/bin whenever that directory is not already on PATH. On a host whose
+// ambient PATH already contains usr/bin the test's bin dir stays first and the fake
+// wins; on a host without it (the CI runner) usr/bin lands ahead of the test's bin
+// dir and the real tool answers instead. The fake is then never consulted and the
+// test quietly stops exercising what it claims.
+func prependPathDir(env []string, dir string) []string {
+	out := append([]string(nil), env...)
+	for i, kv := range out {
+		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
+			out[i] = "PATH=" + dir + string(os.PathListSeparator) + kv[5:]
+			return out
+		}
+	}
+	return append(out, "PATH="+dir)
+}
+
 // samePathText reports whether two strings name the same path ignoring
 // separator flavor. Pack scripts are Tier-2 POSIX sh and join paths with "/"
 // ("$dir/.beads" in gc-beads-bd.sh), so a value that round-trips through a
