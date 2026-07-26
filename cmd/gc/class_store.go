@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/coordclass"
@@ -285,8 +287,40 @@ func resolveGraphStore(workStore beads.Store, cfg *config.City, cityPath string,
 // store. Both resolve to the work store at the single-store bd backend, so this is
 // byte-identical to newMailProvider(workStore) today and diverges only once
 // [beads.classes.messaging] or [beads.classes.sessions] relocates a class.
+// The provider NAME is resolved from this city's own cfg/cityPath. It used to
+// come from newMailProviderWithSessionStore -> mailProviderName(), which ignores
+// both arguments and calls resolveCity() — a walk up from the process working
+// directory. That was wrong in two ways at once:
+//
+//   - Correctness: a controller started for an explicit city adopted a DIFFERENT
+//     city's [mail] provider whenever the working directory resolved elsewhere.
+//     Measured in a cmd/gc test whose city was a temp dir: it resolved to
+//     D:\dev\gem-city-jkenkel, the developer's real city, and read its config.
+//   - Latency: that resolve plus the foreign loadCityConfig took 3.3s, and it runs
+//     during controller startup BEFORE the command socket's stop can be serviced,
+//     so `gc stop` right after `gc start` waited behind it (gw-5us).
+//
+// cfg is already loaded and cityPath is already known, so the correct answer needs
+// no filesystem walk at all. Precedence is unchanged: GC_MAIL, then this city's
+// [mail] provider.
 func newCityMailProvider(workStore beads.Store, cfg *config.City, cityPath string, rec events.Recorder) mail.Provider {
 	msgStore := resolveMailMessagesStore(workStore, cfg, cityPath, rec)
 	sessStore := resolveSessionStore(workStore, cfg, cityPath, rec)
-	return newMailProviderWithSessionStore(msgStore, sessStore)
+	return newMailProviderNamedWithSessionStore(cityMailProviderName(cfg, cityPath), msgStore, sessStore, true)
+}
+
+// cityMailProviderName returns the mail provider configured for the given city,
+// without consulting the process working directory. Falls back to reading the
+// city's config only when cfg was not supplied.
+func cityMailProviderName(cfg *config.City, cityPath string) string {
+	if v := os.Getenv("GC_MAIL"); v != "" {
+		return v
+	}
+	if cfg != nil && cfg.Mail.Provider != "" {
+		return cfg.Mail.Provider
+	}
+	if cfg == nil && cityPath != "" {
+		return mailProviderNameForCity(cityPath)
+	}
+	return ""
 }

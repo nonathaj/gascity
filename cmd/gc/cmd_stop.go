@@ -94,7 +94,17 @@ func cmdStopJSON(args []string, stdout, stderr io.Writer, wallClockTimeout time.
 		}
 	}
 
-	cfg, err := loadCityConfig(cityPath, stderr)
+	// Stop reads config WITHOUT forcing a builtin-pack refresh. loadCityConfig
+	// calls ensureBuiltinPacksForConfigLoad, which materializes the generated
+	// builtin packs to disk: measured at 1.79s cold and 334ms warm, against 0.5ms
+	// for the underlying config.Load. Paying that during teardown is wrong on its
+	// own terms — the packs are only needed to RUN a city — and it lands inside the
+	// pre-flight that `--timeout` deliberately does not bound, so it was pure
+	// unbounded latency on every `gc stop` (gw-5us). Completion paths already skip
+	// the refresh for the same reason. The values stop actually needs (daemon
+	// timeouts, agent list) still come from LoadWithIncludes, which reads whatever
+	// packs are already on disk.
+	cfg, err := loadCityConfigWithoutBuiltinPackRefresh(cityPath, stderr)
 	if err != nil {
 		if handled, code := stopManagedRuntimeWithoutConfig(cityPath, err, stopStdout, stderr, force); handled {
 			if code == 0 && jsonOut {
