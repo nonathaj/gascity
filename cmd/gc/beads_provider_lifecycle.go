@@ -2092,7 +2092,17 @@ func runProviderProbe(script, cityPath, provider string) bool {
 		}
 		cmd.Env = env
 	}
-	return cmd.Run() == nil
+	// Same containment as runProviderOpWithEnvContext: Start/Wait so the child can
+	// be placed in a kill-on-close Job Object between the two. The probe script is
+	// sh like every other provider op, so a cancelled probe otherwise leaves the
+	// backgrounded grandchild running (gw-591).
+	if err := cmd.Start(); err != nil {
+		return false
+	}
+	releaseContainment := containProviderOpProcess(cmd)
+	err := cmd.Wait()
+	releaseContainment()
+	return err == nil
 }
 
 func providerLifecycleDoltPathEnv(cityPath string) []string {
