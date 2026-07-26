@@ -5789,9 +5789,15 @@ func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T
 	// let the real chmod run and the test silently stopped exercising its failure
 	// path. Keying on the ".beads" suffix is spelling-independent and still
 	// specific to what this test blocks (doctrine P8).
-	fakeChmod := filepath.Join(binDir, "chmod")
+	// The fake records every invocation. Two prior fix attempts (path spelling,
+	// then PATH ordering) each passed locally and still failed on CI, because a
+	// bare "init unexpectedly succeeded" cannot distinguish "the fake ran and its
+	// guard did not match" from "the fake never ran at all". The log makes CI
+	// answer that directly.
+	chmodLog := filepath.Join(t.TempDir(), "chmod-calls.log")
 	fakeChmodScript := fmt.Sprintf(`#!/bin/sh
 set -eu
+printf 'chmod %%s\n' "$*" >> %q
 target=$(printf '%%s' "${2:-}" | tr '\\' '/')
 case "$target" in
   */.beads) is_beads_dir=yes ;;
@@ -5802,19 +5808,10 @@ if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$is_beads_dir" = yes ]; then
   exit 1
 fi
 exec %q "$@"
-`, filepath.ToSlash(realChmod))
-	if err := os.WriteFile(fakeChmod, []byte(fakeChmodScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	fakeBd := filepath.Join(binDir, "bd")
-	if err := os.WriteFile(fakeBd, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fakeDolt := filepath.Join(binDir, "dolt")
-	if err := os.WriteFile(fakeDolt, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+`, filepath.ToSlash(chmodLog), filepath.ToSlash(realChmod))
+	installFakeToolOnPath(t, binDir, "chmod", fakeChmodScript)
+	installFakeToolOnPath(t, binDir, "bd", "#!/bin/sh\nexit 0\n")
+	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 0\n")
 
 	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
 	// prependPathDir AFTER sanitizedBaseEnv: it ends with EnvWithShellDir, which
@@ -5828,7 +5825,12 @@ exec %q "$@"
 	), binDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s", out)
+		calls, readErr := os.ReadFile(chmodLog)
+		if readErr != nil {
+			calls = []byte("(no chmod-call log: the fake chmod was NEVER invoked — a real chmod " +
+				"answered, so PATH resolution, not the guard, is the problem: " + readErr.Error() + ")")
+		}
+		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s\nchmod calls seen by the fake:\n%s", out, calls)
 	}
 	// The die message embeds the script's own "$dir/.beads" spelling, so compare
 	// in slash space here too.

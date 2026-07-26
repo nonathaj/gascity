@@ -4,8 +4,9 @@ package exec
 
 import (
 	"os/exec"
-	"strconv"
 	"sync/atomic"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
 // cancelKillTree returns a cmd.Cancel that terminates the whole process
@@ -20,9 +21,10 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 		if cmd.Process == nil {
 			return nil
 		}
-		// /T kills the tree, /F forces; errors (already-gone) are
-		// non-fatal — the caller's WaitDelay still closes the pipes.
-		_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
+		// pidutil.KillTree is the single implementation of "kill the tree" —
+		// cmd/gc's provider-op cancellation needs the same thing, and two copies
+		// of the taskkill invocation would drift.
+		_ = pidutil.KillTree(cmd.Process.Pid)
 		return cmd.Process.Kill()
 	}
 }
