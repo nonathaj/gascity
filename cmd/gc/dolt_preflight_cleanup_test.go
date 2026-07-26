@@ -17,7 +17,7 @@ func TestStaleManagedDoltSocketPathsExcludesMysqlSock(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// The sweep collects dolt's Unix domain sockets from /tmp — a mechanism
 		// that does not exist on Windows (dolt uses TCP; hosted runners have no
-		// 	mp to seed).
+		// /tmp to seed).
 		t.Skip("unix /tmp socket sweep is Unix-specific")
 	}
 	tmpSock, err := os.CreateTemp("/tmp", "dolt-preflight-cleanup-*.sock")
@@ -254,6 +254,15 @@ func TestFileOpenedByAnyProcessFromProcFallsBackWhenUnixTableUnreadable(t *testi
 }
 
 func TestRemoveStaleManagedDoltSocketsWithoutLsofKeepsSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Same reason as TestStaleManagedDoltSocketPathsExcludesMysqlSock:
+		// staleManagedDoltSocketPaths globs a hardcoded "/tmp/dolt*.sock", a
+		// mechanism that does not exist on Windows (dolt uses TCP there). Binding
+		// the socket somewhere real instead would make this test pass VACUOUSLY —
+		// the sweep would never consider the path, so "keeps socket" would hold
+		// trivially. Skip rather than assert something the sweep cannot see.
+		t.Skip("unix /tmp socket sweep is Unix-specific")
+	}
 	socketPath := filepath.Join("/tmp", "dolt-preflight-cleanup-live-test.sock")
 	_ = os.Remove(socketPath)
 	listener, err := net.Listen("unix", socketPath)

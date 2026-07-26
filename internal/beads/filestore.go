@@ -717,11 +717,14 @@ func (fs *FileStore) save() error {
 		return fmt.Errorf("saving file store: %w", err)
 	}
 
-	tmp := fs.path + ".tmp"
-	if err := fs.fs.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("saving file store: %w", err)
-	}
-	if err := fs.fs.Rename(tmp, fs.path); err != nil {
+	// WriteFileAtomic rather than a hand-rolled temp+rename. Two properties
+	// matter here and neither was present before: the temp name is unique per
+	// call (the old fixed "<path>.tmp" meant two concurrent saves wrote the same
+	// scratch file, so one could rename the other's half-written bytes), and the
+	// rename retries the transient Windows sharing errors an AV scanner or
+	// indexer produces while it holds the destination open — which surfaced as
+	// flaky "rename ...: Access is denied" save failures.
+	if err := fsys.WriteFileAtomic(fs.fs, fs.path, data, 0o644); err != nil {
 		return fmt.Errorf("saving file store: %w", err)
 	}
 	fs.refreshFreshnessCache()

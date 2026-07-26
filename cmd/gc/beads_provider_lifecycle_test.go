@@ -5780,20 +5780,29 @@ func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T
 	if err != nil {
 		t.Fatalf("LookPath(chmod): %v", err)
 	}
-	// The script chmods "$dir/.beads", so on Windows the argument arrives mixed
-	// ("C:\...\002/.beads") — matching it against a filepath.Join form never
-	// fires, the real chmod runs, and the test silently stops exercising the
-	// failure path. Compare in slash space on both sides (doctrine P8).
+	// Match on the SHAPE of the target, not its spelling: the script chmods
+	// "$dir/.beads", so the argument arrives with mixed separators on Windows, and
+	// comparing it to any locally built path also has to survive whatever the temp
+	// root looks like on the host (drive casing, 8.3 shortening, a junctioned
+	// runner profile). An earlier version compared against filepath.ToSlash(
+	// cityPath + "/.beads") and passed locally while still not firing on CI, which
+	// let the real chmod run and the test silently stopped exercising its failure
+	// path. Keying on the ".beads" suffix is spelling-independent and still
+	// specific to what this test blocks (doctrine P8).
 	fakeChmod := filepath.Join(binDir, "chmod")
 	fakeChmodScript := fmt.Sprintf(`#!/bin/sh
 set -eu
 target=$(printf '%%s' "${2:-}" | tr '\\' '/')
-if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$target" = %q ]; then
+case "$target" in
+  */.beads) is_beads_dir=yes ;;
+  *)        is_beads_dir=no  ;;
+esac
+if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$is_beads_dir" = yes ]; then
   echo "chmod blocked" >&2
   exit 1
 fi
 exec %q "$@"
-`, filepath.ToSlash(filepath.Join(cityPath, ".beads")), filepath.ToSlash(realChmod))
+`, filepath.ToSlash(realChmod))
 	if err := os.WriteFile(fakeChmod, []byte(fakeChmodScript), 0o755); err != nil {
 		t.Fatal(err)
 	}

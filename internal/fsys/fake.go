@@ -21,6 +21,23 @@ func fakeClean(p string) string {
 	return slashpath.Clean(filepath.ToSlash(p))
 }
 
+// injectedErr returns the error injected for name, if any. A key ending in "*"
+// matches by prefix, which is what makes error injection usable against
+// [WriteFileAtomic]: its temp file carries a pid+nonce suffix, so no test can
+// name it exactly. Exact keys win over prefix keys.
+func (f *Fake) injectedErr(name string) (error, bool) {
+	name = f.norm(name)
+	if err, ok := f.Errors[name]; ok {
+		return err, true
+	}
+	for key, err := range f.Errors {
+		if strings.HasSuffix(key, "*") && strings.HasPrefix(name, strings.TrimSuffix(key, "*")) {
+			return err, true
+		}
+	}
+	return nil, false
+}
+
 // FakeKey returns the canonical [Fake] map-key form for p. Use it whenever a
 // test indexes Files/Dirs/Modes/Symlinks directly with a path built by
 // filepath.Join: the Fake's own methods normalize through fakeClean, but raw
@@ -300,7 +317,7 @@ func (f *Fake) clearEntry(path string) {
 func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "MkdirAll", Path: path})
 	path = f.norm(path)
-	if err, ok := f.Errors[path]; ok {
+	if err, ok := f.injectedErr(path); ok {
 		return err
 	}
 	if f.Dirs == nil {
@@ -334,7 +351,7 @@ func (f *Fake) MkdirAll(path string, perm os.FileMode) error {
 func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "WriteFile", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return err
 	}
 	if f.entryKind(slashpath.Dir(name)) != fakeEntryDirectory {
@@ -365,7 +382,7 @@ func (f *Fake) WriteFile(name string, data []byte, perm os.FileMode) error {
 func (f *Fake) ReadFile(name string) ([]byte, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadFile", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return nil, err
 	}
 	if data, ok := f.Files[name]; ok {
@@ -381,7 +398,7 @@ func (f *Fake) ReadFile(name string) ([]byte, error) {
 func (f *Fake) ReadRegularFile(name string) ([]byte, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadRegularFile", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return nil, err
 	}
 	if _, ok := f.Symlinks[name]; ok {
@@ -413,7 +430,7 @@ func (f *Fake) readRegularFileSnapshot(name string) (regularFileSnapshot, error)
 func (f *Fake) Stat(name string) (os.FileInfo, error) {
 	f.Calls = append(f.Calls, Call{Method: "Stat", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return nil, err
 	}
 	if target, ok := f.Symlinks[name]; ok {
@@ -452,7 +469,7 @@ func (f *Fake) Stat(name string) (os.FileInfo, error) {
 func (f *Fake) Lstat(name string) (os.FileInfo, error) {
 	f.Calls = append(f.Calls, Call{Method: "Lstat", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return nil, err
 	}
 	if _, ok := f.Symlinks[name]; ok {
@@ -474,7 +491,7 @@ func (f *Fake) Lstat(name string) (os.FileInfo, error) {
 func (f *Fake) Readlink(name string) (string, error) {
 	f.Calls = append(f.Calls, Call{Method: "Readlink", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return "", err
 	}
 	if target, ok := f.Symlinks[name]; ok {
@@ -488,7 +505,7 @@ func (f *Fake) Symlink(oldname, newname string) error {
 	f.Calls = append(f.Calls, Call{Method: "Symlink", Path: newname})
 	oldname = fakeClean(oldname)
 	newname = f.norm(newname)
-	if err, ok := f.Errors[newname]; ok {
+	if err, ok := f.injectedErr(newname); ok {
 		return err
 	}
 	if f.Symlinks == nil {
@@ -506,7 +523,7 @@ func (f *Fake) Symlink(oldname, newname string) error {
 func (f *Fake) ReadDir(name string) ([]os.DirEntry, error) {
 	f.Calls = append(f.Calls, Call{Method: "ReadDir", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return nil, err
 	}
 
@@ -569,7 +586,7 @@ func (f *Fake) Rename(oldpath, newpath string) error {
 	f.Calls = append(f.Calls, Call{Method: "Rename", Path: oldpath})
 	oldpath = f.norm(oldpath)
 	newpath = fakeClean(newpath)
-	if err, ok := f.Errors[oldpath]; ok {
+	if err, ok := f.injectedErr(oldpath); ok {
 		return err
 	}
 	sourceKind := f.entryKind(oldpath)
@@ -638,7 +655,7 @@ func (f *Fake) Rename(oldpath, newpath string) error {
 func (f *Fake) Remove(name string) error {
 	f.Calls = append(f.Calls, Call{Method: "Remove", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return err
 	}
 	if _, ok := f.Symlinks[name]; ok {
@@ -668,7 +685,7 @@ func (f *Fake) Remove(name string) error {
 func (f *Fake) Chmod(name string, mode os.FileMode) error {
 	f.Calls = append(f.Calls, Call{Method: "Chmod", Path: name})
 	name = f.norm(name)
-	if err, ok := f.Errors[name]; ok {
+	if err, ok := f.injectedErr(name); ok {
 		return err
 	}
 	if _, ok := f.Symlinks[name]; ok {

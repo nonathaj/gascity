@@ -1431,7 +1431,7 @@ func TestFileStoreDeleteRollsBackWhenSaveFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f.Errors[path+".tmp"] = fmt.Errorf("disk full")
+	f.Errors[path+".tmp.*"] = fmt.Errorf("disk full")
 
 	err = s1.Delete(created.ID)
 	if err == nil {
@@ -1441,7 +1441,7 @@ func TestFileStoreDeleteRollsBackWhenSaveFails(t *testing.T) {
 		t.Fatalf("Delete(%q) err = %v, want disk full", created.ID, err)
 	}
 
-	delete(f.Errors, path+".tmp")
+	delete(f.Errors, path+".tmp.*")
 
 	if _, err := s1.Get(created.ID); err != nil {
 		t.Fatalf("Get(%q) after rollback: %v", created.ID, err)
@@ -1741,7 +1741,7 @@ func TestFileStoreSaveWriteFails(t *testing.T) {
 	}
 
 	// Inject error on the temp file write.
-	f.Errors["/city/.gc/beads.json.tmp"] = fmt.Errorf("disk full")
+	f.Errors["/city/.gc/beads.json.tmp.*"] = fmt.Errorf("disk full")
 
 	_, err = s.Create(beads.Bead{Title: "test"})
 	if err == nil {
@@ -1760,7 +1760,7 @@ func TestFileStoreSaveRenameFails(t *testing.T) {
 	}
 
 	// Inject error on the rename (atomic commit step).
-	f.Errors["/city/.gc/beads.json.tmp"] = fmt.Errorf("rename failed")
+	f.Errors["/city/.gc/beads.json"] = fmt.Errorf("rename failed")
 
 	_, err = s.Create(beads.Bead{Title: "test"})
 	if err == nil {
@@ -1921,7 +1921,7 @@ func TestFileStoreCloseWriteFails(t *testing.T) {
 	}
 
 	// Now inject error on the next save (Close flushes).
-	f.Errors["/city/.gc/beads.json.tmp"] = fmt.Errorf("disk full")
+	f.Errors["/city/.gc/beads.json.tmp.*"] = fmt.Errorf("disk full")
 
 	err = s.Close(b.ID)
 	if err == nil {
