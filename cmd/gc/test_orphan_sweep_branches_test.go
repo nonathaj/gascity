@@ -76,7 +76,13 @@ func TestCmdGCTestTempRootPrefixUsesShardPrefix(t *testing.T) {
 func TestCmdGCTmuxSocketRootUsesShortPath(t *testing.T) {
 	longMacRoot := filepath.Join("/private/var/folders/pm/cmklcsfj60nd7nfc79g8xmbc0000gn/T", "gcx12345-1234567890")
 
-	root, cleanupRoot, sentinel, err := cmdGCTmuxSocketRoot(longMacRoot, "/tmp")
+	// shortSocketRoot(), not a literal "/tmp": it returns "/tmp" on Unix (so this is
+	// unchanged there) but LOCALAPPDATA on Windows, where "\tmp" generally does not
+	// exist. With a non-existent parent, NewSocketParentDir fails and
+	// cmdGCTmuxSocketRoot takes its fallback branch, which returns sentinel = nil —
+	// exactly what this test then reports. It passed on a dev box that happens to
+	// have D:\tmp and failed on CI, which has no C:\tmp.
+	root, cleanupRoot, sentinel, err := cmdGCTmuxSocketRoot(longMacRoot, shortSocketRoot())
 	if err != nil {
 		t.Fatalf("cmdGCTmuxSocketRoot: %v", err)
 	}
