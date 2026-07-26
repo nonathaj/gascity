@@ -5827,10 +5827,10 @@ exec %q "$@"
 	if err == nil {
 		calls, readErr := os.ReadFile(chmodLog)
 		if readErr != nil {
-			calls = []byte("(no chmod-call log: the fake chmod was NEVER invoked — a real chmod " +
-				"answered, so PATH resolution, not the guard, is the problem: " + readErr.Error() + ")")
+			calls = []byte("(no chmod-call log: the fake chmod was NEVER invoked — " + readErr.Error() + ")")
 		}
-		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s\nchmod calls seen by the fake:\n%s", out, calls)
+		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s\nchmod calls seen by the fake:\n%s\n%s",
+			out, calls, shChmodResolutionReport(t, binDir, cmd.Env))
 	}
 	// The die message embeds the script's own "$dir/.beads" spelling, so compare
 	// in slash space here too.

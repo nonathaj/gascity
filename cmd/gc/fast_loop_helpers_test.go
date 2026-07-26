@@ -123,6 +123,45 @@ func denyDirWrites(t *testing.T, dir string) {
 	})
 }
 
+// shChmodResolutionReport asks the SAME sh, with the SAME env, what it resolves
+// "chmod" to, and reports what the fake's directory actually contains. Use it in
+// a failure message when a test installs a fake coreutil and the fake appears not
+// to have run: it distinguishes "sh resolved a different chmod" from "the fake
+// file is not where or what we think it is", which no amount of reading the
+// production script can settle.
+func shChmodResolutionReport(t *testing.T, binDir string, env []string) string {
+	t.Helper()
+	var b strings.Builder
+	for _, kv := range env {
+		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
+			parts := strings.Split(kv[5:], string(os.PathListSeparator))
+			for i := 0; i < 3 && i < len(parts); i++ {
+				fmt.Fprintf(&b, "child PATH[%d] = %s\n", i, parts[i])
+			}
+			break
+		}
+	}
+	fmt.Fprintf(&b, "binDir = %s\n", binDir)
+	entries, err := os.ReadDir(binDir)
+	if err != nil {
+		fmt.Fprintf(&b, "binDir unreadable: %v\n", err)
+	} else {
+		for _, e := range entries {
+			fmt.Fprintf(&b, "  binDir entry: %s\n", e.Name())
+		}
+	}
+	probe := filepath.Join(t.TempDir(), "which-chmod.sh")
+	if err := os.WriteFile(probe, []byte("#!/bin/sh\ncommand -v chmod\ntype chmod 2>&1 || true\n"), 0o755); err != nil {
+		fmt.Fprintf(&b, "probe write failed: %v\n", err)
+		return b.String()
+	}
+	probeCmd := execshim.Command(probe)
+	probeCmd.Env = env
+	probeOut, probeErr := probeCmd.CombinedOutput()
+	fmt.Fprintf(&b, "sh resolves chmod to (err=%v):\n%s", probeErr, probeOut)
+	return b.String()
+}
+
 // prependPathDir moves dir to the FRONT of env's PATH. Call it after
 // sanitizedBaseEnv when the test installs a fake that must shadow a Git for
 // Windows coreutil (chmod, dirname, ...).
