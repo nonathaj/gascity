@@ -5757,86 +5757,48 @@ esac
 }
 
 func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T) {
-	cityPath := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(cityPath, ".gc"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(cityPath, ".beads"), 0o775); err != nil {
-		t.Fatal(err)
-	}
-
-	materializeBuiltinPacksForTest(t, cityPath)
-	script := gcBeadsBdScriptPath(cityPath)
-
-	binDir := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// execshim.LookPath so Git for Windows' coreutils resolve the same way the
-	// script's own PATH lookup will (doctrine P2); exec.LookPath only sees Go's
-	// PATH view.
-	realChmod, err := execshim.LookPath("chmod")
+	// Harness style — the same technique the run_with_timeout and ensure-ready
+	// tests in this file use: source the script's prelude, override the one OS
+	// leaf that must fail, and call the function under test directly.
+	//
+	// This deliberately does NOT shadow chmod on PATH. That approach cannot work
+	// on Windows, and establishing why took three CI runs: with the test's bin dir
+	// confirmed as PATH[0] and a fake `chmod` confirmed present in it, Git for
+	// Windows' sh still resolved chmod to /usr/bin/chmod. An extensionless script
+	// written by Go carries no execute permission MSYS recognises on the runner's
+	// volume, so it is skipped during PATH search. A shell function is resolved
+	// before PATH is consulted at all, so it is immune both to that and to
+	// execshim's coreutils PATH injection.
+	embedded, err := bdpack.PackFS.ReadFile("assets/scripts/gc-beads-bd.sh")
 	if err != nil {
-		t.Fatalf("LookPath(chmod): %v", err)
+		t.Fatalf("read embedded gc-beads-bd.sh: %v", err)
 	}
-	// Match on the SHAPE of the target, not its spelling: the script chmods
-	// "$dir/.beads", so the argument arrives with mixed separators on Windows, and
-	// comparing it to any locally built path also has to survive whatever the temp
-	// root looks like on the host (drive casing, 8.3 shortening, a junctioned
-	// runner profile). An earlier version compared against filepath.ToSlash(
-	// cityPath + "/.beads") and passed locally while still not firing on CI, which
-	// let the real chmod run and the test silently stopped exercising its failure
-	// path. Keying on the ".beads" suffix is spelling-independent and still
-	// specific to what this test blocks (doctrine P8).
-	// The fake records every invocation. Two prior fix attempts (path spelling,
-	// then PATH ordering) each passed locally and still failed on CI, because a
-	// bare "init unexpectedly succeeded" cannot distinguish "the fake ran and its
-	// guard did not match" from "the fake never ran at all". The log makes CI
-	// answer that directly.
-	chmodLog := filepath.Join(t.TempDir(), "chmod-calls.log")
-	fakeChmodScript := fmt.Sprintf(`#!/bin/sh
-set -eu
-printf 'chmod %%s\n' "$*" >> %q
-target=$(printf '%%s' "${2:-}" | tr '\\' '/')
-case "$target" in
-  */.beads) is_beads_dir=yes ;;
-  *)        is_beads_dir=no  ;;
-esac
-if [ "$#" -ge 2 ] && [ "$1" = "700" ] && [ "$is_beads_dir" = yes ]; then
-  echo "chmod blocked" >&2
-  exit 1
-fi
-exec %q "$@"
-`, filepath.ToSlash(chmodLog), filepath.ToSlash(realChmod))
-	installFakeToolOnPath(t, binDir, "chmod", fakeChmodScript)
-	installFakeToolOnPath(t, binDir, "bd", "#!/bin/sh\nexit 0\n")
-	installFakeToolOnPath(t, binDir, "dolt", "#!/bin/sh\nexit 0\n")
+	prelude, _, found := strings.Cut(string(embedded), "# --- Main ---")
+	if !found {
+		t.Fatal("embedded gc-beads-bd.sh is missing the main boundary")
+	}
 
-	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
-	// prependPathDir AFTER sanitizedBaseEnv: it ends with EnvWithShellDir, which
-	// prepends Git's usr/bin when absent from PATH — and the real chmod lives
-	// there. Passing binDir inside sanitizedBaseEnv is not enough on a host whose
-	// ambient PATH lacks usr/bin (the CI runner), where the real chmod then wins,
-	// the guard never fires, and this test silently stops testing anything.
-	cmd.Env = prependPathDir(sanitizedBaseEnv(
-		"GC_CITY_PATH="+cityPath,
-		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
-	), binDir)
+	cityPath := t.TempDir()
+	harness := prelude + `
+chmod() {
+  echo "chmod blocked: $*" >&2
+  return 1
+}
+ensure_beads_dir_permissions "$1"
+echo "ensure_beads_dir_permissions returned without dying" >&2
+`
+	cmd := execshim.Command("sh", "-s", cityPath)
+	cmd.Stdin = strings.NewReader(harness)
+	cmd.Env = sanitizedBaseEnv("GC_CITY_PATH=" + cityPath)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		calls, readErr := os.ReadFile(chmodLog)
-		if readErr != nil {
-			calls = []byte("(no chmod-call log: the fake chmod was NEVER invoked — " + readErr.Error() + ")")
-		}
-		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s\nchmod calls seen by the fake:\n%s\n%s",
-			out, calls, shChmodResolutionReport(t, binDir, cmd.Env))
+		t.Fatalf("ensure_beads_dir_permissions succeeded despite a failing chmod\n%s", out)
 	}
 	// The die message embeds the script's own "$dir/.beads" spelling, so compare
-	// in slash space here too.
+	// in slash space.
 	wantDie := filepath.ToSlash("failed to set " + filepath.Join(cityPath, ".beads") + " permissions to 700")
 	if !strings.Contains(filepath.ToSlash(string(out)), wantDie) {
-		t.Fatalf("init error = %q, want %q", string(out), wantDie)
+		t.Fatalf("output = %q, want %q", string(out), wantDie)
 	}
 }
 

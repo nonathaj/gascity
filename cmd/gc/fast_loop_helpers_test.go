@@ -123,67 +123,6 @@ func denyDirWrites(t *testing.T, dir string) {
 	})
 }
 
-// shChmodResolutionReport asks the SAME sh, with the SAME env, what it resolves
-// "chmod" to, and reports what the fake's directory actually contains. Use it in
-// a failure message when a test installs a fake coreutil and the fake appears not
-// to have run: it distinguishes "sh resolved a different chmod" from "the fake
-// file is not where or what we think it is", which no amount of reading the
-// production script can settle.
-func shChmodResolutionReport(t *testing.T, binDir string, env []string) string {
-	t.Helper()
-	var b strings.Builder
-	for _, kv := range env {
-		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
-			parts := strings.Split(kv[5:], string(os.PathListSeparator))
-			for i := 0; i < 3 && i < len(parts); i++ {
-				fmt.Fprintf(&b, "child PATH[%d] = %s\n", i, parts[i])
-			}
-			break
-		}
-	}
-	fmt.Fprintf(&b, "binDir = %s\n", binDir)
-	entries, err := os.ReadDir(binDir)
-	if err != nil {
-		fmt.Fprintf(&b, "binDir unreadable: %v\n", err)
-	} else {
-		for _, e := range entries {
-			fmt.Fprintf(&b, "  binDir entry: %s\n", e.Name())
-		}
-	}
-	probe := filepath.Join(t.TempDir(), "which-chmod.sh")
-	if err := os.WriteFile(probe, []byte("#!/bin/sh\ncommand -v chmod\ntype chmod 2>&1 || true\n"), 0o755); err != nil {
-		fmt.Fprintf(&b, "probe write failed: %v\n", err)
-		return b.String()
-	}
-	probeCmd := execshim.Command(probe)
-	probeCmd.Env = env
-	probeOut, probeErr := probeCmd.CombinedOutput()
-	fmt.Fprintf(&b, "sh resolves chmod to (err=%v):\n%s", probeErr, probeOut)
-	return b.String()
-}
-
-// prependPathDir moves dir to the FRONT of env's PATH. Call it after
-// sanitizedBaseEnv when the test installs a fake that must shadow a Git for
-// Windows coreutil (chmod, dirname, ...).
-//
-// sanitizedBaseEnv finishes by calling execshim.EnvWithShellDir, which PREPENDS
-// Git's usr/bin whenever that directory is not already on PATH — and the real
-// coreutils live there. So on a host whose ambient PATH already contains usr/bin
-// the test's bin dir stays first and the fake wins, while on a host without it
-// (the CI runner) usr/bin lands ahead of the test's bin dir and the REAL tool
-// answers instead. The fake is then never consulted and the test quietly stops
-// exercising what it claims — it does not fail, which is worse.
-func prependPathDir(env []string, dir string) []string {
-	out := append([]string(nil), env...)
-	for i, kv := range out {
-		if len(kv) >= 5 && strings.EqualFold(kv[:5], "PATH=") {
-			out[i] = "PATH=" + dir + string(os.PathListSeparator) + kv[5:]
-			return out
-		}
-	}
-	return append(out, "PATH="+dir)
-}
-
 // samePathText reports whether two strings name the same path ignoring
 // separator flavor. Pack scripts are Tier-2 POSIX sh and join paths with "/"
 // ("$dir/.beads" in gc-beads-bd.sh), so a value that round-trips through a
