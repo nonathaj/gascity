@@ -1363,7 +1363,19 @@ func openStoreResultAtForCityWithAuthority(storePath, cityPath string, modeOverr
 	if runtimeCityPath == "" {
 		runtimeCityPath = cityForStoreDir(storePath)
 	}
-	cfg, _ := loadCityConfig(runtimeCityPath, io.Discard)
+	// Opening a store needs the config's beads settings — it does not need the
+	// generated builtin packs re-materialized to disk, which is what the plain
+	// loadCityConfig does via ensureBuiltinPacksForConfigLoad. That step measures
+	// 1.85s on a cold city and 291ms warm (against ~1ms for the actual config
+	// parse), it is keyed per city so every fresh city pays it, and this function is
+	// on the path of every store open in the CLI. Try the no-refresh load first and
+	// fall back to the refreshing one only if the config genuinely cannot resolve —
+	// a city whose builtin packs were never materialized still needs them on disk
+	// before its includes load. Errors stay ignored exactly as before.
+	cfg, cfgErr := loadCityConfigWithoutBuiltinPackRefresh(runtimeCityPath, io.Discard)
+	if cfgErr != nil {
+		cfg, _ = loadCityConfig(runtimeCityPath, io.Discard)
+	}
 	scopeRoot := resolveStoreScopeRoot(runtimeCityPath, storePath)
 	provider := rawBeadsProviderForScope(scopeRoot, runtimeCityPath)
 	if authoritative {
