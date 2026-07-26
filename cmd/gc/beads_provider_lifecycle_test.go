@@ -10086,7 +10086,10 @@ op_ensure_ready
 		"GC_TEST_STATE_PORT=15432",
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("run gc-beads-bd ensure-ready function harness: %v\n%s", err, out)
+		// Include the trace: without it an unexpected op_start (exit 97) says
+		// nothing about which readiness step decided to restart.
+		trace, _ := os.ReadFile(traceFile)
+		t.Fatalf("run gc-beads-bd ensure-ready function harness: %v\n%s\ntrace:\n%s", err, out, trace)
 	}
 
 	persistedPID, err := os.ReadFile(pidFile)

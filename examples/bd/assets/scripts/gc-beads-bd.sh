@@ -257,6 +257,28 @@ path_under_data_dir() {
     return 1
 }
 
+# pid_alive reports whether a process id is still running.
+#
+# `kill -0` alone is WRONG on Windows: under Git for Windows, MSYS kill and ps
+# only know processes MSYS itself spawned, so a native Windows process — which is
+# exactly what the managed dolt server is — always looks dead. Every liveness
+# check in this script would then report "not running", making ensure-ready
+# restart a perfectly healthy server on each call and lock-holder checks treat
+# live holders as stale. `ps -W` lists native processes with the Windows pid in
+# the WINPID column, which is the id recorded in our state files.
+#
+# Unix behavior is unchanged: kill -0 is authoritative there and the fallback
+# never runs (and `ps -W` is not a valid option, so the probe fails closed).
+pid_alive() {
+    local pid="$1"
+    [ -n "$pid" ] || return 1
+    if kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    ps -W >/dev/null 2>&1 || return 1
+    ps -W 2>/dev/null | awk -v want="$pid" 'NR > 1 && $4 == want { found = 1 } END { exit !found }'
+}
+
 # do_query_probe runs a read-only information_schema query against the dolt server.
 do_query_probe() {
     local host gc_bin
@@ -1116,7 +1138,7 @@ kill_imposter() {
     # Wait up to 5s for graceful shutdown.
     local waited=0
     while [ "$waited" -lt 5 ]; do
-        if ! kill -0 "$pid" 2>/dev/null; then
+        if ! pid_alive "$pid"; then
             return 0
         fi
         sleep 1
@@ -1203,23 +1225,23 @@ graceful_stop_owned_pid() {
     local pid="$1" waited=0 holder lock_window_ms lock_deadline_ms now_ms
     [ -n "$pid" ] || return 0
     kill "$pid" 2>/dev/null || true
-    while [ "$waited" -lt 60 ] && kill -0 "$pid" 2>/dev/null; do
+    while [ "$waited" -lt 60 ] && pid_alive "$pid"; do
         sleep 0.5 2>/dev/null || sleep 1
         waited=$((waited + 1))
     done
-    if kill -0 "$pid" 2>/dev/null; then
+    if pid_alive "$pid"; then
         # The process outlived the SIGTERM grace. Extend the wait by the
         # lock-release window while the store lock is held — the holder is
         # mid-flush — then force-kill only once the lock is free.
         lock_window_ms=$(lock_release_timeout_ms)
         now_ms=$(current_time_ms) || now_ms=0
         lock_deadline_ms=$((now_ms + lock_window_ms))
-        while kill -0 "$pid" 2>/dev/null && dolt_data_lock_holder >/dev/null; do
+        while pid_alive "$pid" && dolt_data_lock_holder >/dev/null; do
             now_ms=$(current_time_ms) || break
             [ "$now_ms" -lt "$lock_deadline_ms" ] || break
             sleep_ms 250 2>/dev/null || sleep 1
         done
-        if kill -0 "$pid" 2>/dev/null; then
+        if pid_alive "$pid"; then
             if holder=$(dolt_data_lock_holder); then
                 echo "PID $pid did not exit within the SIGTERM grace and a live process still holds dolt exclusive store lock $holder; refusing SIGKILL mid-journal-write (gastownhall/gascity#3174)" >&2
                 return 1
@@ -1554,7 +1576,7 @@ wait_for_managed_pid_ready() {
     fi
 
     while [ "$attempt" -lt "$max_attempts" ]; do
-        if ! kill -0 "$pid" 2>/dev/null; then
+        if ! pid_alive "$pid"; then
             return 1
         fi
         if [ "$check_deleted" = "true" ] && has_deleted_data_inodes "$pid"; then
@@ -1796,7 +1818,7 @@ find_dolt_pid() {
     if [ -f "$PID_FILE" ]; then
         local file_pid
         file_pid=$(cat "$PID_FILE" 2>/dev/null)
-        if [ -n "$file_pid" ] && kill -0 "$file_pid" 2>/dev/null; then
+        if [ -n "$file_pid" ] && pid_alive "$file_pid"; then
             echo "$file_pid"
             return
         fi
@@ -1847,7 +1869,7 @@ allocate_port() {
         local state_port state_pid
         state_port=$(load_state_field port)
         state_pid=$(load_state_field pid)
-        if [ -n "$state_port" ] && [ -n "$state_pid" ] && kill -0 "$state_pid" 2>/dev/null && tcp_check_port "$state_port"; then
+        if [ -n "$state_port" ] && [ -n "$state_pid" ] && pid_alive "$state_pid" && tcp_check_port "$state_port"; then
             echo "$state_port"
             return
         fi
@@ -2201,7 +2223,7 @@ op_start() {
                 break
             fi
             lock_holder=$(cat "$START_LOCK_DIR/pid" 2>/dev/null || true)
-            if [ -n "$lock_holder" ] && ! kill -0 "$lock_holder" 2>/dev/null; then
+            if [ -n "$lock_holder" ] && ! pid_alive "$lock_holder"; then
                 rm -rf "$START_LOCK_DIR" 2>/dev/null || true
             else
                 sleep 0.5 2>/dev/null || sleep 1
@@ -2239,7 +2261,7 @@ op_start() {
             existing_pid="$GC_MANAGED_PID"
             holder="$GC_PORT_HOLDER_PID"
         fi
-        if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+        if [ -n "$existing_pid" ] && pid_alive "$existing_pid"; then
             local existing_owned=true
             local existing_deleted=false
             if [ -n "${GC_MANAGED_PID:-}" ] && [ "$existing_pid" = "$GC_MANAGED_PID" ]; then
@@ -2394,7 +2416,7 @@ op_start() {
             attempt=0
             while [ "$attempt" -lt 60 ]; do
                 # Fail fast if process crashed during startup.
-                if ! kill -0 "$server_pid" 2>/dev/null; then
+                if ! pid_alive "$server_pid"; then
                     break
                 fi
 
@@ -2412,7 +2434,7 @@ op_start() {
             return 0
         fi
 
-        if kill -0 "$server_pid" 2>/dev/null; then
+        if pid_alive "$server_pid"; then
             # Clean up: kill the stuck server and reset state to prevent double-launch.
             kill "$server_pid" 2>/dev/null || true
             rm -f "$PID_FILE"
@@ -2462,7 +2484,7 @@ op_ensure_ready() {
     if ! is_remote; then
         local pid state_port
         pid=$(find_dolt_pid)
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && verify_our_server "$pid"; then
+        if [ -n "$pid" ] && pid_alive "$pid" && verify_our_server "$pid"; then
             state_port=$(load_state_field port)
             if [ -z "$state_port" ]; then
                 state_port="$DOLT_PORT"

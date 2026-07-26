@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/config"
+	"github.com/gastownhall/gascity/internal/testutil"
 	"github.com/gastownhall/gascity/test/tmuxtest"
 	"github.com/spf13/cobra"
 )
@@ -310,11 +311,12 @@ const testTmuxSocketParentRootEnv = "GC_TEST_TMUX_SOCKET_PARENT_ROOT"
 func createAgedFreeTmuxSocketParent(t *testing.T) (string, string) {
 	t.Helper()
 	const fakePID = 2147483647 // Above the Linux and Darwin process-ID ranges.
-	root, err := os.MkdirTemp("/tmp", "gctroot-*")
-	if err != nil {
-		t.Fatalf("create isolated tmux socket-parent root: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	// ShortTempDir, not MkdirTemp("/tmp", ...): the short root exists to keep
+	// AF_UNIX socket paths under sun_path, but "/tmp" has no volume on Windows so
+	// it resolves against the current drive and yields a path the child's sweeper
+	// never matches (doctrine T2). ShortTempDir keeps the "short" property on
+	// every platform (LOCALAPPDATA on Windows) and owns its own cleanup.
+	root := testutil.ShortTempDir(t, "gctroot-")
 	dir, err := os.MkdirTemp(root, fmt.Sprintf("%s%d-*", tmuxtest.SocketParentDirPrefix, fakePID))
 	if err != nil {
 		t.Fatalf("create orphaned tmux socket parent: %v", err)
