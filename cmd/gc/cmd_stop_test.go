@@ -284,7 +284,10 @@ func TestCmdStopForceDelegatesImmediateControllerStop(t *testing.T) {
 			t.Fatalf("stopped = %q, want %q", stopped, sess)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for delegated force stop")
+		// Surface both sides: a bare timeout says nothing about whether cmdStop
+		// failed to reach the controller or the controller never dispatched.
+		t.Fatalf("timed out waiting for delegated force stop\nstop stdout:\n%s\nstop stderr:\n%s\ncontroller stdout:\n%s\ncontroller stderr:\n%s",
+			stdout.String(), stderr.String(), controllerStdout.String(), controllerStderr.String())
 	}
 
 	select {

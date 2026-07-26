@@ -5817,10 +5817,15 @@ exec %q "$@"
 	}
 
 	cmd := execshim.Command(script, "init", cityPath, "gc", "gascity")
-	cmd.Env = sanitizedBaseEnv(
+	// prependPathDir AFTER sanitizedBaseEnv: it ends with EnvWithShellDir, which
+	// prepends Git's usr/bin when absent from PATH — and the real chmod lives
+	// there. Passing binDir inside sanitizedBaseEnv is not enough on a host whose
+	// ambient PATH lacks usr/bin (the CI runner), where the real chmod then wins,
+	// the guard never fires, and this test silently stops testing anything.
+	cmd.Env = prependPathDir(sanitizedBaseEnv(
 		"GC_CITY_PATH="+cityPath,
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
-	)
+	), binDir)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("gc-beads-bd init unexpectedly succeeded\n%s", out)
