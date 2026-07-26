@@ -2096,13 +2096,7 @@ func runProviderProbe(script, cityPath, provider string) bool {
 	// be placed in a kill-on-close Job Object between the two. The probe script is
 	// sh like every other provider op, so a cancelled probe otherwise leaves the
 	// backgrounded grandchild running (gw-591).
-	if err := cmd.Start(); err != nil {
-		return false
-	}
-	releaseContainment := containProviderOpProcess(cmd)
-	err := cmd.Wait()
-	releaseContainment()
-	return err == nil
+	return runContainedProviderCommand(cmd) == nil
 }
 
 func providerLifecycleDoltPathEnv(cityPath string) []string {
@@ -2396,12 +2390,7 @@ func runProviderOpWithEnvContext(parent context.Context, script string, environ 
 	// between the two: on Windows the provider script backgrounds its work, and the
 	// resulting grandchild is not reliably reachable from the direct child's process
 	// tree at cancellation time. No-op off Windows, where Setpgid already covers it.
-	err := cmd.Start()
-	if err == nil {
-		releaseContainment := containProviderOpProcess(cmd)
-		err = cmd.Wait()
-		releaseContainment()
-	}
+	err := runContainedProviderCommand(cmd)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("exec beads %s: %w", args[0], ctxErr)

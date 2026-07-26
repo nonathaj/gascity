@@ -154,7 +154,8 @@ func cmdHookRun(args []string, opts hookRunOptions, stdin io.Reader, stdout, std
 	prepareProviderOpCommand(cmd)
 	disableProductMetricsForChild(cmd)
 
-	err = cmd.Run()
+	// Contained: see the work-query call below (gw-591).
+	err = runContainedProviderCommand(cmd)
 	// A clean exit wins even if the deadline fired in the same instant: the
 	// child finished and produced complete output, so report success and flush.
 	if err == nil {
@@ -790,7 +791,9 @@ func shellWorkQueryWithEnv(command, dir string, env []string) (string, error) {
 	disableProductMetricsForChild(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	// Contained rather than cmd.Output(): a pack-authored query may background its
+	// work, and on Windows that grandchild outlives a kill of sh.exe (gw-591).
+	out, err := outputContainedProviderCommand(cmd)
 	if ctx.Err() == context.DeadlineExceeded {
 		// Wrap context.DeadlineExceeded so callers can classify the timeout as
 		// transient (dispatch.IsTransientControllerError / errors.Is). Without

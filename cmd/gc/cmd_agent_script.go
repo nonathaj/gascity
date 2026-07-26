@@ -721,7 +721,9 @@ func (e agentScriptExecutor) runShellCommand(command string, env []string) error
 	cmd.Env = execshim.EnvWithShellDir(workQueryEnvForDir(env, ""))
 	cmd.Stdout = e.stdout
 	cmd.Stderr = e.stderr
-	if err := cmd.Run(); err != nil {
+	// Contained: pack-authored script content may background work whose grandchild
+	// survives a kill of sh.exe on Windows (gw-591).
+	if err := runContainedProviderCommand(cmd); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("shell action timed out after %s", agentScriptActionTimeout)
 		}
@@ -755,7 +757,9 @@ func runAgentScriptCommandInStore(stdout, stderr io.Writer, dir string, env []st
 	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
+	// Contained: pack-authored script content may background work whose grandchild
+	// survives a kill of sh.exe on Windows (gw-591).
+	if err := runContainedProviderCommand(cmd); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("%s %s: timed out after %s", name, strings.Join(args, " "), agentScriptActionTimeout)
 		}
