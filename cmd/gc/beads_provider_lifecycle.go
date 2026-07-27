@@ -882,11 +882,11 @@ type providerOpExecutor func(script string, environ []string, args ...string) er
 // initBeadsForDirWithExecutor initializes the scope's beads store and then
 // enforces the store directory's access contract on every platform.
 //
-// The bd pack script tightens .beads with chmod 700, which is ADVISORY on NTFS
+// The bd pack script also tightens .beads with chmod 700, which is ADVISORY on NTFS
 // (doctrine P5): without the winsec step below, Unix got real 0700 protection
 // while Windows left the entire beads store readable by whatever the parent
-// directory's ACL allows. winsec.RestrictToOwner is a no-op off Windows, so this
-// converges the two platforms instead of leaving one unprotected.
+// directory's ACL allows. gc now applies BOTH halves itself so the guarantee does
+// not depend on the pack script having run — see the comment at the call below.
 func initBeadsForDirWithExecutor(cityPath, dir, prefix, doltDatabase string, execute providerOpExecutor) error {
 	if err := initBeadsForDirWithExecutorInner(cityPath, dir, prefix, doltDatabase, execute); err != nil {
 		return err
@@ -895,6 +895,23 @@ func initBeadsForDirWithExecutor(cityPath, dir, prefix, doltDatabase string, exe
 	if _, statErr := os.Stat(beadsDir); statErr != nil {
 		// Nothing was created (deferred/seeded paths); nothing to harden.
 		return nil
+	}
+	// Both halves, because each platform's enforcement is the other's no-op: the chmod is
+	// authoritative on Unix and advisory on NTFS (doctrine P5), and RestrictToOwner is
+	// Windows-only.
+	//
+	// The chmod is done HERE rather than left to the bd pack script, even though the script
+	// also chmods. Relying on the script made gc's guarantee conditional on the script having
+	// run, so any path that initialised a store without it — a stubbed executor, a deferred or
+	// seeded provider — left the store at whatever mode `mkdir -p` produced (0755 under a
+	// typical umask, i.e. world-readable). "gc restricts the beads store itself, on every
+	// platform" has to mean gc, not gc-if-the-script-ran.
+	//
+	// Best-effort like ensureBeadsDir: some filesystems (container mounts) reject chmod, and a
+	// working store with wider permissions beats a hard failure. The Windows ACL stays a hard
+	// error because there it is the only real enforcement.
+	if err := os.Chmod(beadsDir, beadsDirPerm); err != nil {
+		log.Printf("warning: chmod %s to %o: %v (continuing with existing permissions)", beadsDir, beadsDirPerm, err)
 	}
 	if err := winsec.RestrictToOwner(beadsDir); err != nil {
 		return fmt.Errorf("restricting beads store permissions %q: %w", beadsDir, err)
