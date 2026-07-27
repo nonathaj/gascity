@@ -1011,9 +1011,19 @@ verify_our_server() {
     fi
 
     # Layer 2: Process args from ps — check --config or --data-dir.
+    #
+    # "ps cannot tell us" is NOT "it is someone else's". Git for Windows' ps rejects -o
+    # outright ("ps: unknown option -- o"), so a hard `|| return 1` here fired for every
+    # pid on Windows and made Layer 3 and the state-file fallback below unreachable —
+    # ensure-ready then never adopted a healthy server and stop cleared state without
+    # killing anything (gw-1ay). Absent evidence must fall through to the remaining
+    # layers; only evidence of a DIFFERENT config/data-dir disproves ownership.
     local proc_args
-    proc_args=$(ps -p "$pid" -o args= 2>/dev/null) || return 1
+    proc_args=$(ps -p "$pid" -o args= 2>/dev/null) || proc_args=""
     case "$proc_args" in
+        '')
+            # No args available on this platform; defer to the layers below.
+            ;;
         *"--config $CONFIG_FILE"*|*"--config=$CONFIG_FILE"*)
             return 0
             ;;
