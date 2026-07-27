@@ -24,16 +24,20 @@ func TestKillTreeIsANoOpForPidsThatCannotNameAProcess(t *testing.T) {
 // contract is "make sure this is not running", and a process that exited satisfies it;
 // returning an error would make every cleanup path log noise for the normal case.
 func TestKillTreeSucceedsForAProcessThatAlreadyExited(t *testing.T) {
-	child := testutil.StartShellChild(t, "exit 0")
-	testutil.WaitFor(t, 15*time.Second, "the child to exit on its own", func() bool {
+	// The native pid is captured while the child is still alive, then the child is stopped
+	// and reaped. Resolving it afterwards is not an option and guessing is worse: an exited
+	// pid cannot be mapped, and falling back to the raw SHELL pid would hand KillTree a
+	// number from the wrong space — which on Unix it signals as a process GROUP. That is the
+	// collateral-damage failure this package exists to prevent, so the test must not commit
+	// it either.
+	child := testutil.StartShellChild(t, "exec sleep 30")
+	native := child.NativePID(t)
+
+	child.Stop()
+	testutil.WaitFor(t, 15*time.Second, "the stopped child to be reaped", func() bool {
 		_, state := testutil.InspectShellPID(child.ShellPID)
 		return state == testutil.ShellPIDGone
 	})
-	native, _ := testutil.NativePIDForShellPID(child.ShellPID)
-	if native <= 0 {
-		// The process is gone, so it can no longer be mapped; use the pid it reported.
-		native = child.ShellPID
-	}
 
 	if err := pidutil.KillTree(native); err != nil {
 		t.Fatalf("KillTree(%d) for an exited process = %v, want nil", native, err)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -55,8 +56,9 @@ type ShellChild struct {
 	// mapping it first; see InspectShellPID.
 	ShellPID int
 
-	cmd     *exec.Cmd
-	stopped bool
+	cmd      *exec.Cmd
+	exited   chan struct{}
+	stopOnce sync.Once
 }
 
 // StartShellChild runs body in sh after recording the shell's own pid, and waits until that
@@ -75,7 +77,15 @@ func StartShellChild(t *testing.T, body string) *ShellChild {
 	if err := cmd.Start(); err != nil {
 		t.Skipf("cannot start sh, so shell-pid behaviour cannot be exercised here: %v", err)
 	}
-	child := &ShellChild{cmd: cmd}
+	child := &ShellChild{cmd: cmd, exited: make(chan struct{})}
+	// Reap continuously rather than only in Stop. An exited-but-unreaped child is a ZOMBIE
+	// on Unix, and kill(pid, 0) succeeds against a zombie — so a caller asking "is this pid
+	// gone" would be told "no" forever. Windows has no equivalent, which is exactly why the
+	// bug this prevents passed on Windows and hung on Linux.
+	go func() {
+		_ = cmd.Wait()
+		close(child.exited)
+	}()
 	t.Cleanup(child.Stop)
 
 	WaitFor(t, 10*time.Second, "the shell child to record its pid", func() bool {
@@ -113,19 +123,22 @@ func (c *ShellChild) NativePID(t *testing.T) int {
 // leave the pid the shell reported still naming something alive. Killing what the pid actually
 // names is the only thing that makes "this pid is gone" true.
 func (c *ShellChild) Stop() {
-	if c.stopped {
-		return
-	}
-	c.stopped = true
-	if native, state := InspectShellPID(c.ShellPID); state == ShellPIDLive {
-		if process, err := os.FindProcess(native); err == nil {
-			_ = process.Kill()
+	c.stopOnce.Do(func() {
+		if native, state := InspectShellPID(c.ShellPID); state == ShellPIDLive {
+			if process, err := os.FindProcess(native); err == nil {
+				_ = process.Kill()
+			}
 		}
-	}
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-		_, _ = c.cmd.Process.Wait()
-	}
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		// Wait for the reaping goroutine rather than calling Wait here: Wait is not safe to
+		// call twice, and the child is not reaped (so not truly gone on Unix) until it returns.
+		select {
+		case <-c.exited:
+		case <-time.After(10 * time.Second):
+		}
+	})
 }
 
 // ListenWhenPortFree binds host:port as soon as it becomes bindable, returning nil if it does
