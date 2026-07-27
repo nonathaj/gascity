@@ -650,8 +650,28 @@ func processArgsFromPS(pid int, timeout time.Duration) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// containsProcessConfig reports whether args names configFile as its --config.
+//
+// The comparison is path-aware, like the --data-dir arm below. It used to be a raw
+// strings.Contains of "--config "+configFile, which is a TEXT match on a filesystem path and
+// therefore wrong on Windows, where the same file has many spellings: C:\a\b vs C:/a/b, and
+// case-insensitively too. A mismatch there does not merely fail to confirm ownership — control
+// falls through to hasOtherProcessConfig, which sees a --config it could not match and reports
+// the process as an IMPOSTER. So gc could declare its own dolt server foreign purely because
+// the script spelled the path with forward slashes.
+//
+// That is the gw-1ay shape again (a check answering "not ours" about our own server), and it
+// is live today, masked by the pid-equality shortcut in managedDoltRuntimeProcessOwned that
+// returns true before ownership is consulted.
+//
+// Shares extractFlagValue's whitespace limitation with --data-dir: a config path containing
+// spaces cannot be recovered from a flattened argv. Pre-existing, and not made worse here.
 func containsProcessConfig(args, configFile string) bool {
-	return strings.Contains(args, "--config "+configFile) || strings.Contains(args, "--config="+configFile)
+	value := extractFlagValue(args, "--config")
+	if value == "" {
+		return false
+	}
+	return samePath(value, configFile)
 }
 
 func hasOtherProcessConfig(args string) bool {

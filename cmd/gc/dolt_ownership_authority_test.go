@@ -47,10 +47,10 @@ func TestOwnershipIsAuthoritativeNotPidEquality(t *testing.T) {
 	t.Skip("gw-dbm Phase 3: encodes the target contract; fails today against the pid-equality " +
 		"shortcut, whose removal needs six fixtures migrated off `PID: os.Getpid()` first")
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
+	// listenOnRandomPort rather than a fresh net.Listen: the shared helper already carries
+	// this package's listener accounting in the resource census, and net_listen's baseline is
+	// pinned by TestBootstrapPolicyOwnsNetListenDebtAndExactMediumOwners.
+	listener := listenOnRandomPort(t)
 	t.Cleanup(func() { _ = listener.Close() })
 	port := listener.Addr().(*net.TCPAddr).Port
 
@@ -91,5 +91,45 @@ func TestOwnershipIsAuthoritativeNotPidEquality(t *testing.T) {
 			"cwd is not the data dir, so ownership inspection says NOT ours. Accepting it means "+
 			"pid equality is overriding ownership, which makes the check vacuous once the pid is "+
 			"derived from the port (windows-pid-space.md 8a MEASURE 2)", state.PID)
+	}
+}
+
+// TestOwnershipAcceptsAFaithfulDoltStandIn is the positive half, and the feasibility proof for
+// migrating fixtures off `PID: os.Getpid()`.
+//
+// A stand-in that holds the dolt port AND carries `--config <ours>` in its argv must be judged
+// OURS by ownership inspection alone — with no help from pid equality. If this could not pass,
+// there would be no way to write a faithful fixture and the pid-equality shortcut could never
+// be removed.
+func TestOwnershipAcceptsAFaithfulDoltStandIn(t *testing.T) {
+	dir := t.TempDir()
+	layout := managedDoltRuntimeLayout{
+		PackStateDir: dir,
+		DataDir:      filepath.Join(dir, "data"),
+		StateFile:    filepath.Join(dir, "dolt-state.json"),
+		ConfigFile:   filepath.Join(dir, "dolt-config.yaml"),
+	}
+	if err := os.MkdirAll(layout.DataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	standIn := startDoltStandInForConfig(t, layout.ConfigFile)
+	state := doltRuntimeState{
+		Running:   true,
+		PID:       standIn.PID,
+		Port:      standIn.Port,
+		DataDir:   layout.DataDir,
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := writeDoltRuntimeStateFile(layout.StateFile, state); err != nil {
+		t.Fatalf("write dolt runtime state: %v", err)
+	}
+
+	if !managedDoltRuntimeProcessOwned(state, layout) {
+		args, _ := processArgs(standIn.PID)
+		t.Fatalf("ownership rejected a faithful stand-in (pid %d, port %d).\n"+
+			"Its argv is %q and our config is %q. If argv cannot be read, or the --config match "+
+			"fails, then no fixture can represent managed dolt without the pid-equality "+
+			"shortcut, and gw-dbm Phase 3 is blocked on mechanism rather than fixtures.",
+			standIn.PID, standIn.Port, args, layout.ConfigFile)
 	}
 }
