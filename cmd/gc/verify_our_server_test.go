@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -84,11 +83,10 @@ kill "$probe_pid" 2>/dev/null || true
 // TestVerifyOurServerRejectsForeignDataDir is the reject-direction guard that runs
 // EVERYWHERE, including Windows.
 //
-// It matters because the args-based imposter test below can only run where ps reports
-// args, so on Windows it skips — leaving the accept-direction fix with no counterweight.
-// Without this test, relaxing Layer 2 could silently degrade into "always ours" on the
-// one platform the fix was written for, and nothing here would notice. Layer 1 (state
-// data_dir vs DATA_DIR) needs no process introspection, so it is assertable on any OS.
+// Layer 1 (state data_dir vs DATA_DIR) needs no process introspection, so it is assertable
+// on any OS with a real process. The args-based imposter test below covers Layer 2 on every
+// platform by stubbing ps; this one keeps a reject-direction guard that runs against a
+// genuine live process rather than a stubbed probe.
 func TestVerifyOurServerRejectsForeignDataDir(t *testing.T) {
 	skipSlowCmdGCTest(t, "spawns a real child process through sh; run make test-cmd-gc-process for full coverage")
 
@@ -145,9 +143,7 @@ kill "$probe_pid" 2>/dev/null || true
 // platform whose ps limitation caused gw-1ay. A test that skips where the bug lives is
 // not covering it.
 //
-// The subject here is verify_our_server's DECISION, not the platform's ps. Whether a given
-// sh can produce args is a separate question, and shSupportsPsArgs answers it where that
-// matters.
+// The subject here is verify_our_server's DECISION, not the platform's ps.
 func TestVerifyOurServerRejectsForeignConfig(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
@@ -216,12 +212,4 @@ fi
 			}
 		})
 	}
-}
-
-// shSupportsPsArgs reports whether this platform's ps can report process args, which is
-// the evidence verify_our_server's imposter check depends on.
-func shSupportsPsArgs(t *testing.T) bool {
-	t.Helper()
-	cmd := execshim.Command("sh", "-c", "ps -p "+strconv.Itoa(os.Getpid())+" -o args= >/dev/null 2>&1")
-	return cmd.Run() == nil
 }

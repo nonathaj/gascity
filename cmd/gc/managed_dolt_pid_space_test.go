@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -36,6 +37,23 @@ import (
 func managedDoltPidSpaceStart(t *testing.T) doltRuntimeState {
 	t.Helper()
 	skipSlowCmdGCTest(t, "runs the real gc-beads-bd start path with a fake dolt; run make test-cmd-gc-process for full coverage")
+	if runtime.GOOS != "windows" {
+		// Windows-only, for two reasons that both matter.
+		//
+		// Nothing to assert: the contract is that the pid the SHELL captures is in the space
+		// Go reads it in. Off Windows there is one pid space, so that is true by construction
+		// and this harness would prove nothing.
+		//
+		// And it is actively unsafe here. Readiness is satisfied by binding the port from Go,
+		// which makes the TEST BINARY the process listening on the dolt port. On Linux
+		// find_port_holder works (lsof is present; Git for Windows has none), so the script
+		// correctly identifies a foreign process squatting on its port and kill_imposter
+		// SIGTERMs it — killing the test binary mid-run. That is the product working as
+		// designed: "cmd/gc test dolt leak guard: received terminated" was the script doing
+		// its job to a fixture that had made itself the imposter.
+		t.Skip("pid-space boundary is Windows-only; off Windows there is one pid space, and " +
+			"holding the dolt port from the test binary makes it an imposter the script kills")
+	}
 
 	cityPath := t.TempDir()
 	packStateDir := filepath.Join(cityPath, ".gc", "runtime", "packs", "dolt")
