@@ -4334,8 +4334,23 @@ func TestStopManagedCityForcesCleanupAfterTimeout(t *testing.T) {
 	var stderr bytes.Buffer
 	start := time.Now()
 	err := stopManagedCity(mc, cityPath, &stderr)
-	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-		t.Fatalf("stopManagedCity took %s, want bounded timeout", elapsed)
+	// The three configured timeouts total 60ms, so the bound exists to catch "the config
+	// was ignored and a default was used instead", not to measure the 60ms. It has to sit
+	// in the gap between those two outcomes:
+	//
+	//   - honoured: 60ms plus fixed overhead unrelated to any timeout. This test spawns a
+	//     spy script through GC_BEADS=exec:, and a process spawn alone costs ~165ms on
+	//     Windows. An earlier 500ms bound failed here at 693ms — flaky on load, and
+	//     measuring host scheduling rather than the behaviour under test.
+	//   - ignored: the defaults are 5s (shutdown_timeout) and 2m (drift_drain_timeout), so
+	//     any regression that drops the config lands at 5s or worse.
+	//
+	// 3s therefore keeps the discrimination — it is comfortably under the smallest default
+	// — while leaving 4x headroom over the worst honoured run observed. Raising it to 5s
+	// instead would silently destroy the assertion by colliding with that default.
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("stopManagedCity took %s, want the configured 20ms timeouts to bound it "+
+			"(5s+ means a default was used instead of the config)", elapsed)
 	}
 	if err == nil {
 		t.Fatal("stopManagedCity err = nil, want non-nil because city never exited")
