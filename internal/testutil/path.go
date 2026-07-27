@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/pathutil"
@@ -63,6 +64,75 @@ func NativePIDForShellPID(shellPID int) (int, bool) {
 		return 0, false
 	}
 	return native, true
+}
+
+// ShellPIDState is what could be established about a pid written by a POSIX shell.
+type ShellPIDState int
+
+const (
+	// ShellPIDUnknown means liveness could not be determined — the process table itself
+	// could not be read. Callers must not guess from this.
+	ShellPIDUnknown ShellPIDState = iota
+	// ShellPIDLive means the pid was found and maps to a native pid.
+	ShellPIDLive
+	// ShellPIDGone means the process table was readable and the pid was not in it.
+	ShellPIDGone
+)
+
+// InspectShellPID reports whether a shell-written pid is still live, and its native pid when
+// it is.
+//
+// NativePIDForShellPID collapses "gone" and "cannot tell" into one ok=false, which is right
+// for a caller deciding whether to KILL something — both mean "do not". It is wrong for a
+// caller asking whether a process died: absence from a readable process table is precisely
+// the answer, not a failure to obtain one. Distinguishing them requires knowing whether the
+// table was readable at all, which is why this returns three states rather than two.
+func InspectShellPID(shellPID int) (int, ShellPIDState) {
+	if runtime.GOOS != "windows" {
+		if shellPID <= 0 {
+			return 0, ShellPIDUnknown
+		}
+		if processExistsUnix(shellPID) {
+			return shellPID, ShellPIDLive
+		}
+		return 0, ShellPIDGone
+	}
+	if shellPID <= 0 {
+		return 0, ShellPIDUnknown
+	}
+	out, err := exec.Command("sh", "-c", "ps -W 2>/dev/null").Output()
+	if err != nil {
+		return 0, ShellPIDUnknown
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 {
+		// No header plus at least one process means ps told us nothing usable; treating
+		// that as "gone" would make every death assertion pass on a broken host.
+		return 0, ShellPIDUnknown
+	}
+	want := strconv.Itoa(shellPID)
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || fields[0] != want {
+			continue
+		}
+		native, convErr := strconv.Atoi(fields[3])
+		if convErr != nil || native <= 0 {
+			return 0, ShellPIDUnknown
+		}
+		return native, ShellPIDLive
+	}
+	return 0, ShellPIDGone
+}
+
+// processExistsUnix reports whether a pid is present off Windows, where the shell and the OS
+// share one pid space.
+func processExistsUnix(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return process.Signal(syscall.Signal(0)) == nil
 }
 
 // SetTestHome pins the test's home directory on every platform. os.UserHomeDir

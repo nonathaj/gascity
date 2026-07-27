@@ -336,7 +336,7 @@ func checkCondition(a Order, opts TriggerOptions) TriggerResult {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	cmd := execshim.ShellCommandContext(ctx, a.Check)
-	cleanupCommand := prepareConditionCommand(cmd, conditionCheckSignalGrace)
+	conditionCmd := prepareConditionCommand(cmd, conditionCheckSignalGrace)
 	cmd.WaitDelay = conditionCheckPostCancelWaitDelay
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -344,17 +344,17 @@ func checkCondition(a Order, opts TriggerOptions) TriggerResult {
 		cmd.Dir = opts.ConditionDir
 	}
 	cmd.Env = mergeConditionEnv(os.Environ(), opts.ConditionEnv)
-	if err := cmd.Run(); err != nil {
+	if err := conditionCmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			reason := fmt.Sprintf("check command %s after %s", ConditionCheckTimedOutMarker, timeout)
-			if cleanupErr := cleanupCommand(); cleanupErr != nil {
+			if cleanupErr := conditionCmd.Cleanup(); cleanupErr != nil {
 				reason = fmt.Sprintf("%s; cleanup failed: %v", reason, cleanupErr)
 			}
 			return TriggerResult{Due: false, Reason: reason}
 		}
 		if errors.Is(err, exec.ErrWaitDelay) {
 			reason := "check command cleanup exceeded post-cancel wait delay"
-			if cleanupErr := cleanupCommand(); cleanupErr != nil {
+			if cleanupErr := conditionCmd.Cleanup(); cleanupErr != nil {
 				reason = fmt.Sprintf("%s: %v", reason, cleanupErr)
 			}
 			return TriggerResult{Due: false, Reason: reason}

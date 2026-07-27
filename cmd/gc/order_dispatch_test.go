@@ -3392,7 +3392,7 @@ func TestShellExecRunnerKillsProcessGroupOnTimeout(t *testing.T) {
 	oldSignalGrace := shellExecSignalGrace
 	shellExecSignalGrace = 100 * time.Millisecond
 	t.Cleanup(func() { shellExecSignalGrace = oldSignalGrace })
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), processgrouptest.KillObservationTimeout)
 	defer cancel()
 
 	command := fmt.Sprintf("sh -c 'printf \"%%s\\n\" \"$$\" > %q; trap \"\" TERM; while :; do printf . >> %q; sleep 0.05; done' & wait", childPIDPath, heartbeatPath)
@@ -3401,8 +3401,7 @@ func TestShellExecRunnerKillsProcessGroupOnTimeout(t *testing.T) {
 		t.Fatalf("shellExecRunner() error = %v, want %v", err, context.DeadlineExceeded)
 	}
 
-	size := processgrouptest.WaitForFileSize(t, heartbeatPath)
-	processgrouptest.AssertFileSizeStable(t, heartbeatPath, size, 300*time.Millisecond)
+	processgrouptest.AssertProcessFromPIDFileDies(t, childPIDPath, processgrouptest.KillDeadline)
 }
 
 func TestShellExecRunnerKillsProcessGroupAfterWaitDelay(t *testing.T) {
@@ -3429,8 +3428,7 @@ func TestShellExecRunnerKillsProcessGroupAfterWaitDelay(t *testing.T) {
 		t.Fatalf("shellExecRunner() error = %v, want %v", err, exec.ErrWaitDelay)
 	}
 
-	size := processgrouptest.WaitForFileSize(t, heartbeatPath)
-	processgrouptest.AssertFileSizeStable(t, heartbeatPath, size, 300*time.Millisecond)
+	processgrouptest.AssertProcessFromPIDFileDies(t, childPIDPath, processgrouptest.KillDeadline)
 }
 
 func TestShellExecRunnerReturnsPartialOutputOnTimeout(t *testing.T) {

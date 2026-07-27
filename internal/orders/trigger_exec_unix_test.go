@@ -41,7 +41,7 @@ func TestPrepareConditionCommandEscalatesToSIGKILL(t *testing.T) {
 	t.Cleanup(func() { conditionProcessGroupOptions = oldOptions })
 
 	cmd := exec.CommandContext(context.Background(), "sleep", "10")
-	cleanup := prepareConditionCommand(cmd, 0)
+	conditionCmd := prepareConditionCommand(cmd, 0)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start command: %v", err)
 	}
@@ -52,8 +52,8 @@ func TestPrepareConditionCommandEscalatesToSIGKILL(t *testing.T) {
 		}
 	})
 
-	if err := cleanup(); err != nil {
-		t.Fatalf("cleanup() error = %v, want nil", err)
+	if err := conditionCmd.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() error = %v, want nil", err)
 	}
 	if len(signals) != 2 || signals[0] != syscall.SIGTERM || signals[1] != syscall.SIGKILL {
 		t.Fatalf("signals = %v, want [SIGTERM SIGKILL]", signals)

@@ -284,7 +284,7 @@ func TestCheckTriggerConditionKillsProcessGroupOnTimeout(t *testing.T) {
 	now := time.Date(2026, 2, 27, 12, 0, 0, 0, time.UTC)
 	result := CheckTriggerWithOptions(a, now, neverRan, nil, nil, TriggerOptions{
 		ConditionDir:     dir,
-		ConditionTimeout: 100 * time.Millisecond,
+		ConditionTimeout: processgrouptest.KillObservationTimeout,
 	})
 	if result.Due {
 		t.Fatalf("Due = true, want false after condition timeout")
@@ -293,8 +293,7 @@ func TestCheckTriggerConditionKillsProcessGroupOnTimeout(t *testing.T) {
 		t.Fatalf("Reason = %q, want timeout", result.Reason)
 	}
 
-	size := processgrouptest.WaitForFileSize(t, heartbeatPath)
-	processgrouptest.AssertFileSizeStable(t, heartbeatPath, size, 300*time.Millisecond)
+	processgrouptest.AssertProcessFromPIDFileDies(t, childPIDPath, processgrouptest.KillDeadline)
 }
 
 func TestCheckTriggerConditionKillsProcessGroupAfterWaitDelay(t *testing.T) {
@@ -329,8 +328,7 @@ func TestCheckTriggerConditionKillsProcessGroupAfterWaitDelay(t *testing.T) {
 		t.Fatalf("Reason = %q, want post-cancel wait delay", result.Reason)
 	}
 
-	size := processgrouptest.WaitForFileSize(t, heartbeatPath)
-	processgrouptest.AssertFileSizeStable(t, heartbeatPath, size, 300*time.Millisecond)
+	processgrouptest.AssertProcessFromPIDFileDies(t, childPIDPath, processgrouptest.KillDeadline)
 }
 
 func TestCronFieldMatches(t *testing.T) {

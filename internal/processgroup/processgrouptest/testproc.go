@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/pidutil"
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
@@ -65,47 +66,65 @@ func KillFromPIDFile(t *testing.T, path string) {
 	_ = process.Kill()
 }
 
-// WaitForFileSize waits until path exists with non-empty contents.
-func WaitForFileSize(t *testing.T, path string) int64 {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		info, err := os.Stat(path)
-		if err == nil {
-			if info.Size() > 0 {
-				return info.Size()
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("stat heartbeat file %s: %v", path, err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for heartbeat file %s to grow", path)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
+// KillObservationTimeout is the run budget to give a command whose child must be
+// demonstrably running before the timeout under test fires.
+//
+// It cannot be tuned to the timeout being tested; it has to clear process startup on the
+// slowest supported platform. At 100ms these tests failed on Windows because spawning sh and
+// its background subshell takes longer than that, so the child was killed before its first
+// write and the test could not tell "killed" from "never started". Linux spawns in ~1ms,
+// which is why 100ms looked sufficient for years.
+const KillObservationTimeout = 2 * time.Second
 
-// AssertFileSizeStable fails if path keeps growing during stableFor.
-func AssertFileSizeStable(t *testing.T, path string, initialSize int64, stableFor time.Duration) {
+// KillDeadline is how long after a runner returns the child may take to actually die.
+// Generous on purpose: it bounds a failure, so overshooting costs nothing on the passing
+// path, while a tight value would turn scheduling noise into a red test.
+const KillDeadline = 10 * time.Second
+
+// AssertProcessFromPIDFileDies fails unless the process recorded at pidPath is gone within
+// the given window.
+//
+// This asserts the subject directly. The alternative — watching a heartbeat file stop
+// growing — infers death from the absence of writes, which cannot distinguish "killed" from
+// "never started", and needs a stability window longer than the child's write period to mean
+// anything. On Windows each loop iteration of such a child costs ~200ms because `sleep` is a
+// process spawn, so a short window can be satisfied by a process that is still very much
+// alive. Liveness has an answer; there is no reason to guess at it.
+//
+// The pid is mapped out of the shell's numbering space first (see
+// testutil.NativePIDForShellPID). A mapping failure fails the test rather than passing
+// quietly: this function exists to prove a process died, and "I could not tell" is not that.
+func AssertProcessFromPIDFileDies(t *testing.T, pidPath string, within time.Duration) {
 	t.Helper()
-	lastSize := initialSize
-	stableSince := time.Now()
-	deadline := time.Now().Add(3 * time.Second)
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatalf("read child pid file %s: %v. The child never recorded its pid, so this test "+
+			"cannot tell whether the process group was killed or never started", pidPath, err)
+	}
+	shellPID, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("parse child pid file %s: %v", pidPath, err)
+	}
+	deadline := time.Now().Add(within)
 	for {
-		time.Sleep(50 * time.Millisecond)
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatalf("stat heartbeat file %s: %v", path, err)
-		}
-		if size := info.Size(); size != lastSize {
-			lastSize = size
-			stableSince = time.Now()
-		}
-		if time.Since(stableSince) >= stableFor {
+		nativePID, state := testutil.InspectShellPID(shellPID)
+		switch state {
+		case testutil.ShellPIDGone:
+			// Absent from a readable process table is the answer, not a missing answer.
 			return
+		case testutil.ShellPIDLive:
+			if !pidutil.Alive(nativePID) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("child pid %d (shell pid %d) still alive %s after the runner "+
+					"returned; the process group was not killed", nativePID, shellPID, within)
+			}
+		default:
+			t.Fatalf("could not read the process table, so the liveness of child pid %d "+
+				"cannot be established. Passing here would make this assertion vacuous on "+
+				"any host where the check itself is broken", shellPID)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("heartbeat file %s kept growing after timeout cleanup; latest size %d", path, lastSize)
-		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

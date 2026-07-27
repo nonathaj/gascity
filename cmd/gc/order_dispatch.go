@@ -157,12 +157,22 @@ func shellExecRunner(ctx context.Context, command, dir string, env []string) ([]
 	var cleanupOnce sync.Once
 	startedPGID := 0
 	canceled := false
+	var containment *processgroup.Containment
 	cleanupProcess := func() error {
 		cleanupOnce.Do(func() {
 			cleanupMu.Lock()
 			pgid := startedPGID
+			contained := containment
 			cleanupMu.Unlock()
 			err := cancelShellExecProcessGroup(cmd, pgid)
+			// Also terminate the containment. taskkill /T walks live parent links, so it
+			// cannot reach a descendant whose intermediate shell already exited — which is
+			// exactly what a command ending in `&` produces. The job can.
+			if contained != nil {
+				if termErr := contained.Terminate(); termErr != nil && err == nil {
+					err = termErr
+				}
+			}
 			cleanupMu.Lock()
 			cleanupErr = err
 			cleanupMu.Unlock()
@@ -188,7 +198,20 @@ func shellExecRunner(ctx context.Context, command, dir string, env []string) ([]
 	if pgid, err := platformGetpgid(cmd.Process.Pid); err == nil {
 		startedPGID = pgid
 	}
+	// Contain immediately after Start: containment can only be attached to a live process,
+	// and attaching it at cancellation time is too late because the shell that owns the
+	// backgrounded work may already have exited by then.
+	containment = processgroup.Contain(cmd)
 	cleanupMu.Unlock()
+	defer func() {
+		cleanupMu.Lock()
+		contained := containment
+		containment = nil
+		cleanupMu.Unlock()
+		// Release drops the handle WITHOUT killing: a command may have backgrounded a
+		// daemon on purpose, and a successful run must not take it down.
+		contained.Release()
+	}()
 
 	err := cmd.Wait()
 	cleanupMu.Lock()
