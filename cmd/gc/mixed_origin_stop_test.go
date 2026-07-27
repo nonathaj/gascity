@@ -12,6 +12,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/processgroup"
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
@@ -106,6 +107,9 @@ func TestMixedOriginStopTerminatesHelperRecordedServer(t *testing.T) {
 		"GC_DOLT_CONFIG_FILE="+filepath.Join(packStateDir, "dolt-config.yaml"),
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	), binDir)
+	// Own process group: this runs the real stop op, which signals processes. In the test
+	// binary's group a stray group-directed signal would land on the test binary itself.
+	processgroup.StartCommandInNewGroup(cmd)
 	out, runErr := cmd.CombinedOutput()
 
 	if testutil.WaitUntil(45*time.Second, func() bool { return !pidutil.Alive(nativePID) }) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/processgroup"
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
@@ -75,6 +76,17 @@ esac
 		"GC_DOLT_CONFIG_FILE="+filepath.Join(packStateDir, "dolt-config.yaml"),
 		"PATH="+strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
 	), binDir)
+
+	// Own process group. Without it the script runs in the TEST BINARY's group, so any
+	// group-directed signal it or its descendants send lands on the test binary itself —
+	// and this shard died with "signal: terminated" on Linux CI, which is a SIGTERM the
+	// test's own SIGKILL-based cleanup cannot explain. Isolating the group removes that
+	// whole class whether or not it was the cause here.
+	//
+	// It also makes the cleanup below precise rather than accidental: KillTree signals the
+	// process GROUP on Unix, which only names this script's descendants once the script is
+	// a group leader.
+	processgroup.StartCommandInNewGroup(cmd)
 
 	done := make(chan error, 1)
 	var out []byte
