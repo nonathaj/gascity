@@ -459,3 +459,43 @@ Concretely, Phase 1 is:
 
 Step 4 is the load-bearing one and the reason Phase 1 was not landed in the same
 session as the test: getting it half-right is the documented worse outcome.
+
+## 13. RETRACTION: the two-field design is wrong; unify on native
+
+Section 8b proposed persisting both `pid` (native) and `shell_pid` (interpreter) to
+avoid a `ps -W` cost in sh's polling loops. Further tracing shows that reasoning was
+built on a false premise.
+
+**The script already receives and polls NATIVE pids.** `GC_PROBE_PORT_HOLDER_PID`
+(script `:829`) and `GC_EXISTING_MANAGED_PID` (`:881`) are parsed out of
+`gc dolt-state probe-managed` / `existing-managed` — i.e. produced by Go, in native
+space. Those values are passed straight to `graceful_stop_owned_pid` (`:2254`, `:2293`,
+`:2310`), whose loop calls `pid_alive` up to 60 times.
+
+Two consequences:
+
+1. **The mixing is not hypothetical — it exists today.** Adding `shell_pid` would
+   institutionalise a second space rather than remove the confusion.
+2. **The `ps -W` cost is already being paid.** For any gc-helper-supplied pid the
+   `kill -0` fast path fails and every poll falls through to `ps -W`. A 30s graceful
+   stop already takes ~63s of wall clock on Windows (60 x (500ms sleep + 560ms probe)).
+   That is a pre-existing degradation, not something Option A would introduce.
+
+`tasklist //FI "PID eq N" //NH` was measured as an alternative: it works (the `//FI`
+escape defeats MSYS argument mangling) but costs **1371ms**, worse than `ps -W`.
+There is no cheap native liveness probe available to sh.
+
+### Revised Phase 1
+
+1. `native_pid_of()` — map once at capture (`ps -W`, identity off Windows).
+2. Persist **native** in both `$PID_FILE` and `state.pid`. One space crosses the
+   boundary; no new field; Go unchanged.
+3. `pid_kill()` — MSYS `kill` first (correct for interpreter pids), `taskkill //T`
+   fallback for native ones. Symmetric with `pid_alive`, and required because MSYS
+   `kill` cannot terminate a native pid.
+4. Make the stop/wait loops **deadline-based** rather than iteration-counted, so an
+   expensive probe costs samples instead of stretching the budget. This fixes the
+   pre-existing 30s→63s overshoot and needs no platform special-casing.
+
+Simpler than the two-field scheme, removes the existing mixing instead of encoding it,
+and corrects a latent timing bug on the way through.

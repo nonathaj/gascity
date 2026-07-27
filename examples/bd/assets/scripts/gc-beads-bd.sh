@@ -279,6 +279,50 @@ pid_alive() {
     ps -W 2>/dev/null | awk -v want="$pid" 'NR > 1 && $4 == want { found = 1 } END { exit !found }'
 }
 
+# native_pid_of maps an interpreter pid to the OS-native pid, printing the result.
+#
+# Under Git for Windows "$!" and "$$" are MSYS pids, a different numbering space from
+# the Windows pids every Go-side probe uses (OpenProcess, taskkill). A pid that crosses
+# the sh->Go boundary — the pid file and the provider state file are both read by Go —
+# must therefore be converted first, or gc mis-detects the server and can signal an
+# unrelated process that happens to hold the same number.
+#
+# ps -W lists native processes with the MSYS pid in column 1 and the Windows pid in
+# column 4. Off Windows there is one pid space, so this is identity.
+native_pid_of() {
+    local pid="$1"
+    [ -n "$pid" ] || return 1
+    if ! ps -W >/dev/null 2>&1; then
+        printf '%s\n' "$pid"
+        return 0
+    fi
+    ps -W 2>/dev/null | awk -v want="$pid" 'NR > 1 && $1 == want { print $4; found = 1; exit } END { exit !found }'
+}
+
+# pid_kill terminates a pid in either numbering space, the companion to pid_alive.
+#
+# MSYS kill accepts only interpreter pids, so it cannot terminate the native pids this
+# script now stores (nor the native pids the gc helper already hands back through
+# GC_PROBE_PORT_HOLDER_PID / GC_EXISTING_MANAGED_PID). Try kill first — it is correct
+# and cheap for interpreter pids — then fall back to taskkill for native ones. The
+# doubled slashes stop MSYS rewriting the switches into paths.
+pid_kill() {
+    local pid="$1" mode="${2:-term}"
+    [ -n "$pid" ] || return 0
+    if [ "$mode" = "force" ]; then
+        kill -9 "$pid" 2>/dev/null && return 0
+    else
+        kill "$pid" 2>/dev/null && return 0
+    fi
+    command -v taskkill >/dev/null 2>&1 || return 0
+    if [ "$mode" = "force" ]; then
+        taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
+    else
+        taskkill //T //PID "$pid" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
 # do_query_probe runs a read-only information_schema query against the dolt server.
 do_query_probe() {
     local host gc_bin
@@ -1133,7 +1177,7 @@ kill_imposter() {
     [ -n "$pid" ] || return 0
 
     echo "killing imposter dolt server (PID $pid) on port $DOLT_PORT" >&2
-    kill "$pid" 2>/dev/null || return 0
+    pid_kill "$pid" || return 0
 
     # Wait up to 5s for graceful shutdown.
     local waited=0
@@ -1146,7 +1190,7 @@ kill_imposter() {
     done
 
     # Force kill.
-    kill -9 "$pid" 2>/dev/null || true
+    pid_kill "$pid" force
     sleep 1
 }
 
@@ -1224,7 +1268,13 @@ wait_dolt_data_lock_free() {
 graceful_stop_owned_pid() {
     local pid="$1" waited=0 holder lock_window_ms lock_deadline_ms now_ms
     [ -n "$pid" ] || return 0
-    kill "$pid" 2>/dev/null || true
+    pid_kill "$pid"
+    # NOTE: iteration-counted, so on Windows this budget stretches — pid_alive costs
+    # ~560ms for a native pid (ps -W; tasklist //FI measured worse), making 60 x 500ms
+    # take ~63s of wall clock instead of 30s. Pre-existing, since the gc helper already
+    # hands this function native pids. Converting to a deadline is tracked separately;
+    # it is deliberately not bundled here because current_time_ms can fail and may
+    # shell out to gc, which would cost more inside a poll than it saves.
     while [ "$waited" -lt 60 ] && pid_alive "$pid"; do
         sleep 0.5 2>/dev/null || sleep 1
         waited=$((waited + 1))
@@ -1246,7 +1296,7 @@ graceful_stop_owned_pid() {
                 echo "PID $pid did not exit within the SIGTERM grace and a live process still holds dolt exclusive store lock $holder; refusing SIGKILL mid-journal-write (gastownhall/gascity#3174)" >&2
                 return 1
             fi
-            kill -9 "$pid" 2>/dev/null || true
+            pid_kill "$pid" force
             sleep 1
         fi
     fi
@@ -2397,7 +2447,15 @@ op_start() {
         # Start dolt sql-server with config file. Close the startup lock fd in
         # the child so the flock is released when this starter exits.
         nohup sh -c 'exec 9>&-; exec dolt sql-server --config "$1"' sh "$CONFIG_FILE" >> "$LOG_FILE" 2>&1 &
-        local server_pid=$!
+        local shell_pid=$!
+        # Convert ONCE, here, before the value crosses into anything Go reads. Both the
+        # pid file and the provider state file are read by Go (managedPIDFromPIDFile,
+        # doltRuntimeState.PID), and Go interprets them as native pids. Converting at
+        # the single capture point keeps one pid space on the wire; doing it lazily at
+        # each read would put a ~560ms ps -W in every poll.
+        local server_pid
+        server_pid=$(native_pid_of "$shell_pid") || server_pid="$shell_pid"
+        [ -n "$server_pid" ] || server_pid="$shell_pid"
 
         # Write PID file.
         echo "$server_pid" > "$PID_FILE"
@@ -2436,7 +2494,7 @@ op_start() {
 
         if pid_alive "$server_pid"; then
             # Clean up: kill the stuck server and reset state to prevent double-launch.
-            kill "$server_pid" 2>/dev/null || true
+            pid_kill "$server_pid"
             rm -f "$PID_FILE"
             save_state 0 false
             die "dolt server started (PID $server_pid) but did not become query-ready after 30s (check $LOG_FILE)"

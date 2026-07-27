@@ -133,13 +133,10 @@ esac
 // relabelling a field — which is what makes it a contract test rather than a mechanism
 // test. See engdocs/contributors/windows-pid-space.md.
 func TestManagedDoltStatePIDIsNativeAfterShellFallbackStart(t *testing.T) {
-	// EXPECTED-RED until gw-dbm Phase 1 lands. Verified failing as written:
+	// Demonstrated failing before the fix, which is why it is trusted now:
 	//   "dolt-state.json pid 49126 is not live per pidutil.Alive … (gw-dbm)"
-	// 49126 was an MSYS pid. Skipped rather than left failing so that
-	// `make test-cmd-gc-process` does not report a defect with no context; the skip
-	// removal is part of Phase 1's definition of done, not an afterthought.
-	t.Skip("expected-red pending gw-dbm Phase 1: script records an MSYS pid where Go reads a native pid")
-
+	// 49126 was an MSYS pid. The script now converts once at capture via
+	// native_pid_of, so both the pid file and the state file carry native pids.
 	state := managedDoltPidSpaceStart(t)
 	if !pidutil.Alive(state.PID) {
 		t.Fatalf("dolt-state.json pid %d is not live per pidutil.Alive, the probe "+
