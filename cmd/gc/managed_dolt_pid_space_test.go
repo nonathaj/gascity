@@ -132,6 +132,45 @@ esac
 // (true by construction on Unix), needs no build tags, and cannot be satisfied by
 // relabelling a field — which is what makes it a contract test rather than a mechanism
 // test. See engdocs/contributors/windows-pid-space.md.
+// TestManagedDoltStatePIDIsRejectedWhenInShellSpace is the anti-vacuity guard for the
+// contract above.
+//
+// Without it, the contract test could be "satisfied" by relabelling — writing an
+// interpreter pid into the native field and calling it done. This pins the other
+// direction: a state file carrying a pid that production's probe does NOT accept must
+// be judged invalid rather than trusted. It is the same shape as the vacuous
+// assertions removed elsewhere this session, caught deliberately this time.
+//
+// Platform-neutral by construction: it fabricates a pid that is not a live process on
+// any OS, so it asserts the same thing everywhere without build tags.
+func TestManagedDoltStatePIDIsRejectedWhenInShellSpace(t *testing.T) {
+	cityPath := t.TempDir()
+	dataDir := filepath.Join(cityPath, ".beads", "dolt")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeCityToml(t, cityPath, "[workspace]\nname = \"reject-city\"\n")
+
+	// A pid that is not live. Stands in for an interpreter-space value that Go cannot
+	// resolve — the failure mode gw-dbm produced in the field.
+	const notALivePID = 0x7FFFFFF0
+	if pidutil.Alive(notALivePID) {
+		t.Skipf("pid %d unexpectedly live on this host; cannot stand in for an unresolvable pid", notALivePID)
+	}
+	state := doltRuntimeState{
+		Running:   true,
+		PID:       notALivePID,
+		Port:      reserveRandomTCPPort(t),
+		DataDir:   dataDir,
+		StartedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	if validDoltRuntimeState(state, cityPath) {
+		t.Fatalf("validDoltRuntimeState accepted pid %d, which production's own probe "+
+			"(pidutil.Alive) says is not running. A pid gc cannot resolve must invalidate "+
+			"the state rather than be trusted (gw-dbm)", state.PID)
+	}
+}
+
 func TestManagedDoltStatePIDIsNativeAfterShellFallbackStart(t *testing.T) {
 	// Demonstrated failing before the fix, which is why it is trusted now:
 	//   "dolt-state.json pid 49126 is not live per pidutil.Alive … (gw-dbm)"

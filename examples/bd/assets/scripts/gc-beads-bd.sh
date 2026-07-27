@@ -204,12 +204,12 @@ run_with_timeout() {
     local timeout_seconds="$1"
     shift
     "$@" &
-    local cmd_pid=$!
+    local cmd_pid=$! # interpreter-local pid: killed below by this same shell, never persisted
     (
         sleep "$timeout_seconds" 2>/dev/null || sleep 1
         kill "$cmd_pid" 2>/dev/null || true
     ) </dev/null >/dev/null 2>&1 &
-    local watchdog_pid=$!
+    local watchdog_pid=$! # interpreter-local pid: killed below by this same shell, never persisted
     local status=0
     wait "$cmd_pid" || status=$?
     kill "$watchdog_pid" 2>/dev/null || true
