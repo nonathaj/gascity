@@ -103,7 +103,7 @@ expires = "2026-10-01"
 [[debt]]
 scope = "cmd/gc+untagged"
 resource = "slow_process_gate"
-baseline_calls = 63
+baseline_calls = 62
 baseline_files = 28
 reported_calls = 78
 reported_files = 27
@@ -385,7 +385,7 @@ expires = "2026-10-01"
 [[small_debt]]
 scope = "cmd/gc+untagged"
 resource = "slow_process_gate"
-baseline_calls = 63
+baseline_calls = 62
 baseline_files = 28
 reported_calls = 75
 reported_files = 25

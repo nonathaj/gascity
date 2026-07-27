@@ -139,53 +139,82 @@ kill "$probe_pid" 2>/dev/null || true
 // cannot degrade into "always ours". A process whose args name a DIFFERENT --config is
 // an imposter and must be rejected even though the state file agrees.
 //
-// Skipped where ps cannot report args at all: there the evidence does not exist, so
-// there is nothing to assert rather than something to assert weakly.
+// ps is stubbed rather than a real process being spawned and inspected. That is what lets
+// this run on EVERY platform, including the one it is really about: Git for Windows' ps
+// cannot report args at all, so the real-process version skipped on Windows — the exact
+// platform whose ps limitation caused gw-1ay. A test that skips where the bug lives is
+// not covering it.
+//
+// The subject here is verify_our_server's DECISION, not the platform's ps. Whether a given
+// sh can produce args is a separate question, and shSupportsPsArgs answers it where that
+// matters.
 func TestVerifyOurServerRejectsForeignConfig(t *testing.T) {
-	skipSlowCmdGCTest(t, "spawns a real child process through sh; run make test-cmd-gc-process for full coverage")
-
-	if !shSupportsPsArgs(t) {
-		t.Skip("this sh's ps cannot report process args (Git for Windows lacks -o), so an " +
-			"args-based imposter check has no evidence to work from; the accept-direction " +
-			"test above is what covers this platform")
-	}
-
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
 	stateFile := filepath.Join(dir, "dolt-state.json")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The state file AGREES, so only the args evidence can produce a rejection. Without
+	// that agreement Layer 1 would reject and the test would pass without ever reaching
+	// the args check it exists to cover.
 	stateJSON := fmt.Sprintf(`{"running":true,"pid":0,"port":1,"data_dir":%q,"started_at":"2026-04-14T00:00:00Z"}`,
 		filepath.ToSlash(dataDir))
 	if err := os.WriteFile(stateFile, []byte(stateJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	body := `
+	for _, tc := range []struct {
+		name     string
+		procArgs string
+		want     string
+	}{{
+		name:     "foreign config is an imposter",
+		procArgs: "dolt sql-server --config /somewhere/else/theirs.yaml",
+		want:     "verdict=not-ours",
+	}, {
+		name:     "our own config is ours",
+		procArgs: "dolt sql-server --config CONFIG_FILE_PLACEHOLDER",
+		want:     "verdict=ours",
+	}, {
+		name:     "foreign data-dir is an imposter",
+		procArgs: "dolt sql-server --data-dir /somewhere/else/data",
+		want:     "verdict=not-ours",
+	}, {
+		name:     "no args available falls through to the state file",
+		procArgs: "",
+		want:     "verdict=ours",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			configFile := filepath.Join(dir, "ours.yaml")
+			procArgs := strings.ReplaceAll(tc.procArgs, "CONFIG_FILE_PLACEHOLDER", filepath.ToSlash(configFile))
+			body := `
 DATA_DIR=` + shScriptPath(dataDir) + `
 STATE_FILE=` + shScriptPath(stateFile) + `
-CONFIG_FILE=` + shScriptPath(filepath.Join(dir, "ours.yaml")) + `
-sh -c 'exec sleep 60 --config /somewhere/else/theirs.yaml' >/dev/null 2>&1 & # interpreter-local pid
-probe_pid=$!
-sleep 1
-if verify_our_server "$probe_pid"; then
+CONFIG_FILE=` + shScriptPath(configFile) + `
+# Stand in for the platform's ps. Overriding the command is what makes the args evidence
+# available on hosts whose real ps cannot supply it.
+ps() { printf '%s\n' ` + shScriptPath(procArgs) + `; }
+if verify_our_server 4242; then
   printf 'verdict=ours\n'
 else
   printf 'verdict=not-ours\n'
 fi
-kill "$probe_pid" 2>/dev/null || true
 `
-	cmd := execshim.Command("sh", "-s")
-	cmd.Stdin = strings.NewReader(pidSpacePrelude(t) + "\n" + body)
-	cmd.Env = sanitizedBaseEnv()
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("imposter harness failed: %v\noutput:\n%s", err, out)
-	}
-	if !strings.Contains(string(out), "verdict=not-ours") {
-		t.Fatalf("verify_our_server accepted a process whose --config names a different "+
-			"file; the accept path must not degrade into always-ours\noutput:\n%s", out)
+			cmd := execshim.Command("sh", "-s")
+			cmd.Stdin = strings.NewReader(pidSpacePrelude(t) + "\n" + body)
+			cmd.Env = sanitizedBaseEnv()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("imposter harness failed: %v\noutput:\n%s", err, out)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Fatalf("verify_our_server verdict for args %q = %s, want %s. The accept path "+
+					"must not degrade into always-ours, and the reject path must not fire on "+
+					"absent evidence (gw-1ay).\noutput:\n%s",
+					procArgs, strings.TrimSpace(string(out)), tc.want, out)
+			}
+		})
 	}
 }
 
