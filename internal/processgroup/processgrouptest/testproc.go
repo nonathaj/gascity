@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // RequireRealProcessSignals skips tests that intentionally send OS signals
@@ -40,9 +42,25 @@ func KillFromPIDFile(t *testing.T, path string) {
 	if pid <= 1 {
 		return
 	}
-	process, err := os.FindProcess(pid)
+	// The pid in these files is written by a POSIX shell ("$$"/"$!"), which under Git for
+	// Windows is an MSYS pid — a different numbering space from the one os.FindProcess
+	// and Kill operate on. Killing it raw does not just fail to reap the intended child:
+	// when the number collides with a live native pid it TERMINATES AN UNRELATED PROCESS
+	// on the developer's machine, and observed MSYS values sit squarely in the range
+	// Windows assigns.
+	//
+	// Map first, and if the mapping cannot be established, kill NOTHING. Leaking a bounded
+	// test child is a far smaller cost than killing something that was never ours. Off
+	// Windows this is identity, so behaviour there is unchanged.
+	nativePID, ok := testutil.NativePIDForShellPID(pid)
+	if !ok {
+		t.Logf("skipping kill of pid %d from %s: could not map it to a native pid, and "+
+			"killing an unmapped shell pid risks terminating an unrelated process", pid, path)
+		return
+	}
+	process, err := os.FindProcess(nativePID)
 	if err != nil {
-		t.Fatalf("find child process %d from %s: %v", pid, path, err)
+		t.Fatalf("find child process %d from %s: %v", nativePID, path, err)
 	}
 	_ = process.Kill()
 }

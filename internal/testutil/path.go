@@ -3,8 +3,11 @@ package testutil
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/pathutil"
@@ -25,6 +28,41 @@ func AssertSamePath(t *testing.T, got, want string) {
 	if got != want {
 		t.Fatalf("path = %q, want %q", got, want)
 	}
+}
+
+// NativePIDForShellPID maps a pid produced by a POSIX shell to the pid the OS process
+// APIs use, and reports whether the mapping succeeded.
+//
+// Under Git for Windows, "$$" and "$!" are MSYS pids — a different numbering space from
+// the native pids os.FindProcess, OpenProcess and taskkill operate on. A fixture that
+// writes a shell pid to a file and later hands it to a Go kill/liveness call is
+// therefore acting on an unrelated number. That is not merely a broken assertion: it can
+// TERMINATE AN UNRELATED PROCESS on the developer's machine when the number happens to
+// collide with a live native pid, and observed MSYS values (1749, 10782, 46077) sit
+// squarely in the range Windows assigns.
+//
+// ps -W lists native processes with the MSYS pid in column 1 and the native pid in
+// column 4. Off Windows there is one pid space, so this is identity and always ok=true.
+//
+// ok=false means the mapping could not be established — callers must NOT fall back to
+// using the raw value, because that is the dangerous case.
+func NativePIDForShellPID(shellPID int) (int, bool) {
+	if runtime.GOOS != "windows" {
+		return shellPID, shellPID > 0
+	}
+	if shellPID <= 0 {
+		return 0, false
+	}
+	out, err := exec.Command("sh", "-c",
+		"ps -W 2>/dev/null | awk -v p="+strconv.Itoa(shellPID)+" 'NR>1 && $1==p {print $4; exit}'").Output()
+	if err != nil {
+		return 0, false
+	}
+	native, convErr := strconv.Atoi(strings.TrimSpace(string(out)))
+	if convErr != nil || native <= 0 {
+		return 0, false
+	}
+	return native, true
 }
 
 // SetTestHome pins the test's home directory on every platform. os.UserHomeDir
