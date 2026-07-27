@@ -11,6 +11,7 @@ import (
 	bdpack "github.com/gastownhall/gascity/examples/bd"
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // pidSpacePrelude returns the pack script's function definitions, so the boundary
@@ -98,12 +99,8 @@ printf 'alive_per_sh=%s\n' "$(pid_alive "$native_pid" && echo yes || echo no)"
 	// #4: a LATER sh invocation must be able to terminate it — the stop path.
 	runPidSpaceScript(t, `pid_kill `+strconv.Quote(strconv.Itoa(nativePID))+` force`+"\n")
 
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		if !pidutil.Alive(nativePID) {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	if testutil.WaitUntil(15*time.Second, func() bool { return !pidutil.Alive(nativePID) }) {
+		return
 	}
 	t.Fatalf("pid_kill did not terminate pid %d; MSYS kill cannot signal a native pid, "+
 		"so the taskkill fallback is what has to work here (gw-dbm)", nativePID)

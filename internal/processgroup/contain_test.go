@@ -22,8 +22,10 @@ func TestContainToleratesEveryDegenerateInput(t *testing.T) {
 	})
 
 	t.Run("command that was never started", func(t *testing.T) {
-		// cmd.Process is nil until Start succeeds.
-		c := Contain(exec.Command("sh", "-c", "true"))
+		// cmd.Process is nil until Start succeeds. Built directly rather than via
+		// exec.Command so this costs no subprocess at all — nothing is ever started, and
+		// spawning a shell to represent "not started" would be pure resource debt.
+		c := Contain(&exec.Cmd{})
 		if err := c.Terminate(); err != nil {
 			t.Fatalf("Terminate() on unstarted command = %v, want nil", err)
 		}

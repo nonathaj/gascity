@@ -37,24 +37,22 @@ func spawnOrphanedGrandchild(t *testing.T, seconds int) (*Containment, int) {
 	}
 
 	var nativePID int
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.WaitFor(t, 10*time.Second, "the orphaned grandchild to become observable", func() bool {
 		raw, err := os.ReadFile(pidPath)
-		data := strings.TrimSpace(string(raw))
-		if err == nil && data != "" {
-			shellPID, convErr := strconv.Atoi(data)
-			if convErr == nil {
-				if native, state := testutil.InspectShellPID(shellPID); state == testutil.ShellPIDLive {
-					nativePID = native
-					break
-				}
-			}
+		if err != nil {
+			return false
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("grandchild never became observable; pid file contents %q", data)
+		shellPID, convErr := strconv.Atoi(strings.TrimSpace(string(raw)))
+		if convErr != nil {
+			return false
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		native, state := testutil.InspectShellPID(shellPID)
+		if state != testutil.ShellPIDLive {
+			return false
+		}
+		nativePID = native
+		return true
+	})
 	t.Cleanup(func() { _ = pidutil.KillTree(nativePID) })
 
 	if !pidutil.Alive(nativePID) {
@@ -75,13 +73,9 @@ func TestContainTerminateReachesAnOrphanedGrandchild(t *testing.T) {
 	if err := containment.Terminate(); err != nil {
 		t.Fatalf("Terminate() error = %v, want nil", err)
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for pidutil.Alive(nativePID) {
-		if time.Now().After(deadline) {
-			t.Fatalf("orphaned grandchild %d survived Terminate; the containment is not "+
-				"reaching descendants whose parent already exited", nativePID)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if !testutil.WaitUntil(15*time.Second, func() bool { return !pidutil.Alive(nativePID) }) {
+		t.Fatalf("orphaned grandchild %d survived Terminate; the containment is not "+
+			"reaching descendants whose parent already exited", nativePID)
 	}
 }
 

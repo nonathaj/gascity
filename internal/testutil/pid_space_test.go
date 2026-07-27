@@ -1,94 +1,53 @@
 package testutil
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
 
-// startShellChild starts a shell that records its own pid and then sleeps, returning the pid it
-// wrote (in the SHELL's numbering space) and a stop function.
-func startShellChild(t *testing.T, seconds int) (int, func()) {
-	t.Helper()
-	pidPath := filepath.Join(t.TempDir(), "child.pid")
-	script := "printf '%s\\n' \"$$\" > " + strconv.Quote(filepath.ToSlash(pidPath)) +
-		"; exec sleep " + strconv.Itoa(seconds)
-	cmd := exec.Command("sh", "-c", script)
-	if err := cmd.Start(); err != nil {
-		t.Skipf("cannot start sh: %v", err)
-	}
-	stopped := false
-	stop := func() {
-		if stopped {
-			return
-		}
-		stopped = true
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-	}
-	t.Cleanup(stop)
-
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		raw, err := os.ReadFile(pidPath)
-		text := strings.TrimSpace(string(raw))
-		if err == nil && text != "" {
-			pid, convErr := strconv.Atoi(text)
-			if convErr == nil && pid > 0 {
-				return pid, stop
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("shell child never recorded its pid at %s", pidPath)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
-
 // TestInspectShellPIDReportsALiveProcess covers the ShellPIDLive branch, and on Windows also
 // proves the mapping is real: the native pid it returns must differ from the MSYS pid the
-// shell wrote, because conflating the two is the bug this whole helper exists for.
+// shell wrote, because conflating the two is the bug this helper exists for.
 func TestInspectShellPIDReportsALiveProcess(t *testing.T) {
-	shellPID, _ := startShellChild(t, 30)
+	child := StartShellChild(t, "exec sleep 30")
 
-	nativePID, state := InspectShellPID(shellPID)
+	nativePID, state := InspectShellPID(child.ShellPID)
 	if state != ShellPIDLive {
-		t.Fatalf("InspectShellPID(%d) state = %v, want ShellPIDLive", shellPID, state)
+		t.Fatalf("InspectShellPID(%d) state = %v, want ShellPIDLive", child.ShellPID, state)
 	}
 	if nativePID <= 0 {
-		t.Fatalf("InspectShellPID(%d) native pid = %d, want a positive pid", shellPID, nativePID)
+		t.Fatalf("InspectShellPID(%d) native pid = %d, want a positive pid", child.ShellPID, nativePID)
 	}
-	if runtime.GOOS != "windows" && nativePID != shellPID {
+	if runtime.GOOS != "windows" && nativePID != child.ShellPID {
 		t.Fatalf("off Windows there is one pid space, so native pid %d should equal shell pid %d",
-			nativePID, shellPID)
+			nativePID, child.ShellPID)
 	}
 }
 
 // TestInspectShellPIDReportsAGoneProcess covers the ShellPIDGone branch — the one that makes a
 // death assertion possible at all. If this regressed to Unknown, every "the process was killed"
 // assertion in the suite would fail; if Unknown regressed to Gone, they would all pass
-// vacuously.
+// VACUOUSLY.
+//
+// The child is stopped through ShellChild.Stop, which kills what the reported pid actually
+// names. An earlier version killed the started command instead and failed on Windows for a
+// reason worth recording: Windows has no exec(2), so MSYS emulates `exec` by spawning a new
+// Windows process while KEEPING the MSYS pid. Killing the originally started process left the
+// reported pid still naming a live `sleep`, and InspectShellPID was right to say Live.
 func TestInspectShellPIDReportsAGoneProcess(t *testing.T) {
-	shellPID, stop := startShellChild(t, 30)
-	stop()
-
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		_, state := InspectShellPID(shellPID)
-		if state == ShellPIDGone {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("InspectShellPID(%d) state = %v after the process was killed, want "+
-				"ShellPIDGone", shellPID, state)
-		}
-		time.Sleep(100 * time.Millisecond)
+	child := StartShellChild(t, "exec sleep 30")
+	if _, state := InspectShellPID(child.ShellPID); state != ShellPIDLive {
+		t.Fatalf("child pid %d was not live before being stopped, so its later absence "+
+			"would prove nothing", child.ShellPID)
 	}
+
+	child.Stop()
+
+	WaitFor(t, 15*time.Second, "the stopped child to leave the process table", func() bool {
+		_, state := InspectShellPID(child.ShellPID)
+		return state == ShellPIDGone
+	})
 }
 
 // TestInspectShellPIDRefusesToAnswerForNonsense pins that a pid which cannot mean anything
@@ -104,14 +63,14 @@ func TestInspectShellPIDRefusesToAnswerForNonsense(t *testing.T) {
 
 // TestNativePIDForShellPIDMapsALiveProcess covers the kill-oriented helper's success path.
 func TestNativePIDForShellPIDMapsALiveProcess(t *testing.T) {
-	shellPID, _ := startShellChild(t, 30)
+	child := StartShellChild(t, "exec sleep 30")
 
-	nativePID, ok := NativePIDForShellPID(shellPID)
+	nativePID, ok := NativePIDForShellPID(child.ShellPID)
 	if !ok {
-		t.Fatalf("NativePIDForShellPID(%d) ok = false, want true for a live process", shellPID)
+		t.Fatalf("NativePIDForShellPID(%d) ok = false, want true for a live process", child.ShellPID)
 	}
 	if nativePID <= 0 {
-		t.Fatalf("NativePIDForShellPID(%d) = %d, want a positive pid", shellPID, nativePID)
+		t.Fatalf("NativePIDForShellPID(%d) = %d, want a positive pid", child.ShellPID, nativePID)
 	}
 }
 

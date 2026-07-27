@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // managedDoltPidSpaceStart runs the pack script's REAL managed-dolt start with GC_BIN
@@ -90,15 +90,7 @@ esac
 	})
 
 	// Satisfy the readiness probe once the spawn has happened.
-	var ln net.Listener
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) && ln == nil {
-		if l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port))); err == nil {
-			ln = l
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	ln := testutil.ListenWhenPortFree(20*time.Second, "127.0.0.1", port)
 	if ln != nil {
 		t.Cleanup(func() { _ = ln.Close() })
 	}

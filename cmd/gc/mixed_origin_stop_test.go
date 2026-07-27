@@ -12,6 +12,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/pidutil"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // TestMixedOriginStopTerminatesHelperRecordedServer is plan item #6 from
@@ -107,12 +108,8 @@ func TestMixedOriginStopTerminatesHelperRecordedServer(t *testing.T) {
 	), binDir)
 	out, runErr := cmd.CombinedOutput()
 
-	deadline := time.Now().Add(45 * time.Second)
-	for time.Now().Before(deadline) {
-		if !pidutil.Alive(nativePID) {
-			return
-		}
-		time.Sleep(200 * time.Millisecond)
+	if testutil.WaitUntil(45*time.Second, func() bool { return !pidutil.Alive(nativePID) }) {
+		return
 	}
 	t.Fatalf("the script's stop op left pid %d running (stop err %v). A stop that reports "+
 		"success without stopping is the gw-1ay symptom; a stop that cannot recognise or "+
