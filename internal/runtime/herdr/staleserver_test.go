@@ -5,20 +5,28 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
-// shortHome returns a short temp dir set as $HOME. The default t.TempDir()
-// (/var/folders/… on macOS) blows past the 104-byte unix-socket sun_path limit
-// once socketPath() appends .config/herdr/sessions/<name>/herdr.sock, so we root
-// under /tmp instead.
+// shortHome points this test's home directory at a short-pathed temp dir.
+//
+// Short because the default t.TempDir() (/var/folders/… on macOS) blows past the 104-byte
+// unix-socket sun_path limit once socketPath() appends
+// .config/herdr/sessions/<name>/herdr.sock.
+//
+// Two things here were wrong on Windows and are worth stating, because both were silent:
+//
+//   - os.MkdirTemp("/tmp", …) — "/tmp" has no volume on Windows, so it resolves against
+//     the current drive. It worked only on a machine that happened to have a D:\tmp.
+//   - t.Setenv("HOME", …) alone did not redirect anything. client.go resolves the home dir
+//     with os.UserHomeDir, which reads USERPROFILE on Windows (doctrine T1), so these
+//     tests created real sockets under the developer's actual profile
+//     (~/.config/herdr/sessions/staletest) and were never isolated there at all. Leftover
+//     state from a previous run then sits in the exact path a stale-socket test inspects.
 func shortHome(t *testing.T) {
 	t.Helper()
-	home, err := os.MkdirTemp("/tmp", "hdr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(home) })
-	t.Setenv("HOME", home)
+	testutil.SetTestHome(t, testutil.ShortTempDir(t, "hdr"))
 }
 
 // A stale socket inode — left by a herdr server that exited uncleanly — must not

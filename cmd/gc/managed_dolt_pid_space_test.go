@@ -26,7 +26,7 @@ import (
 //   - It cannot be driven through the prelude-override harness other script tests use:
 //     the env→globals initialisation (DATA_DIR, LOCK_FILE, …) lives in the script's
 //     Main section, so calling op_start against the prelude alone leaves those empty
-//     and the script dies in `mkdir -p '' .`.
+//     and the script dies in a `mkdir -p` whose first argument is empty.
 //   - Readiness is satisfied by binding the port from Go AFTER the spawn. Binding it
 //     first would make the script treat the port as already-served and adopt instead
 //     of spawning, which is not the path under test.

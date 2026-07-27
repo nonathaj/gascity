@@ -20,6 +20,8 @@ func TestStaleManagedDoltSocketPathsExcludesMysqlSock(t *testing.T) {
 		// /tmp to seed).
 		t.Skip("unix /tmp socket sweep is Unix-specific")
 	}
+	// gc:allow-rootless-tmp: the sweep under test globs a hardcoded /tmp, so the socket
+	// must live there for the test to mean anything. Skipped off Unix above.
 	tmpSock, err := os.CreateTemp("/tmp", "dolt-preflight-cleanup-*.sock")
 	if err != nil {
 		t.Fatal(err)

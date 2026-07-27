@@ -43,6 +43,8 @@ func TestCmdGCTempRootPrefixKeepsControllerSocketLegacy(t *testing.T) {
 		// has no /tmp and controllerSocketPath hash-falls-back there anyway.
 		t.Skip("legacy /tmp controller-socket length budget is Unix-specific")
 	}
+	// gc:allow-rootless-tmp: this asserts the legacy /tmp controller-socket length budget,
+	// so the path root is the subject of the test. Skipped off Unix above.
 	root, err := os.MkdirTemp("/tmp", pidPrefixedTempPattern(testCmdGCTempRootPrefix))
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)

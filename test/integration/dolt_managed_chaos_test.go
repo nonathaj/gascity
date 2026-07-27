@@ -324,6 +324,8 @@ func setupManagedDoltChaosHarness(t *testing.T, seed int64) *managedDoltChaosHar
 	t.Helper()
 
 	env := newIsolatedCommandEnv(t, true)
+	// gc:allow-rootless-tmp: chaos lane is Unix-only (build tag integration && chaos_dolt).
+	// If it is ever run on Windows, switch to testutil.ShortTempDir.
 	root, err := os.MkdirTemp("/tmp", "mdc-*")
 	if err != nil {
 		t.Fatalf("mktemp short chaos root: %v", err)
