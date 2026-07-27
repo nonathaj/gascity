@@ -1,5 +1,9 @@
 //go:build !windows
 
+// Package winsec restricts filesystem access to the owner. On Windows that means a
+// protected owner-only DACL, because os.Chmod there only toggles the read-only bit and
+// cannot revoke access; everywhere else the caller's chmod is the native mechanism, so
+// the entry points in this file are no-ops that exist to keep call sites platform-free.
 package winsec
 
 // RestrictToOwner is a no-op on non-Windows platforms: callers restrict access

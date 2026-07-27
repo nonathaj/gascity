@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"testing"
@@ -64,8 +65,8 @@ func TestStartExitWatchdogEndsHungBinary(t *testing.T) {
 	if err == nil {
 		t.Fatalf("hung helper exited cleanly in %v; watchdog did not fire:\n%s", elapsed, out)
 	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
 		t.Fatalf("helper error = %v (not an exit error):\n%s", err, out)
 	}
 	if code := exitErr.ExitCode(); code != 2 {
