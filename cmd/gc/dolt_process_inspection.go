@@ -578,7 +578,25 @@ func loadDoltRuntimeStateDataDir(path string) string {
 	return state.DataDir
 }
 
+// processArgs returns another process's argv as a single string, for the ownership checks
+// that tell OUR dolt from an imposter.
+//
+// pidutil.Cmdline goes first because it is the only source that answers on every supported
+// platform: it reads /proc on Linux and walks the target's PEB on Windows. The two older
+// sources below cannot answer on Windows at all — there is no /proc, and Git for Windows'
+// ps rejects `-o` (the same limitation behind gw-1ay in the pack script). With both failing,
+// every ownership question there answered "not ours", and only a pid-equality shortcut in
+// managedDoltRuntimeProcessOwned kept gc recognising its own server.
+//
+// The old sources stay as fallbacks rather than being deleted: Cmdline reports
+// ErrCmdlineUnsupported on darwin, where ps is the working answer, and on Windows the PEB
+// read can legitimately fail for a process owned by another user or running elevated. Losing
+// argv then degrades ownership to "not ours" exactly as before, which is the same answer
+// today — no worse, and better wherever the native read succeeds.
 func processArgs(pid int) (string, error) {
+	if argv, err := pidutil.Cmdline(pid); err == nil && len(argv) > 0 {
+		return strings.Join(argv, " "), nil
+	}
 	if args, err := processArgsFromProc(pid); err == nil && args != "" {
 		return args, nil
 	}

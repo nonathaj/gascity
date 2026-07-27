@@ -227,6 +227,42 @@ port holder would be accepted as managed dolt without ever verifying it *is* dol
 Vanishingly unlikely, but it is the same short-circuit, so making ownership
 authoritative fixes it too.
 
+## 8c. Phase 3 attempted: prerequisite landed, fixtures are the blocker (2026-07-27)
+
+Phase 3 was attempted and is now split by what actually blocks it.
+
+**Prerequisite — DONE.** `processArgs` (cmd/gc/dolt_process_inspection.go) had two sources,
+`/proc/<pid>/cmdline` and `ps -p <pid> -o args=`, and NEITHER works on Windows: no /proc, and
+Git for Windows' ps rejects `-o` — the same limitation behind gw-1ay in the pack script. So
+ownership inspection answered "not ours" for every pid on Windows, and the pid-equality
+shortcut was the only reason gc recognised its own server. Demonstrated with
+`TestProcessArgsReadsAnotherProcessArgvOnEveryPlatform`, which failed with
+`processArgs(pid) = ""`. Fixed by delegating to `pidutil.Cmdline` first, which reads /proc on
+Linux and walks the target's PEB on Windows; the old sources stay as fallbacks for darwin
+(`ErrCmdlineUnsupported`) and for PEB reads that fail on another user's process.
+
+**Remaining blocker — fixtures, not mechanism.** With argv readable, removing the three-line
+shortcut turns at least six tests red:
+
+- `TestCurrentDoltPortPrefersRuntimeState`
+- `TestEnsureBeadsProviderPublishesManagedDoltRuntimeStateFromProviderState`
+- `TestPublishManagedDoltRuntimeStateIfOwnedPublishesForInheritedBdRigUnderFileCity`
+- `TestResolvedRuntimeCityDoltTargetWithoutRecoveryDoesNotPublishProviderState`
+- `TestResolvedRuntimeCityDoltTargetSurfacesNotOwnedProviderStateWhenNoFallbackResolves`
+- `TestResolvedRuntimeCityDoltTargetFallsBackToResolvablePortWhenPublishWriteFails`
+
+Every one fabricates running managed dolt as `PID: os.Getpid()` with the test binary holding
+the port. That stand-in carries no `--config` of ours, so once inspection is authoritative it
+is correctly NOT ours — these tests pass today *because of* the shortcut they would need
+removed. The fix is a stand-in that both holds the port and carries dolt-like argv, i.e. a
+re-exec helper rather than a pid literal. `os.Getpid()` cannot be given an argv, so this is a
+real migration, not a search-and-replace.
+
+`TestOwnershipIsAuthoritativeNotPidEquality` (plan item 7) is committed and skipped against
+the shortcut, with the blocker named in its skip reason. It has been run and it fails, so the
+target contract is recorded as executable evidence rather than prose. Un-skipping it is the
+last step of Phase 3.
+
 ## 8b. Questions 2 and 3: reviewed (both change the plan)
 
 ### Q2 — why is `GC_BIN` stripped? CORRECTION: it is not.

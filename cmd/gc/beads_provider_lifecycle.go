@@ -1537,6 +1537,26 @@ func managedDoltRuntimeProcessOwned(state doltRuntimeState, layout managedDoltRu
 	if deleted {
 		return false
 	}
+	// PID-EQUALITY SHORTCUT — still here, deliberately, and its removal is gw-dbm Phase 3.
+	//
+	// This returns true without consulting ownership inspection, so the remembered pid is the
+	// whole answer: a process holding the port whose pid matches state.PID is accepted as
+	// managed dolt even when inspection says it is not dolt at all (measured in
+	// engdocs/contributors/windows-pid-space.md 8a MEASURE 2). That leaves a recycled-pid hole,
+	// and it blocks deriving the pid from the port — the derivation would compare holderPID to
+	// itself and accept anything listening.
+	//
+	// The mechanical prerequisite is now DONE: processArgs reads argv natively on Windows via
+	// pidutil.Cmdline, so inspection can answer there instead of saying "not ours" for every
+	// pid. What remains is not mechanism, it is fixtures. Removing these three lines turns at
+	// least six tests red, because they fabricate "running managed dolt" as
+	// `PID: os.Getpid()` with the test binary holding the port — a stand-in that carries no
+	// --config of ours and therefore is correctly NOT ours once inspection is authoritative.
+	// They pass today BECAUSE of this shortcut. Making them faithful means a stand-in that both
+	// holds the port and carries dolt-like argv, i.e. a re-exec helper, not a pid literal.
+	//
+	// TestOwnershipIsAuthoritativeNotPidEquality encodes the target contract and is skipped
+	// against this, so the intended behaviour is recorded rather than merely described.
 	if holderPID == state.PID {
 		return true
 	}
