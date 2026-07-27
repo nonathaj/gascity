@@ -1189,15 +1189,12 @@ kill_imposter() {
     echo "killing imposter dolt server (PID $pid) on port $DOLT_PORT" >&2
     pid_kill "$pid" || return 0
 
-    # Wait up to 5s for graceful shutdown.
-    local waited=0
-    while [ "$waited" -lt 5 ]; do
-        if ! pid_alive "$pid"; then
-            return 0
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
+    # Wait up to 5s of wall clock for graceful shutdown. Same measured-not-counted budget
+    # as graceful_stop_owned_pid, via the same helper: a second hand-rolled poll loop here
+    # would drift from that one and stretch on exactly the platforms it did before.
+    if wait_pid_exit_until "$pid" "$IMPOSTER_GRACE_SECONDS"; then
+        return 0
+    fi
 
     # Force kill.
     pid_kill "$pid" force
@@ -1247,6 +1244,62 @@ lock_release_timeout_ms() {
     esac
 }
 
+# clock_seconds prints the current wall-clock time in whole seconds.
+#
+# Deliberately reads `date` directly rather than going through current_time_ms: that
+# helper prefers the gc binary when one is available, which is the right trade for a
+# one-shot timestamp but not inside a poll, where a gc process spawn per iteration would
+# cost far more than the budget it is policing. Returns 1 when no usable clock is
+# available so callers can fall back rather than treat a failure as time zero.
+clock_seconds() {
+    local now
+    now=$(date +%s 2>/dev/null) || return 1
+    case "$now" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s\n' "$now"
+}
+
+# wait_pid_exit_until waits for PID ($1) to exit, for at most BUDGET_S ($2) seconds of
+# wall clock. Returns 0 as soon as the process is gone, 1 if the budget is exhausted.
+#
+# The budget is measured, not counted. An iteration-counted wait spends N polls, so its
+# real duration is N x (probe + sleep) and its wall-clock meaning changes per platform:
+# the intended 30s grace here measured 124s on Windows, where a single pid_alive costs
+# ~560ms and `sleep` is itself a process spawn. That matters beyond latency, because the
+# same number is meant to match the gc helper's dolt_stop_timeout — two tiers agreeing on
+# "30s" while one of them actually waits 124s is the kind of skew that makes a stop look
+# hung.
+#
+# Reading a clock per poll costs one `date` (~165ms on Windows, small against a ~2s poll).
+# When no clock is available the wait falls back to counting polls at the nominal 500ms
+# cadence: that restores the old stretch, which is survivable, whereas trusting a failed
+# clock read would turn a bounded wait into an unbounded spin and hang stop outright.
+wait_pid_exit_until() {
+    local pid="$1" budget_s="$2" start_s now_s polls=0 max_polls
+    [ -n "$pid" ] || return 0
+    max_polls=$((budget_s * 2))
+    start_s=$(clock_seconds) || start_s=""
+    while pid_alive "$pid"; do
+        if [ -n "$start_s" ]; then
+            now_s=$(clock_seconds) || now_s=""
+            if [ -n "$now_s" ]; then
+                [ "$((now_s - start_s))" -lt "$budget_s" ] || return 1
+            else
+                # The clock worked at entry and does not now; stop trusting it and let
+                # the poll counter below bound the rest of the wait.
+                start_s=""
+            fi
+        fi
+        if [ -z "$start_s" ]; then
+            polls=$((polls + 1))
+            [ "$polls" -lt "$max_polls" ] || return 1
+        fi
+        sleep 0.5 2>/dev/null || sleep 1
+    done
+    return 0
+}
+
 # wait_dolt_data_lock_free blocks until no live process holds a dolt
 # exclusive store lock under DATA_DIR, or LOCK_RELEASE_TIMEOUT_MS elapses.
 # Lock release on a clean dolt shutdown happens only after the chunk journal
@@ -1269,26 +1322,26 @@ wait_dolt_data_lock_free() {
     done
 }
 
+# SIGTERM_GRACE_SECONDS is how long a dolt server gets to exit on its own after SIGTERM
+# before a lock-gated force kill. It mirrors the gc helper's default dolt_stop_timeout, so
+# both tiers grant the same grace.
+SIGTERM_GRACE_SECONDS=30
+
+# IMPOSTER_GRACE_SECONDS is the shorter grace given to a process squatting on our port
+# that is NOT one of ours. It is not journal-flush-sensitive the way our own server is, so
+# it does not get the full SIGTERM grace.
+IMPOSTER_GRACE_SECONDS=5
+
 # graceful_stop_owned_pid stops one of OUR dolt server processes without ever
-# SIGKILLing it mid-journal-write: SIGTERM, wait for exit (60 × 500ms = 30s,
-# matching the gc helper's default dolt_stop_timeout), then force-kill only if
-# the dolt exclusive store lock is free. After exit, blocks until the lock is
-# released so a follow-up start cannot bind the data_dir mid-flush. Returns 1
-# (fail closed) when the process survives while still holding the lock.
+# SIGKILLing it mid-journal-write: SIGTERM, wait SIGTERM_GRACE_SECONDS of wall clock for
+# exit, then force-kill only if the dolt exclusive store lock is free. After exit, blocks
+# until the lock is released so a follow-up start cannot bind the data_dir mid-flush.
+# Returns 1 (fail closed) when the process survives while still holding the lock.
 graceful_stop_owned_pid() {
-    local pid="$1" waited=0 holder lock_window_ms lock_deadline_ms now_ms
+    local pid="$1" holder lock_window_ms lock_deadline_ms now_ms
     [ -n "$pid" ] || return 0
     pid_kill "$pid"
-    # NOTE: iteration-counted, so on Windows this budget stretches — pid_alive costs
-    # ~560ms for a native pid (ps -W; tasklist //FI measured worse), making 60 x 500ms
-    # take ~63s of wall clock instead of 30s. Pre-existing, since the gc helper already
-    # hands this function native pids. Converting to a deadline is tracked separately;
-    # it is deliberately not bundled here because current_time_ms can fail and may
-    # shell out to gc, which would cost more inside a poll than it saves.
-    while [ "$waited" -lt 60 ] && pid_alive "$pid"; do
-        sleep 0.5 2>/dev/null || sleep 1
-        waited=$((waited + 1))
-    done
+    wait_pid_exit_until "$pid" "$SIGTERM_GRACE_SECONDS" || true
     if pid_alive "$pid"; then
         # The process outlived the SIGTERM grace. Extend the wait by the
         # lock-release window while the store lock is held — the holder is
@@ -3258,8 +3311,7 @@ op_stop_impl() {
 
     drain_connections_before_stop
 
-    # SIGTERM and wait (60 × 500ms = 30s grace, matching the gc helper's
-    # default dolt_stop_timeout), then a
+    # SIGTERM and wait SIGTERM_GRACE_SECONDS for a clean exit, then a
     # lock-gated force kill: SIGKILL is only safe when the dolt exclusive
     # store lock is free — a holder is mid-flush, and killing it tears the
     # noms journal (gastownhall/gascity#3174). graceful_stop_owned_pid also

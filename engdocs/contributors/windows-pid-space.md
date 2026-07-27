@@ -478,8 +478,17 @@ Two consequences:
    institutionalise a second space rather than remove the confusion.
 2. **The `ps -W` cost is already being paid.** For any gc-helper-supplied pid the
    `kill -0` fast path fails and every poll falls through to `ps -W`. A 30s graceful
-   stop already takes ~63s of wall clock on Windows (60 x (500ms sleep + 560ms probe)).
-   That is a pre-existing degradation, not something Option A would introduce.
+   stop already overruns badly on Windows. That is a pre-existing degradation, not
+   something Option A would introduce.
+
+   **Measured (2026-07-27), correcting the ~63s estimate first written here.** The real
+   figure is **124s for the intended 30s** — 4.1x, not 2x. Phase-timing the stop op
+   (`TestMixedOriginStopTerminatesHelperRecordedServer`) attributed 140s of stop as:
+   `pid_kill` term 2s, **wait loop 124s**, force kill 2s, ~12s elsewhere. The estimate
+   was low because it counted the 560ms probe but treated `sleep 0.5` as costing 500ms;
+   under MSYS `sleep` is itself a process spawn, making each poll ~2.07s rather than
+   ~1.06s. Lesson: on Windows every coreutil in a loop body is a process spawn, so
+   per-iteration cost must be measured, not summed from the parts.
 
 `tasklist //FI "PID eq N" //NH` was measured as an alternative: it works (the `//FI`
 escape defeats MSYS argument mangling) but costs **1371ms**, worse than `ps -W`.
