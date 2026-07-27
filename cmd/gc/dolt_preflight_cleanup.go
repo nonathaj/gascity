@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 )
 
 var managedDoltPreflightCleanupFn = preflightManagedDoltCleanup
@@ -115,7 +116,7 @@ func fileOpenedByAnyProcess(path string) (bool, error) {
 		if cmd.Process == nil {
 			return nil
 		}
-		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
 		return nil

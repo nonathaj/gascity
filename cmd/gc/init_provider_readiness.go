@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -453,7 +452,7 @@ func uniqueProbeNames(targets []initProviderTarget) []string {
 }
 
 func shellQuotePath(path string) string {
-	return shellQuotePathForOS(path, runtime.GOOS)
+	return shellQuotePathForOS(path, goruntime.GOOS)
 }
 
 func shellQuotePathForOS(path, goos string) string {

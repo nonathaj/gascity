@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"io"
 	"net"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/gastownhall/gascity/internal/beads/contract"
 	"github.com/gastownhall/gascity/internal/config"

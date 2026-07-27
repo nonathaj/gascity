@@ -45,7 +45,7 @@ func makeRetryControl(t *testing.T, store beads.Store, stepRef string, spec *for
 			"gc.control_epoch":    "1",
 		},
 	})
-	return
+	return root, control
 }
 
 // makeAttemptBead creates and closes an attempt bead with the given outcome metadata.

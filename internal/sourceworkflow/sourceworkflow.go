@@ -15,13 +15,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"

@@ -21,6 +21,9 @@ func TestSymlinkCapabilityCheckFailureCarriesGuidance(t *testing.T) {
 	c := &SymlinkCapabilityCheck{
 		probeDir: t.TempDir(),
 		symlink: func(_, _ string) error {
+			// Verbatim Windows text: the check under test matches on this exact wording,
+			// so Go error-string style is deliberately not applied here.
+			//nolint:revive // reproduces the OS message the production check parses
 			return errors.New("A required privilege is not held by the client.")
 		},
 	}

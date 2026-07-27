@@ -902,7 +902,7 @@ func initBeadsForDirWithExecutor(cityPath, dir, prefix, doltDatabase string, exe
 	//
 	// The chmod is done HERE rather than left to the bd pack script, even though the script
 	// also chmods. Relying on the script made gc's guarantee conditional on the script having
-	// run, so any path that initialised a store without it — a stubbed executor, a deferred or
+	// run, so any path that initialized a store without it — a stubbed executor, a deferred or
 	// seeded provider — left the store at whatever mode `mkdir -p` produced (0755 under a
 	// typical umask, i.e. world-readable). "gc restricts the beads store itself, on every
 	// platform" has to mean gc, not gc-if-the-script-ran.
@@ -2111,7 +2111,7 @@ func runProviderProbe(script, cityPath, provider string) bool {
 	}
 	// Same containment as runProviderOpWithEnvContext: Start/Wait so the child can
 	// be placed in a kill-on-close Job Object between the two. The probe script is
-	// sh like every other provider op, so a cancelled probe otherwise leaves the
+	// sh like every other provider op, so a canceled probe otherwise leaves the
 	// backgrounded grandchild running (gw-591).
 	return runContainedProviderCommand(cmd) == nil
 }

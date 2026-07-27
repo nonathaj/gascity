@@ -31,7 +31,7 @@ import (
 //     first would make the script treat the port as already-served and adopt instead
 //     of spawning, which is not the path under test.
 //   - No python3/dolt dependency: Git-Bash ships neither (doctrine T8/T12), and the
-//     contract under test is pid bookkeeping, not dolt behaviour.
+//     contract under test is pid bookkeeping, not dolt behavior.
 func managedDoltPidSpaceStart(t *testing.T) doltRuntimeState {
 	t.Helper()
 	skipSlowCmdGCTest(t, "runs the real gc-beads-bd start path with a fake dolt; run make test-cmd-gc-process for full coverage")

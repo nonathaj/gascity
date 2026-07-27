@@ -7,12 +7,13 @@ package supervisor
 import (
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/pathutil"

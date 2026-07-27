@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,9 +49,6 @@ func TestManagedDoltTestParentDoneClosesOnPipeEOF(t *testing.T) {
 }
 
 func TestManagedDoltWatchdogParentPipeEOFHonorsDisarm(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX process semantics required")
-	}
 	withManagedDoltTestMode(t, false)
 	t.Setenv(managedDoltTestModeEnv, "1")
 	fakeDoltDir := writeFakeDoltSQLServer(t)
@@ -131,9 +127,6 @@ func TestManagedDoltWatchdogParentPipeEOFHonorsDisarm(t *testing.T) {
 // child, call terminateManagedDoltTestPID on the shell. Both must die.
 // Without the M3 fix (leader-only kill), the child outlives the shell.
 func TestTerminateManagedDoltTestPIDKillsProcessGroup(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX process-group signal semantics required")
-	}
 	processgrouptest.RequireRealProcessSignals(t)
 	dir := t.TempDir()
 	childFile := filepath.Join(dir, "child.pid")
@@ -193,9 +186,6 @@ func TestTerminateManagedDoltTestPIDKillsProcessGroup(t *testing.T) {
 // child of the test binary that did NOT call Setpgid; it inherits the test
 // binary's group. Terminate must only kill the child.
 func TestTerminateManagedDoltTestPIDLeaderOnlyForNonGroupLeader(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX process-group signal semantics required")
-	}
 	// Spawn a sleep WITHOUT Setpgid — it inherits the test binary's pgid.
 	cmd := exec.Command("sleep", "60")
 	if err := cmd.Start(); err != nil {

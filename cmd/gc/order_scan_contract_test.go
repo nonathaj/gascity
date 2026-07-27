@@ -39,7 +39,7 @@ func contractCitySetup(t *testing.T) (cityPath, formulasDir string) {
 	if err := os.MkdirAll(formulasDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return
+	return cityPath, formulasDir
 }
 
 // TestOrderScanContractNoCityScanDouble verifies that city orders are not

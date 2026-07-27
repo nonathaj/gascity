@@ -506,7 +506,7 @@ func stopManagedDoltTestPID(t *testing.T, pid int) {
 	if pid <= 0 || !managedStopPIDAlive(pid) {
 		return
 	}
-	if err := platformKill(pid, syscall.SIGTERM); err != nil && err != syscall.ESRCH {
+	if err := platformKill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("signal dolt test pid %d with SIGTERM: %v", pid, err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -516,7 +516,7 @@ func stopManagedDoltTestPID(t *testing.T, pid int) {
 	if !managedStopPIDAlive(pid) {
 		return
 	}
-	if err := platformKill(pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+	if err := platformKill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("signal dolt test pid %d with SIGKILL: %v", pid, err)
 	}
 	deadline = time.Now().Add(time.Second)

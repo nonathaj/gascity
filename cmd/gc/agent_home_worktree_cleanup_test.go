@@ -54,7 +54,7 @@ func setupAgentHomeWorktreeCleanupTest(t *testing.T) (cityPath, builderWTPath st
 		t.Fatalf("creating builder worktree: %v", err)
 	}
 	store = beads.NewMemStore()
-	return
+	return cityPath, builderWTPath, store
 }
 
 func agentHomeConfig() *config.City {

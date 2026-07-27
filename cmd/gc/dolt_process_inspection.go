@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -365,7 +366,7 @@ func lsofOutput(args ...string) ([]byte, error) {
 		if cmd.Process == nil {
 			return nil
 		}
-		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
 		return nil
@@ -616,7 +617,7 @@ func processArgsFromPS(pid int, timeout time.Duration) (string, error) {
 		if cmd.Process == nil {
 			return nil
 		}
-		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		if err := platformKillGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
 		return nil

@@ -4,9 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 // withTargetLock serializes writers that target the same provider-native MCP

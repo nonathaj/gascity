@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // DefaultExecSinkTimeout bounds a single ExecSink.Record invocation. The [Sink]

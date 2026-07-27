@@ -11,11 +11,11 @@ import (
 // KillTree terminates pid and every process descended from it.
 //
 // The Unix counterpart of the Windows taskkill /T walk. Here the durable grouping is the
-// process group: signalling the negative pid reaches every member, including descendants that
+// process group: signaling the negative pid reaches every member, including descendants that
 // have been orphaned and re-parented, which is precisely what a tree walk cannot do once an
 // intermediate parent exits.
 //
-// The group signal is attempted first and the process itself is signalled as a fallback,
+// The group signal is attempted first and the process itself is signaled as a fallback,
 // because a pid is only a group leader if it was spawned with Setpgid. ESRCH is not an error
 // for a function whose contract is "make sure this is gone" — a process that already exited
 // satisfies that.

@@ -29,7 +29,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -38,6 +37,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 )
 
 const (

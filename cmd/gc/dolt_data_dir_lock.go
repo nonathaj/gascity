@@ -3,13 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/config"
 )

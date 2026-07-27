@@ -17,7 +17,7 @@ import (
 // cleanup remains direct-process-only until provider ops use job objects". That
 // leaked processes: provider scripts run under sh.exe (execshim), so the actual
 // work — dolt, bd — is a GRANDCHILD, and terminating sh.exe leaves it running
-// with the pipes still open. A cancelled or timed-out provider op therefore
+// with the pipes still open. A canceled or timed-out provider op therefore
 // stranded a dolt server on the machine every time, which is the same class of
 // leak as incident gw-qhs (1583 orphaned processes, 93GB).
 //

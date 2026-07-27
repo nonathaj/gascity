@@ -5,13 +5,13 @@ import (
 	"errors"
 	"os"
 	osexec "os/exec"
-
-	"github.com/gastownhall/gascity/internal/execshim"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // newSliceTestTmux returns a Tmux backed by a fakeExecutor with the agent

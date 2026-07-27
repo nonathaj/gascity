@@ -100,7 +100,7 @@ echo waited
 		t.Fatalf("wait did not run to completion without a clock; output:\n%s", out)
 	}
 	if strings.Contains(out, "UNEXPECTED_EXIT") {
-		t.Fatalf("wait reported an exit the probe never signalled; output:\n%s", out)
+		t.Fatalf("wait reported an exit the probe never signaled; output:\n%s", out)
 	}
 	if elapsed > 30*time.Second {
 		t.Fatalf("wait took %s with no clock available: the fallback is not bounding the "+

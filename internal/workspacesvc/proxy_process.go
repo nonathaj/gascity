@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -16,6 +15,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"

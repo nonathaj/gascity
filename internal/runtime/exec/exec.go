@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"os"
 	"os/exec"
 	"strconv"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/runtime"
 )

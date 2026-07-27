@@ -52,7 +52,7 @@ func KillFromPIDFile(t *testing.T, path string) {
 	//
 	// Map first, and if the mapping cannot be established, kill NOTHING. Leaking a bounded
 	// test child is a far smaller cost than killing something that was never ours. Off
-	// Windows this is identity, so behaviour there is unchanged.
+	// Windows this is identity, so behavior there is unchanged.
 	nativePID, ok := testutil.NativePIDForShellPID(pid)
 	if !ok {
 		t.Logf("skipping kill of pid %d from %s: could not map it to a native pid, and "+

@@ -54,10 +54,9 @@ func AliveWithCmdline(pid int, match func([]string) bool) bool {
 	}
 	argv, err := Cmdline(pid)
 	if err != nil {
-		if errors.Is(err, ErrCmdlineUnsupported) {
-			return true
-		}
-		return false
+		// A host that cannot report a command line cannot refute the match either, so the
+		// caller's liveness answer stands rather than being downgraded to "not ours".
+		return errors.Is(err, ErrCmdlineUnsupported)
 	}
 	return match(argv)
 }

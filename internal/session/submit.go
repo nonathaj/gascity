@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
-	"github.com/gastownhall/gascity/internal/processgroup"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/citylayout"

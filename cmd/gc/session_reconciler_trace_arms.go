@@ -2,10 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/fsys"

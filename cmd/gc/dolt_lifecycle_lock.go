@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/gastownhall/gascity/internal/fslock"
 	"os"
 	"path/filepath"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 func openManagedDoltLifecycleLock(cityPath string) (*os.File, managedDoltRuntimeLayout, error) {

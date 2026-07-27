@@ -4338,15 +4338,15 @@ func TestStopManagedCityForcesCleanupAfterTimeout(t *testing.T) {
 	// was ignored and a default was used instead", not to measure the 60ms. It has to sit
 	// in the gap between those two outcomes:
 	//
-	//   - honoured: 60ms plus fixed overhead unrelated to any timeout. This test spawns a
+	//   - honored: 60ms plus fixed overhead unrelated to any timeout. This test spawns a
 	//     spy script through GC_BEADS=exec:, and a process spawn alone costs ~165ms on
 	//     Windows. An earlier 500ms bound failed here at 693ms — flaky on load, and
-	//     measuring host scheduling rather than the behaviour under test.
+	//     measuring host scheduling rather than the behavior under test.
 	//   - ignored: the defaults are 5s (shutdown_timeout) and 2m (drift_drain_timeout), so
 	//     any regression that drops the config lands at 5s or worse.
 	//
 	// 3s therefore keeps the discrimination — it is comfortably under the smallest default
-	// — while leaving 4x headroom over the worst honoured run observed. Raising it to 5s
+	// — while leaving 4x headroom over the worst honored run observed. Raising it to 5s
 	// instead would silently destroy the assertion by colliding with that default.
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("stopManagedCity took %s, want the configured 20ms timeouts to bound it "+

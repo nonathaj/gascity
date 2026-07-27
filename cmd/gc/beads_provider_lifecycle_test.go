@@ -5808,7 +5808,7 @@ func TestGcBeadsBdInitFailsWhenBeadsDirPermissionsCannotBeTightened(t *testing.T
 	// on Windows, and establishing why took three CI runs: with the test's bin dir
 	// confirmed as PATH[0] and a fake `chmod` confirmed present in it, Git for
 	// Windows' sh still resolved chmod to /usr/bin/chmod. An extensionless script
-	// written by Go carries no execute permission MSYS recognises on the runner's
+	// written by Go carries no execute permission MSYS recognizes on the runner's
 	// volume, so it is skipped during PATH search. A shell function is resolved
 	// before PATH is consulted at all, so it is immune both to that and to
 	// execshim's coreutils PATH injection.

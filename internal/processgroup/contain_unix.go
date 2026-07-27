@@ -14,7 +14,7 @@ import "os/exec"
 type Containment struct{}
 
 // Contain returns an inert containment; Unix needs no extra grouping.
-func Contain(cmd *exec.Cmd) *Containment { return &Containment{} }
+func Contain(_ *exec.Cmd) *Containment { return &Containment{} }
 
 // Terminate does nothing; Terminate on the process group already covers this.
 func (c *Containment) Terminate() error { return nil }

@@ -85,7 +85,7 @@ func absFixture(p string) string {
 // resolution — an extensionless script is invisible there, so the REAL tool on
 // the host PATH would silently take over (doctrine T3; same pattern as
 // internal/beads installFakeBDOnPath).
-func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) string {
+func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) {
 	t.Helper()
 	impl := filepath.Join(binDir, name)
 	if err := os.WriteFile(impl, []byte(shBody), 0o755); err != nil {
@@ -97,7 +97,6 @@ func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) string {
 			t.Fatalf("WriteFile fake %s.bat: %v", name, err)
 		}
 	}
-	return impl
 }
 
 // denyDirWrites blocks file creation/writes in dir for the remainder of the

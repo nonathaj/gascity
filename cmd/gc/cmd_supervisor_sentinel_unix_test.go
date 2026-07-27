@@ -4,7 +4,7 @@ package main
 
 // The workspace-service sentinel is a sh process that traps SIGTERM inside
 // its own Unix process group; the warm-refresh tests assert group-targeted
-// signalling (kill(-pgid)) and the systemd install path, none of which have
+// signaling (kill(-pgid)) and the systemd install path, none of which have
 // Windows equivalents. The Windows arm of workspace-service cleanup is
 // covered by the platform seams' own tests.
 

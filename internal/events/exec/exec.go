@@ -15,12 +15,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/events"
 )

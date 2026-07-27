@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +10,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"

@@ -25,7 +25,7 @@ import (
 // three fixes to compose:
 //
 //   - gw-dbm  — the persisted pid is in the space Go and sh now agree on, so
-//     find_dolt_pid's pid_alive recognises it instead of discarding the pid file.
+//     find_dolt_pid's pid_alive recognizes it instead of discarding the pid file.
 //   - gw-1ay  — verify_our_server accepts on the state-file fallback instead of
 //     hard-failing where ps cannot report args, so owned=true and the kill is attempted
 //     at all.
@@ -112,6 +112,6 @@ func TestMixedOriginStopTerminatesHelperRecordedServer(t *testing.T) {
 		return
 	}
 	t.Fatalf("the script's stop op left pid %d running (stop err %v). A stop that reports "+
-		"success without stopping is the gw-1ay symptom; a stop that cannot recognise or "+
+		"success without stopping is the gw-1ay symptom; a stop that cannot recognize or "+
 		"signal the pid is gw-dbm/gw-591.\nstop output:\n%s", nativePID, runErr, out)
 }

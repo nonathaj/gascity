@@ -9,11 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/gastownhall/gascity/internal/execshim"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 
 	"github.com/gastownhall/gascity/internal/mail"
 )

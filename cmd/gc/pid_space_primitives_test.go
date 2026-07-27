@@ -44,7 +44,7 @@ func runPidSpaceScript(t *testing.T, body string) string {
 
 // TestPidSpacePrimitivesRoundTripAcrossTheBoundary covers plan items #4 and #5 from
 // engdocs/contributors/windows-pid-space.md: the value one sh invocation persists must
-// be recognised by Go's probe, and a LATER sh invocation must be able to terminate it.
+// be recognized by Go's probe, and a LATER sh invocation must be able to terminate it.
 //
 // That two-invocation shape is the real stop path — `gc dolt stop` and the script's own
 // stop op both act on a pid recorded by an earlier process — and it is the case MSYS
@@ -77,7 +77,7 @@ printf '%s\n' "$native_pid" > `+shScriptPath(pidFile)+`
 printf 'alive_per_sh=%s\n' "$(pid_alive "$native_pid" && echo yes || echo no)"
 `)
 	if !strings.Contains(out, "alive_per_sh=yes") {
-		t.Fatalf("sh pid_alive did not recognise the pid it just converted:\n%s", out)
+		t.Fatalf("sh pid_alive did not recognize the pid it just converted:\n%s", out)
 	}
 
 	raw, err := os.ReadFile(pidFile)

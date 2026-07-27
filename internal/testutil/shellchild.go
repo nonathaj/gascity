@@ -17,7 +17,7 @@ const pollInterval = 20 * time.Millisecond
 
 // WaitFor blocks until cond returns true, failing the test with desc if timeout elapses.
 //
-// Centralising the poll here is not only DRY. Sleeps and process spawns scattered across
+// Centralizing the poll here is not only DRY. Sleeps and process spawns scattered across
 // _test.go files are exactly what the resource census (test/test-resources.toml) ratchets
 // against, and it deliberately counts only test files: library helpers are where these
 // patterns are supposed to live so they can be reviewed once instead of re-invented per test.
@@ -68,14 +68,14 @@ type ShellChild struct {
 // process whose reported pid names the sleep itself.
 //
 // It skips rather than fails when sh is unavailable: a host without a POSIX shell cannot
-// exercise shell-pid behaviour at all, and reporting that as a product failure would be noise.
+// exercise shell-pid behavior at all, and reporting that as a product failure would be noise.
 func StartShellChild(t *testing.T, body string) *ShellChild {
 	t.Helper()
 	pidPath := filepath.Join(t.TempDir(), "shell-child.pid")
 	script := "printf '%s\\n' \"$$\" > " + strconv.Quote(filepath.ToSlash(pidPath)) + "; " + body
 	cmd := exec.Command("sh", "-c", script)
 	if err := cmd.Start(); err != nil {
-		t.Skipf("cannot start sh, so shell-pid behaviour cannot be exercised here: %v", err)
+		t.Skipf("cannot start sh, so shell-pid behavior cannot be exercised here: %v", err)
 	}
 	child := &ShellChild{cmd: cmd, exited: make(chan struct{})}
 	// Reap continuously rather than only in Stop. An exited-but-unreaped child is a ZOMBIE
