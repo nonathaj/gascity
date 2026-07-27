@@ -23,7 +23,7 @@ import (
 //     that caused gw-1ay in the pack script)
 //
 // So on Windows every ownership question answered "not ours", and the only reason gc still
-// recognised its own server was a pid-equality shortcut in managedDoltRuntimeProcessOwned.
+// recognized its own server was a pid-equality shortcut in managedDoltRuntimeProcessOwned.
 // That shortcut is what section 8a of engdocs/contributors/windows-pid-space.md shows must
 // go, and it cannot go until this works.
 //

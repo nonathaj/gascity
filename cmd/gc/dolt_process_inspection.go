@@ -586,7 +586,7 @@ func loadDoltRuntimeStateDataDir(path string) string {
 // sources below cannot answer on Windows at all — there is no /proc, and Git for Windows'
 // ps rejects `-o` (the same limitation behind gw-1ay in the pack script). With both failing,
 // every ownership question there answered "not ours", and only a pid-equality shortcut in
-// managedDoltRuntimeProcessOwned kept gc recognising its own server.
+// managedDoltRuntimeProcessOwned kept gc recognizing its own server.
 //
 // The old sources stay as fallbacks rather than being deleted: Cmdline reports
 // ErrCmdlineUnsupported on darwin, where ps is the working answer, and on Windows the PEB

@@ -1556,7 +1556,7 @@ func managedDoltRuntimeProcessOwned(state doltRuntimeState, layout managedDoltRu
 	// holds the port and carries dolt-like argv, i.e. a re-exec helper, not a pid literal.
 	//
 	// TestOwnershipIsAuthoritativeNotPidEquality encodes the target contract and is skipped
-	// against this, so the intended behaviour is recorded rather than merely described.
+	// against this, so the intended behavior is recorded rather than merely described.
 	if holderPID == state.PID {
 		return true
 	}

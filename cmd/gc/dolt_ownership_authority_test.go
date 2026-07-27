@@ -30,7 +30,7 @@ import (
 // records its pid as the managed one. Ownership must reject it. Before the fix this returns
 // true on the pid-equality branch.
 func TestOwnershipIsAuthoritativeNotPidEquality(t *testing.T) {
-	// Skipped, not deleted, and not softened to match today's behaviour.
+	// Skipped, not deleted, and not softened to match today's behavior.
 	//
 	// It has been RUN and it fails against the shortcut, which is the evidence that matters:
 	// managedDoltRuntimeProcessOwned accepts this test binary as managed dolt. The mechanical
