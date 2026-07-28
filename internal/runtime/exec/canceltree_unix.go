@@ -5,6 +5,8 @@ package exec
 import (
 	"os/exec"
 	"sync/atomic"
+
+	"github.com/gastownhall/gascity/internal/execgrace"
 )
 
 // cancelKillTree returns a cmd.Cancel matching exec's default (kill the
@@ -26,6 +28,8 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 // escalate to Kill if that fails. Composing here — rather than assigning
 // cmd.Cancel twice — is what keeps the cooperative path from being silently
 // overwritten by the tree-kill fallback.
+// Delegates to execgrace.InterruptThenKill, which upstream extracted from this
+// package's own former interruptThenKill. Same behavior, one implementation.
 func cancelAdapter(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
-	return interruptThenKill(cmd, accepted)
+	return execgrace.InterruptThenKill(cmd, accepted)
 }

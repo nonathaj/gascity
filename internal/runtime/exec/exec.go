@@ -12,11 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execgrace"
 	"github.com/gastownhall/gascity/internal/execshim"
-
 	"github.com/gastownhall/gascity/internal/runtime"
 )
 
@@ -84,22 +83,17 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 	// script, which Windows cannot exec directly — execshim routes it through
 	// the resolved sh interpreter. Identity on Unix.
 	cmd := execshim.CommandContext(ctx, p.script, args...)
-	// Run the adapter in its own process group so cooperative cancellation
-	// reaches a foreground child (e.g. a readiness sleep in the adapter), not
-	// just the shell leader. Without this the shell defers its rollback trap
-	// until the child returns, and WaitDelay force-kills it first — leaking any
-	// resource the adapter already created (e.g. a Docker container).
-	setProcessGroup(cmd)
-	var cancellationAccepted atomic.Bool
-	// WaitDelay ensures Go forcibly closes I/O pipes after the context
-	// expires, even if grandchild processes (e.g. sleep in a shell script)
-	// still hold them open.
-	cmd.WaitDelay = 2 * time.Second
-	// Single, platform-composed Cancel: cooperative interrupt-then-kill on Unix;
-	// on Windows (no cross-process SIGINT) a taskkill /T tree kill so a
-	// sh-wrapped grandchild is reaped, not orphaned (gw-ho3). Assigning
-	// cmd.Cancel twice here would silently drop whichever came first.
-	cmd.Cancel = cancelAdapter(cmd, &cancellationAccepted)
+	// execgrace.Apply is upstream's shared plumbing: own process group, WaitDelay,
+	// and an accepted flag so a delivered cancellation can win over the adapter's
+	// exit status.
+	cancellationAccepted := execgrace.Apply(cmd, 2*time.Second)
+	// ...but its Cancel is then REPLACED, because on Windows execgrace degrades to
+	// cmd.Process.Kill(), which terminates the leader only. The adapter is run through
+	// sh there, so the real work is a GRANDCHILD: killing the leader orphans it (gw-ho3),
+	// which is the process-leak class this port has been closing. cancelAdapter is
+	// interrupt-then-kill on Unix — the same behaviour execgrace installs — and a
+	// taskkill /T tree kill on Windows.
+	cmd.Cancel = cancelAdapter(cmd, cancellationAccepted)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -125,30 +119,6 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 		return "", p.cancellationError(ctx.Err(), stderr.String(), args)
 	}
 	return "", p.runError(err, stderr.String(), args)
-}
-
-// interruptThenKill builds a [exec.Cmd.Cancel] that first interrupts the
-// adapter's process group so a cooperative adapter — and any foreground child
-// blocking its rollback trap — can roll back before cancellation becomes a
-// forced kill, recording in accepted whether cancellation was delivered so the
-// caller can let it win over the adapter's own exit status. Platforms without
-// process groups or os.Interrupt (such as Windows) fall back to Kill.
-func interruptThenKill(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
-	return func() error {
-		err := interruptProcessGroup(cmd)
-		if err == nil {
-			accepted.Store(true)
-			return nil
-		}
-		if errors.Is(err, os.ErrProcessDone) {
-			return err
-		}
-		err = cmd.Process.Kill()
-		if err == nil {
-			accepted.Store(true)
-		}
-		return err
-	}
 }
 
 // cancellationError formats the error returned when a delivered cancellation

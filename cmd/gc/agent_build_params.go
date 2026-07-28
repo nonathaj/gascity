@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/agentutil"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/execshim"
@@ -255,10 +256,7 @@ func effectiveOverlayDirs(cityDirs []string, rigDirs map[string][]string, rigNam
 // back to the template, so `gc internal materialize-skills` exits 1.
 // For regular agents, qualifiedName already equals the template name.
 func templateNameFor(cfgAgent *config.Agent, qualifiedName string) string {
-	if cfgAgent.PoolName != "" {
-		return cfgAgent.PoolName
-	}
-	if t := cfgAgent.QualifiedName(); t != "" && t != qualifiedName {
+	if t := agentutil.RoutedToIdentity(cfgAgent); t != "" && t != qualifiedName {
 		return t
 	}
 	return qualifiedName

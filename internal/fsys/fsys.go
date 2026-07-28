@@ -61,9 +61,14 @@ func (OSFS) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(name, data, perm)
 }
 
-// ReadFile delegates to [os.ReadFile].
+// ReadFile reads a file, permitting a concurrent rename or delete of it.
+//
+// os.ReadFile off Windows. On Windows it opens with FILE_SHARE_DELETE, because
+// os.Open does not and NTFS then refuses to replace the file while the handle is
+// open — an ordinary reader would block WriteFileAtomic's rename rather than merely
+// racing it. See readFileSharing.
 func (OSFS) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
+	return readFileSharing(name)
 }
 
 // Stat delegates to [os.Stat].

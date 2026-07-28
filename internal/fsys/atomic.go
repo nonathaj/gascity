@@ -43,22 +43,33 @@ func WriteFileAtomic(fs FS, path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// renameWithTransientRetry renames tmp onto path, retrying briefly when the
-// failure is a transient Windows sharing error (ERROR_ACCESS_DENIED /
-// ERROR_SHARING_VIOLATION): antivirus scanners, the search indexer, or a
-// concurrent reader can hold the destination open for a few milliseconds,
-// and NTFS refuses the replace while they do. Unix never reports these
-// errno values from rename, so the retry loop is Windows-only in practice
-// and deterministic errors (including fsys.Fake's) fail on the first try.
+// renameWithTransientRetry renames tmp onto path, retrying when the failure is a
+// transient Windows sharing error (ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION):
+// antivirus scanners, the search indexer, or a concurrent reader can hold the
+// destination open, and NTFS refuses the replace while they do. Unix never reports
+// these errno values from rename, so the retry loop is Windows-only in practice and
+// deterministic errors (including fsys.Fake's) fail on the first try.
+//
+// The budget is ~4s rather than the original ~255ms because those two sources of
+// contention have different shapes. A scanner or indexer holds a file for a few
+// milliseconds, which 255ms absorbed easily. APPLICATION readers are different: a
+// process polling a sidecar in a loop can lose a replace many races in a row. Sizing
+// costs nothing on the common path — the loop returns the instant the rename succeeds —
+// so this only changes how much sustained contention a writer survives before failing.
+//
+// It is not the whole fix, and should not be read as one. OSFS.ReadFile now opens with
+// FILE_SHARE_DELETE (see readFileSharing), so a well-behaved reader no longer BLOCKS a
+// replace at all; this budget covers what is left, including readers outside this
+// package that still open without share-delete.
 func renameWithTransientRetry(fs FS, tmp, path string) error {
 	delay := time.Millisecond
 	for attempt := 0; ; attempt++ {
 		err := fs.Rename(tmp, path)
-		if err == nil || attempt >= 8 || !isTransientRenameError(err) {
+		if err == nil || attempt >= 12 || !isTransientRenameError(err) {
 			return err
 		}
 		time.Sleep(delay)
-		delay *= 2 // 1+2+...+128ms ≈ 255ms worst case
+		delay *= 2 // 1+2+...+2048ms ≈ 4s worst case
 	}
 }
 
@@ -238,5 +249,30 @@ func numericFieldToUint64(v reflect.Value) (uint64, bool) {
 		return v.Uint(), true
 	default:
 		return 0, false
+	}
+}
+
+// ReadFileWithTransientRetry reads path, retrying briefly on the same transient
+// Windows sharing errors that renameWithTransientRetry absorbs on the write side.
+//
+// It is the read-side counterpart, and it is needed for the same reason. NTFS refuses
+// concurrent access while a replace is in flight, so a reader that opens a file at the
+// instant WriteFileAtomic swaps it in gets ERROR_SHARING_VIOLATION or
+// ERROR_ACCESS_DENIED rather than either the old or the new contents. POSIX has no such
+// window — a rename there is atomic to readers — so a read path that is correct on Unix
+// can fail intermittently on Windows with no bug in either the reader or the writer.
+//
+// The retry is bounded and the delays match the rename side. A genuinely missing file
+// or a permission error is not transient and returns on the first attempt, so this does
+// not mask real failures.
+func ReadFileWithTransientRetry(fs FS, path string) ([]byte, error) {
+	delay := time.Millisecond
+	for attempt := 0; ; attempt++ {
+		data, err := fs.ReadFile(path)
+		if err == nil || attempt >= 8 || !isTransientRenameError(err) {
+			return data, err
+		}
+		time.Sleep(delay)
+		delay *= 2 // 1+2+...+128ms ≈ 255ms worst case, same budget as the rename retry
 	}
 }

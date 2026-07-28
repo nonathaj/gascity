@@ -1149,13 +1149,27 @@ func (cr *CityRuntime) tick(
 		sessionBeads = cr.loadSessionBeadSnapshot()
 		recordPhase(TraceSiteSessionSnapshot, "load_session_snapshot.after_reap", phaseStart, traceSessionSnapshotFields(sessionBeads))
 	}
-	if cr.cfg.Daemon.AutoReapClosedBeadWorktreesEnabled() {
+	reapEnabled := cr.cfg.Daemon.AutoReapClosedBeadWorktreesEnabled()
+	reapDryRun := cr.cfg.Daemon.AutoReapClosedBeadWorktreesDryRunEnabled()
+	if reapEnabled || reapDryRun {
 		phaseStart = time.Now()
-		beadWorktreesReaped := reapClosedBeadWorktrees(cr.cityPath, cr.cfg, cr.rigBeadStores(), cr.rec, cr.stderr)
-		recordPhase(TraceSiteControllerTickPhase, "reap_closed_bead_worktrees", phaseStart, map[string]any{"reaped": beadWorktreesReaped})
-		phaseStart = time.Now()
-		agentHomesReset := cleanupClosedBeadAgentHomeWorktrees(cr.cityPath, cr.cfg, cr.rigBeadStores(), cr.stderr)
-		recordPhase(TraceSiteControllerTickPhase, "cleanup_agent_home_worktrees", phaseStart, map[string]any{"reset": agentHomesReset})
+		// Cross-check the liveness gate against the current open-session set in
+		// addition to the authoritative /proc cwd scan. Real removal supersedes
+		// dry-run when both flags are set.
+		liveSessionDirs := liveSessionWorktreeDirs(sessionBeads)
+		report := reapClosedBeadWorktrees(cr.cityPath, cr.cfg, cr.rigBeadStores(), liveSessionDirs, !reapEnabled, cr.rec, cr.stderr)
+		recordPhase(TraceSiteControllerTickPhase, "reap_closed_bead_worktrees", phaseStart, map[string]any{
+			"reaped":    len(report.Reaped),
+			"protected": len(report.Protected),
+			"dry_run":   !reapEnabled,
+		})
+		// Agent-home worktree cleanup performs real removals, so it runs only
+		// when real reaping is enabled — never under dry-run.
+		if reapEnabled {
+			phaseStart = time.Now()
+			agentHomesReset := cleanupClosedBeadAgentHomeWorktrees(cr.cityPath, cr.cfg, cr.rigBeadStores(), cr.stderr)
+			recordPhase(TraceSiteControllerTickPhase, "cleanup_agent_home_worktrees", phaseStart, map[string]any{"reset": agentHomesReset})
+		}
 	}
 	if ctx.Err() != nil {
 		return
@@ -2342,6 +2356,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 		awakeAssignedWorkBeads, rigStores, readyWaitSet, cr.sessionDrains, cr.providerHealthGate,
 		poolDesired,
 		result.NamedSessionDemand,
+		result.NamedSessionRoutedDemand,
 		result.snapshotQueryPartial(),
 		workSet, cityName,
 		cr.it, clock.Real{}, cr.rec, cr.cfg.Session.StartupTimeoutDuration(),
@@ -3057,6 +3072,7 @@ func (cr *CityRuntime) controlDispatcherTick(ctx context.Context) {
 		cr.providerHealthGate,
 		poolDesired,
 		wfcResult.NamedSessionDemand,
+		wfcResult.NamedSessionRoutedDemand,
 		false, // storeQueryPartial: config-change path doesn't query work beads
 		nil,   // workSet: not computed for config-change reconcile
 		cr.cityName,

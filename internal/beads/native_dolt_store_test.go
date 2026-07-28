@@ -340,11 +340,15 @@ func TestNativeDoltStoreReadyOnlyIncludesOpenAndDeferredUpstreamStatuses(t *test
 	// issue set intentionally includes a blocked bead whose dependency
 	// graph the spy treats as fully satisfied (it is returned unconditionally
 	// whenever queried by status), to prove Ready() must never surface it
-	// even when GetReadyWork would happily return it if asked.
+	// even when GetReadyWork would happily return it if asked. gc-deferred
+	// carries a past DeferUntil to represent an expired time-bound deferral;
+	// the no-DeferUntil (indefinite) case is covered separately by
+	// TestNativeDoltStoreReadyExcludesIndefinitelyDeferredBeads.
+	past := time.Now().UTC().Add(-24 * time.Hour)
 	issues := []*beadslib.Issue{
 		{ID: "gc-open", Title: "open", Status: beadslib.StatusOpen, IssueType: beadslib.TypeTask, Priority: 2},
 		{ID: "gc-blocked", Title: "blocked", Status: beadslib.StatusBlocked, IssueType: beadslib.TypeTask, Priority: 2},
-		{ID: "gc-deferred", Title: "deferred", Status: beadslib.StatusDeferred, IssueType: beadslib.TypeTask, Priority: 2},
+		{ID: "gc-deferred", Title: "deferred", Status: beadslib.StatusDeferred, IssueType: beadslib.TypeTask, Priority: 2, DeferUntil: &past},
 		{ID: "gc-pinned", Title: "pinned", Status: beadslib.Status("pinned"), IssueType: beadslib.TypeTask, Priority: 2},
 		{ID: "gc-hooked", Title: "hooked", Status: beadslib.Status("hooked"), IssueType: beadslib.TypeTask, Priority: 2},
 		{ID: "gc-review", Title: "review", Status: beadslib.Status("review"), IssueType: beadslib.TypeTask, Priority: 2},
@@ -417,6 +421,52 @@ func TestNativeDoltStoreReadyExcludesFutureDeferredBeads(t *testing.T) {
 	}
 	if ids[futureDeferred.ID] {
 		t.Fatalf("Ready() ids = %v, future-deferred bead %s must be hidden", ids, futureDeferred.ID)
+	}
+}
+
+// TestNativeDoltStoreReadyExcludesIndefinitelyDeferredBeads covers bd defer
+// <id> without --until: a first-class, documented "status-based" indefinite
+// deferral (upstream cmd/bd/defer.go) that sets status=deferred and leaves
+// defer_until NULL, distinct from bd defer <id> --until=<time>'s time-bound
+// snooze. nativeDoltOpenReadyStatuses must keep querying StatusDeferred so an
+// *expired* time-bound deferral (defer_until in the past) can resurface, but
+// an issue that was never time-bound (defer_until nil) must not fall through
+// IsReadyCandidateForTier's nil-DeferUntil case as if it were an ordinary
+// open bead that was never deferred at all.
+func TestNativeDoltStoreReadyExcludesIndefinitelyDeferredBeads(t *testing.T) {
+	past := time.Now().UTC().Add(-24 * time.Hour)
+	issues := []*beadslib.Issue{
+		{ID: "gc-open", Title: "open", Status: beadslib.StatusOpen, IssueType: beadslib.TypeTask, Priority: 2},
+		{ID: "gc-deferred-indefinite", Title: "indefinite", Status: beadslib.StatusDeferred, IssueType: beadslib.TypeTask, Priority: 2},
+		{ID: "gc-deferred-expired", Title: "expired", Status: beadslib.StatusDeferred, IssueType: beadslib.TypeTask, Priority: 2, DeferUntil: &past},
+	}
+	storage := &nativeDoltStorageSpy{
+		getReadyWork: func(_ context.Context, filter beadslib.WorkFilter) ([]*beadslib.Issue, error) {
+			var result []*beadslib.Issue
+			for _, issue := range issues {
+				if issue.Status != filter.Status {
+					continue
+				}
+				result = append(result, cloneNativeIssueForTest(issue))
+			}
+			return result, nil
+		},
+	}
+	store := newNativeDoltStoreForTest(storage)
+
+	got, err := store.Ready()
+	if err != nil {
+		t.Fatalf("Ready: %v", err)
+	}
+
+	wantIDs := map[string]bool{"gc-open": true, "gc-deferred-expired": true}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("Ready len = %d, want %d; got %+v", len(got), len(wantIDs), got)
+	}
+	for _, bead := range got {
+		if !wantIDs[bead.ID] {
+			t.Fatalf("Ready returned unexpected bead %q from %+v — an indefinitely status-deferred bead (status=deferred, defer_until=NULL) must never surface as ready", bead.ID, got)
+		}
 	}
 }
 
@@ -1677,6 +1727,50 @@ func TestOpenNativeDoltStoreAtProjectsScopedEnvDuringOpen(t *testing.T) {
 	}
 	if got := os.Getenv("BEADS_DOLT_SERVER_PORT"); got != "9999" {
 		t.Fatalf("BEADS_DOLT_SERVER_PORT after open = %q, want ambient restored", got)
+	}
+}
+
+// TestOpenNativeDoltStoreAtPersistsLocalStringsAcrossReopen exercises the
+// real newNativeDoltStoreAt wiring (not the in-memory-only default used by
+// newNativeDoltStoreForTest / the conformance factory): it swaps only the
+// external Dolt-open seam and proves SetLocalString/GetLocalString survive a
+// second open of the same scopeRoot, i.e. clone-local data really lives on
+// disk at <scopeRoot>/.beads/local-strings.json rather than in process memory.
+func TestOpenNativeDoltStoreAtPersistsLocalStringsAcrossReopen(t *testing.T) {
+	scopeRoot := filepath.Join(t.TempDir(), "scope")
+	oldOpen := nativeDoltOpenBestAvailable
+	t.Cleanup(func() {
+		nativeDoltOpenBestAvailable = oldOpen
+	})
+	nativeDoltOpenBestAvailable = func(context.Context, string) (beadslib.Storage, error) {
+		return &nativeDoltStorageSpy{
+			getConfig: func(context.Context, string) (string, error) { return "gc", nil },
+		}, nil
+	}
+
+	store, err := OpenNativeDoltStoreAt(context.Background(), scopeRoot, nil)
+	if err != nil {
+		t.Fatalf("OpenNativeDoltStoreAt (first open): %v", err)
+	}
+	if err := store.SetLocalString("gc-1", "last_woke_at", "2026-07-14T00:00:00Z"); err != nil {
+		t.Fatalf("SetLocalString: %v", err)
+	}
+
+	sidecarPath := filepath.Join(scopeRoot, ".beads", "local-strings.json")
+	if _, err := os.Stat(sidecarPath); err != nil {
+		t.Fatalf("expected sidecar file at %s: %v", sidecarPath, err)
+	}
+
+	reopened, err := OpenNativeDoltStoreAt(context.Background(), scopeRoot, nil)
+	if err != nil {
+		t.Fatalf("OpenNativeDoltStoreAt (reopen): %v", err)
+	}
+	got, err := reopened.GetLocalString("gc-1", "last_woke_at")
+	if err != nil {
+		t.Fatalf("GetLocalString after reopen: %v", err)
+	}
+	if got != "2026-07-14T00:00:00Z" {
+		t.Fatalf("GetLocalString after reopen = %q, want persisted value", got)
 	}
 }
 

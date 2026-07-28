@@ -213,7 +213,7 @@ func (p *gatedStartProvider) release(name string) {
 func (p *gatedStartProvider) waitForStarts(t *testing.T, n int) []string {
 	t.Helper()
 	var names []string
-	timeout := time.After(3 * time.Second)
+	timeout := time.After(hangBudget)
 	for len(names) < n {
 		select {
 		case name := <-p.startSignals:
@@ -231,6 +231,30 @@ func (p *gatedStartProvider) ensureNoFurtherStart(t *testing.T, wait time.Durati
 	case name := <-p.startSignals:
 		t.Fatalf("unexpected extra start signal: %s", name)
 	case <-time.After(wait):
+	}
+}
+
+// TestGatedStartProviderWaitForStartsSurvivesDelayPastOldFixedDeadline proves
+// waitForStarts watches for hangBudget, not a fixed deadline: a start signal
+// arriving after the old 3s literal (but well inside hangBudget) must still
+// be observed rather than reported as a timeout.
+func TestGatedStartProviderWaitForStartsSurvivesDelayPastOldFixedDeadline(t *testing.T) {
+	t.Parallel()
+
+	const oldFixedDeadline = 3 * time.Second
+	if hangBudget <= oldFixedDeadline {
+		t.Fatalf("hangBudget = %s, want > %s (the fixed deadline this helper replaced)", hangBudget, oldFixedDeadline)
+	}
+
+	p := newGatedStartProvider()
+	go func() {
+		<-time.After(oldFixedDeadline + time.Second)
+		p.startSignals <- "late-start"
+	}()
+
+	got := p.waitForStarts(t, 1)
+	if len(got) != 1 || got[0] != "late-start" {
+		t.Fatalf("waitForStarts = %v, want [late-start]", got)
 	}
 }
 
@@ -376,11 +400,7 @@ func (p *gatedStopProvider) releaseInterrupt(name string) {
 func (p *gatedStopProvider) waitForStops(t *testing.T, n int) []string {
 	t.Helper()
 	var names []string
-	// 30s: the controller's shutdown drain is what delivers these stops, and it
-	// runs slowly on Windows — measured ~15-19s locally, right at a 20s edge
-	// (one run overshot to 25s). 30s clears that variance with margin; the wait
-	// is a cap, not a fixed delay, so a fast drain still returns immediately.
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(hangBudget)
 	for len(names) < n {
 		select {
 		case name := <-p.stopSignals:
@@ -404,7 +424,7 @@ func (p *gatedStopProvider) ensureNoFurtherStop(t *testing.T) {
 func (p *gatedStopProvider) waitForInterrupts(t *testing.T, n int) []string {
 	t.Helper()
 	var names []string
-	timeout := time.After(3 * time.Second)
+	timeout := time.After(hangBudget)
 	for len(names) < n {
 		select {
 		case name := <-p.interrupts:

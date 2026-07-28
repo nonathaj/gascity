@@ -1915,6 +1915,7 @@ func desiredCityDoltConfigState(cityPath string, cityDolt config.DoltConfig, cit
 			EndpointOrigin: contract.EndpointOriginCityCanonical,
 			DoltHost:       cityHost,
 			DoltPort:       cityPort,
+			DoltMode:       "server",
 		}
 		state.DoltUser = preservedDoltUser(cityPath, state)
 		state.EndpointStatus = preservedEndpointStatus(cityPath, state, contract.EndpointStatusUnverified)
@@ -1925,6 +1926,7 @@ func desiredCityDoltConfigState(cityPath string, cityDolt config.DoltConfig, cit
 		IssuePrefix:    cityPrefix,
 		EndpointOrigin: contract.EndpointOriginManagedCity,
 		EndpointStatus: contract.EndpointStatusVerified,
+		DoltMode:       "server",
 	}
 }
 
@@ -1934,6 +1936,7 @@ func desiredRigDoltConfigState(cityPath string, rig config.Rig, cityState contra
 		state := contract.ConfigState{
 			IssuePrefix:    rig.EffectivePrefix(),
 			EndpointOrigin: contract.EndpointOriginExplicit,
+			DoltMode:       "server",
 		}
 		state.DoltHost, state.DoltPort = configuredExternalDoltTargetForRig(rig)
 		state.DoltUser = preservedDoltUser(rig.Path, state)
@@ -1948,6 +1951,7 @@ func inheritedRigDoltConfigState(rigPath, prefix string, cityState contract.Conf
 	state := contract.ConfigState{
 		IssuePrefix:    prefix,
 		EndpointOrigin: contract.EndpointOriginInheritedCity,
+		DoltMode:       cityState.DoltMode,
 	}
 	if cityState.EndpointOrigin == contract.EndpointOriginCityCanonical {
 		state.DoltHost = cityState.DoltHost

@@ -4466,6 +4466,10 @@ func TestDoInitPreservesExistingPackToml(t *testing.T) {
 func TestCmdInitFromFileWithOptionsUsesCWDWhenArgsEmpty(t *testing.T) {
 	configureIsolatedRuntimeEnv(t)
 
+	old := stdinIsRealTerminal
+	stdinIsRealTerminal = func() bool { return true }
+	t.Cleanup(func() { stdinIsRealTerminal = old })
+
 	dir := t.TempDir()
 	t.Chdir(dir)
 
@@ -6173,6 +6177,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"mayor"}, &stdout, &stderr)
@@ -6214,6 +6219,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "mayor")
 
 	var stdout, stderr bytes.Buffer
@@ -6253,6 +6259,7 @@ name = "test-city"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"ada"}, &stdout, &stderr)
@@ -6287,6 +6294,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"nonexistent"}, &stdout, &stderr)
@@ -6323,6 +6331,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"nonexistent"}, &stdout, &stderr, false, true)
@@ -6369,6 +6378,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
@@ -6430,6 +6440,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode(nil, &stdout, &stderr, false, true)
@@ -6476,6 +6487,7 @@ max_active_sessions = 1
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
@@ -6517,6 +6529,7 @@ prompt_template = "prompts/does-not-exist.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
@@ -6561,6 +6574,7 @@ prompt_template = %q
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
@@ -6615,6 +6629,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	// Clear GC_RIG so .RigName evaluates to empty and the conditional
 	// short-circuits. Without this, an ambient GC_RIG would produce output.
@@ -6657,6 +6672,7 @@ name = "mayor"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	t.Setenv("GC_SESSION_ID", "test-session-123")
 	t.Setenv("GC_PROVIDER_SESSION_ID", "provider-session-123")
@@ -6724,6 +6740,7 @@ prompt_template = "prompts/does-not-exist.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	t.Setenv("GC_SESSION_ID", sessionBead.ID)
 	t.Setenv("GC_PROVIDER_SESSION_ID", "provider-session-missing-template")
@@ -6780,6 +6797,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	t.Setenv("GC_SESSION_ID", "test-session-456")
 
@@ -6838,6 +6856,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrimeWithMode([]string{"mayor"}, &stdout, &stderr, false, true)
@@ -6880,6 +6899,7 @@ suspended = true
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	t.Setenv("GC_SESSION_ID", "test-session-suspended")
 
@@ -6955,6 +6975,7 @@ max = 3
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"polecat"}, &stdout, &stderr)
@@ -6998,6 +7019,7 @@ max = -1
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"polecat"}, &stdout, &stderr)
@@ -7053,6 +7075,7 @@ max = -1
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 
 	var stdout, stderr bytes.Buffer
 	code := doPrime([]string{"worker"}, &stdout, &stderr)
@@ -7110,6 +7133,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "mayor")
 
 	reader, writer, err := os.Pipe()
@@ -7209,6 +7233,7 @@ prompt_template = "prompts/probe.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "probe")
 	t.Setenv("GC_SESSION_ID", sessionBead.ID)
 	t.Setenv("GEMINI_SESSION_ID", "gemini-provider-session")
@@ -7288,6 +7313,7 @@ prompt_template = "prompts/probe.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "probe")
 	t.Setenv("GC_SESSION_ID", sessionBead.ID)
 	t.Setenv("GC_PROVIDER_SESSION_ID", "omp-provider-session")
@@ -7461,6 +7487,7 @@ prompt_template = "prompts/probe.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "probe")
 	t.Setenv("GC_SESSION_ID", sessionBead.ID)
 	t.Setenv("GC_SESSION_NAME", "probe")
@@ -7519,6 +7546,7 @@ prompt_template = "prompts/probe.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_ALIAS", "probe-live")
 	t.Setenv("GC_TEMPLATE", "probe")
 
@@ -7584,6 +7612,7 @@ prompt_template = "prompts/probe.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_ALIAS", "probe-live")
 	t.Setenv("GC_SESSION_ID", sessionBead.ID)
 	t.Setenv("GC_TEMPLATE", "")
@@ -7633,6 +7662,7 @@ prompt_template = "prompts/mayor.md"
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GC_CITY_PATH", dir)
 	t.Setenv("GC_AGENT", "bl-9jl") // bead ID, not an agent name
 	t.Setenv("GC_ALIAS", "mayor")
 
