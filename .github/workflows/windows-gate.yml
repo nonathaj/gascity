@@ -243,3 +243,81 @@ jobs:
             if ($LASTEXITCODE -ne 0) { $failed++ }
           }
           if ($failed -ne 0) { throw "shard ${shard}: $failed sub-batch(es) failed" }
+
+  process-lane:
+    name: Windows process lane (lifecycle, GC_FAST_UNIT=0)
+    runs-on: windows-latest
+    # WHY THIS JOB EXISTS (gw-45w).
+    #
+    # Every other job here sets GC_FAST_UNIT=1, which SKIPS every test guarded by
+    # skipSlowCmdGCTest or processgrouptest.RequireRealProcessSignals — i.e. exactly
+    # the tests that start, signal and reap real processes. Without this job a green
+    # Windows gate proves compilation and unit logic, and says nothing about whether
+    # gc can start, supervise and stop processes on Windows.
+    #
+    # That gap hid real defects: the backgrounded order/condition process leak
+    # (gw-uby), the stop grace running 4x its budget (gw-a0m), the MSYS/native pid
+    # mismatch (gw-dbm) and the imposter-check regression (gw-1ay) were all found by
+    # running this lane by hand, and none of them failed the gate.
+    #
+    # Deliberately CURATED rather than "all slow tests": this is the lifecycle
+    # contract — pid space, ownership, containment, stop budgets — chosen to stay a
+    # few minutes rather than the 40-75m an unfiltered process lane would cost. It
+    # needs no tmux and no provider CLIs, so their install steps are omitted; the
+    # managed-dolt tests here drive a FAKE dolt on PATH, but real dolt is installed
+    # because the start path probes `dolt version` before the fake takes over.
+    timeout-minutes: 25
+    steps:
+      - name: Preserve LF line endings on checkout
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Dolt
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: .github/scripts/install-dolt-archive.sh 2.1.7 --cache
+      - name: Verify Dolt on PATH
+        shell: pwsh
+        run: dolt version
+      - name: Run cmd/gc lifecycle tests
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '0'
+          CGO_ENABLED: '0'
+        run: |
+          $regex = '^(TestMixedOriginStop|TestManagedDoltStatePID|TestPidSpacePrimitives|' +
+                   'TestVerifyOurServer|TestGracefulStopBudget|TestGracefulStopReturns|' +
+                   'TestGracefulStopStays|TestShellExecRunnerKillsProcessGroup|' +
+                   'TestProcessArgsReads|TestOwnershipAccepts)'
+          # Fail if the filter goes stale. A -run regex matching NOTHING makes `go test`
+          # print "ok" and exit 0, so a rename would silently turn this job into a no-op
+          # that still reports green — the same vacuous-guard failure this lane exists to
+          # catch in the product.
+          $selected = go test -list $regex ./cmd/gc/ | Where-Object { $_ -like 'Test*' }
+          if ($selected.Count -lt 12) {
+            throw "process lane selected $($selected.Count) cmd/gc tests, expected >= 12; the -run filter has gone stale"
+          }
+          Write-Host "process lane: $($selected.Count) cmd/gc lifecycle tests selected"
+          go test -count=1 -timeout 20m -run $regex ./cmd/gc/
+      - name: Run orders cancellation tests
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '0'
+          CGO_ENABLED: '0'
+        run: |
+          $filter = '^TestCheckTriggerConditionKillsProcessGroup'
+          $selected = go test -list $filter ./internal/orders/ | Where-Object { $_ -like 'Test*' }
+          if ($selected.Count -lt 2) {
+            throw "process lane selected $($selected.Count) orders tests, expected >= 2; the -run filter has gone stale"
+          }
+          go test -count=1 -timeout 10m -run $filter ./internal/orders/
+      - name: Run containment and pid-space primitives
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '0'
+          CGO_ENABLED: '0'
+        run: go test -count=1 -timeout 10m ./internal/processgroup/... ./internal/pidutil/ ./internal/testutil/
