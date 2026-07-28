@@ -326,3 +326,23 @@ jobs:
           GC_FAST_UNIT: '0'
           CGO_ENABLED: '0'
         run: go test -count=1 -timeout 10m ./internal/processgroup/... ./internal/pidutil/ ./internal/testutil/
+      # NON-BLOCKING diagnostic for gw-2yu. continue-on-error, so a failure here never
+      # fails the gate.
+      #
+      # It exists because the evidence needed to close gw-2yu can only be produced on a
+      # hosted runner: the test passes locally and fails only here. It is excluded from the
+      # required filter above (its failure is an environment problem with the fake-dolt
+      # fixture, not a lifecycle regression), and it SKIPS in every other job because those
+      # set GC_FAST_UNIT=1 — so without this step nothing in CI would ever run it and the
+      # dolt.log capture added for it would never fire.
+      #
+      # The test now inlines dolt.log into its failure message, so a red run here prints
+      # the cause directly. Delete this step once gw-2yu closes and the test rejoins the
+      # required filter.
+      - name: Diagnostic (non-blocking) - gw-2yu managed-dolt startup
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GC_FAST_UNIT: '0'
+          CGO_ENABLED: '0'
+        run: go test -count=1 -timeout 10m -run '^TestManagedDoltStatePIDIsNativeAfterShellFallbackStart$' -v ./cmd/gc/
