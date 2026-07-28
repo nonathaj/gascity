@@ -37,6 +37,17 @@ const writeTimeout = time.Second
 // It returns (true, nil) once the datagram is written, and
 // (false, err) when NOTIFY_SOCKET is set but the send fails.
 func Notify(state string) (bool, error) {
+	// GC_NOTIFY_PIPE is the Windows transport (gw-x1k, D4 of
+	// engdocs/design/windows-systemd-parity.md). sd_notify is a unixgram protocol, so
+	// without it Notify is a permanent no-op on Windows and the four states gc already
+	// sends at ready/reload/stopping/watchdog points are discarded — nothing hosting the
+	// supervisor there can observe that it came up.
+	//
+	// Checked before NOTIFY_SOCKET only so a host that sets both gets the transport that
+	// can actually work on its platform; in practice exactly one is ever set.
+	if pipe := os.Getenv("GC_NOTIFY_PIPE"); pipe != "" {
+		return notifyPipe(pipe, state)
+	}
 	socket := os.Getenv("NOTIFY_SOCKET")
 	if socket == "" {
 		return false, nil
@@ -53,6 +64,38 @@ func Notify(state string) (bool, error) {
 	defer conn.Close() //nolint:errcheck
 	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 		return false, err
+	}
+	if _, err := conn.Write([]byte(state)); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// notifyPipe writes state to the named pipe at path, the Windows transport for the same
+// sd_notify(3) state strings.
+//
+// The wire form is deliberately identical to the unix path — a bare "READY=1" and friends,
+// one write per call — so a reader can be shared between the two and the existing call sites
+// need no platform awareness.
+//
+// No named-pipe library is needed for the client half: opening the pipe path with os.OpenFile
+// connects to an existing server, which keeps this package dependency-free as its doc comment
+// promises. Creating a pipe SERVER does require platform calls, but only a host or a test does
+// that, never Notify.
+//
+// A configured-but-dead pipe is an error rather than a silent success, matching
+// NOTIFY_SOCKET's behavior: whoever set the variable is waiting for readiness, and reporting
+// "sent" for a message nobody received would leave them waiting on a state that never arrives.
+func notifyPipe(path, state string) (bool, error) {
+	conn, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close() //nolint:errcheck
+	if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		// Not every pipe handle supports deadlines; the bounded write below still applies
+		// because a named-pipe write to a live reader does not block indefinitely.
+		_ = err
 	}
 	if _, err := conn.Write([]byte(state)); err != nil {
 		return false, err
