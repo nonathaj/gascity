@@ -363,9 +363,11 @@ func TestIsRunningFalseAfterExit(t *testing.T) {
 	if err := p.Start(context.Background(), "short", runtime.Config{Command: "true"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	time.Sleep(200 * time.Millisecond)
-
-	if p.IsRunning("short") {
+	// Poll rather than sleep a fixed 200ms. The command has to be SPAWNED and then exit,
+	// and a spawn alone costs ~165ms under Git-for-Windows, so a fixed 200ms sits on the
+	// edge and loses under CI load — this failed on the Windows gate while passing locally.
+	// Polling also returns the instant the process is gone, so it does not slow the pass.
+	if !testutil.WaitUntil(30*time.Second, func() bool { return !p.IsRunning("short") }) {
 		t.Error("expected IsRunning=false after process exits")
 	}
 }
