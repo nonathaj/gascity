@@ -22,8 +22,18 @@ var atomicWriteNonce uint64
 // are enforced on the temp file before the rename so the final path is never
 // visible with a wider mode (no write-then-chmod window).
 func WriteFileAtomic(fs FS, path string, data []byte, perm os.FileMode) error {
-	nonce := time.Now().UnixNano() + int64(atomic.AddUint64(&atomicWriteNonce, 1))
-	suffix := strconv.Itoa(os.Getpid()) + "." + strconv.FormatInt(nonce, 36)
+	// Timestamp and counter are SEPARATE fields, not summed. Adding them aliases: a call
+	// at nanosecond T with counter 1 and a call at T-1 with counter 2 both produce T+1, so
+	// two concurrent writers can derive the same temp path. One then renames it away and
+	// the other's rename fails with ENOENT — observed as
+	// "renaming temp file: ... no such file or directory" under concurrent writers.
+	//
+	// The counter alone is unique within a process and the pid separates processes, so the
+	// timestamp is only there to keep orphaned temps human-readable. parseAtomicTempPID
+	// reads the pid up to the FIRST dot, so the extra field does not disturb the sweeper.
+	seq := atomic.AddUint64(&atomicWriteNonce, 1)
+	suffix := strconv.Itoa(os.Getpid()) + "." + strconv.FormatInt(time.Now().UnixNano(), 36) +
+		"." + strconv.FormatUint(seq, 36)
 	tmp := path + ".tmp." + suffix
 	if err := fs.WriteFile(tmp, data, perm); err != nil {
 		return fmt.Errorf("writing temp file: %w", err)
