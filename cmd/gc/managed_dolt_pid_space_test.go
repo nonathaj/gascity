@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -144,6 +145,25 @@ esac
 		t.Fatalf("script persisted no pid\nscript output:\n%s", out)
 	}
 	return state
+}
+
+// doltStartupLog returns the managed-dolt log the script writes, or a note saying why it
+// could not be read.
+//
+// Failures on this path report "dolt server exited during startup (check <log>)" and then
+// the test tears its temp tree down, so the log the message points at is gone before anyone
+// can look — which is why gw-2yu sat as "environment problem, cause unknown" through two
+// separate failures. Inlining it into the failure message makes the next occurrence
+// diagnosable from CI output alone.
+func doltStartupLog(logPath string) string {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return fmt.Sprintf("<dolt.log unreadable: %v>", err)
+	}
+	if len(data) == 0 {
+		return "<dolt.log empty — the server wrote nothing before exiting>"
+	}
+	return string(data)
 }
 
 // TestManagedDoltStatePIDIsNativeAfterShellFallbackStart is the boundary contract for
