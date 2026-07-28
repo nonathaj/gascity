@@ -2588,3 +2588,76 @@ func filterNativeIssuesForTest(issues []*beadslib.Issue, filter beadslib.IssueFi
 	}
 	return filtered
 }
+
+// TestNativeDoltStoreUpdateRetriesSerializationConflict pins that a bead Update survives a
+// transient Dolt transaction conflict.
+//
+// This is a user-visible defect, not a theoretical one. It was caught by the integration suite:
+//
+//	POST /v0/city/.../session/.../suspend status = 500, want 200
+//	"internal: updating suspension state: sql commit (regular): Error 1213 (40001):
+//	 serialization failure: this transaction conflicts with a committed transaction from
+//	 another client, try restarting transaction."
+//
+// Error 1213 / SQLSTATE 40001 is the database asking to be retried — the message says so. The
+// write lost a commit race without applying, so re-running it is safe. SetMetadataBatch in this
+// same file already retries exactly this class; Update made one attempt and surfaced the
+// conflict as a 500, which is why suspending a session failed intermittently under concurrency.
+//
+// Retrying re-runs the WHOLE transaction, so the second attempt reads state committed by the
+// competing writer rather than overwriting it from a stale read — the same reasoning
+// setMetadataBatchOnce documents.
+func TestNativeDoltStoreUpdateRetriesSerializationConflict(t *testing.T) {
+	transactions := 0
+	var storage *nativeDoltStorageSpy
+	storage = &nativeDoltStorageSpy{
+		getIssue: func(context.Context, string) (*beadslib.Issue, error) {
+			return &beadslib.Issue{
+				ID:        "gc-update-conflict",
+				Title:     "update conflict",
+				Status:    beadslib.StatusOpen,
+				IssueType: beadslib.TypeTask,
+				Priority:  2,
+			}, nil
+		},
+		updateIssue: func(context.Context, string, map[string]interface{}, string) error { return nil },
+		runInTransaction: func(_ context.Context, _ string, fn func(beadslib.Transaction) error) error {
+			transactions++
+			if transactions == 1 {
+				return errors.New("sql commit (regular): Error 1213 (40001): serialization failure: this transaction conflicts with a committed transaction from another client, try restarting transaction")
+			}
+			return fn(nativeDoltTransactionForTest{storage: storage})
+		},
+	}
+	store := newNativeDoltStoreForTest(storage)
+
+	if err := store.Update("gc-update-conflict", UpdateOpts{Metadata: map[string]string{"state": "suspended"}}); err != nil {
+		t.Fatalf("Update returned %v; a serialization conflict is retryable and must not reach "+
+			"the caller as a failure (it surfaces as a 500 on session suspend)", err)
+	}
+	if transactions != 2 {
+		t.Fatalf("transactions = %d, want 2: the conflicting attempt must be retried", transactions)
+	}
+}
+
+// TestNativeDoltStoreUpdateStopsAfterRepeatedSerializationConflicts pins the bound. A retry loop
+// that never gives up turns a persistent conflict into a hang, so the attempt count is capped
+// and the final error is returned.
+func TestNativeDoltStoreUpdateStopsAfterRepeatedSerializationConflicts(t *testing.T) {
+	transactions := 0
+	storage := &nativeDoltStorageSpy{
+		runInTransaction: func(context.Context, string, func(beadslib.Transaction) error) error {
+			transactions++
+			return errors.New("sql commit (regular): Error 1213 (40001): serialization failure: this transaction conflicts with a committed transaction from another client")
+		},
+	}
+	store := newNativeDoltStoreForTest(storage)
+
+	if err := store.Update("gc-always-conflict", UpdateOpts{Metadata: map[string]string{"state": "suspended"}}); err == nil {
+		t.Fatal("Update returned nil for a conflict that never clears; the bound must surface the error")
+	}
+	if transactions != nativeMetadataWriteAttempts {
+		t.Fatalf("transactions = %d, want %d (the same bound SetMetadataBatch uses)",
+			transactions, nativeMetadataWriteAttempts)
+	}
+}

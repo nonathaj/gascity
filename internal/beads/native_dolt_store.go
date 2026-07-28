@@ -985,15 +985,30 @@ func (s *NativeDoltStore) Update(id string, opts UpdateOpts) error {
 		return err
 	}
 	defer release()
-	ctx, cancel := nativeDoltOperationContext(context.TODO())
-	defer cancel()
-	err = storage.RunInTransaction(ctx, fmt.Sprintf("gc: update bead %s", id), func(tx beadslib.Transaction) error {
-		return s.applyUpdateInTx(ctx, tx, id, opts)
-	})
-	if err != nil {
-		return nativeStoreError(id, err)
+
+	// Retried on a serialization conflict, like SetMetadataBatch below. Error 1213 / SQLSTATE
+	// 40001 is the database asking to be retried — the write lost a commit race WITHOUT
+	// applying, so re-running it is safe. Without this, a lost race surfaced to the caller and
+	// the API turned it into a 500: session suspend failed intermittently under concurrency
+	// with "updating suspension state: sql commit (regular): Error 1213 (40001)".
+	//
+	// The retry re-runs the WHOLE transaction, so the next attempt reads what the competing
+	// writer committed instead of overwriting it from a stale read.
+	for attempt := 1; attempt <= nativeMetadataWriteAttempts; attempt++ {
+		ctx, cancel := nativeDoltOperationContext(context.TODO())
+		err = storage.RunInTransaction(ctx, fmt.Sprintf("gc: update bead %s", id), func(tx beadslib.Transaction) error {
+			return s.applyUpdateInTx(ctx, tx, id, opts)
+		})
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if !isNativeDoltSerializationConflict(err) || attempt == nativeMetadataWriteAttempts {
+			return nativeStoreError(id, err)
+		}
+		time.Sleep(time.Duration(attempt) * nativeMetadataWriteRetryBackoff)
 	}
-	return nil
+	return nativeStoreError(id, err)
 }
 
 // applyUpdateInTx applies an Update against an open beadslib transaction. It is
