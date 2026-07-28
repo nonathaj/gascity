@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"testing"
 	"time"
 
@@ -84,6 +85,29 @@ func newUsageFactHandle(t *testing.T) (handle *SessionHandle, transcriptPath, si
 // adopt-pr finding that real transcript model usage never reached the usage sink:
 // a transcript invocation completes, a prompt op runs, and a configured LocalSink
 // must receive a priced model fact whose RunID matches the session run root.
+// requireEnforceableUnreadableDir skips when chmod 0o000 cannot actually deny this process
+// directory access, which is the fault these tests inject.
+//
+// Two hosts cannot enforce it. Root bypasses mode bits entirely — upstream already guarded
+// that. Windows is the other: chmod there only toggles the read-only ATTRIBUTE and never
+// removes the owner's directory access (doctrine P5), so os.ReadDir keeps succeeding and the
+// test observes a clean scan instead of the IO fault it staged. The same reasoning is already
+// recorded on TestReadAgentSession_StatError in this package.
+//
+// Skipping is honest here rather than a workaround: the behavior under test is what the
+// scanner does when enumeration FAILS, and on Windows this mechanism cannot make it fail.
+// A real Windows equivalent means denying the current user via ACL, which is tracked
+// separately rather than improvised per test.
+func requireEnforceableUnreadableDir(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("chmod 0o000 does not deny owner access on Windows; cannot stage a ReadDir fault")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod-000 unreadable dir is not enforced for root")
+	}
+}
+
 func TestMessageEmitsModelUsageFactToSink(t *testing.T) {
 	handle, transcriptPath, sinkPath := newUsageFactHandle(t)
 
@@ -950,9 +974,7 @@ func TestFactorySweepSessionModelUsageKeylessCodexAmbiguousWorkdirTakesNone(t *t
 // (proven elsewhere) is correct; a fault-clouded miss doing so would silently drop
 // the interval's tokens forever.
 func TestFactorySweepSessionModelUsageKeylessCodexDirtyScanRetries(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("chmod-000 unreadable dir is not enforced for root")
-	}
+	requireEnforceableUnreadableDir(t)
 	codexRoot := t.TempDir()
 	workDir := t.TempDir()
 	sinkPath := filepath.Join(t.TempDir(), "usage.jsonl")
@@ -1034,9 +1056,7 @@ func TestFactorySweepSessionModelUsageKeylessCodexDirtyScanRetries(t *testing.T)
 // reviewers found exercised by no sweep-level test; when the fault clears the
 // sibling turns out to be a different session, so the true singleton records.
 func TestFactorySweepSessionModelUsageKeylessCodexDirtySingletonRetries(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("chmod-000 unreadable file is not enforced for root")
-	}
+	requireEnforceableUnreadableDir(t)
 	codexRoot := t.TempDir()
 	workDir := t.TempDir()
 	otherDir := t.TempDir()

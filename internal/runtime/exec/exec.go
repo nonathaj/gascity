@@ -91,7 +91,7 @@ func (p *Provider) runWithContext(parent context.Context, dur time.Duration, std
 	// cmd.Process.Kill(), which terminates the leader only. The adapter is run through
 	// sh there, so the real work is a GRANDCHILD: killing the leader orphans it (gw-ho3),
 	// which is the process-leak class this port has been closing. cancelAdapter is
-	// interrupt-then-kill on Unix — the same behaviour execgrace installs — and a
+	// interrupt-then-kill on Unix — the same behavior execgrace installs — and a
 	// taskkill /T tree kill on Windows.
 	cmd.Cancel = cancelAdapter(cmd, cancellationAccepted)
 

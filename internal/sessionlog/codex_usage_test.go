@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -851,6 +852,41 @@ func TestFindCodexSessionFileNear(t *testing.T) {
 // but also for a lone visible match under a dirty scan, which a hidden second
 // same-cwd rollout could turn into an ambiguity refusal. Both dirty sources are
 // covered: a day/root ReadDir fault and a per-file cwd-probe open fault.
+// requireEnforceableUnreadableDir skips when chmod 0o000 cannot actually deny this process
+// directory access, which is the fault these tests inject.
+//
+// Two hosts cannot enforce it. Root bypasses mode bits entirely — upstream already guarded
+// that. Windows is the other: chmod there only toggles the read-only ATTRIBUTE and never
+// removes the owner's directory access (doctrine P5), so os.ReadDir keeps succeeding and the
+// test observes a clean scan instead of the IO fault it staged. The same reasoning is already
+// recorded on TestReadAgentSession_StatError in this package.
+//
+// Skipping is honest here rather than a workaround: the behavior under test is what the
+// scanner does when enumeration FAILS, and on Windows this mechanism cannot make it fail.
+// A real Windows equivalent means denying the current user via ACL, which is tracked
+// separately rather than improvised per test.
+func requireEnforceableUnreadableFile(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		// chmod 0o000 clears the read-only attribute story only; the owner keeps read
+		// access, so the os.Open this subtest needs to fault with EACCES simply succeeds.
+		t.Skip("chmod 0o000 does not deny owner read on Windows; cannot stage an Open fault")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod-000 unreadable file is not enforced for root")
+	}
+}
+
+func requireEnforceableUnreadableDir(t *testing.T) {
+	t.Helper()
+	if goruntime.GOOS == "windows" {
+		t.Skip("chmod 0o000 does not deny owner access on Windows; cannot stage a ReadDir fault")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod-000 unreadable dir is not enforced for root")
+	}
+}
+
 func TestFindCodexSessionFileNearScanReportsScanCleanliness(t *testing.T) {
 	anchor := time.Date(2026, 6, 10, 14, 30, 0, 0, time.Local)
 	window := 10 * time.Minute
@@ -884,9 +920,7 @@ func TestFindCodexSessionFileNearScanReportsScanCleanliness(t *testing.T) {
 	})
 
 	t.Run("dirty scan (unreadable day dir) reports scanClean=false on a miss, recovers when cleared", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Skip("chmod-000 unreadable dir is not enforced for root")
-		}
+		requireEnforceableUnreadableDir(t)
 		root := t.TempDir()
 		// A rollout that WOULD match, sealed behind an unreadable day directory so the
 		// enumerating os.ReadDir fails with EACCES (a non-ENOENT IO fault).
@@ -916,9 +950,7 @@ func TestFindCodexSessionFileNearScanReportsScanCleanliness(t *testing.T) {
 	})
 
 	t.Run("dirty singleton via unreadable sibling day dir reports scanClean=false, recovers when cleared", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Skip("chmod-000 unreadable dir is not enforced for root")
-		}
+		requireEnforceableUnreadableDir(t)
 		root := t.TempDir()
 		// One visible in-window match in the anchor's day dir...
 		want := writeCodexRolloutAt(t, root, anchor.Add(2*time.Minute), "019d9845-cccc-7000-8000-000000000007", workDir)
@@ -955,9 +987,7 @@ func TestFindCodexSessionFileNearScanReportsScanCleanliness(t *testing.T) {
 	})
 
 	t.Run("dirty singleton via per-file cwd-probe open fault reports scanClean=false, recovers to ambiguity", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Skip("chmod-000 unreadable file is not enforced for root")
-		}
+		requireEnforceableUnreadableFile(t)
 		root := t.TempDir()
 		// One visible in-window match...
 		want := writeCodexRolloutAt(t, root, anchor.Add(2*time.Minute), "019d9845-cccc-7000-8000-000000000008", workDir)

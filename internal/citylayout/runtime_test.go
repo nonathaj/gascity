@@ -245,8 +245,12 @@ func TestSessionNameLocksDir(t *testing.T) {
 }
 
 func TestGateSlotsDir(t *testing.T) {
-	if got := GateSlotsDir("/city"); got != "/city/.gc/gate-slots" {
-		t.Fatalf("GateSlotsDir = %q, want %q", got, "/city/.gc/gate-slots")
+	// filepath.FromSlash, matching TestSessionNameLocksDir above: RuntimePath builds with
+	// filepath.Join, which yields backslashes on Windows, so comparing against a slash
+	// literal fails there for a correct value (doctrine T10).
+	want := filepath.FromSlash("/city/.gc/gate-slots")
+	if got := GateSlotsDir("/city"); got != want {
+		t.Fatalf("GateSlotsDir = %q, want %q", got, want)
 	}
 }
 
