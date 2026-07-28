@@ -134,7 +134,8 @@ esac
 
 	state, err := readDoltRuntimeStateFile(statePath)
 	if err != nil {
-		t.Fatalf("read persisted dolt state: %v\nscript output:\n%s", err, out)
+		t.Fatalf("read persisted dolt state: %v\nscript output:\n%s\ndolt.log:\n%s",
+			err, out, doltStartupLog(filepath.Join(packStateDir, "dolt.log")))
 	}
 	t.Cleanup(func() {
 		if state.PID > 0 {
@@ -142,7 +143,8 @@ esac
 		}
 	})
 	if state.PID <= 0 {
-		t.Fatalf("script persisted no pid\nscript output:\n%s", out)
+		t.Fatalf("script persisted no pid\nscript output:\n%s\ndolt.log:\n%s",
+			out, doltStartupLog(filepath.Join(packStateDir, "dolt.log")))
 	}
 	return state
 }
