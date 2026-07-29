@@ -90,9 +90,31 @@ add_fsys_compile_job() {
     'tmp=$(mktemp -d); trap '"'"'rm -rf "$tmp"'"'"' EXIT; GOOS=darwin GOARCH=arm64 go test -c -o "$tmp/fsys.test" ./internal/fsys'
 }
 
+# On Windows the authoritative "what passes here" set is the CI green list
+# (.github/windows-test-packages.txt), which .github/workflows/windows-gate.yml
+# enforces. Selecting packages with `go list ./...` instead made the LOCAL gate
+# strictly STRICTER than CI: it pulled in packages the Windows port has not
+# reached yet, so .githooks/pre-push could never pass even on a commit whose CI
+# is fully green -- examples/bd/dolt alone runs 45m+ and still fails there.
+#
+# Pointing both at one list is the correctness fix, not a lowered bar: the green
+# list is the declared Windows contract, and adding a package to it now switches
+# it on in CI and locally together instead of the two drifting apart. Its own
+# header commits to growing toward "everything minus documented exclusions", at
+# which point this branch converges with the Unix one.
+#
+# Unix keeps enumerating every package, which is what Linux CI does too.
 add_unit_core_job() {
-  add_job "unit-core" \
-    'GC_FAST_UNIT=1 go test $(go list ./... | grep -v '"'"'^github.com/gastownhall/gascity/cmd/gc$'"'"')'
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      add_job "unit-core" \
+        'GC_FAST_UNIT=1 go test $(grep -vE "^[[:space:]]*(#|$)" .github/windows-test-packages.txt)'
+      ;;
+    *)
+      add_job "unit-core" \
+        'GC_FAST_UNIT=1 go test $(go list ./... | grep -v '"'"'^github.com/gastownhall/gascity/cmd/gc$'"'"')'
+      ;;
+  esac
 }
 
 # Runs as a direct shell job rather than through a `go test` wrapper because a
