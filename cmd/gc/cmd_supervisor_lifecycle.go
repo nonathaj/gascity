@@ -926,6 +926,8 @@ func doSupervisorInstall(stdout, stderr io.Writer) int {
 		return installSupervisorLaunchd(data, stdout, stderr)
 	case "linux":
 		return installSupervisorSystemd(data, stdout, stderr)
+	case "windows":
+		return installSupervisorSchtasks(data, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "gc supervisor install: not supported on %s\n", goruntime.GOOS) //nolint:errcheck // best-effort stderr
 		return 1
@@ -974,6 +976,8 @@ func doSupervisorUninstall(stdout, stderr io.Writer) int {
 		return uninstallSupervisorLaunchd(data, stdout, stderr)
 	case "linux":
 		return uninstallSupervisorSystemd(data, stdout, stderr)
+	case "windows":
+		return uninstallSupervisorSchtasks(data, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "gc supervisor uninstall: not supported on %s\n", goruntime.GOOS) //nolint:errcheck // best-effort stderr
 		return 1

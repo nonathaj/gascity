@@ -38,6 +38,8 @@ func sweepStaleIsolatedSupervisorServices(stderr io.Writer) {
 		sweepStaleIsolatedSupervisorLaunchd(stderr)
 	case "linux":
 		sweepStaleIsolatedSupervisorSystemd(stderr)
+	case "windows":
+		sweepStaleIsolatedSupervisorSchtasks(stderr)
 	}
 }
 

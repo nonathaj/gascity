@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,27 @@ func lookPathInto(t *testing.T, bin, host, linkName string) bool {
 	hostPath, err := exec.LookPath(host)
 	if err != nil {
 		return false
+	}
+	if runtime.GOOS == "windows" {
+		// Windows resolves an executable's DLLs from the directory it was
+		// LAUNCHED from, not from the directory of the file a symlink resolves
+		// to. Git for Windows' timeout.exe is an MSYS binary that needs
+		// msys-2.0.dll, so placing it inside this hermetic bin dir -- by symlink
+		// or by copy -- makes it die with "error while loading shared libraries"
+		// (exit 127). run_bounded in doctor/check-dolt/run.sh saw a status that
+		// was neither 0 nor 124 and reported "unable to run dolt version",
+		// failing all 19 doctor tests on Windows including every case asserting
+		// a version is ACCEPTED.
+		//
+		// A sh shim keeps the sandbox hermetic where it matters -- bash's
+		// `command -v timeout` still resolves this extensionless file inside
+		// bin, and nothing else leaks onto PATH -- while the real binary runs
+		// from its own directory, where its DLLs live.
+		shim := fmt.Sprintf("#!/bin/sh\nexec %s \"$@\"\n", shellQuote(filepath.ToSlash(hostPath)))
+		if err := os.WriteFile(filepath.Join(bin, linkName), []byte(shim), 0o755); err != nil {
+			t.Fatalf("write %q shim for %q: %v", linkName, host, err)
+		}
+		return true
 	}
 	if err := os.Symlink(hostPath, filepath.Join(bin, linkName)); err != nil {
 		t.Fatalf("symlink %q -> %q: %v", host, linkName, err)
@@ -67,13 +89,12 @@ type doctorSandboxOpts struct {
 func doctorSandbox(t *testing.T, opts doctorSandboxOpts) string {
 	t.Helper()
 	bin := t.TempDir()
+	// Routed through lookPathInto rather than symlinked directly: head and sed
+	// are MSYS binaries on Windows and hit exactly the same DLL-resolution
+	// problem as timeout does below, which the helper handles.
 	for _, tool := range []string{"head", "sed"} {
-		hostPath, err := exec.LookPath(tool)
-		if err != nil {
-			t.Fatalf("LookPath(%q): %v", tool, err)
-		}
-		if err := os.Symlink(hostPath, filepath.Join(bin, tool)); err != nil {
-			t.Fatalf("symlink %q: %v", tool, err)
+		if !lookPathInto(t, bin, tool, tool) {
+			t.Fatalf("LookPath(%q): not found on PATH", tool)
 		}
 	}
 	// run.sh wraps `dolt version` in run_bounded, which prefers
