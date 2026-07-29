@@ -73,29 +73,77 @@ append_failed_db() {
     fi
 }
 
+# backup_lock_holder_alive reports whether the pid recorded in the lock
+# directory is still running, so a lock orphaned by a crash does not disable
+# backups permanently. A lock directory with no readable pid is treated as
+# alive: without evidence the holder is gone, the safe answer is to wait.
+backup_lock_holder_alive() {
+    lock_holder_pid=$(cat "$BACKUP_LOCK_DIR/pid" 2>/dev/null || true)
+    case "$lock_holder_pid" in
+        ''|*[!0-9]*) return 0 ;;
+    esac
+    kill -0 "$lock_holder_pid" 2>/dev/null
+}
+
+# acquire_backup_lock serializes backup sync across concurrent invocations.
+#
+# Concurrent `dolt backup sync` against the shared sql-server can overload it,
+# so this must be a real mutual exclusion, not best-effort.
+#
+# flock(1) is used when present because the kernel releases it on process death,
+# which no userspace scheme can match. Git for Windows ships no flock, and this
+# used to fail closed there -- escalating and exiting 1 -- which meant managed
+# backup simply did not run on Windows. That is stronger than the guarantee
+# needs: mkdir is atomic on every POSIX filesystem, so a lock DIRECTORY provides
+# the same mutual exclusion, and recording the holder's pid lets a lock orphaned
+# by a crash be reclaimed rather than blocking backups forever.
+#
+# This mirrors the fallback commands/compact/run.sh already uses for the same
+# reason; see gw-oo5 for unifying the two.
 acquire_backup_lock() {
     case "$BACKUP_LOCK_WAIT_SECONDS" in
         ''|*[!0-9]*) BACKUP_LOCK_WAIT_SECONDS=5 ;;
     esac
-    if ! command -v flock >/dev/null 2>&1; then
-        SUMMARY="backup — flock-missing"
-        dolt_escalate \
-            "Dolt backup: flock missing for backup sync [HIGH]" \
-            "Skipping backup sync because flock is unavailable; concurrent dolt backup sync can overload the shared sql-server." \
-            2>/dev/null || true
-        dolt_notify_done "$SUMMARY"
-        echo "backup: $SUMMARY"
-        exit 1
-    fi
 
     mkdir -p "$(dirname "$BACKUP_LOCK_FILE")"
-    exec 9>"$BACKUP_LOCK_FILE"
-    if ! flock -w "$BACKUP_LOCK_WAIT_SECONDS" 9; then
-        SUMMARY="backup — skipped: already running"
-        dolt_notify_done "$SUMMARY"
-        echo "backup: $SUMMARY"
-        exit 0
+
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$BACKUP_LOCK_FILE"
+        if ! flock -w "$BACKUP_LOCK_WAIT_SECONDS" 9; then
+            SUMMARY="backup — skipped: already running"
+            dolt_notify_done "$SUMMARY"
+            echo "backup: $SUMMARY"
+            exit 0
+        fi
+        return 0
     fi
+
+    BACKUP_LOCK_DIR="$BACKUP_LOCK_FILE.d"
+    backup_lock_waited=0
+    while : ; do
+        if mkdir "$BACKUP_LOCK_DIR" 2>/dev/null; then
+            printf '%s\n' "$$" > "$BACKUP_LOCK_DIR/pid" 2>/dev/null || true
+            # Release on every exit path, including the error paths below that
+            # exit non-zero. Without this a failed backup would leave the lock
+            # behind and the next run would wait out the full timeout.
+            trap 'rm -rf "$BACKUP_LOCK_DIR"' EXIT INT TERM
+            return 0
+        fi
+        if ! backup_lock_holder_alive; then
+            rm -rf "$BACKUP_LOCK_DIR"
+            continue
+        fi
+        if [ "$backup_lock_waited" -ge "$BACKUP_LOCK_WAIT_SECONDS" ]; then
+            break
+        fi
+        sleep 1
+        backup_lock_waited=$((backup_lock_waited + 1))
+    done
+
+    SUMMARY="backup — skipped: already running"
+    dolt_notify_done "$SUMMARY"
+    echo "backup: $SUMMARY"
+    exit 0
 }
 
 # --- Step 1: Preflight Dolt version before backup sync ---

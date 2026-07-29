@@ -389,13 +389,21 @@ func assertCompactBeadsQuarantineAlert(t *testing.T, fixture compactScriptFixtur
 		t.Fatalf("compact quarantine should emit exactly one dolt.compact.quarantine event, got %d\nlog:\n%s", len(eventLines), log)
 	}
 
+	// markerPath is compared with separators normalized: the script composes it
+	// with "/" while the fixture builds it with filepath.Join, so on Windows the
+	// two spell the same marker differently. Everything else is compared
+	// verbatim -- only the path is subject to this. ToSlash is a no-op on Unix.
+	mailLine := filepath.ToSlash(mailLines[0])
+	eventLine := filepath.ToSlash(eventLines[0])
+	markerPath = filepath.ToSlash(markerPath)
+
 	for _, want := range []string{recipient, "beads", markerPath, markerType, reason, "--from controller"} {
-		if !strings.Contains(mailLines[0], want) {
+		if !strings.Contains(mailLine, want) {
 			t.Fatalf("mail alert line missing %q\nline:\n%s\nlog:\n%s", want, mailLines[0], log)
 		}
 	}
 	for _, want := range []string{recipient, "beads", markerPath, markerType, reason, "--actor controller"} {
-		if !strings.Contains(eventLines[0], want) {
+		if !strings.Contains(eventLine, want) {
 			t.Fatalf("event alert line missing %q\nline:\n%s\nlog:\n%s", want, eventLines[0], log)
 		}
 	}
@@ -3526,7 +3534,12 @@ func TestCompactScriptExistingQuarantineMarkerAlertsDefaultMayorBeforeFlattenAnd
 			if err == nil {
 				t.Fatalf("%s must fail when quarantine marker exists:\n%s", tc.name, out)
 			}
-			if !strings.Contains(out, marker) || !strings.Contains(out, "reason="+reason) {
+			// Separators normalized: the script composes this path with "/" while
+			// filepath.Join uses "\" on Windows, so both name the same marker in
+			// different forms and a raw substring check fails on form rather than
+			// on whether the marker was reported. ToSlash is a no-op on Unix.
+			if !strings.Contains(filepath.ToSlash(out), filepath.ToSlash(marker)) ||
+				!strings.Contains(out, "reason="+reason) {
 				t.Fatalf("%s output missing quarantine marker details:\n%s", tc.name, out)
 			}
 			assertCompactBeadsQuarantineAlert(t, fixture, "mayor", marker, "compact-quarantine", reason)
@@ -4331,10 +4344,16 @@ func TestBackupScriptDiscoversNamedBackupsAndSyncsArtifactsOffsite(t *testing.T)
 	if err != nil {
 		t.Fatalf("read rsync log: %v", err)
 	}
-	if !strings.Contains(string(rsyncLog), artifactDir+"/") {
+	// Compare with separators normalized. The script joins paths with "/" while
+	// the Go-side fixture builds them with filepath.Join, so on Windows the two
+	// describe the same directory in different forms ("...\001/.dolt-backup" vs
+	// "...\001\.dolt-backup") and a raw substring check fails on form rather
+	// than on the behavior under test. ToSlash is a no-op on Unix.
+	rsyncLogText := filepath.ToSlash(string(rsyncLog))
+	if !strings.Contains(rsyncLogText, filepath.ToSlash(artifactDir)+"/") {
 		t.Fatalf("rsync should use backup artifact dir, log:\n%s", rsyncLog)
 	}
-	if strings.Contains(string(rsyncLog), dataDir+"/") {
+	if strings.Contains(rsyncLogText, filepath.ToSlash(dataDir)+"/") {
 		t.Fatalf("rsync must not use live data dir, log:\n%s", rsyncLog)
 	}
 }
@@ -4565,8 +4584,12 @@ func TestBackupScriptAutoConfiguresMissingBackupRemotes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read dolt log: %v", err)
 	}
-	artifactURL := "file://" + filepath.Join(cityPath, ".dolt-backup", "archive")
-	if !strings.Contains(string(doltLog), "backup add archive-backup "+artifactURL) {
+	// Separators normalized on both sides: the script builds this URL with "/"
+	// while filepath.Join uses "\" on Windows, so the two spell the same
+	// location differently and a raw comparison fails on form. A file:// URL is
+	// slash-separated by definition, which is what the script emits.
+	artifactURL := "file://" + filepath.ToSlash(filepath.Join(cityPath, ".dolt-backup", "archive"))
+	if !strings.Contains(filepath.ToSlash(string(doltLog)), "backup add archive-backup "+artifactURL) {
 		t.Fatalf("dolt log missing backup add for archive -> %s:\n%s", artifactURL, doltLog)
 	}
 	if strings.Contains(string(doltLog), "backup add prod-backup") {
