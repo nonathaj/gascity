@@ -92,7 +92,23 @@ assert_true "loadavg.script_references_seam" grep -q 'GC_TEST_LOCAL_LOADAVG' "$J
 # inherits the real host's core count and so false-fails on a small host.
 # GC_TEST_LOCAL_LOADAVG stays unset, which is what gives the guard its
 # teeth: it still proves the default path reads /proc/loadavg.
-if command -v strace >/dev/null 2>&1; then
+# Before trusting a NEGATIVE strace result, prove strace can observe file opens
+# at all on this platform. Git for Windows ships an strace.exe, so the
+# command -v check below does not skip there, but its tracing does not surface
+# these opens: straced `cat /proc/loadavg` reports zero loadavg opens even
+# though /proc/loadavg exists and is readable under MSYS. Without this probe the
+# guard reports a failure for a script that is behaving correctly, which is
+# exactly the false signal it was written to prevent.
+strace_sees_file_opens() {
+    command -v strace >/dev/null 2>&1 || return 1
+    [[ -r /proc/loadavg ]] || return 1
+    local probe
+    probe="$(strace -f -e trace=%file -- cat /proc/loadavg 2>&1 >/dev/null || true)"
+    [[ "$probe" == *"/proc/loadavg"* ]]
+}
+if ! strace_sees_file_opens; then
+    echo "  skip loadavg.default_path_opens_proc_loadavg — strace cannot observe file opens on this platform"
+elif command -v strace >/dev/null 2>&1; then
     # Captured into a variable rather than piped live into grep: a piped
     # `grep -q` closes its end of the pipe as soon as it finds a match, and
     # under pipefail that early close can race strace's own exit — SIGPIPEing

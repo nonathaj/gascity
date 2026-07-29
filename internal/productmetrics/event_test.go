@@ -348,10 +348,13 @@ func TestInjectedImmutableCommandCatalogRoundTripsWithoutExpandingProduction(t *
 		t.Fatal("production encoder accepted a non-sentinel ID from an injected-only catalog")
 	}
 
+	// Bump this when a command is added to the census: the count is a guard
+	// against the injected-only catalog silently leaking into production, not a
+	// cap on how many commands gc may have.
 	generatedCount := 0
 	generatedCommandIDCatalog(func(commandIDEntry) { generatedCount++ })
-	if generatedCount != 191 {
-		t.Fatalf("generated production catalog has %d entries, want 191", generatedCount)
+	if generatedCount != 192 {
+		t.Fatalf("generated production catalog has %d entries, want 192", generatedCount)
 	}
 
 	injected := func(yield func(commandIDEntry)) {
