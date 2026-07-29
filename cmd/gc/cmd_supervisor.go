@@ -62,6 +62,7 @@ to add cities.`,
 		newSupervisorLogsCmd(stdout, stderr),
 		newSupervisorInstallCmd(stdout, stderr),
 		newSupervisorUninstallCmd(stdout, stderr),
+		newSupervisorEnsureCmd(stdout, stderr),
 	)
 	return cmd
 }
@@ -1429,11 +1430,23 @@ func runSupervisor(stdout, stderr io.Writer) int {
 	if apiErr != nil {
 		if supervisorAddrInUse(apiErr) && supervisorRespondingGCSupervisor(addr) {
 			fmt.Fprint(stderr, supervisorPortInUseMessage(addr, supervisor.ConfigPath())) //nolint:errcheck
+			// Record WHY this exit happened, so a keepalive can tell it from a crash.
+			// systemd reads that from the exit code via RestartPreventExitStatus=3; Windows
+			// Task Scheduler cannot inspect an exit code at all, so `gc supervisor ensure`
+			// reads this sentinel instead. Best-effort: failing to write it must not change
+			// the exit code a service manager that CAN read exit codes is relying on.
+			if err := recordSupervisorPortCollision(); err != nil {
+				fmt.Fprintf(stderr, "gc supervisor: recording port collision: %v\n", err) //nolint:errcheck
+			}
 			return supervisorExitCodePortInUse
 		}
 		fmt.Fprintf(stderr, "gc supervisor: api: listen %s failed: %v\n", addr, apiErr) //nolint:errcheck
 		return 1
 	}
+	// Binding the port is proof that whatever collision was recorded earlier is over.
+	// Without this, a collision that the operator has since resolved would keep suppressing
+	// keepalive respawns for the rest of its window if this supervisor later died.
+	clearSupervisorPortCollision(stderr)
 	if port >= supervisorEphemeralPortWarningThreshold {
 		_, _ = fmt.Fprintf(stderr,
 			"gc supervisor: WARNING: API binding to ephemeral port %d -- "+

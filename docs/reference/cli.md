@@ -4321,6 +4321,7 @@ gc supervisor
 
 | Subcommand | Description |
 |------------|-------------|
+| [gc supervisor ensure](#gc-supervisor-ensure) | Start the supervisor only if it should be running and is not |
 | [gc supervisor install](#gc-supervisor-install) | Install the supervisor as a platform service |
 | [gc supervisor logs](#gc-supervisor-logs) | Tail the supervisor log file |
 | [gc supervisor reload](#gc-supervisor-reload) | Trigger immediate reconciliation of all cities |
@@ -4329,6 +4330,25 @@ gc supervisor
 | [gc supervisor status](#gc-supervisor-status) | Check if the supervisor is running |
 | [gc supervisor stop](#gc-supervisor-stop) | Stop the machine-wide supervisor |
 | [gc supervisor uninstall](#gc-supervisor-uninstall) | Remove the platform service |
+
+## gc supervisor ensure
+
+Start the machine-wide supervisor only if it should be running and is not.
+
+Intended for a repeating scheduled trigger (the Windows Task Scheduler analog of
+systemd's Restart=always). It is idempotent and safe to run every few minutes:
+
+  - exits immediately when the control socket already answers
+  - declines to respawn while a recent port collision shows another supervisor
+    owns the API port (the RestartPreventExitStatus=3 analog)
+  - otherwise starts "gc supervisor run" detached
+
+Declining to respawn is a success, not a failure: a scheduled task should not report
+an error on a machine where the supervisor is deliberately not running.
+
+```
+gc supervisor ensure
+```
 
 ## gc supervisor install
 

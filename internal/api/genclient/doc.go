@@ -24,4 +24,10 @@ package genclient
 // compiles, and the compile step reads this package — so
 // `client_gen.go` is empty at read time and the build fails before
 // producing any output. The script writes to a temp file and renames.
-//go:generate ../../../scripts/gen-client.sh
+//
+// Run through `sh` explicitly rather than relying on the shebang: go generate
+// fork/execs the directive directly, and Windows has no shebang handling, so a
+// bare script path fails with "%1 is not a valid Win32 application" and blocks
+// the pre-commit regeneration. `sh` resolves to Git for Windows' shell there and
+// to the system shell on Unix, so one directive works on both.
+//go:generate sh ../../../scripts/gen-client.sh

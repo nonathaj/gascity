@@ -5,8 +5,17 @@ BUILDX_VERSION := 0.21.2
 GOOS   := $(shell go env GOOS)
 GOARCH := $(shell go env GOARCH)
 
-BIN_DIR := $(shell go env GOPATH)/bin
-GOLANGCI_LINT := $(BIN_DIR)/golangci-lint
+# Normalize GOPATH to forward slashes. On Windows `go env GOPATH` returns
+# backslashes (C:\Users\me\go), and every recipe passes this value through sh:
+# unquoted, sh eats the backslashes as escapes and GOBIN arrives as
+# "C:Usersmego/bin", which `go install` rejects with "GOBIN must be an absolute
+# path". Forward slashes are absolute to Go on Windows and need no quoting to
+# survive sh. The subst is a no-op on Unix, where GOPATH has no backslashes.
+BIN_DIR := $(subst \,/,$(shell go env GOPATH))/bin
+# $(GOEXE) is ".exe" on Windows and empty elsewhere. Without it this target
+# names a file `go install` never creates, so the tool reinstalls on every
+# lint invocation instead of being cached.
+GOLANGCI_LINT := $(BIN_DIR)/golangci-lint$(shell go env GOEXE)
 
 BINARY     := gc
 BUILD_DIR  := bin
@@ -347,6 +356,11 @@ GOCACHE_VAL   := $(shell go env GOCACHE)
 GOMODCACHE_VAL := $(shell go env GOMODCACHE)
 GOTMPDIR_VAL  := $(shell go env GOTMPDIR)
 GOROOT_VAL    := $(shell go env GOROOT)
+## TMP/TEMP are preserved alongside TMPDIR because `env -i` clears the whole
+## environment and Go picks its work dir per-platform: os.TempDir() reads TMPDIR
+## on Unix but TMP, then TEMP, on Windows. Dropping them left Go falling back to
+## C:\WINDOWS, where every `go test` under this wrapper died with
+## "creating work dir: Access is denied". Empty-by-default, so Unix is unchanged.
 TEST_ENV = env -i \
 	PATH="$$PATH" \
 	HOME="$$HOME" \
@@ -355,6 +369,8 @@ TEST_ENV = env -i \
 	SHELL="$$SHELL" \
 	LANG="$$LANG" \
 	TMPDIR="$${TMPDIR:-/var/tmp}" \
+	TMP="$${TMP-}" \
+	TEMP="$${TEMP-}" \
 	OBSERVABLE_TEST_LOG="$${OBSERVABLE_TEST_LOG-}" \
 	OBSERVABLE_FAILURE_LINES="$${OBSERVABLE_FAILURE_LINES-}" \
 	GC_TEST_NO_SLICE="$${GC_TEST_NO_SLICE-}" \
