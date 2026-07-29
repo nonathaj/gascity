@@ -61,6 +61,18 @@ run_in_test_env() {
     SHELL="${SHELL:-/bin/sh}" \
     LANG="${LANG:-C.UTF-8}" \
     TMPDIR="${TMPDIR:-/var/tmp}" \
+    TMP="${TMP-}" \
+    TEMP="${TEMP-}" \
+    SYSTEMROOT="${SYSTEMROOT-}" \
+    SYSTEMDRIVE="${SYSTEMDRIVE-}" \
+    WINDIR="${WINDIR-}" \
+    COMSPEC="${COMSPEC-}" \
+    PATHEXT="${PATHEXT-}" \
+    USERPROFILE="${USERPROFILE-}" \
+    LOCALAPPDATA="${LOCALAPPDATA-}" \
+    APPDATA="${APPDATA-}" \
+    ProgramData="${ProgramData-}" \
+    NUMBER_OF_PROCESSORS="${NUMBER_OF_PROCESSORS-}" \
     XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}" \
     GOPATH="${gopath_val}" \
     GOCACHE="${gocache_val}" \
@@ -209,11 +221,59 @@ join_regex() {
   printf '%s' "$*"
 }
 
-regex="^($(join_regex "${selected[@]}"))$"
+# Maximum characters to spend on a single -run regex.
+#
+# Windows caps an entire CreateProcess command line at 32767 characters, and a
+# cmd/gc shard blows straight through it: ~8200 tests over 6 shards is ~1400
+# names per shard, which joins into a ~60 KB alternation and fails with
+# "env: 'go': Argument list too long" before a single test runs. Unix has no
+# comparable limit in practice (ARG_MAX is ~2 MB), so the budget only ever
+# binds on Windows; the batching below is a no-op elsewhere because a whole
+# shard fits in one batch.
+#
+# 28000 leaves room for the rest of the command line -- the go binary path, the
+# package, the flags, and the full environment env(1) rebuilds, all of which
+# count against the same limit.
+GO_TEST_RUN_REGEX_BUDGET="${GO_TEST_RUN_REGEX_BUDGET:-28000}"
+
+# Split the shard into batches whose -run regex fits the budget. Batching keeps
+# the shard's test SET identical -- every selected test still runs exactly once,
+# in this shard -- so cross-shard parallelism and coverage are unchanged; only
+# the number of `go test` invocations grows.
+batches=()
+current=()
+current_len=0
+for name in "${selected[@]}"; do
+  # +1 for the '|' separator this name will need.
+  name_len=$(( ${#name} + 1 ))
+  if (( ${#current[@]} > 0 && current_len + name_len > GO_TEST_RUN_REGEX_BUDGET )); then
+    batches+=("$(join_regex "${current[@]}")")
+    current=()
+    current_len=0
+  fi
+  current+=("$name")
+  current_len=$(( current_len + name_len ))
+done
+if (( ${#current[@]} > 0 )); then
+  batches+=("$(join_regex "${current[@]}")")
+fi
+
 echo "Running ${test_pkg} shard ${shard_index} of ${shard_total} (${#selected[@]} tests)"
 printf '  %s\n' "${selected[@]}"
-if [[ -n "${GO_TEST_TIMING_FILE:-}" ]]; then
-  run_observable_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex"
-else
-  run_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex"
+if (( ${#batches[@]} > 1 )); then
+  echo "  (split into ${#batches[@]} batches to stay under the ${GO_TEST_RUN_REGEX_BUDGET}-char -run regex budget)"
 fi
+
+# Run every batch even after one fails, then report the first failure. Stopping
+# at the first failing batch would hide the rest of the shard's results and make
+# a Windows run report strictly less than a Unix run of the same shard.
+shard_status=0
+for batch in "${batches[@]}"; do
+  regex="^(${batch})\$"
+  if [[ -n "${GO_TEST_TIMING_FILE:-}" ]]; then
+    run_observable_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
+  else
+    run_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
+  fi
+done
+exit "$shard_status"

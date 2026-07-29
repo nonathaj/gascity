@@ -27,9 +27,60 @@ LOCAL_PARALLEL="$TEST_DIR/test-local-parallel"
 # shellcheck source=./push-gate-lock-lib.sh disable=SC1091
 . "$LIB"
 
-pass=0; fail=0
+# flock(1) IS the cross-invocation cap. push-gate-lock-lib.sh documents a
+# deliberate degraded path when it is missing: warn once, hand back an empty fd,
+# and return success so callers proceed uncapped. Every assertion about
+# capping, waiting, denial, holder reporting and tunable validation therefore
+# describes behavior that, without flock, is specified NOT to happen.
+#
+# Git for Windows ships no flock(1) and none of its packages provide one, so on
+# Windows this suite reported 21 failures against a library behaving exactly as
+# designed. Those cases are skipped -- not silently passed -- when flock is
+# genuinely absent, which keeps the ~30 assertions that do not depend on it
+# (slot-dir resolution, worktree sharing, wiring) as real Windows coverage.
+#
+# This is inert on Linux and macOS: HAVE_FLOCK is 1 there, so every case runs
+# and a genuine regression in any of them still fails the suite.
+HAVE_FLOCK=1
+command -v flock >/dev/null 2>&1 || HAVE_FLOCK=0
+
+# Cases whose subject is the cap itself, and which are meaningless without it.
+FLOCK_DEPENDENT_CASES="
+acquire.fd_var_set
+acquire.second_fd_differs
+describe.has_pid_a
+describe.has_label_a
+describe.has_label_b
+describe.flags_dead_holder
+deny.lib_from_child_zero_wait
+wait.busy_message_immediate
+wait.reports_holder_a
+wait.timeout_message
+wait.eventually_denied
+wait.elapsed_at_least_bound
+wait.library_returns_1_on_timeout
+release.flock_probe_succeeds
+inherit.detached_descendant_does_not_pin_slot
+mkdir_fail.warns_cannot_create_slot_dir
+tunables.max_concurrent_zero_warns_by_name
+tunables.max_concurrent_negative_warns_by_name
+tunables.max_concurrent_nonnumeric_warns_by_name
+tunables.PUSH_GATE_MAX_WAIT_SECONDS_warns_by_name
+tunables.PUSH_GATE_POLL_SECONDS_warns_by_name
+"
+
+pass=0; fail=0; skip=0
 record_pass() { echo "  ok   $1"; pass=$((pass + 1)); }
-record_fail() { echo "  FAIL $1 — $2"; fail=$((fail + 1)); }
+record_skip() { echo "  skip $1 — $2"; skip=$((skip + 1)); }
+record_fail() {
+    if (( ! HAVE_FLOCK )) && [[ "$FLOCK_DEPENDENT_CASES" == *"
+$1
+"* ]]; then
+        record_skip "$1" "requires flock(1), which this platform does not provide; the cap degrades to no-cap by design"
+        return
+    fi
+    echo "  FAIL $1 — $2"; fail=$((fail + 1))
+}
 
 assert_eq() {
     local name="$1" got="$2" want="$3"
@@ -315,5 +366,9 @@ else
 fi
 
 echo
-echo "push-gate-lock tests: $pass passed, $fail failed"
+if (( skip > 0 )); then
+    echo "push-gate-lock tests: $pass passed, $fail failed, $skip skipped (flock(1) unavailable)"
+else
+    echo "push-gate-lock tests: $pass passed, $fail failed"
+fi
 [[ "$fail" -eq 0 ]]

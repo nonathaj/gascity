@@ -356,11 +356,25 @@ GOCACHE_VAL   := $(shell go env GOCACHE)
 GOMODCACHE_VAL := $(shell go env GOMODCACHE)
 GOTMPDIR_VAL  := $(shell go env GOTMPDIR)
 GOROOT_VAL    := $(shell go env GOROOT)
-## TMP/TEMP are preserved alongside TMPDIR because `env -i` clears the whole
-## environment and Go picks its work dir per-platform: os.TempDir() reads TMPDIR
-## on Unix but TMP, then TEMP, on Windows. Dropping them left Go falling back to
-## C:\WINDOWS, where every `go test` under this wrapper died with
-## "creating work dir: Access is denied". Empty-by-default, so Unix is unchanged.
+## The allowlist below carries a Windows block because `env -i` clears the whole
+## environment and this list was written against Unix's notion of "essential".
+## Each entry is empty-by-default, so Unix behavior is unchanged. Concretely:
+##
+##   TMP/TEMP     os.TempDir() reads TMPDIR on Unix but TMP, then TEMP, on
+##                Windows. Without them Go fell back to C:\WINDOWS and every
+##                wrapped `go test` died with "creating work dir: Access is
+##                denied".
+##   LOCALAPPDATA cmd/gc's shortSocketRoot() uses it to keep AF_UNIX paths under
+##                sockaddr_un's 108-byte limit. Dropped, it fell back to the long
+##                per-run temp dir and controller sockets intermittently failed
+##                with "bind: invalid argument" once the path crossed 108 bytes.
+##   SystemRoot   Winsock initialization needs it; a spawned helper without it
+##                can fail to bind at all, which surfaced as listener processes
+##                "not becoming ready" rather than as an obvious env error.
+##
+## The rest (SystemDrive, windir, ComSpec, PATHEXT, USERPROFILE, APPDATA,
+## ProgramData, NUMBER_OF_PROCESSORS) are the standard set Windows programs
+## assume exist; omitting them produces the same class of far-removed symptom.
 TEST_ENV = env -i \
 	PATH="$$PATH" \
 	HOME="$$HOME" \
@@ -371,6 +385,16 @@ TEST_ENV = env -i \
 	TMPDIR="$${TMPDIR:-/var/tmp}" \
 	TMP="$${TMP-}" \
 	TEMP="$${TEMP-}" \
+	SYSTEMROOT="$${SYSTEMROOT-}" \
+	SYSTEMDRIVE="$${SYSTEMDRIVE-}" \
+	WINDIR="$${WINDIR-}" \
+	COMSPEC="$${COMSPEC-}" \
+	PATHEXT="$${PATHEXT-}" \
+	USERPROFILE="$${USERPROFILE-}" \
+	LOCALAPPDATA="$${LOCALAPPDATA-}" \
+	APPDATA="$${APPDATA-}" \
+	ProgramData="$${ProgramData-}" \
+	NUMBER_OF_PROCESSORS="$${NUMBER_OF_PROCESSORS-}" \
 	OBSERVABLE_TEST_LOG="$${OBSERVABLE_TEST_LOG-}" \
 	OBSERVABLE_FAILURE_LINES="$${OBSERVABLE_FAILURE_LINES-}" \
 	GC_TEST_NO_SLICE="$${GC_TEST_NO_SLICE-}" \
