@@ -114,6 +114,24 @@ pid_is_running() (
   if command -v ps >/dev/null 2>&1; then
     ps_pid=$(ps -p "$pid" -o pid= 2>/dev/null | tr -d '[:space:]')
     [ "$ps_pid" = "$pid" ] && return 0
+
+    # Windows: the pid may be a NATIVE (Win32) pid rather than an interpreter
+    # one. Both checks above resolve in the MSYS pid space, but gc records
+    # native pids in dolt-state.json and dolt.pid, so a perfectly healthy
+    # managed dolt server looks dead to both -- and runtime.sh then reports
+    # "state file present but not running" and falls back to a stale env port
+    # or exits 78 "cannot resolve runtime port".
+    #
+    # `ps -W` lists Windows processes with the native pid in column 4 (WINPID);
+    # column 1 stays the MSYS pid. On other platforms `ps -W` is not a valid
+    # option, so it writes nothing to stdout and this simply falls through,
+    # leaving Unix behavior unchanged.
+    if ps -W 2>/dev/null | awk -v target="$pid" '
+        NR > 1 && $4 == target { found = 1 }
+        END { exit found ? 0 : 1 }
+      '; then
+      return 0
+    fi
   fi
 
   return 1

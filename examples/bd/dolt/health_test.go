@@ -414,10 +414,27 @@ func TestHealthScriptToleratesSlowRigListDiscovery(t *testing.T) {
 	// `gc dolt-cleanup`) fails, so orphan detection takes the metadata
 	// referenced-set fallback, which protects extdb only when the rig-list
 	// result was consumed instead of the city-only scan.
+	// The rig path is JSON-encoded rather than pasted between quotes, and
+	// emitted with a quoted heredoc rather than printf. Both matter on Windows,
+	// where the path contains backslashes:
+	//
+	//   - "\" is JSON's escape character, so a raw C:\Users\... produced invalid
+	//     JSON. jq (which IS installed here) then emitted nothing, the script
+	//     fell back to the city-only scan, and the external rig this test exists
+	//     to protect disappeared -- reported as "extdb misclassified as orphan".
+	//   - printf interprets escapes in its FORMAT string, so it would have
+	//     collapsed the "\\" that JSON encoding just added, undoing the fix. A
+	//     <<'JSON' heredoc performs no expansion or escape processing.
+	extRigJSON, err := json.Marshal(extRig)
+	if err != nil {
+		t.Fatalf("encode external rig path: %v", err)
+	}
 	writeExecutable(t, filepath.Join(binDir, "gc"), `#!/bin/sh
 if [ "${1:-}" = "rig" ] && [ "${2:-}" = "list" ]; then
   sleep 7
-  printf '{"rigs":[{"path": "`+extRig+`"}]}\n'
+  cat <<'JSON'
+{"rigs":[{"path": `+string(extRigJSON)+`}]}
+JSON
   exit 0
 fi
 exit 1
@@ -696,7 +713,14 @@ func assertRuntimePortExit78(t *testing.T, err error, out []byte, stateFile, cit
 	if exitErr.ExitCode() != 78 {
 		t.Fatalf("runtime.sh exit code = %d, want 78\n%s", exitErr.ExitCode(), out)
 	}
-	if got, want := string(out), expectedPortResolveErrorWithProvider(stateFile, cityPath, "present but not running"); got != want {
+	// Separators normalized on both sides: runtime.sh composes the state-file
+	// path with "/" while the fixture builds it with filepath.Join, so on
+	// Windows the two name the same file differently and this compares unequal
+	// even when the script emitted exactly the right diagnostic. ToSlash is a
+	// no-op on Unix, so the exact-match strictness is unchanged there.
+	got := filepath.ToSlash(string(out))
+	want := filepath.ToSlash(expectedPortResolveErrorWithProvider(stateFile, cityPath, "present but not running"))
+	if got != want {
 		t.Fatalf("runtime.sh output = %q, want %q", got, want)
 	}
 }
