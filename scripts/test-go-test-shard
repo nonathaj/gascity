@@ -234,7 +234,19 @@ join_regex() {
 # 28000 leaves room for the rest of the command line -- the go binary path, the
 # package, the flags, and the full environment env(1) rebuilds, all of which
 # count against the same limit.
-GO_TEST_RUN_REGEX_BUDGET="${GO_TEST_RUN_REGEX_BUDGET:-28000}"
+#
+# The default is 0 (unlimited, one batch) everywhere except Windows. This is
+# deliberately NOT a uniform budget: a cmd/gc shard's regex measures ~68000
+# characters, so a cross-platform 28000 would silently split Linux shards into
+# three invocations too -- changing which tests share a process, tripling the
+# effective -timeout, and (worst) making each batch overwrite the previous
+# batch's -coverprofile. Unix has no argv limit worth working around here, so it
+# keeps the exact single-invocation behavior it always had.
+case "$(uname -s 2>/dev/null || echo unknown)" in
+  MINGW*|MSYS*|CYGWIN*|Windows_NT) _default_regex_budget=28000 ;;
+  *)                               _default_regex_budget=0 ;;
+esac
+GO_TEST_RUN_REGEX_BUDGET="${GO_TEST_RUN_REGEX_BUDGET:-$_default_regex_budget}"
 
 # Split the shard into batches whose -run regex fits the budget. Batching keeps
 # the shard's test SET identical -- every selected test still runs exactly once,
@@ -246,7 +258,7 @@ current_len=0
 for name in "${selected[@]}"; do
   # +1 for the '|' separator this name will need.
   name_len=$(( ${#name} + 1 ))
-  if (( ${#current[@]} > 0 && current_len + name_len > GO_TEST_RUN_REGEX_BUDGET )); then
+  if (( GO_TEST_RUN_REGEX_BUDGET > 0 && ${#current[@]} > 0 && current_len + name_len > GO_TEST_RUN_REGEX_BUDGET )); then
     batches+=("$(join_regex "${current[@]}")")
     current=()
     current_len=0
@@ -266,14 +278,51 @@ fi
 
 # Run every batch even after one fails, then report the first failure. Stopping
 # at the first failing batch would hide the rest of the shard's results and make
-# a Windows run report strictly less than a Unix run of the same shard.
+# a batched run report strictly less than an unbatched run of the same shard.
+#
+# Coverage needs care once there is more than one batch: `go test -coverprofile`
+# TRUNCATES its output file, so reusing one path across batches would leave only
+# the last batch's profile and silently under-report the shard. Each batch writes
+# its own profile and they are merged below.
 shard_status=0
+batch_profiles=()
+batch_number=0
 for batch in "${batches[@]}"; do
+  batch_number=$(( batch_number + 1 ))
   regex="^(${batch})\$"
+  batch_args=("${go_test_args[@]}")
+  if [[ -n "${GO_TEST_COVERPROFILE:-}" && ${#batches[@]} -gt 1 ]]; then
+    batch_profile="${GO_TEST_COVERPROFILE}.batch${batch_number}"
+    batch_profiles+=("$batch_profile")
+    # Replace the -coverprofile argument's value with this batch's path.
+    for (( i = 0; i < ${#batch_args[@]}; i++ )); do
+      if [[ "${batch_args[$i]}" == "-coverprofile" ]]; then
+        batch_args[$((i + 1))]="$batch_profile"
+        break
+      fi
+    done
+  fi
   if [[ -n "${GO_TEST_TIMING_FILE:-}" ]]; then
-    run_observable_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
+    run_observable_go_test "${batch_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
   else
-    run_go_test "${go_test_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
+    run_go_test "${batch_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
   fi
 done
+
+# Merge per-batch profiles into the path the caller asked for. Every batch runs
+# the same package set with the same -covermode, so a valid merge is the single
+# shared "mode:" header followed by every batch's data lines.
+if (( ${#batch_profiles[@]} > 0 )); then
+  merged_mode=""
+  : > "$GO_TEST_COVERPROFILE"
+  for batch_profile in "${batch_profiles[@]}"; do
+    [[ -f "$batch_profile" ]] || continue
+    if [[ -z "$merged_mode" ]]; then
+      merged_mode="$(head -n 1 "$batch_profile")"
+      printf '%s\n' "$merged_mode" >> "$GO_TEST_COVERPROFILE"
+    fi
+    tail -n +2 "$batch_profile" >> "$GO_TEST_COVERPROFILE"
+    rm -f "$batch_profile"
+  done
+fi
 exit "$shard_status"
