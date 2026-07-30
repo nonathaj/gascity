@@ -669,6 +669,42 @@ Authors should put new private scripts, prompt fragments, overlays, and other
 implementation files under `assets/` unless an established loader convention
 requires a well-known directory.
 
+A pack whose scripts shell out to `jq` should carry a **platform prelude** under
+`assets/scripts/`. The core pack ships one as `assets/scripts/_platform.sh`;
+because `assets/` is private to its owning pack, a pack does not source another
+pack's copy — it carries its own. The prelude normalizes tool behavior that
+differs by host, so the scripts that source it stay portable without
+per-call-site special cases:
+
+```sh
+# assets/scripts/_platform.sh
+gc_platform_is_windows() {
+    [ "${OS:-}" = "Windows_NT" ] && return 0
+    case "$(uname -s 2>/dev/null || true)" in
+        MINGW* | MSYS* | CYGWIN* | Windows_NT*) return 0 ;;
+    esac
+    return 1
+}
+
+# A native Windows jq build opens stdout in text mode and emits CRLF, which
+# leaves a stray carriage return on the last field of every `read`. Requires
+# jq 1.7 or newer, where -b was introduced.
+if gc_platform_is_windows; then
+    jq() { command jq -b "$@"; }
+fi
+```
+
+Source it before any parsing:
+
+```sh
+. "$__SCRIPT_DIR/_platform.sh"
+```
+
+Shadowing the tool with a shell function applies to every call in the sourcing
+shell and its subshells, including command substitutions and pipelines, so call
+sites need no changes. A separate process that runs the tool directly — `xargs
+jq`, `find -exec jq` — bypasses the function and needs the flag spelled out.
+
 Formula steps reference prompt assets with
 `description_file = "../assets/<relative-path>"`; section 1.3.2 specifies how
 those references resolve across formula layers.
