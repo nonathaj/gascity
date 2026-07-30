@@ -112,7 +112,7 @@ run_go_test() {
 run_observable_go_test() {
   local timing_name="${GO_TEST_TIMING_NAME:-${test_pkg#./}-shard-${shard_index}-of-${shard_total}}"
   local observable_env=(
-    OBSERVABLE_TIMING_FILE="${GO_TEST_TIMING_FILE}"
+    OBSERVABLE_TIMING_FILE="${batch_timing_file:-${GO_TEST_TIMING_FILE}}"
     OBSERVABLE_SHARD_ID="${timing_name}"
     OBSERVABLE_VARIANT="${GO_TEST_TIMING_VARIANT:-default}"
     OBSERVABLE_COMMIT_SHA="${GITHUB_SHA:-}"
@@ -287,6 +287,8 @@ fi
 # its own profile and they are merged below.
 shard_status=0
 batch_profiles=()
+batch_timings=()
+batch_timing_file=""
 batch_number=0
 for batch in "${batches[@]}"; do
   batch_number=$(( batch_number + 1 ))
@@ -304,6 +306,14 @@ for batch in "${batches[@]}"; do
     done
   fi
   if [[ -n "${GO_TEST_TIMING_FILE:-}" ]]; then
+    # The timing artifact is truncated per run exactly like -coverprofile, so a
+    # batched shard needs the same per-batch-then-merge treatment; sharing one
+    # path left only the last batch's tests and silently under-reported the
+    # shard's cost.
+    if (( ${#batches[@]} > 1 )); then
+      batch_timing_file="${GO_TEST_TIMING_FILE}.batch${batch_number}"
+      batch_timings+=("$batch_timing_file")
+    fi
     run_observable_go_test "${batch_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
   else
     run_go_test "${batch_args[@]}" "$test_pkg" -run "$regex" || shard_status=$?
@@ -325,5 +335,30 @@ if (( ${#batch_profiles[@]} > 0 )); then
     tail -n +2 "$batch_profile" >> "$GO_TEST_COVERPROFILE"
     rm -f "$batch_profile"
   done
+fi
+
+# Merge per-batch timing artifacts the same way. Every batch describes the same
+# shard, so the merge keeps the first batch's identity/runner metadata and
+# concatenates the per-batch unit lists; the package-level unit appears once per
+# batch and is summed so the shard still reports one package total.
+if (( ${#batch_timings[@]} > 0 )); then
+  existing_timings=()
+  for batch_timing in "${batch_timings[@]}"; do
+    [[ -f "$batch_timing" ]] && existing_timings+=("$batch_timing")
+  done
+  if (( ${#existing_timings[@]} > 0 )) && command -v jq >/dev/null 2>&1; then
+    jq -s '
+      (.[0] | del(.units)) as $base
+      | ([.[].units[]] | map(select(.kind != "package"))) as $tests
+      | ([.[].units[]] | map(select(.kind == "package"))) as $pkgs
+      | $base + {units: (
+          ($pkgs | if length == 0 then [] else
+            [ (.[0] + {duration_seconds: (map(.duration_seconds) | add),
+                       outcome: (if any(.[]; .outcome == "fail") then "fail" else .[0].outcome end)}) ]
+          end) + $tests)}
+    ' "${existing_timings[@]}" > "${GO_TEST_TIMING_FILE}.merged" \
+      && mv -f "${GO_TEST_TIMING_FILE}.merged" "$GO_TEST_TIMING_FILE"
+  fi
+  rm -f "${batch_timings[@]}"
 fi
 exit "$shard_status"

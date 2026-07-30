@@ -16,6 +16,37 @@ func shCommand(args ...string) *exec.Cmd {
 	return testCommand("sh", args...)
 }
 
+// windowsEssentialEnv returns the Windows variables any test that replaces a
+// child's environment wholesale must carry, mirroring the Makefile's TEST_ENV
+// allowlist and documented in the comment above it. Two matter most here:
+// without TMP/TEMP, os.TempDir() -- which reads those on Windows rather than
+// TMPDIR -- falls back to C:\WINDOWS and `go test` dies with "creating work
+// dir: Access is denied"; without USERPROFILE, Go cannot derive a default
+// GOPATH and fails with "module cache not found". Every entry is skipped when
+// empty, so this is a no-op on Unix.
+func windowsEssentialEnv() []string {
+	var env []string
+	for _, key := range []string{
+		"TMP",
+		"TEMP",
+		"SYSTEMROOT",
+		"SYSTEMDRIVE",
+		"WINDIR",
+		"COMSPEC",
+		"PATHEXT",
+		"USERPROFILE",
+		"LOCALAPPDATA",
+		"APPDATA",
+		"PROGRAMDATA",
+		"NUMBER_OF_PROCESSORS",
+	} {
+		if value := os.Getenv(key); value != "" {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
 // environWithout returns env with every assignment of name removed. Windows
 // environment variables are case-insensitive, so the match is too.
 func environWithout(env []string, name string) []string {

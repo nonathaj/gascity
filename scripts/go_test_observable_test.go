@@ -393,30 +393,7 @@ func goTestScriptEnv(t *testing.T, tmpDir string) []string {
 		"HOME=" + t.TempDir(),
 		"TMPDIR=" + tmpDir,
 	}
-	// This env replaces the caller's wholesale, so it needs the same Windows
-	// essentials the Makefile's TEST_ENV allowlist carries and for the same
-	// reasons (see the comment above TEST_ENV). Without TMP/TEMP, os.TempDir()
-	// -- which reads TMP then TEMP on Windows, not TMPDIR -- fell back to
-	// C:\WINDOWS and every wrapped `go test` died with "creating work dir:
-	// Access is denied". Each is skipped when empty, so Unix is unchanged.
-	for _, key := range []string{
-		"TMP",
-		"TEMP",
-		"SYSTEMROOT",
-		"SYSTEMDRIVE",
-		"WINDIR",
-		"COMSPEC",
-		"PATHEXT",
-		"USERPROFILE",
-		"LOCALAPPDATA",
-		"APPDATA",
-		"PROGRAMDATA",
-		"NUMBER_OF_PROCESSORS",
-	} {
-		if value := os.Getenv(key); value != "" {
-			env = append(env, key+"="+value)
-		}
-	}
+	env = append(env, windowsEssentialEnv()...)
 	for _, key := range []string{
 		"GOPATH",
 		"GOCACHE",

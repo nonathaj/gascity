@@ -722,18 +722,19 @@ func TestGoTestShardPreservesAcceptanceAuthEnv(t *testing.T) {
 	}
 
 	cmd := exec.Command(
+		"bash",
 		filepath.Join(repoRoot, "scripts", "test-go-test-shard"),
 		"./scripts/testdata/test-go-test-shard/env_required",
 		"1",
 		"1",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + t.TempDir(),
 		"GO_TEST_TIMEOUT=1m",
 		"ANTHROPIC_AUTH_TOKEN=synthetic-token",
-	}
+	}, windowsEssentialEnv()...)
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -754,11 +755,11 @@ func TestGoTestShardRunsWithoutPreservedProviderEnv(t *testing.T) {
 		"1",
 	)
 	cmd.Dir = repoRoot
-	cmd.Env = []string{
+	cmd.Env = append([]string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + t.TempDir(),
 		"GO_TEST_TIMEOUT=1m",
-	}
+	}, windowsEssentialEnv()...)
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
