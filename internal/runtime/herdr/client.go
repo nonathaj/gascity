@@ -426,13 +426,32 @@ func (c *client) ensurePlacement(ctx context.Context, wsLabel, tabLabel string) 
 
 // ── shared session-server lifecycle ──────────────────────────────────────────
 
+// herdrConfigDir is the directory herdr keeps its per-session sockets under.
+//
+// os.UserConfigDir resolves what herdr itself uses on each platform:
+// $XDG_CONFIG_HOME or ~/.config on Unix, and %AppData% on Windows. Hardcoding
+// "~/.config" made this Unix-only — herdr on Windows writes to
+// %AppData%\herdr\sessions\<session>\herdr.sock, so gc probed a directory that
+// never exists there, serverAlive() could never be true, and every Start failed
+// with "herdr server for session … did not become ready" after burning the full
+// 10s readiness wait. The provider was inoperable on Windows, not slow.
+//
+// Falls back to the old layout only if UserConfigDir fails, which keeps a
+// misconfigured environment behaving as before rather than pointing at "".
+func herdrConfigDir() string {
+	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+		return filepath.Join(dir, "herdr")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "herdr")
+}
+
 // socketPath is the unix socket for this client's herdr session.
 func (c *client) socketPath() string {
-	home, _ := os.UserHomeDir()
 	if c.session == "" || c.session == "default" {
-		return filepath.Join(home, ".config", "herdr", "herdr.sock")
+		return filepath.Join(herdrConfigDir(), "herdr.sock")
 	}
-	return filepath.Join(home, ".config", "herdr", "sessions", c.session, "herdr.sock")
+	return filepath.Join(herdrConfigDir(), "sessions", c.session, "herdr.sock")
 }
 
 // serverAlive reports whether the session-server is actually accepting

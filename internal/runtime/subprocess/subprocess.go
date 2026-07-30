@@ -525,6 +525,14 @@ func (p *Provider) sockKey(name string) string {
 	return "s" + hex.EncodeToString(sum[:4])
 }
 
+// fallbackDir is the current-euid convenience wrapper over fallbackDirForEUID.
+//
+// is //go:build !windows because the fallback it exercises is the Unix
+// sockaddr_un 108-byte path limit. A native-GOOS lint on Windows therefore sees
+// no caller; the Linux lint sees them and reports nothing. Structural cleanup of
+// this Windows-only unused class is tracked on gw-4c3.
+//
+//nolint:unused // Its only callers are in subprocess_fallback_unix_test.go, which
 func (p *Provider) fallbackDir() string {
 	return p.fallbackDirForEUID(os.Geteuid())
 }
@@ -711,6 +719,12 @@ func (p *Provider) socketAliveAt(name string, euid int) bool {
 
 // sendSocketCommand connects to the session's control socket, sends a
 // command, and waits for "ok". Returns nil on success.
+//
+// exercised only by tests whose socket assertions are Unix-shaped, so a
+// native-GOOS lint on Windows sees no caller while the Linux lint sees them.
+// Same Windows-only unused class as fallbackDir above (gw-4c3).
+//
+//nolint:unused // Production code calls the ...At form directly; this wrapper is
 func (p *Provider) sendSocketCommand(name, command string, timeout time.Duration) error {
 	return p.sendSocketCommandAt(name, command, timeout, os.Geteuid())
 }
@@ -781,8 +795,28 @@ func (p *Provider) stopBySocket(name string) error {
 	return p.stopBySocketAt(name, os.Geteuid())
 }
 
+// stopSocketTimeout bounds the wait for a "stop" reply.
+//
+// Derived from the server's own stop budget rather than being an independent
+// constant. The handler runs TerminateManagedProcess BEFORE it answers, so the
+// reply cannot arrive sooner than that call returns: a signal/kill attempt, up
+// to ManagedProcessStopGrace waiting for the process to go, then a forced kill
+// and a wait for exit.
+//
+// The previous fixed 7s left almost no headroom on Windows and timed out under
+// load. There the grace is spent in full for anything windowless -- a graceful
+// `taskkill /T` cannot close a console process like `sleep`, so the escalation
+// path always runs -- and each of the two taskkill attempts is its own process
+// creation at ~380ms. That put a successful stop at ~6s against a 7s deadline,
+// so the caller reported "i/o timeout" for a stop that was working correctly.
+//
+// Keying off the grace keeps the two in step: raising or lowering
+// ManagedProcessStopGrace on either platform can no longer silently strand this
+// caller.
+var stopSocketTimeout = runtime.ManagedProcessStopGrace + 8*time.Second
+
 func (p *Provider) stopBySocketAt(name string, euid int) error {
-	err := p.sendSocketCommandAt(name, "stop", 7*time.Second, euid)
+	err := p.sendSocketCommandAt(name, "stop", stopSocketTimeout, euid)
 	if err != nil {
 		if isUnavailableSocketError(err) {
 			// Socket doesn't exist or can't connect — session is dead (idempotent).
