@@ -24,8 +24,16 @@ func TestProcessArgsFromPSReturnsWhenPSHangs(t *testing.T) {
 	if err == nil {
 		t.Fatalf("processArgsFromPS succeeded with a hanging ps")
 	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("processArgsFromPS took %s, want bounded timeout", elapsed)
+	// The claim under test is "returns promptly instead of waiting out the 10s
+	// hang", so the bound only has to sit comfortably below 10s. A 1s bound
+	// asserted something stricter than intended: the 100ms timeout fires
+	// correctly, but spawning and tearing down the fake ps (a script, so sh plus
+	// sleep) costs ~380ms per process on Windows, and the local gate runs six
+	// cmd/gc shards plus unit-core on one machine where CI gives each shard its
+	// own runner. Under that contention the teardown alone exceeded 1s and the
+	// test failed while the timeout it exercises was working.
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("processArgsFromPS took %s, want bounded timeout well under the 10s hang", elapsed)
 	}
 }
 
