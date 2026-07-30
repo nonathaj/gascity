@@ -302,10 +302,23 @@ func (c *client) listAgents(ctx context.Context) ([]agentInfo, error) {
 // read → `herdr agent read <name> --source <source> [--lines n]`. Use
 // "visible" for the current screen (the liveness/fingerprint snapshot);
 // "recent"/"recent-unwrapped" are scrollback only.
+//
+// Output format changed in 0.7.5: through 0.7.4 `agent read` returned the
+// JSON envelope ({"read":{"text":…}}); 0.7.5+ prints the screen text directly
+// (--format text|ansi, no JSON). Branch on the detected interface so both work.
 func (c *client) read(ctx context.Context, name, source string, lines int) (string, error) {
 	args := []string{"agent", "read", name, "--source", source}
 	if lines > 0 {
 		args = append(args, "--lines", strconv.Itoa(lines))
+	}
+	legacy, verr := c.supportsLegacyStart()
+	if verr != nil {
+		return "", fmt.Errorf("herdr: detect herdr version: %w", verr)
+	}
+	if !legacy {
+		// 0.7.5+: read prints text directly (run() would try to JSON-decode it).
+		out, err := c.runText(ctx, args...)
+		return out, err
 	}
 	res, err := c.run(ctx, args...)
 	if err != nil {
@@ -320,6 +333,22 @@ func (c *client) read(ctx context.Context, name, source string, lines int) (stri
 		return "", fmt.Errorf("herdr agent read: decode: %w", err)
 	}
 	return wrap.Read.Text, nil
+}
+
+// runText executes a herdr CLI verb that prints plain text rather than the
+// JSON envelope (0.7.5+ `agent read`), returning stdout verbatim. A non-zero
+// exit with stderr is surfaced like run's transport errors.
+func (c *client) runText(ctx context.Context, args ...string) (string, error) {
+	full := append([]string{"--session", c.session}, args...)
+	out, err := exec.CommandContext(ctx, c.bin, full...).Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("herdr %v: %s", args, ee.Stderr)
+		}
+		return "", fmt.Errorf("herdr %v: %w", args, err)
+	}
+	return string(out), nil
 }
 
 // proc is one process in a pane's foreground tree.
