@@ -126,6 +126,78 @@ skip-if-unchanged check, an orphan sweeper) was refuted by the profile, which
 pointed instead at redundant work the code should not have been doing on
 either platform.
 
+The sh-specific breakdown of that spawn cost -- which constructs fork and
+what each costs -- is in the Tier 2 section below; it is the same charge
+seen from the pack-script side.
+
+## Tier 2 performance: fork cost (measured 2026-07-29)
+
+Choosing POSIX sh for Tier 2 buys pack portability at a price that is
+invisible on Linux and severe on Windows. **The unit of cost is
+`fork()`, not "shell".** Win32 has no copy-on-write fork, so the sh
+distribution emulates it by copying the address space and replaying DLL
+base addresses. This is a structural property of the platform, widely
+reported outside this project, with no configuration or environment fix
+— not antivirus, not a shell flag, not `nsswitch`. Shell *builtins* are
+free; every subshell is not.
+
+Measured on a Windows dev box (Defender disabled, so this is not AV
+overhead):
+
+| sh construct | Windows cost | Notes |
+|---|---|---|
+| parameter expansion (`${p##*/}`), `case`, arithmetic | **free** | no process created |
+| subshell function body — `f() ( … )` | **~70 ms per call** | paid *before* the body runs |
+| command substitution — `$(cmd)` | **~154 ms** | fork even when `cmd` is a builtin (`$(echo x)`) |
+| fork + exec of an external coreutil | **~380 ms** | `sed`, `head`, `basename`, … |
+
+The Linux equivalents are sub-millisecond (~0.5 ms fork, 1–2 ms
+fork+exec). Those Linux figures are *not* measured here — they are the
+standard costs, consistent with the package-level ratios below.
+
+Consequences observed, not projected:
+
+- `examples/bd/dolt` runs its 189 tests in **79 s on Linux CI** and
+  exceeds **45 minutes** on Windows without finishing.
+- One `orphan-sweep` order invocation costs **~13–15 s** on Windows.
+- A single `read_runtime_state_flag` call in the **core** pack — a
+  subshell body wrapping `$(sed … | head -1)`, invoked via `$( )` —
+  measured **over 1 s**.
+
+This is not confined to an opt-in pack. The core builtin pack that every
+city gets carries ~384 command substitutions across 16 scripts, and its
+largest scripts (`reaper.sh`, `jsonl-export.sh`, `orphan-sweep.sh`,
+`renudge-stale-human-gates.sh`) are **orders** — they fire on a schedule
+for the life of the city, so the cost recurs rather than being paid once.
+
+### Rules for writing Tier 2 sh
+
+Ordered by payoff. The first three change nothing about a script's
+interface, so they are safe to apply mechanically.
+
+| # | Rule | Measured effect |
+|---|---|---|
+| S1 | Write function bodies with braces — `f() { … }`, not `f() ( … )` — unless the function genuinely needs subshell isolation (it assigns variables or `cd`s that must not leak). | 2.7× on a helper |
+| S2 | Parse with shell builtins instead of spawning: `while IFS= read -r line` + `case` + parameter expansion in place of `$(sed …)`, `$(grep …)`, `$(cut …)`, `$(head -1)`. | 10.7× cumulative |
+| S3 | Prefer parameter expansion to a process: `${p##*/}` over `$(basename "$p")`, `${p%/*}` over `$(dirname "$p")`, `read -r x < f` over `x=$(cat f)`. Collapse multi-stage pipelines into one `awk`. | included above |
+| S4 | For helpers called in loops, return through a variable instead of `printf`, so the *caller* needs no `$( )` either. Invasive — it changes every call site — so reserve it for hot paths. | ~50× cumulative |
+
+Two rules that are about correctness, not speed, and that the fork-cost
+work keeps colliding with:
+
+- A script must locate its siblings from a **slash-separated** path.
+  `case "$0" in */*)` silently falls through to `$(pwd)` when handed a
+  native Windows path, which resolves the script's directory to the
+  *caller's* working directory. The exec boundary normalizes paths so
+  pack scripts stay pure POSIX (class P1); do not add backslash handling
+  to pack content.
+- Do not reach for a tool the sh distribution lacks. Git for Windows
+  ships no `flock`, no `lsof`, no `python3`, and no `wget` (class T8).
+  Fail *soft* with a portable fallback where the guarantee allows one —
+  `mkdir` is atomic on every POSIX filesystem and is the portable
+  mutual-exclusion primitive when `flock` is absent — and skip loudly
+  where it does not.
+
 ## Operational rules
 
 - The green list is `.github/windows-test-packages.txt` (header comment
