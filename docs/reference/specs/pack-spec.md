@@ -753,6 +753,53 @@ should live under `assets/`.
 owning subsystems. `assets/` is not scanned directly. Files under `assets/`
 become effective only when a pack definition references them.
 
+### 1.3.6. Shell Scripts
+
+A pack that ships executable content ships it as **POSIX sh** — pack scripts,
+order `exec` strings, condition checks, and setup scripts. A pack authored on
+one platform runs unchanged on every platform, so a script must not assume a
+tool, path shape, or shell extension that only some hosts provide.
+
+Two constraints govern how those scripts are written.
+
+**Portability.** Write to POSIX sh, and reach only for tools that every host
+provides. Notably absent on Windows hosts: `flock`, `lsof`, `python3`, and
+`wget`. Where a guarantee has a portable equivalent, use it — `mkdir` is atomic
+on every POSIX filesystem and is the portable way to take a lock. Where it does
+not, detect the missing tool and degrade with a message rather than failing
+obscurely. Derive a script's own directory from a slash-separated path; a
+`case "$0" in */*)` test that finds no match falls through to the working
+directory, which is rarely what the author meant.
+
+**Cost.** Creating a process is roughly a thousand times more expensive on
+Windows than on Linux, because Windows has no cheap `fork`. Shell builtins are
+free; every subshell is not. A script that spawns freely can run in under a
+second on one host and take minutes on another, and an order that fires on a
+schedule pays that cost on every tick.
+
+Prefer the cheap form:
+
+| Instead of | Write | Why |
+|---|---|---|
+| `f() ( … )` | `f() { … }` | a subshell body forks on every call, before the body runs |
+| `$(basename "$p")` | `${p##*/}` | parameter expansion creates no process |
+| `$(dirname "$p")` | `${p%/*}` | same |
+| `x=$(cat f)` | `read -r x < f` | same |
+| `$(sed … \| head -1)` | `while IFS= read -r line` + `case` | one loop replaces two processes and a pipe |
+| a five-stage pipeline | one `awk` | each stage is a process |
+
+For a helper called in a loop, returning a value by assigning a variable avoids
+the caller's `$( )` as well:
+
+```sh
+# Caller pays one process per call.
+value=$(read_flag "$state_file" running)
+
+# Caller pays none.
+read_flag "$state_file" running   # sets flag_value
+value=$flag_value
+```
+
 ## 2. Loader
 
 Loading a pack is the process of turning one or more pack directories into a
