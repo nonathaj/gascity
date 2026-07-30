@@ -48,7 +48,14 @@ func TestRunGCUsesExactBinaryOverridePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunGC: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "override:"+override+" version") {
+	// $0 is compared in slash form. execshim hands sh a slash-normalized script
+	// path on purpose: pack scripts locate their siblings with
+	// `case "$0" in */*)`, and a native Windows path has no forward slash, so
+	// that glob silently fell through and resolved the script's directory to the
+	// caller's working directory. The shell therefore reports a POSIX-shaped $0
+	// while filepath.Join here produces a native one; ToSlash puts both in the
+	// same space without weakening the assertion. No-op on Unix.
+	if !strings.Contains(filepath.ToSlash(out), "override:"+filepath.ToSlash(override)+" version") {
 		t.Fatalf("RunGC() output = %q, want override invocation for %q", out, override)
 	}
 }
