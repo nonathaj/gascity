@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -1905,7 +1906,16 @@ func TestOrphanSweepPreservesProtectedInProgressEphemeralMoleculeWisp(t *testing
 				orphanID:           tt.orphanID,
 				orphanAssignee:     tt.orphanAssignee,
 			})
-			assertOrphanSweepFakeGC(t, env, filepath.Join(binDir, "bash"), fakeGC, gcLog)
+			// Resolve a real shell rather than naming one inside binDir: nothing
+			// in this test's setup puts a bash there, so on Windows the lookup
+			// failed with "executable file not found" before the assertion ran.
+			// The point of the check is that `command -v gc` resolves to the fake
+			// gc under the test's PATH, which any real shell demonstrates.
+			shell, lookErr := exec.LookPath("bash")
+			if lookErr != nil {
+				t.Skip("bash not available")
+			}
+			assertOrphanSweepFakeGC(t, env, shell, fakeGC, gcLog)
 
 			script := coreScriptPath("orphan-sweep.sh")
 			cmd := execshim.Command(script)
@@ -2121,7 +2131,7 @@ func orphanSweepCleanroomEnv(t *testing.T, root, binDir, gcLog string, cfg orpha
 			t.Fatalf("MkdirAll(%s): %v", path, err)
 		}
 	}
-	return []string{
+	env := []string{
 		"HOME=" + dirs["HOME"],
 		"XDG_CONFIG_HOME=" + dirs["XDG_CONFIG_HOME"],
 		"XDG_CACHE_HOME=" + dirs["XDG_CACHE_HOME"],
@@ -2143,6 +2153,13 @@ func orphanSweepCleanroomEnv(t *testing.T, root, binDir, gcLog string, cfg orpha
 		"ORPHAN_SWEEP_ORPHAN_ASSIGNEE=" + cfg.orphanAssignee,
 		"PATH=" + binDir,
 	}
+	// PATH is deliberately just binDir so the fake gc is the only gc that can
+	// win. On Windows that also strips the sh distribution's coreutils, which
+	// are not on a stock PATH -- orphan-sweep then fails its first `mktemp` and
+	// exits silently, producing empty output instead of a sweep result
+	// (windows-portability class P2). Re-adding the shell dir keeps the intent
+	// (one candidate gc) while leaving mktemp/jq/sed resolvable.
+	return execshim.EnvWithShellDir(env)
 }
 
 func assertOrphanSweepFakeGC(t *testing.T, env []string, bashPath, fakeGC, gcLog string) {
@@ -2153,7 +2170,14 @@ func assertOrphanSweepFakeGC(t *testing.T, env []string, bashPath, fakeGC, gcLog
 	if err != nil {
 		t.Fatalf("command -v gc failed: %v\n%s", err, orphanSweepFailureContext(out, gcLog))
 	}
-	if got := strings.TrimSpace(string(out)); got != fakeGC {
+	// Compare by suffix, not by equality. The shell answers in ITS path space:
+	// on Windows `command -v` reports the MSYS form ("/tmp/…/bin/gc") for the
+	// same file the fixture knows as "C:\Users\…\Temp\…\bin\gc". The two name the
+	// same binary through different roots, so no amount of separator
+	// normalization makes them equal (class P4). PATH is set to binDir alone
+	// here, so resolving `gc` at all proves the fake is the one that won.
+	wantSuffix := path.Join(filepath.Base(filepath.Dir(fakeGC)), filepath.Base(fakeGC))
+	if got := strings.TrimSpace(string(out)); !strings.HasSuffix(filepath.ToSlash(got), wantSuffix) {
 		t.Fatalf("command -v gc = %q, want %q\n%s", got, fakeGC, orphanSweepFailureContext(out, gcLog))
 	}
 }
@@ -7178,7 +7202,18 @@ func mergeTestEnv(overrides map[string]string) []string {
 	for _, key := range keys {
 		env = append(env, key+"="+overrides[key])
 	}
-	return env
+	// These scripts are sh-routed, and every caller assigns the result straight
+	// to cmd.Env AFTER execshim built the command -- which silently discards the
+	// sh-directory PATH injection execshim added (windows-portability class P2).
+	// The scripts then lose the coreutils their children need: jq, sed, grep and
+	// awk are not on a stock Windows PATH, they come from the sh distribution.
+	//
+	// The failure was invisible rather than loud. orphan-sweep's
+	// work_bead_still_resettable pipes `gc bd show` output through jq and maps
+	// ANY non-zero pipeline to "cannot verify", so a missing jq surfaced as
+	// "skipped 1 unverifiable" -- indistinguishable from a bead the sweep had
+	// legitimately declined to reclaim.
+	return execshim.EnvWithShellDir(env)
 }
 
 // jsonlExportEnv builds the common env map used by the spike-detection tests

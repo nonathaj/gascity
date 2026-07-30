@@ -18,6 +18,10 @@ case "${BASH_SOURCE[0]}" in
 esac
 # shellcheck disable=SC1091
 . "$__SCRIPT_DIR/_bd_trace.sh" "orphan-sweep"
+# Normalize external tool behavior (jq line endings on Windows) before any
+# parsing below. See _platform.sh.
+# shellcheck disable=SC1091
+. "$__SCRIPT_DIR/_platform.sh"
 
 # Step 1: Collect in-progress beads from HQ and every rig whose session
 # liveness can be determined.
