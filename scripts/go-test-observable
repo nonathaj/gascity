@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/platform.sh
+source "$script_dir/lib/platform.sh"
 # shellcheck source=lib/test-slice.sh
 source "$script_dir/lib/test-slice.sh"
 gc_test_slice_reexec "$script_dir/go-test-observable" "$@"
@@ -68,25 +70,7 @@ if [ -n "${OBSERVABLE_TEST_LOG:-}" ]; then
   rm -f "$log"
 else
   safe_name="$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')"
-  # $TMPDIR wins, then /var/tmp. Git for Windows has no /var/tmp, so mktemp
-  # failed there and timing capture was silently unavailable on Windows. The
-  # /tmp fallback is only reached when /var/tmp is absent, so hosts that have
-  # it -- every Linux box, where /tmp is a size-capped shared tmpfs the build
-  # conventions keep scratch off -- resolve exactly as before.
-  observable_tmpdir="${TMPDIR:-}"
-  if [ -z "$observable_tmpdir" ]; then
-    for candidate in /var/tmp /tmp; do
-      if [ -d "$candidate" ] && [ -w "$candidate" ]; then
-        observable_tmpdir="$candidate"
-        break
-      fi
-    done
-  fi
-  if [ -z "$observable_tmpdir" ]; then
-    echo "observable go test: warning: no writable temp dir; timing capture disabled" >&2
-    timing_file=""
-    observable_tmpdir="."
-  fi
+  observable_tmpdir="$(sh "$script_dir/lib/default-tmpdir.sh")"
   log="$(mktemp "${observable_tmpdir}/gascity-${safe_name}.jsonl.XXXXXX")"
 fi
 

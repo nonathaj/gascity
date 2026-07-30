@@ -356,6 +356,7 @@ GOCACHE_VAL   := $(shell go env GOCACHE)
 GOMODCACHE_VAL := $(shell go env GOMODCACHE)
 GOTMPDIR_VAL  := $(shell go env GOTMPDIR)
 GOROOT_VAL    := $(shell go env GOROOT)
+TMPDIR_DEFAULT := $(shell sh scripts/lib/default-tmpdir.sh)
 ## The allowlist below carries a Windows block because `env -i` clears the whole
 ## environment and this list was written against Unix's notion of "essential".
 ## Each entry is empty-by-default, so Unix behavior is unchanged. Concretely:
@@ -382,7 +383,7 @@ TEST_ENV = env -i \
 	LOGNAME="$$LOGNAME" \
 	SHELL="$$SHELL" \
 	LANG="$$LANG" \
-	TMPDIR="$${TMPDIR:-/var/tmp}" \
+	TMPDIR="$${TMPDIR:-$(TMPDIR_DEFAULT)}" \
 	TMP="$${TMP-}" \
 	TEMP="$${TEMP-}" \
 	SYSTEMROOT="$${SYSTEMROOT-}" \

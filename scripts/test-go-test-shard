@@ -34,6 +34,7 @@ gocache_val="$(go env GOCACHE)"
 gomodcache_val="$(go env GOMODCACHE)"
 gotmpdir_val="$(go env GOTMPDIR)"
 goroot_val="$(go env GOROOT)"
+default_tmpdir="$(sh "$repo_root/scripts/lib/default-tmpdir.sh")"
 
 # Mirror the Makefile's CGO path detection here so tests run via this script
 # see the same system dependency paths as `make`. When invoked from
@@ -60,7 +61,7 @@ run_in_test_env() {
     LOGNAME="${LOGNAME:-}" \
     SHELL="${SHELL:-/bin/sh}" \
     LANG="${LANG:-C.UTF-8}" \
-    TMPDIR="${TMPDIR:-/var/tmp}" \
+    TMPDIR="${TMPDIR:-$default_tmpdir}" \
     TMP="${TMP-}" \
     TEMP="${TEMP-}" \
     SYSTEMROOT="${SYSTEMROOT-}" \

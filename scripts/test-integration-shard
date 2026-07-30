@@ -41,7 +41,7 @@ run_go() {
     LOGNAME="${LOGNAME:-}" \
     SHELL="${SHELL:-/bin/sh}" \
     LANG="${LANG:-C.UTF-8}" \
-    TMPDIR="${TMPDIR:-/var/tmp}" \
+    TMPDIR="${TMPDIR:-$(sh "$repo_root/scripts/lib/default-tmpdir.sh")}" \
     TMP="${TMP-}" \
     TEMP="${TEMP-}" \
     SYSTEMROOT="${SYSTEMROOT-}" \

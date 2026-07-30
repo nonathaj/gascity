@@ -2,31 +2,96 @@ package scripts_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// wantTestTMPDirDefault is the fallback TMPDIR the test-running wrappers
-// (Makefile TEST_ENV, and the shard scripts below) must use when the calling
-// shell has not already set TMPDIR itself. It must stay off the shared,
-// size-capped /tmp tmpfs (see AGENTS.md "Build Cache Conventions") and it
-// must stay short: internal/testutil.ShortTempDir roots test-owned socket
-// directories at os.TempDir() (== $TMPDIR on Linux), and Unix socket paths
-// built under it must stay under the sun_path limit (104 bytes on macOS, 108
-// on Linux; see internal/runtime/acp and internal/runtime/subprocess).
-const wantTestTMPDirDefault = "/var/tmp"
+// shCommand runs a POSIX sh script the same way the wrappers do. The scripts
+// package already invokes "bash" directly for hook and guard scripts; sh is
+// available alongside it on every supported platform, including Git for
+// Windows.
+func shCommand(args ...string) *exec.Cmd {
+	return testCommand("sh", args...)
+}
 
-// TestMakefileTestEnvDefaultsTMPDirOffSharedTmpTmpfs guards ga-ntbpyb.4: make
-// test-fast-parallel (and every other $(TEST_ENV)-wrapped target) must not
-// fall back to the shared /tmp tmpfs when the caller leaves TMPDIR unset.
-func TestMakefileTestEnvDefaultsTMPDirOffSharedTmpTmpfs(t *testing.T) {
-	got := runMakefileTestEnvTMPDirPrintTarget(t, nil)
-	if got == "/tmp" || strings.HasPrefix(got, "/tmp/") {
-		t.Fatalf("TEST_ENV TMPDIR = %q, still rooted under the shared /tmp tmpfs", got)
+// environWithout returns env with every assignment of name removed. Windows
+// environment variables are case-insensitive, so the match is too.
+func environWithout(env []string, name string) []string {
+	prefix := name + "="
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(strings.ToUpper(entry), strings.ToUpper(prefix)) {
+			continue
+		}
+		out = append(out, entry)
 	}
-	if got != wantTestTMPDirDefault {
-		t.Fatalf("TEST_ENV TMPDIR = %q, want %q", got, wantTestTMPDirDefault)
+	return out
+}
+
+// resolveDefaultTMPDir runs the shared helper that every test-running wrapper
+// (Makefile TEST_ENV, and the shard scripts below) consults for its TMPDIR
+// fallback, with TMPDIR unset so the helper picks a default. The helper, not a
+// literal in this file, is the single source of truth for the policy:
+//
+//	Off the shared tmpfs -- on the Linux fleet /tmp is a size-capped RAM-backed
+//	tmpfs shared by every executor (see AGENTS.md "Build Cache Conventions"), so
+//	the on-disk /var/tmp wins wherever it exists.
+//
+//	Short -- internal/testutil.ShortTempDir roots test-owned socket directories
+//	at os.TempDir(), and Unix socket paths built under it must stay under the
+//	sun_path limit (104 bytes on macOS, 108 on Linux and for Windows AF_UNIX;
+//	see internal/runtime/acp and internal/runtime/subprocess).
+//
+// Git for Windows ships no /var at all, so a hardcoded /var/tmp was a
+// nonexistent path there; its /tmp is the on-disk user temp rather than a
+// tmpfs, so the fallback satisfies both constraints on the one platform that
+// reaches it.
+func resolveDefaultTMPDir(t *testing.T) string {
+	t.Helper()
+	repoRoot := repoRoot(t)
+	cmd := shCommand(filepath.Join(repoRoot, "scripts", "lib", "default-tmpdir.sh"))
+	cmd.Dir = repoRoot
+	// Drop TMPDIR rather than setting it empty: MSYS rewrites path-shaped
+	// variables when it starts a process, and an explicitly empty TMPDIR came
+	// back through that translation as a cwd-derived path, which the helper then
+	// echoed as a caller-supplied value.
+	cmd.Env = environWithout(os.Environ(), "TMPDIR")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("resolve default tmpdir: %v", err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// TestDefaultTMPDirStaysOffSharedTmpTmpfs guards ga-ntbpyb.4 at its source: the
+// resolved default must prefer the on-disk /var/tmp and only reach /tmp on a
+// host that has no /var/tmp at all.
+func TestDefaultTMPDirStaysOffSharedTmpTmpfs(t *testing.T) {
+	got := resolveDefaultTMPDir(t)
+	if _, err := os.Stat("/var/tmp"); err == nil {
+		if got != "/var/tmp" {
+			t.Fatalf("default TMPDIR = %q on a host that has /var/tmp, want %q", got, "/var/tmp")
+		}
+		return
+	}
+	if got != "/tmp" {
+		t.Fatalf("default TMPDIR = %q on a host without /var/tmp, want %q", got, "/tmp")
+	}
+	if info, err := os.Stat(got); err != nil || !info.IsDir() {
+		t.Fatalf("default TMPDIR %q is not a usable directory: %v", got, err)
+	}
+}
+
+// TestMakefileTestEnvDefaultsTMPDirToSharedHelper guards ga-ntbpyb.4: make
+// test-fast-parallel (and every other $(TEST_ENV)-wrapped target) must take its
+// fallback from the shared helper rather than an independent literal, so the
+// policy cannot drift between the Makefile and the shard scripts.
+func TestMakefileTestEnvDefaultsTMPDirToSharedHelper(t *testing.T) {
+	got := runMakefileTestEnvTMPDirPrintTarget(t, nil)
+	if want := resolveDefaultTMPDir(t); got != want {
+		t.Fatalf("TEST_ENV TMPDIR = %q, want the shared helper's %q", got, want)
 	}
 }
 
@@ -40,9 +105,42 @@ func TestMakefileTestEnvRespectsCallerSuppliedTMPDir(t *testing.T) {
 		t.Fatalf("mkdir custom TMPDIR: %v", err)
 	}
 	got := runMakefileTestEnvTMPDirPrintTarget(t, []string{"TMPDIR=" + custom})
-	if got != custom {
-		t.Fatalf("TEST_ENV TMPDIR = %q, want caller-supplied %q", got, custom)
+	// Compare directories, not spellings. t.TempDir() hands back a native
+	// Windows path while the shell reports the MSYS translation of the same
+	// directory (C:\Users\...\Temp\x becomes /tmp/x), so a string match failed
+	// on a value that was in fact the caller-supplied one. Resolving both sides
+	// through the shell puts them in one namespace; on Unix it is identity.
+	if gotDir, wantDir := canonicalizeViaSh(t, got), canonicalizeViaSh(t, custom); gotDir != wantDir {
+		t.Fatalf("TEST_ENV TMPDIR = %q (resolves to %q), want caller-supplied %q (resolves to %q)",
+			got, gotDir, custom, wantDir)
 	}
+}
+
+// canonicalizeViaSh resolves a path to the shell's own canonical form so paths
+// produced by Go and by the shell can be compared on Windows, where they name
+// the same directory in different namespaces.
+// canonicalizeParentViaSh is canonicalizeViaSh for the directory holding path.
+// The dirname is taken inside the shell because path may already be in the
+// shell's namespace ("/tmp/..."), which Go's filepath would mis-split on
+// Windows.
+func canonicalizeParentViaSh(t *testing.T, path string) string {
+	t.Helper()
+	cmd := shCommand("-c", `cd "$(dirname "$1")" && pwd -P`, "sh", path)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("canonicalize parent of %q via sh: %v", path, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func canonicalizeViaSh(t *testing.T, path string) string {
+	t.Helper()
+	cmd := shCommand("-c", `cd "$1" && pwd -P`, "sh", path)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("canonicalize %q via sh: %v", path, err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // TestMakefileTestEnvTMPDirDefaultLeavesSocketPathHeadroom proves the actual
@@ -105,40 +203,43 @@ print-test-env-tmpdir:
 	return strings.TrimPrefix(line, prefix)
 }
 
-// shardScriptTMPDirDefaults documents every sharded/parallel test-runner
-// script that constructs its own env -i wrapper around go test (mirroring
-// the Makefile's TEST_ENV) and must therefore apply the same off-tmpfs
-// TMPDIR default. Each count is the exact number of "${TMPDIR:-...}"
-// fallback sites in that file today; a changed count means a site was added
+// tmpdirHelperReferences documents every wrapper that builds its own env -i
+// around go test (or mktemps its own scratch) and must therefore resolve its
+// TMPDIR fallback through the shared helper. Each count is the exact number of
+// helper references in that file today; a changed count means a site was added
 // or removed and this ledger must be updated deliberately, not silently.
-var shardScriptTMPDirDefaults = map[string]int{
+var tmpdirHelperReferences = map[string]int{
 	"scripts/test-local-parallel":    2, // log_dir mktemp + per-job env
 	"scripts/go-test-observable":     1, // per-run log file mktemp
-	"scripts/test-go-test-shard":     1, // per-shard env
+	"scripts/test-go-test-shard":     1, // per-shard env, resolved once
 	"scripts/test-integration-shard": 1, // per-shard env
+	"Makefile":                       1, // TMPDIR_DEFAULT for TEST_ENV
 }
 
-// TestShardScriptsDefaultTMPDirOffSharedTmpTmpfs is the sibling-targets half
-// of ga-ntbpyb.4: test-cmd-gc-process-parallel, test-integration-shards-parallel,
-// and test-local-full-parallel all fan out through these scripts directly
-// (not through the Makefile's TEST_ENV), so each script's own TMPDIR fallback
-// must independently stay off /tmp.
-func TestShardScriptsDefaultTMPDirOffSharedTmpTmpfs(t *testing.T) {
+// TestWrappersResolveTMPDirThroughSharedHelper is the sibling-targets half of
+// ga-ntbpyb.4: test-cmd-gc-process-parallel, test-integration-shards-parallel,
+// and test-local-full-parallel all fan out through these scripts directly (not
+// through the Makefile's TEST_ENV), so each must independently route to the
+// helper. Hardcoded literals are rejected outright: "/tmp" put scratch on the
+// shared tmpfs, and "/var/tmp" was a nonexistent path on Git for Windows.
+func TestWrappersResolveTMPDirThroughSharedHelper(t *testing.T) {
 	repoRoot := repoRoot(t)
-	oldPattern := "${TMPDIR:-/tmp}"
-	newPattern := "${TMPDIR:-" + wantTestTMPDirDefault + "}"
-	for relPath, wantCount := range shardScriptTMPDirDefaults {
+	const helperRef = "default-tmpdir.sh"
+	bannedLiterals := []string{"${TMPDIR:-/tmp}", "${TMPDIR:-/var/tmp}", "$${TMPDIR:-/tmp}", "$${TMPDIR:-/var/tmp}"}
+	for relPath, wantCount := range tmpdirHelperReferences {
 		t.Run(relPath, func(t *testing.T) {
 			data, err := os.ReadFile(filepath.Join(repoRoot, relPath))
 			if err != nil {
 				t.Fatalf("read %s: %v", relPath, err)
 			}
 			content := string(data)
-			if strings.Contains(content, oldPattern) {
-				t.Fatalf("%s still falls back to the shared /tmp tmpfs via %q", relPath, oldPattern)
+			for _, banned := range bannedLiterals {
+				if strings.Contains(content, banned) {
+					t.Fatalf("%s hardcodes the TMPDIR fallback via %q instead of the shared helper", relPath, banned)
+				}
 			}
-			if got := strings.Count(content, newPattern); got != wantCount {
-				t.Fatalf("%s has %d occurrences of %q, want %d", relPath, got, newPattern, wantCount)
+			if got := strings.Count(content, helperRef); got != wantCount {
+				t.Fatalf("%s has %d references to %q, want %d", relPath, got, helperRef, wantCount)
 			}
 		})
 	}
