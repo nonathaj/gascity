@@ -129,7 +129,7 @@ func TestProviderLivePaneLaunch(t *testing.T) {
 		t.Skip("claude not installed")
 	}
 
-	p := New("gctest-pane", t.TempDir(), t.TempDir(), 0, 0)
+	p := New("gctest-pane", t.TempDir(), t.TempDir(), 0)
 	_ = p.Stop("smoke")
 	t.Cleanup(func() { _ = p.Stop("smoke"); _ = p.TeardownServer() })
 
