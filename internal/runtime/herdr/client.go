@@ -27,7 +27,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/herdrversion"
+	"github.com/gastownhall/gascity/internal/shellquote"
 )
+
+// ErrAgentNotDetected reports that the command pasted into a pane did not
+// register as a herdr agent within the detection window — i.e. it is not a
+// process herdr recognizes (claude/codex/gemini/…). Only the ≥ 0.7.5 pane-verb
+// launch is detection-driven; the legacy `agent start` registers any command.
+var ErrAgentNotDetected = errors.New("herdr: command not detected as an agent")
 
 // client runs `herdr` CLI verbs against a named herdr session and decodes the
 // response envelope ({"id":…,"result":…} | {"id":…,"error":{code,message}}).
@@ -36,6 +45,10 @@ type client struct {
 	bin      string     // herdr binary (default "herdr")
 	cityRoot string     // city root: the shared server's launch cwd, and the effectiveWorkDir fallback when a session's WorkDir doesn't exist yet (empty in city-less/standalone construction)
 	serverMu sync.Mutex // serializes startServer: serverAlive → removeStaleSocket → launch → readiness
+
+	versionOnce sync.Once         // detect herdr version lazily, once
+	version     herdrversion.Info // parsed `herdr --version`
+	versionErr  error             // non-nil when detection failed
 }
 
 func newClient(session, cityRoot string) *client {
@@ -80,6 +93,7 @@ func (c *client) run(ctx context.Context, args ...string) (json.RawMessage, erro
 // agentInfo mirrors herdr's agent object.
 type agentInfo struct {
 	Name        string `json:"name"`
+	Agent       string `json:"agent"` // detected kind, e.g. "claude" (0.7.5+)
 	PaneID      string `json:"pane_id"`
 	WorkspaceID string `json:"workspace_id"`
 	TabID       string `json:"tab_id"`
@@ -88,9 +102,36 @@ type agentInfo struct {
 	Cwd         string `json:"cwd"`
 }
 
+// detectVersion runs `herdr --version` once and caches the parsed result, so
+// the provider can choose the agent-start interface that matches the installed
+// herdr (legacy headless form ≤ 0.7.4 vs. pane-verb launch for ≥ 0.7.5).
+func (c *client) detectVersion() (herdrversion.Info, error) {
+	c.versionOnce.Do(func() {
+		out, err := exec.Command(c.bin, "--version").Output()
+		if err != nil {
+			c.versionErr = fmt.Errorf("herdr --version: %w", err)
+			return
+		}
+		c.version, c.versionErr = herdrversion.Parse(string(out))
+	})
+	return c.version, c.versionErr
+}
+
+// supportsLegacyStart reports whether this herdr's `agent start` accepts the
+// legacy headless form gascity's original provider targeted. Returns false (the
+// safe pane-verb path) when detection fails, and the error is surfaced by Start.
+func (c *client) supportsLegacyStart() (bool, error) {
+	v, err := c.detectVersion()
+	if err != nil {
+		return false, err
+	}
+	return v.SupportsLegacyStart(), nil
+}
+
 // startAgent → `herdr agent start <name> --no-focus [--tab <tabID>] [--cwd <cwd>]
 // [--env k=v …] -- <argv…>`. A non-empty tabID places the agent in that tab;
-// without it herdr splits the focused tab into a new pane.
+// without it herdr splits the focused tab into a new pane. Legacy interface
+// (herdr ≤ 0.7.4); 0.7.5+ removed it — see launchViaPane.
 func (c *client) startAgent(ctx context.Context, name, tabID, cwd string, env map[string]string, argv []string) (agentInfo, error) {
 	args := []string{"agent", "start", name, "--no-focus"}
 	if tabID != "" {
@@ -117,7 +158,133 @@ func (c *client) startAgent(ctx context.Context, name, tabID, cwd string, env ma
 	return wrap.Agent, nil
 }
 
-// listAgents → `herdr agent list`.
+// splitPane → `herdr pane split <paneID> --direction right [--cwd <cwd>]
+// [--env K=V …] --no-focus`: spawn a new pane and return its id. 0.7.5+ (the
+// legacy `agent start` that carried cwd/env/argv was removed). The pane boots a
+// shell at --cwd with --env applied, so the agent command only needs to be
+// pasted (see launchViaPane). The target may be a pane id (used directly) or a
+// tab id (resolved to that tab's active pane, since herdr splits panes, not
+// tabs).
+func (c *client) splitPane(ctx context.Context, target, cwd string, env map[string]string) (string, error) {
+	paneID, err := c.resolvePaneID(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"pane", "split", paneID, "--direction", "right", "--no-focus"}
+	if cwd != "" {
+		args = append(args, "--cwd", cwd)
+	}
+	for k, v := range env {
+		args = append(args, "--env", k+"="+v)
+	}
+	res, err := c.run(ctx, args...)
+	if err != nil {
+		return "", err
+	}
+	var wrap struct {
+		Pane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"pane"`
+	}
+	if err := json.Unmarshal(res, &wrap); err != nil {
+		return "", fmt.Errorf("herdr pane split: decode: %w", err)
+	}
+	return wrap.Pane.PaneID, nil
+}
+
+// resolvePaneID maps a target to a concrete pane id for `pane split`: a pane id
+// passes through unchanged; a tab id resolves to its first pane (herdr splits
+// panes, so passing a tab id directly fails with pane_not_found, and tab list
+// does not expose an active-pane field).
+func (c *client) resolvePaneID(ctx context.Context, target string) (string, error) {
+	if !strings.Contains(target, ":t") { // pane ids look like w1:p1; tab ids like w1:t1
+		return target, nil
+	}
+	workspace := strings.SplitN(target, ":", 2)[0]
+	res, err := c.run(ctx, "pane", "list", "--workspace", workspace)
+	if err != nil {
+		return "", err
+	}
+	var wrap struct {
+		Panes []struct {
+			PaneID string `json:"pane_id"`
+			TabID  string `json:"tab_id"`
+		} `json:"panes"`
+	}
+	if err := json.Unmarshal(res, &wrap); err != nil {
+		return "", fmt.Errorf("herdr pane list: decode: %w", err)
+	}
+	for _, p := range wrap.Panes {
+		if p.TabID == target {
+			return p.PaneID, nil
+		}
+	}
+	return "", fmt.Errorf("herdr: no pane found for tab %s", target)
+}
+
+// launchViaPane starts an agent without `agent start`, for herdr ≥ 0.7.5 (whose
+// `agent start` no longer carries cwd/env/argv). It splits a new pane in the
+// placed tab (cwd + env applied at spawn), pastes the agent command, waits for
+// herdr's process detection to register it as an agent, then names it via
+// `agent rename`. Returns an agentInfo with the pane id so the pane-based
+// nudge/liveness/process paths work unchanged.
+//
+// Detection drives registration (identify_agent on the pane's foreground
+// process), so a `claude` pasted into a pane registers as a herdr agent
+// regardless of how it was launched — verified against herdr 0.7.5.
+func (c *client) launchViaPane(ctx context.Context, name, tabPaneID, cwd string, env map[string]string, argv []string) (agentInfo, error) {
+	paneID, err := c.splitPane(ctx, tabPaneID, cwd, env)
+	if err != nil {
+		return agentInfo{}, fmt.Errorf("herdr: split pane for %q: %w", name, err)
+	}
+	if len(argv) > 0 {
+		if err := c.paneRun(ctx, paneID, shellquote.Join(argv)); err != nil {
+			_ = c.closePane(ctx, paneID)
+			return agentInfo{}, fmt.Errorf("herdr: paste command for %q: %w", name, err)
+		}
+	}
+	// Wait for detection to register the agent in this pane (a few seconds).
+	deadline := time.Now().Add(agentDetectTimeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		info, ok, err := c.getAgent(ctx, paneID)
+		if err == nil && ok && info.Agent != "" {
+			if err := c.renameAgent(ctx, paneID, name); err != nil {
+				return agentInfo{}, fmt.Errorf("herdr: rename agent %q: %w", name, err)
+			}
+			info.Name = name
+			return info, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		time.Sleep(agentDetectPoll)
+	}
+	_ = c.closePane(ctx, paneID)
+	if lastErr != nil {
+		return agentInfo{}, fmt.Errorf("%w %q in pane %s: %v", ErrAgentNotDetected, name, paneID, lastErr)
+	}
+	return agentInfo{}, fmt.Errorf("%w %q in pane %s within %s (the command must be an agent herdr recognizes — %v)", ErrAgentNotDetected, name, paneID, agentDetectTimeout, agentKindsHint)
+}
+
+// agentKindsHint names the agent processes herdr detects, so a detection
+// timeout points the caller at a launchable command rather than a bare hang.
+const agentKindsHint = "claude, codex, gemini, …"
+
+// agentDetectTimeout/Poll bound how long launchViaPane waits for herdr to
+// detect the pasted process as an agent. Detection is fast (~1–2s); the bound
+// only bites on a launch that never produces a recognized agent process.
+const (
+	agentDetectTimeout = 30 * time.Second
+	agentDetectPoll    = 500 * time.Millisecond
+)
+
+// renameAgent → `herdr agent rename <paneID> <name>`: bind gascity's session
+// name to the (detected) agent in the pane.
+func (c *client) renameAgent(ctx context.Context, paneID, name string) error {
+	_, err := c.run(ctx, "agent", "rename", paneID, name)
+	return err
+}
 func (c *client) listAgents(ctx context.Context) ([]agentInfo, error) {
 	res, err := c.run(ctx, "agent", "list")
 	if err != nil {

@@ -103,7 +103,28 @@ func (p *Provider) Start(ctx context.Context, name string, cfg runtime.Config) e
 	if err != nil {
 		return fmt.Errorf("herdr: place %q: %w", name, err)
 	}
-	info, err := p.c.startAgent(ctx, name, tabID, effectiveWorkDir(cfg, p.c.cityRoot), cfg.Env, shellArgv(cfg.Command))
+	// Choose the launch path by the installed herdr's agent-start interface. The
+	// legacy `agent start` (≤ 0.7.4) carries cwd/env/argv directly; 0.7.5 removed
+	// it, so launch via pane verbs (split + paste + rename) instead.
+	workDir := effectiveWorkDir(cfg, p.c.cityRoot)
+	argv := shellArgv(cfg.Command)
+	legacy, verr := p.c.supportsLegacyStart()
+	if verr != nil {
+		return fmt.Errorf("herdr: detect herdr version: %w", verr)
+	}
+	var info agentInfo
+	if legacy {
+		info, err = p.c.startAgent(ctx, name, tabID, workDir, cfg.Env, argv)
+	} else {
+		// 0.7.5+: launch into a pane split off the tab's auto-spawned shell pane
+		// (or, for a reused tab, its existing pane). The stray shell pane serves
+		// as the split target and is closed afterward as before.
+		target := strayPane
+		if target == "" {
+			target = tabID // herdr resolves a tab id to its active pane for split
+		}
+		info, err = p.c.launchViaPane(ctx, name, target, workDir, cfg.Env, argv)
+	}
 	if err != nil {
 		return fmt.Errorf("herdr: start %q: %w", name, err)
 	}
