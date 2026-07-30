@@ -68,14 +68,19 @@ func TestCityStatusWithAgents(t *testing.T) {
 		},
 	}
 
+	// A real directory rather than the "/home/user/city" literal: this path
+	// reaches a bd query, and bd chdirs to it. The literal is not absolute on
+	// Windows (windows-portability class T2), so the resolver joined it onto
+	// itself and bd failed to chdir to the doubled path.
+	cityPath := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	code := doCityStatus(sp, dops, cfg, "/home/user/city", &stdout, &stderr)
+	code := doCityStatus(sp, dops, cfg, cityPath, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
 	out := stdout.String()
 
-	if !strings.Contains(out, "/home/user/city") {
+	if !strings.Contains(out, cityPath) {
 		t.Errorf("stdout missing city path, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Agents:") {
@@ -111,7 +116,8 @@ func TestCityStatusReportsObservationErrors(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doCityStatus(sp, dops, cfg, "/home/user/city", &stdout, &stderr)
+	// Real directory, same class T2 reason as the sibling test above.
+	code := doCityStatus(sp, dops, cfg, t.TempDir(), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}
