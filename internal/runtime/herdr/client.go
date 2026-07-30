@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/herdrversion"
 )
 
 // client runs `herdr` CLI verbs against a named herdr session and decodes the
@@ -36,10 +38,54 @@ type client struct {
 	bin      string     // herdr binary (default "herdr")
 	cityRoot string     // city root: the shared server's launch cwd, and the effectiveWorkDir fallback when a session's WorkDir doesn't exist yet (empty in city-less/standalone construction)
 	serverMu sync.Mutex // serializes startServer: serverAlive → removeStaleSocket → launch → readiness
+
+	versionOnce sync.Once         // detect herdr version lazily, once
+	version     herdrversion.Info // parsed `herdr --version`
+	versionErr  error             // non-nil when detection failed
 }
 
 func newClient(session, cityRoot string) *client {
 	return &client{session: session, bin: "herdr", cityRoot: cityRoot}
+}
+
+// minSupportedVersion is the oldest herdr this provider can drive. The adapter
+// is written for the ≥0.7.5 pane-shell model (`agent start --kind/--pane`,
+// detection-driven registration); older herdr still has the legacy
+// exec-argv `agent start`, which this code no longer issues — tmux is the
+// supported fallback there.
+const minSupportedVersion = "0.7.5"
+
+// detectVersion runs `herdr --version` once and caches the parsed result.
+func (c *client) detectVersion() (herdrversion.Info, error) {
+	c.versionOnce.Do(func() {
+		out, err := exec.Command(c.bin, "--version").Output()
+		if err != nil {
+			c.versionErr = fmt.Errorf("herdr --version: %w", err)
+			return
+		}
+		c.version, c.versionErr = herdrversion.Parse(string(out))
+	})
+	return c.version, c.versionErr
+}
+
+// requireSupportedVersion fails fast when the installed herdr predates the
+// ≥0.7.5 interface this provider targets, or when its version can't be
+// determined — surfacing a clear error at server start instead of the
+// start→quarantine loop an unrecognized CLI produces (the failure mode that
+// hid the 0.7.5 agent-start incompatibility).
+func (c *client) requireSupportedVersion() error {
+	v, err := c.detectVersion()
+	if err != nil {
+		return fmt.Errorf("herdr: cannot determine herdr version (need >= %s): %w", minSupportedVersion, err)
+	}
+	min, err := herdrversion.Parse(minSupportedVersion)
+	if err != nil {
+		return fmt.Errorf("herdr: bad minSupportedVersion %q: %w", minSupportedVersion, err)
+	}
+	if herdrversion.Compare(v, min) < 0 {
+		return fmt.Errorf("herdr: version %s is below the supported minimum %s (the herdr session backend requires the 0.7.5+ interface; use the tmux backend on older herdr)", v.Raw, minSupportedVersion)
+	}
+	return nil
 }
 
 type herdrError struct {
@@ -500,6 +546,9 @@ func (c *client) removeStaleSocket() {
 func (c *client) startServer() error {
 	c.serverMu.Lock()
 	defer c.serverMu.Unlock()
+	if err := c.requireSupportedVersion(); err != nil {
+		return err
+	}
 	if c.serverAlive() {
 		return nil
 	}

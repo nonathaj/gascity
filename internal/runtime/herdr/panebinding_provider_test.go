@@ -38,6 +38,7 @@ func newFakeHerdrProvider(t *testing.T) (*Provider, string, string) {
 	fake := `#!/bin/sh
 STATE='` + state + `'
 METADIR='` + metaDir + `'
+if [ "$1" = "--version" ]; then printf '%s\n' 'herdr 0.7.5'; exit 0; fi
 shift 2
 printf '%s\n' "$*" >> "$STATE/calls.log"
 case "$1_$2" in
