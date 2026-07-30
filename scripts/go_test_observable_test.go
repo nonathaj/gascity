@@ -58,9 +58,15 @@ func TestGoTestObservableDefaultLogPathIsUnique(t *testing.T) {
 	if first == second {
 		t.Fatalf("default log paths should be unique, got %q twice", first)
 	}
+	// Compare directories, not spellings: the script reports the shell's view of
+	// the path (/tmp/...) while t.TempDir() hands back the native Windows one
+	// (C:\Users\...\Temp\...) for the very same directory, so a native-prefix
+	// match failed on a correct path. Resolving the log's parent through the
+	// shell puts both in one namespace; on Unix it is identity.
+	wantDir := canonicalizeViaSh(t, tmpDir)
 	for _, path := range []string{first, second} {
-		if !strings.HasPrefix(path, tmpDir+string(os.PathSeparator)) {
-			t.Fatalf("default log path %q should be under TMPDIR %q", path, tmpDir)
+		if gotDir := canonicalizeParentViaSh(t, path); gotDir != wantDir {
+			t.Fatalf("default log path %q sits in %q, want it under TMPDIR %q (%q)", path, gotDir, tmpDir, wantDir)
 		}
 		if filepath.Base(path) == "gascity-observable-log-test.jsonl" {
 			t.Fatalf("default log path %q should not be a shared deterministic file", path)
@@ -342,8 +348,13 @@ func replaceScriptEnv(env []string, key, value string) []string {
 	return append(result, key+"="+value)
 }
 
+// scriptCommand runs a repo script through bash rather than executing it
+// directly. Windows has no shebang handling, so exec'ing the script itself
+// failed with "executable file not found in %PATH%" and every test here was
+// red on Windows while passing on Unix. The scripts package already invokes
+// bash explicitly for its hook and guard scripts; this matches that.
 func scriptCommand(repoRoot, name string, args ...string) *exec.Cmd {
-	return exec.Command(filepath.Join(repoRoot, "scripts", name), args...)
+	return exec.Command("bash", append([]string{filepath.Join(repoRoot, "scripts", name)}, args...)...)
 }
 
 func runObservableTestLogPath(t *testing.T, repoRoot, tmpDir string) string {
@@ -381,6 +392,30 @@ func goTestScriptEnv(t *testing.T, tmpDir string) []string {
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + t.TempDir(),
 		"TMPDIR=" + tmpDir,
+	}
+	// This env replaces the caller's wholesale, so it needs the same Windows
+	// essentials the Makefile's TEST_ENV allowlist carries and for the same
+	// reasons (see the comment above TEST_ENV). Without TMP/TEMP, os.TempDir()
+	// -- which reads TMP then TEMP on Windows, not TMPDIR -- fell back to
+	// C:\WINDOWS and every wrapped `go test` died with "creating work dir:
+	// Access is denied". Each is skipped when empty, so Unix is unchanged.
+	for _, key := range []string{
+		"TMP",
+		"TEMP",
+		"SYSTEMROOT",
+		"SYSTEMDRIVE",
+		"WINDIR",
+		"COMSPEC",
+		"PATHEXT",
+		"USERPROFILE",
+		"LOCALAPPDATA",
+		"APPDATA",
+		"PROGRAMDATA",
+		"NUMBER_OF_PROCESSORS",
+	} {
+		if value := os.Getenv(key); value != "" {
+			env = append(env, key+"="+value)
+		}
 	}
 	for _, key := range []string{
 		"GOPATH",

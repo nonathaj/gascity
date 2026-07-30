@@ -155,8 +155,12 @@ func goTestShardCommand(repoRoot string, args ...string) *exec.Cmd {
 	return shardTestCommand(filepath.Join(repoRoot, "scripts", "test-go-test-shard"), args...)
 }
 
+// shardTestCommand runs a repo script through bash rather than executing it
+// directly. Windows has no shebang handling, so exec'ing the script itself
+// failed with "executable file not found in %PATH%" and these tests were red on
+// Windows while passing on Unix.
 func shardTestCommand(name string, args ...string) *exec.Cmd {
-	return exec.Command(name, args...)
+	return exec.Command("bash", append([]string{name}, args...)...)
 }
 
 func runShardCommand(t *testing.T, cmd *exec.Cmd) (int, []byte) {

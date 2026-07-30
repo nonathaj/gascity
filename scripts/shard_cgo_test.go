@@ -29,7 +29,7 @@ func TestShardScriptsApplyLinuxCGOFallback(t *testing.T) {
 			repoRoot := repoRoot(t)
 			fixture := newShardCGOFixture(t)
 
-			cmd := exec.Command(filepath.Join(repoRoot, "scripts", tt.script), tt.args...)
+			cmd := exec.Command("bash", append([]string{filepath.Join(repoRoot, "scripts", tt.script)}, tt.args...)...)
 			cmd.Dir = repoRoot
 			cmd.Env = fixture.env(t)
 
@@ -77,7 +77,7 @@ func TestShardScriptsDisableLinuxCGOFallback(t *testing.T) {
 			repoRoot := repoRoot(t)
 			fixture := newShardCGOFixture(t)
 
-			cmd := exec.Command(filepath.Join(repoRoot, "scripts", tt.script), tt.args...)
+			cmd := exec.Command("bash", append([]string{filepath.Join(repoRoot, "scripts", tt.script)}, tt.args...)...)
 			cmd.Dir = repoRoot
 			cmd.Env = append(fixture.env(t), "SYS_USR_CGO_FALLBACK=0")
 

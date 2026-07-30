@@ -27,7 +27,7 @@ printf '\n'
 		t.Fatalf("write source: %v", err)
 	}
 
-	cmd := exec.Command(filepath.Join(repoRoot, "scripts", "precommit-format-staged-go"))
+	cmd := exec.Command("bash", filepath.Join(repoRoot, "scripts", "precommit-format-staged-go"))
 	cmd.Dir = repoRoot
 	cmd.Env = []string{
 		"PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH"),

@@ -518,7 +518,11 @@ func (f integrationShardFixture) runShard(t *testing.T, shard string) ([]byte, e
 func (f integrationShardFixture) runShardWithEnv(t *testing.T, shard string, extraEnv ...string) ([]byte, error) {
 	t.Helper()
 	repo := repoRoot(t)
+	// Run through bash rather than exec'ing the script: Windows has no shebang
+	// handling, so a direct exec failed with "executable file not found in
+	// %PATH%" and these tests were red on Windows while passing on Unix.
 	cmd := exec.Command(
+		"bash",
 		filepath.Join(repo, "scripts", "test-integration-shard"),
 		shard,
 	)
