@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/execshim"
+
 	"github.com/gastownhall/gascity/internal/beads"
 )
 
@@ -74,7 +76,7 @@ func TestMaintenanceCheckBinariesTreatsGhAsOptional(t *testing.T) {
 	}
 	writeExecutable(t, filepath.Join(binDir, "jq"), "#!/bin/sh\nexit 0\n")
 
-	cmd := exec.Command(filepath.Join(corePackDir(), "doctor", "check-binaries", "run.sh"))
+	cmd := execshim.Command(filepath.Join(corePackDir(), "doctor", "check-binaries", "run.sh"))
 	cmd.Env = mergeTestEnv(map[string]string{"PATH": binDir})
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -307,7 +309,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -422,7 +424,7 @@ func TestOrphanSweepPreservesBareShortFormOfLiveQualifiedAgent(t *testing.T) {
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -461,7 +463,7 @@ func TestOrphanSweepResetsBareShortFormWhenQualifiedAgentDead(t *testing.T) {
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -561,7 +563,7 @@ func TestOrphanSweepPreservesHumanOperatorAssignee(t *testing.T) {
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -600,7 +602,7 @@ func TestOrphanSweepResetsHumanLikeDeadAssignee(t *testing.T) {
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -699,7 +701,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -795,7 +797,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -900,7 +902,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -985,7 +987,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1082,7 +1084,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1178,7 +1180,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1273,7 +1275,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1388,7 +1390,7 @@ exit 1
 			}
 
 			script := coreScriptPath("orphan-sweep.sh")
-			cmd := exec.Command(script)
+			cmd := execshim.Command(script)
 			cmd.Env = mergeTestEnv(env)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -1511,7 +1513,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1635,7 +1637,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1759,7 +1761,7 @@ exit 1
 	}
 
 	script := coreScriptPath("orphan-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1906,7 +1908,7 @@ func TestOrphanSweepPreservesProtectedInProgressEphemeralMoleculeWisp(t *testing
 			assertOrphanSweepFakeGC(t, env, filepath.Join(binDir, "bash"), fakeGC, gcLog)
 
 			script := coreScriptPath("orphan-sweep.sh")
-			cmd := exec.Command(script)
+			cmd := execshim.Command(script)
 			cmd.Env = env
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -2712,7 +2714,7 @@ func TestMaintenanceDoltScriptsRejectInvalidManagedPort(t *testing.T) {
 	}
 
 	script := coreScriptPath("reaper.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -6735,7 +6737,7 @@ exit 0
 	}
 
 	script := coreScriptPath("spawn-storm-detect.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("%s succeeded with malformed bd JSON; output:\n%s", filepath.Base(script), out)
@@ -6891,7 +6893,7 @@ func runScript(t *testing.T, script string, env map[string]string) {
 
 func runScriptResult(t *testing.T, script string, env map[string]string) ([]byte, error) {
 	t.Helper()
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	return cmd.CombinedOutput()
 }
@@ -10177,7 +10179,7 @@ esac
 `)
 
 	script := coreScriptPath("gate-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10205,7 +10207,7 @@ esac
 `)
 
 	script := coreScriptPath("gate-sweep.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -10315,7 +10317,7 @@ func TestPruneBranchesPrunesMergedGcBranches(t *testing.T) {
 	}
 
 	script := coreScriptPath("prune-branches.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10343,7 +10345,7 @@ func TestPruneBranchesSkipsCurrentBranch(t *testing.T) {
 	}
 
 	script := coreScriptPath("prune-branches.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10381,7 +10383,7 @@ func TestPruneBranchesPreservesBranchWithUnmergedWork(t *testing.T) {
 	}
 
 	script := coreScriptPath("prune-branches.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10409,7 +10411,7 @@ func TestPruneBranchesNoOpWhenNoGcBranches(t *testing.T) {
 	}
 
 	script := coreScriptPath("prune-branches.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10830,7 +10832,7 @@ exit 0
 	}
 
 	script := coreScriptPath("wisp-compact.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10905,7 +10907,7 @@ exit 1
 	}
 
 	script := coreScriptPath("wisp-compact.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -10991,7 +10993,7 @@ exit 0
 	}
 
 	script := coreScriptPath("cross-rig-deps.sh")
-	cmd := exec.Command(script)
+	cmd := execshim.Command(script)
 	cmd.Env = mergeTestEnv(env)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

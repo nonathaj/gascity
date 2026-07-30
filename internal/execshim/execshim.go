@@ -150,10 +150,31 @@ func wellKnownGitForWindowsRoots() []string {
 	return roots
 }
 
+// shellScriptPath renders a script path the way a POSIX script expects to see
+// its own name in $0 / ${BASH_SOURCE[0]}.
+//
+// Pack scripts locate their siblings with POSIX idioms such as
+//
+//	case "$0" in */*) dir="${0%/*}" ;; *) dir="$(pwd)" ;; esac
+//
+// Handed a native Windows path, that glob finds no forward slash, silently
+// takes the fallback branch, and resolves the script's directory to the CALLER's
+// working directory. Every core pack script that sources _bd_trace.sh does this,
+// so orphan-sweep, reaper, jsonl-export and friends all failed with
+// "_bd_trace.sh: No such file or directory" pointing at an unrelated directory.
+//
+// Normalizing here rather than teaching each script about backslashes is the
+// point of this package: execshim owns the Windows/sh boundary so pack content
+// stays pure POSIX sh. Slash-separated absolute paths are accepted by the shell
+// and by Windows itself, and ToSlash is a no-op on Unix.
+func shellScriptPath(path string) string {
+	return filepath.ToSlash(path)
+}
+
 // Command is exec.Command with .sh routing on Windows.
 func Command(path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		cmd := exec.Command(ShPath(), append([]string{path}, args...)...)
+		cmd := exec.Command(ShPath(), append([]string{shellScriptPath(path)}, args...)...)
 		cmd.Env = EnvWithShellDir(os.Environ())
 		return cmd
 	}
@@ -168,7 +189,7 @@ func Command(path string, args ...string) *exec.Cmd {
 // CommandContext is exec.CommandContext with .sh routing on Windows.
 func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd {
 	if needsShell(path) {
-		cmd := exec.CommandContext(ctx, ShPath(), append([]string{path}, args...)...)
+		cmd := exec.CommandContext(ctx, ShPath(), append([]string{shellScriptPath(path)}, args...)...)
 		cmd.Env = EnvWithShellDir(os.Environ())
 		return cmd
 	}
