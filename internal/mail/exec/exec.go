@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,11 +29,36 @@ type Provider struct {
 	ready   sync.Once // ensure-running called once
 }
 
+// defaultProviderTimeout bounds one provider script invocation.
+//
+// The budget is per-platform because the cost of running a shell script is, and
+// the difference is large enough to change correctness rather than just speed.
+// A provider script is a sequence of subprocesses — the bundled
+// mcp_agent_mail bridge alone runs jq 53 times — and process creation costs
+// well under a millisecond on Unix but ~150ms (fork) to ~380ms (fork+exec) on
+// Windows, where Win32 has no copy-on-write fork and the sh layer emulates one.
+//
+// At 30s a Windows send was killed mid-run: the script needs ~45-70s, so the
+// context fired, the process died at whatever command it happened to be
+// executing, and the caller saw a bare "exit status 1" with no diagnostic —
+// which is how this looked like a mysterious provider failure rather than a
+// timeout (gw-5ee).
+//
+// Raising the Windows budget makes the feature work; it does not make it fast.
+// The durable fix is fewer subprocesses in the bridge script (gw-yak), after
+// which this can converge back to one value.
+var defaultProviderTimeout = func() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 180 * time.Second
+	}
+	return 30 * time.Second
+}()
+
 // NewProvider returns an exec mail provider that delegates to the given script.
 func NewProvider(script string) *Provider {
 	return &Provider{
 		script:  script,
-		timeout: 30 * time.Second,
+		timeout: defaultProviderTimeout,
 	}
 }
 

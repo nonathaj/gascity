@@ -421,7 +421,14 @@ func TestCityStatusJSONWithAgents(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := doCityStatusJSON(sp, cfg, "/home/user/city", &stdout, &stderr)
+	// A real directory rather than the "/home/user/city" literal the sibling
+	// tests use: this is the one case that reaches a bd query, and bd chdirs to
+	// the city path. "/home/user/city" is not absolute on Windows
+	// (windows-portability class T2), so the resolver joined it onto itself and
+	// bd failed with `chdir \home\user\city\home\user\city`. The path is not
+	// asserted on here — only the decoded status is — so any real directory
+	// serves, and t.TempDir() is absolute on every platform.
+	code := doCityStatusJSON(sp, cfg, t.TempDir(), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, want 0; stderr: %s", code, stderr.String())
 	}

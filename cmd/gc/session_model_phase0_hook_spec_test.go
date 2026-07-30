@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,8 +70,16 @@ work_query = "printf 'pwd=%s|agent=%s|template=%s|session=%s|origin=%s' \"$PWD\"
 	if !strings.Contains(out, "origin=named") {
 		t.Fatalf("stdout = %q, want GC_SESSION_ORIGIN to remain named", out)
 	}
-	if !strings.Contains(out, fmt.Sprintf("pwd=%s", cityDir)) {
-		t.Fatalf("stdout = %q, want hook to run from city root", out)
+	// The hook reports pwd from the SHELL's path space. On Windows that is the
+	// MSYS form ("/tmp/gct…/002") for the directory Go knows as
+	// "C:\Users\…\Temp\gct…\002", so the two name the same place through
+	// different roots and no separator normalization makes them equal
+	// (windows-portability class P4). Comparing the trailing segments keeps the
+	// assertion — that the hook ran from the city root rather than somewhere
+	// else — without depending on which space reported it.
+	wantTail := path.Join(filepath.Base(filepath.Dir(cityDir)), filepath.Base(cityDir))
+	if !strings.Contains(filepath.ToSlash(out), "pwd=") || !strings.Contains(filepath.ToSlash(out), wantTail) {
+		t.Fatalf("stdout = %q, want hook to run from city root %q", out, cityDir)
 	}
 }
 
