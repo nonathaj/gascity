@@ -108,6 +108,18 @@ detect_memory_kib() {
     candidate="$(awk '/^MemAvailable:/ { print $2; exit }' "$meminfo" 2>/dev/null || true)"
     if [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]]; then
       best="$candidate"
+    else
+      # MemAvailable postdates Linux 3.14, and Git for Windows' MSYS layer
+      # emulates /proc/meminfo with MemTotal/MemFree only. Without this
+      # fallback the file was readable but yielded nothing, every later probe
+      # was Linux- or macOS-specific, and detection reported "unknown" -- which
+      # pinned a 32-core, 128 GiB Windows box to the three-job safety default.
+      # MemFree is the conservative reading of the two: it excludes reclaimable
+      # page cache that MemAvailable would count.
+      candidate="$(awk '/^MemFree:/ { print $2; exit }' "$meminfo" 2>/dev/null || true)"
+      if [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]]; then
+        best="$candidate"
+      fi
     fi
   fi
 
