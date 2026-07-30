@@ -78,11 +78,11 @@ func (c *client) requireSupportedVersion() error {
 	if err != nil {
 		return fmt.Errorf("herdr: cannot determine herdr version (need >= %s): %w", minSupportedVersion, err)
 	}
-	min, err := herdrversion.Parse(minSupportedVersion)
+	minV, err := herdrversion.Parse(minSupportedVersion)
 	if err != nil {
 		return fmt.Errorf("herdr: bad minSupportedVersion %q: %w", minSupportedVersion, err)
 	}
-	if herdrversion.Compare(v, min) < 0 {
+	if herdrversion.Compare(v, minV) < 0 {
 		return fmt.Errorf("herdr: version %s is below the supported minimum %s (the herdr session backend requires the 0.7.5+ interface; use the tmux backend on older herdr)", v.Raw, minSupportedVersion)
 	}
 	return nil
