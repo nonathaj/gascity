@@ -161,15 +161,37 @@ LIVE_SESSION_IDS=$(jq -r -s '
     | select(. != null and . != "")
 ' "$SESSION_TMP" 2>/dev/null) || exit 0
 
+# Exact-line membership test, equivalent to `grep -Fxq` but without spawning.
+# The pipe-into-grep form costs two process creations per call (the subshell for
+# the pipe, then grep), which is ~free on Linux and ~530ms on Windows, and this
+# is called once per candidate per bead. Wrapping both haystack and needle in
+# newlines makes the glob match whole lines only, including the first and last.
 agent_exists() {
     local candidate="$1"
-    [ -n "$candidate" ] && printf '%s\n' "$AGENTS" | grep -Fxq -- "$candidate"
+    [ -n "$candidate" ] || return 1
+    case "
+$AGENTS
+" in
+        *"
+$candidate
+"*) return 0 ;;
+    esac
+    return 1
 }
 
+# Same fork-free membership test as agent_exists; see the note there.
 live_session_match() {
     local candidate="$1"
-    [ -n "$candidate" ] && [ -n "$LIVE_SESSION_IDS" ] \
-        && printf '%s\n' "$LIVE_SESSION_IDS" | grep -Fxq -- "$candidate"
+    [ -n "$candidate" ] || return 1
+    [ -n "$LIVE_SESSION_IDS" ] || return 1
+    case "
+$LIVE_SESSION_IDS
+" in
+        *"
+$candidate
+"*) return 0 ;;
+    esac
+    return 1
 }
 
 CURRENT_BEAD_JSON=""
