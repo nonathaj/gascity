@@ -512,7 +512,18 @@ var initLookPath = execshim.LookPath
 
 var initRunVersionCommandContext = exec.CommandContext
 
-var initRunVersionTimeout = 2 * time.Second
+// initRunVersionTimeout bounds one `<tool> version` or `dolt config get` probe.
+// Two seconds is ample on Unix, where these answer immediately and a fork+exec
+// is sub-millisecond. Windows has no copy-on-write fork, so spawning the probe
+// costs ~380ms before it runs and over a second under load -- most of the
+// budget is startup, and exhausting it turns a healthy probe into a timeout
+// that callers cannot distinguish from a missing key or a missing tool.
+var initRunVersionTimeout = func() time.Duration {
+	if goruntime.GOOS == "windows" {
+		return 10 * time.Second
+	}
+	return 2 * time.Second
+}()
 
 var initRunDoltConfigGet = func(key string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), initRunVersionTimeout)

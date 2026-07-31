@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -745,17 +746,26 @@ type WorkQueryRunner func(command, dir string) (string, error)
 // per-rig `bd ready`/`gc ready` paths are optimized.
 //
 // GC_HOOK_WORK_QUERY_TIMEOUT overrides the cap (Go duration syntax, e.g.
-// "180s"). Hosts where each bd invocation is expensive — per-call doltlite
-// fallback on Windows costs ~4s per round-trip — need more than the default
-// 60s budget for the composite probe; without the override the serve loop
-// emits session.work_query_failed every cycle and operators are starved of
-// routed work.
+// "180s").
+//
+// The default is platform-aware because the composite probe is far more
+// expensive on Windows: each bd invocation pays per-call doltlite fallback at
+// roughly 4s per round-trip, and every sh construct in the probe is a process
+// spawn costing ~380ms where Unix forks in under a millisecond. Six sequential
+// round-trips plus the probe's own shell work exceed 60s routinely there. That
+// cost was previously documented here but left to an env var each operator had
+// to discover and set; without it the serve loop emitted
+// session.work_query_failed every cycle and pool operators were starved of
+// routed work — a default that is wrong for the platform, not a tuning knob.
 var hookWorkQueryTimeout = resolveHookWorkQueryTimeout()
 
 // resolveHookWorkQueryTimeout returns the GC_HOOK_WORK_QUERY_TIMEOUT override
-// when it parses to a positive duration, and the 60s default otherwise.
+// when it parses to a positive duration, and the platform default otherwise.
 func resolveHookWorkQueryTimeout() time.Duration {
-	const fallback = 60 * time.Second
+	fallback := 60 * time.Second
+	if runtime.GOOS == "windows" {
+		fallback = 180 * time.Second
+	}
 	raw := strings.TrimSpace(os.Getenv("GC_HOOK_WORK_QUERY_TIMEOUT"))
 	if raw == "" {
 		return fallback
