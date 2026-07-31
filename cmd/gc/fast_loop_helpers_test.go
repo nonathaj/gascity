@@ -99,6 +99,25 @@ func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) {
 	}
 }
 
+// processReadyBudget scales a readiness deadline for the platform. These
+// budgets bound how long a test waits for a helper process it just spawned to
+// bind a port, take a lock, or write a file. They were sized on Unix, where a
+// fork+exec is sub-millisecond. Windows has no copy-on-write fork: MSYS
+// emulates it by copying the address space and replaying DLL base addresses, so
+// a spawn costs ~380ms before the child runs, an interpreter start adds more,
+// and a loaded machine adds more again. At the Unix budget these waits expired
+// on processes that were starting normally, producing "did not become ready"
+// failures that reproduced only under load and passed in isolation.
+//
+// The multiplier scales rather than flattens so the relative sizing each caller
+// chose is preserved. It is a no-op on Unix.
+func processReadyBudget(base time.Duration) time.Duration {
+	if runtime.GOOS == "windows" {
+		return base * 4
+	}
+	return base
+}
+
 // denyDirWrites blocks file creation/writes in dir for the remainder of the
 // test. Unix uses mode bits (0o555); Windows mode bits are synthetic
 // (doctrine P5), so an explicit ACL deny for Everyone (SID S-1-1-0, locale
@@ -240,7 +259,7 @@ while True:
 		}
 		_ = cmd.Wait()
 	})
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
 		if err == nil {

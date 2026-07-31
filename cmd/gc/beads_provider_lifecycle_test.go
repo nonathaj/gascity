@@ -8570,7 +8570,7 @@ while [ ! -f "$release_file" ]; do
 		}
 	})
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for {
 		if _, err := os.Stat(readyFile); err == nil {
 			break
@@ -9159,7 +9159,7 @@ exec sleep 60
 		_ = holder.Process.Kill()
 		_ = holder.Wait()
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for {
 		if _, err := os.Stat(readyFile); err == nil {
 			break
@@ -9342,7 +9342,7 @@ sleep 5
 		_ = holder.Process.Kill()
 		_ = holder.Wait()
 	}()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for {
 		if _, err := os.Stat(readyFile); err == nil {
 			break

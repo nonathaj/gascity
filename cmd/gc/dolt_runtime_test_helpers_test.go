@@ -120,7 +120,7 @@ while True:
 		_ = cmd.Wait()
 	})
 
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(10 * time.Second))
 	for time.Now().Before(deadline) {
 		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
 			t.Fatalf("managed port blocker for %d exited early", port)

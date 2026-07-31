@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,9 +17,24 @@ const (
 	// detachedProbeMetadataKey is a work-bead metadata contract documented in
 	// engdocs/architecture/health-patrol.md. Values use tmux:<socket>:<session>.
 	detachedProbeMetadataKey    = beadmeta.DetachedMetadataKey
-	detachedProbeDefaultTimeout = time.Second
 	detachedProbeErrorThreshold = 3
 )
+
+// detachedProbeDefaultTimeout bounds a single `tmux has-session` spawn. One
+// second is ample on Unix, where a fork+exec is sub-millisecond, but Windows
+// has no copy-on-write fork: MSYS emulates it by copying the address space and
+// replaying DLL base addresses, so spawning a process costs ~380ms before it
+// runs at all and considerably more when the machine is busy. At one second the
+// probe reported "timeout" for sessions that were plainly alive or dead, and
+// pool_session_name.go treats a timeout as an error. The Windows budget is
+// deliberately several spawns wide; it bounds a hang, and a probe that answers
+// late is still far better than one that answers wrongly.
+var detachedProbeDefaultTimeout = func() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 5 * time.Second
+	}
+	return time.Second
+}()
 
 type detachedProbeStatus string
 

@@ -1638,7 +1638,7 @@ while True:
 		}
 		_ = cmd.Wait()
 	})
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
 		if err == nil {
@@ -1827,7 +1827,7 @@ while True:
 	if err := proc.Start(); err != nil {
 		t.Fatalf("start open-file listener process: %v", err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(processReadyBudget(5 * time.Second))
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			if _, readyErr := os.Stat(readyPath); readyErr == nil {
