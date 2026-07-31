@@ -70,6 +70,21 @@ func testDelegatedSystemctlJobTimeout() time.Duration {
 	return 300 * time.Millisecond
 }
 
+// testDelegatedSystemctlElapsedBound is how long a delegated path may take
+// before the test concludes the CLI waited the shim out instead of bounding it.
+//
+// It scales with the job timeout rather than pinning a literal, because the two
+// are coupled: widening the budget so the Windows shim can run at all
+// necessarily moves what "bounded" looks like from the outside. The shim sleeps
+// 5s, so any bound derived from a job timeout below that still fails a CLI that
+// waits for the command to finish -- which is the whole claim.
+func testDelegatedSystemctlElapsedBound() time.Duration {
+	if bound := 10 * testDelegatedSystemctlJobTimeout(); bound > 3*time.Second {
+		return bound
+	}
+	return 3 * time.Second
+}
+
 // installFakeDelegatedSystemctlHangingVerb installs a shim whose
 // invocation of verb hangs (exec sleep) so tests can prove the CLI
 // bounds the systemctl wait. is-active probes report active; other
@@ -535,7 +550,7 @@ func TestRunDelegatedSystemctlTimeoutClassifiesTimeout(t *testing.T) {
 		if !strings.Contains(err.Error(), "timed out after") {
 			t.Errorf("err = %q, want 'timed out after'", err.Error())
 		}
-		if elapsed > 3*time.Second {
+		if elapsed > testDelegatedSystemctlElapsedBound() {
 			t.Fatalf("runDelegatedSystemctlTimeout took %s; the bound did not apply", elapsed)
 		}
 	})
@@ -588,7 +603,7 @@ func TestSupervisorStartDelegatedBoundsSystemctl(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("doSupervisorStart code = %d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated start took %s; the job timeout did not bound the systemctl invocation", elapsed)
 	}
 	if !strings.Contains(stderr.String(), "did not become ready") {
@@ -626,7 +641,7 @@ func TestSupervisorStartDelegatedTimeoutThenLateStartSucceeds(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doSupervisorStart code = %d, want 0; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated start took %s; the job timeout did not bound the systemctl invocation", elapsed)
 	}
 	if !strings.Contains(stdout.String(), "liveness confirmed via service_manager") {
@@ -651,7 +666,7 @@ func TestDelegatedUnitActiveBoundsHangingProbe(t *testing.T) {
 	if active {
 		t.Errorf("delegatedUnitActive = true, want false when the is-active probe hangs past its bound")
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegatedUnitActive took %s; the is-active probe was not bounded", elapsed)
 	}
 }
@@ -692,7 +707,7 @@ func TestSupervisorStartDelegatedTimeoutThenHangingIsActiveStaysBounded(t *testi
 	if code != 0 {
 		t.Fatalf("doSupervisorStart code = %d, want 0; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated start took %s; the is-active probe was not bounded after the start timeout", elapsed)
 	}
 	if !strings.Contains(stdout.String(), "liveness confirmed via api") {
@@ -730,7 +745,7 @@ func TestEnsureSupervisorRunningDelegatedBoundsSystemctl(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("ensureSupervisorRunning code = %d, want 1; stderr=%q", code, stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated ensure-start took %s; the job timeout did not bound the systemctl invocation", elapsed)
 	}
 	if !strings.Contains(stderr.String(), "did not become ready") {
@@ -768,7 +783,7 @@ func TestEnsureSupervisorRunningDelegatedTimeoutThenLateStartSucceeds(t *testing
 	if code != 0 {
 		t.Fatalf("ensureSupervisorRunning code = %d, want 0; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated ensure-start took %s; the job timeout did not bound the systemctl invocation", elapsed)
 	}
 	if strings.Contains(stderr.String(), "did not become ready") {
@@ -953,7 +968,7 @@ func TestSupervisorStopDelegatedWaitTimeoutBoundsSystemctl(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("stopSupervisorWithWait code = %d, want 1; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if elapsed > 3*time.Second {
+	if elapsed > testDelegatedSystemctlElapsedBound() {
 		t.Fatalf("delegated stop took %s; --wait-timeout=300ms did not bound the systemctl invocation", elapsed)
 	}
 	if !strings.Contains(stderr.String(), "timed out after") {
@@ -1717,13 +1732,7 @@ func TestRunStartDriftCheck_DelegatedTryRestartBoundsSystemctl(t *testing.T) {
 	if exitCode != 1 || cont {
 		t.Fatalf("(exitCode, cont) = (%d, %v), want (1, false); stderr=%q", exitCode, cont, stderr.String())
 	}
-	// Scales with the job timeout for the same reason as the late-replacement
-	// test: the claim is that the CLI did not wait out the shim's 5s sleep, and
-	// the Windows budget is wider so the shim can record its argv at all.
-	elapsedBound := 10 * testDelegatedSystemctlJobTimeout()
-	if elapsedBound < 3*time.Second {
-		elapsedBound = 3 * time.Second
-	}
+	elapsedBound := testDelegatedSystemctlElapsedBound()
 	if elapsed > elapsedBound {
 		t.Fatalf("delegated try-restart took %s (bound %s); the job timeout did not bound the systemctl invocation", elapsed, elapsedBound)
 	}
@@ -1793,14 +1802,7 @@ func TestRunStartDriftCheck_DelegatedTryRestartTimeoutThenReplacementSucceeds(t 
 	if postTimeoutProbes.Load() <= oldBuildProbesBeforeReplace {
 		t.Fatalf("verification made %d post-timeout probes; want > %d (the poll must retry past the early old-build probes to the late replacement)", postTimeoutProbes.Load(), oldBuildProbesBeforeReplace)
 	}
-	// Scale with the job timeout rather than pinning a literal: the bound proves
-	// the CLI did not wait out the shim's 5s sleep, so it has to stay under that
-	// while leaving room for the widened Windows budget plus the verification
-	// poll behind it.
-	elapsedBound := 10 * testDelegatedSystemctlJobTimeout()
-	if elapsedBound < 3*time.Second {
-		elapsedBound = 3 * time.Second
-	}
+	elapsedBound := testDelegatedSystemctlElapsedBound()
 	if elapsed > elapsedBound {
 		t.Fatalf("delegated try-restart took %s (bound %s); the job timeout did not bound the systemctl invocation", elapsed, elapsedBound)
 	}
