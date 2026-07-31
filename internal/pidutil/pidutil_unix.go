@@ -103,3 +103,27 @@ func psReportsZombie(pid int) bool {
 	state := strings.TrimSpace(string(out))
 	return strings.HasPrefix(state, "Z")
 }
+
+// Supported reports whether Cwd can work on this platform. Linux exposes
+// /proc/<pid>/cwd; other Unixes have no equivalent that does not shell out, so
+// callers fall back to their own probes (lsof) there.
+func Supported() bool { return runtime.GOOS == "linux" }
+
+// Cwd returns a PID's current working directory from /proc/<pid>/cwd.
+//
+// This is the same read the managed-dolt ownership probe did inline; it lives
+// here so the Windows PEB walk and the Linux symlink read present one API to
+// callers instead of each caller reimplementing the platform split.
+func Cwd(pid int) (string, error) {
+	if pid <= 0 {
+		return "", fmt.Errorf("pidutil: invalid pid %d", pid)
+	}
+	cwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
+	if err != nil {
+		return "", fmt.Errorf("pidutil: reading cwd of PID %d: %w", pid, err)
+	}
+	if strings.TrimSpace(cwd) == "" {
+		return "", fmt.Errorf("pidutil: PID %d reported no working directory", pid)
+	}
+	return cwd, nil
+}

@@ -708,9 +708,17 @@ func extractFlagValue(args, flag string) string {
 	return ""
 }
 
+// processCWDMatches reports whether pid's working directory is dataDir.
+//
+// pidutil.Cwd is consulted first: it reads /proc/<pid>/cwd on Linux exactly as
+// this did inline, and on Windows walks the target's PEB. Without that second
+// path Windows had no way at all to answer this question -- the /proc read and
+// lsof both fail there -- so every process identifying itself by working
+// directory rather than an explicit --data-dir flag was judged unowned, and a
+// live managed server could never be adopted or repaired (gw-4np). lsof remains
+// the fallback for Unixes without /proc.
 func processCWDMatches(pid int, dataDir string) bool {
-	cwd, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
-	if err == nil {
+	if cwd, err := pidutil.Cwd(pid); err == nil {
 		return samePath(cwd, dataDir)
 	}
 	cwd, ok := processCWDFromLsof(pid)

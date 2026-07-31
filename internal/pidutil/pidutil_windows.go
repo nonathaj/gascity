@@ -5,6 +5,7 @@ package pidutil
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -54,9 +55,51 @@ func Cmdline(pid int) ([]string, error) {
 	return NormalizeArgv(argv), nil
 }
 
+// Supported reports whether Cwd can work on this platform.
+func Supported() bool { return true }
+
+// Cwd returns a PID's current working directory.
+//
+// Windows has no /proc/<pid>/cwd and no lsof, so the value comes from the
+// target's PEB (ProcessParameters → CurrentDirectory.DosPath) — the same walk
+// Cmdline uses. Only same-user, same-bitness processes are readable; anything
+// else returns an error, which callers must treat as "no ownership evidence"
+// rather than as a mismatch.
+//
+// The stored DosPath keeps a trailing separator ("C:\dir\"); it is trimmed here
+// so the result compares equal to a filepath.Clean'd path.
+func Cwd(pid int) (string, error) {
+	if pid <= 0 {
+		return "", fmt.Errorf("pidutil: invalid pid %d", pid)
+	}
+	raw, err := windowsProcessParameterString(pid, func(p *windows.RTL_USER_PROCESS_PARAMETERS) *windows.NTUnicodeString {
+		return &p.CurrentDirectory.DosPath
+	})
+	if err != nil {
+		return "", err
+	}
+	if raw == "" {
+		return "", fmt.Errorf("pidutil: PID %d reported no working directory", pid)
+	}
+	return strings.TrimRight(raw, `\/`), nil
+}
+
 // windowsProcessCommandLine reads another process's command line by
 // walking its PEB.
 func windowsProcessCommandLine(pid int) (string, error) {
+	return windowsProcessParameterString(pid, func(p *windows.RTL_USER_PROCESS_PARAMETERS) *windows.NTUnicodeString {
+		return &p.CommandLine
+	})
+}
+
+// windowsProcessParameterString walks a PID's PEB to its
+// RTL_USER_PROCESS_PARAMETERS and reads one UNICODE_STRING member out of the
+// target's address space. Both the command line and the working directory live
+// there, so the walk is shared rather than duplicated per field.
+func windowsProcessParameterString(
+	pid int,
+	pick func(*windows.RTL_USER_PROCESS_PARAMETERS) *windows.NTUnicodeString,
+) (string, error) {
 	h, err := windows.OpenProcess(
 		windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ, false, uint32(pid))
 	if err != nil {
@@ -87,14 +130,16 @@ func windowsProcessCommandLine(pid int) (string, error) {
 		unsafe.Pointer(&params), unsafe.Sizeof(params)); err != nil {
 		return "", fmt.Errorf("pidutil: reading process parameters of PID %d: %w", pid, err)
 	}
-	n := uintptr(params.CommandLine.Length)
-	if n == 0 || params.CommandLine.Buffer == nil {
+
+	field := pick(&params)
+	n := uintptr(field.Length)
+	if n == 0 || field.Buffer == nil {
 		return "", nil
 	}
 	buf := make([]uint16, n/2)
-	if err := readProcessMemory(h, uintptr(unsafe.Pointer(params.CommandLine.Buffer)),
+	if err := readProcessMemory(h, uintptr(unsafe.Pointer(field.Buffer)),
 		unsafe.Pointer(&buf[0]), n); err != nil {
-		return "", fmt.Errorf("pidutil: reading command line of PID %d: %w", pid, err)
+		return "", fmt.Errorf("pidutil: reading process parameter of PID %d: %w", pid, err)
 	}
 	return windows.UTF16ToString(buf), nil
 }
