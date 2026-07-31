@@ -1,6 +1,7 @@
 package main
 
 import (
+	goruntime "runtime"
 	"testing"
 	"time"
 )
@@ -38,7 +39,16 @@ func TestWorkQueryTimeoutsAccommodateMultiRoundTripProbe(t *testing.T) {
 // probe needs more than the 60s default). Invalid, non-positive, or absent
 // values must fall back to the default rather than disable or zero the cap.
 func TestResolveHookWorkQueryTimeoutEnvOverride(t *testing.T) {
-	const fallback = 60 * time.Second
+	// The default is platform-aware: the composite probe costs far more on
+	// Windows, where each bd round-trip pays doltlite fallback and every sh
+	// construct is a process spawn. What this test pins is the override
+	// behavior -- a valid duration wins, anything else falls back -- so it takes
+	// the platform default rather than restating a literal that would make the
+	// suite fail on one OS while passing on the other.
+	fallback := 60 * time.Second
+	if goruntime.GOOS == "windows" {
+		fallback = 180 * time.Second
+	}
 	cases := []struct {
 		name string
 		env  string

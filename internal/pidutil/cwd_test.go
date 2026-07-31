@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // TestCwdReadsOwnWorkingDirectory is the baseline: a process can always read
@@ -47,21 +49,18 @@ func TestCwdReadsAnotherProcessWorkingDirectory(t *testing.T) {
 		_ = cmd.Wait()
 	}()
 
-	// The child needs to be far enough along that its PEB is populated.
+	// The child needs to be far enough along that its PEB is populated. Poll via
+	// testutil.WaitFor rather than a hand-rolled sleep loop: the resource census
+	// counts fixed sleeps in _test.go files precisely so this pattern lives in a
+	// library helper instead of being re-invented per test.
 	var (
 		got string
 		err error
 	)
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if got, err = Cwd(cmd.Process.Pid); err == nil && strings.TrimSpace(got) != "" {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("Cwd(child): %v", err)
-	}
+	testutil.WaitFor(t, 10*time.Second, "child working directory to become readable", func() bool {
+		got, err = Cwd(cmd.Process.Pid)
+		return err == nil && strings.TrimSpace(got) != ""
+	})
 	if !sameDir(t, got, dir) {
 		t.Fatalf("Cwd(child) = %q, want %q", got, dir)
 	}

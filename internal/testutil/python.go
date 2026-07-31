@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/execshim"
 )
 
 // pythonCandidates are argv prefixes tried in order.
@@ -32,7 +34,7 @@ var resolvedPython struct {
 // PythonCommand returns an *exec.Cmd running args under a Python interpreter
 // that actually executes code, or skips the test when the host has none.
 //
-// Resolution runs each candidate rather than trusting exec.LookPath, and then
+// Resolution runs each candidate rather than trusting a PATH lookup, and then
 // uses the sys.executable it reports rather than the name that found it. Both
 // halves are load-bearing on Windows.
 //
@@ -82,7 +84,10 @@ func resolvePython() {
 	resolvedPython.Do(func() {
 		const marker = "gascity-python-probe"
 		for _, candidate := range pythonCandidates {
-			path, err := exec.LookPath(candidate[0])
+			// execshim.LookPath, not exec.LookPath: it also finds the Git for
+			// Windows shims and coreutils that a bare PATH lookup misses
+			// (doctrine P1).
+			path, err := execshim.LookPath(candidate[0])
 			if err != nil {
 				continue
 			}
