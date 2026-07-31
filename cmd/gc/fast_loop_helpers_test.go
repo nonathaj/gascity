@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gastownhall/gascity/internal/execshim"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func skipSlowCmdGCTest(t *testing.T, reason string) {
@@ -105,9 +106,15 @@ func installFakeToolOnPath(t testing.TB, binDir, name, shBody string) {
 // fork+exec is sub-millisecond. Windows has no copy-on-write fork: MSYS
 // emulates it by copying the address space and replaying DLL base addresses, so
 // a spawn costs ~380ms before the child runs, an interpreter start adds more,
-// and a loaded machine adds more again. At the Unix budget these waits expired
-// on processes that were starting normally, producing "did not become ready"
-// failures that reproduced only under load and passed in isolation.
+// and a loaded machine adds more again, so a budget sized for Unix leaves
+// little room for a child that is starting normally.
+//
+// Note what this does NOT fix. The "did not become ready" failures that first
+// prompted it were not slow starts at all: the helper resolved "python3", which
+// on Windows hits a pyenv shim that exits 0 having run nothing, so no process
+// ever bound the port and every wait ran to its deadline. Raising the budget
+// only made those failures take longer to report. Use testutil.PythonPath for
+// interpreter resolution; this budget is for genuine startup latency.
 //
 // The multiplier scales rather than flattens so the relative sizing each caller
 // chose is preserved. It is a no-op on Unix.
@@ -233,7 +240,7 @@ func reserveRandomTCPPort(t *testing.T) int {
 func startTCPListenerProcess(t *testing.T, port int) *exec.Cmd {
 	t.Helper()
 	skipSlowCmdGCTest(t, "spawns a TCP listener process to emulate managed dolt; run make test-cmd-gc-process for full coverage")
-	cmd := exec.Command("python3", "-c", `
+	cmd := testutil.PythonCommand(t, "-c", `
 import signal
 import socket
 import sys

@@ -1001,7 +1001,7 @@ func TestDoltStateInspectManagedCmdDetectsDeletedInodes(t *testing.T) {
 	// for it. Without this sync the test races and sporadically observes
 	// the inode as still-linked. (ga-q42 flake.)
 	readyFile := filepath.Join(t.TempDir(), "deleted-inode.ready")
-	proc := exec.Command("python3", "-c", `
+	proc := testutil.PythonCommand(t, "-c", `
 import os, signal, sys, time
 path = sys.argv[1]
 ready_file = sys.argv[2]
@@ -1610,7 +1610,7 @@ func startTCPListenerProcessInDir(t *testing.T, port int, dir string) *exec.Cmd 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%s): %v", dir, err)
 	}
-	cmd := exec.Command("python3", "-c", `
+	cmd := testutil.PythonCommand(t, "-c", `
 import os
 import signal
 import socket
@@ -1663,7 +1663,7 @@ func startLockedDelayedTCPListenerProcessInDir(t *testing.T, lockFile string, po
 		t.Fatalf("MkdirAll(%s): %v", dir, err)
 	}
 	readyFile := filepath.Join(t.TempDir(), "lock-held.ready")
-	cmd := exec.Command("python3", "-c", `
+	cmd := testutil.PythonCommand(t, "-c", `
 import fcntl
 import os
 import signal
@@ -1715,7 +1715,7 @@ while True:
 func startUnixSocketProcess(t *testing.T, socketPath string) *exec.Cmd {
 	t.Helper()
 	readyPath := filepath.Join(t.TempDir(), "ready")
-	proc := exec.Command("python3", "-c", `
+	proc := testutil.PythonCommand(t, "-c", `
 import os
 import socket
 import sys
@@ -1757,7 +1757,7 @@ func startOpenFileProcess(t *testing.T, path string) *exec.Cmd {
 		t.Fatal(err)
 	}
 	readyPath := filepath.Join(t.TempDir(), "ready")
-	proc := exec.Command("python3", "-c", `
+	proc := testutil.PythonCommand(t, "-c", `
 import os
 import sys
 import time
@@ -1796,7 +1796,7 @@ func startOpenFileAndTCPListenerProcess(t *testing.T, path string, port int, dir
 		t.Fatal(err)
 	}
 	readyPath := filepath.Join(t.TempDir(), "ready")
-	proc := exec.Command("python3", "-c", `
+	proc := testutil.PythonCommand(t, "-c", `
 import os
 import signal
 import socket

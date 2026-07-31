@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func writeReachableManagedDoltState(t *testing.T, cityPath string) int {
@@ -77,7 +78,7 @@ func writeReachableProviderManagedDoltState(t *testing.T, cityPath string) int {
 func occupyManagedDoltPort(t *testing.T, port int) {
 	t.Helper()
 
-	cmd := exec.Command("python3", "-c", `
+	cmd := testutil.PythonCommand(t, "-c", `
 import signal
 import socket
 import sys
