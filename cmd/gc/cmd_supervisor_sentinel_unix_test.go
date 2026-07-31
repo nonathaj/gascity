@@ -24,6 +24,14 @@ import (
 	"github.com/gastownhall/gascity/internal/supervisor"
 )
 
+// workspaceServiceSentinel identifies the sentinel by its Unix process group.
+// It lives with its only user rather than in the untagged test file: a pgid is
+// a Unix concept, and declaring it where Windows also compiles left it unused
+// on that platform -- a finding GOOS=linux CI lint cannot see (gw-4c3).
+type workspaceServiceSentinel struct {
+	pgid int
+}
+
 func startWorkspaceServiceSentinel(t *testing.T, gcHome, cityPath, serviceName string) workspaceServiceSentinel {
 	t.Helper()
 	processgrouptest.RequireRealProcessSignals(t)

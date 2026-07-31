@@ -4471,7 +4471,7 @@ func TestNativeDoltOpenEnvForScopeContextCancelsManagedRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := `#!/bin/sh
-echo $$ > "$GC_TEST_CHILD_PID"
+{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > "$GC_TEST_CHILD_PID"
 while :; do sleep 1; done
 `
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {

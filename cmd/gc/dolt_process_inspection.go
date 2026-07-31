@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	slashpath "path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -18,10 +19,23 @@ import (
 	"github.com/gastownhall/gascity/internal/processgroup"
 )
 
-const (
-	processArgsPSTimeout = 10 * time.Second
-	lsofCommandTimeout   = 2 * time.Second
-)
+const processArgsPSTimeout = 10 * time.Second
+
+// lsofCommandTimeout bounds one lsof invocation. Two seconds is generous on
+// Unix, where lsof answers in milliseconds and a fork+exec is sub-millisecond.
+// It is not generous on Windows: there is no copy-on-write fork, so spawning
+// any child costs ~380ms before it runs and measured over a second for a
+// script, meaning most of the budget is startup and a busy machine exhausts it
+// outright. The timeout then fires on a healthy command and the caller reads
+// the empty result as "no records", which is the wrong conclusion -- it should
+// mean "could not tell". Only bounding a hang is at stake here, so the Windows
+// budget is widened rather than the failure being reinterpreted.
+var lsofCommandTimeout = func() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 10 * time.Second
+	}
+	return 2 * time.Second
+}()
 
 type managedDoltProcessInspection struct {
 	ManagedPID              int

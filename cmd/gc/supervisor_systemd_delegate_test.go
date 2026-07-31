@@ -49,6 +49,27 @@ func installFakeDelegatedSystemctlWithUnitState(t *testing.T, exitCode int, stde
 	return argsFile
 }
 
+// testDelegatedSystemctlJobTimeout is the bounded systemctl wait these tests
+// install in place of the production budget.
+//
+// The fakes below record their argv and only then hang (exec sleep 5), and
+// several assertions depend on that record existing. On Unix 300ms is ample:
+// the shim is running within a millisecond. On Windows a spawn costs ~380ms
+// before the child executes and over a second for a shell script, so a 300ms
+// budget killed the shim before it wrote anything -- the test then saw a
+// verification poll against a fake that had never run and read it as "the
+// supervisor was not replaced", a conclusion about the wrong thing entirely.
+//
+// The invariant these tests exist to prove is unaffected: the shim sleeps 5s,
+// so a 2s budget still bounds the hang and still fails a CLI that waits for the
+// command to finish.
+func testDelegatedSystemctlJobTimeout() time.Duration {
+	if goruntime.GOOS == "windows" {
+		return 2 * time.Second
+	}
+	return 300 * time.Millisecond
+}
+
 // installFakeDelegatedSystemctlHangingVerb installs a shim whose
 // invocation of verb hangs (exec sleep) so tests can prove the CLI
 // bounds the systemctl wait. is-active probes report active; other
@@ -547,7 +568,7 @@ func TestSupervisorStartDelegatedBoundsSystemctl(t *testing.T) {
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	installFakeDelegatedSystemctlHangingVerbWithUnitState(t, "start", 3)
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 
 	old := supervisorAliveHook
@@ -585,7 +606,7 @@ func TestSupervisorStartDelegatedTimeoutThenLateStartSucceeds(t *testing.T) {
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	installFakeDelegatedSystemctlHangingVerbWithUnitState(t, "start", 0)
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 
 	old := supervisorAliveHook
@@ -648,7 +669,7 @@ func TestSupervisorStartDelegatedTimeoutThenHangingIsActiveStaysBounded(t *testi
 	installFakeDelegatedSystemctlHangingStartAndIsActive(t)
 
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 	oldIsActive := delegatedIsActiveTimeout
 	delegatedIsActiveTimeout = 300 * time.Millisecond
@@ -689,7 +710,7 @@ func TestEnsureSupervisorRunningDelegatedBoundsSystemctl(t *testing.T) {
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	installFakeDelegatedSystemctlHangingVerbWithUnitState(t, "start", 3)
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 
 	old := supervisorAliveHook
@@ -727,7 +748,7 @@ func TestEnsureSupervisorRunningDelegatedTimeoutThenLateStartSucceeds(t *testing
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	installFakeDelegatedSystemctlHangingVerbWithUnitState(t, "start", 0)
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 
 	old := supervisorAliveHook
@@ -1682,7 +1703,7 @@ func TestRunStartDriftCheck_DelegatedTryRestartBoundsSystemctl(t *testing.T) {
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	installFakeDelegatedSystemctlHangingVerb(t, "try-restart")
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 	// The bounded try-restart never replaces the supervisor, so the
 	// verification poll runs to driftReadyTimeout before reporting "was not
@@ -1696,8 +1717,15 @@ func TestRunStartDriftCheck_DelegatedTryRestartBoundsSystemctl(t *testing.T) {
 	if exitCode != 1 || cont {
 		t.Fatalf("(exitCode, cont) = (%d, %v), want (1, false); stderr=%q", exitCode, cont, stderr.String())
 	}
-	if elapsed > 3*time.Second {
-		t.Fatalf("delegated try-restart took %s; the job timeout did not bound the systemctl invocation", elapsed)
+	// Scales with the job timeout for the same reason as the late-replacement
+	// test: the claim is that the CLI did not wait out the shim's 5s sleep, and
+	// the Windows budget is wider so the shim can record its argv at all.
+	elapsedBound := 10 * testDelegatedSystemctlJobTimeout()
+	if elapsedBound < 3*time.Second {
+		elapsedBound = 3 * time.Second
+	}
+	if elapsed > elapsedBound {
+		t.Fatalf("delegated try-restart took %s (bound %s); the job timeout did not bound the systemctl invocation", elapsed, elapsedBound)
 	}
 	if !strings.Contains(stderr.String(), "was not replaced") {
 		t.Errorf("stderr = %q, want 'was not replaced' after the bounded timeout fell through to drift verification", stderr.String())
@@ -1725,7 +1753,7 @@ func TestRunStartDriftCheck_DelegatedTryRestartTimeoutThenReplacementSucceeds(t 
 	setDelegationEnvForTest(t, "gascity-prod.service", "")
 	argsFile := installFakeDelegatedSystemctlHangingVerb(t, "try-restart")
 	oldJob := delegatedSystemctlJobTimeout
-	delegatedSystemctlJobTimeout = 300 * time.Millisecond
+	delegatedSystemctlJobTimeout = testDelegatedSystemctlJobTimeout()
 	t.Cleanup(func() { delegatedSystemctlJobTimeout = oldJob })
 
 	// Model a unit that replaces the supervisor binary only after the CLI's
@@ -1765,8 +1793,16 @@ func TestRunStartDriftCheck_DelegatedTryRestartTimeoutThenReplacementSucceeds(t 
 	if postTimeoutProbes.Load() <= oldBuildProbesBeforeReplace {
 		t.Fatalf("verification made %d post-timeout probes; want > %d (the poll must retry past the early old-build probes to the late replacement)", postTimeoutProbes.Load(), oldBuildProbesBeforeReplace)
 	}
-	if elapsed > 3*time.Second {
-		t.Fatalf("delegated try-restart took %s; the job timeout did not bound the systemctl invocation", elapsed)
+	// Scale with the job timeout rather than pinning a literal: the bound proves
+	// the CLI did not wait out the shim's 5s sleep, so it has to stay under that
+	// while leaving room for the widened Windows budget plus the verification
+	// poll behind it.
+	elapsedBound := 10 * testDelegatedSystemctlJobTimeout()
+	if elapsedBound < 3*time.Second {
+		elapsedBound = 3 * time.Second
+	}
+	if elapsed > elapsedBound {
+		t.Fatalf("delegated try-restart took %s (bound %s); the job timeout did not bound the systemctl invocation", elapsed, elapsedBound)
 	}
 	if !strings.Contains(stdout.String(), " ready (") {
 		t.Errorf("stdout = %q, want ready line after verified late replacement", stdout.String())

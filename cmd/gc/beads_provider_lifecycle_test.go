@@ -26,6 +26,7 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/execshim"
 	"github.com/gastownhall/gascity/internal/fsys"
+	"github.com/gastownhall/gascity/internal/pidutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -4218,7 +4219,7 @@ func TestRunProviderOpKillsProcessGroupOnTimeout(t *testing.T) {
 	childPIDFile := filepath.Join(dir, "child.pid")
 	script := filepath.Join(dir, "provider-op.sh")
 	content := `#!/bin/sh
-sh -c 'echo $$ > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
+sh -c '{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
 wait
 `
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
@@ -4259,7 +4260,7 @@ func TestRunProviderOpWithEnvContextParentCancellationKillsProcessGroup(t *testi
 	childPIDFile := filepath.Join(dir, "child.pid")
 	script := filepath.Join(dir, "provider-op.sh")
 	content := `#!/bin/sh
-sh -c 'echo $$ > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
+sh -c '{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
 wait
 `
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
@@ -4294,7 +4295,7 @@ func TestRunProviderProbeKillsProcessGroupOnTimeout(t *testing.T) {
 	childPIDFile := filepath.Join(dir, "child.pid")
 	script := filepath.Join(dir, "provider-probe.sh")
 	content := `#!/bin/sh
-sh -c 'echo $$ > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
+sh -c '{ cat /proc/$$/winpid 2>/dev/null || echo $$; } > "$GC_TEST_CHILD_PID"; while :; do sleep 1; done' &
 wait
 `
 	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
@@ -4387,12 +4388,23 @@ func waitForProviderTestChildPID(t *testing.T, path string) int {
 	if goruntime.GOOS != "windows" {
 		return pid
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	// The fixtures record /proc/$$/winpid, so the file already holds a native
+	// Windows pid and no mapping is needed. Note that MSYS exposes the shell's
+	// own winpid only under its literal pid -- /proc/self/winpid inside a
+	// `cat` reports cat's, not the shell's.
+	if pidutil.Alive(pid) {
+		return pid
+	}
+	// Older fixtures may still write the MSYS pid. Map it, but poll on a budget
+	// that reflects what the mapping costs here: each attempt spawns sh, ps and
+	// awk, which is one to two seconds on Windows, so the previous five-second
+	// deadline allowed barely two tries and expired under gate load.
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if winPID, ok := windowsPIDForShellPID(pid); ok {
 			return winPID
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 	t.Fatalf("could not map MSYS pid %d to a Windows pid via ps -W; the child pid is "+
 		"unusable for pidutil probes and the assertion would be vacuous", pid)

@@ -61,10 +61,6 @@ func (b *lockedBuffer) String() string {
 	return b.buf.String()
 }
 
-type workspaceServiceSentinel struct {
-	pgid int
-}
-
 func stubSupervisorRunningPreserveSignalReady(t *testing.T, ready bool) {
 	t.Helper()
 	old := supervisorRunningPreserveSignalReady
@@ -4468,11 +4464,23 @@ func TestStopManagedCityDoesNotUseStartupOrDriftTimeouts(t *testing.T) {
 		},
 	}
 
+	// The claim under test is that stop honored ShutdownTimeout (20ms) instead of
+	// StartupTimeout (3m) or DriftDrainTimeout (2m), so the bound only has to sit
+	// far below those. 500ms is unreachable on Windows for reasons unrelated to
+	// the claim: this path spawns the exec beads provider, and a spawn there
+	// costs ~380ms before the child runs, measuring 0.6-1.5s with nothing wrong.
+	// 5s stays more than an order of magnitude under either timeout it must not
+	// have used, so the assertion keeps its teeth on both platforms.
+	bound := 500 * time.Millisecond
+	if goruntime.GOOS == "windows" {
+		bound = 5 * time.Second
+	}
+
 	var stderr bytes.Buffer
 	start := time.Now()
 	err := stopManagedCity(mc, cityPath, &stderr)
-	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-		t.Fatalf("stopManagedCity took %s, want shutdown-timeout bound", elapsed)
+	if elapsed := time.Since(start); elapsed > bound {
+		t.Fatalf("stopManagedCity took %s, want under %s (shutdown-timeout bound)", elapsed, bound)
 	}
 	if err == nil {
 		t.Fatal("stopManagedCity err = nil, want non-nil because city never exited")
