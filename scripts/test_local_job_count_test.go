@@ -23,14 +23,37 @@ func runJobCount(t *testing.T, meminfo string, extraEnv ...string) string {
 	}
 	env = append(env, extraEnv...)
 
-	cmd := testCommand("bash", filepath.Join(repoRoot, "scripts", "test-local-job-count"))
+	args := []string{filepath.Join(repoRoot, "scripts", "test-local-job-count")}
+	kept := env[:0]
+	for _, entry := range env {
+		if rest, ok := strings.CutPrefix(entry, "GC_TEST_LOCAL_JOB_ARGS="); ok {
+			args = append(args, strings.Fields(rest)...)
+			continue
+		}
+		kept = append(kept, entry)
+	}
+
+	cmd := testCommand("bash", args...)
 	cmd.Dir = repoRoot
-	cmd.Env = env
+	cmd.Env = kept
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("test-local-job-count: %v", err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// runJobCountExpectingError runs the script with raw arguments and returns the
+// error, for the fail-closed cases.
+func runJobCountExpectingError(t *testing.T, rawArgs string) (string, error) {
+	t.Helper()
+	repoRoot := repoRoot(t)
+	args := append([]string{filepath.Join(repoRoot, "scripts", "test-local-job-count")}, strings.Fields(rawArgs)...)
+	cmd := testCommand("bash", args...)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "GC_TEST_LOCAL_CPUS=32")
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 // TestJobCountPrefersMemAvailableOverMemFree pins the Linux reading: when the
@@ -63,6 +86,31 @@ func TestJobCountKeepsSafetyDefaultWhenMemoryIsUnknowable(t *testing.T) {
 	got := runJobCount(t, "MemTotal:      100000000 kB\n")
 	if want := "3"; got != want {
 		t.Fatalf("job count = %s, want the %s-job unknown-memory default", got, want)
+	}
+}
+
+// TestJobCountAppliesCallerCap covers --max, which the Makefile uses for suites
+// that contend on process-creation throughput rather than CPU or memory. The cap
+// must bound every path, including an explicit memory override, and must never
+// raise a count that is already lower.
+func TestJobCountAppliesCallerCap(t *testing.T) {
+	plenty := "MemTotal:      100000000 kB\nMemAvailable:   41943040 kB\n"
+	if got, want := runJobCount(t, plenty, "GC_TEST_LOCAL_JOB_ARGS=--max 3"), "3"; got != want {
+		t.Fatalf("capped job count = %s, want %s", got, want)
+	}
+	if got, want := runJobCount(t, plenty, "GC_TEST_LOCAL_JOB_ARGS=--max 99"), "10"; got != want {
+		t.Fatalf("job count with a cap above the computed budget = %s, want the computed %s", got, want)
+	}
+}
+
+// TestJobCountRejectsMalformedCap keeps the flag fail-closed: a bad cap must be
+// an error rather than silently ignored, which would leave a spawn-heavy suite
+// running at full machine-size concurrency.
+func TestJobCountRejectsMalformedCap(t *testing.T) {
+	for _, args := range []string{"--max 0", "--max abc", "--max", "bogus"} {
+		if out, err := runJobCountExpectingError(t, args); err == nil {
+			t.Fatalf("job count with %q succeeded (%s), want an error", args, out)
+		}
 	}
 }
 

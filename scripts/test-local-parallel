@@ -22,6 +22,12 @@ fi
 mode="$1"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+# Resolve the TMPDIR default once, here, and export it. The per-job env below is
+# assembled into a command string that a child shell evaluates under `set -u`,
+# so a $repo_root reference inside it is unbound there; exporting the resolved
+# value keeps every downstream use a plain variable expansion.
+: "${TMPDIR:="$(sh "$repo_root/scripts/lib/default-tmpdir.sh")"}"
+export TMPDIR
 # shellcheck source=lib/test-slice.sh
 source "$repo_root/scripts/lib/test-slice.sh"
 gc_test_slice_reexec "$repo_root/scripts/test-local-parallel" "$@"
@@ -229,7 +235,7 @@ if [[ -n "${LOCAL_TEST_LOG_DIR:-}" ]]; then
   log_dir="$LOCAL_TEST_LOG_DIR"
   cleanup_log_dir=0
 else
-  log_dir="$(mktemp -d "${TMPDIR:-$(sh "$repo_root/scripts/lib/default-tmpdir.sh")}/gc-local-tests.XXXXXX")"
+  log_dir="$(mktemp -d "${TMPDIR}/gc-local-tests.XXXXXX")"
 fi
 export LOCAL_TEST_LOG_DIR="$log_dir"
 export TEST_LOCAL_GOPATH="$gopath_val"
@@ -282,7 +288,7 @@ set +e
     LOGNAME="${LOGNAME:-}" \
     SHELL="${SHELL:-/bin/sh}" \
     LANG="${LANG:-C.UTF-8}" \
-    TMPDIR="${TMPDIR:-$(sh "$repo_root/scripts/lib/default-tmpdir.sh")}" \
+    TMPDIR="${TMPDIR}" \
     TMP="${TMP-}" \
     TEMP="${TEMP-}" \
     SYSTEMROOT="${SYSTEMROOT-}" \

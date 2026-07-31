@@ -240,7 +240,7 @@ print-test-env-tmpdir:
 // helper references in that file today; a changed count means a site was added
 // or removed and this ledger must be updated deliberately, not silently.
 var tmpdirHelperReferences = map[string]int{
-	"scripts/test-local-parallel":    2, // log_dir mktemp + per-job env
+	"scripts/test-local-parallel":    1, // resolved once at startup and exported
 	"scripts/go-test-observable":     1, // per-run log file mktemp
 	"scripts/test-go-test-shard":     1, // per-shard env, resolved once
 	"scripts/test-integration-shard": 1, // per-shard env

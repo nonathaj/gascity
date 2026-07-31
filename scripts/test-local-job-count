@@ -19,6 +19,27 @@ fail() {
   exit 1
 }
 
+# --max N caps the computed count. Callers use it for suites whose contended
+# resource is not CPU or memory, so the cpu/memory budget above does not describe
+# them. The cmd/gc process suite is the case in point: its tests spawn real
+# helper processes, bind ports, and take locks, and process creation does not
+# scale with core count -- on Windows especially, where a spawn costs ~380ms.
+# Measured on a 32-core, 128 GiB Windows box: six concurrent shards finished in
+# 39.5 min with 35 readiness-timeout failures, while three concurrent shards took
+# about the same wall clock with ~2. Extra concurrency bought no speed and cost
+# reliability, so that suite is pinned low deliberately rather than riding the
+# machine-size number.
+max_jobs_cap=0
+if [[ "${1:-}" == "--max" ]]; then
+  [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ && "$2" -gt 0 ]] ||
+    fail "--max requires a positive integer"
+  max_jobs_cap="$2"
+  shift 2
+fi
+if [[ $# -gt 0 ]]; then
+  fail "unexpected argument: $1"
+fi
+
 detect_cpus() {
   if [[ -n "${GC_TEST_LOCAL_CPUS:-}" ]]; then
     [[ "$GC_TEST_LOCAL_CPUS" =~ ^[0-9]+$ && "$GC_TEST_LOCAL_CPUS" -gt 0 ]] ||
@@ -197,6 +218,12 @@ fi
 
 if [[ "$jobs" -gt "$max_auto_jobs" ]]; then
   jobs="$max_auto_jobs"
+fi
+
+# The caller's cap is applied last so it bounds every path above, including an
+# explicit GC_TEST_LOCAL_MEMORY_KIB or CPU override.
+if [[ "$max_jobs_cap" -gt 0 && "$jobs" -gt "$max_jobs_cap" ]]; then
+  jobs="$max_jobs_cap"
 fi
 
 printf '%s\n' "$jobs"

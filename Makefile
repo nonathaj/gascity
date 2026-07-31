@@ -458,6 +458,14 @@ test-mac: test-fsys-darwin-compile
 	$(TEST_ENV) GC_FAST_UNIT=1 scripts/go-test-observable test-mac -- -p=4 -count=1 -timeout 15m $(MAC_UNIT_PKGS)
 
 LOCAL_TEST_JOBS ?= $(shell ./scripts/test-local-job-count)
+## SPAWN_HEAVY_TEST_JOBS bounds the suites whose tests spawn real helper
+## processes, bind ports, and take locks. Those contend on process-creation
+## throughput, which does not scale with core count, so the cpu/memory budget in
+## LOCAL_TEST_JOBS does not describe them. Measured on a 32-core, 128 GiB Windows
+## box: six concurrent cmd/gc shards took 39.5 min and produced 35
+## readiness-timeout failures; three took about the same wall clock with ~2. The
+## extra concurrency bought no speed and cost reliability.
+SPAWN_HEAVY_TEST_JOBS ?= $(shell ./scripts/test-local-job-count --max 3)
 
 ## test-fast-parallel: run the default fast suite with cmd/gc sharded locally
 test-fast-parallel:
@@ -513,7 +521,7 @@ test-cmd-gc-process-shard:
 
 ## test-cmd-gc-process-parallel: run all cmd/gc process shards concurrently
 test-cmd-gc-process-parallel:
-	LOCAL_TEST_JOBS=$(LOCAL_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel cmd-gc-process
+	LOCAL_TEST_JOBS=$(SPAWN_HEAVY_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel cmd-gc-process
 
 ## test-worker-core: run deterministic worker transcript and continuation conformance
 test-worker-core:
@@ -588,11 +596,11 @@ test-integration-shards: test-integration-packages test-integration-review-formu
 
 ## test-integration-shards-parallel: run the CI integration shards concurrently
 test-integration-shards-parallel:
-	LOCAL_TEST_JOBS=$(LOCAL_TEST_JOBS) ./scripts/test-local-parallel integration
+	LOCAL_TEST_JOBS=$(SPAWN_HEAVY_TEST_JOBS) ./scripts/test-local-parallel integration
 
 ## test-local-full-parallel: run fast unit, cmd/gc process, and integration shards concurrently
 test-local-full-parallel:
-	LOCAL_TEST_JOBS=$(LOCAL_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel full
+	LOCAL_TEST_JOBS=$(SPAWN_HEAVY_TEST_JOBS) CMD_GC_PROCESS_TOTAL=$(CMD_GC_PROCESS_TOTAL) ./scripts/test-local-parallel full
 
 ## test-integration-shards-cover: run the CI integration coverage shards sequentially
 test-integration-shards-cover: test-integration-packages-cover test-integration-review-formulas-cover test-integration-bdstore-cover test-integration-rest-smoke-cover test-integration-rest-full-cover
