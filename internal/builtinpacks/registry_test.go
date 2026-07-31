@@ -539,3 +539,66 @@ func TestSyntheticCacheKeyComponentMatchesContentHash(t *testing.T) {
 		t.Fatalf("SyntheticCacheKeyComponent not stable across calls: %q != %q", got, second)
 	}
 }
+
+// TestMaterializeSyntheticRepoRepairsDivergedCacheFile covers the branch that
+// still has to go through the atomic writer. materializeFS writes a brand-new
+// file directly, but a file that already exists may be an older or corrupted
+// materialization, so its content must still be corrected in place.
+func TestMaterializeSyntheticRepoRepairsDivergedCacheFile(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "cache")
+	if err := MaterializeSyntheticRepo(dst, testCommit); err != nil {
+		t.Fatalf("MaterializeSyntheticRepo (first): %v", err)
+	}
+
+	var victim string
+	if err := filepath.WalkDir(dst, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || victim != "" {
+			return nil //nolint:nilerr // best-effort scan for any materialized file
+		}
+		if filepath.Base(path) != syntheticMarkerFile {
+			victim = path
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk cache: %v", err)
+	}
+	if victim == "" {
+		t.Fatal("materialized cache contains no pack files")
+	}
+	want, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read original: %v", err)
+	}
+	if err := os.WriteFile(victim, []byte("corrupted"), 0o644); err != nil {
+		t.Fatalf("corrupt cache file: %v", err)
+	}
+
+	if err := MaterializeSyntheticRepo(dst, testCommit); err != nil {
+		t.Fatalf("MaterializeSyntheticRepo (repair): %v", err)
+	}
+	got, err := os.ReadFile(victim)
+	if err != nil {
+		t.Fatalf("read repaired file: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("%s was not repaired: got %d bytes, want %d", victim, len(got), len(want))
+	}
+	if err := ValidateSyntheticRepo(dst, testCommit); err != nil {
+		t.Fatalf("ValidateSyntheticRepo after repair: %v", err)
+	}
+}
+
+// TestMaterializeSyntheticRepoIsIdempotent pins that re-materializing an
+// already-correct cache leaves it valid. The fresh-file fast path must not
+// break the refresh path that runs on every subsequent materialization.
+func TestMaterializeSyntheticRepoIsIdempotent(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "cache")
+	for i := 0; i < 3; i++ {
+		if err := MaterializeSyntheticRepo(dst, testCommit); err != nil {
+			t.Fatalf("MaterializeSyntheticRepo (pass %d): %v", i, err)
+		}
+		if err := ValidateSyntheticRepo(dst, testCommit); err != nil {
+			t.Fatalf("ValidateSyntheticRepo (pass %d): %v", i, err)
+		}
+	}
+}

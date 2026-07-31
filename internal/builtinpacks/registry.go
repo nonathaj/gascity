@@ -4,6 +4,7 @@ package builtinpacks
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -470,9 +471,60 @@ func materializeFS(src fs.FS, dst string) error {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return err
 		}
-		if err := fsys.WriteFileIfContentOrModeChangedAtomic(fsys.OSFS{}, target, file.data, file.perm); err != nil {
+		if err := writeMaterializedPackFile(target, file.data, file.perm); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// writeMaterializedPackFile writes one file of a materialized pack.
+//
+// A path that does not exist yet is written directly instead of through the
+// atomic temp-and-rename dance, which is four filesystem operations per file
+// (create temp, chmod, rename, orphan-sweep readdir). That is safe here for
+// three separate reasons, and only together:
+//
+//   - There is no existing content to tear. O_EXCL is what establishes that;
+//     it is not a pre-check that could race.
+//   - Materialization runs inside the repo cache's exclusive cross-process
+//     write lock (config.WithRepoCacheWriteLock), and readers hold the matching
+//     read lock, so no concurrent writer or reader is present.
+//   - validatePackFiles re-reads and compares every file afterwards, so a
+//     crash that truncates a partly written file is detected and the cache is
+//     re-materialized rather than trusted.
+//
+// An existing path still goes through the atomic writer: it may be an older or
+// corrupted materialization, and replacing it atomically keeps any reader that
+// slipped past the lock from observing a half-written file.
+//
+// The cost this avoids is platform-shaped. On Unix the extra operations are
+// tens of microseconds and invisible; on Windows each is on the order of a
+// millisecond, which made populating a fresh cache 62% of the runtime of any
+// test that builds a city from scratch.
+func writeMaterializedPackFile(target string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fsys.WriteFileIfContentOrModeChangedAtomic(fsys.OSFS{}, target, data, perm)
+		}
+		return err
+	}
+	if _, werr := f.Write(data); werr != nil {
+		_ = f.Close()
+		_ = os.Remove(target)
+		return werr
+	}
+	if cerr := f.Close(); cerr != nil {
+		_ = os.Remove(target)
+		return cerr
+	}
+	// O_CREATE applies the process umask, so the mode on disk can be narrower
+	// than requested. WriteFileAtomic normalises the same way, and
+	// validatePackFiles compares modes.
+	if err := os.Chmod(target, perm); err != nil {
+		_ = os.Remove(target)
+		return err
 	}
 	return nil
 }
