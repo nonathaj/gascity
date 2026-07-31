@@ -32,15 +32,25 @@ var resolvedPython struct {
 // PythonCommand returns an *exec.Cmd running args under a Python interpreter
 // that actually executes code, or skips the test when the host has none.
 //
-// Resolution runs each candidate rather than trusting exec.LookPath. On Windows
-// both "python3" and "python" commonly resolve to something that starts cleanly
-// and exits 0 having run nothing: a pyenv shim forwards to `pyenv exec <name>`
-// for a version that provides only python.exe, and the Microsoft Store stub in
-// WindowsApps behaves similarly. A caller that spawned a listener through one of
-// those saw Start succeed, no process bind the port, and the test fail its
-// readiness deadline -- a failure indistinguishable from a slow machine, which
-// is exactly how it was first misdiagnosed. Requiring observed output is what
-// separates a working interpreter from a silent no-op.
+// Resolution runs each candidate rather than trusting exec.LookPath, and then
+// uses the sys.executable it reports rather than the name that found it. Both
+// halves are load-bearing on Windows.
+//
+// Running the candidate is what separates a working interpreter from a silent
+// no-op: "python3" commonly resolves to a pyenv shim that forwards to `pyenv
+// exec python3` for a version providing only python.exe, and the Store stub in
+// WindowsApps behaves similarly. Either starts cleanly and exits 0 having run
+// nothing, so a caller that spawned a listener through one saw Start succeed, no
+// process bind the port, and the test fail its readiness deadline -- a failure
+// indistinguishable from a slow machine, which is how it was first misdiagnosed.
+//
+// Using sys.executable is what makes the returned command's PID meaningful.
+// Every Windows entry point measured here -- the pyenv shim and the py launcher
+// alike -- runs Python in a CHILD process, so cmd.Process.Pid identifies the
+// launcher, not the interpreter. Callers that spawn a listener and then assert
+// the recorded PID owns the port (managed-dolt runtime-state validation does
+// exactly this) compare two different processes and fail. Spawning the reported
+// executable directly removes the intermediary.
 func PythonCommand(t testing.TB, args ...string) *exec.Cmd {
 	t.Helper()
 	prefix, err := PythonArgv()
@@ -76,12 +86,19 @@ func resolvePython() {
 			if err != nil {
 				continue
 			}
-			args := append(append([]string(nil), candidate[1:]...), "-c", "print('"+marker+"')")
+			// One probe answers both questions: whether this candidate executes
+			// anything at all, and where the real interpreter lives.
+			args := append(append([]string(nil), candidate[1:]...),
+				"-c", "import sys; print('"+marker+"', sys.executable)")
 			out, err := exec.Command(path, args...).Output()
-			if err != nil || !strings.Contains(string(out), marker) {
+			if err != nil {
 				continue
 			}
-			resolvedPython.prefix = append([]string{path}, candidate[1:]...)
+			executable, ok := strings.CutPrefix(strings.TrimSpace(string(out)), marker+" ")
+			if !ok || executable == "" {
+				continue
+			}
+			resolvedPython.prefix = []string{executable}
 			return
 		}
 	})
