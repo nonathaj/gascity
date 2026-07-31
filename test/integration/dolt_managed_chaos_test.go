@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 const (
@@ -1094,8 +1096,13 @@ func occupyManagedDoltPort(port int, timeout time.Duration) (func() error, error
 	deadline := time.Now().Add(timeout)
 	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 
+	python, err := testutil.PythonArgv()
+	if err != nil {
+		return nil, err
+	}
+
 	var stderr bytes.Buffer
-	cmd := exec.Command("python3", "-c", `
+	cmd := exec.Command(python[0], append(append([]string(nil), python[1:]...), "-c", `
 import signal
 import socket
 import sys
@@ -1138,7 +1145,7 @@ while True:
 
 while True:
     time.sleep(1)
-`, strconv.Itoa(port), fmt.Sprintf("%.3f", timeout.Seconds()))
+`, strconv.Itoa(port), fmt.Sprintf("%.3f", timeout.Seconds()))...)
 	cmd.Stdout = &stderr
 	cmd.Stderr = &stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

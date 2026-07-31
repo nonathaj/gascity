@@ -11,6 +11,7 @@ import (
 
 	"github.com/gastownhall/gascity/internal/mail"
 	"github.com/gastownhall/gascity/internal/mail/mailtest"
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 // TestMCPMailConformanceLive runs the conformance suite against a real
@@ -93,18 +94,15 @@ func mcpServerReachable(serverURL string) bool {
 func startMCPServer(t *testing.T, serverURL string) {
 	t.Helper()
 
-	python, err := osexec.LookPath("python3")
-	if err != nil {
-		t.Skip("python3 not on PATH; mcp_agent_mail server not running")
-	}
-
-	// Verify the module is installed before starting.
-	check := osexec.Command(python, "-c", "import mcp_agent_mail")
+	// Verify the module is installed before starting. PythonCommand skips the
+	// test when no interpreter actually executes, which a bare LookPath cannot
+	// tell apart from a Windows shim that exits 0 having run nothing.
+	check := testutil.PythonCommand(t, "-c", "import mcp_agent_mail")
 	if err := check.Run(); err != nil {
 		t.Skip("mcp_agent_mail not installed; server not running")
 	}
 
-	cmd := osexec.Command(python, "-m", "mcp_agent_mail.http")
+	cmd := testutil.PythonCommand(t, "-m", "mcp_agent_mail.http")
 	cmd.Dir = t.TempDir()
 	cmd.Stdout = os.Stderr // visible with -v
 	cmd.Stderr = os.Stderr

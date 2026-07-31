@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -42,13 +43,32 @@ var resolvedPython struct {
 // separates a working interpreter from a silent no-op.
 func PythonCommand(t testing.TB, args ...string) *exec.Cmd {
 	t.Helper()
-	prefix := pythonPrefix(t)
+	prefix, err := PythonArgv()
+	if err != nil {
+		t.Skip(err.Error())
+	}
 	full := append(append([]string(nil), prefix[1:]...), args...)
 	return exec.Command(prefix[0], full...)
 }
 
-func pythonPrefix(t testing.TB) []string {
-	t.Helper()
+// PythonArgv is PythonCommand's resolution step for callers that have no
+// *testing.T to skip -- helpers that return an error instead. It reports the
+// argv prefix of a working interpreter, or an error naming what was tried.
+func PythonArgv() ([]string, error) {
+	resolvePython()
+	if len(resolvedPython.prefix) == 0 {
+		names := make([]string, 0, len(pythonCandidates))
+		for _, candidate := range pythonCandidates {
+			names = append(names, strings.Join(candidate, " "))
+		}
+		return nil, fmt.Errorf("no working Python interpreter found (tried %s); "+
+			"a name that resolves but produces no output does not count",
+			strings.Join(names, ", "))
+	}
+	return append([]string(nil), resolvedPython.prefix...), nil
+}
+
+func resolvePython() {
 	resolvedPython.Do(func() {
 		const marker = "gascity-python-probe"
 		for _, candidate := range pythonCandidates {
@@ -65,14 +85,4 @@ func pythonPrefix(t testing.TB) []string {
 			return
 		}
 	})
-	if len(resolvedPython.prefix) == 0 {
-		names := make([]string, 0, len(pythonCandidates))
-		for _, candidate := range pythonCandidates {
-			names = append(names, strings.Join(candidate, " "))
-		}
-		t.Skipf("no working Python interpreter found (tried %s); "+
-			"a name that resolves but produces no output does not count",
-			strings.Join(names, ", "))
-	}
-	return resolvedPython.prefix
 }

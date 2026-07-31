@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/testutil"
 )
 
 func TestChangedStaticTargetsScopeLintAndFormattingToTheDiff(t *testing.T) {
@@ -31,7 +33,7 @@ if any(classify(path) for path in ("README.md", "pkg/input.go.bak", "pkg/header.
     raise SystemExit("a non-build input was classified")
 `
 		args := append([]string{"-c", code, selector}, want...)
-		cmd := testCommand("python3", args...)
+		cmd := testutil.PythonCommand(t, args...)
 		cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("verify Go build-input suffix contract: %v\n%s", err, output)
