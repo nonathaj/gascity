@@ -69,6 +69,63 @@ contract per-OS is not.
 | T11 | 8.3 short names on CI runners | GitHub's TEMP is short-form (`C:\Users\RUNNER~1\…`); production canonicalization expands to the long form, so expectations built from raw `t.TempDir()` mismatch — **only on the runner** (short local usernames need no 8.3 alias). Use `testutil.CanonicalTempDir` (or inline `EvalSymlinks` where testutil would cycle) whenever a test compares canonicalized production output against fixture paths |
 | T12 | GitHub-runner environment deltas | No `dolt.exe`, ICMP blocked (`ping`-based slow-command fakes fail — use `powershell -NoProfile -Command Start-Sleep`), `timeout.exe` rejects redirected stdin, no `/tmp` (a bare `MkdirTemp("/tmp", …)` panics; use the default root on Windows) |
 
+## Performance: the cost model is per-operation, not per-byte
+
+Windows is not uniformly slower; it charges far more for *each* filesystem
+entry and each process it creates, and almost the same for bytes. Getting this
+backwards leads to optimizations that do nothing.
+
+Measured on the dev box (32 core, 128 GiB, NTFS, SentinelOne EDR present),
+against typical Linux figures:
+
+| Operation | Windows | Linux | Ratio |
+|---|---|---|---|
+| `stat` an existing file | 71us | ~1-2us | ~50x |
+| open+close an existing file | 114us | ~5us | ~25x |
+| **create** a file (open+write+close) | **662us-1.2ms** | ~25us | ~50x |
+| `MkdirAll` 3-deep + `RemoveAll` | 5.26ms | ~60us | ~88x |
+| spawn `cmd /c exit` | ~100ms | ~1ms | ~100x |
+| spawn a script through sh | ~380ms | ~1ms | ~380x |
+| 8 MB written through **one** open | 130ms (61 MB/s) | comparable | ~1x |
+
+Reads are cheap-ish, writes through an existing handle are fine, and
+throughput is healthy. Creation is what costs.
+
+**No copy strategy avoids this.** Measured per file, same box:
+`create+write` 1.175ms, `os.Link` (hardlink) **1.72ms — slower**, `os.Symlink`
+1.105ms. NTFS charges for the directory entry whether it points at new data,
+shared data, or a reparse point, so `os.CopyFS` (Go 1.23), hardlink farms, and
+kernel-side `CopyFileEx` all land on the same floor. The only lever is
+**creating fewer entries**.
+
+Consequences that have actually bitten:
+
+- **Atomic writes cost 4x a plain write.** `fsys.WriteFileAtomic` is temp
+  create + chmod + rename + orphan-sweep readdir. That is invisible on Linux
+  and dominant here. When a file is brand new *and* the caller already holds an
+  exclusive lock *and* the result is validated afterwards, write it directly
+  (`builtinpacks.writeMaterializedPackFile`). Do not weaken the atomic path for
+  files that already exist: a reader must never see a half-written replacement.
+- **Re-materializing a content-addressed cache is never free.** One synthetic
+  pack repo is 492 files + 220 dirs (2.4 MB) and takes ~1.4s to write here
+  versus ~18ms on Linux. A test that rotates `GC_HOME` per subtest rebuilds it
+  every time, then pays `RemoveAll` to delete it again.
+- **Suite-level effect.** The same six `cmd/gc` unit shards take 7.5 min of
+  wall clock on Linux CI and 31 min here (4.1x; 4.7x by total test time), and
+  the ratio is uniform across shards -- the signature of a per-operation cost
+  applied everywhere rather than a few slow tests.
+- **Parallelism does not work around it.** Measured twice: 14 shards took
+  58 min against 41 min at 6, and the process suite behaved the same at 3 vs 6
+  concurrent shards. Process creation is the contended resource, so more
+  concurrency multiplies it.
+
+When a Windows path is slow, profile before optimizing: `go test -cpuprofile`
+then `go tool pprof -peek` on the suspect function. Every hypothesis formed
+from the shape of the code alone (EDR reputation scanning, a dead
+skip-if-unchanged check, an orphan sweeper) was refuted by the profile, which
+pointed instead at redundant work the code should not have been doing on
+either platform.
+
 ## Operational rules
 
 - The green list is `.github/windows-test-packages.txt` (header comment

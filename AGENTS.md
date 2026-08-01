@@ -314,6 +314,13 @@ These decisions are final. Do not revisit them.
   consumer layer. Apply this before adding any new primitive.
 - **`engdocs/archive/backlogs/worktree-roadmap.md`** — Worktree isolation roadmap, polecat
   lifecycle analysis, and Gas Town cleanup bug lessons.
+- **`engdocs/contributors/windows-portability.md`** — Windows doctrine: the
+  numbered production/test-fixture classes with their canonical fixes, and the
+  measured cost model. Read the cost model before optimizing anything that
+  looks slow on Windows: the platform charges per filesystem entry and per
+  process spawn, not per byte, so copy strategies (`os.CopyFS`, hardlinks,
+  symlinks) and added parallelism do not help — only creating fewer entries
+  does.
 
 ## Key design principles
 
