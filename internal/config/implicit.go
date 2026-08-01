@@ -106,6 +106,25 @@ func ImplicitGCHome() string {
 // resolvable (hermetic test binaries without GC_HOME set) instead of
 // silently touching the developer's real cache.
 func GlobalRepoCacheRoot() (string, error) {
+	// GC_REPO_CACHE_ROOT relocates only this cache, leaving every other
+	// GC_HOME-derived path alone. The cache is content-addressed by
+	// source+commit and immutable once written, so it is safe to share between
+	// otherwise-isolated GC_HOMEs -- which is exactly what test binaries need:
+	// they rotate GC_HOME per test for state isolation, and would otherwise
+	// rebuild an identical 492-file pack tree every time (~1.4s each on
+	// Windows, where the cost is per filesystem entry; see
+	// engdocs/contributors/windows-portability.md).
+	//
+	// It is deliberately NOT read by GlobalRepoCachePath, which takes gcHome as
+	// an argument: callers that compute a cache path from a known GC_HOME are
+	// asserting where the cache is, and must not silently follow an override.
+	// That is also why this is opt-in rather than set for every test.
+	if override := strings.TrimSpace(os.Getenv("GC_REPO_CACHE_ROOT")); override != "" {
+		if !filepath.IsAbs(override) {
+			return "", fmt.Errorf("GC_REPO_CACHE_ROOT must be an absolute path, got %q", override)
+		}
+		return override, nil
+	}
 	gcHome := ImplicitGCHome()
 	if gcHome == "" {
 		return "", fmt.Errorf("no GC_HOME available to resolve the repo cache; set GC_HOME")

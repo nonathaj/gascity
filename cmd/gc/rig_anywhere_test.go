@@ -160,6 +160,10 @@ func assertNoGlobalRigEntries(t *testing.T, gcHome string) {
 // ===========================================================================
 
 func TestRigAnywhere_ResolveContext(t *testing.T) {
+	// The bundled pack cache is identical for every subtest here and none of
+	// them assert where it lives, so share one materialization instead of
+	// rebuilding it under each subtest's GC_HOME.
+	useSharedBuiltinPackCache(t)
 	t.Run("city_and_rig_flags", func(t *testing.T) {
 		resetFlags(t)
 		t.Setenv("GC_HOME", t.TempDir())
@@ -1325,6 +1329,10 @@ func TestRigAnywhere_WriteBeadsEnvGTRoot(t *testing.T) {
 // ===========================================================================
 
 func TestRigAnywhere_ResolveRigToContext(t *testing.T) {
+	// The bundled pack cache is identical for every subtest here and none of
+	// them assert where it lives, so share one materialization instead of
+	// rebuilding it under each subtest's GC_HOME.
+	useSharedBuiltinPackCache(t)
 	// Ambient-isolation for every subtest: these cases build their own
 	// temp cities/registries and assume no real city is in scope. A stray
 	// GC_CITY/GC_DIR in the environment, or a cwd nested inside a live city

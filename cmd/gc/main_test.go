@@ -202,6 +202,9 @@ func (m cleanupTestingM) Run() int {
 			_ = os.RemoveAll(path)
 		}
 	}
+	// Opt-in only: removes nothing when no test asked for the shared
+	// bundled-pack cache.
+	removeSharedBuiltinPackCache()
 	return code
 }
 
