@@ -162,16 +162,76 @@ func startControllerSocket(
 	if err != nil {
 		return nil, fmt.Errorf("listening on controller socket: %w", err)
 	}
-	go func() {
-		for {
-			conn, err := lis.Accept()
-			if err != nil {
-				return // listener closed
-			}
-			go handleControllerConn(conn, cityPath, cancelFn, forceShutdown, dirty, reloadReqCh, convergenceReqCh, pokeCh, controlDispatcherCh)
-		}
-	}()
+	go acceptControllerConns(lis, func(conn net.Conn) {
+		handleControllerConn(conn, cityPath, cancelFn, forceShutdown, dirty, reloadReqCh, convergenceReqCh, pokeCh, controlDispatcherCh)
+	})
 	return lis, nil
+}
+
+// acceptControllerConns serves connections until the listener is closed.
+//
+// Only a closed listener ends the loop. Any other Accept error is transient and
+// must not: this loop is the controller's only ear, and returning early leaves
+// the process alive but permanently deaf. A client then still connects — the
+// socket exists and the OS completes the handshake — and waits out its whole
+// deadline for an acknowledgement nobody will ever send. That is the observed
+// failure: `gc stop` reporting may_have_entered against a live controller, and
+// TestControllerShutdown hanging at exactly controllerStopReadTimeout under
+// load (gw-sph). Raising that deadline does not help; the wait is unbounded.
+func acceptControllerConns(lis net.Listener, serve func(net.Conn)) {
+	const (
+		acceptRetryDelay = 10 * time.Millisecond
+		acceptMaxRetries = 128
+	)
+	retries := 0
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			// A hard error that repeats forever would spin here, so the retry
+			// budget bounds it; exhausting the budget is the one non-close case
+			// that gives up.
+			retries++
+			if retries > acceptMaxRetries {
+				return
+			}
+			time.Sleep(acceptRetryDelay)
+			continue
+		}
+		retries = 0
+		go serve(conn)
+	}
+}
+
+// controllerConnDrainTimeout bounds the wait for a client to close its side
+// after it has been sent a reply.
+const controllerConnDrainTimeout = 5 * time.Second
+
+// closeControllerConn ends a controller connection without losing the reply.
+//
+// Windows discards data the peer has not read yet when an AF_UNIX connection is
+// closed. Writing a reply and closing immediately therefore loses it whenever
+// the client has not been scheduled to read in between -- which is what happens
+// under load, and is the whole of gw-sph: the server logs a successful 3-byte
+// write of "ok\n" and the client still waits out its entire read deadline. The
+// symptom reads as a slow acknowledgement and is actually a discarded one, so
+// no amount of extra client patience helps.
+//
+// Half-closing first lets the reply be followed by an orderly FIN instead of an
+// abortive close, and waiting for the peer to close confirms it consumed the
+// data. The client reads until EOF (readControllerStopReply uses io.ReadAll),
+// so it closes promptly once the reply lands; the drain is bounded in case a
+// client goes away without closing.
+func closeControllerConn(conn net.Conn) {
+	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
+		if err := cw.CloseWrite(); err == nil {
+			_ = conn.SetReadDeadline(time.Now().Add(controllerConnDrainTimeout)) //nolint:errcheck // bounded best-effort drain
+			_, _ = io.Copy(io.Discard, conn)                                     //nolint:errcheck // draining to EOF, result irrelevant
+		}
+	}
+	_ = conn.Close() //nolint:errcheck // best-effort cleanup
 }
 
 // handleControllerConn reads from a connection and dispatches commands.
@@ -189,7 +249,7 @@ func handleControllerConn(
 	pokeCh chan struct{},
 	controlDispatcherCh chan struct{},
 ) {
-	defer conn.Close()                                 //nolint:errcheck // best-effort cleanup
+	defer closeControllerConn(conn)
 	conn.SetDeadline(time.Now().Add(95 * time.Second)) //nolint:errcheck // symmetric read+write deadline; 5s margin over 30s enqueue + 60s reply
 	scanner := bufio.NewScanner(conn)
 	// Increase scanner buffer for convergence commands which may carry large payloads.
