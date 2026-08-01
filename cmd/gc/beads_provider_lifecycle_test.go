@@ -4245,7 +4245,7 @@ wait
 	var err error
 	select {
 	case err = <-resultCh:
-	case <-time.After(5 * time.Second):
+	case <-time.After(processReadyBudget(5 * time.Second)):
 		t.Fatal("provider op did not return after cancellation")
 	}
 	if err == nil {

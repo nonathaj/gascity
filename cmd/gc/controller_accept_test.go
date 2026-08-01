@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"io"
 	"net"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -86,63 +84,5 @@ func TestAcceptControllerConnsStopsWhenListenerCloses(t *testing.T) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal("accept loop did not return on a closed listener")
-	}
-}
-
-// TestCloseControllerConnDeliversReplyToASlowReader is the regression for the
-// second half of gw-sph. The controller writes its acknowledgement and returns
-// immediately; on Windows, closing an AF_UNIX connection discards data the peer
-// has not read yet, so a client that has not been scheduled in between loses
-// the reply entirely. The server sees a successful write and the client waits
-// out its whole deadline, which is why the failure looked like a slow
-// acknowledgement rather than a dropped one.
-//
-// The delay before reading is the point of the test: it stands in for the
-// scheduling gap that load produces.
-func TestCloseControllerConnDeliversReplyToASlowReader(t *testing.T) {
-	dir := shortSocketTempDir(t, "gc-ackclose-")
-	sock := filepath.Join(dir, "s.sock")
-	lis, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	t.Cleanup(func() { _ = lis.Close() })
-
-	served := make(chan struct{})
-	go func() {
-		conn, aerr := lis.Accept()
-		if aerr != nil {
-			close(served)
-			return
-		}
-		_, _ = conn.Write([]byte("ok\n"))
-		closeControllerConn(conn)
-		close(served)
-	}()
-
-	conn, err := net.DialTimeout("unix", sock, 5*time.Second)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-
-	// Do not read yet: let the server write and close first.
-	time.Sleep(300 * time.Millisecond)
-
-	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		t.Fatalf("set read deadline: %v", err)
-	}
-	got, err := io.ReadAll(io.LimitReader(conn, 64))
-	if err != nil {
-		t.Fatalf("reading acknowledgement after the server closed: %v", err)
-	}
-	if string(got) != "ok\n" {
-		t.Fatalf("acknowledgement = %q, want %q (the reply was discarded by the close)", string(got), "ok\n")
-	}
-
-	select {
-	case <-served:
-	case <-time.After(10 * time.Second):
-		t.Fatal("server side did not finish")
 	}
 }

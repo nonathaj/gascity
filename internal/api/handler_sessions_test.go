@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -701,6 +702,25 @@ func (r *syncResponseRecorder) BodyString() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.Body.String()
+}
+
+// windowsStreamBudget scales a stream-test budget for the platform.
+//
+// Windows charges far more per process spawn and per filesystem operation than
+// Unix (see engdocs/contributors/windows-portability.md), so a deadline sized
+// against Unix expires while a session's first transcript chunk is still on its
+// way -- observed as TestCityScopedSessionStreamFollowsRotatedGeminiTranscriptAfterWake
+// failing at 3.04s against a 3s wait, under gate load only. Scaling preserves
+// the relative sizing each caller chose; it is identity on Unix.
+//
+// Callers must scale their request context with the same factor: a longer wait
+// against an unscaled context just moves the failure to the context expiring
+// first.
+func windowsStreamBudget(d time.Duration) time.Duration {
+	if goruntime.GOOS == "windows" {
+		return d * 4
+	}
+	return d
 }
 
 func waitForRecorderSubstring(t *testing.T, rec *syncResponseRecorder, want string, timeout time.Duration) string {
@@ -7062,7 +7082,7 @@ func TestCityScopedSessionStreamFollowsRotatedGeminiTranscriptAfterWake(t *testi
 		t.Fatalf("Create: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), windowsStreamBudget(8*time.Second))
 	defer cancel()
 
 	req := httptest.NewRequest("GET", cityURL(fs, "/session/")+info.ID+"/stream", nil).WithContext(ctx)
@@ -7073,7 +7093,7 @@ func TestCityScopedSessionStreamFollowsRotatedGeminiTranscriptAfterWake(t *testi
 		close(done)
 	}()
 
-	if body := waitForRecorderSubstring(t, rec, "first-output", 3*time.Second); !strings.Contains(body, "first-output") {
+	if body := waitForRecorderSubstring(t, rec, "first-output", windowsStreamBudget(3*time.Second)); !strings.Contains(body, "first-output") {
 		t.Fatalf("stream body missing initial transcript turn: %s", body)
 	}
 
