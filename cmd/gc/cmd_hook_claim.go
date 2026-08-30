@@ -17,6 +17,7 @@ import (
 	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
+	"github.com/gastownhall/gascity/internal/graphroute"
 	"github.com/gastownhall/gascity/internal/winsec"
 )
 
@@ -164,6 +165,7 @@ func tryHookClaim(workQuery, dir string, opts *hookClaimOptions, ops *hookClaimO
 		fmt.Fprintf(stderr, "gc hook --claim: requires JSON work_query output to identify claim candidates: %v\n", err) //nolint:errcheck
 		return hookClaimResult{terminal: true, code: 1}
 	}
+	candidates = dropWorkflowTopologyClaimCandidates(candidates)
 	if len(candidates) == 0 {
 		return hookClaimResult{}
 	}
@@ -281,6 +283,96 @@ func claimFirstEligibleHookCandidate(candidates []beads.Bead, opts hookClaimOpti
 	}
 
 	return hookClaimResult{claimsErrored: claimsErrored}
+}
+
+// dropWorkflowTopologyClaimCandidates removes every candidate that anchors
+// graph.v2 workflow topology (beadmeta.WorkflowTopologyKinds — the root workflow
+// bead, a scope latch, a formula spec; see isUnclaimableLatchCandidate for why
+// the root needs a second qualifier). graphroute.IsWorkflowTopologyKind states
+// the invariant these carry: "Routing never lands on these — they exist to
+// structure the graph, not to be claimed by an agent."
+//
+// The claim path was kind-blind, so a latch stamped with a role route in
+// gc.routed_to (which a graph.v2 root legitimately is — see #2763 below) matched
+// hookClaimMatchesRoute like any routed step and came back as action=work. A role
+// worker cannot advance a latch: working it would falsely settle workflow state,
+// so the protocol makes it release and drain, and the released latch is
+// immediately re-served to the next session in the pool. Sixteen role-worker
+// sessions burned on one fed-build run that way (infra-5b6r), and the latch also
+// competes with genuinely routed steps for the same claim, so real work waits on
+// extra sessions to get picked up.
+//
+// This is the exact shape of gas-kg6 (isHeldHookCandidate, cmd_hook.go): a bead
+// handed back as work that cannot be advanced, is never released, and so is
+// re-served forever. The status/assignee tiers cannot catch either one — a latch
+// is validly ready and validly routed to us — so the kind dimension is filtered
+// here.
+//
+// Scope, and why this seam and not an earlier one: this drops what the CLAIM
+// serves as work, mirroring the split beadmeta/hold_labels.go draws for holds —
+// filter when deciding what to DO, never when deciding who EXISTS. A routed
+// graph.v2 root MUST stay visible to the surfacing and pool-demand readers, or
+// #2763 regresses: the root stamps gc.routed_to precisely so it produces demand
+// and a session gets spawned instead of the work orphaning and the worker
+// idle-reaping (TestCmdHookClaimsRoutedToRoot; doctor_run_target_backfill.go
+// backfills that key for the same reason). So the shared work query
+// (EffectiveWorkQueryFor) and the shared filterUnreadyHookCandidates chain — both
+// of which also feed plain `gc hook <pool>` and the demand/serve agreement — are
+// deliberately left alone. Only tryHookClaim, reached solely from --claim, is
+// narrowed.
+//
+// Applied ahead of all three claim tiers, not just the fresh-claim one: a latch
+// left in_progress under the POOL name is re-served to every later session in
+// that pool by the adoption tier (hookClaimExistingAssignment), which is the same
+// burn arriving through a different door.
+//
+// Control kinds are deliberately NOT filtered. workflow-finalize, drain and the
+// rest are claimed and advanced by the control-dispatcher lane by design, and it
+// is workflow-finalize — not the root — that settles the root
+// (internal/dispatch/runtime.go processWorkflowFinalize). Nothing needs to claim
+// a latch for a workflow to complete.
+func dropWorkflowTopologyClaimCandidates(candidates []beads.Bead) []beads.Bead {
+	kept := make([]beads.Bead, 0, len(candidates))
+	for _, candidate := range candidates {
+		if isUnclaimableLatchCandidate(candidate) {
+			continue
+		}
+		kept = append(kept, candidate)
+	}
+	return kept
+}
+
+// isUnclaimableLatchCandidate reports whether one candidate is a graph.v2 latch.
+//
+// gc.kind alone is not the test, because KindWorkflow spells TWO different
+// things. A graph.v2 root is a latch: the real work lives in its child steps and
+// the root exists to anchor them. A LEGACY v1 workflow root is itself the unit of
+// work handed to a worker — hookClaimMatchesRoute keeps a dedicated branch for
+// it (empty gc.routed_to + gc.kind=workflow, matched on gc.run_target), pinned by
+// TestDoHookClaimClaimsLegacyRunTargetWorkflowRoot. Filtering on kind alone
+// strands that path, so KindWorkflow additionally requires the graph.v2 contract.
+// That is exactly graphroute.IsCompiledGraphWorkflow's own definition of a
+// graph.v2 workflow, and gc.formula_contract is stamped in one place
+// (formula/compile.go) beside the kind, on the root, for precisely these.
+//
+// KindScope and KindSpec need no such qualifier and deliberately do not get one.
+// They are graph.v2-only structural constructs with no legacy claimable meaning:
+// the run_target fallback in hookClaimMatchesRoute is gated on KindWorkflow, so
+// they are reachable only via gc.routed_to, which graphroute declines to stamp on
+// a workflow-topology step in the first place. They also would not satisfy a
+// contract check if one were applied — gc.formula_contract rides the ROOT step
+// only, and a scope latch is not the root — so requiring it there would quietly
+// turn this half of the filter into a no-op.
+func isUnclaimableLatchCandidate(candidate beads.Bead) bool {
+	kind := strings.TrimSpace(candidate.Metadata[beadmeta.KindMetadataKey])
+	if !graphroute.IsWorkflowTopologyKind(kind) {
+		return false
+	}
+	if kind != beadmeta.KindWorkflow {
+		return true
+	}
+	contract := strings.TrimSpace(candidate.Metadata[beadmeta.FormulaContractMetadataKey])
+	return strings.EqualFold(contract, beadmeta.FormulaContractGraphV2)
 }
 
 // hookCandidateClaimable reports whether a work-query candidate is eligible for a
