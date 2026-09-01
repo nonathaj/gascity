@@ -9,24 +9,27 @@ import (
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
-// shortHome points this test's home directory at a short-pathed temp dir.
+// shortHome points socketPath()'s config-dir resolution at a short, isolated
+// temp dir so these tests never touch the real user's herdr sessions dir.
 //
-// Short because the default t.TempDir() (/var/folders/… on macOS) blows past the 104-byte
-// unix-socket sun_path limit once socketPath() appends
-// .config/herdr/sessions/<name>/herdr.sock.
+// All three resolution inputs are redirected because os.UserConfigDir consults
+// a different one per platform: $XDG_CONFIG_HOME on Unix, %AppData% on
+// Windows, with $HOME/$USERPROFILE behind them. Setting only HOME redirected
+// nothing on Windows — those tests created real sockets under the developer's
+// actual profile and were never isolated at all.
 //
-// Two things here were wrong on Windows and are worth stating, because both were silent:
-//
-//   - os.MkdirTemp("/tmp", …) — "/tmp" has no volume on Windows, so it resolves against
-//     the current drive. It worked only on a machine that happened to have a D:\tmp.
-//   - t.Setenv("HOME", …) alone did not redirect anything. client.go resolves the home dir
-//     with os.UserHomeDir, which reads USERPROFILE on Windows (doctrine T1), so these
-//     tests created real sockets under the developer's actual profile
-//     (~/.config/herdr/sessions/staletest) and were never isolated there at all. Leftover
-//     state from a previous run then sits in the exact path a stale-socket test inspects.
+// Short because the default t.TempDir() (/var/folders/... on macOS) blows past
+// the 104-byte unix-socket sun_path limit once socketPath() appends
+// herdr/sessions/<name>/herdr.sock. ShortTempDir rather than
+// os.MkdirTemp("/tmp", ...): "/tmp" has no volume on Windows, so it resolves
+// against whatever the current drive happens to be.
 func shortHome(t *testing.T) {
 	t.Helper()
-	testutil.SetTestHome(t, testutil.ShortTempDir(t, "hdr"))
+	dir := testutil.ShortTempDir(t, "hdr")
+	testutil.SetTestHome(t, dir)
+	configHome := filepath.Join(dir, ".config")
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("AppData", configHome)
 }
 
 // A stale socket inode — left by a herdr server that exited uncleanly — must not

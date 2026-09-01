@@ -41,11 +41,14 @@ func TestWorkQueryTimeoutsAccommodateMultiRoundTripProbe(t *testing.T) {
 func TestResolveHookWorkQueryTimeoutEnvOverride(t *testing.T) {
 	// The default is platform-aware: the composite probe costs far more on
 	// Windows, where each bd round-trip pays doltlite fallback and every sh
-	// construct is a process spawn. What this test pins is the override
+	// construct is a process spawn. The non-Windows default is upstream's
+	// measured 150s (raised from 60s on 2026-08-14: five sequential `gc ready`
+	// legs at 10-14s each put the payoff call at t=60s exactly). What this test
+	// pins is the override
 	// behavior -- a valid duration wins, anything else falls back -- so it takes
 	// the platform default rather than restating a literal that would make the
 	// suite fail on one OS while passing on the other.
-	fallback := 60 * time.Second
+	fallback := 150 * time.Second
 	if goruntime.GOOS == "windows" {
 		fallback = 180 * time.Second
 	}

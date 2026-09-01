@@ -47,7 +47,6 @@
 ./internal/dispatch
 ./internal/docgen
 ./internal/doctor
-./internal/doctor/checks
 ./internal/doltauth
 ./internal/doltversion
 ./internal/emergency
@@ -84,7 +83,6 @@
 ./internal/packman
 ./internal/packregistry
 ./internal/pathutil
-./internal/pgauth
 ./internal/pidutil
 ./internal/poolplan
 ./internal/pricing

@@ -226,6 +226,7 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	processgroup.StartCommandInNewGroup(cmd)
+	applyProxyProcessPdeathsig(cmd)
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		return fmt.Errorf("start process: %w", err)

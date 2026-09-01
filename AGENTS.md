@@ -321,6 +321,9 @@ These decisions are final. Do not revisit them.
   process spawn, not per byte, so copy strategies (`os.CopyFS`, hardlinks,
   symlinks) and added parallelism do not help — only creating fewer entries
   does.
+- **`engdocs/contributors/release-gate-criteria-conventions.md`** — What the
+  "Tests pass" criterion in a `release-gates/*.md` file must cite. Apply this
+  before signing off that criterion on any deploy gate.
 
 ## Key design principles
 
@@ -379,6 +382,14 @@ becoming more useful as models improve — it becomes LESS useful instead.
   default tmux server. If tmux cleanup is required, target only the known
   city/test socket explicitly with `tmux -L <socket> ...`, or prefer `gc stop`
   for city shutdown. Treat personal tmux servers as out of bounds.
+- **Git safety:** Never run `git checkout <ref> -- .` (or any pathspec
+  checkout) in a worktree you do not own — above all the shared rig root
+  (`$GC_RIG_ROOT`). Unlike `git checkout <ref>`, the pathspec form overwrites
+  the index and worktree for every tracked path, moves no HEAD (so no reflog
+  entry) and stages nothing (so no dangling blob): overwritten uncommitted
+  work is unrecoverable. To read a file at a ref use `git show <ref>:<path>`.
+  To check something out, use your own worktree or a disposable
+  `git worktree add`.
 - **Adding agent config fields:** When adding a field to `config.Agent`,
   also add it to `AgentPatch` and `AgentOverride`, wire it into the shared
   merge body `applyAgentMutation` (in `internal/config/patch.go`) — and, for

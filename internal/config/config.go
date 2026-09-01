@@ -253,6 +253,9 @@ type City struct {
 	Rigs []Rig `toml:"rigs,omitempty"`
 	// Patches holds targeted modifications applied after fragment merge.
 	Patches Patches `toml:"patches,omitempty"`
+	// Storage assigns the six semantic storage classes to immutable named
+	// bindings. Nil preserves the existing all-Work storage topology.
+	Storage *StorageConfig `toml:"storage,omitempty"`
 	// Beads configures the bead store backend.
 	Beads BeadsConfig `toml:"beads,omitempty"`
 	// Session configures the session provider backend.
@@ -711,6 +714,9 @@ type AgentOverride struct {
 	// MaxSessionAgeJitter overrides the jitter added on top of MaxSessionAge.
 	// Duration string (e.g., "15m"). Empty disables jitter.
 	MaxSessionAgeJitter *string `toml:"max_session_age_jitter,omitempty"`
+	// AssignedWorkDeferLimit overrides Agent.AssignedWorkDeferLimit (see that
+	// field for semantics).
+	AssignedWorkDeferLimit *int `toml:"assigned_work_defer_limit,omitempty"`
 	// SleepAfterIdle overrides idle sleep policy for this agent. Accepts a
 	// duration string (e.g., "30s") or "off".
 	SleepAfterIdle *string `toml:"sleep_after_idle,omitempty"`
@@ -1118,6 +1124,16 @@ type PackRuntimeEntry struct {
 	// the only version today; the declaration exists so future protocol
 	// bumps fail at composition instead of at session start.
 	Protocol int `toml:"protocol,omitempty"`
+	// PromptDelivery opts this runtime into a non-default oversized-prompt
+	// delivery strategy (cmd/gc promptDeliverySupportFor). Unset (the zero
+	// value) keeps today's behavior: an oversized prompt hard-fails for any
+	// runtime this package cannot positively classify. The only other
+	// accepted value is "nudge-fallback", asserting the runtime has a
+	// working post-start Nudge path an oversized prompt can reroute
+	// through. This is a pack-composition-time assertion, not something gc
+	// verifies against the runtime executable — see
+	// docs/reference/specs/pack-spec.md sec 1.2.8.
+	PromptDelivery string `toml:"prompt_delivery,omitempty" jsonschema:"enum=nudge-fallback"`
 }
 
 // PackCommandEntry declares a CLI subcommand provided by a pack.
@@ -1906,21 +1922,31 @@ const (
 	// DefaultDoltMaxConnections is the managed Dolt listener connection cap.
 	DefaultDoltMaxConnections = 256
 	// DefaultDoltReadTimeoutMillis is the managed Dolt listener read timeout.
-	// Managed multi-agent cities open a short-lived bd/dolt-sql client
-	// connection per operation and frequently SIGKILL it on a client-side
-	// deadline (e.g. agents wrap `gc hook` in `timeout 10`), so the server
-	// orphans the socket in Sleep until read_timeout fires. Lowering this from
-	// the former 30s reaps those dead per-call connections sooner, before they
-	// accumulate into a store-wide read collapse under load. read_timeout is the
-	// listener socket idle/produce timeout: it reaps idle (Sleep) connections
-	// and bounds the inter-row produce gap (go-mysql-server ErrRowTimeout
-	// re-arms per row), not total query wall-clock — so it does not cut a long
-	// but steadily-producing query. Do NOT drop it to/below the client kill
-	// budget (`timeout 10`) on the assumption it is purely idle-reaping. Cities
-	// with slower live operations raise it via city.toml [dolt]
-	// read_timeout_millis. See #3022 (5m->30s) and the scale_check storm RCA
-	// (30s->15s).
-	DefaultDoltReadTimeoutMillis = 15000
+	// read_timeout is go-mysql-server's ONLY idle-connection reaper:
+	// wait_timeout (DefaultDoltWaitTimeoutSeconds) is accepted, stored, and
+	// reported by the server, but reaps nothing on dolt 2.2.3 (measured for
+	// #5383). In code ErrRowTimeout re-arms per row, but plan shapes that
+	// produce no rows until they finish — recursive CTEs, aggregates, large
+	// UPDATEs — never re-arm it, so in practice read_timeout behaves as a
+	// wall-clock cap on the whole result-production phase, not merely an
+	// inter-row gap bound. It is fixed at handler construction: neither SET
+	// SESSION nor SET GLOBAL changes the effective value at runtime, only the
+	// server config file plus a restart.
+	//
+	// Raised from 15000 to 120000 after #5383 (the Reaper's own maintenance
+	// query was killed mid-production by the old 15s bound). #5053 introduced
+	// the wait_timeout config knob believing it would take over
+	// idle-connection reaping so read_timeout could be freed for long
+	// queries; #5383's measurements found that belief false, so this value
+	// instead stays at less than half of DefaultDoltWriteTimeoutMillis
+	// (300000, the prior emergency-workaround value) to preserve headroom
+	// for #3101's independent outer wall-clock deadline to catch a genuine
+	// connection pile-up (#3626) first. Cities with slower live operations
+	// can raise it further via city.toml [dolt] read_timeout_millis. See
+	// #3022 (5m->30s), the scale_check storm RCA (30s->15s), #5053
+	// (wait_timeout knob added), #5383 (Reaper false positive; wait_timeout
+	// measured inert), #3626 (read collapse incident).
+	DefaultDoltReadTimeoutMillis = 120000
 	// DefaultDoltWriteTimeoutMillis is the managed Dolt listener write timeout.
 	DefaultDoltWriteTimeoutMillis = 300000
 )
@@ -1948,10 +1974,21 @@ type DoltConfig struct {
 	MaxConnections int `toml:"max_connections,omitempty" jsonschema:"default=256"`
 	// ReadTimeoutMillis overrides the managed Dolt listener read_timeout_millis.
 	// 0 means use the managed default.
-	ReadTimeoutMillis int `toml:"read_timeout_millis,omitempty" jsonschema:"default=15000"`
+	ReadTimeoutMillis int `toml:"read_timeout_millis,omitempty" jsonschema:"default=120000"`
 	// WriteTimeoutMillis overrides the managed Dolt listener write_timeout_millis.
 	// 0 means use the managed default.
 	WriteTimeoutMillis int `toml:"write_timeout_millis,omitempty" jsonschema:"default=300000"`
+	// WaitTimeoutSeconds overrides the managed server's wait_timeout system
+	// variable. Despite the name, wait_timeout does not currently reap idle
+	// connections -- measured inert on dolt 2.2.3 for #5383 (see
+	// DefaultDoltWaitTimeoutSeconds); read_timeout is the only reaper. The
+	// knob is kept and still emitted regardless: it is harmless, and becomes
+	// correct the moment dolt implements it. Before this field existed the
+	// only way to set it was GC_DOLT_WAIT_TIMEOUT in the supervisor's process
+	// environment, which no city.toml could express and no shell-invoked
+	// restart inherited — so a restart from an operator shell silently
+	// rewrote the value. 0 (omitted) means use the managed default.
+	WaitTimeoutSeconds int `toml:"wait_timeout_seconds,omitempty" jsonschema:"default=30"`
 	// DoltLockReleaseTimeout is how long managed-dolt lifecycle operations
 	// wait for dolt's on-disk exclusive store locks (the root-level
 	// `<data_dir>/.dolt/noms/LOCK` and per-database
@@ -2024,6 +2061,22 @@ func (d DoltConfig) EffectiveWriteTimeoutMillis() int {
 	return DefaultDoltWriteTimeoutMillis
 }
 
+// DefaultDoltWaitTimeoutSeconds is the managed default for the server's
+// wait_timeout system variable when neither city.toml nor the environment
+// configures one. Despite the name this is not an idle-connection reap
+// window: measured inert on dolt 2.2.3 for #5383 (accepted, stored, and
+// reported by the server, but nothing reads it in go-mysql-server's
+// server/ package -- see DefaultDoltReadTimeoutMillis, the actual reaper).
+// Kept and still emitted because it is harmless and becomes correct if a
+// future dolt version implements it.
+//
+// Deliberately not paired with an Effective* accessor like the other [dolt]
+// fields: wait_timeout resolves three ways, not two. An unset field must fall
+// through to GC_DOLT_WAIT_TIMEOUT, which can itself select "omit the system
+// variable entirely" with a negative value, so collapsing unset to this default
+// would silently discard the env layer.
+const DefaultDoltWaitTimeoutSeconds = 30
+
 // DefaultDoltLockReleaseTimeout is the wait window for dolt's on-disk
 // exclusive store lock to be released when no value is configured. 1m covers
 // the longest observed clean-shutdown flush of a multi-GB chunk journal on
@@ -2065,6 +2118,16 @@ type OrdersConfig struct {
 	// timeout only; a condition trigger's check_timeout is a separate probe
 	// deadline and is not capped here.
 	MaxTimeout string `toml:"max_timeout,omitempty"`
+
+	// *int rather than int so an unset value stays out of marshaled config:
+	// BurntSushi's omitempty does not drop a zero int, so a plain int would
+	// emit max_dispatches_per_tick = 0 into every marshaled city.toml.
+
+	// MaxDispatchesPerTick caps how many orders the supervisor dispatches
+	// per tick. Unset keeps the built-in default of 4; set to 1 to drain
+	// overdue cooldown orders one-per-tick at cold start instead of firing
+	// several concurrent goroutines at once.
+	MaxDispatchesPerTick *int `toml:"max_dispatches_per_tick,omitempty"`
 	// Overrides apply per-order field overrides after scanning.
 	// Each override targets an order by name and optionally by rig.
 	Overrides []OrderOverride `toml:"overrides,omitempty"`
@@ -2563,8 +2626,11 @@ type DaemonConfig struct {
 	// AutoReapClosedBeadWorktrees controls whether the reconciler patrol
 	// automatically removes per-bead git worktrees once their associated
 	// work bead reaches closed status. Only worktrees with a clean working
-	// tree, no unpushed commits, and no stashes are removed; unsafe worktrees
-	// are logged as warnings and left in place for operator review. Session
+	// tree, no stashes, and no commits that removal would orphan — commits
+	// reachable from no branch, tag, or remote-tracking ref — are removed;
+	// push state is deliberately not the test, since `git worktree remove`
+	// deletes the checkout and not refs/heads. Unsafe worktrees are logged
+	// as warnings and left in place for operator review. Session
 	// home directories (agent template directories) are never touched.
 	// Defaults to false. Set to true to enable automated worktree cleanup.
 	AutoReapClosedBeadWorktrees *bool `toml:"auto_reap_closed_bead_worktrees,omitempty" jsonschema:"default=false"`
@@ -2575,9 +2641,13 @@ type DaemonConfig struct {
 	// what it protected, without removing anything. This is the safe
 	// staged-rollout surface: an operator enables dry-run first, confirms via
 	// `gc events` that no live worktree appears in the would-reap set, then
-	// enables AutoReapClosedBeadWorktrees for real removal. Dry-run has no
-	// effect when AutoReapClosedBeadWorktrees is already true (real removal
-	// supersedes it). Defaults to false.
+	// enables AutoReapClosedBeadWorktrees for real removal. Those events are
+	// edge-triggered: each worktree is reported when the patrol first
+	// classifies it and again whenever its verdict changes, not once per
+	// tick, so the would-reap set is complete right after dry-run is enabled
+	// rather than reprinted every sweep. Dry-run has no effect when
+	// AutoReapClosedBeadWorktrees is already true (real removal supersedes
+	// it). Defaults to false.
 	AutoReapClosedBeadWorktreesDryRun *bool `toml:"auto_reap_closed_bead_worktrees_dry_run,omitempty" jsonschema:"default=false"`
 	// AutoReapClosedBeadWorktreesMinAgeMinutes is the minimum worktree age,
 	// in minutes, before a closed-bead worktree becomes eligible for reap
@@ -2938,9 +3008,11 @@ func (c *City) FormulasDir() string {
 
 // AllPackDirs returns the union of city-level and all rig-level pack directories
 // (city dirs first, then sorted-by-rig-name dirs), deduplicated. Use this for
-// global scans that intentionally need the full pack-fragment universe. Prompt
-// rendering for a specific rig should use PackDirsForRig so one rig's fragments
-// cannot override another rig's same-named fragments.
+// global scans that intentionally need the full pack-fragment universe, and as
+// the fallback PackDirsForRig("") uses for rig-less (scope="city") agents, which
+// have no single rig to scope to. Prompt rendering for a specific rig should use
+// PackDirsForRig so one rig's fragments cannot override another rig's
+// same-named fragments.
 func (c *City) AllPackDirs() []string {
 	var dirs []string
 	dirs = appendUnique(dirs, c.PackDirs...)
@@ -2959,12 +3031,27 @@ func (c *City) AllPackDirs() []string {
 // directories imported by rigName, deduplicated with city-level dirs kept first.
 // Use this when rendering prompts for one agent so rig-imported template
 // fragments are available without exposing fragments imported by other rigs.
+//
+// rigName == "" means a rig-less (scope="city") agent — e.g. deep-investigator,
+// supervisor, pack-author — which has no single rig to scope to. Those agents
+// fall back to AllPackDirs(): the union across every rig, sorted by rig name for
+// determinism. A fragment name defined identically in more than one rig's pack
+// resolves fine (that's the common case: a shared vocabulary like
+// handoff-routing, meant to render identically everywhere). A name defined with
+// DIFFERENT content in two rigs' packs silently picks whichever rig sorts LAST
+// alphabetically: renderPrompt parses pack dirs in order and a later
+// {{ define }} replaces an earlier one. For the same reason, a rig-imported
+// fragment can shadow a same-named city-level imported-pack fragment (city
+// dirs are parsed first) — city-ROOT fragments still win, they load last.
+// This is a pack-authoring collision this function does not detect.
+// See ga-bmjqvb.
 func (c *City) PackDirsForRig(rigName string) []string {
+	if rigName == "" {
+		return c.AllPackDirs()
+	}
 	var dirs []string
 	dirs = appendUnique(dirs, c.PackDirs...)
-	if rigName != "" {
-		dirs = appendUnique(dirs, c.RigPackDirs[rigName]...)
-	}
+	dirs = appendUnique(dirs, c.RigPackDirs[rigName]...)
 	return dirs
 }
 
@@ -3125,8 +3212,14 @@ type Agent struct {
 	// PromptTemplate is the path to this agent's prompt template file.
 	// Relative paths resolve against the city directory.
 	PromptTemplate string `toml:"prompt_template,omitempty"`
-	// Nudge is text typed into the agent's tmux session after startup.
-	// Used for CLI agents that don't accept command-line prompts.
+	// Nudge is text typed into the agent's session after startup.
+	// Used for CLI agents that don't accept command-line prompts. For a known
+	// pool session whose trigger remains unclaimed after the 90-second recovery
+	// grace period, an empty or whitespace-only Nudge does not opt out: it sends
+	// "Run gc hook --claim --drain-ack --json now; if it returns work, execute
+	// it immediately." This fallback applies only to the initial stalled-claim
+	// recovery; continuation-claim recovery remains configured-only. Unknown
+	// templates receive no fallback.
 	Nudge string `toml:"nudge,omitempty"`
 	// Session overrides the session transport for this agent.
 	// "" (default) uses the city-level session provider (typically tmux).
@@ -3258,6 +3351,19 @@ type Agent struct {
 	// disables jitter (every session restarts at exactly MaxSessionAge).
 	// Ignored when MaxSessionAge is unset.
 	MaxSessionAgeJitter string `toml:"max_session_age_jitter,omitempty"`
+	// AssignedWorkDeferLimit bounds how many consecutive reconciler ticks the
+	// idle-timeout ladder may defer on the same assigned-work bead
+	// (DecideIdleTimeout's AssignedWorkHas rung) before the reconciler
+	// overrides the defer and forces a stop via DecideAssignedWorkExhausted.
+	// Nil means use the built-in default. Without this backstop a session
+	// anchored to a bead that never clears assigned-work (e.g. a bead stuck
+	// open due to an upstream status-mapping bug) would defer indefinitely,
+	// reproducing the unbounded wake/idle-kill treadmill ga-3ox7rk fixed at
+	// the single-tick level. The counter resets whenever the anchor bead
+	// changes or the session is not idle-kill-eligible; see
+	// sessionHasAwakeAssignedWorkForReachableStore's caller in
+	// session_reconciler.go.
+	AssignedWorkDeferLimit *int `toml:"assigned_work_defer_limit,omitempty"`
 	// SleepAfterIdle overrides idle sleep policy for this agent. Accepts a
 	// duration string (e.g., "30s") or "off".
 	SleepAfterIdle string `toml:"sleep_after_idle,omitempty"`
@@ -3451,6 +3557,7 @@ func (a Agent) Clone() Agent {
 	out.ReadyDelayMs = copyIntPtr(a.ReadyDelayMs)
 	out.MaxActiveSessions = copyIntPtr(a.MaxActiveSessions)
 	out.MinActiveSessions = copyIntPtr(a.MinActiveSessions)
+	out.AssignedWorkDeferLimit = copyIntPtr(a.AssignedWorkDeferLimit)
 	out.EmitsPermissionWarning = copyBoolPtr(a.EmitsPermissionWarning)
 	out.HooksInstalled = copyBoolPtr(a.HooksInstalled)
 	out.InjectAssignedSkills = copyBoolPtr(a.InjectAssignedSkills)
@@ -3610,7 +3717,7 @@ func InjectImplicitAgents(cfg *City) {
 	// prompt rendering falls back to the embedded baseline.
 	promptTemplate := ""
 	if coreDir := cfg.PackDirByName("core"); coreDir != "" {
-		promptTemplate = filepath.Join(coreDir, "assets", "prompts", "pool-worker.md")
+		promptTemplate = filepath.Join(coreDir, "assets", "prompts", "pool-worker.template.md")
 	}
 
 	slingFormula := cfg.AgentDefaults.DefaultSlingFormula
@@ -4103,6 +4210,13 @@ func validateNamedSessions(cfg *City, requireBackingTemplate bool) (warnings []s
 		reservedSessionNames[sessionName] = identity
 		if s.ModeOrDefault() == "always" && agent != nil {
 			alwaysByTemplate[agent.QualifiedName()]++
+			if agent.EffectiveWakeMode() == "fresh" {
+				warnings = append(warnings, fmt.Sprintf(
+					"named_session %q: mode %q with wake_mode %q on template %q %s; use only for a deliberate restart-per-cycle actor",
+					s.QualifiedName(), s.ModeOrDefault(), agent.EffectiveWakeMode(), agent.QualifiedName(),
+					alwaysFreshWakeModeMarker,
+				))
+			}
 			if maxActive := agent.EffectiveMaxActiveSessions(); maxActive != nil && *maxActive < alwaysByTemplate[agent.QualifiedName()] {
 				return nil, fmt.Errorf(
 					"named_session %q: mode %q exceeds max_active_sessions capacity %d on template %q",
@@ -4119,6 +4233,20 @@ func validateNamedSessions(cfg *City, requireBackingTemplate bool) (warnings []s
 		}
 	}
 	return warnings, nil
+}
+
+// alwaysFreshWakeModeMarker is a stable substring on the warning emitted when a
+// mode="always" named session backs a wake_mode="fresh" template. CLI warning
+// classification keys off this marker, so keep it in sync with
+// IsAlwaysFreshWakeModeWarning.
+const alwaysFreshWakeModeMarker = "starts a fresh provider session after every drain"
+
+// IsAlwaysFreshWakeModeWarning reports whether a load warning is the non-fatal
+// always+fresh advisory. CLI warning filters use this to print the notice and
+// keep it non-fatal in strict mode. Keep in sync with
+// alwaysFreshWakeModeMarker.
+func IsAlwaysFreshWakeModeWarning(warning string) bool {
+	return strings.Contains(warning, alwaysFreshWakeModeMarker)
 }
 
 // disabledNamedSessionMarker is a stable suffix on the warning emitted when a
@@ -4518,6 +4646,9 @@ func Parse(data []byte) (*City, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if err := validateStorageAuthoringSurface(md); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
 	normalizeAgentDefaultsAlias(&cfg, md)
 	applyDaemonFormulaV2Default(&cfg, md)
 	normalizeLegacyOrderOverrideAliases(&cfg)
@@ -4534,6 +4665,12 @@ func Parse(data []byte) (*City, error) {
 		return nil, err
 	}
 	if err := validateGuardedRelease(cfg.Beads.GuardedRelease); err != nil {
+		return nil, err
+	}
+	// Parse sees one layer. Cross-layer storage invariants (six-class
+	// completeness, binding resolution) are checked on the composed root in
+	// LoadWithIncludesOptions, because a fragment may supply either half.
+	if err := validateStorageLayer(&cfg); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
