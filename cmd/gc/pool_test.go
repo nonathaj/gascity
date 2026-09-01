@@ -13,6 +13,7 @@ import (
 	"reflect"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/beads/contract"
@@ -867,6 +868,7 @@ func TestDeepCopyAgentCoversAllFields(t *testing.T) {
 		OptionDefaults:               map[string]string{"effort": "max"},
 		BindingName:                  "gastown",
 		PackName:                     "gastown",
+		AssignedWorkDeferLimit:       intPtr(3),
 	}
 
 	// Tombstone fields (deprecated in v0.15.1, removed in v0.16) are not
@@ -985,8 +987,13 @@ func TestDeepCopyAgentSetsPoolName(t *testing.T) {
 }
 
 func TestRunPoolOnBoot(t *testing.T) {
+	// on_boot hooks run concurrently, so this double protects its own state as
+	// the ScaleCheckRunner contract requires.
+	var mu sync.Mutex
 	var ran []string
 	runner := func(cmd, _ string, _ map[string]string) (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		ran = append(ran, cmd)
 		return "", nil
 	}

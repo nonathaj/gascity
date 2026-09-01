@@ -353,8 +353,8 @@ func TestInjectedImmutableCommandCatalogRoundTripsWithoutExpandingProduction(t *
 	// cap on how many commands gc may have.
 	generatedCount := 0
 	generatedCommandIDCatalog(func(commandIDEntry) { generatedCount++ })
-	if generatedCount != 192 {
-		t.Fatalf("generated production catalog has %d entries, want 192", generatedCount)
+	if generatedCount != 201 {
+		t.Fatalf("generated production catalog has %d entries, want 201", generatedCount)
 	}
 
 	injected := func(yield func(commandIDEntry)) {

@@ -162,3 +162,42 @@ func readProcessMemory(h windows.Handle, addr uintptr, dst unsafe.Pointer, size 
 func StartTime(int) (string, error) {
 	return "", errors.New("pidutil: start-time inspection is not supported on windows")
 }
+
+// ChildPIDs returns the direct children of parent.
+//
+// Windows keeps the parent link on the process entry rather than under the
+// parent, so the only way to answer "who are my children" is to walk the whole
+// process table once and filter — there is no per-pid read like Linux's
+// /proc/<pid>/task/<tid>/children. The Toolhelp32 snapshot is that walk; it is
+// the same table taskkill /T follows in KillTree.
+//
+// A parent with no children is an empty slice and a nil error, which is
+// distinct from the error returned when the table itself cannot be read.
+func ChildPIDs(parent int) ([]int, error) {
+	if parent <= 0 {
+		return nil, fmt.Errorf("pidutil: invalid PID %d", parent)
+	}
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("pidutil: process snapshot: %w", err)
+	}
+	defer windows.CloseHandle(snapshot) //nolint:errcheck // read-only snapshot
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, fmt.Errorf("pidutil: first process entry: %w", err)
+	}
+	var children []int
+	for {
+		if int(entry.ParentProcessID) == parent && int(entry.ProcessID) != parent {
+			children = append(children, int(entry.ProcessID))
+		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+				return children, nil
+			}
+			return nil, fmt.Errorf("pidutil: next process entry: %w", err)
+		}
+	}
+}
