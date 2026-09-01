@@ -1,4 +1,13 @@
+//go:build !windows
+
 package scripts_test
+
+// scripts/test-go-test-shard is a POSIX sh runner, and these tests assert its
+// process-ownership contract with Unix-only machinery: the runner is started
+// in its own process group and signalled through it (kill(-pgid)), liveness
+// and reaping are probed with signal-0 kills, and the sweep fixtures replay
+// lsof/ps output. The shard runner has no Windows arm to hold to this
+// contract, so there is no counterpart suite to write.
 
 import (
 	"errors"
