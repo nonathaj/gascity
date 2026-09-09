@@ -34,6 +34,24 @@ func bdReadyIncludeEphemeralArg(includeEphemeralReady bool) string {
 // empty-string default, e.g. (.metadata["gc.routed_to"] // ""). Shell/jq
 // builders use it so embedded key spellings stay anchored to the beadmeta
 // vocabulary constants.
+// livenessMapJQExpr renders the array-level liveness filter as a bare jq
+// expression. The routed work_query first-row tier and the scale_check
+// count-form both build from this one function, so the two cannot drift apart
+// on what "still live" means — the divergence that let a closed row be counted
+// as demand and spawn a session with nothing claimable to do.
+func livenessMapJQExpr() string {
+	return `map(` + beadmeta.LivenessJQSelect() + `)`
+}
+
+// livenessMapJQCommand wraps livenessMapJQExpr as a standalone shell-quoted jq
+// invocation, for the one consumer that pipes through jq rather than embedding
+// the filter in a jq program it already runs. -c keeps the tier's output on one
+// line: the raw bd rows it filters are compact, and downstream readers compare
+// against "[]" to detect the empty case.
+func livenessMapJQCommand() string {
+	return shellquote.Join([]string{"jq", "-c", livenessMapJQExpr()})
+}
+
 func jqMeta(key string) string {
 	return `(.metadata["` + key + `"] // "")`
 }
@@ -55,7 +73,7 @@ func bdReadyPoolDemandMigrationShell(limitFlag string, includeEphemeralReady boo
 }
 
 func poolDemandMigrationFilterJQ(limit int) string {
-	filter := `[.[] | select(` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == "")]`
+	filter := `[.[] | ` + beadmeta.LivenessJQSelect() + ` | select(` + jqMeta(beadmeta.RoutedToMetadataKey) + ` == "")]`
 	if limit > 0 {
 		filter += ` | .[:` + strconv.Itoa(limit) + `]`
 	}
@@ -71,7 +89,7 @@ func bdQueryEphemeralStatusQuietShell(status string) string {
 }
 
 func legacyEphemeralReadyFilterJQ(selector string, limit int) string {
-	filter := `[.[] | ` + selector +
+	filter := `[.[] | ` + beadmeta.LivenessJQSelect() + ` | ` + selector +
 		` | select(((.issue_type // .type // "") != "epic"))` +
 		` | select(([ (.dependencies // [])[]` +
 		` | select((.type // .dep_type // "") as $t | ($t == "blocks" or $t == "waits-for" or $t == "conditional-blocks"))` +
@@ -112,6 +130,17 @@ func poolDemandFirstRowFunctionScript(includeEphemeralReady bool) string {
 		`target="$1"; ` +
 		`[ -z "$target" ] && return 1; ` +
 		`r=$(` + routedReadyTierCommand(includeEphemeralReady) + `); ` +
+		// The liveness filter's failure is reported, not swallowed. jq can fail here
+		// on a malformed row, a non-string .status that makes ascii_downcase throw,
+		// or a missing jq — and an empty $r is otherwise indistinguishable from an
+		// honestly empty tier, so the query would degrade to the legacy tiers with
+		// no signal. jq's own stderr is left connected for the same reason. $r is
+		// cleared explicitly so a filter that printed partial output before failing
+		// cannot leave a truncated array behind. Falling through stays the correct
+		// response: a work query that dies takes the worker with it. printf is a
+		// shell builtin, so the healthy path forks nothing extra.
+		`if [ -n "$r" ] && [ "$r" != "[]" ]; then r=$(printf "%s" "$r" | ` + livenessMapJQCommand() + `) || ` +
+		`{ printf '%s\n' "gc work_query: routed-tier liveness filter failed; falling through to legacy tiers" >&2; r=""; }; fi; ` +
 		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; ` +
 		`legacy_candidates=$(` + bdReadyPoolDemandMigrationShell("--limit=20", includeEphemeralReady) + ` 2>/dev/null); ` +
 		`r=$(printf "%s" "$legacy_candidates" | ` + poolDemandMigrationFilterJQ(1) + ` 2>/dev/null); ` +
@@ -150,7 +179,8 @@ func poolDemandCountShell(target string, includeEphemeralReady bool) string {
 		`legacy_candidates=$(` + bdReadyPoolDemandMigrationShell("--limit 0", includeEphemeralReady) + `) || exit $?; ` +
 		`legacy_json=$(printf "%s" "$legacy_candidates" | ` + poolDemandMigrationFilterJQ(0) + `) || exit $?; ` +
 		`legacy_ephemeral_json=$(` + legacyEphemeralPoolDemandShell(0, includeEphemeralReady, false) + `); ` +
-		`printf "%s\n%s\n%s\n" "$ready_json" "$legacy_json" "$legacy_ephemeral_json" | jq -s "(add // []) | unique_by(.id) | length"`
+		`printf "%s\n%s\n%s\n" "$ready_json" "$legacy_json" "$legacy_ephemeral_json" | ` +
+		shellquote.Join([]string{"jq", "-s", `(add // []) | unique_by(.id) | ` + livenessMapJQExpr() + ` | length`})
 	return shellquote.Join([]string{"sh", "-c", script, "--", target})
 }
 
