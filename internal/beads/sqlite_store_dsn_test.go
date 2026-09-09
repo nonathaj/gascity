@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pathutil"
 )
 
 func dsnPragmas(t *testing.T, dsn string) []string {
@@ -94,6 +96,129 @@ func TestSQLiteStoreDSNOmitsMeasuredOutPragmas(t *testing.T) {
 			}
 		}
 	}
+}
+
+// dsnRoundTripPragmas is the exact _pragma list every DSN builder emits, in
+// url.Values.Encode order. A rendering that drops or reorders query parameters
+// is as broken as one that drops the path, and the path assertions alone would
+// not see it.
+var dsnRoundTripPragmas = []string{
+	"busy_timeout(5000)",
+	"foreign_keys(1)",
+	sqliteTuningPragma,
+}
+
+// assertDSNRoundTrip states DSN correctness as the one property that holds on
+// every platform: the DSN parses, the local path survives it byte-for-byte, and
+// the query comes back intact.
+//
+// It deliberately asserts neither the DSN's literal text nor the absence of
+// %5C. filepath.ToSlash is a no-op when os.PathSeparator != '\\', so a
+// Windows-shaped path keeps its backslashes on Linux and a correct DSN still
+// renders them as %5C there; pinning either spelling would fail against a
+// correct fix on one platform or the other. The round trip is
+// separator-independent and escaping-independent, and it is true exactly when
+// the DSN is right, because url.URL's escaping and
+// pathutil.LocalPathFromFileURL are inverses — including the leading slash that
+// carries a drive letter.
+func assertDSNRoundTrip(t *testing.T, dsn, wantPath, wantMode string) {
+	t.Helper()
+
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("url.Parse(%q): %v", dsn, err)
+	}
+
+	// An empty authority is the whole point: "file://C:/x" parses "C:" as a
+	// host, which is how a drive letter escapes the path to begin with.
+	if parsed.Host != "" {
+		t.Errorf("DSN %s parsed to host %q, want empty: the drive letter belongs in the path, never the authority", dsn, parsed.Host)
+	}
+
+	got, err := pathutil.LocalPathFromFileURL(parsed)
+	if err != nil {
+		t.Fatalf("LocalPathFromFileURL(%q): %v", dsn, err)
+	}
+	if got != wantPath {
+		t.Errorf("DSN %s round-tripped to path %q, want %q", dsn, got, wantPath)
+	}
+
+	if pragmas := dsnPragmas(t, dsn); !slices.Equal(pragmas, dsnRoundTripPragmas) {
+		t.Errorf("DSN %s carries _pragma %v, want %v", dsn, pragmas, dsnRoundTripPragmas)
+	}
+	if mode := parsed.Query().Get("mode"); mode != wantMode {
+		t.Errorf("DSN %s mode = %q, want %q", dsn, mode, wantMode)
+	}
+}
+
+// TestSQLiteStoreDSNRoundTripsLocalPath is the REQ-003/REQ-004/REQ-005
+// regression guard for the Windows file-URL defect. sqliteStoreDSNWithMode
+// builds its DSN as url.URL{Scheme: "file", Path: path}, and url.URL.String
+// writes "//" ahead of a path that does not start with a slash. A
+// drive-lettered path therefore lands in the authority instead of the path and
+// the DSN stops parsing altogether, which is why this reproduces as a parse
+// error rather than a wrong path.
+func TestSQLiteStoreDSNRoundTripsLocalPath(t *testing.T) {
+	// A GitHub-hosted Windows runner's temp directory in native spelling: the
+	// shape that reaches OpenSQLiteStore through t.TempDir on Windows CI.
+	const windowsTempPath = `C:\Users\runneradmin\AppData\Local\Temp\x\beads.sqlite`
+	const unixPath = "/tmp/x/beads.sqlite"
+	// Every character that means something to a URL parser: a space, a query
+	// introducer, a fragment introducer, and a percent sign that must not be
+	// read as the start of an escape. All are legal in a POSIX filename, so the
+	// DSN has to escape them rather than assume they never occur. This case is
+	// what makes a naive fix — concatenating "file:///" onto the path, the way
+	// pathutil.FileURLForLocalPath does — fail loudly here instead of silently
+	// truncating a real database path at the first "?" in production.
+	const metacharPath = "/tmp/T/source ? # % spaces/beads.sqlite"
+
+	cases := []struct {
+		name     string
+		path     string
+		dsn      string
+		wantMode string
+	}{
+		{
+			name: "windows drive-lettered path",
+			path: windowsTempPath,
+			dsn:  sqliteStoreDSN(windowsTempPath, false),
+		},
+		{
+			name: "unix path",
+			path: unixPath,
+			dsn:  sqliteStoreDSN(unixPath, false),
+		},
+		{
+			name: "path holding url metacharacters",
+			path: metacharPath,
+			dsn:  sqliteStoreDSN(metacharPath, false),
+		},
+		{
+			name:     "read-only open",
+			path:     unixPath,
+			dsn:      sqliteStoreDSN(unixPath, true),
+			wantMode: "ro",
+		},
+		{
+			name:     "private recovery open",
+			path:     metacharPath,
+			dsn:      sqliteStorePrivateRecoveryDSN(metacharPath),
+			wantMode: "rw",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertDSNRoundTrip(t, tc.dsn, tc.path, tc.wantMode)
+		})
+	}
+
+	t.Run("unc share path", func(t *testing.T) {
+		t.Skip(`known-unverified: a UNC path (\\server\share\beads.sqlite) has a genuine ` +
+			`authority component, so the empty-host round trip asserted above is the wrong ` +
+			`contract for it, and the correct file-URL spelling has not been checked against a ` +
+			`live SMB share. Recorded as a gap rather than asserted, so a guess does not become ` +
+			`a pinned invariant.`)
+	})
 }
 
 func sqlitePragmaValue(t *testing.T, conn *sql.Conn, pragma string) string {
