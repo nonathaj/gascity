@@ -413,7 +413,17 @@ func sqliteStoreDSNWithMode(path, mode string) string {
 	if mode != "" {
 		query.Set("mode", mode)
 	}
-	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
+	// A drive-lettered path must not be read as the URL authority: url.URL
+	// renders an empty Host as "file://", so "C:/x" would emit "file://C:/x"
+	// and SQLite rejects it with "invalid uri authority". Forcing the leading
+	// slash gives the sanctioned three-slash spelling while url.URL keeps
+	// escaping the path (a store directory may legally contain ? # % or a
+	// space).
+	slashed := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return (&url.URL{Scheme: "file", Path: slashed, RawQuery: query.Encode()}).String()
 }
 
 func (s *SQLiteStore) applySchema(ctx context.Context) error {
