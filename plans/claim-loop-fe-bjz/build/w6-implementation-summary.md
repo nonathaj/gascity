@@ -130,6 +130,39 @@ Also observed:
   note) and `TestStaleDBFormulaSuccessPathFailuresDrainAck` (an append failure on
   an open row is still non-fatal).
 
+**Repo-wide gates, reported in full.** `make test` **FAILED**, and the failure is
+in `cmd/gc`, not in the changed package. It was run down rather than waved off.
+Six tests fail, all from the host environment this session runs in, none from
+this change:
+
+- `TestControllerReloadsConfig`, `TestControllerReloadsConfigImmediatelyOnWatchEvent`,
+  `TestCityRuntimeReloadRestartsConfigWatcherWithNewPackTargets` — all three print
+  `gc start: config watcher: too many open files (reload on tick only)`. The host
+  is at **126 of 128** `fs.inotify.max_user_instances`, exhausted by the sibling
+  worker sessions running concurrent sweeps. The first `make test` run did not even
+  reach a verdict: the `cmd/gc` package blew its own 15m `-timeout` at load average
+  ~35.
+- `TestImportMigrateScript/migrate-v2`, `TestPackV2ImportsScript/pack-v2-imports` —
+  the testscript sandbox resolves bare `gc` to a non-`gc` binary
+  (`gc: option -d unrecognized - ignored`, `Can't open import`).
+- `TestOrderExecEnvReservedKeysCoverProjectedEnv` — projects order exec env from
+  the real process environment, so it fails on any host with `GITHUB_TOKEN`
+  exported. Proven by bisecting the variable, not assumed:
+  `go test -run TestOrderExecEnvReservedKeysCoverProjectedEnv` **FAILS** in this
+  session and `env -u GITHUB_TOKEN go test -run ...` **passes**. Filed as
+  `gcty-x270`; it is a test-hygiene defect independent of this bead.
+
+`cmd/gc` is reachable from this change — `examples/bd/dolt/embed.go` `go:embed`s
+`formulas/`, so the edited TOML compiles into `dolt.PackFS`. That was checked
+rather than assumed: every `cmd/gc` test that consumes the dolt pack passes
+(`TestBuiltinDatabaseEnumeratorsSkipManagedProbeDatabase`,
+`TestBuiltinPacksUseCanonicalRegistry`, `TestEnsureBuiltinRuntimeAssets*`,
+`TestPruneRetiredSystemPacks*`, `TestLoadCityConfig*`,
+`TestDoltSyncRejectsManagedProbeDatabaseFilter`, `TestBuildDesiredState*`,
+`TestCmdDoctorOrderFiring`). The one assertion that reads this formula counts
+`__gc_probe`, a needle this diff does not touch, and it reads the pinned pack
+cache rather than the worktree.
+
 The closed-row test asserts all three acceptance statements: the run exits
 non-zero with the refusal on stderr, no `--append-notes` is issued, and a separate
 mutation log proves the closed row received no `bd update` and no `bd close`.
@@ -164,6 +197,14 @@ unmutated. W6-3 = no general immutability model was introduced.
   and the claim-admission work in W2 (`gcty-l52m`). With this change the stale
   claim still occurs; it can no longer silently mutate the closed row, and it now
   fails loudly instead, which should make a recurrence visible rather than silent.
+- **`make test` is red on this host for reasons outside this change.** The six
+  `cmd/gc` failures above are environmental (inotify exhaustion, testscript PATH,
+  ambient `GITHUB_TOKEN`) and were each traced to a proven cause. They are not
+  fixed here: two are host capacity rather than repo defects, `cmd/gc` is being
+  edited concurrently by sibling bead `gcty-l52m`, and touching it from this bead
+  would risk a collision for no in-scope gain. `gcty-x270` carries the one that is
+  a real repo defect. Anyone reading this summary should not take `make test`
+  green as established on this host.
 - **Fail-closed on an unestablished status is a judgment call.** If `bd show`
   became unavailable, this order would refuse its report and exit non-zero every
   run rather than appending blind. That is the safer direction for this write
