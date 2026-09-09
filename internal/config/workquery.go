@@ -130,7 +130,17 @@ func poolDemandFirstRowFunctionScript(includeEphemeralReady bool) string {
 		`target="$1"; ` +
 		`[ -z "$target" ] && return 1; ` +
 		`r=$(` + routedReadyTierCommand(includeEphemeralReady) + `); ` +
-		`[ -n "$r" ] && [ "$r" != "[]" ] && r=$(printf "%s" "$r" | ` + livenessMapJQCommand() + ` 2>/dev/null); ` +
+		// The liveness filter's failure is reported, not swallowed. jq can fail here
+		// on a malformed row, a non-string .status that makes ascii_downcase throw,
+		// or a missing jq — and an empty $r is otherwise indistinguishable from an
+		// honestly empty tier, so the query would degrade to the legacy tiers with
+		// no signal. jq's own stderr is left connected for the same reason. $r is
+		// cleared explicitly so a filter that printed partial output before failing
+		// cannot leave a truncated array behind. Falling through stays the correct
+		// response: a work query that dies takes the worker with it. printf is a
+		// shell builtin, so the healthy path forks nothing extra.
+		`if [ -n "$r" ] && [ "$r" != "[]" ]; then r=$(printf "%s" "$r" | ` + livenessMapJQCommand() + `) || ` +
+		`{ printf '%s\n' "gc work_query: routed-tier liveness filter failed; falling through to legacy tiers" >&2; r=""; }; fi; ` +
 		`[ -n "$r" ] && [ "$r" != "[]" ] && printf "%s" "$r" && exit 0; ` +
 		`legacy_candidates=$(` + bdReadyPoolDemandMigrationShell("--limit=20", includeEphemeralReady) + ` 2>/dev/null); ` +
 		`r=$(printf "%s" "$legacy_candidates" | ` + poolDemandMigrationFilterJQ(1) + ` 2>/dev/null); ` +
