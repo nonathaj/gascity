@@ -282,7 +282,14 @@ func TestOpenSQLiteStoreRejectsNonAbsoluteDir(t *testing.T) {
 			}
 			// The path has to be in the message: the caller handed in a
 			// relative path by mistake and cannot fix it without seeing it.
-			if tc.dir != "" && !strings.Contains(err.Error(), tc.dir) {
+			//
+			// Matched in its %q rendering, not raw. The guard quotes the path
+			// so an empty or space-only one is still visible, and %q escapes a
+			// backslash — so on Windows ".gc\beads" reaches the message as
+			// ".gc\\beads" and a raw substring match would fail there while
+			// passing on Linux. That is the same platform-asymmetric assertion
+			// this file was just fixed for; do not reintroduce it.
+			if tc.dir != "" && !strings.Contains(err.Error(), fmt.Sprintf("%q", tc.dir)) {
 				t.Errorf("OpenSQLiteStore(%q) error = %v, want the rejected path named in the message", tc.dir, err)
 			}
 
