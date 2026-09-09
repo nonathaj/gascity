@@ -1317,11 +1317,13 @@ gc doctor --fix
 gc doctor --verbose
 gc doctor --json
 gc doctor --explain-postgres-auth
+gc doctor --drain-ack-window 2h
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--check-timeout` | duration | `1m0s` | per-check time budget; a check or its --fix remediation exceeding it is abandoned and reported as timed out (0 disables) |
+| `--drain-ack-window` | duration | `30m0s` | window the drain-ack-rate check measures session.drain_acked_with_assigned_work over (e.g. 30m, 2h) |
 | `--explain-postgres-auth` | bool |  | after running checks, print per-scope Postgres credential resolution table (no values printed) |
 | `--fix` | bool |  | attempt automatic repairs and safe mechanical migrations |
 | `--json` | bool |  | emit structured JSON instead of human-readable output |
