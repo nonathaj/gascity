@@ -54,6 +54,24 @@ const (
 	// (30s default → dozens of ticks), narrow enough that unrelated reopens
 	// spread across an afternoon never sum into a false alarm.
 	reopenBudgetWindow = 15 * time.Minute
+
+	// reopenBudgetSweepThreshold is the entry count past which note reclaims the
+	// entries whose windows have closed.
+	//
+	// The controller's budget lives as long as the process, so an entry that is
+	// never reclaimed is held for the controller's uptime. A closed window can
+	// only ever be overwritten, never consulted, so those entries are dead
+	// weight — without this the map would grow with every distinct bead the
+	// dead-assignee sweep has EVER reopened.
+	//
+	// 256 sits far above any healthy steady state (a bead only lands here by
+	// having its assignee die) while keeping the map small. Reclamation is an
+	// O(n) scan under the lock, but note runs only on a reopen that actually
+	// landed — a handful of times per patrol tick at worst — so scanning a few
+	// hundred entries there is not a cost worth amortizing away with a dynamic
+	// threshold. Sweeping eagerly keeps the map at the live-entry count instead
+	// of at its historical peak.
+	reopenBudgetSweepThreshold = 256
 )
 
 // reopenBudgetEntry is one bead's spend inside its current window.
@@ -121,7 +139,24 @@ func (b *reopenBudget) note(key string, now time.Time) int {
 	}
 	entry.count++
 	b.byBead[key] = entry
+	if len(b.byBead) > reopenBudgetSweepThreshold {
+		b.reclaimElapsedLocked(now)
+	}
 	return entry.count
+}
+
+// reclaimElapsedLocked drops every entry whose window has closed. Such an entry
+// is indistinguishable from an absent one — allows and note both treat an
+// elapsed window as a fresh, fully funded bead — so removing it cannot change
+// any decision, only the memory held to make it.
+//
+// Callers must hold b.mu.
+func (b *reopenBudget) reclaimElapsedLocked(now time.Time) {
+	for key, entry := range b.byBead {
+		if reopenBudgetWindowElapsed(entry, now) {
+			delete(b.byBead, key)
+		}
+	}
 }
 
 // reopenBudgetWindowElapsed reports whether entry's window has closed by now.

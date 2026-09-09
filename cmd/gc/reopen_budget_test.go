@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -252,5 +253,67 @@ func TestEmitReopenBudgetExhaustedEvents_NoOpWithoutExhaustion(t *testing.T) {
 	)
 	if len(rec.events) != 0 {
 		t.Fatalf("expected no alarm events, got %d", len(rec.events))
+	}
+}
+
+// The budget's owner is long-lived by design — the controller holds one for the
+// life of the process, which is what makes the window span patrol ticks. So
+// every entry the map keeps is kept for the process's uptime, and a bead whose
+// window closed long ago is dead weight: it can never be consulted again except
+// to be overwritten. Without reclamation the map is a slow leak in a daemon,
+// growing with every distinct bead the dead-assignee sweep has EVER reopened.
+//
+// Review finding R2.
+func TestReopenBudget_ReclaimsEntriesWithElapsedWindows(t *testing.T) {
+	budget := newReopenBudget()
+	start := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
+
+	// A wave of beads flaps once each, then never again.
+	const wave = reopenBudgetSweepThreshold * 2
+	for i := 0; i < wave; i++ {
+		budget.note(reopenBudgetKey("rig:alpha", "cold-"+strconv.Itoa(i)), start)
+	}
+
+	// Long after every one of those windows has closed, an unrelated bead flaps.
+	after := start.Add(reopenBudgetWindow * 2)
+	budget.note(reopenBudgetKey("rig:alpha", "warm-1"), after)
+
+	budget.mu.Lock()
+	got := len(budget.byBead)
+	budget.mu.Unlock()
+
+	// Only the live entry need survive. Allow the sweep threshold as slack so the
+	// test pins "bounded", not one specific reclamation cadence.
+	if got > reopenBudgetSweepThreshold {
+		t.Errorf("byBead holds %d entries after %d elapsed windows; want it reclaimed to "+
+			"at most %d — a controller-lifetime map that only ever grows is a leak",
+			got, wave, reopenBudgetSweepThreshold)
+	}
+}
+
+// Reclamation must never cost a live bead its spend: a bead that is over budget
+// inside its window has to stay refused, or the alarm it already raised is
+// undone by housekeeping.
+func TestReopenBudget_ReclamationPreservesLiveSpend(t *testing.T) {
+	budget := newReopenBudget()
+	start := time.Date(2026, 5, 23, 12, 0, 0, 0, time.UTC)
+
+	hot := reopenBudgetKey("rig:alpha", "hot-1")
+	for i := 0; i < reopenBudgetLimit; i++ {
+		budget.note(hot, start)
+	}
+	if budget.allows(hot, start) {
+		t.Fatalf("precondition: hot-1 must be over budget")
+	}
+
+	// Enough distinct live beads to cross any reclamation threshold, all inside
+	// the same window as hot-1.
+	for i := 0; i < reopenBudgetSweepThreshold*2; i++ {
+		budget.note(reopenBudgetKey("rig:alpha", "live-"+strconv.Itoa(i)), start)
+	}
+
+	if budget.allows(hot, start) {
+		t.Errorf("hot-1 regained budget inside its own window: reclamation must only " +
+			"drop entries whose windows have elapsed")
 	}
 }
