@@ -268,7 +268,14 @@ func claimFirstEligibleHookCandidate(candidates []beads.Bead, opts hookClaimOpti
 			reportHookClaimNotLive(stderr, candidate.ID, claimed)
 		}
 		if !ok {
-			reportHookClaimRejected(candidate, claimed, opts, ops)
+			// A non-live row is nobody's live work, so losing to its assignee is not
+			// contention: bead.claim_rejected means a race against a LIVE claimant
+			// (ADR-0009), and the store-truth refusal above is already the whole
+			// story. Emitting both would report a race that did not happen into the
+			// telemetry stream used to detect this very defect class.
+			if !notLive {
+				reportHookClaimRejected(candidate, claimed, opts, ops)
+			}
 			continue
 		}
 		if notLive {
@@ -323,6 +330,13 @@ func reportHookClaimRejected(candidate, claimed beads.Bead, opts hookClaimOption
 	ops.EmitClaimRejected(candidate.ID, existing, opts.Assignee)
 }
 
+// reportHookClaimNotLive surfaces a store-truth refusal on stderr. Every refusal
+// is announced: a silent no-op on this path is what kept the closed-row claim
+// loop invisible for hours.
+func reportHookClaimNotLive(stderr io.Writer, beadID string, row beads.Bead) {
+	fmt.Fprintf(stderr, "gc hook --claim: skipping %s: store row is not live (status %q)\n", beadID, row.Status) //nolint:errcheck
+}
+
 // hookClaimRowIsLive is the ONE liveness predicate both claim admission doors
 // apply: does this authoritative store row still represent live, workable work?
 //
@@ -333,13 +347,12 @@ func reportHookClaimRejected(candidate, claimed beads.Bead, opts hookClaimOption
 // rather than a guess. Anything outside it — closed, or a status this binary does
 // not recognize — is not live, which makes the predicate fail-closed by
 // construction instead of by each caller remembering to handle a default case.
-// reportHookClaimNotLive surfaces a store-truth refusal on stderr. Every refusal
-// is announced: a silent no-op on this path is what kept the closed-row claim
-// loop invisible for hours.
-func reportHookClaimNotLive(stderr io.Writer, beadID string, row beads.Bead) {
-	fmt.Fprintf(stderr, "gc hook --claim: skipping %s: store row is not live (status %q)\n", beadID, row.Status) //nolint:errcheck
-}
-
+//
+// PRECONDITION: the row must be a STORE-READ row, so its status is already
+// mapped. A raw work_query projection carries bd's six-value vocabulary and must
+// go through beads.NormalizeStatus first — feeding one straight in reads
+// `review` and `testing` as not-live, which is the opposite of what the store
+// says about them.
 func hookClaimRowIsLive(row beads.Bead) bool {
 	switch strings.ToLower(strings.TrimSpace(row.Status)) {
 	case "open", "in_progress":
@@ -364,8 +377,14 @@ func hookClaimExistingOrAssigned(candidates []beads.Bead, opts hookClaimOptions,
 	defer cancel()
 	for _, projected := range []string{"in_progress", "open"} {
 		for _, candidate := range candidates {
+			// Candidates come from the work_query projection, which is unmarshalled
+			// straight from bd JSON and never passes through a store read — so
+			// candidate.Status is a RAW bd status (six values) while `projected`
+			// spells Gas City's three. Normalize before comparing, or `review` and
+			// `testing` rows match neither spelling: the work query counts them as
+			// live demand and spawns a session, and this door then serves nothing.
 			if hookClaimCandidateIsMessage(candidate) ||
-				!strings.EqualFold(strings.TrimSpace(candidate.Status), projected) ||
+				beads.NormalizeStatus(candidate.Status) != projected ||
 				!hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
 				continue
 			}
