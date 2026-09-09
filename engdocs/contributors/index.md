@@ -31,6 +31,12 @@ description: The shortest path for new contributors to get productive in Gas Cit
 - Run `make check-docs` when changing navigation, cross-links, or docs
   structure.
 
+## Incident Records
+
+- [The `fe-bjz` Claim Loop](fe-bjz-claim-loop-incident.md) explains the scan
+  note dated `2026-09-09` on a bead closed `2026-08-27`, the claim loop that
+  wrote it, and why the note is deliberately left in place
+
 ## Active Proposals
 
 - [Testing Pyramid Audit and Hardening Plan](testing-pyramid-hardening-plan.md)
