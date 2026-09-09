@@ -36,6 +36,16 @@ trace:
       status: covered
     - id: AC-2
       status: deferred
+      rationale: >-
+        AC-2's named proof is W1B's integration starvation test
+        (test/integration/hook_claim_starvation_test.go, gcty-57o), which
+        cannot pass on W4 alone: it reproduces the claim-admission half of the
+        defect, owned by W2 (gcty-l52m, still open), and it is not on this
+        branch. W4 removes the spawn half, so a closed row is no longer counted
+        as demand and no session is spawned for it; the starvation shape is
+        covered here at unit tier by TestLivenessMixedBatchKeepsOnlyTheLiveRow.
+        End-to-end verification belongs to the integration bead gcty-1dn0,
+        where W2, W3B and W4 meet.
 ---
 
 # W4: one liveness predicate shared by work_query and scale_check
