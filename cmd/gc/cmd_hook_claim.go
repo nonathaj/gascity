@@ -66,6 +66,10 @@ type hookClaimOps struct {
 	// PublishRunMap writes best-effort session-to-run correlation without
 	// mutating the session bead after a successful work claim.
 	PublishRunMap hookPublishRunMapFunc
+	// LoadCanonical reads a bead's authoritative store row. It is the adoption
+	// door's store-truth read: unlike the fresh-claim door, adoption performs no
+	// mutation, so it has no claim read-back to piggyback the liveness check on.
+	LoadCanonical hookLoadCanonicalFunc
 	Now           func() time.Time
 }
 
@@ -78,6 +82,7 @@ type (
 	hookResolveWorkBranchFunc  func(dir string) string
 	hookStampWorkMetaFunc      func(ctx context.Context, dir string, env []string, beadID, assignee string, patch map[string]string) error
 	hookPublishRunMapFunc      func(runID, beadID string, sessionKeys ...string) error
+	hookLoadCanonicalFunc      func(context.Context, string, []string, string, string) (beads.Bead, error)
 )
 
 type hookClaimJSONResult struct {
@@ -168,7 +173,7 @@ func tryHookClaim(workQuery, dir string, opts *hookClaimOptions, ops *hookClaimO
 		return hookClaimResult{}
 	}
 
-	if result, bead, ok := hookClaimExistingOrAssigned(candidates, *opts); ok {
+	if result, bead, ok := hookClaimExistingOrAssigned(candidates, *opts, *ops, dir, stderr); ok {
 		return hookClaimResult{terminal: true, code: writeHookClaimWorkResultForBead(result, bead, *opts, *ops, dir, stdout, stderr)}
 	}
 
@@ -202,6 +207,9 @@ func (ops *hookClaimOps) applyDefaults() {
 	}
 	if ops.PublishRunMap == nil {
 		ops.PublishRunMap = writeRunMap
+	}
+	if ops.LoadCanonical == nil {
+		ops.LoadCanonical = hookLoadCanonicalWithBdStore
 	}
 }
 
@@ -250,8 +258,20 @@ func claimFirstEligibleHookCandidate(candidates []beads.Bead, opts hookClaimOpti
 			claimsErrored = true
 			continue
 		}
+		// Store-truth liveness gate. It belongs HERE, at the door, not only inside
+		// the default claim seam: ops.Claim is caller-supplied, so a door that
+		// trusts its verdict has no store-truth guarantee at all. A non-live row
+		// is a correct refusal rather than an operational error, so it never flips
+		// the shared drain to claims_errored.
+		notLive := strings.TrimSpace(claimed.ID) != "" && !hookClaimRowIsLive(claimed)
+		if notLive {
+			reportHookClaimNotLive(stderr, candidate.ID, claimed)
+		}
 		if !ok {
 			reportHookClaimRejected(candidate, claimed, opts, ops)
+			continue
+		}
+		if notLive {
 			continue
 		}
 		if len(candidate.Metadata) > 0 {
@@ -303,46 +323,126 @@ func reportHookClaimRejected(candidate, claimed beads.Bead, opts hookClaimOption
 	ops.EmitClaimRejected(candidate.ID, existing, opts.Assignee)
 }
 
-func hookClaimExistingOrAssigned(candidates []beads.Bead, opts hookClaimOptions) (hookClaimJSONResult, beads.Bead, bool) {
-	for _, candidate := range candidates {
-		if hookClaimCandidateIsMessage(candidate) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(candidate.Status), "in_progress") &&
-			hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
-			result := hookClaimJSONResult{
-				SchemaVersion: "1",
-				OK:            true,
-				Command:       hookClaimCommandName,
-				Action:        "work",
-				Reason:        "existing_assignment",
-				BeadID:        candidate.ID,
-				Assignee:      candidate.Assignee,
-				Route:         hookClaimRoute(candidate),
-			}
-			return result, candidate, true
-		}
+// hookClaimRowIsLive is the ONE liveness predicate both claim admission doors
+// apply: does this authoritative store row still represent live, workable work?
+//
+// It is a store-truth test, not a heuristic — it asks only what the store says
+// the row's status is, never whether the row "looks" stale. Gas City normalizes
+// every bd status into three values (open, in_progress, closed; see
+// internal/beads/bdstore.go mapBdStatus), so the live set is an exact allowlist
+// rather than a guess. Anything outside it — closed, or a status this binary does
+// not recognize — is not live, which makes the predicate fail-closed by
+// construction instead of by each caller remembering to handle a default case.
+// reportHookClaimNotLive surfaces a store-truth refusal on stderr. Every refusal
+// is announced: a silent no-op on this path is what kept the closed-row claim
+// loop invisible for hours.
+func reportHookClaimNotLive(stderr io.Writer, beadID string, row beads.Bead) {
+	fmt.Fprintf(stderr, "gc hook --claim: skipping %s: store row is not live (status %q)\n", beadID, row.Status) //nolint:errcheck
+}
+
+func hookClaimRowIsLive(row beads.Bead) bool {
+	switch strings.ToLower(strings.TrimSpace(row.Status)) {
+	case "open", "in_progress":
+		return true
+	default:
+		return false
 	}
-	for _, candidate := range candidates {
-		if hookClaimCandidateIsMessage(candidate) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(candidate.Status), "open") &&
-			hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
+}
+
+// hookClaimExistingOrAssigned is the ADOPTION door: it re-serves a bead this
+// session already owns, without going through the claim CAS. Candidates come from
+// the work_query projection, which can outlive the store row it describes; before
+// this gate the door decided from that projection alone, which is why a bead
+// closed days earlier could still be served as reason=existing_assignment forever.
+//
+// Selection still prefers in-progress work over merely-ready work, but nothing is
+// served until hookClaimAdoptableRow confirms the candidate against the store.
+// The reported reason is derived from the canonical row, not the projection, so
+// the result never describes a state the store disagrees with.
+func hookClaimExistingOrAssigned(candidates []beads.Bead, opts hookClaimOptions, ops hookClaimOps, dir string, stderr io.Writer) (hookClaimJSONResult, beads.Bead, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), hookClaimMutationTimeout)
+	defer cancel()
+	for _, projected := range []string{"in_progress", "open"} {
+		for _, candidate := range candidates {
+			if hookClaimCandidateIsMessage(candidate) ||
+				!strings.EqualFold(strings.TrimSpace(candidate.Status), projected) ||
+				!hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
+				continue
+			}
+			canonical, ok := hookClaimAdoptableRow(ctx, candidate, opts, ops, dir, stderr)
+			if !ok {
+				continue
+			}
+			reason := "ready_assignment"
+			if strings.EqualFold(strings.TrimSpace(canonical.Status), "in_progress") {
+				reason = "existing_assignment"
+			}
 			result := hookClaimJSONResult{
 				SchemaVersion: "1",
 				OK:            true,
 				Command:       hookClaimCommandName,
 				Action:        "work",
-				Reason:        "ready_assignment",
-				BeadID:        candidate.ID,
-				Assignee:      candidate.Assignee,
-				Route:         hookClaimRoute(candidate),
+				Reason:        reason,
+				BeadID:        canonical.ID,
+				Assignee:      canonical.Assignee,
+				Route:         hookClaimRoute(canonical),
 			}
-			return result, candidate, true
+			return result, canonical, true
 		}
 	}
 	return hookClaimJSONResult{}, beads.Bead{}, false
+}
+
+// hookClaimAdoptableRow re-reads candidate from the authoritative store and
+// reports whether this session may still be served it as work: the row must load,
+// must be live, and must still be ours.
+//
+// Error semantics (plan-review finding F4, settled by gcty-l52m): fail CLOSED per
+// candidate. A row whose liveness cannot be confirmed is refused, never served
+// optimistically — serving it is precisely the unclaimable-offer loop this gate
+// exists to end, and if the store is genuinely unreachable then the claim CAS
+// could not durably claim anything anyway. The refusal is scoped to the single
+// unconfirmable candidate, so a store blip cannot stall the whole fleet's routed
+// work: the surrounding loop continues to the next candidate. Every refusal is
+// surfaced on stderr — a silent no-op here is what kept the original defect
+// invisible for hours.
+//
+// Latency budget: at most one canonical read per identity-matched candidate, and
+// the loop stops at the first row that verifies, so the common case costs exactly
+// one `bd show` bounded by hookClaimMutationTimeout (10s) shared across the door.
+func hookClaimAdoptableRow(ctx context.Context, candidate beads.Bead, opts hookClaimOptions, ops hookClaimOps, dir string, stderr io.Writer) (beads.Bead, bool) {
+	canonical, err := ops.LoadCanonical(ctx, dir, opts.Env, candidate.ID, opts.Assignee)
+	if err != nil {
+		fmt.Fprintf(stderr, "gc hook --claim: skipping %s: confirming store liveness failed: %v\n", candidate.ID, err) //nolint:errcheck
+		return beads.Bead{}, false
+	}
+	if !hookClaimRowIsLive(canonical) {
+		reportHookClaimNotLive(stderr, candidate.ID, canonical)
+		return beads.Bead{}, false
+	}
+	if !hookClaimHasIdentity(canonical.Assignee, opts.IdentityCandidates) {
+		fmt.Fprintf(stderr, "gc hook --claim: skipping %s: store row is assigned to %q\n", candidate.ID, canonical.Assignee) //nolint:errcheck
+		return beads.Bead{}, false
+	}
+	if canonical.ID == "" {
+		canonical.ID = candidate.ID
+	}
+	if len(candidate.Metadata) > 0 {
+		// A canonical read can return a thinner metadata projection than the work
+		// query. Retain the candidate's fields while preferring store values, so
+		// the result contract (route, root bead, continuation group) stays whole.
+		metadata := maps.Clone(candidate.Metadata)
+		maps.Copy(metadata, canonical.Metadata)
+		canonical.Metadata = metadata
+	}
+	return canonical, true
+}
+
+// hookLoadCanonicalWithBdStore reads a bead's authoritative store row for the
+// adoption door. The fresh-claim door gets the same guarantee from the canonical
+// re-read already performed inside hookClaimWithBdStore.
+func hookLoadCanonicalWithBdStore(ctx context.Context, dir string, env []string, beadID, assignee string) (beads.Bead, error) {
+	return hookClaimBdStoreContext(ctx, dir, env, assignee).Get(beadID)
 }
 
 // hookClaimCandidateIsMessage reports whether candidate is a mail message
@@ -474,11 +574,13 @@ func hookClaimWithBdStore(ctx context.Context, dir string, env []string, beadID,
 	}
 	if !ok {
 		// Claim conflict: re-read the bead so the caller can surface who won
-		// the race in the bead.claim_rejected event (ADR-0009). Best-effort —
-		// a read error degrades to a silent no-op (empty bead, no event).
+		// the race in the bead.claim_rejected event (ADR-0009). A read error
+		// leaves this candidate's liveness unconfirmable, so it is returned
+		// rather than swallowed (F4 fail-closed): the caller skips this one id
+		// loudly and moves on to the next candidate.
 		current, getErr := store.Get(beadID)
 		if getErr != nil {
-			return beads.Bead{}, false, nil
+			return beads.Bead{}, false, fmt.Errorf("reading contended bead %q: %w", beadID, getErr)
 		}
 		return current, false, nil
 	}
@@ -493,6 +595,13 @@ func hookClaimWithBdStore(ctx context.Context, dir string, env []string, beadID,
 		return claimed, true, fmt.Errorf("reloading claimed bead %q: %w", beadID, err)
 	}
 	if !hookClaimHasIdentity(canonical.Assignee, []string{assignee}) {
+		return canonical, false, nil
+	}
+	if !hookClaimRowIsLive(canonical) {
+		// The mutation reported success against a stale projection, but store
+		// truth says this row is not live work. Refuse it as a non-claim so the
+		// caller skips it instead of serving work no worker can progress; the
+		// caller surfaces the refusal.
 		return canonical, false, nil
 	}
 	return canonical, true, nil

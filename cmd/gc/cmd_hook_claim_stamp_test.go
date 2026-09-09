@@ -124,6 +124,7 @@ func TestDoHookClaimStampsSessionIdentityOnAdoption(t *testing.T) {
 		ResolveWorkBranch: func(string) string { return "" }, // no worktree
 		StampWorkMeta:     spy.fn,
 		PublishRunMap:     noopPublishRunMap,
+		LoadCanonical:     liveCanonicalRowLoader(),
 	}
 
 	var stdout, stderr bytes.Buffer
