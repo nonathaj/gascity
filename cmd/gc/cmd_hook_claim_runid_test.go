@@ -160,6 +160,9 @@ func TestDoHookClaimPublishesRunMapOnExistingAssignment(t *testing.T) {
 		t.Fatal("Claim must not run for an existing assignment")
 		return beads.Bead{}, false, nil
 	}
+	// The adoption door confirms liveness against the store before serving; this
+	// fixture's store agrees with its projection.
+	ops.LoadCanonical = liveCanonicalRowLoader()
 
 	var stdout, stderr bytes.Buffer
 	if code := doHookClaim("bd ready --json", "/tmp/work", opts, ops, &stdout, &stderr); code != 0 {
