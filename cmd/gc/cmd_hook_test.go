@@ -351,6 +351,9 @@ func TestDoHookClaimReturnsExistingAssignment(t *testing.T) {
 		ListContinuation: func(context.Context, string, []string, string, string) ([]beads.Bead, error) {
 			return nil, nil
 		},
+		// The adoption door confirms liveness against the store before serving;
+		// this fixture's store agrees with its projection.
+		LoadCanonical: liveCanonicalRowLoader(),
 	}
 	opts := hookClaimOptions{
 		Assignee:           "worker-1",
@@ -1690,7 +1693,16 @@ mode = "on_demand"
 	}
 
 	fakeBin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fakeBin, "bd"), []byte("#!/bin/sh\nprintf '[]'\n"), 0o755); err != nil {
+	// The adoption door confirms liveness against the store before serving, so
+	// this fake bd must answer the canonical read: the holder's bead really is
+	// live and really is theirs. Everything else stays an empty projection.
+	fakeBd := `#!/bin/sh
+case "$*" in
+  *show*) printf '[{"id":"ga-frpt4k","status":"in_progress","assignee":"builder","metadata":{"gc.routed_to":"builder"}}]' ;;
+  *) printf '[]' ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(fakeBin, "bd"), []byte(fakeBd), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

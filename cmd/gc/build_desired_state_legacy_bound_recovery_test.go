@@ -208,6 +208,9 @@ func TestCanonicalizeLegacyBoundAssignedWorkWokenSessionClaimsRehomedWork(t *tes
 			t.Fatal("claim must not run: in-progress work already assigned to the canonical identity is an existing assignment")
 			return beads.Bead{}, false, nil
 		},
+		// The adoption door confirms liveness against the store before serving.
+		// Store truth here is the re-homed row itself.
+		LoadCanonical: canonicalRowLoader(rehomed),
 	}
 	opts := hookClaimOptions{
 		Assignee:           "planner-gc-1",

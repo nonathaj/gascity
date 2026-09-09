@@ -76,62 +76,6 @@ func TestWorkAssignmentReadyAssignedTo_ByteIdenticalQuery(t *testing.T) {
 	}
 }
 
-// TestWorkAssignmentCachedOpenAssignedWisps_NoFastPathWithoutCache asserts that
-// on a store without the CachedList capability the cache probe reports "not
-// answered" (so the caller falls through to OpenAssignedTo), and crucially does
-// NOT assert CachedList on the WorkStore wrapper (which would always fail and
-// silently drop the cache on a real caching store).
-func TestWorkAssignmentCachedOpenAssignedWisps_NoFastPathWithoutCache(t *testing.T) {
-	rec := newRecordingWorkStore()
-	wa := workAssignmentForStore(beads.WorkStore{Store: rec})
-
-	if items, ok := wa.CachedOpenAssignedWisps("agent-3", "open"); ok {
-		t.Fatalf("expected cache miss on non-caching store, got ok=true items=%#v", items)
-	}
-	if len(rec.listQueries) != 0 {
-		t.Fatalf("cache probe must not issue a List on a non-caching store, got %#v", rec.listQueries)
-	}
-}
-
-// fakeCachingWorkStore implements the CachedList capability on the underlying
-// store (not the wrapper) so the façade's fast-path can be exercised.
-type fakeCachingWorkStore struct {
-	*beads.MemStore
-	cachedCalls []beads.ListQuery
-	cachedHit   []beads.Bead
-	cachedOK    bool
-}
-
-func (s *fakeCachingWorkStore) CachedList(q beads.ListQuery) ([]beads.Bead, bool) {
-	s.cachedCalls = append(s.cachedCalls, q)
-	return s.cachedHit, s.cachedOK
-}
-
-// TestWorkAssignmentCachedOpenAssignedWisps_UsesUnwrappedStore proves the
-// CachedList assertion is made on the embedded .Store, not the WorkStore
-// wrapper: the wrapper does not promote CachedList, so asserting on it would
-// miss this capability and silently lose the fast-path (the typed-nil trap).
-func TestWorkAssignmentCachedOpenAssignedWisps_UsesUnwrappedStore(t *testing.T) {
-	want := beads.ListQuery{Assignee: "agent-4", Status: "in_progress", TierMode: beads.TierWisps}
-	cache := &fakeCachingWorkStore{
-		MemStore:  beads.NewMemStore(),
-		cachedHit: []beads.Bead{{ID: "w-1"}},
-		cachedOK:  true,
-	}
-	wa := workAssignmentForStore(beads.WorkStore{Store: cache})
-
-	items, ok := wa.CachedOpenAssignedWisps("agent-4", "in_progress")
-	if !ok {
-		t.Fatalf("expected cache hit via unwrapped .Store, got ok=false")
-	}
-	if len(items) != 1 || items[0].ID != "w-1" {
-		t.Fatalf("unexpected cached items: %#v", items)
-	}
-	if len(cache.cachedCalls) != 1 || !reflect.DeepEqual(cache.cachedCalls[0], want) {
-		t.Fatalf("CachedList query mismatch:\n got %#v\n want %#v", cache.cachedCalls, want)
-	}
-}
-
 // TestWorkAssignmentForStore_NilUnderlyingStoreSafe asserts the façade tolerates
 // a nil underlying store the same way the raw probes did (return empty, no
 // panic).
@@ -142,8 +86,5 @@ func TestWorkAssignmentForStore_NilUnderlyingStoreSafe(t *testing.T) {
 	}
 	if items, err := wa.ReadyAssignedTo("a", beads.TierIssues); err != nil || items != nil {
 		t.Fatalf("nil store ReadyAssignedTo: items=%#v err=%v", items, err)
-	}
-	if items, ok := wa.CachedOpenAssignedWisps("a", "open"); ok || items != nil {
-		t.Fatalf("nil store CachedOpenAssignedWisps: items=%#v ok=%v", items, ok)
 	}
 }

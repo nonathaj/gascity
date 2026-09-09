@@ -373,6 +373,33 @@ export type BeadGraphResponse = {
     root: Bead;
 };
 
+export type BeadReopenBudgetExhaustedPayload = {
+    /**
+     * ID of the bead whose reopen budget is spent (also the envelope Subject).
+     */
+    bead_id: string;
+    /**
+     * The assignee identity that resolved to no open session bead on the reopen that spent the budget.
+     */
+    dead_assignee?: string;
+    /**
+     * Reopens allowed per bead per patrol window; further reopens are refused until the window elapses.
+     */
+    limit: number;
+    /**
+     * Reopens of this bead observed inside the current patrol window, including the one that spent the budget.
+     */
+    reopen_count: number;
+    /**
+     * The gc.routed_to target the bead stays routed to, when set.
+     */
+    routed_to?: string;
+    /**
+     * Width of the patrol window the count is measured over, in seconds.
+     */
+    window_seconds: number;
+};
+
 export type BeadUpdateBody = {
     /**
      * Assigned agent.
@@ -844,7 +871,7 @@ export type EventEmitRequest = {
     type: string;
 };
 
-export type EventPayload = AdapterEventPayload | BeadClaimRejectedPayload | BeadDeadAssigneeReopenedPayload | BeadEventPayload | BeadWorktreeReapSkippedPayload | BeadWorktreeReapedPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | ConditionalWritesDegradedPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | MoleculeResolvedPayload | NoPayload | OutboundChannelMismatchPayload | OutboundEventPayload | PostgresCredentialResolvedPayload | ProjectIdentityStampedPayload | Record | RequestFailedPayload | RigCreateSucceededPayload | RigProvisionProgressPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionResetStalledPayload | SessionStrandedPayload | SessionSubmitSucceededPayload | SessionUnknownStatePayload | StoreDiskCriticalPayload | StoreDiskWarnPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorRequestPayload | SupervisorShutdownPayload | SupervisorStartedPayload | UnboundEventPayload | WebhookReceivedPayload | WebhookRejectedPayload | WorkerOperationEventPayload;
+export type EventPayload = AdapterEventPayload | BeadClaimRejectedPayload | BeadDeadAssigneeReopenedPayload | BeadEventPayload | BeadReopenBudgetExhaustedPayload | BeadWorktreeReapSkippedPayload | BeadWorktreeReapedPayload | BoundEventPayload | CityCreateSucceededPayload | CityLifecyclePayload | CityUnregisterSucceededPayload | ConditionalWritesDegradedPayload | GroupCreatedEventPayload | InboundEventPayload | MailEventPayload | MoleculeResolvedPayload | NoPayload | OutboundChannelMismatchPayload | OutboundEventPayload | PostgresCredentialResolvedPayload | ProjectIdentityStampedPayload | Record | RequestFailedPayload | RigCreateSucceededPayload | RigProvisionProgressPayload | RotatedPayload | SessionCreateSucceededPayload | SessionDrainAckedWithAssignedWorkPayload | SessionLifecyclePayload | SessionMessageSucceededPayload | SessionResetStalledPayload | SessionStrandedPayload | SessionSubmitSucceededPayload | SessionUnknownStatePayload | StoreDiskCriticalPayload | StoreDiskWarnPayload | StoreMaintenanceDonePayload | StoreMaintenanceFailedPayload | SupervisorFsPressureSkippedTickPayload | SupervisorRequestPayload | SupervisorShutdownPayload | SupervisorStartedPayload | UnboundEventPayload | WebhookReceivedPayload | WebhookRejectedPayload | WorkerOperationEventPayload;
 
 export type EventRotateAnchor = {
     /**
@@ -5118,6 +5145,8 @@ export type TypedEventStreamEnvelope = ({
 } & TypedEventStreamEnvelopeBeadDeadAssigneeReopened) | ({
     type: 'bead.deleted';
 } & TypedEventStreamEnvelopeBeadDeleted) | ({
+    type: 'bead.reopen_budget_exhausted';
+} & TypedEventStreamEnvelopeBeadReopenBudgetExhausted) | ({
     type: 'bead.updated';
 } & TypedEventStreamEnvelopeBeadUpdated) | ({
     type: 'bead.worktree.reap_skipped';
@@ -5347,6 +5376,23 @@ export type TypedEventStreamEnvelopeBeadDeleted = {
     subject?: string;
     ts: string;
     type: 'bead.deleted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedEventStreamEnvelope bead.reopen_budget_exhausted
+ */
+export type TypedEventStreamEnvelopeBeadReopenBudgetExhausted = {
+    actor: string;
+    message?: string;
+    payload: BeadReopenBudgetExhaustedPayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'bead.reopen_budget_exhausted';
     workflow?: WorkflowEventProjection;
 };
 
@@ -6607,6 +6653,8 @@ export type TypedTaggedEventStreamEnvelope = ({
 } & TypedTaggedEventStreamEnvelopeBeadDeadAssigneeReopened) | ({
     type: 'bead.deleted';
 } & TypedTaggedEventStreamEnvelopeBeadDeleted) | ({
+    type: 'bead.reopen_budget_exhausted';
+} & TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted) | ({
     type: 'bead.updated';
 } & TypedTaggedEventStreamEnvelopeBeadUpdated) | ({
     type: 'bead.worktree.reap_skipped';
@@ -6841,6 +6889,24 @@ export type TypedTaggedEventStreamEnvelopeBeadDeleted = {
     subject?: string;
     ts: string;
     type: 'bead.deleted';
+    workflow?: WorkflowEventProjection;
+};
+
+/**
+ * TypedTaggedEventStreamEnvelope bead.reopen_budget_exhausted
+ */
+export type TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted = {
+    actor: string;
+    city: string;
+    message?: string;
+    payload: BeadReopenBudgetExhaustedPayload;
+    run_id?: string;
+    seq: number;
+    session_id?: string;
+    step_id?: string;
+    subject?: string;
+    ts: string;
+    type: 'bead.reopen_budget_exhausted';
     workflow?: WorkflowEventProjection;
 };
 

@@ -889,6 +889,22 @@ func mapBdStatus(s string) string {
 	}
 }
 
+// NormalizeStatus collapses a raw bd status into Gas City's three-value
+// vocabulary (open, in_progress, closed), tolerating case and surrounding
+// whitespace.
+//
+// Every status that crosses a store boundary is already mapped on read. This is
+// for the callers that hold a bd status WITHOUT having gone through a store —
+// a work_query projection unmarshalled straight from bd JSON is the one that
+// matters — so that both sides of a status comparison speak one vocabulary.
+// Comparing a raw six-value bd status against a mapped three-value one silently
+// drops `review` and `testing` rows, which is how a routed bead could be
+// advertised as live demand, spawn a session, and then match no selection
+// spelling.
+func NormalizeStatus(s string) string {
+	return mapBdStatus(strings.ToLower(strings.TrimSpace(s)))
+}
+
 type optionalBool struct {
 	set   bool
 	value bool

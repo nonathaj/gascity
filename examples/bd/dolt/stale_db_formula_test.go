@@ -138,6 +138,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -236,6 +239,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -310,6 +316,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -388,6 +397,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -473,6 +485,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -561,6 +576,9 @@ esac
 	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     echo "bd $*" >> "$GC_TEST_LOG"
     ;;
@@ -899,6 +917,9 @@ maybe_fail() {
   fi
 }
 case "${1:-}" in
+  show)
+    printf '{"id":"%s","status":"open"}\n' "${2:-}"
+    ;;
   update|close)
     rendered="bd $*"
     echo "$rendered" >> "$GC_TEST_LOG"
@@ -1006,5 +1027,206 @@ func TestStaleDBOrderUsesParsedFieldsOnly(t *testing.T) {
 	}
 	if order.Schedule != "0 */4 * * *" {
 		t.Fatalf("Schedule = %q, want 0 */4 * * *", order.Schedule)
+	}
+}
+
+// TestStaleDBFormulaRefusesNoteAppendToClosedWorkBead pins REQ-006/AC-4: when
+// the claim served a row the store reports CLOSED, the formula must refuse to
+// append its scan/apply report to that row, surface the refusal as an error,
+// and leave the closed row unmodified. The gate exists because `bd update
+// --append-notes` does not itself refuse closed rows, which is how a fresh
+// scan report landed on fe-bjz, a row closed 13 days earlier.
+func TestStaleDBFormulaRefusesNoteAppendToClosedWorkBead(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skipf("bash not found: %v", err)
+	}
+
+	script := renderStaleDBFormulaShell(t)
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	logPath := filepath.Join(dir, "commands.log")
+	mutationPath := filepath.Join(dir, "mutations.log")
+	scanPath := filepath.Join(dir, "scan.json")
+	writeTestFile(t, scanPath, `{"schema":"gc.dolt.cleanup.v1","dropped":{"count":0,"failed":[],"skipped":[]},"purge":{"bytes_reclaimed":0},"reaped":{"count":0,"targets":[]},"force_blockers":[],"summary":{"bytes_freed_disk":0,"bytes_freed_rss":0,"errors_total":0}}`)
+	writeTestFile(t, filepath.Join(binDir, "gc"), `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-} ${2:-}" in
+  "dolt-cleanup "*)
+    cat "$GC_TEST_SCAN_JSON"
+    ;;
+  "event emit"|"session nudge"|"runtime drain-ack"|"mail send")
+    echo "gc $*" >> "$GC_TEST_LOG"
+    ;;
+  *)
+    echo "unexpected gc command: $*" >&2
+    exit 64
+    ;;
+esac
+`, 0o755)
+	// The fake bd reports the work bead as closed and records every mutating
+	// call, so the test can prove the closed row was left untouched. bd show
+	// --json can return a one-element list, so this fake returns that shape.
+	writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  show)
+    printf '[{"id":"bead-1","status":"closed","closed_at":"2026-08-27T20:01:53Z"}]\n'
+    ;;
+  update|close)
+    echo "bd $*" >> "$GC_TEST_LOG"
+    echo "bd $*" >> "$GC_TEST_MUTATION_LOG"
+    ;;
+  *)
+    echo "unexpected bd command: $*" >&2
+    exit 64
+    ;;
+esac
+`, 0o755)
+
+	cmd := exec.Command("bash", "-s")
+	cmd.Stdin = strings.NewReader(script)
+	cmd.Env = append(staleDBFilteredEnv("GC_BEAD_ID", "PATH", "TMPDIR", "GC_TEST_LOG", "GC_TEST_MUTATION_LOG", "GC_TEST_SCAN_JSON"),
+		"GC_BEAD_ID=bead-1",
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"TMPDIR="+dir,
+		"GC_TEST_LOG="+logPath,
+		"GC_TEST_MUTATION_LOG="+mutationPath,
+		"GC_TEST_SCAN_JSON="+scanPath,
+	)
+	out, err := cmd.CombinedOutput()
+	logData, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatalf("ReadFile(%s): %v\noutput:\n%s", logPath, readErr, out)
+	}
+	log := string(logData)
+
+	if err == nil {
+		t.Fatalf("rendered script exited 0; want the closed-row refusal surfaced as an error\nlog:\n%s\noutput:\n%s", log, out)
+	}
+	if !strings.Contains(string(out), "refusing to append") {
+		t.Fatalf("refusal was not surfaced on stderr\nlog:\n%s\noutput:\n%s", log, out)
+	}
+	if !strings.Contains(string(out), "bead-1") {
+		t.Fatalf("refusal did not name the closed bead\nlog:\n%s\noutput:\n%s", log, out)
+	}
+	if strings.Contains(log, "--append-notes") {
+		t.Fatalf("formula appended a report note to a closed bead\nlog:\n%s\noutput:\n%s", log, out)
+	}
+
+	mutations, err := os.ReadFile(mutationPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("ReadFile(%s): %v", mutationPath, err)
+	}
+	if len(strings.TrimSpace(string(mutations))) != 0 {
+		t.Fatalf("closed row was mutated; want it left unmodified\nmutations:\n%s\noutput:\n%s", mutations, out)
+	}
+	if !strings.Contains(log, "gc runtime drain-ack") {
+		t.Fatalf("refusal skipped the drain-ack contract\nlog:\n%s\noutput:\n%s", log, out)
+	}
+}
+
+// TestStaleDBFormulaRefusesNoteAppendWhenStatusUnestablished pins the
+// fail-closed half of the REQ-006 gate: if the work bead's status cannot be
+// established, the formula refuses the append rather than writing blind. An
+// unverifiable row is treated like a closed one, because the point of the gate
+// is to stop writing to rows whose state we cannot establish. Both shapes of
+// failure count: bd exiting non-zero, and bd exiting 0 with a payload the
+// status cannot be read from.
+func TestStaleDBFormulaRefusesNoteAppendWhenStatusUnestablished(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skipf("bash not found: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		showBD string
+	}{
+		{
+			name: "show exits non-zero",
+			showBD: `    echo "bd show unavailable" >&2
+    exit 70`,
+		},
+		{
+			name:   "show exits zero with unreadable payload",
+			showBD: `    printf '{"unexpected":"shape"}\n'`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			script := renderStaleDBFormulaShell(t)
+			dir := t.TempDir()
+			binDir := filepath.Join(dir, "bin")
+			if err := os.Mkdir(binDir, 0o755); err != nil {
+				t.Fatalf("Mkdir: %v", err)
+			}
+
+			logPath := filepath.Join(dir, "commands.log")
+			scanPath := filepath.Join(dir, "scan.json")
+			writeTestFile(t, scanPath, `{"schema":"gc.dolt.cleanup.v1","dropped":{"count":0,"failed":[],"skipped":[]},"purge":{"bytes_reclaimed":0},"reaped":{"count":0,"targets":[]},"force_blockers":[],"summary":{"bytes_freed_disk":0,"bytes_freed_rss":0,"errors_total":0}}`)
+			writeTestFile(t, filepath.Join(binDir, "gc"), `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-} ${2:-}" in
+  "dolt-cleanup "*)
+    cat "$GC_TEST_SCAN_JSON"
+    ;;
+  "event emit"|"session nudge"|"runtime drain-ack"|"mail send")
+    echo "gc $*" >> "$GC_TEST_LOG"
+    ;;
+  *)
+    echo "unexpected gc command: $*" >&2
+    exit 64
+    ;;
+esac
+`, 0o755)
+			writeTestFile(t, filepath.Join(binDir, "bd"), `#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  show)
+`+tc.showBD+`
+    ;;
+  update|close)
+    echo "bd $*" >> "$GC_TEST_LOG"
+    ;;
+  *)
+    echo "unexpected bd command: $*" >&2
+    exit 64
+    ;;
+esac
+`, 0o755)
+
+			cmd := exec.Command("bash", "-s")
+			cmd.Stdin = strings.NewReader(script)
+			cmd.Env = append(staleDBFilteredEnv("GC_BEAD_ID", "PATH", "TMPDIR", "GC_TEST_LOG", "GC_TEST_SCAN_JSON"),
+				"GC_BEAD_ID=bead-1",
+				"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"TMPDIR="+dir,
+				"GC_TEST_LOG="+logPath,
+				"GC_TEST_SCAN_JSON="+scanPath,
+			)
+			out, err := cmd.CombinedOutput()
+			logData, readErr := os.ReadFile(logPath)
+			if readErr != nil {
+				t.Fatalf("ReadFile(%s): %v\noutput:\n%s", logPath, readErr, out)
+			}
+			log := string(logData)
+
+			if err == nil {
+				t.Fatalf("rendered script exited 0; want an unestablished status to refuse the append\nlog:\n%s\noutput:\n%s", log, out)
+			}
+			if !strings.Contains(string(out), "cannot read the status of bead-1") {
+				t.Fatalf("unestablished status was not surfaced\nlog:\n%s\noutput:\n%s", log, out)
+			}
+			if strings.Contains(log, "--append-notes") {
+				t.Fatalf("formula appended a report note without establishing the row status\nlog:\n%s\noutput:\n%s", log, out)
+			}
+			if !strings.Contains(log, "gc runtime drain-ack") {
+				t.Fatalf("refusal skipped the drain-ack contract\nlog:\n%s\noutput:\n%s", log, out)
+			}
+		})
 	}
 }
