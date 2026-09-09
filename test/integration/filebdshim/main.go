@@ -131,7 +131,14 @@ func runFileStore(cityDir string, args []string, stdout io.Writer) (int, bool, e
 		if err != nil {
 			return 0, true, err
 		}
-		return 0, true, writeBead(stdout, b, jsonOut, false)
+		if jsonOut {
+			// Real `bd show --json` emits a one-element ARRAY, and
+			// beads.BdStore.Get unmarshals into []bdIssue. Encoding a bare
+			// object here made every shim-backed Get fail with "cannot
+			// unmarshal object into Go value of type []beads.bdIssue".
+			return 0, true, writeList(stdout, []beads.Bead{b}, true)
+		}
+		return 0, true, writeBead(stdout, b, false, false)
 	case "list":
 		q, jsonOut, err := parseListArgs(args[1:])
 		if err != nil {
