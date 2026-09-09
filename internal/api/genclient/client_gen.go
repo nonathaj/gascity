@@ -1220,6 +1220,27 @@ type BeadGraphResponse struct {
 	Root  Bead                   `json:"root"`
 }
 
+// BeadReopenBudgetExhaustedPayload defines model for BeadReopenBudgetExhaustedPayload.
+type BeadReopenBudgetExhaustedPayload struct {
+	// BeadId ID of the bead whose reopen budget is spent (also the envelope Subject).
+	BeadId string `json:"bead_id"`
+
+	// DeadAssignee The assignee identity that resolved to no open session bead on the reopen that spent the budget.
+	DeadAssignee *string `json:"dead_assignee,omitempty"`
+
+	// Limit Reopens allowed per bead per patrol window; further reopens are refused until the window elapses.
+	Limit int64 `json:"limit"`
+
+	// ReopenCount Reopens of this bead observed inside the current patrol window, including the one that spent the budget.
+	ReopenCount int64 `json:"reopen_count"`
+
+	// RoutedTo The gc.routed_to target the bead stays routed to, when set.
+	RoutedTo *string `json:"routed_to,omitempty"`
+
+	// WindowSeconds Width of the patrol window the count is measured over, in seconds.
+	WindowSeconds int64 `json:"window_seconds"`
+}
+
 // BeadUpdateBody defines model for BeadUpdateBody.
 type BeadUpdateBody struct {
 	// Assignee Assigned agent.
@@ -5261,6 +5282,21 @@ type TypedEventStreamEnvelopeBeadDeleted struct {
 	Workflow  *WorkflowEventProjection `json:"workflow,omitempty"`
 }
 
+// TypedEventStreamEnvelopeBeadReopenBudgetExhausted defines model for TypedEventStreamEnvelopeBeadReopenBudgetExhausted.
+type TypedEventStreamEnvelopeBeadReopenBudgetExhausted struct {
+	Actor     string                           `json:"actor"`
+	Message   *string                          `json:"message,omitempty"`
+	Payload   BeadReopenBudgetExhaustedPayload `json:"payload"`
+	RunId     *string                          `json:"run_id,omitempty"`
+	Seq       int64                            `json:"seq"`
+	SessionId *string                          `json:"session_id,omitempty"`
+	StepId    *string                          `json:"step_id,omitempty"`
+	Subject   *string                          `json:"subject,omitempty"`
+	Ts        time.Time                        `json:"ts"`
+	Type      string                           `json:"type"`
+	Workflow  *WorkflowEventProjection         `json:"workflow,omitempty"`
+}
+
 // TypedEventStreamEnvelopeBeadUpdated defines model for TypedEventStreamEnvelopeBeadUpdated.
 type TypedEventStreamEnvelopeBeadUpdated struct {
 	Actor     string                   `json:"actor"`
@@ -6439,6 +6475,22 @@ type TypedTaggedEventStreamEnvelopeBeadDeleted struct {
 	Ts        time.Time                `json:"ts"`
 	Type      string                   `json:"type"`
 	Workflow  *WorkflowEventProjection `json:"workflow,omitempty"`
+}
+
+// TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted defines model for TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted.
+type TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted struct {
+	Actor     string                           `json:"actor"`
+	City      string                           `json:"city"`
+	Message   *string                          `json:"message,omitempty"`
+	Payload   BeadReopenBudgetExhaustedPayload `json:"payload"`
+	RunId     *string                          `json:"run_id,omitempty"`
+	Seq       int64                            `json:"seq"`
+	SessionId *string                          `json:"session_id,omitempty"`
+	StepId    *string                          `json:"step_id,omitempty"`
+	Subject   *string                          `json:"subject,omitempty"`
+	Ts        time.Time                        `json:"ts"`
+	Type      string                           `json:"type"`
+	Workflow  *WorkflowEventProjection         `json:"workflow,omitempty"`
 }
 
 // TypedTaggedEventStreamEnvelopeBeadUpdated defines model for TypedTaggedEventStreamEnvelopeBeadUpdated.
@@ -9281,6 +9333,32 @@ func (t *EventPayload) FromBeadEventPayload(v BeadEventPayload) error {
 
 // MergeBeadEventPayload performs a merge with any union data inside the EventPayload, using the provided BeadEventPayload
 func (t *EventPayload) MergeBeadEventPayload(v BeadEventPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsBeadReopenBudgetExhaustedPayload returns the union data inside the EventPayload as a BeadReopenBudgetExhaustedPayload
+func (t EventPayload) AsBeadReopenBudgetExhaustedPayload() (BeadReopenBudgetExhaustedPayload, error) {
+	var body BeadReopenBudgetExhaustedPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBeadReopenBudgetExhaustedPayload overwrites any union data inside the EventPayload as the provided BeadReopenBudgetExhaustedPayload
+func (t *EventPayload) FromBeadReopenBudgetExhaustedPayload(v BeadReopenBudgetExhaustedPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeBeadReopenBudgetExhaustedPayload performs a merge with any union data inside the EventPayload, using the provided BeadReopenBudgetExhaustedPayload
+func (t *EventPayload) MergeBeadReopenBudgetExhaustedPayload(v BeadReopenBudgetExhaustedPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -12172,6 +12250,34 @@ func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeBeadDeleted(v Ty
 	return err
 }
 
+// AsTypedEventStreamEnvelopeBeadReopenBudgetExhausted returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeBeadReopenBudgetExhausted() (TypedEventStreamEnvelopeBeadReopenBudgetExhausted, error) {
+	var body TypedEventStreamEnvelopeBeadReopenBudgetExhausted
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedEventStreamEnvelopeBeadReopenBudgetExhausted overwrites any union data inside the TypedEventStreamEnvelope as the provided TypedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t *TypedEventStreamEnvelope) FromTypedEventStreamEnvelopeBeadReopenBudgetExhausted(v TypedEventStreamEnvelopeBeadReopenBudgetExhausted) error {
+	v.Type = "bead.reopen_budget_exhausted"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedEventStreamEnvelopeBeadReopenBudgetExhausted performs a merge with any union data inside the TypedEventStreamEnvelope, using the provided TypedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t *TypedEventStreamEnvelope) MergeTypedEventStreamEnvelopeBeadReopenBudgetExhausted(v TypedEventStreamEnvelopeBeadReopenBudgetExhausted) error {
+	v.Type = "bead.reopen_budget_exhausted"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsTypedEventStreamEnvelopeBeadUpdated returns the union data inside the TypedEventStreamEnvelope as a TypedEventStreamEnvelopeBeadUpdated
 func (t TypedEventStreamEnvelope) AsTypedEventStreamEnvelopeBeadUpdated() (TypedEventStreamEnvelopeBeadUpdated, error) {
 	var body TypedEventStreamEnvelopeBeadUpdated
@@ -14242,6 +14348,8 @@ func (t TypedEventStreamEnvelope) ValueByDiscriminator() (interface{}, error) {
 		return t.AsTypedEventStreamEnvelopeBeadDeadAssigneeReopened()
 	case "bead.deleted":
 		return t.AsTypedEventStreamEnvelopeBeadDeleted()
+	case "bead.reopen_budget_exhausted":
+		return t.AsTypedEventStreamEnvelopeBeadReopenBudgetExhausted()
 	case "bead.updated":
 		return t.AsTypedEventStreamEnvelopeBeadUpdated()
 	case "bead.worktree.reap_skipped":
@@ -14531,6 +14639,34 @@ func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeBeadD
 // MergeTypedTaggedEventStreamEnvelopeBeadDeleted performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeBeadDeleted
 func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeBeadDeleted(v TypedTaggedEventStreamEnvelopeBeadDeleted) error {
 	v.Type = "bead.deleted"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted returns the union data inside the TypedTaggedEventStreamEnvelope as a TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t TypedTaggedEventStreamEnvelope) AsTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted() (TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted, error) {
+	var body TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted overwrites any union data inside the TypedTaggedEventStreamEnvelope as the provided TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t *TypedTaggedEventStreamEnvelope) FromTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted(v TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted) error {
+	v.Type = "bead.reopen_budget_exhausted"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted performs a merge with any union data inside the TypedTaggedEventStreamEnvelope, using the provided TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted
+func (t *TypedTaggedEventStreamEnvelope) MergeTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted(v TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted) error {
+	v.Type = "bead.reopen_budget_exhausted"
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -16611,6 +16747,8 @@ func (t TypedTaggedEventStreamEnvelope) ValueByDiscriminator() (interface{}, err
 		return t.AsTypedTaggedEventStreamEnvelopeBeadDeadAssigneeReopened()
 	case "bead.deleted":
 		return t.AsTypedTaggedEventStreamEnvelopeBeadDeleted()
+	case "bead.reopen_budget_exhausted":
+		return t.AsTypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted()
 	case "bead.updated":
 		return t.AsTypedTaggedEventStreamEnvelopeBeadUpdated()
 	case "bead.worktree.reap_skipped":

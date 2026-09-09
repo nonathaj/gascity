@@ -1107,6 +1107,45 @@
         ],
         "type": "object"
       },
+      "BeadReopenBudgetExhaustedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "bead_id": {
+            "description": "ID of the bead whose reopen budget is spent (also the envelope Subject).",
+            "type": "string"
+          },
+          "dead_assignee": {
+            "description": "The assignee identity that resolved to no open session bead on the reopen that spent the budget.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Reopens allowed per bead per patrol window; further reopens are refused until the window elapses.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "reopen_count": {
+            "description": "Reopens of this bead observed inside the current patrol window, including the one that spent the budget.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "routed_to": {
+            "description": "The gc.routed_to target the bead stays routed to, when set.",
+            "type": "string"
+          },
+          "window_seconds": {
+            "description": "Width of the patrol window the count is measured over, in seconds.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bead_id",
+          "reopen_count",
+          "limit",
+          "window_seconds"
+        ],
+        "type": "object"
+      },
       "BeadUpdateBody": {
         "additionalProperties": false,
         "properties": {
@@ -2344,6 +2383,9 @@
           },
           {
             "$ref": "#/components/schemas/BeadEventPayload"
+          },
+          {
+            "$ref": "#/components/schemas/BeadReopenBudgetExhaustedPayload"
           },
           {
             "$ref": "#/components/schemas/BeadWorktreeReapSkippedPayload"
@@ -11863,6 +11905,7 @@
             "bead.created": "#/components/schemas/TypedEventStreamEnvelopeBeadCreated",
             "bead.dead_assignee_reopened": "#/components/schemas/TypedEventStreamEnvelopeBeadDeadAssigneeReopened",
             "bead.deleted": "#/components/schemas/TypedEventStreamEnvelopeBeadDeleted",
+            "bead.reopen_budget_exhausted": "#/components/schemas/TypedEventStreamEnvelopeBeadReopenBudgetExhausted",
             "bead.updated": "#/components/schemas/TypedEventStreamEnvelopeBeadUpdated",
             "bead.worktree.reap_skipped": "#/components/schemas/TypedEventStreamEnvelopeBeadWorktreeReapSkipped",
             "bead.worktree.reaped": "#/components/schemas/TypedEventStreamEnvelopeBeadWorktreeReaped",
@@ -11953,6 +11996,9 @@
           },
           {
             "$ref": "#/components/schemas/TypedEventStreamEnvelopeBeadDeleted"
+          },
+          {
+            "$ref": "#/components/schemas/TypedEventStreamEnvelopeBeadReopenBudgetExhausted"
           },
           {
             "$ref": "#/components/schemas/TypedEventStreamEnvelopeBeadUpdated"
@@ -12429,6 +12475,57 @@
           "payload"
         ],
         "title": "TypedEventStreamEnvelope bead.deleted",
+        "type": "object"
+      },
+      "TypedEventStreamEnvelopeBeadReopenBudgetExhausted": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/BeadReopenBudgetExhaustedPayload"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "bead.reopen_budget_exhausted",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload"
+        ],
+        "title": "TypedEventStreamEnvelope bead.reopen_budget_exhausted",
         "type": "object"
       },
       "TypedEventStreamEnvelopeBeadUpdated": {
@@ -13101,6 +13198,7 @@
                 "bead.worktree.reap_skipped",
                 "bead.claim_rejected",
                 "bead.dead_assignee_reopened",
+                "bead.reopen_budget_exhausted",
                 "mail.sent",
                 "mail.read",
                 "mail.archived",
@@ -16241,6 +16339,7 @@
             "bead.created": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadCreated",
             "bead.dead_assignee_reopened": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadDeadAssigneeReopened",
             "bead.deleted": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadDeleted",
+            "bead.reopen_budget_exhausted": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted",
             "bead.updated": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadUpdated",
             "bead.worktree.reap_skipped": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadWorktreeReapSkipped",
             "bead.worktree.reaped": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadWorktreeReaped",
@@ -16331,6 +16430,9 @@
           },
           {
             "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadDeleted"
+          },
+          {
+            "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted"
           },
           {
             "$ref": "#/components/schemas/TypedTaggedEventStreamEnvelopeBeadUpdated"
@@ -16827,6 +16929,61 @@
           "city"
         ],
         "title": "TypedTaggedEventStreamEnvelope bead.deleted",
+        "type": "object"
+      },
+      "TypedTaggedEventStreamEnvelopeBeadReopenBudgetExhausted": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/BeadReopenBudgetExhaustedPayload"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "step_id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "type": {
+            "const": "bead.reopen_budget_exhausted",
+            "type": "string"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowEventProjection"
+          }
+        },
+        "required": [
+          "seq",
+          "type",
+          "ts",
+          "actor",
+          "payload",
+          "city"
+        ],
+        "title": "TypedTaggedEventStreamEnvelope bead.reopen_budget_exhausted",
         "type": "object"
       },
       "TypedTaggedEventStreamEnvelopeBeadUpdated": {
@@ -17550,6 +17707,7 @@
                 "bead.worktree.reap_skipped",
                 "bead.claim_rejected",
                 "bead.dead_assignee_reopened",
+                "bead.reopen_budget_exhausted",
                 "mail.sent",
                 "mail.read",
                 "mail.archived",

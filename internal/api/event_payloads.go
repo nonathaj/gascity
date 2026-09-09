@@ -564,6 +564,40 @@ func BeadDeadAssigneeReopenedPayloadJSON(beadID, deadAssignee, routedTo string) 
 	return b
 }
 
+// BeadReopenBudgetExhaustedPayload is the typed payload for
+// bead.reopen_budget_exhausted events. Emitted when the dead-assignee repair
+// path has reopened one bead its full budget of times inside a single patrol
+// window and therefore stops reopening it. The payload carries the budget
+// itself — the count observed, the limit that was hit, and the window it was
+// measured over — so a subscriber can tell a wedged bead from a busy one
+// without reading the reconciler source or replaying the reopen history.
+type BeadReopenBudgetExhaustedPayload struct {
+	BeadID        string `json:"bead_id" doc:"ID of the bead whose reopen budget is spent (also the envelope Subject)."`
+	DeadAssignee  string `json:"dead_assignee,omitempty" doc:"The assignee identity that resolved to no open session bead on the reopen that spent the budget."`
+	RoutedTo      string `json:"routed_to,omitempty" doc:"The gc.routed_to target the bead stays routed to, when set."`
+	ReopenCount   int    `json:"reopen_count" doc:"Reopens of this bead observed inside the current patrol window, including the one that spent the budget."`
+	Limit         int    `json:"limit" doc:"Reopens allowed per bead per patrol window; further reopens are refused until the window elapses."`
+	WindowSeconds int    `json:"window_seconds" doc:"Width of the patrol window the count is measured over, in seconds."`
+}
+
+// IsEventPayload marks BeadReopenBudgetExhaustedPayload as an events.Payload variant.
+func (BeadReopenBudgetExhaustedPayload) IsEventPayload() {}
+
+// BeadReopenBudgetExhaustedPayloadJSON builds the JSON wire form for attachment
+// to an events.Event.Payload field. DeadAssignee and RoutedTo are emitted only
+// when non-empty.
+func BeadReopenBudgetExhaustedPayloadJSON(beadID, deadAssignee, routedTo string, reopenCount, limit, windowSeconds int) json.RawMessage {
+	b, _ := json.Marshal(BeadReopenBudgetExhaustedPayload{
+		BeadID:        beadID,
+		DeadAssignee:  deadAssignee,
+		RoutedTo:      routedTo,
+		ReopenCount:   reopenCount,
+		Limit:         limit,
+		WindowSeconds: windowSeconds,
+	})
+	return b
+}
+
 // SessionUnknownStatePayload carries the machine-readable context for a
 // session.unknown_state event: a session bead whose metadata state the
 // reconciler does not recognize and therefore skips (forward-compatible
@@ -615,6 +649,7 @@ func init() {
 	events.RegisterPayload(events.BeadClosed, BeadEventPayload{})
 	events.RegisterPayload(events.BeadDeleted, BeadEventPayload{})
 	events.RegisterPayload(events.BeadDeadAssigneeReopened, BeadDeadAssigneeReopenedPayload{})
+	events.RegisterPayload(events.BeadReopenBudgetExhausted, BeadReopenBudgetExhaustedPayload{})
 
 	// session.* / convoy.* / controller.* / city.* / order.* /
 	// provider.* — these events carry no structured payload today;
