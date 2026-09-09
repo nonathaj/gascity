@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -116,13 +118,24 @@ var dsnRoundTripPragmas = []string{
 // %5C. filepath.ToSlash is a no-op when os.PathSeparator != '\\', so a
 // Windows-shaped path keeps its backslashes on Linux and a correct DSN still
 // renders them as %5C there; pinning either spelling would fail against a
-// correct fix on one platform or the other. The round trip is
-// separator-independent and escaping-independent, and it is true exactly when
-// the DSN is right, because url.URL's escaping and
-// pathutil.LocalPathFromFileURL are inverses — including the leading slash that
-// carries a drive letter.
+// correct fix on one platform or the other.
+//
+// wantPath is normalized through filepath.FromSlash for the same reason the
+// literal DSN text is not asserted: the round trip lands in NATIVE spelling,
+// because pathutil.LocalPathFromFileURL finishes through filepath.FromSlash.
+// A POSIX-literal expectation is therefore correct only off Windows — pinning
+// one made four of these five cases fail on the Windows gate against a DSN
+// that was right in every case. Deriving the expectation from the input keeps
+// the assertion separator-independent in fact, not just in intent, and it is
+// true exactly when the DSN is right, because url.URL's escaping and
+// pathutil.LocalPathFromFileURL are inverses — including the leading slash
+// that carries a drive letter.
 func assertDSNRoundTrip(t *testing.T, dsn, wantPath, wantMode string) {
 	t.Helper()
+
+	// Native spelling, matching what LocalPathFromFileURL returns. A no-op off
+	// Windows, where the separator already is '/'.
+	wantPath = filepath.FromSlash(wantPath)
 
 	parsed, err := url.Parse(dsn)
 	if err != nil {
@@ -213,12 +226,77 @@ func TestSQLiteStoreDSNRoundTripsLocalPath(t *testing.T) {
 	}
 
 	t.Run("unc share path", func(t *testing.T) {
-		t.Skip(`known-unverified: a UNC path (\\server\share\beads.sqlite) has a genuine ` +
-			`authority component, so the empty-host round trip asserted above is the wrong ` +
-			`contract for it, and the correct file-URL spelling has not been checked against a ` +
-			`live SMB share. Recorded as a gap rather than asserted, so a guess does not become ` +
-			`a pinned invariant.`)
+		t.Skip(`known-unverified: a UNC path (\\server\share\beads.sqlite) converts to ` +
+			`"//server/share/beads.sqlite", which already starts with a slash, so the builder ` +
+			`prepends nothing and url.URL renders "file:////server/share/beads.sqlite" — four ` +
+			`slashes, empty authority. The empty-host round trip asserted above is therefore ` +
+			`the right contract Go-side; what is unverified is whether that spelling opens a ` +
+			`live SMB share, which needs a Windows host with one mounted. Recorded as a gap ` +
+			`rather than asserted, so a guess does not become a pinned invariant.`)
 	})
+}
+
+// TestOpenSQLiteStoreRejectsNonAbsoluteDir pins the boundary guard that keeps a
+// relative store directory from being silently relocated to the filesystem
+// root.
+//
+// The leading-slash guard sqliteStoreDSNWithMode needs for the drive letter
+// prepends "/" to anything not already slash-prefixed. For an absolute POSIX
+// path that is a no-op and for a drive-lettered path it is the fix; for a
+// RELATIVE path it is neither — it silently re-anchors ".gc/beads" to
+// "/.gc/beads". That is strictly worse than the pre-fix behavior, which failed
+// loudly with "invalid uri authority": OpenSQLiteStore's os.Stat would check
+// the relative path while SQLite opened the root-anchored one, so the
+// read-only and private-recovery gates would adjudicate a different file than
+// the one opened, and MkdirAll would create one directory while the database
+// landed in another.
+//
+// No current caller is relative — all six non-test call sites pass absolute
+// paths — but OpenSQLiteStore is exported with an unconstrained dir, so the
+// guard rejects rather than rewrites. Rejecting is the only safe answer: there
+// is no correct base to resolve a relative store path against at this layer.
+func TestOpenSQLiteStoreRejectsNonAbsoluteDir(t *testing.T) {
+	cases := []struct {
+		name string
+		dir  string
+	}{
+		{name: "relative nested path", dir: filepath.Join(".gc", "beads")},
+		{name: "bare relative path", dir: "beads"},
+		{name: "current directory", dir: "."},
+		{name: "empty path", dir: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Any MkdirAll that escapes the guard lands here rather than in the
+			// package directory, which is what makes the side-effect assertion
+			// below safe to run at all.
+			root := t.TempDir()
+			t.Chdir(root)
+
+			store, err := OpenSQLiteStore(tc.dir)
+			if err == nil {
+				if sqliteStore, ok := store.(*SQLiteStore); ok {
+					_ = sqliteStore.CloseStore()
+				}
+				t.Fatalf("OpenSQLiteStore(%q) succeeded, want a rejection: a relative store directory opens a different database than the one the caller named", tc.dir)
+			}
+			// The path has to be in the message: the caller handed in a
+			// relative path by mistake and cannot fix it without seeing it.
+			if tc.dir != "" && !strings.Contains(err.Error(), tc.dir) {
+				t.Errorf("OpenSQLiteStore(%q) error = %v, want the rejected path named in the message", tc.dir, err)
+			}
+
+			// Rejecting after MkdirAll would still leave the directory behind,
+			// so the guard has to run before any side effect.
+			entries, readErr := os.ReadDir(root)
+			if readErr != nil {
+				t.Fatalf("reading %s: %v", root, readErr)
+			}
+			if len(entries) != 0 {
+				t.Errorf("OpenSQLiteStore(%q) created %d entries under the working directory, want none: the guard must reject before MkdirAll", tc.dir, len(entries))
+			}
+		})
+	}
 }
 
 func sqlitePragmaValue(t *testing.T, conn *sql.Conn, pragma string) string {
