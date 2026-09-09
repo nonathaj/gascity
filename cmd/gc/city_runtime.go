@@ -92,6 +92,11 @@ type CityRuntime struct {
 	cs  *controllerState // nil when controller-managed bead stores are unavailable
 	svc *workspacesvc.Manager
 
+	// reopenBudget bounds how often the dead-assignee sweep may reopen any one
+	// bead. It lives for the life of the controller so its per-bead windows span
+	// patrol ticks — a budget rebuilt each tick would never bound anything.
+	reopenBudget *reopenBudget
+
 	poolSessions      map[string]time.Duration
 	poolDeathHandlers map[string]poolDeathInfo
 	suspendedNames    map[string]bool
@@ -280,6 +285,7 @@ func newCityRuntime(p CityRuntimeParams) *CityRuntime {
 	suspendedNames := computeSuspendedNames(p.Cfg, p.CityName, p.CityPath)
 
 	cr := &CityRuntime{
+		reopenBudget:            newReopenBudget(),
 		cityPath:                p.CityPath,
 		cityName:                p.CityName,
 		configName:              configName,
@@ -2210,7 +2216,7 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 	assignedWorkBeads := result.AssignedWorkBeads
 	assignedWorkStoreRefs := result.AssignedWorkStoreRefs
 	phaseStart := time.Now()
-	released := releaseOrphanedPoolAssignmentsWhenSnapshotsComplete(store, cr.cfg, cr.cityPath, sessionBeads.OpenInfos(), result, rigStores)
+	released := releaseOrphanedPoolAssignmentsWhenSnapshotsComplete(store, cr.cfg, cr.cityPath, sessionBeads.OpenInfos(), result, rigStores, cr.reopenBudget)
 	recordPhase(TraceSiteControllerTickPhase, "bead_reconcile.release_orphaned_pool_assignments", phaseStart, map[string]any{
 		"released_count": len(released),
 	})
@@ -2223,6 +2229,10 @@ func (cr *CityRuntime) beadReconcileTick(ctx context.Context, result DesiredStat
 		// gated on confirmed non-liveness; emit the event BEFORE the snapshot
 		// filter so the dead assignee and route can still be read off the beads.
 		emitDeadAssigneeReopenedEvents(cr.rec, assignedWorkBeads, released, time.Now())
+		// Escalate the beads whose reopen just spent their per-window budget:
+		// the sweep stops reopening those, and standing down silently is the
+		// failure REQ-005 names. Same pre-filter snapshot, same reason.
+		emitReopenBudgetExhaustedEvents(cr.rec, assignedWorkBeads, released, time.Now())
 		assignedWorkBeads, assignedWorkStoreRefs = filterReleasedAssignedWorkSnapshot(assignedWorkBeads, assignedWorkStoreRefs, released)
 	}
 	// Squatter guard (gastownhall/gascity#2930): a foreign Dolt that has bound

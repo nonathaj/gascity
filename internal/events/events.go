@@ -41,17 +41,27 @@ const (
 	// otherwise-silent repair into an observable signal (mirrors the
 	// bead.claim_rejected shape).
 	BeadDeadAssigneeReopened = "bead.dead_assignee_reopened"
-	MailSent                 = "mail.sent"
-	MailRead                 = "mail.read"
-	MailArchived             = "mail.archived"
-	MailMarkedRead           = "mail.marked_read"
-	MailMarkedUnread         = "mail.marked_unread"
-	MailReplied              = "mail.replied"
-	MailDeleted              = "mail.deleted"
-	SessionDraining          = "session.draining"
-	SessionUndrained         = "session.undrained"
-	SessionQuarantined       = "session.quarantined"
-	SessionIdleKilled        = "session.idle_killed"
+	// BeadReopenBudgetExhausted is the alarm-level peer of
+	// BeadDeadAssigneeReopened: it fires when one bead has been reopened by the
+	// dead-assignee path the full budget of times inside a single patrol window,
+	// at which point the sweep stops reopening it. A single reopen is routine
+	// repair; the same bead needing the repair over and over is a flap that no
+	// longer fixes itself, and reopening it forever hides that. REQ-005 rejects
+	// exactly the silent case this makes loud — 73 reopens over 5 hours that
+	// raised nothing. Fired once per exhausted window per bead, so a wedged
+	// bead cannot turn the alarm itself into a storm.
+	BeadReopenBudgetExhausted = "bead.reopen_budget_exhausted"
+	MailSent                  = "mail.sent"
+	MailRead                  = "mail.read"
+	MailArchived              = "mail.archived"
+	MailMarkedRead            = "mail.marked_read"
+	MailMarkedUnread          = "mail.marked_unread"
+	MailReplied               = "mail.replied"
+	MailDeleted               = "mail.deleted"
+	SessionDraining           = "session.draining"
+	SessionUndrained          = "session.undrained"
+	SessionQuarantined        = "session.quarantined"
+	SessionIdleKilled         = "session.idle_killed"
 	// SessionMaxAgeKilled fires when the controller preemptively restarts a
 	// long-running session because its wall-clock age exceeded the agent's
 	// max_session_age threshold. Motivating case: provider SDKs that cache
@@ -258,6 +268,7 @@ var KnownEventTypes = []string{
 	BeadWorktreeReaped, BeadWorktreeReapSkipped,
 	BeadClaimRejected,
 	BeadDeadAssigneeReopened,
+	BeadReopenBudgetExhausted,
 	MailSent, MailRead, MailArchived, MailMarkedRead, MailMarkedUnread,
 	MailReplied, MailDeleted,
 	ConvoyCreated, ConvoyClosed,
