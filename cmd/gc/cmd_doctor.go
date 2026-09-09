@@ -33,7 +33,7 @@ var (
 
 func newDoctorCmd(stdout, stderr io.Writer) *cobra.Command {
 	var fix, verbose, jsonOut, explainPostgresAuth bool
-	var checkTimeout time.Duration
+	var checkTimeout, drainAckWindow time.Duration
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check workspace health",
@@ -52,10 +52,12 @@ legacy-to-current pack rewrites that are available on this branch.`,
   gc doctor --fix
   gc doctor --verbose
   gc doctor --json
-  gc doctor --explain-postgres-auth`,
+  gc doctor --explain-postgres-auth
+  gc doctor --drain-ack-window 2h`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if doDoctor(fix, verbose, jsonOut, explainPostgresAuth, checkTimeout, stdout, stderr) != 0 {
+			if doDoctor(fix, verbose, jsonOut, explainPostgresAuth, checkTimeout, stdout, stderr,
+				withDrainAckWindow(drainAckWindow)) != 0 {
 				return errExit
 			}
 			return nil
@@ -68,7 +70,18 @@ legacy-to-current pack rewrites that are available on this branch.`,
 		"after running checks, print per-scope Postgres credential resolution table (no values printed)")
 	cmd.Flags().DurationVar(&checkTimeout, "check-timeout", 60*time.Second,
 		"per-check time budget; a check or its --fix remediation exceeding it is abandoned and reported as timed out (0 disables)")
+	cmd.Flags().DurationVar(&drainAckWindow, "drain-ack-window", defaultDrainAckRateWindow,
+		"window the drain-ack-rate check measures session.drain_acked_with_assigned_work over (e.g. 30m, 2h)")
 	return cmd
+}
+
+// doctorRunOption adjusts a doDoctor run. Options keep doDoctor's signature
+// stable as per-run knobs are added.
+type doctorRunOption func(*buildDoctorChecksOpts)
+
+// withDrainAckWindow sets the window the drain-ack-rate check measures over.
+func withDrainAckWindow(window time.Duration) doctorRunOption {
+	return func(o *buildDoctorChecksOpts) { o.DrainAckWindow = window }
 }
 
 // doctorWorkspaceHasPostgresScope reports whether at least one scope
@@ -180,6 +193,9 @@ type buildDoctorChecksOpts struct {
 	// is set when resolving it failed (an out-of-enum config value).
 	RolloutFlags      rollout.Flags
 	RolloutResolveErr error
+	// DrainAckWindow is the window the drain-ack rate check measures over.
+	// Zero selects defaultDrainAckRateWindow.
+	DrainAckWindow time.Duration
 }
 
 func doctorOrderFiringCurrentLastRunFunc(cityPath string, cfg *config.City, stderr io.Writer) doctor.OrderFiringCurrentLastRunFunc {
@@ -339,6 +355,11 @@ func buildDoctorChecks(cityPath string, cfg *config.City, cfgErr error, opts bui
 	// (gc -> bd.real -> dolt) that operators routinely misread as CPU saturation.
 	// Advisory + read-only (/proc/stat); no config needed.
 	register(newForkRateCheck())
+	// Drain-ack rate watch: turns session.drain_acked_with_assigned_work from a
+	// per-event curiosity into a measured rate, so "sessions no longer drain on
+	// top of assigned work" can be shown rather than asserted. Advisory +
+	// read-only (the append-only event log); no config needed.
+	register(newDrainAckRateCheck(cityPath, opts.DrainAckWindow))
 	if cfgErr == nil && doctorWorkspaceHasPostgresScope(cityPath, cfg) {
 		register(doctorchecks.NewPostgresAuthCheck(cityPath, cfg))
 	}
@@ -433,7 +454,7 @@ func buildDoctorChecks(cityPath string, cfg *config.City, cfgErr error, opts bui
 	return checks
 }
 
-func doDoctor(fix, verbose, jsonOut, explainPostgresAuth bool, checkTimeout time.Duration, stdout, stderr io.Writer) int {
+func doDoctor(fix, verbose, jsonOut, explainPostgresAuth bool, checkTimeout time.Duration, stdout, stderr io.Writer, runOpts ...doctorRunOption) int {
 	cityPath, err := resolveCity()
 	if err != nil {
 		fmt.Fprintf(stderr, "gc doctor: %v\n", err) //nolint:errcheck // best-effort stderr
@@ -461,7 +482,7 @@ func doDoctor(fix, verbose, jsonOut, explainPostgresAuth bool, checkTimeout time
 	if cfgErr == nil && cfg != nil {
 		rolloutFlags, rolloutResolveErr = rollout.Resolve(cfg, rollout.ResolveOptions{})
 	}
-	for _, check := range buildDoctorChecks(cityPath, cfg, cfgErr, buildDoctorChecksOpts{
+	checkOpts := buildDoctorChecksOpts{
 		Stderr:               stderr,
 		ControllerRunning:    controllerRunning,
 		SupervisorRunning:    supervisorRunning,
@@ -470,7 +491,11 @@ func doDoctor(fix, verbose, jsonOut, explainPostgresAuth bool, checkTimeout time
 		SkipRigDoltChecks:    skipRigDoltChecks,
 		RolloutFlags:         rolloutFlags,
 		RolloutResolveErr:    rolloutResolveErr,
-	}) {
+	}
+	for _, opt := range runOpts {
+		opt(&checkOpts)
+	}
+	for _, check := range buildDoctorChecks(cityPath, cfg, cfgErr, checkOpts) {
 		d.Register(check)
 	}
 

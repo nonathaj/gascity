@@ -80,6 +80,52 @@ on the old `Stopped drain-acked session` stdout line. Use `.gc/events.jsonl`
 and the trace `operation` records as the durable signal, with stdout/stderr as
 supporting diagnostics only.
 
+## Measuring The Drain-Ack Rate
+
+`session.drain_acked_with_assigned_work` fires when a session acknowledges a
+drain while a bead was still assigned to it: that work is stranded and has to be
+recovered by another observer. One event is a curiosity. A sustained *rate* is
+the claim/drain loop — sessions handed work and drained faster than they can run
+it — so the distinction only shows up as a rate, and a fix for that loop can
+only be demonstrated by measuring one.
+
+`gc doctor` reports it as a number:
+
+```bash
+gc doctor --drain-ack-window 30m | grep drain-ack-rate
+```
+
+```
+✓ drain-ack-rate — drain-ack rate: 0.00/h (count=0, window=30m0s, observed=30m0s)
+```
+
+The window is caller-specified (`--drain-ack-window`, default 30m) and the check
+reads the append-only event log, walking rotation archives, so windows longer
+than the active segment still resolve.
+
+Read `observed` before trusting the rate. It is the span the event log actually
+covers inside the requested window, and it is what the rate is divided by. When
+the log is younger than the window — a fresh city, a rotated-away history — the
+result says `partial coverage` and the number describes only the observed span:
+
+```
+⚠ drain-ack-rate — drain-ack rate: 1.89/h (count=615, window=500h0m0s, observed=324h34m30s)
+  — partial coverage: the event log does not reach back the full window, so this
+  is not evidence for the whole window
+```
+
+A zero over a partially covered window is not evidence that the window was
+clean; it is evidence that nothing was observed for as long as you asked. To
+show a loop is fixed, confirm `observed` equals the window you claim.
+
+The check is advisory and never gates a doctor run. To inspect the underlying
+events — each payload carries session, bead, template, and bead status at drain
+time — list them directly:
+
+```bash
+gc events --type session.drain_acked_with_assigned_work --since 30m
+```
+
 ## Rig-Scoped Convergence Rollback
 
 Before rolling back a release that has created rig-scoped convergence loops,
