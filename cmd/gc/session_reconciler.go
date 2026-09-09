@@ -4581,16 +4581,17 @@ func sessionHasInProgressAssignedWorkForTier(store beads.Store, assignee string,
 	return sessionHasOpenAssignedWorkForTier(store, assignee, "in_progress", tierMode, true)
 }
 
+// sessionHasOpenAssignedWispWork reports whether assignee holds open wisp-tier
+// work, answering from the authoritative store rather than from the projection.
+//
+// The read is deliberately live, and must stay that way. The wisp cache path
+// (CachedList) refuses closed-inclusive queries, so it is structurally unable to
+// observe a row the store has closed; a positive answer served from it can never
+// be contradicted, which lets one stale entry sustain itself indefinitely. Going
+// through the live read also lets the store response correct the projection, so
+// a row that lost to store truth leaves the claimable set instead of being
+// re-served on the next tick. Do not reintroduce a cache fast-path here.
 func sessionHasOpenAssignedWispWork(store beads.Store, assignee, status string) (bool, error) {
-	wa := workAssignmentForStore(beads.WorkStore{Store: store})
-	// This positive-only probe intentionally keeps the tier-scoped cache
-	// helper: HandlesFor(...).Cached.List reads both tiers by contract. The
-	// CachedList assertion lives inside the façade on the unwrapped .Store.
-	if items, ok := wa.CachedOpenAssignedWisps(assignee, status); ok {
-		if wa.HasNonSessionWork(items) {
-			return true, nil
-		}
-	}
 	return sessionHasOpenAssignedWorkForTier(store, assignee, status, beads.TierWisps, true)
 }
 

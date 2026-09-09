@@ -62,26 +62,6 @@ func (w workAssignment) OpenAssignedTo(assignee, status string, tierMode beads.T
 	return items, nil
 }
 
-// CachedOpenAssignedWisps returns cached open-assigned wisp-tier WORK beads when
-// the underlying store exposes the CachedList fast-path, plus whether the cache
-// answered. It is the typed form of the positive-only cache probe in
-// sessionHasOpenAssignedWispWork; the assertion is on the embedded .Store so the
-// fast-path is preserved.
-func (w workAssignment) CachedOpenAssignedWisps(assignee, status string) ([]beads.Bead, bool) {
-	store := w.unwrapped()
-	if store == nil {
-		return nil, false
-	}
-	query := beads.ListQuery{Assignee: assignee, Status: status, TierMode: beads.TierWisps}
-	cache, ok := store.(interface {
-		CachedList(beads.ListQuery) ([]beads.Bead, bool)
-	})
-	if !ok {
-		return nil, false
-	}
-	return cache.CachedList(query)
-}
-
 // ReadyAssignedTo returns the ready (unblocked, actionable) WORK beads assigned
 // to the given identity for the given tier mode. It is the typed form of the raw
 // beads.ReadyLive(ReadyQuery{Assignee,TierMode}) probe. ReadyLive is called on
