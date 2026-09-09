@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/pathutil"
+
 	_ "modernc.org/sqlite" // pure-Go SQLite driver, CGO_ENABLED=0 safe
 )
 
@@ -221,6 +223,18 @@ func OpenSQLiteStore(dir string, opts ...SQLiteStoreOption) (Store, error) {
 	if cfg.readOnly && cfg.privateRecovery {
 		return nil, fmt.Errorf("opening sqlite store: read-only and private recovery modes are mutually exclusive")
 	}
+	// A relative dir must be rejected, not resolved. sqliteStoreDSNWithMode
+	// prepends the leading slash a drive letter needs, which re-anchors a
+	// relative path to the filesystem root: ".gc/beads" is opened as
+	// "/.gc/beads". os.Stat below would then stat the relative path while
+	// SQLite opens the root-anchored one, so the read-only and
+	// private-recovery gates would adjudicate a different file than the one
+	// opened, and MkdirAll would create a directory the database never lands
+	// in. There is no correct base to resolve against at this layer, so the
+	// only safe answer is to refuse — before any side effect.
+	if !pathutil.IsPortableAbs(dir) {
+		return nil, fmt.Errorf("opening sqlite store: directory %q must be absolute", dir)
+	}
 	if !cfg.readOnly && !cfg.privateRecovery {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("opening sqlite store: %w", err)
@@ -413,7 +427,17 @@ func sqliteStoreDSNWithMode(path, mode string) string {
 	if mode != "" {
 		query.Set("mode", mode)
 	}
-	return (&url.URL{Scheme: "file", Path: path, RawQuery: query.Encode()}).String()
+	// A drive-lettered path must not be read as the URL authority: url.URL
+	// renders an empty Host as "file://", so "C:/x" would emit "file://C:/x"
+	// and SQLite rejects it with "invalid uri authority". Forcing the leading
+	// slash gives the sanctioned three-slash spelling while url.URL keeps
+	// escaping the path (a store directory may legally contain ? # % or a
+	// space).
+	slashed := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return (&url.URL{Scheme: "file", Path: slashed, RawQuery: query.Encode()}).String()
 }
 
 func (s *SQLiteStore) applySchema(ctx context.Context) error {
