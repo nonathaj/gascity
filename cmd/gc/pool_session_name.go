@@ -395,6 +395,9 @@ func releaseOrphanedPoolAssignment(store beads.Store, wb beads.Bead, clearDetach
 	if store == nil || strings.TrimSpace(wb.ID) == "" {
 		return false
 	}
+	if !authoritativeRowAllowsOrphanRelease(store, wb.ID) {
+		return false
+	}
 	// Continuation-group beads bypass the CAS fast path: ReleaseIfCurrent swaps
 	// only status/assignee, so clearing the group would need a second write, and
 	// that gap would expose the routing vector on a claimable bead. The recheck
@@ -409,6 +412,44 @@ func releaseOrphanedPoolAssignment(store beads.Store, wb beads.Bead, clearDetach
 		}
 	}
 	return releasePoolAssignmentWithRecheck(store, wb, clearDetached)
+}
+
+// authoritativeRowAllowsOrphanRelease reports whether the orphan-release write
+// may proceed, by re-reading the owning store's row for id immediately before
+// the write and refusing a closed one (REQ-004).
+//
+// Closed-ness is the gate, not close-reason presence. The reason is not a
+// readable field on every close path — BdStore.CloseWithReason forwards it to
+// `bd close --reason` without persisting it, and its own doc tells callers that
+// need an audit trail to write the metadata themselves — so a rule keyed on the
+// reason fails open on exactly the rows it is meant to protect. Closed-ness is
+// always readable and is strictly stronger: every row REQ-004 names is closed.
+//
+// This is the only closed-ness check on the path, and it sits at the single
+// choke point both write paths pass through. Everything upstream of it decides
+// from reads that can lag the close — the assigned-work snapshot, then
+// liveWorkAssignmentStillReleasable's live List — while the writes themselves
+// are unconditional on status: releasePoolAssignmentWithRecheck forces
+// status=open, and ReleaseIfCurrent's status guard is bypassed entirely for
+// open-status strands (issue #2793) and continuation-group beads. Re-reading
+// here also shrinks the window opened by detachedProbeAllowsOrphanRelease,
+// which can block on a subprocess probe between the liveness check and this
+// write.
+//
+// A read failure refuses the release. Skipping a live orphan costs one
+// reconcile tick and is retried; reopening a closed row is unrecoverable
+// silent damage, so the ambiguous case must fail closed.
+func authoritativeRowAllowsOrphanRelease(store beads.Store, id string) bool {
+	got, err := store.Get(id)
+	if err != nil {
+		log.Printf("releaseOrphanedPoolAssignments: skipping release for %s: closed-row check failed: %v", id, err)
+		return false
+	}
+	if strings.TrimSpace(got.Status) == "closed" {
+		log.Printf("releaseOrphanedPoolAssignments: skipping release for %s: row is closed; the dead-assignee path never reopens a closed bead", id)
+		return false
+	}
+	return true
 }
 
 // beadHasActiveContinuationGroup reports whether wb still advertises the active
