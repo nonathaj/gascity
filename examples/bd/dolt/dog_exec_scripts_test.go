@@ -6115,6 +6115,168 @@ func TestBackupScriptRefusesUnknownMode(t *testing.T) {
 	}
 }
 
+// writeDiscoveryFailureFakeDolt installs a fake dolt whose version preflight
+// succeeds and whose `SHOW DATABASES` discovery probe fails with stderr and
+// exitCode — a server that is down, a refused socket, a rejected password.
+//
+// It is the failing sibling of writeFreshnessFakeDolt, the way
+// writeBackupFakeRsyncFailing is the happy-path rsync fake's. It has to exist
+// separately because every one of the SHOW DATABASES stub branches in this
+// file exits 0: no fixture here could refuse the question at all, which is how
+// the branch that discarded this failure went unwitnessed by all 27 backup
+// tests.
+func writeDiscoveryFailureFakeDolt(t *testing.T, binDir, version, stderr string, exitCode int) string {
+	t.Helper()
+	logPath := filepath.Join(binDir, "dolt.log")
+	writeExecutable(t, filepath.Join(binDir, "dolt"), fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+printf 'dolt %%s\n' "$*" >> %s
+if [ "${1:-}" = "version" ]; then
+  printf 'dolt version %%s\n' %s
+  exit 0
+fi
+case "$*" in
+  *"SHOW DATABASES"*)
+    printf '%%s\n' %s >&2
+    exit %d
+    ;;
+esac
+exit 0
+`, shellQuote(logPath), shellQuote(version), shellQuote(stderr), exitCode))
+	return logPath
+}
+
+// TestBackupScriptReportsDatabaseDiscoveryFailure holds the discovery probe to
+// the same contract as every other tool call in this script: a question that
+// could not be answered is reported with the tool's own words and its exit
+// code, and is never rendered as "there is nothing to back up".
+//
+// This is the sentinel's own plumbing failing, which is the exact class of
+// event REQ-003 exists for. The branch used to send `SHOW DATABASES`'s stderr
+// to /dev/null and consult only whether the resulting list came back empty, so
+// a refused connection printed `backup: no databases found, skipping` and
+// exited 0 — byte-identical to a healthy server with no user databases, and
+// silent. The federation deploys this order in verify mode with no
+// GC_BACKUP_DATABASES set, so auto-discovery is the live path: the one
+// component whose job is to say backups have gone stale went quiet during
+// precisely the outage that makes them go stale.
+//
+// The fixture runs the DEFAULT (sync) mode deliberately. Discovery sits ahead
+// of the mode split, so either mode exercises the same branch — but only in
+// sync mode is assertBackupWroteNothing a claim about this early exit rather
+// than about verify mode declining to write anyway.
+//
+// The assertions on the delivered body are load-bearing beyond their own
+// claim. tool_failure() used to be defined 54 lines BELOW this call site;
+// calling it from here found no such command, and because the call sits inside
+// a command substitution `set -e` did not fire — the script carried on, exited
+// 0, and escalated a body with dolt's exit code and stderr silently dropped,
+// reproducing REQ-003's defect inside REQ-003's own fix. Nothing but an
+// assertion on what was actually delivered catches that.
+func TestBackupScriptReportsDatabaseDiscoveryFailure(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "fe", "hq")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	const doltStderr = "dial tcp 127.0.0.1:3307: connect: connection refused"
+	doltLogPath := writeDiscoveryFailureFakeDolt(t, binDir, "2.2.1", doltStderr, 1)
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("a discovery failure is could-not-look, which exits 2; got err=%v:\n%s", err, out)
+	}
+	// The false green this test exists to forbid. Both databases are present on
+	// disk and the script did not get to look at either one.
+	if strings.Contains(out, "no databases found") {
+		t.Fatalf("a failed discovery must not render as an empty fleet:\n%s", out)
+	}
+	if !strings.Contains(out, "could not check: database discovery failed") {
+		t.Fatalf("the summary must name the probe that failed:\n%s", out)
+	}
+	gcLog := backupEscalation(t, gcLogPath)
+	if !strings.Contains(gcLog, "Dolt backup: could not enumerate databases [HIGH]") {
+		t.Fatalf("the escalation must name the failure:\n%s", gcLog)
+	}
+	// REQ-003: the alert carries dolt's own words and its exit code, or the
+	// operator cannot tell a refused socket from a bad password.
+	for _, want := range []string{"SHOW DATABASES", doltStderr, "(exit 1)", "no database was checked"} {
+		if !strings.Contains(gcLog, want) {
+			t.Fatalf("the escalation body must carry %q:\n%s", want, gcLog)
+		}
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptReportsEmptyFleetWithoutEscalating is the positive control
+// for the test above, and it exists so the two can never collapse back into
+// each other under a later edit. A server that is up and genuinely has no user
+// databases is not a failure: it prints the skip line, exits 0, and pages
+// nobody.
+//
+// Before this pair, the string `no databases found` appeared exactly once in
+// this file — inside the allowlist entry that justified discarding the probe's
+// stderr — and was asserted by no test at all. The message the allowlist cited
+// as its own justification was the one message nothing checked.
+func TestBackupScriptReportsEmptyFleetWithoutEscalating(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t)
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", nil)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	if !strings.Contains(out, "backup: no databases found, skipping") {
+		t.Fatalf("an empty fleet is reported and skipped:\n%s", out)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+		t.Fatalf("nothing is wrong here; an empty fleet pages nobody, gc log:\n%s", gcLog)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptReportsListedDatabasesAbsentFromDataDir covers the third
+// state this branch used to conflate with the other two, and that neither
+// review lane found: the server answers and names databases, and not one of
+// them has a .dolt directory under $DOLT_DATA_DIR.
+//
+// That is a data-dir/server mismatch, not an empty fleet. runtime.sh resolves
+// DOLT_DATA_DIR through its own fallback chain while the port is resolved from
+// state files under DOLT_STATE_DIR, which is independent of it — so the probe
+// can succeed against a server whose data dir is not the one this loop tests.
+// The fixture holds a database the server did not name, which is the honest
+// shape of the mismatch: the directory is populated, just not with these.
+//
+// Nothing was checked and the fleet is not empty, so this is could-not-look.
+func TestBackupScriptReportsListedDatabasesAbsentFromDataDir(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "other")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{Name: "fe"}, {Name: "hq"}})
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("a data-dir mismatch is could-not-look, which exits 2; got err=%v:\n%s", err, out)
+	}
+	if strings.Contains(out, "no databases found") {
+		t.Fatalf("dolt named two databases; this is not an empty fleet:\n%s", out)
+	}
+	if !strings.Contains(out, "could not check: no listed database present under "+dataDir) {
+		t.Fatalf("the summary must name the data dir that holds none of them:\n%s", out)
+	}
+	gcLog := backupEscalation(t, gcLogPath)
+	if !strings.Contains(gcLog, "Dolt backup: no listed database is present in the data dir [HIGH]") {
+		t.Fatalf("the escalation must name the mismatch:\n%s", gcLog)
+	}
+	// The operator needs both halves to act: what dolt said it had, and where
+	// the script looked for it.
+	for _, want := range []string{"dolt listed: fe hq — none has", dataDir, "No database was checked"} {
+		if !strings.Contains(gcLog, want) {
+			t.Fatalf("the escalation body must carry %q:\n%s", want, gcLog)
+		}
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
 // TestBackupScriptReportsListTimeoutAsCouldNotCheckInVerifyMode proves REQ-001
 // and REQ-005 in the mode the federation actually runs: a bound that fired is
 // `could not check`, it is counted as could-not-check and never as verified,
@@ -6736,7 +6898,6 @@ var backupSilencedStderrAllowlist = []struct {
 	why      string
 }{
 	{`dolt version 2>/dev/null`, "version preflight: an unparseable version is handled by the floor check below it"},
-	{`"SHOW DATABASES" 2>/dev/null`, "discovery: an empty list is reported as `no databases found, skipping`"},
 	{`cat "$BACKUP_LOCK_DIR/pid" 2>/dev/null`, "lock helper: an unreadable pid file means `assume the holder is alive`"},
 	{`kill -0 "$lock_holder_pid" 2>/dev/null`, "lock helper: the signal probe's failure IS the answer (holder gone)"},
 	{`mkdir "$BACKUP_LOCK_DIR" 2>/dev/null`, "lock helper: the mkdir race is the lock; losing it is the expected path"},
@@ -6746,7 +6907,7 @@ var backupSilencedStderrAllowlist = []struct {
 // TestBackupScriptHasNoSilencedFailurePath proves REQ-003 structurally, which is
 // the only way it can be proved: no fixture can show that a redirect a future
 // edit has not added yet is absent. The script's text is read, and every
-// `2>/dev/null` in it must be one of the six probe sites above.
+// `2>/dev/null` in it must be one of the five probe sites above.
 //
 // Scope is mol-dog-backup.sh, the script whose silenced failure path caused the
 // bug. backup_dest.sh carries four more, all on `stat`/`date` capability probes

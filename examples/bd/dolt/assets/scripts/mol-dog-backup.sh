@@ -94,8 +94,11 @@
 #
 # Exit codes: 0 whether or not there are findings (the escalation is the
 # signal; a non-zero exec exit would make the controller raise a second,
-# generic alarm), 1 when dolt is below the backup floor, 2 for an invalid
-# GC_BACKUP_MODE.
+# generic alarm), 1 when dolt is below the backup floor, 2 for could-not-look —
+# an invalid GC_BACKUP_MODE, a database-discovery query that failed, or a
+# server that named databases the data dir does not hold. Findings are what
+# this script went looking for and 0 is deliberate for them; could-not-look
+# means it never got to look at all, and the two must not share an exit code.
 set -euo pipefail
 
 # `CDPATH= cd` is deliberate: it clears CDPATH for that one cd so a user's
@@ -326,6 +329,26 @@ fi
 
 acquire_backup_lock
 
+# tool_failure renders "<what>: <last stderr line> (exit N)", or the timeout
+# form "<what> timeout (Ns)[: <stderr>]" for 124/137. The stderr is quoted on
+# the timeout form too, so a run_bounded that returned 124 because no
+# bounding mechanism exists is distinguishable from a real timeout.
+tool_failure() {
+    local what="$1" rc="$2" err="$3" bound="$4"
+    case "$rc" in
+        124|137)
+            if [ -n "$err" ]; then
+                printf '%s timeout (%ss): %s' "$what" "$bound" "$err"
+            else
+                printf '%s timeout (%ss)' "$what" "$bound"
+            fi
+            ;;
+        *)
+            printf '%s: %s (exit %s)' "$what" "${err:-<no stderr>}" "$rc"
+            ;;
+    esac
+}
+
 # --- Step 2: Discover databases ---
 
 # If GC_BACKUP_DATABASES is set, use it; otherwise auto-discover every user
@@ -334,11 +357,43 @@ acquire_backup_lock
 # how production DBs ended up unrecoverable after journal corruption (#3176:
 # beads_hq had no named remote, so it was never synced). DBs without any
 # destination get one auto-configured below, in sync mode.
+#
+# Auto-discovery has three outcomes and they used to render identically. The
+# query's stderr went to /dev/null and `|| true` discarded its exit status, so
+# the only thing consulted afterwards was whether the list came back empty: a
+# refused socket printed `no databases found, skipping` and exited 0, byte for
+# byte what a healthy server with nothing to back up prints. This order IS the
+# federation's backup sentinel, and the outage that takes the Dolt server down
+# is the same one that stops fed_sync writing artifacts — so the watchman went
+# silent at exactly the moment the thing it watches became unreachable, every
+# six hours, indefinitely. The three are separated below: a query that failed
+# is could-not-look, a server naming databases the data dir does not hold is
+# could-not-look, and only a genuinely empty fleet is the benign skip.
 if [ -n "${GC_BACKUP_DATABASES:-}" ]; then
     DATABASES=$(echo "$GC_BACKUP_DATABASES" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
 else
-    ALL_DBS=$(dolt_sql -r csv -q "SHOW DATABASES" 2>/dev/null | tail -n +2 | \
-        grep -viE "$SYSTEM_DBS" || true)
+    if err_file="$(new_capture_file)"; then
+        rc=0
+        ALL_DBS="$(dolt_sql -r csv -q "SHOW DATABASES" 2>"$err_file")" || rc=$?
+        db_err="$(last_err "$err_file")"
+        rm -f "$err_file"
+    else
+        rc=1
+        db_err="mktemp failed, cannot capture dolt stderr (check \$TMPDIR)"
+    fi
+    if [ "$rc" -ne 0 ]; then
+        # 30 is dolt_sql's own run_bounded bound, so a 124 renders against the
+        # bound that actually fired rather than against a number invented here.
+        send_escalation \
+            "Dolt backup: could not enumerate databases [HIGH]" \
+            "$(tool_failure "SHOW DATABASES" "$rc" "$db_err" 30) — no database was checked this run." \
+            || true
+        SUMMARY="backup — could not check: database discovery failed"
+        dolt_notify_done "$SUMMARY"
+        echo "backup: $SUMMARY" >&2
+        exit 2
+    fi
+    ALL_DBS="$(printf '%s\n' "$ALL_DBS" | tail -n +2 | grep -viE "$SYSTEM_DBS" || true)"
     DATABASES=""
     for db in $ALL_DBS; do
         if [ -d "$DOLT_DATA_DIR/$db/.dolt" ]; then
@@ -346,9 +401,25 @@ else
         fi
     done
     DATABASES=$(echo "$DATABASES" | tr ' ' '\n' | grep -v '^$' || true)
+    if [ -z "$DATABASES" ] && [ -n "$ALL_DBS" ]; then
+        send_escalation \
+            "Dolt backup: no listed database is present in the data dir [HIGH]" \
+            "dolt listed: $(printf '%s' "$ALL_DBS" | tr '\n' ' ') — none has a .dolt directory under $DOLT_DATA_DIR. No database was checked this run." \
+            || true
+        SUMMARY="backup — could not check: no listed database present under $DOLT_DATA_DIR"
+        dolt_notify_done "$SUMMARY"
+        echo "backup: $SUMMARY" >&2
+        exit 2
+    fi
 fi
 
+# The genuinely empty fleet: the server answered, named nothing this script is
+# responsible for, and that is the whole truth. It gets the completion signal
+# every other terminal path in this script sends — this was the only one that
+# skipped it.
 if [ -z "$DATABASES" ]; then
+    SUMMARY="backup — no user databases found"
+    dolt_notify_done "$SUMMARY"
     echo "backup: no databases found, skipping"
     exit 0
 fi
@@ -385,26 +456,6 @@ artifact_age_clause() {
     age=$((now - mtime))
     [ "$age" -ge 0 ] || age=0
     printf '(%s)' "$(backup_fmt_age "$age")"
-}
-
-# tool_failure renders "<what>: <last stderr line> (exit N)", or the timeout
-# form "<what> timeout (Ns)[: <stderr>]" for 124/137. The stderr is quoted on
-# the timeout form too, so a run_bounded that returned 124 because no
-# bounding mechanism exists is distinguishable from a real timeout.
-tool_failure() {
-    local what="$1" rc="$2" err="$3" bound="$4"
-    case "$rc" in
-        124|137)
-            if [ -n "$err" ]; then
-                printf '%s timeout (%ss): %s' "$what" "$bound" "$err"
-            else
-                printf '%s timeout (%ss)' "$what" "$bound"
-            fi
-            ;;
-        *)
-            printf '%s: %s (exit %s)' "$what" "${err:-<no stderr>}" "$rc"
-            ;;
-    esac
 }
 
 for db in $DATABASES; do
