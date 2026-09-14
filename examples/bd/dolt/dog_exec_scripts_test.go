@@ -1,10 +1,12 @@
 package dolt_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,15 @@ func runDogScriptCommand(t *testing.T, scriptName, binDir, cityPath, dataDir str
 		"GC_BACKUP_DATABASES",
 		"GC_BACKUP_OFFSITE_PATH",
 		"GC_BACKUP_ARTIFACT_DIR",
+		"GC_BACKUP_MODE",
+		"GC_BACKUP_STALE_SECS",
+		"GC_BACKUP_STALE_HINT",
+		"GC_BACKUP_LIST_TIMEOUT_SECS",
+		"GC_BACKUP_ADD_TIMEOUT_SECS",
+		"GC_BACKUP_SYNC_TIMEOUT_SECS",
+		"GC_BACKUP_CONTENT_TIMEOUT_SECS",
+		"GC_DOLT_BACKUP_LOCK_FILE",
+		"GC_DOLT_BACKUP_LOCK_WAIT_SECONDS",
 		"GC_PHANTOM_DATA_DIR",
 		"GC_ESCALATE_SCRIPT",
 		"GC_ESCALATE_SEARCH_PACKS",
@@ -76,6 +87,7 @@ func TestDogExecScriptsAreBashSyntaxValid(t *testing.T) {
 	root := repoRoot(t)
 	for _, scriptName := range []string{
 		"_notify.sh",
+		"backup_dest.sh",
 		"mol-dog-backup.sh",
 		"mol-dog-doctor.sh",
 		"mol-dog-phantom-db.sh",
@@ -4716,6 +4728,12 @@ func TestPhantomDBScriptEscalatesAndPreservesAllDatabases(t *testing.T) {
 	}
 }
 
+// writeBackupFakeDolt fakes a server where every database has a `<db>-backup`
+// destination at file:///backups/<db>. `dolt backup` prints names only and
+// `dolt backup -v` prints `name url {}` — the live 2.2.1 server's third
+// field — so the script's field-1-and-2 parser sees what the real tool
+// prints. `backup sync` and `backup sync-url` exit with syncExit. No manifest
+// is ever written: freshness fixtures create manifests themselves.
 func writeBackupFakeDolt(t *testing.T, binDir, version string, syncExit int, sqlDatabases ...string) string {
 	t.Helper()
 	logPath := filepath.Join(binDir, "dolt.log")
@@ -4735,14 +4753,19 @@ case "$*" in
 esac
 if [ "${1:-}" = "backup" ] && [ "$#" -eq 1 ]; then
   db="$(basename "$PWD")"
-  printf '%%s-backup file:///backups/%%s\n' "$db" "$db"
+  printf '%%s-backup\n' "$db"
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "backup -v" ] && [ "$#" -eq 2 ]; then
+  db="$(basename "$PWD")"
+  printf '%%s-backup file:///backups/%%s {}\n' "$db" "$db"
   exit 0
 fi
 if [ "${1:-}" = "remote" ]; then
   printf 'remote should not be used\n' >&2
   exit 64
 fi
-if [ "${1:-} ${2:-}" = "backup sync" ]; then
+if [ "${1:-} ${2:-}" = "backup sync" ] || [ "${1:-} ${2:-}" = "backup sync-url" ]; then
   exit %d
 fi
 exit 0
@@ -4848,12 +4871,30 @@ func TestBackupScriptDiscoversNamedBackupsAndSyncsArtifactsOffsite(t *testing.T)
 	}
 	binDir := t.TempDir()
 	_ = writeDogFakeGC(t, binDir)
-	doltLogPath := writeBackupFakeDolt(t, binDir, "2.1.0", 0, "prod")
+	// prod's only destination is named prod-backup and sits at a URL that is
+	// NOT file://<artifactDir>/prod, so it is resolved by the legacy-name
+	// rule — the path an upstream operator's own named backup takes.
+	legacyURL := "file://" + filepath.ToSlash(filepath.Join(artifactDir, "legacy-prod"))
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:  "prod",
+		Dests: []fakeDoltDest{{Name: "prod-backup", URL: legacyURL}},
+	}})
+	artifactTime := time.Now().Add(-20 * time.Minute)
+	writeBackupManifest(t, artifactDir, "legacy-prod", artifactTime)
 	rsyncLogPath := writeBackupFakeRsync(t, binDir)
 
 	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_OFFSITE_PATH="+offsiteDir)
 	if !strings.Contains(out, "synced: 1/1") || !strings.Contains(out, "offsite: ok") {
 		t.Fatalf("unexpected backup summary:\n%s", out)
+	}
+	// The entry names the destination it used and when a backup last
+	// completed there — read from the manifest on disk, not inferred from the
+	// script's own sync having run.
+	if !strings.Contains(out, "prod: synced — prod-backup -> "+legacyURL) {
+		t.Fatalf("entry should name the resolved destination:\n%s", out)
+	}
+	if !strings.Contains(out, artifactTime.Format("2006-01-02T15:04:05")) {
+		t.Fatalf("entry should carry the artifact's own timestamp %s:\n%s", artifactTime.Format(time.RFC3339), out)
 	}
 	doltLog, err := os.ReadFile(doltLogPath)
 	if err != nil {
@@ -4916,10 +4957,15 @@ case "$*" in
 esac
 if [ "${1:-}" = "backup" ] && [ "$#" -eq 1 ]; then
   db="$(basename "$PWD")"
-  printf '%%s-backup file:///backups/%%s\n' "$db" "$db"
+  printf '%%s-backup\n' "$db"
   exit 0
 fi
-if [ "${1:-} ${2:-}" = "backup sync" ]; then
+if [ "${1:-} ${2:-}" = "backup -v" ] && [ "$#" -eq 2 ]; then
+  db="$(basename "$PWD")"
+  printf '%%s-backup file:///backups/%%s {}\n' "$db" "$db"
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "backup sync" ] || [ "${1:-} ${2:-}" = "backup sync-url" ]; then
   : > %s
   while [ ! -f %s ]; do sleep 0.05; done
   exit 0
@@ -5029,7 +5075,14 @@ func TestBackupScriptCountsFailedDatabasesByDatabase(t *testing.T) {
 	}
 	binDir := t.TempDir()
 	gcLogPath := writeDogFakeGC(t, binDir)
-	_ = writeBackupFakeDolt(t, binDir, "2.1.0", 1)
+	// prod has a destination; the sync against it fails with dolt's own
+	// message, and no manifest exists at any destination.
+	_ = writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:       "prod",
+		Dests:      []fakeDoltDest{{Name: "prod-backup", URL: "file:///backups/prod"}},
+		SyncStderr: "backup 'prod-backup' not found",
+		SyncExit:   1,
+	}})
 
 	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
 	if !strings.Contains(out, "synced: 0/1") {
@@ -5039,17 +5092,32 @@ func TestBackupScriptCountsFailedDatabasesByDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gc log: %v", err)
 	}
-	if !strings.Contains(string(gcLog), "Dolt backup: 1/1 databases failed to sync") {
-		t.Fatalf("failure mail should count databases, log:\n%s", gcLog)
+	// A sync that failed on a database with no manifest anywhere is a database
+	// that has never been backed up: `missing`, and [HIGH] because of it. The
+	// body quotes the tool's exit code — the fake prints nothing on stderr,
+	// and the entry says so rather than pretending there was a message.
+	if !strings.Contains(string(gcLog), "mail send human -s Dolt backup: 1/1 databases need attention — 0 stale, 1 missing, 0 could not check [HIGH]") {
+		t.Fatalf("failure mail should count verdicts under the generic default recipient, log:\n%s", gcLog)
 	}
-	if !strings.Contains(string(gcLog), "mail send human -s Dolt backup: 1/1 databases failed to sync [MEDIUM]") {
-		t.Fatalf("backup failure escalation must use the generic default recipient:\n%s", gcLog)
+	if strings.Contains(string(gcLog), "databases failed to sync") {
+		t.Fatalf("the plumbing-count subject must be gone, log:\n%s", gcLog)
+	}
+	for _, want := range []string{"prod: missing —", "sync failed: backup sync prod-backup: backup 'prod-backup' not found (exit 1)"} {
+		if !strings.Contains(string(gcLog), want) {
+			t.Fatalf("failure mail body missing %q, log:\n%s", want, gcLog)
+		}
+	}
+	if !strings.Contains(out, "prod: missing —") || !strings.Contains(out, "backup 'prod-backup' not found (exit 1)") {
+		t.Fatalf("run output must carry the per-database entry with dolt's own words and exit code:\n%s", out)
 	}
 }
 
 // writeAutoConfigureFakeDolt fakes a server with prod + archive where only
-// prod has a prod-backup remote. `backup add` exits with addExit so tests can
-// exercise both the auto-configure happy path and the failure accounting.
+// prod has a prod-backup remote (listed by `backup` as a name and by
+// `backup -v` as `prod-backup file:///backups/prod {}`). `backup add` exits
+// with addExit and prints nothing on stderr, so tests can exercise both the
+// auto-configure happy path and the failure accounting for an add that dolt
+// refuses without a message.
 func writeAutoConfigureFakeDolt(t *testing.T, binDir string, addExit int) string {
 	t.Helper()
 	logPath := filepath.Join(binDir, "dolt.log")
@@ -5068,14 +5136,20 @@ case "$*" in
 esac
 if [ "${1:-}" = "backup" ] && [ "$#" -eq 1 ]; then
   if [ "$(basename "$PWD")" = "prod" ]; then
-    printf 'prod-backup file:///backups/prod\n'
+    printf 'prod-backup\n'
+  fi
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "backup -v" ] && [ "$#" -eq 2 ]; then
+  if [ "$(basename "$PWD")" = "prod" ]; then
+    printf 'prod-backup file:///backups/prod {}\n'
   fi
   exit 0
 fi
 if [ "${1:-} ${2:-}" = "backup add" ]; then
   exit %d
 fi
-if [ "${1:-} ${2:-}" = "backup sync" ]; then
+if [ "${1:-} ${2:-}" = "backup sync" ] || [ "${1:-} ${2:-}" = "backup sync-url" ]; then
   exit 0
 fi
 exit 0
@@ -5162,11 +5236,1719 @@ func TestBackupScriptCountsFailedRemoteAutoConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gc log: %v", err)
 	}
-	if !strings.Contains(string(gcLog), "1/2 databases failed to sync") {
-		t.Fatalf("failure mail should count the unconfigurable database, log:\n%s", gcLog)
+	// archive has no destination, no manifest anywhere, and its `backup add`
+	// was refused: never backed up, so `missing`, with the add quoted verbatim
+	// (exit code included) rather than the old `archive(backup add failed)`.
+	if !strings.Contains(string(gcLog), "mail send human -s Dolt backup: 1/2 databases need attention — 0 stale, 1 missing, 0 could not check [HIGH]") {
+		t.Fatalf("failure mail should count the unconfigurable database as missing, log:\n%s", gcLog)
 	}
-	if !strings.Contains(string(gcLog), "archive(backup add failed)") {
-		t.Fatalf("failure mail should name the failed auto-configuration, log:\n%s", gcLog)
+	for _, want := range []string{
+		"archive: missing —",
+		"backup add archive-backup",
+		"(exit 1)",
+	} {
+		if !strings.Contains(string(gcLog), want) {
+			t.Fatalf("failure mail body missing %q, log:\n%s", want, gcLog)
+		}
+	}
+	if strings.Contains(string(gcLog), "backup add failed") || strings.Contains(out, "backup add failed") {
+		t.Fatalf("the old plumbing verdict must not appear anywhere:\n%s\n%s", gcLog, out)
+	}
+	if !strings.Contains(out, "prod: synced —") {
+		t.Fatalf("prod's entry should be synced:\n%s", out)
+	}
+}
+
+// fakeDoltDest is one row of a fake `dolt backup -v` listing.
+type fakeDoltDest struct {
+	Name string
+	URL  string
+}
+
+// fakeDoltDB configures how writeFreshnessFakeDolt answers for one database.
+// Every field is optional; the zero value is a database with no destinations
+// whose every tool call succeeds silently and whose dolt_log is empty.
+//
+//	Name        the database (SHOW DATABASES row; `basename $PWD` for backup
+//	            subcommands; the `FROM <name>.dolt_log` of the content query)
+//	Dests       rows printed by `dolt backup -v` in this db's directory, as
+//	            `name url {}` (the live 2.2.1 server's third field); the
+//	            no-flag form prints the names only, like the real tool
+//	ListSleep   `dolt backup [-v]` sleeps this long before answering — pair
+//	            with GC_BACKUP_LIST_TIMEOUT_SECS=1 to drive a list timeout
+//	ListExit    when non-zero, `dolt backup [-v]` prints nothing and exits
+//	            with it (137 mimics `timeout --kill-after`'s SIGKILL; any
+//	            other code is a tool failure); ListStderr is printed first
+//	ListStderr  stderr text for a failing list
+//	AddStderr   stderr text printed by `dolt backup add`, which exits AddExit
+//	            (e.g. "address conflict with a remote: 'default' -> <url>"
+//	            with AddExit 1, or "backup 'x-backup' already exists")
+//	AddExit
+//	SyncStderr  stderr text printed by `dolt backup sync` and `sync-url`,
+//	            which exit SyncExit (e.g. "backup 'x-backup' not found")
+//	SyncExit
+//	SyncSleep   `dolt backup sync` / `sync-url` sleeps this long first —
+//	            pair with GC_BACKUP_SYNC_TIMEOUT_SECS=1 for a sync timeout
+//	HeadEpoch   the HEAD commit epoch returned by the content query
+//	            (`SELECT TIMESTAMPDIFF(...) FROM <db>.dolt_log LIMIT 1`, CSV
+//	            header + one row); 0 prints the header only — an empty log
+//	HeadSleep   the content query sleeps this long first — pair with
+//	            GC_BACKUP_CONTENT_TIMEOUT_SECS=1 for a content timeout
+//	SQLStderr   when SQLExit is non-zero the content query prints this on
+//	            stderr and exits with it instead of answering
+//	SQLExit
+//
+// The fake never writes a manifest or any other file. Tests create
+// `<path>/manifest` under a destination's file:// path themselves and set
+// its mtime with os.Chtimes (the doctor tests' pattern), so the artifact age
+// the script measures is exactly what the test chose.
+type fakeDoltDB struct {
+	Name       string
+	Dests      []fakeDoltDest
+	ListSleep  time.Duration
+	ListExit   int
+	ListStderr string
+	AddStderr  string
+	AddExit    int
+	SyncStderr string
+	SyncExit   int
+	SyncSleep  time.Duration
+	HeadEpoch  int64
+	HeadSleep  time.Duration
+	SQLStderr  string
+	SQLExit    int
+}
+
+// writeFreshnessFakeDolt installs a fake dolt that reports version, answers
+// SHOW DATABASES with every db in order, and answers `backup`, `backup -v`,
+// `backup add`, `backup sync`, `backup sync-url` and the dolt_log content
+// query per database as configured in dbs. It returns the path of the call
+// log: one `dolt <args>` line per invocation, which tests grep to assert what
+// was and was not run (a verify-mode run must log no `backup add`, `backup
+// sync` or `backup sync-url`; a sync-mode run logs exactly the syncs it
+// made). A database directory that the script visits but that is absent from
+// dbs behaves as the zero fakeDoltDB.
+func writeFreshnessFakeDolt(t *testing.T, binDir, version string, dbs []fakeDoltDB) string {
+	t.Helper()
+	logPath := filepath.Join(binDir, "dolt.log")
+	names := make([]string, 0, len(dbs))
+	for _, db := range dbs {
+		names = append(names, db.Name)
+	}
+	secs := func(d time.Duration) string {
+		return strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
+	}
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env bash\nset -euo pipefail\n")
+	b.WriteString("printf 'dolt %s\\n' \"$*\" >> " + shellQuote(logPath) + "\n")
+	b.WriteString("if [ \"${1:-}\" = version ]; then printf 'dolt version %s\\n' " + shellQuote(version) + "; exit 0; fi\n")
+	b.WriteString("case \"$*\" in *\"SHOW DATABASES\"*) printf 'Database\\n'")
+	for _, name := range names {
+		b.WriteString("; printf '%s\\n' " + shellQuote(name))
+	}
+	b.WriteString("; exit 0;; esac\n")
+	// Which database is this call about? backup subcommands run in the db
+	// directory; the content query names the db in its FROM clause.
+	b.WriteString("db=\"\"\n")
+	b.WriteString("if [ \"${1:-}\" = backup ]; then db=\"$(basename \"$PWD\")\"; else\n")
+	for _, name := range names {
+		b.WriteString("  case \"$*\" in *'`" + name + "`.dolt_log'*) db=" + shellQuote(name) + ";; esac\n")
+	}
+	b.WriteString("fi\n")
+	// Defaults, then the per-database overrides.
+	b.WriteString("LIST_SLEEP=0; LIST_EXIT=0; LIST_STDERR=''; ADD_STDERR=''; ADD_EXIT=0; SYNC_STDERR=''; SYNC_EXIT=0; SYNC_SLEEP=0; HEAD_EPOCH=0; HEAD_SLEEP=0; SQL_STDERR=''; SQL_EXIT=0\n")
+	b.WriteString("list_rows() { :; }\n")
+	b.WriteString("case \"$db\" in\n")
+	for _, db := range dbs {
+		b.WriteString("  " + shellQuote(db.Name) + ")\n")
+		fmt.Fprintf(&b, "    LIST_SLEEP=%s; LIST_EXIT=%d; LIST_STDERR=%s; ADD_STDERR=%s; ADD_EXIT=%d; SYNC_STDERR=%s; SYNC_EXIT=%d; SYNC_SLEEP=%s; HEAD_EPOCH=%d; HEAD_SLEEP=%s; SQL_STDERR=%s; SQL_EXIT=%d\n",
+			secs(db.ListSleep), db.ListExit, shellQuote(db.ListStderr), shellQuote(db.AddStderr), db.AddExit,
+			shellQuote(db.SyncStderr), db.SyncExit, secs(db.SyncSleep), db.HeadEpoch, secs(db.HeadSleep),
+			shellQuote(db.SQLStderr), db.SQLExit)
+		// The `:` keeps the body non-empty. A database with NO destinations is
+		// a real fixture — it is the case `dolt backup add` exists for — and
+		// without this the generator emitted `list_rows() {` followed straight
+		// by `}`, which is a bash syntax error: the fake died on line 16 and
+		// every such run was misreported as `destination list failed ... (exit
+		// 2)` instead of exercising the add path.
+		b.WriteString("    list_rows() {\n      :\n")
+		for _, dest := range db.Dests {
+			b.WriteString("      if [ \"$1\" = names ]; then printf '%s\\n' " + shellQuote(dest.Name) +
+				"; else printf '%s %s {}\\n' " + shellQuote(dest.Name) + " " + shellQuote(dest.URL) + "; fi\n")
+		}
+		b.WriteString("    }\n    ;;\n")
+	}
+	b.WriteString("esac\n")
+	b.WriteString(`if [ "${1:-}" = backup ] && { [ "$#" -eq 1 ] || { [ "$#" -eq 2 ] && [ "$2" = -v ]; }; }; then
+  [ "$LIST_SLEEP" = 0 ] || sleep "$LIST_SLEEP"
+  if [ "$LIST_EXIT" -ne 0 ]; then
+    [ -z "$LIST_STDERR" ] || printf '%s\n' "$LIST_STDERR" >&2
+    exit "$LIST_EXIT"
+  fi
+  if [ "$#" -eq 1 ]; then list_rows names; else list_rows verbose; fi
+  exit 0
+fi
+case "${1:-} ${2:-}" in
+  "backup add")
+    [ -z "$ADD_STDERR" ] || printf '%s\n' "$ADD_STDERR" >&2
+    exit "$ADD_EXIT"
+    ;;
+  "backup sync"|"backup sync-url")
+    [ "$SYNC_SLEEP" = 0 ] || sleep "$SYNC_SLEEP"
+    [ -z "$SYNC_STDERR" ] || printf '%s\n' "$SYNC_STDERR" >&2
+    exit "$SYNC_EXIT"
+    ;;
+esac
+case "$*" in
+  *dolt_log*)
+    [ "$HEAD_SLEEP" = 0 ] || sleep "$HEAD_SLEEP"
+    if [ "$SQL_EXIT" -ne 0 ]; then
+      [ -z "$SQL_STDERR" ] || printf '%s\n' "$SQL_STDERR" >&2
+      exit "$SQL_EXIT"
+    fi
+    printf 'head_epoch\n'
+    [ "$HEAD_EPOCH" = 0 ] || printf '%s\n' "$HEAD_EPOCH"
+    exit 0
+    ;;
+esac
+exit 0
+`)
+	writeExecutable(t, filepath.Join(binDir, "dolt"), b.String())
+	return logPath
+}
+
+// writeBackupManifest creates <artifactDir>/<name>/manifest with the given
+// mtime, the way a completed `dolt backup sync` leaves one, so a freshness
+// fixture controls the artifact age the script measures.
+func writeBackupManifest(t *testing.T, artifactDir, name string, mtime time.Time) string {
+	t.Helper()
+	dir := filepath.Join(artifactDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
+	path := filepath.Join(dir, "manifest")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatalf("chtimes %s: %v", path, err)
+	}
+	return path
+}
+
+// writeBackupFakeRsyncFailing installs an rsync that logs its arguments, then
+// prints stderr and exits with code — the offsite leg's failure path. The
+// happy-path fake (writeBackupFakeRsync) always exits 0, and a test that can
+// only ever see success cannot prove the failure is reported at all.
+func writeBackupFakeRsyncFailing(t *testing.T, binDir, stderr string, exitCode int) string {
+	t.Helper()
+	logPath := filepath.Join(binDir, "rsync.log")
+	writeExecutable(t, filepath.Join(binDir, "rsync"), fmt.Sprintf(`#!/bin/sh
+printf 'rsync %s\n' "$*" >> %s
+printf '%s\n' %s >&2
+exit %d
+`, "%s", shellQuote(logPath), "%s", shellQuote(stderr), exitCode))
+	return logPath
+}
+
+// readOptionalLog returns a fake's call log, or "" when the fake was never
+// invoked and so never created it. A missing log is a real, expected outcome
+// for these fixtures — `gc` is only reached through an escalation, and a run
+// that refuses its mode never reaches `dolt` at all — so it must be
+// distinguishable from a read error rather than crashing the assertion.
+func readOptionalLog(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ""
+		}
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+// backupEntryLine returns the single per-database entry line the backup script
+// printed for db. Tests compare whole entries (not fragments) where the
+// contract is that two inputs are classified identically.
+func backupEntryLine(t *testing.T, out, db string) string {
+	t.Helper()
+	var found string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, db+": ") {
+			if found != "" {
+				t.Fatalf("more than one entry for %q:\n%s", db, out)
+			}
+			found = line
+		}
+	}
+	if found == "" {
+		t.Fatalf("no entry for %q:\n%s", db, out)
+	}
+	return found
+}
+
+// backupExpectedURL is the destination URL the script derives for db from the
+// artifact dir: `file://$GC_BACKUP_ARTIFACT_DIR/<db>`. Built with ToSlash so
+// the Go-side fixture and the script agree on separators.
+func backupExpectedURL(artifactDir, db string) string {
+	return "file://" + filepath.ToSlash(filepath.Join(artifactDir, db))
+}
+
+// newBackupFixture creates the city layout every freshness fixture needs — the
+// data dir with one .dolt directory per database, and the artifact dir — and
+// returns (cityPath, dataDir, artifactDir, binDir). Each call takes its own
+// t.TempDir(): these tests run under the package's parallel runner, and a
+// shared path would let one fixture's manifests and call logs decide another's
+// verdict.
+func newBackupFixture(t *testing.T, dbs ...string) (string, string, string, string) {
+	t.Helper()
+	cityPath := t.TempDir()
+	dataDir := filepath.Join(cityPath, "dolt-data")
+	artifactDir := filepath.Join(cityPath, ".dolt-backup")
+	paths := []string{artifactDir}
+	for _, db := range dbs {
+		paths = append(paths, filepath.Join(dataDir, db, ".dolt"))
+	}
+	for _, path := range paths {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+	return cityPath, dataDir, artifactDir, t.TempDir()
+}
+
+// backupISO renders an instant the way backup_fmt_epoch does: ISO-8601 to the
+// second with a numeric zone and a colon in it. The shell builds that string
+// from `date +%Y-%m-%dT%H:%M:%S%z` and inserts the colon by hand; Go's
+// `-07:00` layout emits the same bytes, UTC included (where both print
+// `+00:00`, not `Z`). Tests assert the exact timestamp rather than its shape:
+// REQ-004 is about the operator being told WHEN the artifact landed, and a
+// pattern match would pass on a plausible-looking wrong time.
+func backupISO(ts time.Time) string {
+	return ts.Format("2006-01-02T15:04:05-07:00")
+}
+
+// backupManifestAt writes a manifest whose mtime is exactly age in the past and
+// returns the timestamp the script must print for it.
+//
+// The truncation to a whole second is not cosmetic. The script reads the mtime
+// through `stat -c %Y`, which yields whole seconds, so a Go-side expectation
+// built from a time carrying nanoseconds would render a second away from the
+// script's whenever the fraction fell the other way — a test that fails on a
+// clock instead of on a defect. Ages are also chosen off the minute boundary
+// (20m30s, not 20m) so that the seconds the fixture spends between Chtimes and
+// the script's own `date +%s` cannot move the age into the next bucket.
+func backupManifestAt(t *testing.T, artifactDir, name string, age time.Duration) string {
+	t.Helper()
+	mtime := time.Now().Add(-age).Truncate(time.Second)
+	writeBackupManifest(t, artifactDir, name, mtime)
+	return backupISO(mtime)
+}
+
+// backupSummaryLine returns the run's single `backup: backup — …` line, the
+// one an operator sees in the order history. Tests compare it whole: the
+// counts in it are five separate claims (synced, verified, stale, missing,
+// could-not-check) and a substring assertion on one of them would pass a run
+// that moved a database into the wrong bucket beside it.
+func backupSummaryLine(t *testing.T, out string) string {
+	t.Helper()
+	const prefix = "backup: backup — "
+	var found string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			if found != "" {
+				t.Fatalf("more than one summary line:\n%s", out)
+			}
+			found = line
+		}
+	}
+	if found == "" {
+		t.Fatalf("no summary line:\n%s", out)
+	}
+	return found
+}
+
+// backupEscalation returns the one escalation the run sent, failing when the
+// count is not exactly one — "escalates" and "escalates once" are different
+// claims, and REQ-005 is about the second.
+//
+// The whole `gc` log is returned rather than a single text line because the
+// escalation body is multi-line and the fake logs an invocation as `gc $*`.
+// These fixtures make no other `gc` call: dolt_notify_done nudges only when
+// GC_MAINTENANCE_DONE_TARGET is set, and runDogScriptCommand does not set it.
+func backupEscalation(t *testing.T, gcLogPath string) string {
+	t.Helper()
+	log := readOptionalLog(t, gcLogPath)
+	if got := strings.Count(log, "gc mail send "); got != 1 {
+		t.Fatalf("want exactly one escalation, got %d, gc log:\n%s", got, log)
+	}
+	return log
+}
+
+// assertBackupWroteNothing requires that the run issued no destination write of
+// any kind. It is the REQ-008 assertion every verify-mode test makes: the
+// federation runs this order beside fed_sync, which writes .dolt-backup/<db>
+// hourly, and a second unserialized writer into the same directory is the
+// hazard that made verify mode exist. Asserted on the fake's call log, because
+// a script that reported correctly and wrote anyway would pass any assertion
+// made on its output.
+func assertBackupWroteNothing(t *testing.T, doltLogPath string) {
+	t.Helper()
+	doltLog := readOptionalLog(t, doltLogPath)
+	for _, forbidden := range []string{"backup add", "backup sync", "backup sync-url"} {
+		if strings.Contains(doltLog, forbidden) {
+			t.Fatalf("verify mode must never run %q, dolt log:\n%s", forbidden, doltLog)
+		}
+	}
+}
+
+// TestBackupScriptReportsListTimeoutAsCouldNotCheckAndStillSyncs proves
+// REQ-001: when the bounded `dolt backup -v` exceeds its bound, the database is
+// classified `could not check` with the bound quoted, it is never reported as a
+// failed backup, and the sync is still attempted — by URL, because the timeout
+// means no destination name is known. This is the exact shape of the bug: the
+// script used to turn "I could not read the destination list" into "the backup
+// failed" and escalate it.
+func TestBackupScriptReportsListTimeoutAsCouldNotCheckAndStillSyncs(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+	// prod HAS a destination at the expected URL. The list still times out, so
+	// the script cannot see it — which is why the sync must go by URL.
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:      "prod",
+		Dests:     []fakeDoltDest{{Name: "default", URL: expectedURL}},
+		ListSleep: 3 * time.Second,
+	}})
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=prod", "GC_BACKUP_LIST_TIMEOUT_SECS=1")
+
+	entry := backupEntryLine(t, out, "prod")
+	if !strings.HasPrefix(entry, "prod: could not check —") {
+		t.Fatalf("a list timeout is could-not-check, not a backup verdict:\n%s", entry)
+	}
+	if !strings.Contains(entry, "destination list timeout (1s)") {
+		t.Fatalf("entry must quote the bound that fired:\n%s", entry)
+	}
+	if !strings.Contains(entry, "sync attempted anyway") {
+		t.Fatalf("REQ-001: the sync is still attempted and the entry says so:\n%s", entry)
+	}
+	if !strings.Contains(out, "could-not-check: 1") {
+		t.Fatalf("summary must count it as could-not-check:\n%s", out)
+	}
+	// The defect's own words, in any form, anywhere in the run output.
+	for _, forbidden := range []string{"backup add failed", "add failed"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("a list timeout must never render as %q:\n%s", forbidden, out)
+		}
+	}
+	doltLog := readOptionalLog(t, doltLogPath)
+	// Asserted on the call log, not the summary: a script that reported a
+	// timeout correctly and then silently skipped the sync would pass an
+	// output-only assertion, and that is the one regression worth catching.
+	if !strings.Contains(doltLog, "backup sync-url "+expectedURL) {
+		t.Fatalf("REQ-001: the sync must still be attempted by URL, log:\n%s", doltLog)
+	}
+	if strings.Contains(doltLog, "backup add") {
+		t.Fatalf("a timed-out list knows of no missing destination; it must not add one, log:\n%s", doltLog)
+	}
+	if !strings.Contains(readOptionalLog(t, gcLogPath), "mail send") {
+		t.Fatalf("a could-not-check database is a finding and must escalate, log:\n%s", readOptionalLog(t, gcLogPath))
+	}
+}
+
+// TestBackupScriptTreatsKill137AsTimeout proves REQ-001 for the other exit code
+// a bound produces: `timeout --kill-after` returns 137 when the child ignored
+// SIGTERM and was killed. 137 must be classified exactly like 124 — so this
+// runs the same fixture under both and requires the two entry lines to be
+// identical, which no assertion on a fragment could establish.
+func TestBackupScriptTreatsKill137AsTimeout(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	_ = writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+
+	// One city, one bin dir, two runs: the entries can only differ by the exit
+	// code under test, never by a per-run temp path.
+	entries := make(map[int]string, 2)
+	for _, code := range []int{124, 137} {
+		_ = writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+			Name:     "prod",
+			ListExit: code,
+		}})
+		out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+			"GC_BACKUP_DATABASES=prod", "GC_BACKUP_LIST_TIMEOUT_SECS=9")
+		entry := backupEntryLine(t, out, "prod")
+		if !strings.HasPrefix(entry, "prod: could not check —") {
+			t.Fatalf("exit %d must be could-not-check:\n%s", code, entry)
+		}
+		if !strings.Contains(entry, "destination list timeout (9s)") {
+			t.Fatalf("exit %d must be rendered as a timeout quoting the bound:\n%s", code, entry)
+		}
+		if strings.Contains(out, "add failed") {
+			t.Fatalf("exit %d must never render as a failed backup:\n%s", code, out)
+		}
+		entries[code] = entry
+	}
+	if entries[124] != entries[137] {
+		t.Fatalf("137 must be classified exactly like 124:\n 124: %s\n 137: %s", entries[124], entries[137])
+	}
+	if !strings.Contains(entries[137], "sync attempted anyway "+
+		"— synced: backup sync-url "+expectedURL+" ok") {
+		t.Fatalf("both codes still attempt the sync by URL:\n%s", entries[137])
+	}
+}
+
+// TestBackupScriptAcceptsDefaultDestinationAtExpectedURL proves REQ-002 and
+// REQ-008: a destination named `default` sitting at the expected URL — what an
+// external producer such as fed_sync configures — is resolved by URL under that
+// name. Sync mode syncs it and never runs `backup add` against the URL it
+// already occupies (the deterministic cause of the two weeks of false
+// escalations); verify mode is not a writer at all.
+func TestBackupScriptAcceptsDefaultDestinationAtExpectedURL(t *testing.T) {
+	for _, mode := range []string{"sync", "verify"} {
+		t.Run(mode, func(t *testing.T) {
+			cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+			gcLogPath := writeDogFakeGC(t, binDir)
+			expectedURL := backupExpectedURL(artifactDir, "prod")
+			doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{
+				Name:  "prod",
+				Dests: []fakeDoltDest{{Name: "default", URL: expectedURL}},
+			}})
+			manifest := writeBackupManifest(t, artifactDir, "prod", time.Now().Add(-20*time.Minute))
+			before, err := os.Stat(manifest)
+			if err != nil {
+				t.Fatalf("stat %s: %v", manifest, err)
+			}
+
+			out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+				"GC_BACKUP_DATABASES=prod", "GC_BACKUP_MODE="+mode)
+
+			entry := backupEntryLine(t, out, "prod")
+			doltLog := readOptionalLog(t, doltLogPath)
+			if strings.Contains(doltLog, "backup add") {
+				t.Fatalf("the destination is already there; adding a second name at the same URL is the bug, log:\n%s", doltLog)
+			}
+			switch mode {
+			case "sync":
+				if !strings.Contains(entry, "prod: synced — default -> "+expectedURL) {
+					t.Fatalf("entry must name the destination it resolved by URL:\n%s", entry)
+				}
+				if !strings.Contains(out, "synced: 1/1") {
+					t.Fatalf("summary must count it as synced:\n%s", out)
+				}
+				if !strings.Contains(doltLog, "backup sync default") {
+					t.Fatalf("sync mode must sync the resolved name, log:\n%s", doltLog)
+				}
+			case "verify":
+				if !strings.Contains(entry, "prod: fresh — default -> "+expectedURL) {
+					t.Fatalf("entry must report artifact freshness at the resolved destination:\n%s", entry)
+				}
+				if !strings.Contains(out, "verified: 1/1") {
+					t.Fatalf("summary must count it as verified:\n%s", out)
+				}
+				// REQ-008: verify mode must not become a second, unserialized
+				// writer into the directory fed_sync already owns.
+				for _, forbidden := range []string{"backup add", "backup sync", "backup sync-url"} {
+					if strings.Contains(doltLog, forbidden) {
+						t.Fatalf("verify mode must never run %q, log:\n%s", forbidden, doltLog)
+					}
+				}
+				// The same claim at the filesystem, which is where it matters:
+				// the call log proves the script issued no write COMMAND, this
+				// proves the script did not touch the artifact itself. (The
+				// fake never writes a manifest, so this cannot catch a sync the
+				// fake performed — it catches the script touching or recreating
+				// the artifact directly.)
+				after, err := os.Stat(manifest)
+				if err != nil {
+					t.Fatalf("stat %s: %v", manifest, err)
+				}
+				if !after.ModTime().Equal(before.ModTime()) {
+					t.Fatalf("verify mode must not write the artifact: %s mtime moved %s -> %s",
+						manifest, before.ModTime(), after.ModTime())
+				}
+			}
+			if strings.Contains(entry, "no destination") {
+				t.Fatalf("the destination was found; the entry must not say otherwise:\n%s", entry)
+			}
+			if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+				t.Fatalf("a resolved, healthy destination is not a finding and must not escalate, log:\n%s", gcLog)
+			}
+		})
+	}
+}
+
+// TestBackupScriptTreatsAddressConflictAsPresent proves REQ-002 against the
+// message dolt actually emits. When the list shows nothing, the script adds —
+// and dolt refuses with `address conflict with a remote: '<name>' -> <url>`,
+// naming the occupant. That message is the answer to "which destination is
+// there", not a failure: the script takes the name out of it and syncs.
+func TestBackupScriptTreatsAddressConflictAsPresent(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+	conflict := "address conflict with a remote: 'default' -> " + expectedURL
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:      "prod",
+		AddStderr: conflict,
+		AddExit:   1,
+	}})
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+
+	entry := backupEntryLine(t, out, "prod")
+	if !strings.Contains(entry, "prod: synced — default -> "+expectedURL) {
+		t.Fatalf("the conflicting remote's name must be adopted and synced:\n%s", entry)
+	}
+	if !strings.Contains(entry, "present under another name, per dolt: "+conflict) {
+		t.Fatalf("the entry must attribute the name to dolt's own message:\n%s", entry)
+	}
+	if strings.Contains(out, "add failed") {
+		t.Fatalf("an address conflict is a present destination, never a failure:\n%s", out)
+	}
+	if !strings.Contains(out, "synced: 1/1") {
+		t.Fatalf("summary must count it as synced:\n%s", out)
+	}
+	if doltLog := readOptionalLog(t, doltLogPath); !strings.Contains(doltLog, "backup sync default") {
+		t.Fatalf("the script must sync the destination dolt named, log:\n%s", doltLog)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+		t.Fatalf("no finding, so no escalation, log:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptTreatsAlreadyExistsAsPresent proves REQ-002 for dolt's other
+// refusal: the destination name is already taken. That also means the
+// destination is present, so the script syncs under that name instead of
+// reporting the add.
+func TestBackupScriptTreatsAlreadyExistsAsPresent(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	exists := "backup 'prod-backup' already exists"
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:      "prod",
+		AddStderr: exists,
+		AddExit:   1,
+	}})
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+
+	entry := backupEntryLine(t, out, "prod")
+	if !strings.HasPrefix(entry, "prod: synced — prod-backup") {
+		t.Fatalf("an already-existing destination is synced under its own name:\n%s", entry)
+	}
+	if !strings.Contains(entry, "present, per dolt: "+exists) {
+		t.Fatalf("the entry must attribute presence to dolt's own message:\n%s", entry)
+	}
+	if strings.Contains(out, "add failed") {
+		t.Fatalf("`already exists` is a present destination, never a failure:\n%s", out)
+	}
+	if !strings.Contains(out, "synced: 1/1") {
+		t.Fatalf("summary must count it as synced:\n%s", out)
+	}
+	if doltLog := readOptionalLog(t, doltLogPath); !strings.Contains(doltLog, "backup sync prod-backup") {
+		t.Fatalf("the script must sync the existing name, log:\n%s", doltLog)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+		t.Fatalf("no finding, so no escalation, log:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptQuotesUnaddableRemote proves REQ-003: an add that dolt
+// refuses for a reason that is NOT "the destination is already there" is still
+// a failure, and the tool's own words and exit code survive into both the entry
+// and the escalation body. Widening REQ-002 must not swallow real failures.
+//
+// The artifact exists here, so the verdict is `add failed` rather than
+// `missing`: the database is being backed up by someone, and what failed is
+// this script's own add.
+func TestBackupScriptQuotesUnaddableRemote(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:      "prod",
+		AddStderr: "permission denied",
+		AddExit:   1,
+	}})
+	writeBackupManifest(t, artifactDir, "prod", time.Now().Add(-20*time.Minute))
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+
+	entry := backupEntryLine(t, out, "prod")
+	if !strings.HasPrefix(entry, "prod: add failed —") {
+		t.Fatalf("an un-addable remote keeps the `add failed` verdict word:\n%s", entry)
+	}
+	wantDetail := "add failed: backup add prod-backup " + expectedURL + ": permission denied (exit 1)"
+	if !strings.Contains(entry, wantDetail) {
+		t.Fatalf("entry must quote dolt verbatim with its exit code, want %q:\n%s", wantDetail, entry)
+	}
+	if !strings.Contains(out, "failed: 1") {
+		t.Fatalf("summary must count the failure:\n%s", out)
+	}
+	gcLog := readOptionalLog(t, gcLogPath)
+	if !strings.Contains(gcLog, "mail send human -s Dolt backup: 1/1 databases need attention — 0 stale, 0 missing, 0 could not check, 1 failed [HIGH]") {
+		t.Fatalf("the subject must count it as failed, log:\n%s", gcLog)
+	}
+	for _, want := range []string{"permission denied", "exit 1"} {
+		if !strings.Contains(gcLog, want) {
+			t.Fatalf("escalation body missing %q, log:\n%s", want, gcLog)
+		}
+	}
+	if doltLog := readOptionalLog(t, doltLogPath); strings.Contains(doltLog, "backup sync") {
+		t.Fatalf("no destination was resolved, so nothing may be synced, log:\n%s", doltLog)
+	}
+}
+
+// TestBackupScriptQuotesSyncFailure proves REQ-003 on the sync leg: dolt's own
+// message survives verbatim, with its exit code, under the `sync failed`
+// verdict. The artifact exists, so this is a database with a backup whose sync
+// failed — distinct from the never-backed-up case, which is reported `missing`.
+func TestBackupScriptQuotesSyncFailure(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+	notFound := "backup 'prod-backup' not found"
+	_ = writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:       "prod",
+		Dests:      []fakeDoltDest{{Name: "prod-backup", URL: expectedURL}},
+		SyncStderr: notFound,
+		SyncExit:   1,
+	}})
+	writeBackupManifest(t, artifactDir, "prod", time.Now().Add(-20*time.Minute))
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir, "GC_BACKUP_DATABASES=prod")
+
+	entry := backupEntryLine(t, out, "prod")
+	if !strings.HasPrefix(entry, "prod: sync failed —") {
+		t.Fatalf("a failed sync on a backed-up database is `sync failed`:\n%s", entry)
+	}
+	wantDetail := "sync failed: backup sync prod-backup: " + notFound + " (exit 1)"
+	if !strings.Contains(entry, wantDetail) {
+		t.Fatalf("entry must quote dolt verbatim with its exit code, want %q:\n%s", wantDetail, entry)
+	}
+	if !strings.Contains(out, "synced: 0/1") || !strings.Contains(out, "failed: 1") {
+		t.Fatalf("summary must count the failure and no sync:\n%s", out)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); !strings.Contains(gcLog, wantDetail) {
+		t.Fatalf("escalation body missing %q, log:\n%s", wantDetail, gcLog)
+	}
+}
+
+// TestBackupScriptQuotesOffsiteRsyncFailure proves REQ-003 on the last tool the
+// script runs: a failed offsite rsync is reported with its own stderr and exit
+// code, in the summary and in the escalation body. It used to be the one leg
+// whose failure had no words attached.
+func TestBackupScriptQuotesOffsiteRsyncFailure(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	offsiteDir := filepath.Join(cityPath, "offsite")
+	if err := os.MkdirAll(offsiteDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", offsiteDir, err)
+	}
+	gcLogPath := writeDogFakeGC(t, binDir)
+	// prod's sync fails so the run has a finding and therefore an escalation —
+	// the offsite line is carried in that body, and a run with no findings
+	// sends nothing at all.
+	_ = writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:       "prod",
+		Dests:      []fakeDoltDest{{Name: "prod-backup", URL: backupExpectedURL(artifactDir, "prod")}},
+		SyncStderr: "backup 'prod-backup' not found",
+		SyncExit:   1,
+	}})
+	rsyncErr := `rsync: [sender] send_files failed to open "/offsite/prod": Permission denied (13)`
+	_ = writeBackupFakeRsyncFailing(t, binDir, rsyncErr, 23)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=prod", "GC_BACKUP_OFFSITE_PATH="+offsiteDir)
+
+	wantOffsite := "offsite: failed: " + rsyncErr + " (exit 23)"
+	if !strings.Contains(out, wantOffsite) {
+		t.Fatalf("summary must carry rsync's own words and exit code, want %q:\n%s", wantOffsite, out)
+	}
+	if strings.Contains(out, "offsite: ok") {
+		t.Fatalf("a failed rsync must never report ok:\n%s", out)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); !strings.Contains(gcLog, wantOffsite) {
+		t.Fatalf("escalation body missing %q, log:\n%s", wantOffsite, gcLog)
+	}
+}
+
+// TestBackupScriptSurvivesHqTwoDestinationShape proves REQ-002 for the live
+// `hq` store, in both shapes it takes across the gf-fz6h4 rename: today two
+// destinations (`default` at the fe path, `hq-backup` at hq's own), and
+// afterwards a single `default` at hq's own path. The verdicts must not change
+// when the named destination goes away — that rename is the thing this test
+// exists to survive.
+func TestBackupScriptSurvivesHqTwoDestinationShape(t *testing.T) {
+	type shape struct {
+		name string
+		// dests is built per-subtest because the URLs embed a temp dir.
+		dests func(artifactDir string) []fakeDoltDest
+		// manifests maps a directory under the artifact dir to its age.
+		manifests map[string]time.Duration
+		// syncTarget is the destination name sync mode must sync, exactly once.
+		syncTarget string
+		// notFreshest is true when the resolved destination is not the one
+		// carrying the newest artifact, which the entry must say.
+		notFreshest bool
+	}
+	shapes := []shape{
+		{
+			name: "two destinations, expected path not freshest",
+			dests: func(artifactDir string) []fakeDoltDest {
+				return []fakeDoltDest{
+					{Name: "default", URL: backupExpectedURL(artifactDir, "fe")},
+					{Name: "hq-backup", URL: backupExpectedURL(artifactDir, "hq")},
+				}
+			},
+			manifests:   map[string]time.Duration{"fe": -20 * time.Minute, "hq": -51 * time.Hour},
+			syncTarget:  "hq-backup",
+			notFreshest: true,
+		},
+		{
+			// After gf-fz6h4: `hq-backup` is gone and `default` sits at hq's own
+			// path. Same verdicts, and the artifact there is the fresh one.
+			name: "single default at the expected path",
+			dests: func(artifactDir string) []fakeDoltDest {
+				return []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "hq")}}
+			},
+			manifests:  map[string]time.Duration{"hq": -20 * time.Minute},
+			syncTarget: "default",
+		},
+	}
+	for _, sh := range shapes {
+		for _, mode := range []string{"sync", "verify"} {
+			t.Run(sh.name+"/"+mode, func(t *testing.T) {
+				cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "hq")
+				gcLogPath := writeDogFakeGC(t, binDir)
+				doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{
+					Name:  "hq",
+					Dests: sh.dests(artifactDir),
+				}})
+				for dir, age := range sh.manifests {
+					writeBackupManifest(t, artifactDir, dir, time.Now().Add(age))
+				}
+
+				out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+					"GC_BACKUP_DATABASES=hq", "GC_BACKUP_MODE="+mode)
+
+				entry := backupEntryLine(t, out, "hq")
+				doltLog := readOptionalLog(t, doltLogPath)
+				if strings.Contains(doltLog, "backup add") {
+					t.Fatalf("hq's destination is configured; nothing may be added, log:\n%s", doltLog)
+				}
+				switch mode {
+				case "sync":
+					if !strings.HasPrefix(entry, "hq: synced —") {
+						t.Fatalf("sync mode must report hq synced:\n%s", entry)
+					}
+					if got := strings.Count(doltLog, "backup sync "+sh.syncTarget); got != 1 {
+						t.Fatalf("expected exactly one `backup sync %s`, got %d, log:\n%s", sh.syncTarget, got, doltLog)
+					}
+					// Exactly one sync overall: syncing both destinations would
+					// double-write the artifact dir (REQ-008).
+					if got := strings.Count(doltLog, "backup sync"); got != 1 {
+						t.Fatalf("expected exactly one sync of any kind, got %d, log:\n%s", got, doltLog)
+					}
+				case "verify":
+					if !strings.HasPrefix(entry, "hq: fresh —") {
+						t.Fatalf("verify mode must report hq fresh:\n%s", entry)
+					}
+					for _, forbidden := range []string{"backup add", "backup sync", "backup sync-url"} {
+						if strings.Contains(doltLog, forbidden) {
+							t.Fatalf("verify mode must never run %q, log:\n%s", forbidden, doltLog)
+						}
+					}
+				}
+				// The resolved destination is always named, in both shapes.
+				if !strings.Contains(entry, sh.syncTarget+" -> "+backupExpectedURL(artifactDir, "hq")) {
+					t.Fatalf("entry must name the destination at hq's expected path:\n%s", entry)
+				}
+				if sh.notFreshest {
+					if !strings.Contains(entry, "not the freshest destination") {
+						t.Fatalf("entry must say the resolved destination is not the freshest one:\n%s", entry)
+					}
+					if !strings.Contains(entry, "also default -> "+backupExpectedURL(artifactDir, "fe")) {
+						t.Fatalf("entry must list the other destination too:\n%s", entry)
+					}
+				} else if strings.Contains(entry, "not the freshest destination") {
+					t.Fatalf("the only destination is the freshest one:\n%s", entry)
+				}
+				if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+					t.Fatalf("hq is healthy in both shapes; no escalation, log:\n%s", gcLog)
+				}
+			})
+		}
+	}
+}
+
+// TestBackupScriptRefusesUnknownMode proves the mode guard: an unrecognized
+// GC_BACKUP_MODE exits 2 naming the knob and syncs nothing. A sentinel
+// misconfigured into an unknown mode must not silently fall back to being a
+// writer into a directory another producer owns (REQ-008).
+func TestBackupScriptRefusesUnknownMode(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	_ = writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.1.0", []fakeDoltDB{{
+		Name:  "prod",
+		Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "prod")}},
+	}})
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=prod", "GC_BACKUP_MODE=maybe")
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("want exit 2, got err=%v:\n%s", err, out)
+	}
+	for _, want := range []string{"GC_BACKUP_MODE", "maybe", "nothing synced"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the refusal must name %q:\n%s", want, out)
+		}
+	}
+	// Nothing ran: the guard sits ahead of the version preflight, so the fake
+	// was never invoked and its log was never created.
+	if doltLog := readOptionalLog(t, doltLogPath); doltLog != "" {
+		t.Fatalf("an invalid mode must run no dolt at all, log:\n%s", doltLog)
+	}
+}
+
+// writeDiscoveryFailureFakeDolt installs a fake dolt whose version preflight
+// succeeds and whose `SHOW DATABASES` discovery probe fails with stderr and
+// exitCode — a server that is down, a refused socket, a rejected password.
+//
+// It is the failing sibling of writeFreshnessFakeDolt, the way
+// writeBackupFakeRsyncFailing is the happy-path rsync fake's. It has to exist
+// separately because every one of the SHOW DATABASES stub branches in this
+// file exits 0: no fixture here could refuse the question at all, which is how
+// the branch that discarded this failure went unwitnessed by all 27 backup
+// tests.
+func writeDiscoveryFailureFakeDolt(t *testing.T, binDir, version, stderr string, exitCode int) string {
+	t.Helper()
+	logPath := filepath.Join(binDir, "dolt.log")
+	writeExecutable(t, filepath.Join(binDir, "dolt"), fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+printf 'dolt %%s\n' "$*" >> %s
+if [ "${1:-}" = "version" ]; then
+  printf 'dolt version %%s\n' %s
+  exit 0
+fi
+case "$*" in
+  *"SHOW DATABASES"*)
+    printf '%%s\n' %s >&2
+    exit %d
+    ;;
+esac
+exit 0
+`, shellQuote(logPath), shellQuote(version), shellQuote(stderr), exitCode))
+	return logPath
+}
+
+// TestBackupScriptReportsDatabaseDiscoveryFailure holds the discovery probe to
+// the same contract as every other tool call in this script: a question that
+// could not be answered is reported with the tool's own words and its exit
+// code, and is never rendered as "there is nothing to back up".
+//
+// This is the sentinel's own plumbing failing, which is the exact class of
+// event REQ-003 exists for. The branch used to send `SHOW DATABASES`'s stderr
+// to /dev/null and consult only whether the resulting list came back empty, so
+// a refused connection printed `backup: no databases found, skipping` and
+// exited 0 — byte-identical to a healthy server with no user databases, and
+// silent. The federation deploys this order in verify mode with no
+// GC_BACKUP_DATABASES set, so auto-discovery is the live path: the one
+// component whose job is to say backups have gone stale went quiet during
+// precisely the outage that makes them go stale.
+//
+// The fixture runs the DEFAULT (sync) mode deliberately. Discovery sits ahead
+// of the mode split, so either mode exercises the same branch — but only in
+// sync mode is assertBackupWroteNothing a claim about this early exit rather
+// than about verify mode declining to write anyway.
+//
+// The assertions on the delivered body are load-bearing beyond their own
+// claim. tool_failure() used to be defined 54 lines BELOW this call site;
+// calling it from here found no such command, and because the call sits inside
+// a command substitution `set -e` did not fire — the script carried on, exited
+// 0, and escalated a body with dolt's exit code and stderr silently dropped,
+// reproducing REQ-003's defect inside REQ-003's own fix. Nothing but an
+// assertion on what was actually delivered catches that.
+func TestBackupScriptReportsDatabaseDiscoveryFailure(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "fe", "hq")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	const doltStderr = "dial tcp 127.0.0.1:3307: connect: connection refused"
+	doltLogPath := writeDiscoveryFailureFakeDolt(t, binDir, "2.2.1", doltStderr, 1)
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("a discovery failure is could-not-look, which exits 2; got err=%v:\n%s", err, out)
+	}
+	// The false green this test exists to forbid. Both databases are present on
+	// disk and the script did not get to look at either one.
+	if strings.Contains(out, "no databases found") {
+		t.Fatalf("a failed discovery must not render as an empty fleet:\n%s", out)
+	}
+	if !strings.Contains(out, "could not check: database discovery failed") {
+		t.Fatalf("the summary must name the probe that failed:\n%s", out)
+	}
+	gcLog := backupEscalation(t, gcLogPath)
+	if !strings.Contains(gcLog, "Dolt backup: could not enumerate databases [HIGH]") {
+		t.Fatalf("the escalation must name the failure:\n%s", gcLog)
+	}
+	// REQ-003: the alert carries dolt's own words and its exit code, or the
+	// operator cannot tell a refused socket from a bad password.
+	for _, want := range []string{"SHOW DATABASES", doltStderr, "(exit 1)", "no database was checked"} {
+		if !strings.Contains(gcLog, want) {
+			t.Fatalf("the escalation body must carry %q:\n%s", want, gcLog)
+		}
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptReportsEmptyFleetWithoutEscalating is the positive control
+// for the test above, and it exists so the two can never collapse back into
+// each other under a later edit. A server that is up and genuinely has no user
+// databases is not a failure: it prints the skip line, exits 0, and pages
+// nobody.
+//
+// Before this pair, the string `no databases found` appeared exactly once in
+// this file — inside the allowlist entry that justified discarding the probe's
+// stderr — and was asserted by no test at all. The message the allowlist cited
+// as its own justification was the one message nothing checked.
+func TestBackupScriptReportsEmptyFleetWithoutEscalating(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t)
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", nil)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	if !strings.Contains(out, "backup: no databases found, skipping") {
+		t.Fatalf("an empty fleet is reported and skipped:\n%s", out)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+		t.Fatalf("nothing is wrong here; an empty fleet pages nobody, gc log:\n%s", gcLog)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptReportsListedDatabasesAbsentFromDataDir covers the third
+// state this branch used to conflate with the other two, and that neither
+// review lane found: the server answers and names databases, and not one of
+// them has a .dolt directory under $DOLT_DATA_DIR.
+//
+// That is a data-dir/server mismatch, not an empty fleet. runtime.sh resolves
+// DOLT_DATA_DIR through its own fallback chain while the port is resolved from
+// state files under DOLT_STATE_DIR, which is independent of it — so the probe
+// can succeed against a server whose data dir is not the one this loop tests.
+// The fixture holds a database the server did not name, which is the honest
+// shape of the mismatch: the directory is populated, just not with these.
+//
+// Nothing was checked and the fleet is not empty, so this is could-not-look.
+func TestBackupScriptReportsListedDatabasesAbsentFromDataDir(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "other")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{Name: "fe"}, {Name: "hq"}})
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir)
+
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("a data-dir mismatch is could-not-look, which exits 2; got err=%v:\n%s", err, out)
+	}
+	if strings.Contains(out, "no databases found") {
+		t.Fatalf("dolt named two databases; this is not an empty fleet:\n%s", out)
+	}
+	if !strings.Contains(out, "could not check: no listed database present under "+dataDir) {
+		t.Fatalf("the summary must name the data dir that holds none of them:\n%s", out)
+	}
+	gcLog := backupEscalation(t, gcLogPath)
+	if !strings.Contains(gcLog, "Dolt backup: no listed database is present in the data dir [HIGH]") {
+		t.Fatalf("the escalation must name the mismatch:\n%s", gcLog)
+	}
+	// The operator needs both halves to act: what dolt said it had, and where
+	// the script looked for it.
+	for _, want := range []string{"dolt listed: fe hq — none has", dataDir, "No database was checked"} {
+		if !strings.Contains(gcLog, want) {
+			t.Fatalf("the escalation body must carry %q:\n%s", want, gcLog)
+		}
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptReportsListTimeoutAsCouldNotCheckInVerifyMode proves REQ-001
+// and REQ-005 in the mode the federation actually runs: a bound that fired is
+// `could not check`, it is counted as could-not-check and never as verified,
+// the escalation names it, and the run still writes nothing.
+//
+// The fixture deliberately leaves a FRESH manifest at the expected path. That
+// is the false-green this requirement forbids (SPEC E8, and the requirements'
+// own counter-example): the script can see a twenty-minute-old artifact and
+// must still refuse to call the database fresh, because the destination list
+// timed out and it therefore does not know that this database's destination is
+// the one pointing there. The age is reported as detail, explicitly marked as
+// not verified.
+func TestBackupScriptReportsListTimeoutAsCouldNotCheckInVerifyMode(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	expectedURL := backupExpectedURL(artifactDir, "prod")
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{
+		Name:      "prod",
+		Dests:     []fakeDoltDest{{Name: "default", URL: expectedURL}},
+		ListSleep: 3 * time.Second,
+	}})
+	iso := backupManifestAt(t, artifactDir, "prod", 20*time.Minute+30*time.Second)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=prod", "GC_BACKUP_MODE=verify",
+		"GC_BACKUP_LIST_TIMEOUT_SECS=1")
+
+	wantEntry := "prod: could not check — destination list timeout (1s); " +
+		"last artifact " + iso + " (20m) — expected path only, freshness not verified"
+	if entry := backupEntryLine(t, out, "prod"); entry != wantEntry {
+		t.Fatalf("entry mismatch\n want: %s\n got:  %s", wantEntry, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/1, verified: 0/1, stale: 0, missing: 0, " +
+		"could-not-check: 1, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	// The false-green and the false-red, both forbidden on this path.
+	for _, forbidden := range []string{"prod: fresh", "add failed", "sync failed"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("a list timeout must never render as %q:\n%s", forbidden, out)
+		}
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/1 databases need attention — " +
+		"0 stale, 0 missing, 1 could not check [HIGH]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("the subject must count the could-not-check, not a plumbing outcome:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantEntry) {
+		t.Fatalf("the escalation must carry the entry naming what could not be checked:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptSendsNoEscalationWhenAllFresh proves REQ-004 and REQ-005 on
+// the case the federation is in on almost every run: everything is fresh, so
+// nothing may reach the human channel — and the run still reports every
+// database with what was checked and when the artifact landed.
+//
+// This is the requirement the two weeks of false escalations violated. Each
+// entry is compared WHOLE, so all five facts REQ-004 asks for are pinned at
+// once: the destination name, its URL, the verdict, the ISO-8601 time with a
+// numeric zone, and the age.
+func TestBackupScriptSendsNoEscalationWhenAllFresh(t *testing.T) {
+	dbs := []struct {
+		name string
+		age  time.Duration
+		want string // the age clause backup_fmt_age must produce
+	}{
+		{name: "alpha", age: 20*time.Minute + 30*time.Second, want: "20m"},
+		{name: "beta", age: 45*time.Minute + 30*time.Second, want: "45m"},
+		{name: "gamma", age: 2*time.Hour + 30*time.Second, want: "2h"},
+	}
+	names := make([]string, 0, len(dbs))
+	for _, db := range dbs {
+		names = append(names, db.name)
+	}
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, names...)
+	gcLogPath := writeDogFakeGC(t, binDir)
+	fakes := make([]fakeDoltDB, 0, len(dbs))
+	for _, db := range dbs {
+		fakes = append(fakes, fakeDoltDB{
+			Name:  db.name,
+			Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, db.name)}},
+		})
+	}
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", fakes)
+	iso := make(map[string]string, len(dbs))
+	for _, db := range dbs {
+		iso[db.name] = backupManifestAt(t, artifactDir, db.name, db.age)
+	}
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES="+strings.Join(names, ","), "GC_BACKUP_MODE=verify")
+
+	for _, db := range dbs {
+		want := db.name + ": fresh — default -> " + backupExpectedURL(artifactDir, db.name) +
+			" (" + db.want + "); last artifact " + iso[db.name] + " (" + db.want + ")"
+		if entry := backupEntryLine(t, out, db.name); entry != want {
+			t.Fatalf("entry mismatch\n want: %s\n got:  %s", want, entry)
+		}
+	}
+	wantSummary := "backup: backup — synced: 0/3, verified: 3/3, stale: 0, missing: 0, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	if gcLog := readOptionalLog(t, gcLogPath); strings.Contains(gcLog, "mail send") {
+		t.Fatalf("REQ-005: nothing is stale and nothing timed out, so nothing may be "+
+			"escalated; an alarm that fires on a healthy fleet is the defect this build "+
+			"removed, gc log:\n%s", gcLog)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// TestBackupScriptEscalatesOnlyTheStaleDatabase proves REQ-005 and REQ-006 on
+// the fleet's real shape: one database is behind the clock and the rest are
+// fine, so exactly one escalation goes out, it names only that database, and it
+// carries the reason — content-complete as of its last commit, nothing syncing
+// it. The bug buried this database eighth in a list of thirteen false entries.
+//
+// The severity is the other half of the claim. This database is stale but its
+// content is complete, so there is no data at risk: [MEDIUM].
+// TestBackupScriptRatesBehindContentHigh runs the identical one-of-three shape
+// with commits newer than the artifact and requires [HIGH], so the pair proves
+// the severity tracks data risk rather than the count of findings.
+func TestBackupScriptEscalatesOnlyTheStaleDatabase(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "alpha", "beta", "hgr")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	// The last commit predates the last artifact: nothing has changed since the
+	// backup, so the store is complete even though no producer has touched it.
+	head := time.Now().Add(-60 * time.Hour).Truncate(time.Second)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{
+		{Name: "alpha", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "alpha")}}},
+		{Name: "beta", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "beta")}}},
+		{
+			Name:      "hgr",
+			Dests:     []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "hgr")}},
+			HeadEpoch: head.Unix(),
+		},
+	})
+	backupManifestAt(t, artifactDir, "alpha", 20*time.Minute+30*time.Second)
+	backupManifestAt(t, artifactDir, "beta", 20*time.Minute+30*time.Second)
+	staleISO := backupManifestAt(t, artifactDir, "hgr", 51*time.Hour)
+	const hint = "no live rig syncs it since hangr was retired (f2e777d)"
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=alpha,beta,hgr", "GC_BACKUP_MODE=verify",
+		"GC_BACKUP_STALE_HINT="+hint)
+
+	wantEntry := "hgr: stale (unsynced) — default -> " + backupExpectedURL(artifactDir, "hgr") +
+		" (51h); last artifact " + staleISO + " (51h); " +
+		"content-complete as of last commit " + backupISO(head) + " — nothing to sync; " + hint
+	if entry := backupEntryLine(t, out, "hgr"); entry != wantEntry {
+		t.Fatalf("entry mismatch\n want: %s\n got:  %s", wantEntry, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/3, verified: 2/3, stale: 1, missing: 0, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/3 databases need attention — " +
+		"1 stale, 0 missing, 0 could not check [MEDIUM]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("a single content-complete finding is [MEDIUM] and the subject counts "+
+			"verdicts, not plumbing:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantEntry) {
+		t.Fatalf("the body must carry the finding's own entry, last-artifact time and "+
+			"reason included:\n%s", gcLog)
+	}
+	// REQ-006: the healthy databases are not findings and must not be listed.
+	// Matched on the entry prefix `<db>: `, which no temp path can produce.
+	for _, fresh := range []string{"alpha", "beta"} {
+		if strings.Contains(gcLog, fresh+": ") {
+			t.Fatalf("a fresh database must not appear in the escalation body; burying the "+
+				"one real finding among healthy names is the defect (%q):\n%s", fresh, gcLog)
+		}
+	}
+}
+
+// TestBackupScriptRatesBehindContentHigh proves the severity rule's data-risk
+// half: an artifact older than the threshold whose database has committed SINCE
+// it landed is unbacked-up data, so it is [HIGH] — even though it is a single
+// finding in a healthy fleet.
+//
+// One of three, deliberately: at that ratio the "half the fleet is not fresh"
+// rule cannot fire, so [HIGH] can only have come from the verdict itself. The
+// same one-of-three shape in TestBackupScriptEscalatesOnlyTheStaleDatabase, with
+// the commit older than the artifact, is [MEDIUM].
+func TestBackupScriptRatesBehindContentHigh(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "alpha", "beta", "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	// Committed an hour ago; the artifact is three hours old. Real data is not
+	// in the backup.
+	head := time.Now().Add(-time.Hour).Truncate(time.Second)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{
+		{Name: "alpha", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "alpha")}}},
+		{Name: "beta", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "beta")}}},
+		{
+			Name:      "prod",
+			Dests:     []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "prod")}},
+			HeadEpoch: head.Unix(),
+		},
+	})
+	backupManifestAt(t, artifactDir, "alpha", 20*time.Minute+30*time.Second)
+	backupManifestAt(t, artifactDir, "beta", 20*time.Minute+30*time.Second)
+	staleISO := backupManifestAt(t, artifactDir, "prod", 3*time.Hour+30*time.Second)
+	const hint = "find out what stopped syncing prod"
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=alpha,beta,prod", "GC_BACKUP_MODE=verify",
+		"GC_BACKUP_STALE_SECS=3600", "GC_BACKUP_STALE_HINT="+hint)
+
+	wantEntry := "prod: stale, behind — default -> " + backupExpectedURL(artifactDir, "prod") +
+		" (3h); last artifact " + staleISO + " (3h); " +
+		"commits newer than the last artifact (last commit " + backupISO(head) + "); " + hint
+	if entry := backupEntryLine(t, out, "prod"); entry != wantEntry {
+		t.Fatalf("entry mismatch\n want: %s\n got:  %s", wantEntry, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/3, verified: 2/3, stale: 1, missing: 0, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/3 databases need attention — " +
+		"1 stale, 0 missing, 0 could not check [HIGH]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("commits newer than the artifact are data at risk: [HIGH], not [MEDIUM]:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantEntry) {
+		t.Fatalf("the body must say the artifact is behind and name the newer commit:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptReportsContentNotCheckedOnTimeout proves the third verdict a
+// clock-stale database can take, and the one an over-eager script would get
+// wrong: the HEAD read that decides "complete" from "behind" timed out, so the
+// answer is NOT KNOWN. It is reported as `content: not checked` with the bound
+// quoted, rated [HIGH] because unknown risk is treated as risk, and the database
+// is never counted fresh (SPEC E8: could-not-look never renders as looked-and-ok).
+//
+// One of three again, so [HIGH] cannot have come from the fleet-fraction rule.
+func TestBackupScriptReportsContentNotCheckedOnTimeout(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "alpha", "beta", "prod")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{
+		{Name: "alpha", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "alpha")}}},
+		{Name: "beta", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "beta")}}},
+		{
+			Name:      "prod",
+			Dests:     []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "prod")}},
+			HeadSleep: 3 * time.Second,
+		},
+	})
+	backupManifestAt(t, artifactDir, "alpha", 20*time.Minute+30*time.Second)
+	backupManifestAt(t, artifactDir, "beta", 20*time.Minute+30*time.Second)
+	staleISO := backupManifestAt(t, artifactDir, "prod", 51*time.Hour)
+	const hint = "decide whether this database still needs a producer"
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=alpha,beta,prod", "GC_BACKUP_MODE=verify",
+		"GC_BACKUP_CONTENT_TIMEOUT_SECS=1", "GC_BACKUP_STALE_HINT="+hint)
+
+	wantEntry := "prod: stale, content: not checked (HEAD commit read timeout (1s)) — " +
+		"default -> " + backupExpectedURL(artifactDir, "prod") + " (51h); " +
+		"last artifact " + staleISO + " (51h); " + hint
+	if entry := backupEntryLine(t, out, "prod"); entry != wantEntry {
+		t.Fatalf("entry mismatch\n want: %s\n got:  %s", wantEntry, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/3, verified: 2/3, stale: 1, missing: 0, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	if strings.Contains(out, "prod: fresh") {
+		t.Fatalf("a database whose content could not be read is never fresh:\n%s", out)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/3 databases need attention — " +
+		"1 stale, 0 missing, 0 could not check [HIGH]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("an unchecked content read leaves the risk unknown, which is rated "+
+			"[HIGH], not [MEDIUM]:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantEntry) {
+		t.Fatalf("the body must say the content was not checked and quote the bound:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptReportsMissingDestination proves the `missing` verdict and
+// REQ-008's edge: a database with no destination and no artifact has never been
+// backed up, which is [HIGH] — and verify mode reports it rather than quietly
+// configuring one. Auto-configuring here would make this order a writer into a
+// directory fed_sync owns, and would also hide the fact that nothing is syncing
+// the database, which is the thing an operator needs to know.
+//
+// One of three, so the [HIGH] is the `missing` verdict's own, not the fleet's.
+func TestBackupScriptReportsMissingDestination(t *testing.T) {
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, "alpha", "beta", "orphan")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{
+		{Name: "alpha", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "alpha")}}},
+		{Name: "beta", Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "beta")}}},
+		// orphan: no destinations, and no manifest is written for it either.
+		{Name: "orphan"},
+	})
+	backupManifestAt(t, artifactDir, "alpha", 20*time.Minute+30*time.Second)
+	backupManifestAt(t, artifactDir, "beta", 20*time.Minute+30*time.Second)
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=alpha,beta,orphan", "GC_BACKUP_MODE=verify")
+
+	wantEntry := "orphan: missing — no destination configured; last artifact: none found"
+	if entry := backupEntryLine(t, out, "orphan"); entry != wantEntry {
+		t.Fatalf("entry mismatch\n want: %s\n got:  %s", wantEntry, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/3, verified: 2/3, stale: 0, missing: 1, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	// The auto-configure path belongs to sync mode alone (REQ-008).
+	assertBackupWroteNothing(t, doltLogPath)
+	if strings.Contains(out, "auto-configured") {
+		t.Fatalf("verify mode configures nothing:\n%s", out)
+	}
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/3 databases need attention — " +
+		"0 stale, 1 missing, 0 could not check [HIGH]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("a database that has never been backed up is [HIGH] and counts as "+
+			"missing, not stale:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantEntry) {
+		t.Fatalf("the body must say there is no destination and no artifact:\n%s", gcLog)
+	}
+}
+
+// TestBackupScriptFleetFixtureHasOneFinding is the regression test for the bug
+// itself, at its own scale. Fifteen databases reproduce the federation as it was
+// measured on 2026-09-11: thirteen with a single `default` destination and an
+// artifact twenty minutes old, `hq` in its two-destination shape (`default` at
+// .dolt-backup/fe carrying the fresh artifact, `hq-backup` at .dolt-backup/hq
+// carrying a stale one), and `hgr` at −51h with a last commit older than that.
+//
+// The old script escalated `14/15 databases failed to sync` here, listing every
+// one of the thirteen twenty-minute-old backups as a failure and burying `hgr`
+// eighth among them. The fixed script must find exactly one thing wrong, say
+// what it is, and name nobody else (REQ-004, REQ-005, REQ-006).
+//
+// The databases are discovered rather than listed in GC_BACKUP_DATABASES, so
+// the fixture exercises the same path the live order takes.
+func TestBackupScriptFleetFixtureHasOneFinding(t *testing.T) {
+	fresh := []string{
+		"analytics", "api", "builds", "canary", "comfy", "gcty", "gf",
+		"infra", "launcher", "p2p", "plugins", "sdk", "web",
+	}
+	// SHOW DATABASES order, as the live server returns it.
+	fleet := []string{
+		"analytics", "api", "builds", "canary", "comfy", "gcty", "gf", "hgr", "hq",
+		"infra", "launcher", "p2p", "plugins", "sdk", "web",
+	}
+	cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, fleet...)
+	gcLogPath := writeDogFakeGC(t, binDir)
+	head := time.Now().Add(-60 * time.Hour).Truncate(time.Second)
+	fakes := make([]fakeDoltDB, 0, len(fleet))
+	for _, name := range fleet {
+		switch name {
+		case "hgr":
+			fakes = append(fakes, fakeDoltDB{
+				Name:      name,
+				Dests:     []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, "hgr")}},
+				HeadEpoch: head.Unix(),
+			})
+		case "hq":
+			fakes = append(fakes, fakeDoltDB{
+				Name: name,
+				Dests: []fakeDoltDest{
+					{Name: "default", URL: backupExpectedURL(artifactDir, "fe")},
+					{Name: "hq-backup", URL: backupExpectedURL(artifactDir, "hq")},
+				},
+			})
+		default:
+			fakes = append(fakes, fakeDoltDB{
+				Name:  name,
+				Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, name)}},
+			})
+		}
+	}
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", fakes)
+	const freshAge = 20*time.Minute + 30*time.Second
+	iso := make(map[string]string, len(fresh))
+	for _, name := range fresh {
+		iso[name] = backupManifestAt(t, artifactDir, name, freshAge)
+	}
+	feISO := backupManifestAt(t, artifactDir, "fe", freshAge)
+	backupManifestAt(t, artifactDir, "hq", 51*time.Hour)
+	hgrISO := backupManifestAt(t, artifactDir, "hgr", 51*time.Hour)
+	const hint = "no live rig syncs it since hangr was retired (f2e777d)"
+
+	out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_MODE=verify", "GC_BACKUP_STALE_HINT="+hint)
+
+	for _, name := range fresh {
+		want := name + ": fresh — default -> " + backupExpectedURL(artifactDir, name) +
+			" (20m); last artifact " + iso[name] + " (20m)"
+		if entry := backupEntryLine(t, out, name); entry != want {
+			t.Fatalf("entry mismatch for %s\n want: %s\n got:  %s", name, want, entry)
+		}
+	}
+	// hq resolves to the destination at its own expected path even though the
+	// freshest artifact is at the other one, and the entry says both things.
+	wantHq := "hq: fresh — hq-backup -> " + backupExpectedURL(artifactDir, "hq") +
+		" (51h), not the freshest destination; also default -> " + backupExpectedURL(artifactDir, "fe") +
+		" (20m); last artifact " + feISO + " (20m)"
+	if entry := backupEntryLine(t, out, "hq"); entry != wantHq {
+		t.Fatalf("hq entry mismatch\n want: %s\n got:  %s", wantHq, entry)
+	}
+	wantHgr := "hgr: stale (unsynced) — default -> " + backupExpectedURL(artifactDir, "hgr") +
+		" (51h); last artifact " + hgrISO + " (51h); " +
+		"content-complete as of last commit " + backupISO(head) + " — nothing to sync; " + hint
+	if entry := backupEntryLine(t, out, "hgr"); entry != wantHgr {
+		t.Fatalf("hgr entry mismatch\n want: %s\n got:  %s", wantHgr, entry)
+	}
+	wantSummary := "backup: backup — synced: 0/15, verified: 14/15, stale: 1, missing: 0, " +
+		"could-not-check: 0, offsite: skipped"
+	if summary := backupSummaryLine(t, out); summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	if strings.Contains(out, "failed to sync") || strings.Contains(out, "add failed") {
+		t.Fatalf("the bug's own words must not appear anywhere in a healthy fleet:\n%s", out)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+
+	gcLog := backupEscalation(t, gcLogPath)
+	wantSubject := "mail send human -s Dolt backup: 1/15 databases need attention — " +
+		"1 stale, 0 missing, 0 could not check [MEDIUM]"
+	if !strings.Contains(gcLog, wantSubject) {
+		t.Fatalf("one finding out of fifteen, content-complete: 1/15 and [MEDIUM]. The bug "+
+			"sent `14/15 databases failed to sync` on this exact fleet:\n%s", gcLog)
+	}
+	if !strings.Contains(gcLog, wantHgr) {
+		t.Fatalf("the body must carry hgr's entry with its last artifact, age, "+
+			"content-complete clause and hint:\n%s", gcLog)
+	}
+	// REQ-006: the fourteen healthy databases are not findings. Matched on the
+	// entry prefix `<db>: `, which no temp path or URL can produce.
+	for _, name := range append(append([]string{}, fresh...), "hq") {
+		if strings.Contains(gcLog, name+": ") {
+			t.Fatalf("a healthy database must not appear in the escalation body (%q); "+
+				"burying the one real finding among thirteen false ones is the bug:\n%s", name, gcLog)
+		}
+	}
+}
+
+// TestBackupScriptRatesProducerOutageHigh proves the severity rule's other
+// trigger: when half or more of the fleet is not fresh, the producer itself is
+// down, and that is [HIGH] no matter how benign each individual database looks.
+//
+// Every finding here is content-complete, so not one of them is [HIGH] on its
+// own — which is what makes the proportion the only thing that can raise the
+// severity. The 7-of-15 case is run beside the 8-of-15 case for the same
+// reason: without it, a script that simply rated every multi-finding run [HIGH]
+// would pass, and the boundary the rule is actually about would be untested.
+func TestBackupScriptRatesProducerOutageHigh(t *testing.T) {
+	const total = 15
+	for _, tc := range []struct {
+		stale    int
+		severity string
+	}{
+		{stale: 8, severity: "HIGH"},   // 8*2 >= 15 — the producer is down
+		{stale: 7, severity: "MEDIUM"}, // 7*2 < 15 — findings, but not an outage
+	} {
+		t.Run(fmt.Sprintf("%d-of-%d", tc.stale, total), func(t *testing.T) {
+			names := make([]string, 0, total)
+			for i := 0; i < total; i++ {
+				names = append(names, fmt.Sprintf("db%02d", i))
+			}
+			cityPath, dataDir, artifactDir, binDir := newBackupFixture(t, names...)
+			gcLogPath := writeDogFakeGC(t, binDir)
+			head := time.Now().Add(-60 * time.Hour).Truncate(time.Second)
+			fakes := make([]fakeDoltDB, 0, total)
+			for i, name := range names {
+				db := fakeDoltDB{
+					Name:  name,
+					Dests: []fakeDoltDest{{Name: "default", URL: backupExpectedURL(artifactDir, name)}},
+				}
+				if i < tc.stale {
+					db.HeadEpoch = head.Unix()
+				}
+				fakes = append(fakes, db)
+			}
+			doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", fakes)
+			for i, name := range names {
+				age := 20*time.Minute + 30*time.Second
+				if i < tc.stale {
+					age = 51 * time.Hour
+				}
+				backupManifestAt(t, artifactDir, name, age)
+			}
+
+			out := runDogScript(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+				"GC_BACKUP_DATABASES="+strings.Join(names, ","), "GC_BACKUP_MODE=verify")
+
+			for _, name := range names[:tc.stale] {
+				entry := backupEntryLine(t, out, name)
+				if !strings.HasPrefix(entry, name+": stale (unsynced) —") {
+					t.Fatalf("every finding in this fixture is content-complete:\n%s", entry)
+				}
+				if !strings.Contains(entry, "content-complete as of last commit") {
+					t.Fatalf("the entry must say why the database is not at risk:\n%s", entry)
+				}
+			}
+			// No database here is individually [HIGH]; if any of these appears,
+			// the severity assertion below would no longer be about the ratio.
+			for _, forbidden := range []string{"stale, behind", "missing —", "content: not checked", "could not check"} {
+				if strings.Contains(out, forbidden) {
+					t.Fatalf("fixture drift: %q makes a single database high-risk and "+
+						"invalidates the proportion this test is about:\n%s", forbidden, out)
+				}
+			}
+			wantSummary := fmt.Sprintf("backup: backup — synced: 0/%d, verified: %d/%d, stale: %d, "+
+				"missing: 0, could-not-check: 0, offsite: skipped", total, total-tc.stale, total, tc.stale)
+			if summary := backupSummaryLine(t, out); summary != wantSummary {
+				t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+			}
+			gcLog := backupEscalation(t, gcLogPath)
+			wantSubject := fmt.Sprintf("mail send human -s Dolt backup: %d/%d databases need "+
+				"attention — %d stale, 0 missing, 0 could not check [%s]",
+				tc.stale, total, tc.stale, tc.severity)
+			if !strings.Contains(gcLog, wantSubject) {
+				t.Fatalf("want subject %q:\n%s", wantSubject, gcLog)
+			}
+			assertBackupWroteNothing(t, doltLogPath)
+		})
+	}
+}
+
+// TestBackupScriptReportsFailedEscalation proves the last link in the chain.
+// An escalation that could not be delivered is a finding nobody received, and a
+// run that reported it as sent would be the same false-green in a new place: the
+// operator would read `1 stale [MEDIUM]` in the summary and believe the channel
+// had it. So the delivery failure is printed with the tool's own stderr, and the
+// summary carries `escalation: FAILED`.
+//
+// The exit code stays 0. A non-zero exec exit makes the controller raise its own
+// generic alarm, which would replace a specific finding with a vague one.
+func TestBackupScriptReportsFailedEscalation(t *testing.T) {
+	cityPath, dataDir, _, binDir := newBackupFixture(t, "orphan")
+	gcLogPath := writeDogFakeGC(t, binDir)
+	doltLogPath := writeFreshnessFakeDolt(t, binDir, "2.2.1", []fakeDoltDB{{Name: "orphan"}})
+	escalateLog := filepath.Join(binDir, "escalate.log")
+	escalatePath := filepath.Join(binDir, "escalate-failing.sh")
+	writeExecutable(t, escalatePath, fmt.Sprintf(`#!/bin/sh
+printf 'escalate %s\n' "$*" >> %s
+printf 'escalate: gc mail send: dial unix /run/gc.sock: connection refused\n' >&2
+exit 1
+`, "%s", shellQuote(escalateLog)))
+
+	out, err := runDogScriptCommand(t, "mol-dog-backup.sh", binDir, cityPath, dataDir,
+		"GC_BACKUP_DATABASES=orphan", "GC_BACKUP_MODE=verify",
+		"GC_ESCALATE_SCRIPT="+escalatePath)
+	if err != nil {
+		t.Fatalf("a failed escalation must not change the script's exit code: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "backup: escalation failed: escalate: gc mail send: "+
+		"dial unix /run/gc.sock: connection refused") {
+		t.Fatalf("the delivery failure must be reported with the tool's own words:\n%s", out)
+	}
+	wantSummary := "backup: backup — synced: 0/1, verified: 0/1, stale: 0, missing: 1, " +
+		"could-not-check: 0, offsite: skipped, escalation: FAILED"
+	summary := backupSummaryLine(t, out)
+	if summary != wantSummary {
+		t.Fatalf("summary mismatch\n want: %s\n got:  %s", wantSummary, summary)
+	}
+	if !strings.HasSuffix(summary, ", escalation: FAILED") {
+		t.Fatalf("the summary must end by saying the escalation did not land:\n%s", summary)
+	}
+	// The escalation was really attempted, with the real subject — otherwise
+	// this would pass on a script that skipped the send entirely.
+	escalated := readOptionalLog(t, escalateLog)
+	if !strings.Contains(escalated, "--subject Dolt backup: 1/1 databases need attention — "+
+		"0 stale, 1 missing, 0 could not check [HIGH]") {
+		t.Fatalf("the failing escalate script must have been called with the finding's "+
+			"subject, log:\n%s", escalated)
+	}
+	// And the fake escalate really replaced the pack's own, so no `gc mail send`
+	// happened behind it.
+	if gcLog := readOptionalLog(t, gcLogPath); gcLog != "" {
+		t.Fatalf("GC_ESCALATE_SCRIPT must be the only delivery path in this fixture, gc log:\n%s", gcLog)
+	}
+	assertBackupWroteNothing(t, doltLogPath)
+}
+
+// backupSilencedStderrAllowlist is the complete set of places mol-dog-backup.sh
+// is permitted to send stderr to /dev/null. Each is a PROBE — a question whose
+// negative answer is itself the information, and whose noise is not a diagnosis
+// of anything — never a tool whose failure the script goes on to report.
+//
+// REQ-003 exists because the opposite was true: `2>/dev/null` sat on the
+// `dolt backup add` and `dolt backup sync` calls, so two weeks of escalations
+// carried `<db>(backup add failed)` and not one word of dolt's own explanation,
+// and the defect could not be diagnosed from the alert at all.
+var backupSilencedStderrAllowlist = []struct {
+	fragment string
+	why      string
+}{
+	{`dolt version 2>/dev/null`, "version preflight: an unparseable version is handled by the floor check below it"},
+	{`cat "$BACKUP_LOCK_DIR/pid" 2>/dev/null`, "lock helper: an unreadable pid file means `assume the holder is alive`"},
+	{`kill -0 "$lock_holder_pid" 2>/dev/null`, "lock helper: the signal probe's failure IS the answer (holder gone)"},
+	{`mkdir "$BACKUP_LOCK_DIR" 2>/dev/null`, "lock helper: the mkdir race is the lock; losing it is the expected path"},
+	{`> "$BACKUP_LOCK_DIR/pid" 2>/dev/null`, "lock helper: a pid that cannot be recorded degrades to `assume alive`"},
+}
+
+// TestBackupScriptHasNoSilencedFailurePath proves REQ-003 structurally, which is
+// the only way it can be proved: no fixture can show that a redirect a future
+// edit has not added yet is absent. The script's text is read, and every
+// `2>/dev/null` in it must be one of the five probe sites above.
+//
+// Scope is mol-dog-backup.sh, the script whose silenced failure path caused the
+// bug. backup_dest.sh carries four more, all on `stat`/`date` capability probes
+// with documented fallbacks — outside this contract; see the summary's
+// Remaining Risks.
+func TestBackupScriptHasNoSilencedFailurePath(t *testing.T) {
+	name := "mol-dog-backup.sh"
+	path := filepath.Join(repoRoot(t), "assets", "scripts", name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	matches := make([]int, len(backupSilencedStderrAllowlist))
+	for i, line := range strings.Split(string(data), "\n") {
+		if !strings.Contains(line, "2>/dev/null") {
+			continue
+		}
+		found := -1
+		for j, allowed := range backupSilencedStderrAllowlist {
+			if strings.Contains(line, allowed.fragment) {
+				found = j
+				break
+			}
+		}
+		if found < 0 {
+			t.Fatalf("REQ-003: %s:%d sends stderr to /dev/null on a site that is not an "+
+				"allowlisted probe:\n    %s\nA failure whose stderr was discarded is the "+
+				"undiagnosable escalation this build removed. Capture it into a temp file and "+
+				"quote it with backup_last_err, or — if this really is a probe whose failure "+
+				"is its own answer — add it to backupSilencedStderrAllowlist with that reason.",
+				name, i+1, strings.TrimSpace(line))
+		}
+		matches[found]++
+	}
+	for j, allowed := range backupSilencedStderrAllowlist {
+		if matches[j] == 0 {
+			t.Fatalf("allowlist entry %d no longer matches anything in %s:\n    %s\n    (%s)\n"+
+				"The site is gone, which is an improvement — delete the entry rather than "+
+				"restoring the redirect, so the allowlist keeps meaning what it says.",
+				j, name, allowed.fragment, allowed.why)
+		}
 	}
 }
 
