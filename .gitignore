@@ -84,3 +84,10 @@ __pycache__/
 
 # Git-for-Windows / Cygwin crash dumps
 *.stackdump
+
+# Beads / Dolt files (added by bd init)
+*.gate.lock*
+
+# Gas City
+.beads/*
+!.beads/identity.toml
