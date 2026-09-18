@@ -37,6 +37,27 @@ func runRunBoundedUnderPython3Fallback(t *testing.T, childScript string, extraEn
 		t.Skip("python3 not installed; cannot exercise run_bounded's python3 fallback")
 	}
 	bin := t.TempDir()
+	// Resolve the interpreter behind any shim before symlinking it. On a host
+	// managed by pyenv/asdf/conda, `python3` on PATH is a BASH SCRIPT that
+	// re-execs the real interpreter, and that breaks this fixture twice over:
+	//
+	//  1. the shim's own `#!/usr/bin/env bash` needs bash, which the restricted
+	//     PATH below deliberately does not carry, so run_bounded's fallback
+	//     died with 127 ("/usr/bin/env: 'bash': No such file or directory")
+	//     before the child was ever started — every assertion here then failed
+	//     on the host's Python installation rather than on run_bounded; and
+	//  2. the shim would sit between run_bounded and the child as the process
+	//     that actually receives the SIGTERM this test exists to observe,
+	//     which makes the measurement wrong even where bash is present.
+	//
+	// sys.executable is the real binary, and the restriction that matters —
+	// no timeout/gtimeout, so run_bounded takes the python3 branch — is
+	// untouched by resolving it.
+	if resolved, rerr := exec.Command(python3Path, "-c", "import sys; print(sys.executable)").Output(); rerr == nil {
+		if resolvedPath := strings.TrimSpace(string(resolved)); resolvedPath != "" {
+			python3Path = resolvedPath
+		}
+	}
 	if err := os.Symlink(python3Path, filepath.Join(bin, "python3")); err != nil {
 		t.Fatalf("symlink python3: %v", err)
 	}
