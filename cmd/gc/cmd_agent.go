@@ -17,14 +17,22 @@ import (
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/configedit"
 	"github.com/gastownhall/gascity/internal/fsys"
+
 	"github.com/spf13/cobra"
 )
 
-// loadCityConfigCalls counts every full TOML load performed by
-// loadCityConfigFS (city.toml + all pack includes). Store-open call sites on
-// hot per-tick paths (order dispatch) must reuse an already-resolved
-// *config.City instead of driving this counter once per scope per tick
-// (ga-237xpr) — tests assert on this counter to guard against a regression.
+// loadCityConfigCalls meters the STORE-OPEN config-reuse guard (ga-237xpr):
+// store-open call sites on hot per-tick paths (order dispatch) must reuse an
+// already-resolved *config.City instead of reloading city.toml once per scope
+// per tick. Tests assert on it from both directions —
+// TestOrderDispatchDoesNotReparseConfigPerTick wants zero growth across ticks,
+// TestOpenStoreResultWithConfigSkipsLoad wants exactly one on the nil-cfg
+// fallback — so it is incremented by loadCityConfigFS and by the store-open
+// fallback, and NOT by every loader in the package. In particular the
+// bd-binary pin resolution (applyWorkspacePinnedBdBinary) loads config through
+// the no-refresh loader for its own documented reason and memoizes the result;
+// counting it would make the per-tick guard fail on a load that is neither a
+// store open nor per-tick.
 var loadCityConfigCalls atomic.Int64
 
 const agentAddPromptScaffold = `You are the {{ .AgentName }} agent.
@@ -81,10 +89,6 @@ func loadCityConfigFS(fs fsys.FS, tomlPath string, warningWriter ...io.Writer) (
 // briefly reflect stale builtin-pack content after an upgrade until a normal
 // gc command refreshes the generated packs.
 func loadCityConfigWithoutBuiltinPackRefreshFS(fs fsys.FS, tomlPath string, warningWriter ...io.Writer) (*config.City, error) {
-	// Still a full TOML load (city.toml + every pack include); only the
-	// builtin-pack refresh is skipped. It counts toward loadCityConfigCalls so
-	// the reuse guards (ga-237xpr) see every parse, whichever loader ran it.
-	loadCityConfigCalls.Add(1)
 	return loadPrematerializedCityConfig(fs, tomlPath, skipRevisionSnapshot, resolveLoadCityConfigWarningWriter(warningWriter...))
 }
 

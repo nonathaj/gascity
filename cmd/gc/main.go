@@ -1614,6 +1614,11 @@ func openStoreResultAtForCityWithConfig(storePath, cityPath string, cfg *config.
 		// fall back to the refreshing one only if the config genuinely cannot resolve —
 		// a city whose builtin packs were never materialized still needs them on disk
 		// before its includes load. Errors stay ignored exactly as before.
+		// This fallback is what loadCityConfigCalls meters (see its doc): a
+		// store open that had to parse city.toml because no resolved config
+		// was handed down. The no-refresh loader does not self-count, so the
+		// increment is explicit here rather than inside it.
+		loadCityConfigCalls.Add(1)
 		var cfgErr error
 		cfg, cfgErr = loadCityConfigWithoutBuiltinPackRefresh(runtimeCityPath, io.Discard)
 		if cfgErr != nil {
