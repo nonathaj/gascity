@@ -134,6 +134,16 @@ func TestFanOutWorkerReceivesExportedGitConfigGlobal(t *testing.T) {
 	if strings.Contains(content, "\nexport gc_test_gitconfig\n") {
 		preamble += "\nexport gc_test_gitconfig"
 	}
+	// run_fan_out is lifted out of the script and run on its own under
+	// `set -u`, so the harness has to establish what the real script
+	// establishes above it. TMPDIR is resolved once at the top through
+	// scripts/lib/default-tmpdir.sh (the shared helper the TMPDIR doctrine
+	// requires instead of a hardcoded fallback) and exported for the fan-out
+	// workers; without it the extracted body dies on an unbound TMPDIR.
+	const tmpdirAssign = `: "${TMPDIR:="$(sh "$repo_root/scripts/lib/default-tmpdir.sh")"}"`
+	if strings.Contains(content, tmpdirAssign) {
+		preamble = tmpdirAssign + "\nexport TMPDIR\n" + preamble
+	}
 
 	const fanOutOpen = "run_fan_out() {\n"
 	startIdx := strings.Index(content, fanOutOpen)
