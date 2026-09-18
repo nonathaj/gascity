@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gastownhall/gascity/internal/processgroup"
-
 	"github.com/gastownhall/gascity/internal/citylayout"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/execenv"
@@ -225,7 +223,7 @@ func (p *proxyProcessInstance) start(now time.Time) error {
 	cmd.Env = execenv.WithUsageMetricsDisabled(cmd.Env)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	processgroup.StartCommandInNewGroup(cmd)
+	cmd.SysProcAttr = proxyProcessSysProcAttr()
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		return fmt.Errorf("start process: %w", err)

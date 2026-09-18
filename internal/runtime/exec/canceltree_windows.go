@@ -4,8 +4,8 @@ package exec
 
 import (
 	"os/exec"
-	"sync/atomic"
 
+	"github.com/gastownhall/gascity/internal/execgrace"
 	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
@@ -32,15 +32,15 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 // cancelAdapter is the cmd.Cancel the adapter runner installs. Windows has no
 // cross-process SIGINT (see signal_windows.go), so the cooperative interrupt
 // upstream uses on Unix cannot run here: the tree kill IS the cancellation
-// action. Mark it accepted so the caller treats cancellation — not the
-// adapter's incidental exit status — as the observed outcome, matching the
-// Unix contract.
-func cancelAdapter(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
+// action. Record it as a forced kill so the caller treats cancellation — not
+// the adapter's incidental exit status — as the observed outcome, matching
+// the Unix contract.
+func cancelAdapter(cmd *exec.Cmd, result *execgrace.CancelResult) func() error {
 	kill := cancelKillTree(cmd)
 	return func() error {
 		err := kill()
-		if err == nil && accepted != nil {
-			accepted.Store(true)
+		if err == nil && result != nil {
+			result.RecordForceKilled()
 		}
 		return err
 	}

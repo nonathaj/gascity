@@ -37,3 +37,13 @@ func taskkillProxyTree(pid int, force bool) error {
 	kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return kill.Run()
 }
+
+// proxyProcessSysProcAttr returns the process attributes used to spawn a
+// proxy_process child. Windows has neither Pdeathsig nor Setpgid; the
+// equivalent of a new process group is CREATE_NEW_PROCESS_GROUP, which is
+// also what processgroup.StartCommandInNewGroup sets, so a Ctrl-Break aimed
+// at the proxy's group cannot reach the parent. Teardown is taskkill /T
+// (stopProcessGroup above), which walks parent links rather than the group.
+func proxyProcessSysProcAttr() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+}

@@ -506,7 +506,7 @@ var (
 
 // waitForPIDExit blocks until the process at pid is gone, escalating
 // to SIGKILL if SIGTERM did not take effect within timeout. Returns
-// nil once the kernel reports ESRCH on a signal-zero probe.
+// nil once the shared PID probe reports no live process.
 //
 // PID-recycling races are not addressed here — the window between
 // SIGTERM and SIGKILL is short enough (seconds) that a recycled PID
@@ -574,7 +574,7 @@ func startDetached(logFile *os.File, exe string, argv ...string) error {
 		child.Stdin = nil
 		child.Stdout = logFile
 		child.Stderr = logFile
-		child.Env = supervisorEnv()
+		child.Env = supervisorForkEnv(supervisorEnv())
 		disableProductMetricsForChild(child)
 		if err := child.Start(); err != nil {
 			lastErr = err

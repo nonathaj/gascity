@@ -4,7 +4,6 @@ package exec
 
 import (
 	"os/exec"
-	"sync/atomic"
 
 	"github.com/gastownhall/gascity/internal/execgrace"
 )
@@ -30,6 +29,6 @@ func cancelKillTree(cmd *exec.Cmd) func() error {
 // overwritten by the tree-kill fallback.
 // Delegates to execgrace.InterruptThenKill, which upstream extracted from this
 // package's own former interruptThenKill. Same behavior, one implementation.
-func cancelAdapter(cmd *exec.Cmd, accepted *atomic.Bool) func() error {
-	return execgrace.InterruptThenKill(cmd, accepted)
+func cancelAdapter(cmd *exec.Cmd, result *execgrace.CancelResult) func() error {
+	return execgrace.InterruptThenKill(cmd, result)
 }

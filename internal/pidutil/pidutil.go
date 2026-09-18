@@ -1,16 +1,13 @@
 // Package pidutil contains small process helpers shared across GC packages.
+//
+// Process liveness, identity and tree inspection are platform-specific and
+// live in pidutil_unix.go / pidutil_windows.go; this file holds the
+// platform-neutral composition and argv helpers built on top of them.
 package pidutil
 
 import (
-	"errors"
 	"strings"
 )
-
-// ErrCmdlineUnsupported marks platforms where Cmdline has no
-// implementation (darwin). AliveWithCmdline treats it as "cannot
-// verify" and falls back to plain liveness; any other Cmdline error
-// fails closed.
-var ErrCmdlineUnsupported = errors.New("pidutil: cmdline inspection is not supported on this platform")
 
 // AliveWithStartTime reports whether pid is alive AND still the same process
 // identified by startTime. It closes the PID-reuse hole in Alive: during a
@@ -19,12 +16,12 @@ var ErrCmdlineUnsupported = errors.New("pidutil: cmdline inspection is not suppo
 // wrongly report the (dead) target as still alive.
 //
 // An empty startTime disables the identity check and falls back to Alive — used
-// on platforms without /proc start-time support (darwin, windows) or when the
-// original start time could not be captured before the wait. A non-empty
-// startTime that no longer matches means the PID was recycled: the original
-// target is dead, so this returns false. When the current start time cannot be
-// read despite Alive reporting true (a transient race, no /proc), it keeps the
-// conservative Alive answer rather than inventing a death.
+// when the original start time could not be captured before the wait. A
+// non-empty startTime that no longer matches means the PID was recycled: the
+// original target is dead, so this returns false. When the current start time
+// cannot be read despite Alive reporting true (a transient race, or a host
+// where neither /proc nor ps can answer), it keeps the conservative Alive
+// answer rather than inventing a death.
 func AliveWithStartTime(pid int, startTime string) bool {
 	if !Alive(pid) {
 		return false
@@ -39,12 +36,18 @@ func AliveWithStartTime(pid int, startTime string) bool {
 	return current == startTime
 }
 
-// AliveWithCmdline reports whether a PID exists, is not a zombie, and
-// its command line satisfies match. Verification is real on linux
-// (/proc) and windows (PEB); platforms without an implementation
-// (ErrCmdlineUnsupported, i.e. darwin) fall back to Alive so callers
-// preserve prior behavior there. Any other Cmdline failure fails
-// closed, matching an unreadable /proc record.
+// AliveWithCmdline reports whether a PID exists, is not a zombie, and its
+// command line satisfies match.
+//
+// It used to return true unconditionally off Linux, because Cmdline read only
+// /proc. That turned an identity check into a bare existence check on those
+// hosts: callers use this to decide whether the PID in a pidfile is still THEIR
+// process, so a recycled PID owned by an unrelated live process passed the
+// check, and the caller skipped work it should have done. Cmdline is portable
+// now, so the platform branch is gone.
+//
+// An unreadable argv yields false — never a match. Callers treat "not my
+// process" as "do the work", which is the recoverable direction.
 func AliveWithCmdline(pid int, match func([]string) bool) bool {
 	if !Alive(pid) {
 		return false
@@ -54,9 +57,7 @@ func AliveWithCmdline(pid int, match func([]string) bool) bool {
 	}
 	argv, err := Cmdline(pid)
 	if err != nil {
-		// A host that cannot report a command line cannot refute the match either, so the
-		// caller's liveness answer stands rather than being downgraded to "not ours".
-		return errors.Is(err, ErrCmdlineUnsupported)
+		return false
 	}
 	return match(argv)
 }

@@ -287,6 +287,7 @@ func TestKimiSessionIDAndWorkDirHash(t *testing.T) {
 }
 
 func TestFindKimiSessionFileByIDUsesSessionKey(t *testing.T) {
+	isolateKimiSearchRoots(t)
 	base := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
 	workHash := kimiWorkDirHash(workDir)
@@ -310,6 +311,7 @@ func TestFindKimiSessionFileByIDUsesSessionKey(t *testing.T) {
 }
 
 func TestFindKimiSessionFileFollowsSymlinkedRoots(t *testing.T) {
+	isolateKimiSearchRoots(t)
 	base := t.TempDir()
 	accountRoot := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
@@ -329,6 +331,17 @@ func TestFindKimiSessionFileFollowsSymlinkedRoots(t *testing.T) {
 	}
 }
 
+// isolateKimiSearchRoots pins every ambient variable DefaultKimiSearchPaths
+// reads, so a discovery test sees only the roots it creates. Pinning HOME alone
+// is insufficient: KIMI_CODE_HOME contributes a root independently of HOME, and
+// on a host that exports it the real session buckets there join every merged
+// root set as extra candidates.
+func isolateKimiSearchRoots(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("KIMI_CODE_HOME", t.TempDir())
+}
+
 func samePath(a, b string) bool {
 	if a == b {
 		return true
@@ -339,6 +352,7 @@ func samePath(a, b string) bool {
 }
 
 func TestFindKimiSessionFileLogsMissingWorkDirHashDiagnostic(t *testing.T) {
+	isolateKimiSearchRoots(t)
 	var logs bytes.Buffer
 	oldWriter := log.Writer()
 	oldFlags := log.Flags()
@@ -369,6 +383,7 @@ func TestFindKimiSessionFileLogsMissingWorkDirHashDiagnostic(t *testing.T) {
 }
 
 func TestFindKimiSessionFileByIDRejectsTraversalSessionID(t *testing.T) {
+	isolateKimiSearchRoots(t)
 	base := t.TempDir()
 	workDir := "/tmp/gascity/phase1/kimi"
 	if got := FindKimiSessionFileByID([]string{base}, workDir, "../escape"); got != "" {
