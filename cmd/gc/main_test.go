@@ -258,11 +258,6 @@ func TestMain(m *testing.M) {
 	// flock must stay held for the binary's lifetime: sweepers in other
 	// processes — including other PID namespaces — probe it instead of
 	// trusting PID visibility (ga-djbcqt).
-	// Capture the inherited temp root before redirecting temp allocation into
-	// the isolated test root: legacy PID-prefixed orphan dirs from prior or
-	// killed runs live there, so the orphan sweeps below must target it, not
-	// the (now-isolated) os.TempDir().
-	inheritedTmpRoot := os.TempDir()
 	testTempRoot, sentinel, err := createActiveTestTempRoot(cmdGCTestTempRootPrefix())
 	if err != nil {
 		panic(err)
@@ -278,15 +273,9 @@ func TestMain(m *testing.M) {
 	if resolved, rerr := filepath.EvalSymlinks(testTempRoot); rerr == nil {
 		testTempRoot = resolved
 	}
-	// os.TempDir() honors TMPDIR on Unix but TMP/TEMP on Windows; set all three
-	// so os.MkdirTemp("")/t.TempDir() — and the re-exec'd gc/bd testscript
-	// children that inherit this env — isolate into testTempRoot on every
-	// platform. Without TMP/TEMP, Windows temp escapes to the ambient dir and
-	// this package's temp isolation and orphan sweeps are void.
-	for _, tmpKey := range []string{"TMPDIR", "TMP", "TEMP"} {
-		if err := os.Setenv(tmpKey, testTempRoot); err != nil {
-			panic(err)
-		}
+	hostTmpRoot, err := adoptPerRunTMPDIR(testTempRoot)
+	if err != nil {
+		panic(err)
 	}
 	tmuxSocketParentRoot := os.Getenv(testTmuxSocketParentRootEnv)
 	if tmuxSocketParentRoot == "" {
@@ -324,11 +313,7 @@ func TestMain(m *testing.M) {
 	if err := tmuxtest.ConfigureProcessEnv(tmuxSocketRoot); err != nil {
 		panic(err)
 	}
-	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testGCHomeDirPrefix)
-	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testRuntimeDirPrefix)
-	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testProviderStubDirPrefix)
-	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testSlingFormulaDirPrefix)
-	sweepOrphanPIDPrefixedDirs(inheritedTmpRoot, testSlingCityDirPrefix)
+	sweepLegacyCmdGCFixtureDirs(hostTmpRoot)
 	initSharedSlingTestFixtures(testTempRoot)
 
 	gcHome, err := os.MkdirTemp("", pidPrefixedTempPattern(testGCHomeDirPrefix))
@@ -359,6 +344,11 @@ func TestMain(m *testing.M) {
 	configureFSPressureForTests()
 	configureSupervisorHooksForTests()
 	var testRunner testscript.TestingM = newDoltLeakGuardedTestingM(m, testTempRoot, testTempRoot, gcHome, runtimeDir, providerStubDir, sharedTestFixtureRoot)
+	// The tmux leak guard wraps outside the dolt guard and inside
+	// cleanupTestingM: it must observe and kill leaked tmux servers while the
+	// per-run socket root still exists (dip-73cr05 — city-name sockets like
+	// -L test-city have exit-empty off and outlive their sessions forever).
+	testRunner = newTmuxLeakGuardedTestingM(testRunner, tmuxSocketRoot)
 	if tmuxSocketCleanupRoot != "" {
 		testRunner = cleanupTestingM{m: testRunner, paths: []string{tmuxSocketCleanupRoot}}
 	}
@@ -835,6 +825,11 @@ func TestResolveCityFlag(t *testing.T) {
 	})
 
 	t.Run("flag_empty_fallback", func(t *testing.T) {
+		t.Skip("ga-klo4gz: this subtest's purpose is exercising resolveCity's " +
+			"ambient cwd-based fallback (step 10), which is now unconditionally " +
+			"refused inside test binaries; an explicit override would make it a " +
+			"no-op test rather than a fix")
+
 		// With empty flag, should fall back to cwd-based discovery.
 		// Clear GC_CITY so the cwd fallback is actually exercised.
 		t.Setenv("GC_CITY", "")
@@ -5586,6 +5581,8 @@ func TestInitFromSkip(t *testing.T) {
 		{filepath.Join(".gc", "agents", "mayor.json"), false, true},
 		{filepath.Join(".gc", "prompts"), true, true},
 		{filepath.Join(".gc", "prompts", "mayor.md"), false, true},
+		{".beads", true, true},
+		{filepath.Join(".beads", "metadata.json"), false, true},
 		{"gastown_test.go", false, true},
 		{filepath.Join("sub", "foo_test.go"), false, true},
 		{"city.toml", false, false},
@@ -5599,6 +5596,36 @@ func TestInitFromSkip(t *testing.T) {
 				t.Errorf("initFromSkip(%q, %v) = %v, want %v", tt.relPath, tt.isDir, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDoInitFromDirExcludesProviderOwnedBeadsState(t *testing.T) {
+	t.Setenv("GC_BEADS", "file")
+	t.Setenv("GC_DOLT", "skip")
+	configureIsolatedRuntimeEnv(t)
+
+	parent := t.TempDir()
+	srcDir := filepath.Join(parent, "template")
+	if err := os.MkdirAll(filepath.Join(srcDir, ".beads", "provider-runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "city.toml"), []byte("[workspace]\nname = \"template\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, ".beads", "metadata.json"), []byte(`{"backend":"dolt","dolt_mode":"proxied-server"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, ".beads", "provider-runtime", "state"), []byte("provider-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cityPath := filepath.Join(parent, "city")
+	var stdout, stderr bytes.Buffer
+	if code := doInitFromDir(srcDir, cityPath, &stdout, &stderr); code != 0 {
+		t.Fatalf("doInitFromDir = %d; stderr: %s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(cityPath, ".beads")); !os.IsNotExist(err) {
+		t.Fatalf("provider-owned .beads state was copied, stat err = %v", err)
 	}
 }
 
@@ -7369,7 +7396,7 @@ base = "builtin:codex"`)
 	}
 }
 
-func TestDoPrimeHookIgnoresProviderSessionKeyFromHookStdinForNonCodex(t *testing.T) {
+func TestDoPrimeClaudeHookPersistsProviderSessionKeyFromHookStdin(t *testing.T) {
 	dir, sessionID := setupPrimeHookProviderSessionKeyTest(t, "claude", `[providers.claude]
 base = "builtin:claude"`)
 	setPrimeHookStdinJSON(t, map[string]string{
@@ -7392,8 +7419,36 @@ base = "builtin:claude"`)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got := strings.TrimSpace(updated.Metadata["session_key"]); got != "claude-provider-session" {
+		t.Fatalf("session_key = %q, want Claude provider session id from hook stdin", got)
+	}
+}
+
+func TestDoPrimeHookIgnoresProviderSessionKeyFromHookStdinForUnsupportedProvider(t *testing.T) {
+	dir, sessionID := setupPrimeHookProviderSessionKeyTest(t, "gemini", `[providers.gemini]
+base = "builtin:gemini"`)
+	setPrimeHookStdinJSON(t, map[string]string{
+		"session_id":      "gemini-provider-session",
+		"hook_event_name": "SessionStart",
+		"source":          "startup",
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := doPrimeWithMode(nil, &stdout, &stderr, true, false)
+	if code != 0 {
+		t.Fatalf("doPrimeWithMode = %d, want 0; stderr: %s", code, stderr.String())
+	}
+
+	updatedStore, err := openCityStoreAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := updatedStore.Get(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := strings.TrimSpace(updated.Metadata["session_key"]); got != "" {
-		t.Fatalf("session_key = %q, want empty for non-Codex hook stdin session id", got)
+		t.Fatalf("session_key = %q, want empty for hook stdin session id from a provider outside the hook-stdin allowlist (gemini surfaces its id via env)", got)
 	}
 }
 

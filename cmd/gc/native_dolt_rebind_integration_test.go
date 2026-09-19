@@ -5,9 +5,10 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
 
 	"github.com/gastownhall/gascity/internal/beads"
 )
@@ -45,7 +46,7 @@ func TestManagedBdRigProviderStoreRecoversAfterHardKillPortRebind(t *testing.T) 
 	if before.PID <= 0 || before.Port <= 0 {
 		t.Fatalf("unexpected managed runtime before fault: %+v", before)
 	}
-	if err := syscall.Kill(before.PID, syscall.SIGKILL); err != nil {
+	if err := pidutil.KillTree(before.PID); err != nil {
 		t.Fatalf("Kill(%d): %v", before.PID, err)
 	}
 	deadline := time.Now().Add(10 * time.Second)

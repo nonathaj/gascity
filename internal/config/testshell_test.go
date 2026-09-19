@@ -16,17 +16,25 @@ import (
 // and on Windows the system identity vars msys sh needs are carried over.
 func testShellCommand(shellCmd, pathPrepend string, extraEnv ...string) *exec.Cmd {
 	cmd := execshim.ShellCommand(shellCmd)
-	cmd.Env = []string{"PATH=" + pathPrepend + string(os.PathListSeparator) + os.Getenv("PATH")}
-	cmd.Env = append(cmd.Env, extraEnv...)
+	env := []string{"PATH=" + pathPrepend + string(os.PathListSeparator) + os.Getenv("PATH")}
+	env = append(env, extraEnv...)
+	cmd.Env = testShellEnv(env)
+	return cmd
+}
+
+// testShellEnv completes an explicit test environment so a generated shell
+// line can run under it on every platform: on Windows the system variables sh
+// and its coreutils need are carried over, and sh's own directory
+// (Git-for-Windows usr\bin, which also holds the coreutils the rendered shell
+// lines invoke) survives the PATH override. On Unix it is the identity.
+func testShellEnv(env []string) []string {
+	out := append([]string(nil), env...)
 	if runtime.GOOS == "windows" {
 		for _, key := range []string{"SystemRoot", "SystemDrive", "ComSpec", "PATHEXT", "TEMP", "TMP"} {
 			if v := os.Getenv(key); v != "" {
-				cmd.Env = append(cmd.Env, key+"="+v)
+				out = append(out, key+"="+v)
 			}
 		}
 	}
-	// Ensure sh's own directory (Git-for-Windows usr\bin, which also holds the
-	// coreutils the rendered shell lines invoke) survives the PATH override.
-	cmd.Env = execshim.EnvWithShellDir(cmd.Env)
-	return cmd
+	return execshim.EnvWithShellDir(out)
 }

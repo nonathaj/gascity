@@ -81,6 +81,10 @@ func walkGoFiles(t *testing.T, root string, visit func(goFile)) {
 		".git": true, "vendor": true, "node_modules": true,
 		// Generated client/spec surfaces are not hand-maintained.
 		"genclient": true, "generated": true,
+		// Nested git worktrees are separate checkouts of other branches that
+		// happen to live under this root. Their files are not this tree's
+		// source, and linting them reports findings no commit here can fix.
+		"worktrees": true,
 	}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {

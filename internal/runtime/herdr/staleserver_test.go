@@ -9,24 +9,23 @@ import (
 	"github.com/gastownhall/gascity/internal/testutil"
 )
 
-// shortHome points this test's home directory at a short-pathed temp dir.
+// shortHome points socketPath()'s config-dir resolution at a short, isolated
+// temp dir so these tests never touch the real user's herdr sessions dir.
 //
-// Short because the default t.TempDir() (/var/folders/… on macOS) blows past the 104-byte
-// unix-socket sun_path limit once socketPath() appends
-// .config/herdr/sessions/<name>/herdr.sock.
-//
-// Two things here were wrong on Windows and are worth stating, because both were silent:
-//
-//   - os.MkdirTemp("/tmp", …) — "/tmp" has no volume on Windows, so it resolves against
-//     the current drive. It worked only on a machine that happened to have a D:\tmp.
-//   - t.Setenv("HOME", …) alone did not redirect anything. client.go resolves the home dir
-//     with os.UserHomeDir, which reads USERPROFILE on Windows (doctrine T1), so these
-//     tests created real sockets under the developer's actual profile
-//     (~/.config/herdr/sessions/staletest) and were never isolated there at all. Leftover
-//     state from a previous run then sits in the exact path a stale-socket test inspects.
+// os.UserConfigDir consults $XDG_CONFIG_HOME on Unix and %AppData% on Windows
+// (see herdrConfigDir), so both are redirected; HOME/USERPROFILE are redirected
+// too so the no-XDG fallback stays isolated. Short because the default
+// t.TempDir() (/var/folders/… on macOS) blows past the 104-byte unix-socket
+// sun_path limit once socketPath() appends herdr/sessions/<name>/herdr.sock,
+// and because "/tmp" has no volume on Windows and resolves against the current
+// drive there — testutil.ShortTempDir picks a short root that exists on every
+// platform.
 func shortHome(t *testing.T) {
 	t.Helper()
-	testutil.SetTestHome(t, testutil.ShortTempDir(t, "hdr"))
+	configHome := testutil.ShortTempDir(t, "hdr")
+	testutil.SetTestHome(t, configHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("AppData", configHome)
 }
 
 // A stale socket inode — left by a herdr server that exited uncleanly — must not

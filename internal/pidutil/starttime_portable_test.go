@@ -1,0 +1,49 @@
+package pidutil
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+// AliveWithStartTime closes the PID-reuse hole in Alive: during a post-SIGKILL
+// reap wait the target's PID can be recycled to an unrelated process, at which
+// point plain Alive wrongly reports the dead target as still alive.
+//
+// StartTime read only /proc/<pid>/stat, so off Linux it always errored, the
+// identity check was skipped, and the hole stayed open. The visible consequence
+// is the opposite of the reaper's: killByPID reports
+// "PID %d still runnable %s after SIGKILL (not confirmed dead)" for a process
+// that is genuinely dead, and internal/runtime/subprocess and the tmux adapter
+// then refuse to start the replacement — an agent restart blocked by a
+// protection that cannot function.
+
+// TestAliveWithStartTime_EmptyIdentityFallsBackToAlive pins the documented
+// opt-out: no captured identity means no identity check.
+func TestAliveWithStartTime_EmptyIdentityFallsBackToAlive(t *testing.T) {
+	if !AliveWithStartTime(os.Getpid(), "") {
+		t.Fatal("AliveWithStartTime(self, \"\") = false, want true (identity check disabled)")
+	}
+}
+
+// TestAliveWithStartTime_UnreadableIdentityKeepsAliveAnswer pins the deliberately
+// CONSERVATIVE direction, which is the opposite of the reaper's. Here a missing
+// signal must not invent a death: reporting a live process dead would let a
+// caller start a second copy alongside it. So an unreadable identity keeps the
+// Alive answer, exactly as the pre-existing doc comment promises.
+func TestAliveWithStartTime_UnreadableIdentityKeepsAliveAnswer(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("on linux /proc answers directly, so a ps stub cannot make the identity unreadable")
+	}
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, "ps"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(ps): %v", err)
+	}
+	t.Setenv("PATH", strings.Join([]string{binDir, os.Getenv("PATH")}, string(os.PathListSeparator)))
+
+	if !AliveWithStartTime(os.Getpid(), "some-captured-identity") {
+		t.Fatal("AliveWithStartTime = false when the identity is unreadable; a live process must not be reported dead")
+	}
+}

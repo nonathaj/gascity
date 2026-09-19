@@ -92,7 +92,7 @@ func TestTestsDoNotAssumeARootlessTmp(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if skipRepoLintDir(d.Name()) || (path != root && isNestedWorktreeRoot(path)) {
+			if skipRepoLintDir(path, root, d.Name()) || (path != root && isNestedWorktreeRoot(path)) {
 				return filepath.SkipDir
 			}
 			return nil

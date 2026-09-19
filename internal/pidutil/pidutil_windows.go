@@ -162,3 +162,43 @@ func readProcessMemory(h windows.Handle, addr uintptr, dst unsafe.Pointer, size 
 func StartTime(int) (string, error) {
 	return "", errors.New("pidutil: start-time inspection is not supported on windows")
 }
+
+// ChildPIDs returns the direct children of parent, read from a Toolhelp
+// process snapshot. It is the Windows counterpart of the /proc children
+// read on Linux and the ps walk on darwin: one snapshot of the process
+// table, filtered on ParentProcessID, so the cost is one system call
+// regardless of how many pids are asked about.
+//
+// Windows recycles PIDs freely and keeps a dead parent's PID in a child's
+// ParentProcessID, so a stale parent can appear to have children that were
+// never its own. Callers that need identity use AliveWithStartTime or
+// AliveWithCmdline on each child, as they do on Unix.
+func ChildPIDs(parent int) ([]int, error) {
+	if parent <= 0 {
+		return nil, fmt.Errorf("pidutil: invalid PID %d", parent)
+	}
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("pidutil: snapshotting process table for children of PID %d: %w", parent, err)
+	}
+	defer windows.CloseHandle(snapshot) //nolint:errcheck // best-effort cleanup
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	if err := windows.Process32First(snapshot, &entry); err != nil {
+		return nil, fmt.Errorf("pidutil: reading process table for children of PID %d: %w", parent, err)
+	}
+	var children []int
+	for {
+		if int(entry.ParentProcessID) == parent && int(entry.ProcessID) != parent {
+			children = append(children, int(entry.ProcessID))
+		}
+		if err := windows.Process32Next(snapshot, &entry); err != nil {
+			if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
+				break
+			}
+			return nil, fmt.Errorf("pidutil: walking process table for children of PID %d: %w", parent, err)
+		}
+	}
+	return children, nil
+}
