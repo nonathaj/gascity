@@ -4,9 +4,10 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/clock"
 )
@@ -32,10 +33,10 @@ func TestWithState_TimesOutInsteadOfBlockingForever(t *testing.T) {
 		t.Fatalf("open lock file: %v", err)
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		t.Fatalf("hold queue lock: %v", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 
 	done := make(chan error, 1)
 	go func() {
@@ -79,10 +80,10 @@ func TestWithStateBounded_TimesOutInsteadOfBlockingForever(t *testing.T) {
 		t.Fatalf("open lock file: %v", err)
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		t.Fatalf("hold queue lock: %v", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 
 	const waitTimeout = 150 * time.Millisecond
 	done := make(chan error, 1)

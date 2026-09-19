@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/gastownhall/gascity/internal/fslock"
+
 	"github.com/BurntSushi/toml"
 	"github.com/gastownhall/gascity/internal/productmetrics"
 	"github.com/gastownhall/gascity/internal/testutil"
@@ -417,12 +419,12 @@ func holdProductMetricsPackCacheLock(t *testing.T, home string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lock); err != nil {
 		_ = lock.Close()
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = fslock.Unlock(lock)
 		_ = lock.Close()
 	})
 }

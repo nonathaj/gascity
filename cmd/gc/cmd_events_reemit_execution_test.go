@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/beadmeta"
 	"github.com/gastownhall/gascity/internal/beads"
@@ -311,7 +311,7 @@ func TestEventsReemitExecutionHoldsControllerLockUntilCompletion(t *testing.T) {
 		t.Fatalf("open competing controller lock: %v", err)
 	}
 	defer competitor.Close() //nolint:errcheck // test cleanup
-	if err := syscall.Flock(int(competitor.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+	if err := fslock.TryLockEx(competitor); !fslock.WouldBlock(err) {
 		t.Fatalf("competing controller lock = %v, want EWOULDBLOCK or EAGAIN", err)
 	}
 
@@ -325,10 +325,10 @@ func TestEventsReemitExecutionHoldsControllerLockUntilCompletion(t *testing.T) {
 		t.Fatalf("reemit command did not complete after releasing barrier: %v", ctx.Err())
 	}
 
-	if err := syscall.Flock(int(competitor.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := fslock.TryLockEx(competitor); err != nil {
 		t.Fatalf("controller lock remained held after reemit completion: %v", err)
 	}
-	if err := syscall.Flock(int(competitor.Fd()), syscall.LOCK_UN); err != nil {
+	if err := fslock.Unlock(competitor); err != nil {
 		t.Fatalf("unlock competing controller lock: %v", err)
 	}
 }

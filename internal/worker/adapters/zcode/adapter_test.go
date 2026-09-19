@@ -1,3 +1,8 @@
+// Unix-only: it drives the adapter with process-group signals (SIGTERM/SIGINT to -pgid), which have no Windows equivalent.
+// This package is compile-only on the Windows gate (not in
+// .github/windows-test-packages.txt), so nothing that runs there is lost.
+//go:build !windows
+
 package zcode_test
 
 import (
@@ -13,6 +18,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/gastownhall/gascity/internal/pathutil"
 	"github.com/gastownhall/gascity/internal/sessionlog"
@@ -192,7 +199,7 @@ func (h *harness) command() *exec.Cmd {
 	cmd := exec.Command(h.adapter)
 	cmd.Dir = h.workDir
 	cmd.Env = h.envList()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	return cmd
 }
 

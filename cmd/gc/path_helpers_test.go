@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/pidutil"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/gastownhall/gascity/internal/config"
 	"github.com/gastownhall/gascity/internal/doltorphan"
@@ -562,12 +564,11 @@ func reapDoltLeakPIDs(pids []int) []error {
 }
 
 // processStillAlive reports whether pid is still present in the process
-// table, probing via signal 0 (delivers no actual signal; ESRCH means the
-// pid is already gone). Mirrors the ESRCH handling killFn callers already
-// use elsewhere in this file.
+// table. pidutil.Alive is the portable form of the signal-0 probe this used
+// to do inline (and it also treats a zombie as dead); the reaper's killFn
+// side already goes through platformKill for the same reason.
 func processStillAlive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || !errors.Is(err, syscall.ESRCH)
+	return pidutil.Alive(pid)
 }
 
 // reapDoltLeakPIDsWithKillerAndWaiter is the fully injectable form of the

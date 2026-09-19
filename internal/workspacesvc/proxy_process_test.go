@@ -16,7 +16,6 @@ import (
 	goruntime "runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -1221,12 +1220,12 @@ func TestProxyProcessSurvivesHardParentExit(t *testing.T) {
 	// asserting immediately.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if !pidutil.Alive(pid) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	_ = syscall.Kill(pid, syscall.SIGKILL) // don't leak this test's own reproduction
+	_ = pidutil.KillTree(pid) // don't leak this test's own reproduction
 	t.Fatalf("grandchild pid %d still alive 5s after harness hard-exited with no cleanup", pid)
 }
 

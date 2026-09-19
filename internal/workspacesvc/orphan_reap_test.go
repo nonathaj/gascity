@@ -59,7 +59,7 @@ func spawnOrphanForTest(t *testing.T, argv []string, extraEnv []string) int {
 	if err != nil {
 		t.Fatalf("parse orphan pid from %q: %v", out, err)
 	}
-	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = pidutil.KillTree(pid) })
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -103,8 +103,7 @@ func processParentPIDForTest(pid int) (int, error) {
 }
 
 func processAliveForTest(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || err == syscall.EPERM
+	return pidutil.Alive(pid)
 }
 
 func waitProcessGoneForTest(t *testing.T, pid int, timeout time.Duration) bool {

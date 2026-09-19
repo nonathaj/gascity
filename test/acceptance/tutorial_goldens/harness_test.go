@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gastownhall/gascity/internal/processgroup"
+
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"
 )
 
@@ -37,6 +39,10 @@ const (
 	gcInitTransientRetryLimit = 2
 	runningShellWaitDelay     = 2 * time.Second
 )
+
+// processGroupStopGrace bounds the TERM-then-KILL escalation processgroup
+// performs on the runner's group; it replaces the inline SIGTERM/SIGKILL pair.
+const processGroupStopGrace = 5 * time.Second
 
 func newTutorialWorkspace(t *testing.T) *tutorialWorkspace {
 	t.Helper()
@@ -138,7 +144,7 @@ func (w *tutorialWorkspace) runShellWithTimeout(timeout time.Duration, command, 
 		cmd := exec.CommandContext(ctx, "bash", "-c", command)
 		cmd.Dir = w.cwd
 		cmd.Env = w.env.Env.List()
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		processgroup.StartCommandInNewGroup(cmd)
 		if stdin != "" {
 			cmd.Stdin = strings.NewReader(stdin)
 		}
@@ -287,7 +293,7 @@ func (w *tutorialWorkspace) startShell(command, stdin string) (*runningShell, er
 	cmd.WaitDelay = runningShellWaitDelay
 	cmd.Dir = w.cwd
 	cmd.Env = w.env.Env.List()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -343,7 +349,7 @@ func (r *runningShell) waitFor(substr string, timeout time.Duration) error {
 func (r *runningShell) stop() error {
 	r.cancel()
 	if r.cmd.Process != nil {
-		_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGTERM)
+		_ = processgroup.TerminateCommand(r.cmd, 0, processGroupStopGrace, processgroup.Options{})
 	}
 	select {
 	case <-r.done:
@@ -353,7 +359,6 @@ func (r *runningShell) stop() error {
 		return r.waitErr
 	case <-time.After(5 * time.Second):
 		if r.cmd.Process != nil {
-			_ = syscall.Kill(-r.cmd.Process.Pid, syscall.SIGKILL)
 		}
 		<-r.done
 		return nil

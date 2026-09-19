@@ -2,9 +2,10 @@ package main
 
 import (
 	"os"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 
 	"github.com/gastownhall/gascity/internal/clock"
 	"github.com/gastownhall/gascity/internal/nudgequeue"
@@ -244,10 +245,10 @@ func TestShouldKeepNudgePollerAlive_DoesNotBlockOnHeldQueueLock(t *testing.T) {
 		t.Fatalf("opening queue lock: %v", err)
 	}
 	defer lockFile.Close() //nolint:errcheck
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+	if err := fslock.LockEx(lockFile); err != nil {
 		t.Fatalf("holding queue lock: %v", err)
 	}
-	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer fslock.Unlock(lockFile) //nolint:errcheck
 
 	target := nudgeTarget{cityPath: dir, alias: "mayor"}
 

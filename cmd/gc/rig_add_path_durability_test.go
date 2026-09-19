@@ -7,29 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/gastownhall/gascity/internal/fsys"
 	"github.com/gastownhall/gascity/internal/pathdurability"
 )
-
-// deviceOf returns the filesystem device path lives on, read straight from the
-// kernel. It is deliberately not routed through internal/pathdurability: these
-// tests use it to establish their own precondition, and a precondition proved
-// with the code under test cannot detect that code breaking.
-func deviceOf(t *testing.T, path string) uint64 {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %q: %v", path, err)
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatalf("stat %q: no syscall.Stat_t available", path)
-	}
-	return st.Dev
-}
 
 // ephemeralRigPath returns a path on a filesystem that cannot survive a restart,
 // on a different device from cityPath. /dev/shm is tmpfs on every Linux host and

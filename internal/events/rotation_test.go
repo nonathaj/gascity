@@ -9,9 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/fslock"
 )
 
 func TestGzipAndArchiveCompressesAndRemovesSource(t *testing.T) {
@@ -573,7 +574,7 @@ func TestTruncateNulPaddedTailSerializesAgainstConcurrentAppend(t *testing.T) {
 		if _, err := sib.Write([]byte(concurrentAppend)); err != nil {
 			t.Errorf("concurrent append through sibling lock holder: %v", err)
 		}
-		if err := syscall.Flock(int(sib.Fd()), syscall.LOCK_UN); err != nil {
+		if err := fslock.Unlock(sib); err != nil {
 			t.Errorf("sibling unlock: %v", err)
 		}
 		_ = sib.Close()
@@ -623,7 +624,7 @@ func TestTruncateNulPaddedTailTimesOutWaitingForFlock(t *testing.T) {
 
 	sib := mustOpenSiblingLock(t, path)
 	defer func() {
-		_ = syscall.Flock(int(sib.Fd()), syscall.LOCK_UN)
+		_ = fslock.Unlock(sib)
 		_ = sib.Close()
 	}()
 

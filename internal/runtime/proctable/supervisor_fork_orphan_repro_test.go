@@ -7,8 +7,9 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
 // spawnReparentedChild starts a long-lived `sleep` from a short-lived shell so
@@ -29,7 +30,7 @@ func spawnReparentedChild(t *testing.T, env []string) int {
 	if err != nil {
 		t.Fatalf("parse child pid from %q: %v", out, err)
 	}
-	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = pidutil.KillTree(pid) })
 	return pid
 }
 
@@ -132,7 +133,7 @@ func TestSetsidDoesNotPreventOrphanSelection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse setsid child pid from %q: %v", out, err)
 	}
-	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = pidutil.KillTree(pid) })
 
 	// Prove the detachment is real: a fully setsid'd process leads its own
 	// session and process group.

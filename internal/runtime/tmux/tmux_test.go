@@ -20,6 +20,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gastownhall/gascity/internal/pidutil"
+
 	"github.com/gastownhall/gascity/internal/citylayout"
 	runtimepkg "github.com/gastownhall/gascity/internal/runtime"
 	"github.com/gastownhall/gascity/internal/runtime/proctable"
@@ -3654,7 +3656,7 @@ func TestSelfCloseExcludedInPaneCallerSurvivesCleanup(t *testing.T) {
 
 	panePID := mustPID(t, mustPanePID(t, tmux, session))
 	callerPID := mustPID(t, waitForFileContents(t, callerPIDPath, 10*time.Second))
-	t.Cleanup(func() { _ = syscall.Kill(callerPID, syscall.SIGKILL) })
+	t.Cleanup(func() { _ = pidutil.KillTree(callerPID) })
 
 	// The exclusion must be recognized as owned by this pane. A foreign
 	// classification here is the misordering risk itself, so assert it before

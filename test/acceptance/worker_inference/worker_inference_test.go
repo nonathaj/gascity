@@ -15,9 +15,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 
 	"github.com/stretchr/testify/require"
 
@@ -5341,7 +5342,7 @@ func runExternalWithTimeout(timeout time.Duration, env *helpers.Env, dir, name s
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = env.List()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 	cmd.Stdout = outFile
 	cmd.Stderr = outFile
 
@@ -5391,7 +5392,7 @@ func killTimedCommand(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}
-	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := processgroup.TerminateCommand(cmd, 0, 5*time.Second, processgroup.Options{}); err != nil {
 		_ = err
 	}
 	if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
@@ -5684,7 +5685,7 @@ func runJSONCommandWithTimeout(timeout time.Duration, env *helpers.Env, dir, nam
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = env.List()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

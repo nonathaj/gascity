@@ -1,3 +1,8 @@
+// Unix-only: the harness reaper it exercises signals a process GROUP (kill -- -pgid), which has no Windows equivalent.
+// This package is compile-only on the Windows gate (not in
+// .github/windows-test-packages.txt), so nothing that runs there is lost.
+//go:build !windows
+
 package scripts_test
 
 import (
@@ -11,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/processgroup"
 )
 
 // fixtureLifetimeSeconds bounds every fixture process these tests spawn.
@@ -114,7 +121,7 @@ func (f *reapFixture) start(t *testing.T, extraEnv ...string) *exec.Cmd {
 		"GC_TEST_NO_SLICE=1",
 		"SYS_USR_CGO_FALLBACK=0",
 	}, extraEnv...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processgroup.StartCommandInNewGroup(cmd)
 
 	f.logPath = filepath.Join(f.tmpDir, "runner.log")
 	logFile, err := os.Create(f.logPath)

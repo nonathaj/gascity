@@ -1,3 +1,8 @@
+// Unix-only: this counts the watcher's open descriptors with Fstat over
+// /proc-style fd numbers, which Windows has no equivalent of. It is the only
+// test in the file, so tagging it costs the Windows gate nothing else.
+//go:build !windows
+
 package main
 
 import (

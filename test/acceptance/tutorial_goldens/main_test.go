@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
 
 	helpers "github.com/gastownhall/gascity/test/acceptance/helpers"
 	"github.com/gastownhall/gascity/test/dolttest"
@@ -270,12 +271,12 @@ func cleanupStaleTutorialProcesses(t *testing.T, tmpRoot string) {
 	}
 
 	for _, pid := range victims {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = pidutil.KillTree(pid)
 	}
 	time.Sleep(500 * time.Millisecond)
 	for _, pid := range victims {
-		if err := syscall.Kill(pid, 0); err == nil {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+		if pidutil.Alive(pid) {
+			_ = pidutil.KillTree(pid)
 		}
 	}
 }

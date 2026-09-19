@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/gastownhall/gascity/internal/pidutil"
 )
 
 // descendantPIDAfterTimeout runs a shell command that forks a long-lived child,
@@ -44,7 +45,7 @@ func descendantPIDAfterTimeout(t *testing.T, timeout time.Duration, prepare func
 func waitForProcessExit(pid int, within time.Duration) bool {
 	deadline := time.Now().Add(within)
 	for {
-		if syscall.Kill(pid, 0) != nil {
+		if !pidutil.Alive(pid) {
 			return true
 		}
 		if time.Now().After(deadline) {
@@ -74,14 +75,14 @@ func TestHookTimeoutKillsTheWholeProcessGroup(t *testing.T) {
 	t.Run("group cleanup reaps the descendant", func(t *testing.T) {
 		pid := descendantPIDAfterTimeout(t, 300*time.Millisecond, hookProcessGroupCleanup)
 		if !waitForProcessExit(pid, 10*time.Second) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			_ = pidutil.KillTree(pid)
 			t.Fatal("the hook's descendant survived the timeout; a freed pool slot does not mean the work stopped")
 		}
 	})
 
 	t.Run("control: without it the descendant survives", func(t *testing.T) {
 		pid := descendantPIDAfterTimeout(t, 300*time.Millisecond, nil)
-		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+		t.Cleanup(func() { _ = pidutil.KillTree(pid) })
 		if waitForProcessExit(pid, 2*time.Second) {
 			t.Fatal("the descendant died without the group cleanup, so the row above proves nothing about the cleanup")
 		}
