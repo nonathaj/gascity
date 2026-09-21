@@ -224,7 +224,35 @@ func (r PoolDemandServeRules) ShellArgs() string {
 }
 
 func bdReadyPoolDemandShell(limitFlag string, topo QueryTopology) string {
-	return readyReaderCommand(topo.FederatedReady) + bdReadyIncludeEphemeralArg(topo.includeEphemeralReady()) + ` --metadata-field "` + beadmeta.RoutedToMetadataKey + `=$target"` + PoolDemandServeRulesForQuery().ShellArgs() + ` --json ` + limitFlag
+	return executablePoolDemandShell(readyReaderCommand(topo.FederatedReady)+bdReadyIncludeEphemeralArg(topo.includeEphemeralReady())+` --metadata-field "`+beadmeta.RoutedToMetadataKey+`=$target"`+PoolDemandServeRulesForQuery().ShellArgs()+` --json `, limitFlag)
+}
+
+// executablePoolDemandShell filters topology before bounding the claim window.
+// Capture the reader separately: a plain pipeline would hide a store failure
+// behind jq's successful exit and report false zero demand.
+func executablePoolDemandShell(reader, limitFlag string) string {
+	// The generated probes have two shapes: unlimited counting and an oldest
+	// 20-candidate claim window. The reader must be unlimited in both cases.
+	filter := `[.[]` + excludeWorkflowLatchesJQClause() + `]`
+	if strings.Contains(limitFlag, "--limit=20") {
+		limitFlag = strings.ReplaceAll(limitFlag, "--limit=20", "--limit=0")
+		filter += ` | .[:20]`
+	}
+	return `{ demand_rows=$(` + reader + limitFlag + `) || exit $?; printf "%s" "$demand_rows" | jq -c ` + shellquote.Quote(filter) + `; }`
+}
+
+// excludeWorkflowLatchesJQClause projects beadmeta.IsWorkflowLatch into the
+// generated shell reader. The parity test covers every topology kind and the
+// legacy-root exception against the Go predicate.
+func excludeWorkflowLatchesJQClause() string {
+	var kinds []string
+	for _, kind := range beadmeta.WorkflowTopologyKinds {
+		if kind != beadmeta.KindWorkflow {
+			kinds = append(kinds, `$kind == "`+kind+`"`)
+		}
+	}
+	kinds = append(kinds, `($kind == "`+beadmeta.KindWorkflow+`" and (`+jqMeta(beadmeta.FormulaContractMetadataKey)+` | gsub("^\\s+|\\s+$"; "") | ascii_downcase) == "`+beadmeta.FormulaContractGraphV2+`")`)
+	return ` | select((` + jqMeta(beadmeta.KindMetadataKey) + ` | gsub("^\\s+|\\s+$"; "")) as $kind | (` + strings.Join(kinds, ` or `) + `) | not)`
 }
 
 // bdReadyPoolDemandMigrationShell is a temporary raw compatibility probe for
@@ -236,7 +264,7 @@ func bdReadyPoolDemandShell(limitFlag string, topo QueryTopology) string {
 // requires jq in the default worker/reconciler environment; remove it with the
 // Go-side legacy candidates after the backfill completion tracked by ga-dhf44.
 func bdReadyPoolDemandMigrationShell(limitFlag string, topo QueryTopology) string {
-	return readyReaderCommand(topo.FederatedReady) + bdReadyIncludeEphemeralArg(topo.includeEphemeralReady()) + ` --metadata-field "` + beadmeta.RunTargetMetadataKey + `=$target" --metadata-field "` + beadmeta.KindMetadataKey + `=` + beadmeta.KindWorkflow + `"` + PoolDemandServeRulesForQuery().ShellArgs() + ` --json --sort oldest ` + limitFlag
+	return executablePoolDemandShell(readyReaderCommand(topo.FederatedReady)+bdReadyIncludeEphemeralArg(topo.includeEphemeralReady())+` --metadata-field "`+beadmeta.RunTargetMetadataKey+`=$target" --metadata-field "`+beadmeta.KindMetadataKey+`=`+beadmeta.KindWorkflow+`"`+PoolDemandServeRulesForQuery().ShellArgs()+` --json --sort oldest `, limitFlag)
 }
 
 func poolDemandMigrationFilterJQ(limit int) string {
@@ -307,7 +335,7 @@ func legacyEphemeralPoolDemandShell(limit int, topo QueryTopology, quiet bool) s
 		return `printf "[]"`
 	}
 	filter := legacyEphemeralReadyFilterJQ(
-		`select((.assignee // "") == "")`+
+		`select((.assignee // "") == "")`+excludeWorkflowLatchesJQClause()+
 			` | select((`+jqMeta(beadmeta.RoutedToMetadataKey)+` == $target) or ((`+jqMeta(beadmeta.RoutedToMetadataKey)+` == "") and (`+jqMeta(beadmeta.RunTargetMetadataKey)+` == $target) and (`+jqMeta(beadmeta.KindMetadataKey)+` == "`+beadmeta.KindWorkflow+`")))`,
 		limit,
 		true,

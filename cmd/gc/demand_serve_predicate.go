@@ -67,6 +67,9 @@ func demandServableForTemplates(cfg *config.City, b beads.Bead, templates map[st
 // rules to one row: the exclusions a worker's query enforces regardless of which
 // template it is asking for.
 func demandRowServable(b beads.Bead) bool {
+	if beadmeta.IsWorkflowLatch(b.Metadata) {
+		return false
+	}
 	rules := config.PoolDemandServeRulesForQuery()
 	if rules.RequireUnassigned && strings.TrimSpace(b.Assignee) != "" {
 		return false

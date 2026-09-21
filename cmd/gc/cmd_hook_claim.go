@@ -19,7 +19,6 @@ import (
 	"github.com/gastownhall/gascity/internal/beads"
 	"github.com/gastownhall/gascity/internal/events"
 	"github.com/gastownhall/gascity/internal/executionevent"
-	"github.com/gastownhall/gascity/internal/graphroute"
 	"github.com/gastownhall/gascity/internal/winsec"
 )
 
@@ -2261,55 +2260,5 @@ func dropWorkflowTopologyClaimCandidates(candidates []beads.Bead) []beads.Bead {
 // only, and a scope latch is not the root — so requiring it there would quietly
 // turn this half of the filter into a no-op.
 func isUnclaimableLatchCandidate(candidate beads.Bead) bool {
-	kind := strings.TrimSpace(candidate.Metadata[beadmeta.KindMetadataKey])
-	if !graphroute.IsWorkflowTopologyKind(kind) {
-		return false
-	}
-	if kind != beadmeta.KindWorkflow {
-		return true
-	}
-	contract := strings.TrimSpace(candidate.Metadata[beadmeta.FormulaContractMetadataKey])
-	return strings.EqualFold(contract, beadmeta.FormulaContractGraphV2)
-}
-
-func hookClaimExistingOrAssigned(candidates []beads.Bead, opts hookClaimOptions) (hookClaimJSONResult, beads.Bead, bool) {
-	for _, candidate := range candidates {
-		if hookClaimCandidateIsMessage(candidate) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(candidate.Status), "in_progress") &&
-			hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
-			result := hookClaimJSONResult{
-				SchemaVersion: "1",
-				OK:            true,
-				Command:       hookClaimCommandName,
-				Action:        "work",
-				Reason:        "existing_assignment",
-				BeadID:        candidate.ID,
-				Assignee:      candidate.Assignee,
-				Route:         hookClaimRoute(candidate),
-			}
-			return result, candidate, true
-		}
-	}
-	for _, candidate := range candidates {
-		if hookClaimCandidateIsMessage(candidate) {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(candidate.Status), "open") &&
-			hookClaimHasIdentity(candidate.Assignee, opts.IdentityCandidates) {
-			result := hookClaimJSONResult{
-				SchemaVersion: "1",
-				OK:            true,
-				Command:       hookClaimCommandName,
-				Action:        "work",
-				Reason:        "ready_assignment",
-				BeadID:        candidate.ID,
-				Assignee:      candidate.Assignee,
-				Route:         hookClaimRoute(candidate),
-			}
-			return result, candidate, true
-		}
-	}
-	return hookClaimJSONResult{}, beads.Bead{}, false
+	return beadmeta.IsWorkflowLatch(candidate.Metadata)
 }
