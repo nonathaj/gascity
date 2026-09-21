@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,12 +28,10 @@ import (
 // burned on a single fed-build run, across two routes and two formulas, while
 // the latch also competed with genuinely routed steps for the same claim.
 //
-// The fix is deliberately scoped to the claim path (tryHookClaim), mirroring the
-// split beadmeta/hold_labels.go draws for holds — filter when deciding what to
-// DO, never when deciding who EXISTS. TestClaimFilterKeepsRoutedRootSurfaced
-// below is the other half: the same latch must still reach plain `gc hook
-// <pool>` and the pool-demand readers, or #2763 regresses into orphaned work and
-// an idle-reaped worker.
+// Both claim selection and default pool demand exclude topology latches.
+// Surfacing a root as demand while refusing to claim it creates repeated empty
+// worker starts. Executable graph children still surface independently; legacy
+// workflow roots remain executable. Public ready/store reads retain topology.
 //
 // Structurally this is gas-kg6 (isHeldHookCandidate) with one word changed: a
 // bead handed back as work that cannot be advanced, is never released, and so is
@@ -218,19 +217,19 @@ func TestHookClaimStillServesControlKinds(t *testing.T) {
 	}
 }
 
-// TestClaimFilterKeepsRoutedRootSurfaced is the other half of the split, and the
-// test the #2763 regression could not provide. TestCmdHookClaimsRoutedToRoot
-// asserts `gc hook <pool>` surfaces a routed graph.v2 root, but its fake bd
-// returns a row with no metadata at all — so gc.kind is empty,
-// IsWorkflowTopologyKind is false, and that test is BLIND to a latch-kind
-// predicate in either seam. It would stay green while the real surfacing
-// behavior regressed.
-//
-// This one carries the kind. A routed root that DOES declare gc.kind=workflow
-// must still reach the surface path: it is what produces pool demand and gets a
-// session spawned, and hiding it there is exactly the #2763 failure — the work
-// orphans and the spawned worker idle-reaps. Serve it, never claim it.
-func TestClaimFilterKeepsRoutedRootSurfaced(t *testing.T) {
+// The old root-surfacing assertion required a worker to wake for a bead it
+// could never claim. Only executable children should reach the default hook;
+// the graph root remains visible through store/ready reads, not as worker work.
+func TestHookSurfacesExecutableGraphChildrenNotTopology(t *testing.T) {
+	for _, withChild := range []bool{false, true} {
+		t.Run(fmt.Sprintf("child=%v", withChild), func(t *testing.T) {
+			testHookGraphDemand(t, withChild)
+		})
+	}
+}
+
+func testHookGraphDemand(t *testing.T, withChild bool) {
+	t.Helper()
 	disableManagedDoltRecoveryForTest(t)
 	clearInheritedCityRoutingEnv(t)
 	cityDir := t.TempDir()
@@ -251,9 +250,13 @@ name = "worker"
 	// kind a real graph.v2 root carries (graphroute.IsCompiledGraphWorkflow
 	// requires gc.kind=workflow on it).
 	root := latchWorkQueryRow("graph-root", "open", "", beadmeta.KindWorkflow, "worker")
+	rows := root
+	if withChild {
+		rows += "," + latchWorkQueryRow("graph-child", "open", "", beadmeta.KindTask, "worker")
+	}
 	script := `#!/bin/sh
 case "$*" in
-  *"--metadata-field gc.routed_to=worker"*) printf '[` + root + `]' ;;
+  *"--metadata-field gc.routed_to=worker"*) printf '[` + rows + `]' ;;
   *) printf '[]' ;;
 esac
 `
@@ -267,11 +270,23 @@ esac
 
 	var stdout, stderr bytes.Buffer
 	code := cmdHook([]string{"worker"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("cmdHook(worker) = %d, want 0; stdout=%q stderr=%s", code, stdout.String(), stderr.String())
+	wantCode := 1
+	if withChild {
+		wantCode = 0
 	}
-	if !strings.Contains(stdout.String(), `"graph-root"`) {
-		t.Fatalf("REGRESSION #2763: the latch-kind claim filter hid a routed graph.v2 root from the SURFACE path; a root that produces no demand orphans its work and idle-reaps the worker. stdout=%q", stdout.String())
+	if code != wantCode {
+		t.Fatalf("cmdHook(worker) = %d, want %d; stdout=%q stderr=%s", code, wantCode, stdout.String(), stderr.String())
+	}
+	var got []beads.Bead
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if withChild {
+		if len(got) != 1 || got[0].ID != "graph-child" {
+			t.Fatalf("hook must surface the executable child only; got %s", stdout.String())
+		}
+	} else if len(got) != 0 {
+		t.Fatalf("topology alone must not surface as executable work; got %s", stdout.String())
 	}
 }
 
