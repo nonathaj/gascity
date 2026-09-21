@@ -11,7 +11,7 @@ import (
 
 // This test lives in a !windows file because umask is a POSIX process
 // attribute: Windows has no syscall.Umask, and no equivalent that can narrow a
-// file's permissions at creation time. The behaviour it pins — WritePrivateFile
+// file's permissions at creation time. The behavior it pins — WritePrivateFile
 // chmod'ing back to privateFileMode after creation — is asserted on Windows by
 // the winsec ACL tests instead.
 

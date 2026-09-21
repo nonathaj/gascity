@@ -1,5 +1,16 @@
 version = 2
 
+[[medium]]
+package_dir = "internal/session"
+package_name = "session"
+owner = "TestStartAdmissionCrossProcessLock"
+resources = ["subprocess"]
+owner_bead = "gcty-i6e5"
+invariant = "city start admission excludes concurrent OS processes and recovers after lock-holder exit"
+resource_owner = "one test-binary child owns the city lock; pipe readiness and bounded context prove exclusion, cancellation and release without a model invocation"
+migration_target = "retain one OS-lock composition proof alongside in-memory admission tests"
+expires = "2026-10-01"
+
 # Every field below is pinned by resourcecensus.bootstrapPolicy. Changing this
 # manifest alone fails; an intentional policy change updates the Go policy,
 # this file, and the generated TESTING.md table under council review.
@@ -10,8 +21,8 @@ version = 2
 [[audit_baseline]]
 scope = "all"
 resource = "subprocess"
-baseline_calls = 558
-baseline_files = 190
+baseline_calls = 559
+baseline_files = 191
 reported_calls = 495
 reported_files = 135
 owner_bead = "ga-80po0c.2"
@@ -51,8 +62,8 @@ expires = "2026-10-01"
 [[debt]]
 scope = "untagged"
 resource = "subprocess"
-baseline_calls = 328
-baseline_files = 119
+baseline_calls = 323
+baseline_files = 118
 reported_calls = 380
 reported_files = 98
 owner_bead = "ga-80po0c.2"
@@ -64,8 +75,8 @@ expires = "2026-10-01"
 [[debt]]
 scope = "untagged"
 resource = "fixed_sleep"
-baseline_calls = 311
-baseline_files = 119
+baseline_calls = 294
+baseline_files = 116
 reported_calls = 295
 reported_files = 114
 owner_bead = "ga-80po0c.2"
@@ -355,8 +366,8 @@ medium_reason = "package TestMain mutates process state"
 [[small_debt]]
 scope = "untagged"
 resource = "subprocess"
-baseline_calls = 321
-baseline_files = 115
+baseline_calls = 315
+baseline_files = 113
 reported_calls = 394
 reported_files = 105
 owner_bead = "ga-80po0c.2.1"
@@ -368,8 +379,8 @@ expires = "2026-10-01"
 [[small_debt]]
 scope = "untagged"
 resource = "fixed_sleep"
-baseline_calls = 311
-baseline_files = 119
+baseline_calls = 294
+baseline_files = 116
 reported_calls = 287
 reported_files = 113
 owner_bead = "ga-80po0c.2.1"
