@@ -3344,6 +3344,13 @@
           "type": "integer",
           "description": "MaxActiveSessions is the workspace-level cap on total concurrent sessions.\nNil means unlimited. Agents and rigs inherit this if they don't set their own."
         },
+        "session_limit_exempt_templates": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "SessionLimitExemptTemplates lists exact qualified template names excluded\nfrom launch admission. Use only for non-model infrastructure. Unknown\nruntime sessions count against MaxActiveSessions; omission exempts none."
+        },
         "session_template": {
           "type": "string",
           "description": "SessionTemplate is a template string supporting placeholders: {{.City}},\n{{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming.\nDefault (empty): \"{{.Agent}}\" — just the sanitized agent name. Per-city\ntmux socket isolation makes a city prefix unnecessary."

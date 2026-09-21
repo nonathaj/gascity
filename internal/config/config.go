@@ -1318,6 +1318,10 @@ type Workspace struct {
 	// MaxActiveSessions is the workspace-level cap on total concurrent sessions.
 	// Nil means unlimited. Agents and rigs inherit this if they don't set their own.
 	MaxActiveSessions *int `toml:"max_active_sessions,omitempty"`
+	// SessionLimitExemptTemplates lists exact qualified template names excluded
+	// from launch admission. Use only for non-model infrastructure. Unknown
+	// runtime sessions count against MaxActiveSessions; omission exempts none.
+	SessionLimitExemptTemplates []string `toml:"session_limit_exempt_templates,omitempty"`
 	// SessionTemplate is a template string supporting placeholders: {{.City}},
 	// {{.Agent}} (sanitized), {{.Dir}}, {{.Name}}. Controls tmux session naming.
 	// Default (empty): "{{.Agent}}" — just the sanitized agent name. Per-city

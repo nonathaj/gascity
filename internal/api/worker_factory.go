@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gastownhall/gascity/internal/beads"
+	"github.com/gastownhall/gascity/internal/session"
 	"github.com/gastownhall/gascity/internal/worker"
 )
 
@@ -16,6 +17,7 @@ func (s *Server) workerFactory(store beads.Store) (*worker.Factory, error) {
 	return worker.NewFactory(worker.FactoryConfig{
 		Store:                 store,
 		Provider:              s.state.SessionProvider(),
+		StartAdmission:        session.NewStartAdmission(s.state.CityPath(), cfg, store, s.state.SessionProvider()),
 		CityPath:              s.state.CityPath(),
 		SearchPaths:           s.sessionLogPaths(),
 		Recorder:              s.state.EventProvider(),

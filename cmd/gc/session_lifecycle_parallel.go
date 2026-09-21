@@ -1529,6 +1529,8 @@ func runPreparedStartCandidate(
 	}
 	var outcome TraceOutcomeCode
 	switch {
+	case errors.Is(err, sessionpkg.ErrStartDeferred):
+		outcome = TraceOutcomeCapacityDeferred
 	case errors.Is(err, runtime.ErrSessionInitializing):
 		outcome = TraceOutcomeSessionInitializing
 		err = nil
@@ -2144,6 +2146,11 @@ func commitStartResultTraced(
 		return false
 	}
 	if result.err != nil {
+		if errors.Is(result.err, sessionpkg.ErrStartDeferred) {
+			clearPendingStartInFlightLease(info.ID, sessFront, stderr)
+			logLifecycleOutcome(stderr, "start", wave, name, tp.TemplateName, string(TraceOutcomeCapacityDeferred), result.started, result.finished, result.err, result.phases)
+			return false
+		}
 		commitStartFailure(result, sessFront, clk, rec, wave, stderr, trace)
 		return false
 	}

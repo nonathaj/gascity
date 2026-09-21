@@ -20,24 +20,26 @@ var ErrOperationUnsupported = errors.New("worker operation is unsupported")
 // RuntimeHandleConfig configures a worker handle for a legacy runtime-only
 // session target that has no bead-backed session identity.
 type RuntimeHandleConfig struct {
-	Provider     runtime.Provider
-	SessionName  string
-	ProviderName string
-	Transport    string
-	ProcessNames []string
-	Recorder     events.Recorder
+	Provider       runtime.Provider
+	StartAdmission *sessionpkg.StartAdmission
+	SessionName    string
+	ProviderName   string
+	Transport      string
+	ProcessNames   []string
+	Recorder       events.Recorder
 }
 
 // RuntimeHandle adapts a legacy runtime session name to the canonical worker
 // interface so higher layers do not bypass internal/worker for lifecycle or
 // pending interaction operations.
 type RuntimeHandle struct {
-	provider     runtime.Provider
-	sessionName  string
-	providerName string
-	transport    string
-	processNames []string
-	recorder     events.Recorder
+	provider       runtime.Provider
+	startAdmission *sessionpkg.StartAdmission
+	sessionName    string
+	providerName   string
+	transport      string
+	processNames   []string
+	recorder       events.Recorder
 }
 
 var _ Handle = (*RuntimeHandle)(nil)
@@ -55,12 +57,13 @@ func NewRuntimeHandle(cfg RuntimeHandleConfig) (*RuntimeHandle, error) {
 		recorder = events.Discard
 	}
 	return &RuntimeHandle{
-		provider:     cfg.Provider,
-		sessionName:  strings.TrimSpace(cfg.SessionName),
-		providerName: strings.TrimSpace(cfg.ProviderName),
-		transport:    strings.TrimSpace(cfg.Transport),
-		processNames: append([]string(nil), cfg.ProcessNames...),
-		recorder:     recorder,
+		provider:       cfg.Provider,
+		startAdmission: cfg.StartAdmission,
+		sessionName:    strings.TrimSpace(cfg.SessionName),
+		providerName:   strings.TrimSpace(cfg.ProviderName),
+		transport:      strings.TrimSpace(cfg.Transport),
+		processNames:   append([]string(nil), cfg.ProcessNames...),
+		recorder:       recorder,
 	}, nil
 }
 
@@ -92,7 +95,7 @@ func (h *RuntimeHandle) StartResolved(ctx context.Context, startCommand string, 
 		err = fmt.Errorf("%w: start requires a runtime command", ErrOperationUnsupported)
 		return err
 	}
-	err = h.provider.Start(ctx, h.sessionName, startCfg)
+	err = h.startAdmission.Start(ctx, h.provider, h.sessionName, startCfg)
 	return err
 }
 

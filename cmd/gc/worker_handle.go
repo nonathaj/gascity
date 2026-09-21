@@ -79,6 +79,7 @@ func workerFactoryWithStaleKeyDetectionWaiter(
 	return worker.NewFactory(worker.FactoryConfig{
 		Store:                   store,
 		Provider:                sp,
+		StartAdmission:          session.NewStartAdmission(cityPath, cfg, store, sp),
 		CityPath:                cityPath,
 		SearchPaths:             searchPaths,
 		UsageSink:               usageSinkForCity(cfg, cityPath),
