@@ -7,13 +7,15 @@ import (
 	"testing"
 )
 
-// runJobCount runs scripts/test-local-job-count with a synthetic /proc/meminfo
-// and a fixed CPU count, so the result depends only on the memory probe.
+// runJobCount runs scripts/test-local-job-count with a synthetic /proc/meminfo,
+// a fixed CPU count and an idle load average, so the result depends only on the
+// memory probe. The script trims its budget by the live /proc/loadavg, so an
+// unpinned load fails these memory assertions on any busy host.
 func runJobCount(t *testing.T, meminfo string, extraEnv ...string) string {
 	t.Helper()
 	repoRoot := repoRoot(t)
 
-	env := append(os.Environ(), "GC_TEST_LOCAL_CPUS=32")
+	env := append(os.Environ(), "GC_TEST_LOCAL_CPUS=32", "GC_TEST_LOCAL_LOADAVG=0")
 	if meminfo != "" {
 		path := filepath.Join(t.TempDir(), "meminfo")
 		if err := os.WriteFile(path, []byte(meminfo), 0o600); err != nil {
