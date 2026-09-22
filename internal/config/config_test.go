@@ -1859,13 +1859,13 @@ func TestEffectiveWorkQueryDefault(t *testing.T) {
 	if strings.Contains(got, `--include-ephemeral`) {
 		t.Errorf("EffectiveWorkQuery() default must be bd 1.0.4-compatible without --include-ephemeral: %q", got)
 	}
-	if !strings.Contains(got, `bd ready --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=20`) {
+	if !strings.Contains(got, `bd ready --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=0`) {
 		t.Errorf("EffectiveWorkQuery() missing tier 3 pool-demand probe: %q", got)
 	}
 	if !strings.Contains(got, "-- mayor") {
 		t.Errorf("EffectiveWorkQuery() missing tier 3 target argument: %q", got)
 	}
-	if !strings.Contains(got, `bd ready --metadata-field "gc.run_target=$target" --metadata-field "gc.kind=workflow" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=20`) {
+	if !strings.Contains(got, `bd ready --metadata-field "gc.run_target=$target" --metadata-field "gc.kind=workflow" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=0`) {
 		t.Errorf("EffectiveWorkQuery() missing run_target migration fallback: %q", got)
 	}
 	for _, want := range []string{`.metadata`, `.[:1]`} {
@@ -1881,7 +1881,7 @@ func TestEffectiveWorkQueryDefault(t *testing.T) {
 func TestEffectiveWorkQueryBD105CompatibilityOptIn(t *testing.T) {
 	a := Agent{Name: "mayor"}
 	got := a.EffectiveWorkQueryFor(QueryTopology{Beads: BeadsConfig{BDCompatibility: BeadsBDCompatibility105}})
-	if !strings.Contains(got, `bd ready --include-ephemeral --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=20`) {
+	if !strings.Contains(got, `bd ready --include-ephemeral --metadata-field "gc.routed_to=$target" --unassigned --exclude-type=epic --exclude-label "hold:mayor" --exclude-label "hold:external" --json --sort oldest --limit=0`) {
 		t.Errorf("EffectiveWorkQueryForBeads(bd-1.0.5) missing include-ephemeral routed probe: %q", got)
 	}
 	if !strings.Contains(got, `bd ready --include-ephemeral --assignee="$id" --json --limit=1`) {
@@ -2266,13 +2266,13 @@ func TestEffectiveWorkQueryControlDispatcherClaimsLegacyUnassignedRoute(t *testi
 	out := runEffectiveWorkQuery(t, a, nil, `#!/bin/sh
 set -eu
 case "$*" in
-  *"ready --include-ephemeral"*"--metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --include-ephemeral"*"--metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[]'
     ;;
-  *"ready --metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --metadata-field gc.routed_to=gascity/control-dispatcher"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[]'
     ;;
-  *"ready --metadata-field gc.routed_to=gascity/workflow-control"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --metadata-field gc.routed_to=gascity/workflow-control"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[{"id":"ga-legacy-route"}]'
     ;;
   *)
@@ -2301,7 +2301,7 @@ func TestEffectiveWorkQueryRoutedQueueUsesNativeOldestSortAcrossReadyTiers(t *te
 	}, `#!/bin/sh
 set -eu
 case "$*" in
-  "ready --metadata-field gc.routed_to=hello-world/worker --unassigned --exclude-type=epic --exclude-label hold:mayor --exclude-label hold:external --json --sort oldest --limit=20")
+  "ready --metadata-field gc.routed_to=hello-world/worker --unassigned --exclude-type=epic --exclude-label hold:mayor --exclude-label hold:external --json --sort oldest --limit=0")
     printf '[{"id":"older-no-history","priority":2,"created_at":"2026-05-20T06:09:30Z","no_history":true}]'
     ;;
   *)
@@ -2346,7 +2346,7 @@ func TestEffectiveWorkQueryRoutedQueueUsesOldestBeforePriority(t *testing.T) {
 	}, `#!/bin/sh
 set -eu
 case "$*" in
-  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[{"id":"older-p2","priority":2,"created_at":"2026-05-20T06:09:30Z"}]'
     ;;
   *)
@@ -2369,10 +2369,10 @@ func TestEffectiveWorkQueryRoutedFallbackUsesNativeOldestSort(t *testing.T) {
 	}, `#!/bin/sh
 set -eu
 case "$*" in
-  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --metadata-field gc.routed_to=hello-world/worker"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[]'
     ;;
-  *"ready --metadata-field gc.run_target=hello-world/worker"*"--metadata-field gc.kind=workflow"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=20"*)
+  *"ready --metadata-field gc.run_target=hello-world/worker"*"--metadata-field gc.kind=workflow"*"--unassigned"*"--exclude-type=epic"*"--json"*"--sort oldest"*"--limit=0"*)
     printf '[{"id":"older-fallback","priority":2,"created_at":"2026-05-20T06:09:30Z","metadata":{"gc.kind":"workflow","gc.run_target":"hello-world/worker"}}]'
     ;;
   *)
@@ -2778,8 +2778,8 @@ func TestPoolDemandPredicateSharedWithWorkQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wq := tt.agent.EffectiveWorkQuery()
-			demand := tt.agent.EffectivePoolDemandQuery()
+			wq := strings.ReplaceAll(tt.agent.EffectiveWorkQuery(), `'\''`, `'`)
+			demand := strings.ReplaceAll(tt.agent.EffectivePoolDemandQuery(), `'\''`, `'`)
 			workPredicate := bdReadyPoolDemandShell("--sort oldest --limit=20", QueryTopology{})
 			if !strings.Contains(wq, workPredicate) {
 				t.Errorf("EffectiveWorkQuery() missing shared predicate %q in %q", workPredicate, wq)

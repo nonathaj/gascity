@@ -125,8 +125,8 @@ var bootstrapPolicy = Ledger{
 		{
 			Scope:           ScopeAll,
 			Resource:        ResourceSubprocess,
-			BaselineCalls:   558,
-			BaselineFiles:   190,
+			BaselineCalls:   559,
+			BaselineFiles:   191,
 			ReportedCalls:   495,
 			ReportedFiles:   135,
 			OwnerBead:       "ga-80po0c.2",
@@ -166,8 +166,8 @@ var bootstrapPolicy = Ledger{
 		{
 			Scope:           ScopeUntagged,
 			Resource:        ResourceSubprocess,
-			BaselineCalls:   328,
-			BaselineFiles:   119,
+			BaselineCalls:   323,
+			BaselineFiles:   118,
 			ReportedCalls:   380,
 			ReportedFiles:   98,
 			OwnerBead:       "ga-80po0c.2",
@@ -179,8 +179,8 @@ var bootstrapPolicy = Ledger{
 		{
 			Scope:           ScopeUntagged,
 			Resource:        ResourceFixedSleep,
-			BaselineCalls:   311,
-			BaselineFiles:   119,
+			BaselineCalls:   294,
+			BaselineFiles:   116,
 			ReportedCalls:   295,
 			ReportedFiles:   114,
 			OwnerBead:       "ga-80po0c.2",
@@ -321,6 +321,17 @@ var bootstrapPolicy = Ledger{
 		},
 	},
 	Medium: []MediumOwner{
+		{
+			PackageDir:      "internal/session",
+			PackageName:     "session",
+			Owner:           "TestStartAdmissionCrossProcessLock",
+			Resources:       []Resource{ResourceSubprocess},
+			OwnerBead:       "gcty-i6e5",
+			Invariant:       "city start admission excludes concurrent OS processes and recovers after lock-holder exit",
+			ResourceOwner:   "one test-binary child owns the city lock; pipe readiness and bounded context prove exclusion, cancellation and release without a model invocation",
+			MigrationTarget: "retain one OS-lock composition proof alongside in-memory admission tests",
+			Expires:         "2026-10-01",
+		},
 		{
 			PackageDir:      "internal/api",
 			PackageName:     "api",
@@ -466,8 +477,8 @@ var bootstrapPolicy = Ledger{
 		{
 			Scope:           ScopeUntagged,
 			Resource:        ResourceSubprocess,
-			BaselineCalls:   321,
-			BaselineFiles:   115,
+			BaselineCalls:   315,
+			BaselineFiles:   113,
 			ReportedCalls:   394,
 			ReportedFiles:   105,
 			OwnerBead:       "ga-80po0c.2.1",
@@ -479,8 +490,8 @@ var bootstrapPolicy = Ledger{
 		{
 			Scope:           ScopeUntagged,
 			Resource:        ResourceFixedSleep,
-			BaselineCalls:   311,
-			BaselineFiles:   119,
+			BaselineCalls:   294,
+			BaselineFiles:   116,
 			ReportedCalls:   287,
 			ReportedFiles:   113,
 			OwnerBead:       "ga-80po0c.2.1",

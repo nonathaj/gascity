@@ -1,4 +1,14 @@
+//go:build !windows
+
 package main
+
+// Both assertions here are about POSIX process groups: the fixture proves a
+// timed-out hook's descendant is reaped by signaling the GROUP (kill(-pgid)),
+// and the control distinguishes a shell that leads its own group from one that
+// inherited gc's by comparing $$ against `ps -o pgid=`. Windows has neither
+// concept — hookProcessGroupCleanup routes through processgroup, whose Windows
+// arm contains the tree in a Job Object and is covered by that package's own
+// contain_windows_test.go — so there is no counterpart assertion to write here.
 
 import (
 	"os"

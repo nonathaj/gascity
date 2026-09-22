@@ -226,13 +226,15 @@ func TestFindPreferredBinary_SkipsTestscriptShim(t *testing.T) {
 	setTestHome(t, filepath.Join(root, "home"))
 	shimDir := filepath.Join(root, "testscript-main123", "bin")
 	realDir := filepath.Join(root, "real-bin")
-	for _, dir := range []string{shimDir, realDir} {
+	homeBin := filepath.Join(root, "home", ".local", "bin")
+	for _, dir := range []string{shimDir, realDir, homeBin} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
 	installFakeToolOnPath(t, shimDir, "bd", "#!/bin/sh\nexit 0\n")
 	installFakeToolOnPath(t, realDir, "bd", "#!/bin/sh\nexit 0\n")
+	installFakeToolOnPath(t, homeBin, "bd", "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", strings.Join([]string{shimDir, realDir}, string(os.PathListSeparator)))
 
 	got, err := findPreferredBinary("bd")
@@ -1415,18 +1417,20 @@ func findPreferredBinary(name string, preferred ...string) (string, error) {
 		}
 		candidates = append(candidates, candidate)
 	}
-	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
-		candidates = append(candidates,
-			filepath.Join(homeDir, ".local", "bin", name),
-			filepath.Join(homeDir, "bin", name),
-		)
-	}
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		dir = strings.TrimSpace(dir)
 		if dir == "" {
 			continue
 		}
 		candidates = append(candidates, filepath.Join(dir, name))
+	}
+	// Explicit test/CI toolchain paths take precedence over ambient installs.
+	// Testscript shims are still filtered below before choosing a real binary.
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		candidates = append(candidates,
+			filepath.Join(homeDir, ".local", "bin", name),
+			filepath.Join(homeDir, "bin", name),
+		)
 	}
 	// Windows binaries carry extensions (real bd is bd.exe; test fakes get a
 	// .bat launcher), so try those spellings for every candidate too.

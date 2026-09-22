@@ -608,6 +608,9 @@ func TestLocalParallelAllowlistIncludesObservableEnv(t *testing.T) {
 		t.Fatalf("read test-local-parallel: %v", err)
 	}
 	content := string(script)
+	if strings.Contains(content, `bash -lc "$command"`) {
+		t.Fatal("isolated jobs must not reload login profiles and overwrite the allowlisted PATH")
+	}
 	for _, key := range []string{"OBSERVABLE_TEST_LOG", "OBSERVABLE_FAILURE_LINES"} {
 		if !strings.Contains(content, key+"=") {
 			t.Fatalf("test-local-parallel job env should pass through %s", key)

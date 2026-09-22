@@ -118,6 +118,14 @@ differs, fix code and prove the row with a test.
 
 ### RPP v0 (Exec Protocol)
 
+Launch admission uses the optional `AdmissionSessionLister` when available.
+Its census includes pending runtimes that can still start a model. Tmux may
+report an empty census only after a successful empty listing or corroborated
+named-socket absence, never merely a protocol failure. Auto/hybrid routers
+preserve admission-specific listings and their partial-observation errors.
+Evidence: `tmux/admission_test.go`, `k8s/admission_test.go`,
+`auto/admission_test.go`, `hybrid/admission_test.go`.
+
 | ID | Scenario | Required behavior | Evidence |
 |---|---|---|---|
 | RUNTIME-RPP-001 | Op dispatch shape | Each provider operation invokes the executable as `<executable> <op> <args…>` (git credential-helper pattern): `start <name>`, `stop <name>`, `is-running <name>`, `peek <name> <lines>`, `nudge <name>`, `set-meta <name> <key>`, `list-running <prefix>`, … | `internal/runtime/exec/exec.go`; `internal/runtime/exec/exec_test.go`; `docs/reference/exec-session-provider.md` |

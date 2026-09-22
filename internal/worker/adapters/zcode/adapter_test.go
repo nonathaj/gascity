@@ -1,4 +1,14 @@
+//go:build !windows
+
 package zcode_test
+
+// The zcode adapter is a bash script that owns a tmux pane's tty, and this
+// suite drives it the way a pane does: it starts the adapter in its own Unix
+// process group and delivers SIGINT/SIGTERM to that group (kill(-pgid)) to
+// assert the escalation ladder, backed by a python3 CLI stub that installs its
+// own SIGINT handler. Windows has no process-group signal delivery, and Git
+// for Windows ships no python3 (doctrine class T8), so none of these
+// assertions have a Windows counterpart to write.
 
 import (
 	"encoding/json"

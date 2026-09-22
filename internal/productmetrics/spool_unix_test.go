@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/gchome"
@@ -225,8 +226,15 @@ func TestRecordOnceMissingQuotaRequiresExactEmptySpoolProof(t *testing.T) {
 	}
 }
 
+func runRecordClockScenario(t *testing.T, name string, scenario func(*testing.T)) {
+	t.Helper()
+	// Each scenario owns its clock, including the lock-acquisition context.
+	// Host fsync/scheduling latency must not inject an unrelated expiry.
+	t.Run(name, func(t *testing.T) { synctest.Test(t, scenario) })
+}
+
 func TestRecordOnceFreshQuotaBootstrapNeverReplacesDestinationRace(t *testing.T) {
-	t.Run("clean first install", func(t *testing.T) {
+	runRecordClockScenario(t, "clean first install", func(t *testing.T) {
 		home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 		if got := service.RecordOnce(permit, CommandHelp); got != RecordStored {
 			t.Fatalf("RecordOnce = %v, want stored", got)
@@ -236,7 +244,7 @@ func TestRecordOnceFreshQuotaBootstrapNeverReplacesDestinationRace(t *testing.T)
 		}
 	})
 
-	t.Run("conflicting destination appears before install", func(t *testing.T) {
+	runRecordClockScenario(t, "conflicting destination appears before install", func(t *testing.T) {
 		home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 		competing := spoolQuota{Events: maximumSpoolEvents, Bytes: 1}
 		competingData, err := encodeSpoolQuota(competing)
@@ -266,7 +274,7 @@ func TestRecordOnceFreshQuotaBootstrapNeverReplacesDestinationRace(t *testing.T)
 		assertNoQueuedEvents(t, home)
 	})
 
-	t.Run("exact expected destination replays", func(t *testing.T) {
+	runRecordClockScenario(t, "exact expected destination replays", func(t *testing.T) {
 		home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 		eventData, err := EncodeEvent(testSpoolEvent(testEventIDOne, "1.0.0", testRecordHour, CommandHelp))
 		if err != nil {
@@ -586,7 +594,7 @@ func TestRecordOnceDoesNotWriteAfterQuotaDirectorySyncIsUncertain(t *testing.T) 
 }
 
 func TestRecordOnceDecisionWindowGatesEveryForegroundQuotaBoundary(t *testing.T) {
-	t.Run("quota read", func(t *testing.T) {
+	runRecordClockScenario(t, "quota read", func(t *testing.T) {
 		home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 		root := mustOpenMutableRoot(t, home)
 		if err := persistSpoolQuota(root, spoolQuota{}); err != nil {
@@ -614,7 +622,7 @@ func TestRecordOnceDecisionWindowGatesEveryForegroundQuotaBoundary(t *testing.T)
 		}
 	})
 
-	t.Run("present quota read before control lookup", func(t *testing.T) {
+	runRecordClockScenario(t, "present quota read before control lookup", func(t *testing.T) {
 		home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 		root := mustOpenMutableRoot(t, home)
 		if err := persistSpoolQuota(root, spoolQuota{}); err != nil {
@@ -651,7 +659,7 @@ func TestRecordOnceDecisionWindowGatesEveryForegroundQuotaBoundary(t *testing.T)
 
 	lookupNames := []string{queueDirectoryName, inflightDirectoryName, spoolControlDirectoryName, retiredControlDirectoryName}
 	for index, expireName := range lookupNames {
-		t.Run("lookup "+expireName, func(t *testing.T) {
+		runRecordClockScenario(t, "lookup "+expireName, func(t *testing.T) {
 			home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 			current := testRecordHour
 			service.deps.now = func() time.Time { return current }
@@ -693,7 +701,7 @@ func TestRecordOnceDecisionWindowGatesEveryForegroundQuotaBoundary(t *testing.T)
 		{operation: recordOperationGenerationOpen, wantQuota: true, wantQuotaWrite: 1},
 		{operation: recordOperationEventWrite, wantQuota: true, wantQuotaWrite: 1},
 	} {
-		t.Run(string(test.operation), func(t *testing.T) {
+		runRecordClockScenario(t, string(test.operation), func(t *testing.T) {
 			home, service, permit := newRecordServiceFixture(t, testEventIDOne)
 			current := testRecordHour
 			service.deps.now = func() time.Time { return current }

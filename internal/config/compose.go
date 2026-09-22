@@ -1499,6 +1499,24 @@ func mergeWorkspace(base, fragment *City, fragMeta toml.MetaData, fragPath strin
 		base.Workspace.Suspended = fragment.Workspace.Suspended
 		prov.Workspace["suspended"] = fragPath
 	}
+	if fragMeta.IsDefined("workspace", "max_active_sessions") {
+		if base.Workspace.MaxActiveSessions != nil {
+			prov.Warnings = append(prov.Warnings,
+				fmt.Sprintf("workspace.max_active_sessions redefined by %q", fragPath))
+		}
+		base.Workspace.MaxActiveSessions = copyIntPtr(fragment.Workspace.MaxActiveSessions)
+		prov.Workspace["max_active_sessions"] = fragPath
+	}
+	// Admission exemptions replace, rather than accumulate: an explicit empty
+	// list must be able to revoke exemptions inherited from an earlier layer.
+	if fragMeta.IsDefined("workspace", "session_limit_exempt_templates") {
+		if len(base.Workspace.SessionLimitExemptTemplates) > 0 {
+			prov.Warnings = append(prov.Warnings,
+				fmt.Sprintf("workspace.session_limit_exempt_templates redefined by %q", fragPath))
+		}
+		base.Workspace.SessionLimitExemptTemplates = append([]string(nil), fragment.Workspace.SessionLimitExemptTemplates...)
+		prov.Workspace["session_limit_exempt_templates"] = fragPath
+	}
 	// install_agent_hooks is a []string — handle outside the wsField loop.
 	if fragMeta.IsDefined("workspace", "install_agent_hooks") {
 		if len(base.Workspace.InstallAgentHooks) > 0 {
@@ -1837,7 +1855,7 @@ func trackRigs(prov *Provenance, rigs []Rig, source string) {
 }
 
 func trackWorkspace(prov *Provenance, meta toml.MetaData, source string) {
-	for _, f := range []string{"name", "provider", "start_command", "session_template", "suspended", "install_agent_hooks", "global_fragments"} {
+	for _, f := range []string{"name", "provider", "start_command", "session_template", "suspended", "max_active_sessions", "session_limit_exempt_templates", "install_agent_hooks", "global_fragments"} {
 		if meta.IsDefined("workspace", f) {
 			prov.Workspace[f] = source
 		}

@@ -562,9 +562,13 @@ func reapDoltLeakPIDsWithKiller(pids []int, killFn func(int, syscall.Signal) err
 // processStillAlive reports whether pid is still present in the process
 // table, probing via signal 0 (delivers no actual signal; ESRCH means the
 // pid is already gone). Mirrors the ESRCH handling killFn callers already
-// use elsewhere in this file.
+// use elsewhere in this file — which is also why it probes through
+// platformKill rather than syscall.Kill: killFn's default is killProcess,
+// itself a platformKill wrapper, and platformKill keeps the signal-0 probe
+// and ESRCH result identical on Unix while giving Windows (no syscall.Kill)
+// the same contract via pidutil.Alive.
 func processStillAlive(pid int) bool {
-	err := syscall.Kill(pid, 0)
+	err := platformKill(pid, 0)
 	return err == nil || !errors.Is(err, syscall.ESRCH)
 }
 

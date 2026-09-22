@@ -1022,3 +1022,17 @@ func snapshotGraphSource(t *testing.T, dir string) graphSourceSnapshot {
 	sort.Strings(snapshot.Entries)
 	return snapshot
 }
+
+// sqliteRollbackHeaderForTest returns a 100-byte SQLite database header whose
+// file-format read/write version bytes select the rollback journal. It lives
+// here, in the package's untagged helper file, rather than beside its first
+// caller in graph_alias_unix_test.go: the header is pure bytes with nothing
+// platform-specific about it, and parking it in a build-tagged file left the
+// untagged tests below undefined on Windows (the GOOS=windows vet gate).
+func sqliteRollbackHeaderForTest() []byte {
+	header := make([]byte, 100)
+	copy(header, "SQLite format 3\x00")
+	header[18] = 1
+	header[19] = 1
+	return header
+}

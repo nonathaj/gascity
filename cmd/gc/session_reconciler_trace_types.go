@@ -270,6 +270,7 @@ const (
 	TraceOutcomeResolutionFailed    TraceOutcomeCode = "resolution_failed"
 	TraceOutcomeStartErrorConverged TraceOutcomeCode = "start_error_converged"
 	TraceOutcomeSessionInitializing TraceOutcomeCode = "session_initializing"
+	TraceOutcomeCapacityDeferred    TraceOutcomeCode = "capacity_deferred"
 	TraceOutcomeStartEnqueued       TraceOutcomeCode = "start_enqueued"
 	TraceOutcomeDeferredUserHold    TraceOutcomeCode = "deferred_user_hold"
 	TraceOutcomeDeferredQuarantine  TraceOutcomeCode = "deferred_quarantine"

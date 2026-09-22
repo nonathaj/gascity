@@ -22,6 +22,7 @@ type SessionRuntimeResolver func(info sessionpkg.Info, sessionKind string, metad
 type FactoryConfig struct {
 	Store                 beads.Store
 	Provider              runtime.Provider
+	StartAdmission        *sessionpkg.StartAdmission
 	CityPath              string
 	SearchPaths           []string
 	Recorder              events.Recorder
@@ -48,12 +49,14 @@ type Factory struct {
 	usageSink             usage.Sink
 	resolveSessionRuntime SessionRuntimeResolver
 	pricing               *pricing.Registry
+	startAdmission        *sessionpkg.StartAdmission
 }
 
 // NewFactory constructs a Factory backed by a session.Manager configured for
 // the caller's city/runtime context.
 func NewFactory(cfg FactoryConfig) (*Factory, error) {
 	opts := make([]sessionpkg.ManagerOption, 0, 3)
+	opts = append(opts, sessionpkg.WithStartAdmission(cfg.StartAdmission))
 	if cfg.CityPath != "" || cfg.ResolveTransport != nil {
 		opts = append(opts, sessionpkg.WithCityPath(cfg.CityPath))
 	}
@@ -64,7 +67,11 @@ func NewFactory(cfg FactoryConfig) (*Factory, error) {
 		opts = append(opts, sessionpkg.WithStaleKeyDetectionWaiter(cfg.StaleKeyDetectionWaiter))
 	}
 	manager := sessionpkg.NewManagerWithOptions(cfg.Store, cfg.Provider, opts...)
-	return newFactory(manager, cfg.Store, cfg.Provider, cfg.SearchPaths, cfg.Recorder, cfg.UsageSink, cfg.ResolveSessionRuntime, cfg.Pricing)
+	factory, err := newFactory(manager, cfg.Store, cfg.Provider, cfg.SearchPaths, cfg.Recorder, cfg.UsageSink, cfg.ResolveSessionRuntime, cfg.Pricing)
+	if err == nil {
+		factory.startAdmission = cfg.StartAdmission
+	}
+	return factory, err
 }
 
 // NewFactoryFromManager wraps an already-constructed session manager behind the
@@ -229,12 +236,13 @@ func (f *Factory) RuntimeHandle(sessionName, providerName, transport string, pro
 		return nil, sessionpkg.ErrSessionNotFound
 	}
 	return NewRuntimeHandle(RuntimeHandleConfig{
-		Provider:     f.provider,
-		SessionName:  sessionName,
-		ProviderName: providerName,
-		Transport:    transport,
-		ProcessNames: append([]string(nil), processNames...),
-		Recorder:     f.recorder,
+		Provider:       f.provider,
+		StartAdmission: f.startAdmission,
+		SessionName:    sessionName,
+		ProviderName:   providerName,
+		Transport:      transport,
+		ProcessNames:   append([]string(nil), processNames...),
+		Recorder:       f.recorder,
 	})
 }
 

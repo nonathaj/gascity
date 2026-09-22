@@ -381,6 +381,18 @@ func TestTutorial01(t *testing.T) {
 	testscript.Run(t, newTestscriptParams(t))
 }
 
+func TestTestscriptSetupPreservesCommandStubPrecedence(t *testing.T) {
+	params := newTestscriptParams(t)
+	stubDir := filepath.Join(t.TempDir(), "command-stubs")
+	env := &testscript.Env{WorkDir: t.TempDir(), Vars: []string{"PATH=" + stubDir}}
+	if err := params.Setup(env); err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.SplitList(env.Getenv("PATH"))[0]; got != stubDir {
+		t.Fatalf("first PATH entry = %q, want test-owned commands %q", got, stubDir)
+	}
+}
+
 func TestImportMigrateScript(t *testing.T) {
 	testscript.Run(t, newTestscriptParams(t, filepath.Join("testdata", "migrate-v2.txtar")))
 }
@@ -405,12 +417,13 @@ func newTestscriptParams(t *testing.T, files ...string) testscript.Params {
 			env.Setenv("GC_HOME", gcHome)
 			env.Setenv("XDG_RUNTIME_DIR", runtimeDir)
 			// testscript `exec grep|sh|mkdir|ln|...` needs the Git for Windows
-			// coreutils, which a bare Windows PATH does not expose. Prepend the
+			// coreutils, which a bare Windows PATH does not expose. Append the
 			// resolved sh interpreter's directory (usr\bin ships the coreutils).
 			// filepath.Dir of a bare "sh" is not absolute, so this is a no-op
-			// where the shell dir cannot be resolved (and harmless on Unix).
+			// where the shell dir cannot be resolved. Test-owned command stubs
+			// must stay first; /usr/bin can contain Graphviz's unrelated gc.
 			if shDir := filepath.Dir(execshim.ShPath()); filepath.IsAbs(shDir) {
-				env.Setenv("PATH", shDir+string(os.PathListSeparator)+env.Getenv("PATH"))
+				env.Setenv("PATH", env.Getenv("PATH")+string(os.PathListSeparator)+shDir)
 			}
 			return nil
 		},

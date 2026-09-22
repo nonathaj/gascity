@@ -22,6 +22,7 @@ func TestTraceCodeConstantValues(t *testing.T) {
 		TraceOutcomeResolutionFailed:    "resolution_failed",
 		TraceOutcomeStartErrorConverged: "start_error_converged",
 		TraceOutcomeSessionInitializing: "session_initializing",
+		TraceOutcomeCapacityDeferred:    "capacity_deferred",
 		TraceOutcomeStartEnqueued:       "start_enqueued",
 		TraceOutcomeDeferredUserHold:    "deferred_user_hold",
 		TraceOutcomeDeferredQuarantine:  "deferred_quarantine",

@@ -567,6 +567,7 @@ type Manager struct {
 	store                   beads.Store
 	sp                      runtime.Provider
 	cityPath                string
+	startAdmission          *StartAdmission
 	transportResolver       func(template, provider string) transportResolution
 	clk                     clock.Clock
 	staleKeyDetectionWaiter StaleKeyDetectionWaiter
@@ -1001,7 +1002,7 @@ func (m *Manager) createStarted(ctx context.Context, spec CreateOptions) (Info, 
 			}
 			return fmt.Errorf("pre-start orphan cleanup: %w", orphanErr)
 		}
-		if err := m.sp.Start(ctx, sessName, cfg); err != nil {
+		if err := m.startRuntime(ctx, sessName, cfg); err != nil {
 			if runtimeSessionMatchesBead(m.sp, sessName, b.ID, meta["instance_token"]) {
 				if metaErr := m.confirmStartedRuntimeMetadata(b.ID, &b); metaErr != nil {
 					return metaErr
