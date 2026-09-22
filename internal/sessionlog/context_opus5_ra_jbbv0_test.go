@@ -28,6 +28,7 @@ func TestOpus5IsNativelyOneMillion(t *testing.T) {
 		"claude-opus-5",
 		"opus-5",
 		"claude-opus-5[1m]", // suffix is redundant for Opus 5, must not regress
+		"claude-opus-5-5",   // Opus 5.5 rides the same "opus-5" marker
 	} {
 		if got := ModelContextWindow(id); got != modelwindow.Million {
 			t.Errorf("ModelContextWindow(%q) = %d, want %d (Opus 5 is natively 1M)", id, got, modelwindow.Million)

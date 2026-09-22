@@ -14,6 +14,8 @@ func TestWindow(t *testing.T) {
 		{"claude-opus-4-7", Million},
 		{"claude-opus-4-6", Million},
 		{"claude-opus-5", Million},
+		{"claude-opus-5-5", Million}, // Opus 5.5 is caught by the "opus-5" marker
+		{"claude-opus-5-5[1m]", Million},
 		{"claude-sonnet-4-6", Million},
 		{"claude-sonnet-5", Million},
 		{"claude-sonnet-5-20260101", Million}, // dated variant still matches
