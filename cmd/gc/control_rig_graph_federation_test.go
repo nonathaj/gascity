@@ -710,15 +710,21 @@ func TestCachedControlReadyUnionRequiresEveryLeg(t *testing.T) {
 	}
 }
 
-// TestControlReadyScanRigScopeFederatesTheBindingOnBothArms is the end-to-end
-// producer assertion, taken through the exact entry point the serve loop calls.
+// TestControlReadyScanRigScopeFederatesTheBindingInBothCompatibilityModes is the
+// end-to-end producer assertion, taken through the exact entry point the serve
+// loop calls.
 //
 // The three fallback tests above call controlReadyFallbackReady directly, which
 // leaves the production path — nextWorkflowServeBeads ->
-// tryControlReadyFromCacheOrFallback -> the cache arm — unexercised for a
-// federated scope. This runs the real entry for both arms against one fixture,
-// so cache/fallback parity is pinned on OUTPUT and not only on routing.
-func TestControlReadyScanRigScopeFederatesTheBindingOnBothArms(t *testing.T) {
+// tryControlReadyFromCacheOrFallback — unexercised for a federated scope. This
+// runs the real entry under both beads compatibility modes against one
+// fixture, so the federated union is pinned on OUTPUT and not only on routing.
+//
+// The fixture's scope leg is bd-backed, so both modes answer through the
+// batched read: a snapshot would prime that leg one bd subprocess per read
+// (controlReadySnapshotReadsThroughBD). The snapshot arm's own union is pinned
+// by TestCachedControlReadyUnionRequiresEveryLeg.
+func TestControlReadyScanRigScopeFederatesTheBindingInBothCompatibilityModes(t *testing.T) {
 	agentCfg := config.Agent{Name: config.ControlDispatcherAgentName}
 	route := agentCfg.QualifiedName()
 	rigResident := `[{"id":"ga-rig-resident","title":"rig check","issue_type":"task","status":"open",` +
@@ -728,8 +734,8 @@ func TestControlReadyScanRigScopeFederatesTheBindingOnBothArms(t *testing.T) {
 		name  string
 		beads config.BeadsConfig
 	}{
-		{name: "cached arm", beads: config.BeadsConfig{}},
-		{name: "fallback arm", beads: config.BeadsConfig{BDCompatibility: config.BeadsBDCompatibility105}},
+		{name: "default compatibility", beads: config.BeadsConfig{}},
+		{name: "bd-1.0.5 compatibility", beads: config.BeadsConfig{BDCompatibility: config.BeadsBDCompatibility105}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cityPath, rigPath, binding := rigFederationFixture(t, rigResident)
