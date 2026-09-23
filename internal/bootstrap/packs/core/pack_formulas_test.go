@@ -73,7 +73,7 @@ func TestMolDoWorkDrainClaimsCurrentContinuation(t *testing.T) {
 		t.Fatal("drain must not treat the immutable startup bead as the continuation bead")
 	}
 	if !strings.Contains(step, "if [ -z \"$ROOT_BEAD_ID\" ]") {
-		t.Fatal("drain must fail closed when the startup bead has no workflow root")
+		t.Fatal("drain must fail closed when the current claim has no workflow root")
 	}
 	if !strings.Contains(step, "if length == 1") || !strings.Contains(step, "could not resolve one ready continuation bead") {
 		t.Fatal("drain must fail closed unless exactly one matching continuation is ready")
@@ -92,26 +92,21 @@ func TestMolDoWorkDrainClaimsCurrentContinuation(t *testing.T) {
 	if !strings.Contains(step[currentAt:readyAt], `.metadata["gc.step_ref"] == "mol-do-work.drain"`) {
 		t.Fatal("drain must gate the current-claim branch on gc.step_ref; an unguarded claim restores the stale-identity bug")
 	}
-	// The startup-bead id is only needed by the ready-query fallback. Requiring
-	// it up front aborts drain on any seat that is not demand-spawned:
-	// GC_BEAD_ID exists only in the dispatch condition environment, never in a
-	// session shell, and GC_TRIGGER_BEAD_ID is pool-seat-only (see
-	// cmd/gc/cmd_hook_current.go). Same shape as ga-2q2r0.
-	startupAt := strings.Index(step, `STARTUP_BEAD_ID="${GC_BEAD_ID`)
-	if startupAt < 0 || startupAt < currentAt {
-		t.Fatal("drain must not require a startup bead id before consulting the current claim")
+	// No startup id reliably names a bead that this session owns. GC_BEAD_ID
+	// exists only in the dispatch condition environment, never in a session
+	// shell (see cmd/gc/cmd_hook_current.go). The GC_TRIGGER_* ids name the bead
+	// that woke the session, frozen when it started: a pool seat's pull claim
+	// routinely wins a different bead, and a named session can carry a stale
+	// trigger for its whole lifetime. A drain that resolves its workflow from
+	// any of them can close another session's drain step as passed (gcty-ycjc).
+	for _, startupID := range []string{"GC_BEAD_ID", "GC_TRIGGER_"} {
+		if strings.Contains(step, "$"+startupID) || strings.Contains(step, "${"+startupID) {
+			t.Fatalf("drain must not expand %s...; only this session's current claim may name its bead", startupID)
+		}
 	}
-	// The current claim carries gc.root_bead_id, and on a warm seat it is the
-	// ONLY source of it: GC_BEAD_ID never reaches a session shell and
-	// GC_TRIGGER_BEAD_ID is demand-spawn-only (cmd/gc/cmd_hook_current.go).
-	// Reading the root off the startup bead first strands every warm seat on
-	// the deferred path — the ga-2q2r0 failure, one layer in.
-	rootFromCurrent := strings.Index(step, `ROOT_BEAD_ID=$(printf '%s' "$CURRENT"`)
-	if rootFromCurrent < 0 {
+	// The current claim is the only source of the workflow root.
+	if !strings.Contains(step, `ROOT_BEAD_ID=$(printf '%s' "$CURRENT"`) {
 		t.Fatal("drain must derive the workflow root from the current claim it already fetched")
-	}
-	if rootFromCurrent > startupAt {
-		t.Fatal("drain must try the current claim's root before falling back to startup env vars")
 	}
 
 	updateAt := strings.Index(step, "gc bd update")
