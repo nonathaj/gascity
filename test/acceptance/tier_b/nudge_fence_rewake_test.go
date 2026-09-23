@@ -47,9 +47,10 @@ const (
 	// nudgeFenceRewakeSleeper is the process name each incarnation idles
 	// under, so leftover processes can be found by name.
 	nudgeFenceRewakeSleeper = "nudge-fence-rewake-sleeper"
-	// nudgeFenceRewakeStepTimeout bounds each wait on the city: a start, the
-	// suspended incarnation's exit, and the woken incarnation's start. It is a
-	// safety deadline; every wait returns as soon as its fact is observed.
+	// nudgeFenceRewakeStepTimeout bounds each wait on the city (a start, the
+	// suspended incarnation's exit, and the woken incarnation's start) and each
+	// gc call a step makes. It is a safety deadline; every wait returns as soon
+	// as its fact is observed.
 	nudgeFenceRewakeStepTimeout = 2 * time.Minute
 	// nudgeFenceRewakeDiagTimeout bounds each gc call made while collecting
 	// failure diagnostics, so a wedged command cannot stall the suite.
@@ -91,7 +92,7 @@ exec -a %[2]s sleep 3600
 // incident shape.
 func TestNudgeFenceRewake_StaleEpochQueuedNudgeIsDelivered(t *testing.T) {
 	c := helpers.NewCity(t, testEnvB)
-	c.Init("claude")
+	c.InitNoStart("claude")
 	s := newNudgeFenceRewakeScenario(t, c)
 	c.StartWithSupervisor()
 
@@ -109,7 +110,7 @@ func TestNudgeFenceRewake_StaleEpochQueuedNudgeIsDelivered(t *testing.T) {
 	}
 
 	// Queue while stopped. Queue delivery never wakes the session.
-	queued, err := c.GCStdout("session", "nudge", "--delivery=queue", nudgeFenceRewakeAgent, s.probe)
+	queued, err := s.stepGC(c.GCStdout, "session", "nudge", "--delivery=queue", nudgeFenceRewakeAgent, s.probe)
 	if err != nil || !strings.HasPrefix(queued, "Queued nudge for") {
 		s.fatalf("gc session nudge --delivery=queue: err=%v stdout=%q; want exit 0 and stdout starting with %q", err, queued, "Queued nudge for")
 	}
@@ -169,12 +170,14 @@ type nudgeFenceRewakeScenario struct {
 }
 
 // newNudgeFenceRewakeScenario writes the session script and the city
-// configuration, and picks a unique probe message. The replacement city.toml
-// keeps the identity gc init recorded in .gc/site.toml and sets the file beads
-// provider and a 1s patrol, so each lifecycle step is picked up promptly; it
-// sets no default provider, so the session gc init scaffolded is not started.
-// One fresh-mode agent is reserved as an always-on named session. The harness
-// environment supplies the subprocess session provider.
+// configuration, and picks a unique probe message. The city was initialized
+// with --no-start, so nothing has run before this configuration is written.
+// The replacement city.toml keeps the identity gc init recorded in
+// .gc/site.toml and sets the file beads provider and a 1s patrol, so each
+// lifecycle step is picked up promptly. It also sets no default provider, so
+// the controller skips the session gc init scaffolded. One fresh-mode agent is
+// reserved as an always-on named session. The harness environment supplies the
+// subprocess session provider.
 func newNudgeFenceRewakeScenario(t *testing.T, c *helpers.City) *nudgeFenceRewakeScenario {
 	t.Helper()
 	s := &nudgeFenceRewakeScenario{
@@ -341,8 +344,11 @@ func (s *nudgeFenceRewakeScenario) requireBinaryUnderTest(inc nudgeFenceRewakeIn
 }
 
 // nudgeFenceRewakeProcessAlive reports whether pid still names a live process.
-// Signal 0 probes without delivering a signal; os.FindProcess keeps the check
-// portable where syscall.Kill does not exist.
+// Signal 0 probes without delivering a signal. The check works only on Unix:
+// on Windows, Process.Signal supports only os.Kill, so the probe always fails
+// and this reports false. Tier B needs bash and never runs on Windows; the
+// file only has to compile there, which os.FindProcess allows and
+// syscall.Kill would not.
 func nudgeFenceRewakeProcessAlive(pid int) bool {
 	p, err := os.FindProcess(pid)
 	if err != nil {
@@ -356,7 +362,7 @@ func nudgeFenceRewakeProcessAlive(pid int) bool {
 // mustGC runs a gc command that must succeed and logs its output.
 func (s *nudgeFenceRewakeScenario) mustGC(args ...string) {
 	s.t.Helper()
-	out, err := s.c.GC(args...)
+	out, err := s.stepGC(s.c.GC, args...)
 	if err != nil {
 		s.fatalf("gc %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
@@ -393,7 +399,7 @@ type nudgeFenceRewakeQueued struct {
 // nudgeStatus reads the agent's queue through gc nudge status --json.
 func (s *nudgeFenceRewakeScenario) nudgeStatus() nudgeFenceRewakeStatus {
 	s.t.Helper()
-	out, err := s.c.GCStdout("nudge", "status", nudgeFenceRewakeAgent, "--json")
+	out, err := s.stepGC(s.c.GCStdout, "nudge", "status", nudgeFenceRewakeAgent, "--json")
 	if err != nil {
 		s.fatalf("gc nudge status %s --json: %v\n%s", nudgeFenceRewakeAgent, err, out)
 	}
@@ -445,8 +451,7 @@ func (s *nudgeFenceRewakeScenario) report(name string) string {
 // are named after the session. Starting a poller for the session creates both,
 // and the lock is never removed, so an empty list means no poller was ever
 // started for it and the hook drain delivered on its own. Files of other
-// sessions do not count: the city that gc init scaffolds can start its own
-// session before this test's configuration replaces it.
+// sessions do not count.
 func (s *nudgeFenceRewakeScenario) pollerFiles(sessionName string) []string {
 	var files []string
 	for _, suffix := range []string{".pid", ".pid.lock"} {
@@ -489,26 +494,53 @@ func (s *nudgeFenceRewakeScenario) diagnostics() string {
 	return b.String()
 }
 
+// stepGC runs one of the scenario's gc calls through call, which is s.c.GC or
+// s.c.GCStdout, and returns its output and error. A call that has not returned
+// within nudgeFenceRewakeStepTimeout fails the test through fatalf, naming the
+// command, so the diagnostics bundle prints instead of the shard hanging until
+// the package -timeout.
+func (s *nudgeFenceRewakeScenario) stepGC(call func(...string) (string, error), args ...string) (string, error) {
+	s.t.Helper()
+	r, finished := nudgeFenceRewakeGCWithin(nudgeFenceRewakeStepTimeout, call, args...)
+	if !finished {
+		s.fatalf("gc %s did not finish within %s", strings.Join(args, " "), nudgeFenceRewakeStepTimeout)
+	}
+	return r.out, r.err
+}
+
 // boundedGC runs a diagnostic gc command and returns its combined output, or
 // a note that it did not finish within nudgeFenceRewakeDiagTimeout.
 func (s *nudgeFenceRewakeScenario) boundedGC(args ...string) string {
-	type result struct {
-		out string
-		err error
+	r, finished := nudgeFenceRewakeGCWithin(nudgeFenceRewakeDiagTimeout, s.c.GC, args...)
+	if !finished {
+		return fmt.Sprintf("(gc %s did not finish within %s)", strings.Join(args, " "), nudgeFenceRewakeDiagTimeout)
 	}
-	done := make(chan result, 1)
+	if r.err != nil {
+		return fmt.Sprintf("%s\n(gc exited: %v)", r.out, r.err)
+	}
+	return r.out
+}
+
+// nudgeFenceRewakeGCResult is a finished gc call's output and error.
+type nudgeFenceRewakeGCResult struct {
+	out string
+	err error
+}
+
+// nudgeFenceRewakeGCWithin runs a gc call on a goroutine and returns its
+// result, or false when it has not returned within timeout. A call that has
+// not returned is left running for teardown.
+func nudgeFenceRewakeGCWithin(timeout time.Duration, call func(...string) (string, error), args ...string) (nudgeFenceRewakeGCResult, bool) {
+	done := make(chan nudgeFenceRewakeGCResult, 1)
 	go func() {
-		out, err := s.c.GC(args...)
-		done <- result{out: out, err: err}
+		out, err := call(args...)
+		done <- nudgeFenceRewakeGCResult{out: out, err: err}
 	}()
 	select {
 	case r := <-done:
-		if r.err != nil {
-			return fmt.Sprintf("%s\n(gc exited: %v)", r.out, r.err)
-		}
-		return r.out
-	case <-time.After(nudgeFenceRewakeDiagTimeout):
-		return fmt.Sprintf("(gc %s did not finish within %s)", strings.Join(args, " "), nudgeFenceRewakeDiagTimeout)
+		return r, true
+	case <-time.After(timeout):
+		return nudgeFenceRewakeGCResult{}, false
 	}
 }
 
