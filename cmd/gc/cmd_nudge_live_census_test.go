@@ -273,6 +273,73 @@ func TestClaimDueQueuedNudgesForTarget_UnavailableCensusFailsClosed(t *testing.T
 	}
 }
 
+// TestClaimDueQueuedNudgesForTarget_PartialCensusFailsClosed pins the
+// production census's partial result: when the session listing is partial, as
+// bd list returns it when a row fails to parse, the census is unavailable. A
+// nudge fenced to a live sibling whose row the listing dropped stays pending
+// instead of rebinding to the successor.
+func TestClaimDueQueuedNudgesForTarget_PartialCensusFailsClosed(t *testing.T) {
+	requireProductionNudgeFenceCensus(t)
+	t.Setenv("GC_BEADS", "file")
+	dir := t.TempDir()
+	mem := beads.NewMemStore()
+	successor, err := mem.Create(beads.Bead{
+		Type:   sessionBeadType,
+		Labels: []string{sessionBeadLabel},
+		Metadata: map[string]string{
+			"session_name": "s-successor",
+			"state":        "active",
+			"template":     "worker",
+			"agent_name":   "worker",
+		},
+	})
+	if err != nil {
+		t.Fatalf("creating the successor's session bead: %v", err)
+	}
+	// gc-live-sibling has no bead: it stands for the row the partial listing
+	// dropped.
+	item := newQueuedNudgeWithOptions("worker", "live sibling session", "session", time.Now().Add(-time.Minute), queuedNudgeOptions{
+		ID:                "n-sibling",
+		SessionID:         "gc-live-sibling",
+		ContinuationEpoch: "1",
+	})
+	if err := enqueueQueuedNudge(dir, item); err != nil {
+		t.Fatalf("enqueueQueuedNudge: %v", err)
+	}
+
+	prev := openNudgeBeadStore
+	t.Cleanup(func() { openNudgeBeadStore = prev })
+	openNudgeBeadStore = func(string) beads.NudgesStore {
+		return beads.NudgesStore{Store: &partialSessionListStore{MemStore: mem}}
+	}
+
+	// Errorf, so that a non-nil census still reaches the claim below and
+	// reports what the successor takes.
+	if live := loadLiveNudgeFenceSessionIDsFromCity(dir); live != nil {
+		t.Errorf("census = %v, want nil (a partial listing is unavailable)", live)
+	}
+	target := nudgeTarget{
+		cityPath:          dir,
+		agent:             config.Agent{Name: "worker"},
+		sessionID:         successor.ID,
+		continuationEpoch: "2",
+	}
+	claimed, err := claimDueQueuedNudgesForTarget(dir, target, time.Now())
+	if err != nil {
+		t.Fatalf("claimDueQueuedNudgesForTarget: %v", err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("claimed = %v, want nothing while the census is partial", queuedNudgeIDs(claimed))
+	}
+	pending, _, dead, err := listQueuedNudges(dir, "worker", time.Now())
+	if err != nil {
+		t.Fatalf("listQueuedNudges: %v", err)
+	}
+	if len(pending) != 1 || len(dead) != 0 {
+		t.Fatalf("pending = %d, dead = %d; want 1 and 0", len(pending), len(dead))
+	}
+}
+
 // TestClaimDueQueuedNudgesForTarget_CensusIsLazyAndOncePerPass pins the cost
 // of the census on a resolved target: a claim pass whose items are unfenced or
 // fenced to the target's own session (the idle tick) never builds it, and a
