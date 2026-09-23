@@ -404,3 +404,47 @@ func TestClaimDueQueuedNudgesForTarget_CensusIsLazyAndOncePerPass(t *testing.T) 
 		})
 	}
 }
+
+// TestClaimDueQueuedNudgesForTarget_CensusClosesTheStoreItOpens pins that the
+// Leg B census releases the bead store it opens. A claim pass that holds a
+// session-replacement item builds the census, which opens its own store on
+// every pass; like the other per-tick poll helpers
+// (TestNudgePollHelpersCloseEveryStoreTheyOpen), it must close what it opens so
+// sql-server connections do not accumulate across poll ticks while such an item
+// waits.
+func TestClaimDueQueuedNudgesForTarget_CensusClosesTheStoreItOpens(t *testing.T) {
+	requireProductionNudgeFenceCensus(t)
+	t.Setenv("GC_BEADS", "file")
+	opens, closes := installCountingNudgeStoreSeam(t)
+	dir := t.TempDir()
+	item := newQueuedNudgeWithOptions("worker", "replaced session", "session", time.Now().Add(-time.Minute), queuedNudgeOptions{
+		ID:                "n-replaced",
+		SessionID:         "gc-old",
+		ContinuationEpoch: "1",
+	})
+	if err := enqueueQueuedNudge(dir, item); err != nil {
+		t.Fatalf("enqueueQueuedNudge: %v", err)
+	}
+	opensBeforeClaims := *opens
+	target := nudgeTarget{
+		cityPath:          dir,
+		agent:             config.Agent{Name: "worker"},
+		sessionID:         "gc-new",
+		continuationEpoch: "2",
+	}
+	const passes = 3
+	for i := 0; i < passes; i++ {
+		if _, err := claimDueQueuedNudgesForTarget(dir, target, time.Now()); err != nil {
+			t.Fatalf("claimDueQueuedNudgesForTarget: %v", err)
+		}
+	}
+	// Each pass opens the claim pass's maintenance store and the census's own
+	// store. If the census comes to reuse a store it did not open, this test no
+	// longer exercises its close; move the pin with it.
+	if got := *opens - opensBeforeClaims; got <= passes {
+		t.Fatalf("%d claim passes opened %d stores; want the census to open its own store on each pass", passes, got)
+	}
+	if *closes != *opens {
+		t.Fatalf("bead store leak: opens=%d closes=%d (the census must close the store it opens)", *opens, *closes)
+	}
+}
