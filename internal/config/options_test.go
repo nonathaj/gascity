@@ -1266,6 +1266,8 @@ func TestResolveClaudeCanonicalModelIDsThroughResolvers(t *testing.T) {
 	for _, model := range []string{
 		"claude-opus-5",
 		"claude-opus-5[1m]",
+		"claude-opus-5-5",
+		"claude-opus-5-5[1m]",
 		"claude-sonnet-5",
 		"claude-fable-5",
 	} {
