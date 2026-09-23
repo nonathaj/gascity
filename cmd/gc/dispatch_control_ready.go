@@ -417,6 +417,10 @@ var controlReadyCacheRegistry = struct {
 type controlReadyCacheEntry struct {
 	caches   []*beads.CachingStore
 	primedAt time.Time
+	// batchedOnly records that this scope's ledgers read through bd
+	// subprocesses, so its scans take the batched read and never prime; see
+	// controlReadySnapshotReadsThroughBD.
+	batchedOnly bool
 }
 
 // controlReadyCachesFor returns a short-lived, best-effort in-process ready
@@ -454,17 +458,31 @@ type controlReadyCacheEntry struct {
 // loop's typical call pattern is sequential-per-tick per dir. Note the entries
 // are keyed by scope dir, so on a split city every rig dispatcher primes the
 // shared city binding independently (ga-n6gnr).
-func controlReadyCachesFor(dir, cityPath string, cfg *config.City) []*beads.CachingStore {
+//
+// A scope whose ledgers read through bd subprocesses is never primed, and the
+// verdict is kept for the life of the process, so its later scans resolve no
+// config and open no store at all; see controlReadySnapshotReadsThroughBD.
+func controlReadyCachesFor(dir, cityPath string) []*beads.CachingStore {
 	controlReadyCacheRegistry.mu.Lock()
 	entry, ok := controlReadyCacheRegistry.byDir[dir]
-	fresh := ok && time.Since(entry.primedAt) < controlReadyCacheTTL
 	controlReadyCacheRegistry.mu.Unlock()
-	if fresh {
+	switch {
+	case ok && entry.batchedOnly:
+		return nil
+	case ok && time.Since(entry.primedAt) < controlReadyCacheTTL:
 		return entry.caches
 	}
 
+	// Only a prime needs the config: it names the rig whose store to open.
+	cfg, _ := loadCityConfig(cityPath, io.Discard)
 	sources, err := controlReadyCacheSources(dir, cityPath, cfg)
 	if err != nil {
+		return nil
+	}
+	if controlReadySnapshotReadsThroughBD(sources) {
+		controlReadyCacheRegistry.mu.Lock()
+		controlReadyCacheRegistry.byDir[dir] = &controlReadyCacheEntry{batchedOnly: true}
+		controlReadyCacheRegistry.mu.Unlock()
 		return nil
 	}
 	caches := make([]*beads.CachingStore, 0, len(sources))
@@ -481,6 +499,35 @@ func controlReadyCachesFor(dir, cityPath string, cfg *config.City) []*beads.Cach
 	controlReadyCacheRegistry.byDir[dir] = &controlReadyCacheEntry{caches: caches, primedAt: time.Now()}
 	controlReadyCacheRegistry.mu.Unlock()
 	return caches
+}
+
+// controlReadySnapshotReadsThroughBD reports whether any of sources would be
+// primed through bd subprocesses, which makes the snapshot the dearer way to
+// answer a scan (gcty-fz6r).
+//
+// A prime is not one read. PrimeActive lists open and in_progress beads in both
+// tiers and then takes the ready projection, and against a *beads.BdStore every
+// one of those reads is its own bd process, whose environment is resolved from
+// the city config each time. controlReadyFallbackReady answers the same scan
+// with ONE batched `bd ready`. The snapshot also cannot win back that cost by
+// reuse: it lives for controlReadyCacheTTL, and an idle --follow loop's sweep
+// backs off past that, so an idle dispatcher re-primed on almost every scan.
+// Measured on a live city: an idle rig dispatcher spent ~28% of a core in its
+// own process, most of it resolving bd environments for those prime reads,
+// plus another ~6% in the bd processes themselves.
+//
+// In-process ledgers — a file store, a native store, a relocated graph binding
+// — keep the snapshot: their reads spawn nothing. Answering from the fallback
+// changes only where the ready set comes from, not what it contains: both arms
+// feed evaluateControlReady, and the fallback is already the arm every scan
+// takes when a snapshot cannot answer.
+func controlReadySnapshotReadsThroughBD(sources []beads.Store) bool {
+	for _, source := range sources {
+		if _, ok := source.(*beads.BdStore); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // controlReadyCacheSources returns the ordered ledgers to snapshot, applying the
@@ -539,11 +586,10 @@ func tryControlReadyFromCacheOrFallback(workQuery, dir string, env map[string]st
 	}
 
 	cityPath := cityForStoreDir(dir)
-	cfg, _ := loadCityConfig(cityPath, io.Discard)
 	envList := mergeRuntimeEnv(os.Environ(), env)
 
 	if !parsed.includeEphemeral {
-		if caches := controlReadyCachesFor(dir, cityPath, cfg); len(caches) > 0 {
+		if caches := controlReadyCachesFor(dir, cityPath); len(caches) > 0 {
 			if ready, ok := cachedControlReadyUnion(caches); ok {
 				return beadsToHookBeads(evaluateControlReady(ready, parsed, envList)), true, nil
 			}

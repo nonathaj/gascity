@@ -430,6 +430,115 @@ esac
 	}
 }
 
+// installHealthyEmptyLedgerBDStub installs a bd that records every invocation
+// and answers like a healthy, empty ledger, so a snapshot prime against it
+// SUCCEEDS; only the batched ready read returns anything: one control bead
+// assigned to target. It returns the invocation log path.
+func installHealthyEmptyLedgerBDStub(t *testing.T, target string) string {
+	t.Helper()
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "bd.log")
+	script := fmt.Sprintf(`#!/bin/sh
+set -eu
+printf '%%s\n' "$*" >> "%s"
+case "$*" in
+  "--readonly --sandbox ready --json --exclude-type=epic --limit=%d")
+    printf '[{"id":"ga-batched-ready","assignee":"%s"}]'
+    ;;
+  *)
+    printf '[]'
+    ;;
+esac
+`, logPath, controlReadyFallbackLimit, target)
+	installFakeToolOnPath(t, tmp, "bd", script)
+	t.Setenv("PATH", tmp+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GC_BEADS", "bd")
+	return logPath
+}
+
+// bdStubCalls returns the logged bd invocations whose argv starts with prefix.
+func bdStubCalls(t *testing.T, logPath, prefix string) []string {
+	t.Helper()
+	data, err := os.ReadFile(logPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read bd log: %v", err)
+	}
+	var matched []string
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line != "" && strings.HasPrefix(line, prefix) {
+			matched = append(matched, line)
+		}
+	}
+	return matched
+}
+
+// TestTryControlReadyFromCacheOrFallbackBDScopeTakesOneBatchedReadPerScan pins
+// the idle cost of a bd-backed control dispatcher (gcty-fz6r). Every read a
+// snapshot prime makes against a bd-backed scope is its own bd subprocess — the
+// open and in_progress lists for each tier, the ready projection — and the
+// snapshot lives for controlReadyCacheTTL, shorter than the serve loop's idle
+// sweep, so an idle loop re-paid the whole prime on almost every scan. The one
+// batched ready read answers the same scan with a single subprocess, so on a
+// bd-backed scope that read is the whole scan, every time, even when a prime
+// would have succeeded.
+func TestTryControlReadyFromCacheOrFallbackBDScopeTakesOneBatchedReadPerScan(t *testing.T) {
+	configureIsolatedRuntimeEnv(t)
+	resetControlReadyCache(t)
+	cityDir := t.TempDir()
+	writeMinimalCityToml(t, cityDir)
+	target := "gascity/control-dispatcher"
+	logPath := installHealthyEmptyLedgerBDStub(t, target)
+
+	query := workflowServeControlReadyQuery(config.Agent{Name: config.ControlDispatcherAgentName, Dir: "gascity"})
+	const scans = 3
+	for i := 0; i < scans; i++ {
+		queue, handled, err := tryControlReadyFromCacheOrFallback(query, cityDir, nil)
+		if err != nil {
+			t.Fatalf("scan %d: tryControlReadyFromCacheOrFallback: %v", i, err)
+		}
+		if !handled {
+			t.Fatalf("scan %d: handled = false, want true for a control-ready query", i)
+		}
+		if len(queue) != 1 || queue[0].ID != "ga-batched-ready" {
+			t.Fatalf("scan %d: queue = %#v, want the batched read's ga-batched-ready", i, queue)
+		}
+	}
+
+	if lists := bdStubCalls(t, logPath, "list"); len(lists) != 0 {
+		t.Errorf("bd list calls = %d, want 0: a bd-backed scope primed a ready snapshot, one bd subprocess per read, instead of taking the batched read:\n%s",
+			len(lists), strings.Join(lists, "\n"))
+	}
+	if readies := bdStubCalls(t, logPath, "--readonly --sandbox ready"); len(readies) != scans {
+		t.Errorf("batched bd ready calls = %d over %d scans, want exactly one per scan", len(readies), scans)
+	}
+}
+
+// TestTryControlReadyFromCacheOrFallbackBDScopeDoesNotReloadConfigPerScan is
+// the other half of that idle cost: the scan loaded the whole city config —
+// city.toml and every pack include — on every call, only to hand it to the
+// snapshot's store open. A scope whose scan never primes a snapshot must not
+// pay for one; at most the first scan may resolve the config to learn that.
+func TestTryControlReadyFromCacheOrFallbackBDScopeDoesNotReloadConfigPerScan(t *testing.T) {
+	configureIsolatedRuntimeEnv(t)
+	resetControlReadyCache(t)
+	cityDir := t.TempDir()
+	writeMinimalCityToml(t, cityDir)
+	target := "gascity/control-dispatcher"
+	installHealthyEmptyLedgerBDStub(t, target)
+
+	query := workflowServeControlReadyQuery(config.Agent{Name: config.ControlDispatcherAgentName, Dir: "gascity"})
+	const scans = 5
+	before := cityConfigLoadCount()
+	for i := 0; i < scans; i++ {
+		if _, _, err := tryControlReadyFromCacheOrFallback(query, cityDir, nil); err != nil {
+			t.Fatalf("scan %d: tryControlReadyFromCacheOrFallback: %v", i, err)
+		}
+	}
+	if loads := cityConfigLoadCount() - before; loads > 1 {
+		t.Fatalf("city config loads over %d scans = %d, want at most 1: the idle scan re-resolves the whole city config on every call", scans, loads)
+	}
+}
+
 // TestControlReadyFallbackReadyLogsWhenResultHitsLimit is ga-bbj6wv Finding 1:
 // a fallback batch that comes back at exactly controlReadyFallbackLimit is a
 // truncation signal (some candidate/route may have been starved of ready
