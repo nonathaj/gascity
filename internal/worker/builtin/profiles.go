@@ -174,6 +174,7 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 					{Value: "fable-5", Label: "Fable 5", FlagArgs: []string{"--model", "claude-fable-5"}, FlagAliases: [][]string{{"-m", "claude-fable-5"}}},
 					{Value: "opus", Label: "Opus", FlagArgs: []string{"--model", "claude-opus-4-8"}, FlagAliases: [][]string{{"-m", "claude-opus-4-8"}}},
 					{Value: "opus-5", Label: "Opus 5", FlagArgs: []string{"--model", "claude-opus-5"}, FlagAliases: [][]string{{"-m", "claude-opus-5"}}},
+					{Value: "opus-5-5", Label: "Opus 5.5", FlagArgs: []string{"--model", "claude-opus-5-5"}, FlagAliases: [][]string{{"-m", "claude-opus-5-5"}}},
 					{Value: "opus-4-7", Label: "Opus 4.7", FlagArgs: []string{"--model", "claude-opus-4-7"}, FlagAliases: [][]string{{"-m", "claude-opus-4-7"}}},
 					{Value: "sonnet", Label: "Sonnet", FlagArgs: []string{"--model", "claude-sonnet-5"}, FlagAliases: [][]string{{"-m", "claude-sonnet-5"}}},
 					{Value: "sonnet-5", Label: "Sonnet 5", FlagArgs: []string{"--model", "claude-sonnet-5"}, FlagAliases: [][]string{{"-m", "claude-sonnet-5"}}},
@@ -194,6 +195,13 @@ var builtinProviderSpecs = map[string]BuiltinProviderSpec{
 					// explicit pin is the same class of surprise these entries exist to
 					// eliminate.
 					{Value: "claude-opus-5[1m]", Label: "Opus 5 1M (canonical id)", FlagArgs: []string{"--model", "claude-opus-5[1m]"}, FlagAliases: [][]string{{"-m", "claude-opus-5[1m]"}}},
+					// Opus 5.5 (2026-09). Pinning it before this entry existed failed
+					// at config load ("option_defaults key \"model\": value
+					// \"claude-opus-5-5\" is not a valid choice"), which took every
+					// gc command and the controller's whole reconcile loop down with
+					// it, not just the one provider (federation outage 2026-09-22).
+					{Value: "claude-opus-5-5", Label: "Opus 5.5 (canonical id)", FlagArgs: []string{"--model", "claude-opus-5-5"}, FlagAliases: [][]string{{"-m", "claude-opus-5-5"}}},
+					{Value: "claude-opus-5-5[1m]", Label: "Opus 5.5 1M (canonical id)", FlagArgs: []string{"--model", "claude-opus-5-5[1m]"}, FlagAliases: [][]string{{"-m", "claude-opus-5-5[1m]"}}},
 					{Value: "claude-sonnet-5", Label: "Sonnet 5 (canonical id)", FlagArgs: []string{"--model", "claude-sonnet-5"}, FlagAliases: [][]string{{"-m", "claude-sonnet-5"}}},
 					{Value: "claude-fable-5", Label: "Fable 5 (canonical id)", FlagArgs: []string{"--model", "claude-fable-5"}, FlagAliases: [][]string{{"-m", "claude-fable-5"}}},
 				},
