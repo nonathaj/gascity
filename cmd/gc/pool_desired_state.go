@@ -445,6 +445,11 @@ func computePoolDesiredStatesAt(
 	// slots explicitly before anonymous creates are materialized. Freshly
 	// completed sessions also establish a short-lived demand floor so a sibling
 	// startup is not drained merely because another worker claimed first.
+	//
+	// Capacity left after the resume tier is shared across templates
+	// (fairNewDemandShares) before any request is materialized, so config order
+	// never decides which template grows while another sits at zero sessions.
+	var claims []newDemandClaim
 	for i := range cfg.Agents {
 		agent := &cfg.Agents[i]
 		if agent.Suspended {
@@ -459,9 +464,19 @@ func computePoolDesiredStatesAt(
 		if _, ok := aliasHeldTemplates[template]; ok {
 			continue
 		}
-		effectiveDemand := max(scaleCount, len(protected))
-		newCount := capNewDemandCount(limits, usage, agent, effectiveDemand)
-		recordNewDemandCapTrace(trace, template, agent, limits, usage, effectiveDemand, newCount)
+		claims = append(claims, newDemandClaim{
+			agent:    agent,
+			template: template,
+			demand:   max(scaleCount, len(protected)),
+			concrete: len(protected) + len(inFlightNewRequests[template]),
+		})
+	}
+	shares := fairNewDemandShares(limits, usage, claims)
+	for i, claim := range claims {
+		template := claim.template
+		scaleCount := scaleCheckCounts[template]
+		protected := protectedNewRequests[template]
+		newCount := shares[i]
 		inFlight := inFlightNewRequests[template]
 		protectedCount := minInt(len(protected), newCount)
 		inFlightCount := minInt(len(inFlight), newCount-protectedCount)
@@ -532,6 +547,9 @@ func computePoolDesiredStatesAt(
 			allRequests = append(allRequests, req)
 			usage.accept(req, limits)
 		}
+	}
+	for i, claim := range claims {
+		recordNewDemandCapTrace(trace, claim.template, claim.agent, limits, usage, claim.demand, shares[i])
 	}
 
 	return applyNestedCaps(cfg, allRequests, aliasHeldTemplates, trace)
@@ -1016,6 +1034,9 @@ func (u *nestedCapUsage) accept(req SessionRequest, limits nestedCapLimits) {
 	u.requests = append(u.requests, req)
 }
 
+// recordNewDemandCapTrace records the cap that held template below its new
+// demand. usage is the tick's accepted usage including template's own grants;
+// the blocking scope is judged against every other claim on capacity.
 func recordNewDemandCapTrace(
 	trace *sessionReconcilerTraceCycle,
 	template string,
@@ -1028,7 +1049,7 @@ func recordNewDemandCapTrace(
 	if trace == nil || scaleCount <= 0 || newCount >= scaleCount {
 		return
 	}
-	site, reason, capMax, current, blockers := newDemandBlockingScope(template, agent, limits, usage, newCount)
+	site, reason, capMax, current, blockers := newDemandBlockingScope(template, agent, limits, usage.withoutNewRequestsFor(template, limits), newCount)
 	if site == "" {
 		return
 	}
