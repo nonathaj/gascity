@@ -327,7 +327,7 @@ func runWorkflowServe(agentName string, follow bool, _ io.Writer, stderr io.Writ
 		_, err := drainWorkflowServeWork(agentCfg, cityPath, workDir, workQuery, workEnv, stderr)
 		return err
 	}
-	return runWorkflowServeFollow(agentCfg, cityPath, workDir, workQuery, workEnv, stderr)
+	return runWorkflowServeFollow(agentCfg, cityPath, workDir, workQuery, workEnv, workflowServeWakeLedgerPrefix(cityPath, workDir, workQuery, cfg), stderr)
 }
 
 func requireWorkflowServeFollowSessionEnv() error {
@@ -510,7 +510,7 @@ func drainWorkflowServeWork(agentCfg config.Agent, cityPath, storePath, workQuer
 	}
 }
 
-func runWorkflowServeFollow(agentCfg config.Agent, cityPath, storePath, workQuery string, workEnv map[string]string, stderr io.Writer) error {
+func runWorkflowServeFollow(agentCfg config.Agent, cityPath, storePath, workQuery string, workEnv map[string]string, wakeLedgerPrefix string, stderr io.Writer) error {
 	ep, err := workflowServeOpenEventsProvider(stderr)
 	if err != nil {
 		return err
@@ -530,7 +530,7 @@ func runWorkflowServeFollow(agentCfg config.Agent, cityPath, storePath, workQuer
 	defer close(done)
 
 	eventCh := make(chan workflowWatchResult, 1)
-	go pumpWorkflowEvents(done, watcher, eventCh)
+	go pumpWorkflowEvents(done, newLedgerWakeWatcher(watcher, wakeLedgerPrefix), eventCh)
 
 	idleSweeps := 0
 	var pendingWakeErr error

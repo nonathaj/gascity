@@ -354,8 +354,7 @@ func (c *CachingStore) ownsBeadID(id string) bool {
 	if c.idPrefix == "" {
 		return true
 	}
-	id = strings.ToLower(strings.TrimSpace(id))
-	return strings.HasPrefix(id, c.idPrefix+"-")
+	return IDHasPrefix(id, c.idPrefix)
 }
 
 // WaitForParentProjection forwards the optional parent-projection wait
