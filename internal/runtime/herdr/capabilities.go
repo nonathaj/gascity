@@ -3,6 +3,7 @@ package herdr
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gastownhall/gascity/internal/runtime"
@@ -17,6 +18,9 @@ import (
 var (
 	_ runtime.IdleWaitProvider       = (*Provider)(nil)
 	_ runtime.ImmediateNudgeProvider = (*Provider)(nil)
+	// NudgeReadinessProvider lets the queued-nudge gate read the agent's state
+	// directly instead of waiting for "idle" (see NudgeReadiness below).
+	_ runtime.NudgeReadinessProvider = (*Provider)(nil)
 	// LivenessObserver lets the reconciler read aliveness from herdr's own
 	// agent-status instead of the host process-table walk (see
 	// provider.go ObserveLiveness).
@@ -70,6 +74,53 @@ func (p *Provider) waitForIdleOutcome(ctx context.Context, name string, timeout 
 func (p *Provider) WaitForIdle(ctx context.Context, name string, timeout time.Duration) error {
 	_ = p.waitForIdleOutcome(ctx, name, timeout)
 	return ctx.Err()
+}
+
+// NudgeReadiness reports whether the agent is in a state to take queued input,
+// from one `agent get`. There is no wait: the answer is herdr's agent_status
+// at this moment.
+//
+// It is what the queued-nudge gate asks instead of WaitForIdle. A session
+// parked at its prompt after a finished turn reads "done" in herdr, never
+// "idle", so `agent wait --until idle` times out on it and a nudge queued to a
+// parked session was never delivered (gf-pdx7a8).
+//
+// An error means herdr could not be asked (the server is down, the reply did
+// not decode). It is not a verdict; in particular it is not "ready".
+func (p *Provider) NudgeReadiness(ctx context.Context, name string) (runtime.NudgeReadiness, string, error) {
+	info, present, err := p.c.getAgent(ctx, herdrAgentName(name))
+	if err != nil {
+		return "", "", err
+	}
+	if !present {
+		return runtime.NudgeNoAgent, "", nil
+	}
+	status := strings.ToLower(strings.TrimSpace(info.AgentStatus))
+	return nudgeReadinessFromStatus(status), status, nil
+}
+
+// nudgeReadinessFromStatus maps herdr's agent_status to a readiness.
+//
+//	idle     the prompt is rendered and the input box is empty   ready
+//	done     a turn finished; the agent is back at its prompt    ready
+//	working  a turn is running                                   busy
+//	blocked  a dialog is waiting for an answer                   blocked
+//	unknown  herdr cannot classify the pane                      unknown
+//
+// Anything else is unknown too, including a status a later herdr adds: a new
+// state holds queued input until someone decides what it means, rather than
+// being pasted into on a guess.
+func nudgeReadinessFromStatus(status string) runtime.NudgeReadiness {
+	switch status {
+	case agentStateIdle, agentStatusDone:
+		return runtime.NudgeReady
+	case agentStatusWorking:
+		return runtime.NudgeBusy
+	case agentStatusBlocked:
+		return runtime.NudgeBlocked
+	default:
+		return runtime.NudgeUnclassified
+	}
 }
 
 // NudgeNow injects input immediately. herdr's send/run already deliver without a

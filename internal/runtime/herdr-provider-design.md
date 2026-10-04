@@ -218,6 +218,7 @@ herdr just becomes another selectable runtime name.
 | capability | herdr | |
 |---|---|---|
 | `IdleWaitProvider.WaitForIdle` | `wait agent-status --status idle` / `events.wait` | ✅✅ **native** |
+| `NudgeReadinessProvider.NudgeReadiness` | `agent get` → `agent_status`, read once, no wait: `idle`/`done` ready, `working` busy, `blocked` blocked, anything else unknown. The queued-nudge gate asks this instead of `WaitForIdle`, which times out on a `done` pane (gf-pdx7a8) | ✅ **native** |
 | `InterruptBoundaryWaitProvider` | `wait output --match "<turn_aborted>"` / `events.wait output_matched` | ✅✅ **native** |
 | `ImmediateNudgeProvider.NudgeNow` | `pane.send_input`/`pane.run` (no wait-idle) | ✅ |
 | `DialogProvider.DismissKnownDialogs` | `pane.read --source detection` + `pane.send_keys` | ✅ |

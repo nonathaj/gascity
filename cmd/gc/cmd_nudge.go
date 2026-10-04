@@ -731,6 +731,7 @@ func cmdNudgePoll(args []string, sessionName string, interval, quiescence time.D
 	sessStore := cliSessionStore(store.Store, target.cfg, target.cityPath)
 	var missingSince time.Time
 	var lastFreeOS time.Time
+	var holds pollerHoldReporter
 	for {
 		// Each tick that observes a changed beads.json re-parses the whole-file
 		// store, leaving several hundred MB of transient garbage. The soft
@@ -772,10 +773,14 @@ func cmdNudgePoll(args []string, sessionName string, interval, quiescence time.D
 			return 0
 		}
 		missingSince = time.Time{}
-		delivered, pollErr := tryDeliverQueuedNudgesByPoller(target, store.Store, cliSessionStore(store.Store, target.cfg, target.cityPath), sp, quiescence, obs)
+		delivered, verdict, pollErr := tryDeliverQueuedNudgesByPoller(target, store.Store, cliSessionStore(store.Store, target.cfg, target.cityPath), sp, quiescence, obs)
 		if pollErr != nil {
 			fmt.Fprintf(stderr, "gc nudge poll: %v\n", pollErr) //nolint:errcheck
 		}
+		holds.report(stderr, "gc nudge poll", target.sessionName, verdict, time.Now(), func() (int, error) {
+			pending, _, _, err := listQueuedNudgesForTarget(target.cityPath, target, time.Now())
+			return len(pending), err
+		})
 		if delivered {
 			continue
 		}
@@ -1414,14 +1419,27 @@ func parseNudgeDeliveryMode(raw string) (nudgeDeliveryMode, error) {
 	}
 }
 
-func tryDeliverQueuedNudgesByPoller(target nudgeTarget, store, sessStore beads.Store, sp runtime.Provider, quiescence time.Duration, obs worker.LiveObservation) (bool, error) {
+// tryDeliverQueuedNudgesByPoller delivers the target's due queued nudges if the
+// delivery gate allows it. It returns whether anything was delivered and the
+// gate's verdict, which the per-session poller and the supervisor dispatcher
+// use to say why a nudge is being held. The verdict is the zero value when the
+// gate was never consulted (the live generation did not match).
+func tryDeliverQueuedNudgesByPoller(target nudgeTarget, store, sessStore beads.Store, sp runtime.Provider, quiescence time.Duration, obs worker.LiveObservation) (bool, pollerGateVerdict, error) {
 	matches, err := nudgeTargetLiveGenerationMatches(target, obs, sp)
 	if err != nil || !matches {
-		return false, err
+		return false, pollerGateVerdict{}, err
 	}
-	if !pollerSessionIdleEnough(target, sp, quiescence, obs) {
-		return false, nil
+	verdict := pollerDeliveryGate(target, sp, quiescence, obs)
+	if !verdict.deliver {
+		return false, verdict, nil
 	}
+	delivered, err := deliverClaimedQueuedNudgesByPoller(target, store, sessStore, sp)
+	return delivered, verdict, err
+}
+
+// deliverClaimedQueuedNudgesByPoller claims the target's due queued nudges and
+// delivers them. The caller has already passed the delivery gate.
+func deliverClaimedQueuedNudgesByPoller(target nudgeTarget, store, sessStore beads.Store, sp runtime.Provider) (bool, error) {
 	items, err := claimDueQueuedNudgesForTarget(target.cityPath, target, time.Now())
 	if err != nil || len(items) == 0 {
 		return false, err
@@ -1525,6 +1543,159 @@ func stampLastNudgeDeliveredAt(sessFront *session.Store, sessionID string, t tim
 	_ = sessFront.SetMarker(sessionID, session.MetadataLastNudgeDeliveredAt, t.UTC().Format(time.RFC3339))
 }
 
+// Hold reasons the delivery gate reports. They are part of the hold line
+// (`gc nudge poll: hold ... reason=<reason>`), so operators and checks match on
+// them.
+const (
+	// pollerHoldNotDeliverable: the runtime read the session's state, and it
+	// is not one that takes input (a turn is running, a dialog is up, or the
+	// runtime cannot classify it).
+	pollerHoldNotDeliverable = "not-deliverable"
+	// pollerHoldCouldNotLook: the runtime could not be asked. Nothing is known
+	// about the session, so nothing is delivered.
+	pollerHoldCouldNotLook = "could-not-look"
+	// pollerHoldNotQuiescent: the runtime has no readiness reading for this
+	// session, and the activity/idle-wait path says it is not quiet yet.
+	pollerHoldNotQuiescent = "not-quiescent"
+)
+
+// pollerReadinessProbeTimeout bounds the gate's readiness read. It is its own
+// timer, deliberately unrelated to quiescence or to any caller deadline: the
+// old gate ran a wait under a context deadline equal to the wait's own
+// timeout, and which of the two fired first decided the verdict.
+const pollerReadinessProbeTimeout = 2 * time.Second
+
+// pollerGateVerdict is the delivery gate's decision for one poller tick.
+type pollerGateVerdict struct {
+	// consulted is false only for the zero value: the gate was never asked.
+	consulted bool
+	// deliver says queued nudges may be claimed and delivered now.
+	deliver bool
+	// reason is why not, one of the pollerHold* constants; "" when deliver.
+	reason string
+	// status is the runtime's own status word for the session ("working",
+	// "blocked", ...), or "" when the runtime gave none.
+	status string
+	// err is the failure behind a could-not-look hold.
+	err error
+}
+
+// held reports whether the gate was consulted and refused delivery.
+func (v pollerGateVerdict) held() bool { return v.consulted && !v.deliver }
+
+// statusWord is the status for a log line: never empty.
+func (v pollerGateVerdict) statusWord() string {
+	if v.status == "" {
+		return "none"
+	}
+	return v.status
+}
+
+// pollerDeliveryGate decides whether the poller may deliver queued nudges to
+// the session now.
+//
+//  1. quiescence <= 0: deliver. The caller asked for no gate.
+//  2. The runtime can report the session's readiness (NudgeReadinessProvider):
+//     ready delivers; busy, blocked and unknown hold; "no registered agent"
+//     and "this backend cannot say" fall through to step 3; a failure to ask
+//     holds as could-not-look.
+//  3. The path every other runtime has always had: the activity stamp, then
+//     the timed-only sleepers, then WaitForIdle (pollerSessionIdleEnough).
+//
+// Step 2 runs BEFORE the activity stamp on purpose. A session sitting on a
+// dialog has a frozen stamp, so the stamp alone reads it as quiet, and the
+// queued text would be typed into the dialog.
+//
+// The readiness is a point-in-time read, so on this path the quiescence
+// window is not applied: a session that reached its prompt a moment ago is
+// deliverable at once.
+func pollerDeliveryGate(target nudgeTarget, sp runtime.Provider, quiescence time.Duration, obs worker.LiveObservation) pollerGateVerdict {
+	if quiescence <= 0 {
+		return pollerGateVerdict{consulted: true, deliver: true}
+	}
+	if rp, ok := sp.(runtime.NudgeReadinessProvider); ok && target.sessionName != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), pollerReadinessProbeTimeout)
+		readiness, status, err := rp.NudgeReadiness(ctx, target.sessionName)
+		cancel()
+		switch {
+		case errors.Is(err, runtime.ErrInteractionUnsupported):
+			// A wrapper whose routed backend has no readiness: step 3.
+		case err != nil:
+			return pollerGateVerdict{consulted: true, reason: pollerHoldCouldNotLook, err: err}
+		case readiness == runtime.NudgeReady:
+			return pollerGateVerdict{consulted: true, deliver: true, status: status}
+		case readiness == runtime.NudgeNoAgent:
+			// Nothing registered to ask about (a raw shell pane): step 3.
+		default:
+			// Busy, blocked, unknown — and any readiness this gate does not
+			// know: hold rather than guess.
+			if status == "" {
+				status = string(readiness)
+			}
+			return pollerGateVerdict{consulted: true, reason: pollerHoldNotDeliverable, status: status}
+		}
+	}
+	if pollerSessionIdleEnough(target, sp, quiescence, obs) {
+		return pollerGateVerdict{consulted: true, deliver: true}
+	}
+	return pollerGateVerdict{consulted: true, reason: pollerHoldNotQuiescent}
+}
+
+// pollerHoldLogInterval is how often an unchanged hold is repeated on stderr.
+const pollerHoldLogInterval = 60 * time.Second
+
+// pollerHoldReporter writes the poller's hold line: once when the hold's
+// (reason, status) changes, and otherwise at most once per
+// pollerHoldLogInterval. A held nudge is otherwise invisible: it stays
+// pending and nothing says why.
+type pollerHoldReporter struct {
+	lastKey string
+	lastAt  time.Time
+}
+
+// report writes the hold line for v if one is due. pending counts the
+// session's pending queued nudges; it is called only when a line is about to
+// be written, so a held session costs no extra queue read per tick. Nothing is
+// written when nothing is pending: there is nothing being held.
+func (r *pollerHoldReporter) report(w io.Writer, prefix, sessionName string, v pollerGateVerdict, now time.Time, pending func() (int, error)) {
+	if !v.held() {
+		// Delivering, or the gate was not consulted: the hold is over, so the
+		// next one is reported at once.
+		r.lastKey, r.lastAt = "", time.Time{}
+		return
+	}
+	key := v.reason + "\x00" + v.statusWord()
+	if key == r.lastKey && now.Sub(r.lastAt) < pollerHoldLogInterval {
+		return
+	}
+	n, err := pending()
+	if err != nil || n == 0 {
+		return
+	}
+	r.lastKey, r.lastAt = key, now
+	line := fmt.Sprintf("%s: hold session=%s reason=%s status=%s pending=%d", prefix, sessionName, v.reason, v.statusWord(), n)
+	if v.err != nil {
+		line += fmt.Sprintf(" error=%q", v.err.Error())
+	}
+	fmt.Fprintln(w, line) //nolint:errcheck
+}
+
+// detail is the verdict as a logRoute detail field, for the supervisor
+// dispatcher's skip line.
+func (v pollerGateVerdict) detail() string {
+	if !v.held() {
+		return ""
+	}
+	d := "hold reason=" + v.reason + " status=" + v.statusWord()
+	if v.err != nil {
+		d += " error=" + v.err.Error()
+	}
+	return d
+}
+
+// pollerSessionIdleEnough is the delivery gate for a session whose runtime
+// cannot report nudge readiness (step 3 of pollerDeliveryGate). It is the
+// whole gate as it was before readiness existed, unchanged.
 func pollerSessionIdleEnough(target nudgeTarget, sp runtime.Provider, quiescence time.Duration, obs worker.LiveObservation) bool {
 	if quiescence <= 0 {
 		return true

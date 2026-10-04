@@ -3,6 +3,7 @@ package herdr
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"testing"
 	"time"
@@ -49,10 +50,8 @@ func TestActivityLive(t *testing.T) {
 	paneID := firstPaneID(t, session)
 	report := func(state string) {
 		t.Helper()
-		out, err := exec.Command("herdr", "--session", session, "pane", "report-agent", paneID,
-			"--source", "gctest", "--agent", "act-a", "--state", state).CombinedOutput()
-		if err != nil {
-			t.Fatalf("pane report-agent %s: %v: %s", state, err, out)
+		if err := reportAgentState(session, paneID, "act-a", state); err != nil {
+			t.Fatal(err)
 		}
 	}
 	report("idle")
@@ -198,4 +197,17 @@ func firstPaneID(t *testing.T, session string, exclude ...string) string {
 	}
 	t.Fatalf("pane list: no unexcluded pane found: %s", out)
 	return ""
+}
+
+// reportAgentState runs `herdr pane report-agent`, the only way a test can put
+// an integration-less pane in a given agent state. herdr accepts idle,
+// working, blocked and unknown; it refuses anything else, and that refusal is
+// returned rather than fatal so a test can assert on it.
+func reportAgentState(session, paneID, agent, state string) error {
+	out, err := exec.Command("herdr", "--session", session, "pane", "report-agent", paneID,
+		"--source", "gctest", "--agent", agent, "--state", state).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("pane report-agent %s: %w: %s", state, err, out)
+	}
+	return nil
 }

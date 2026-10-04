@@ -265,6 +265,44 @@ type IdleWaitProvider interface {
 	WaitForIdle(ctx context.Context, name string, timeout time.Duration) error
 }
 
+// NudgeReadiness is whether queued input may be delivered to a session now.
+// It is a point-in-time reading of the session's state, not a wait.
+type NudgeReadiness string
+
+// The readiness states a [NudgeReadinessProvider] reports.
+const (
+	// NudgeReady: the session is at a prompt, never used or with its turn
+	// finished. Queued input may be delivered.
+	NudgeReady NudgeReadiness = "ready"
+	// NudgeBusy: a turn is running.
+	NudgeBusy NudgeReadiness = "busy"
+	// NudgeBlocked: a dialog owns the keyboard. Input sent now would answer
+	// the dialog.
+	NudgeBlocked NudgeReadiness = "blocked"
+	// NudgeUnclassified: the runtime knows the session but cannot say which
+	// of the states above it is in.
+	NudgeUnclassified NudgeReadiness = "unknown"
+	// NudgeNoAgent: the runtime has nothing registered under the name to ask
+	// about (for example a raw shell pane).
+	NudgeNoAgent NudgeReadiness = "no_agent"
+)
+
+// NudgeReadinessProvider is an optional extension for runtimes that can say,
+// without waiting, whether a session is in a state to take queued input.
+//
+// It exists because [IdleWaitProvider] cannot answer that question for a
+// runtime whose states are richer than idle/not-idle: a session parked at a
+// prompt after a finished turn is ready for input and is not "idle" in such a
+// runtime's vocabulary, so a wait for idle times out on it.
+type NudgeReadinessProvider interface {
+	// NudgeReadiness reports the session's readiness and the runtime's own
+	// status word for it (for logs; "" when the runtime has none). A non-nil
+	// error means the runtime could not be asked and carries no verdict: the
+	// caller must not read it as ready. A wrapper whose routed backend lacks
+	// the capability returns [ErrInteractionUnsupported].
+	NudgeReadiness(ctx context.Context, name string) (NudgeReadiness, string, error)
+}
+
 // ExecProvider is an optional extension for runtimes that expose the RPP
 // connection primitive: run a command inside the box and return its standard
 // output and exit code. It is the op a [Carrier] drives the session-interaction

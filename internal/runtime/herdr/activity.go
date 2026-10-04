@@ -74,6 +74,10 @@ var (
 const (
 	agentStatusWorking = "working"
 	agentStatusUnknown = "unknown"
+	// agentStatusDone and agentStatusBlocked are not interpreted by the
+	// tracker; the nudge-readiness mapping (capabilities.go) names them.
+	agentStatusDone    = "done"
+	agentStatusBlocked = "blocked"
 )
 
 // activityEntry is the tracked state of one session.
