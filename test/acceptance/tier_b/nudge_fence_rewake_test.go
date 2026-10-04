@@ -9,6 +9,9 @@
 // stale-epoch item and then rejects it on the fence dead-letters it on the
 // first attempt instead, although the sender was told it was queued.
 //
+// A second test covers the path a sender actually takes: one default-mode
+// nudge to the stopped session, which enqueues and requests the wake itself.
+//
 // The claim and split decision tables are owned by the cmd/gc unit tests. This
 // test owns their composition: the CLI enqueue against a stopped session, the
 // controller's suspend drain, the pre-wake epoch commit, the woken process's
@@ -159,6 +162,96 @@ func TestNudgeFenceRewake_StaleEpochQueuedNudgeIsDelivered(t *testing.T) {
 			strings.Join(failures, "\n  "), final.describe())
 	}
 	t.Logf("delivered by the incarnation 2 hook drain: %s has %q; queue after the wake: %s", drainOut, wantLine, final.describe())
+}
+
+// TestNudgeFenceRewake_NudgeToStoppedSessionWakesItAndIsDelivered reproduces
+// the sender's side of the same incident: one gc session nudge, in its default
+// delivery mode, to a session that is not running. Nothing else wakes the
+// session.
+//
+// For a stopped managed session that command enqueues the nudge, fenced to the
+// incarnation that has exited, and then requests the wake itself. The pre-wake
+// commit bumps the epoch, so the woken incarnation's first hook drain claims
+// an item whose fence no longer matches and must deliver it. A build that
+// dead-letters on the mismatch tells the sender "queued", wakes the session,
+// and delivers nothing.
+//
+// The stale-epoch test above pins the fence and wakes by hand; this one owns
+// the claim that the nudge is what wakes. It cannot pin the fence between the
+// enqueue and the wake, because one command does both, so it requires what
+// that command reported and what the woken incarnation was: queued for the
+// first incarnation's session, and the same session at a higher epoch.
+func TestNudgeFenceRewake_NudgeToStoppedSessionWakesItAndIsDelivered(t *testing.T) {
+	c := helpers.NewCity(t, testEnvB)
+	c.InitNoStart("claude")
+	s := newNudgeFenceRewakeScenario(t, c)
+	c.StartWithSupervisor()
+
+	// Incarnation 1: its drain ran against an empty queue.
+	first := s.waitForCompletedIncarnations(1)[0]
+	s.requireBinaryUnderTest(first)
+	t.Logf("incarnation 1: session=%s epoch=%d pid=%d gc=%s", first.SessionID, first.Epoch, first.PID, first.GCPath)
+
+	// Stop the session and wait for its process to exit.
+	s.mustGC("session", "suspend", nudgeFenceRewakeAgent)
+	if !c.WaitForCondition(func() bool {
+		return !nudgeFenceRewakeProcessAlive(first.PID)
+	}, nudgeFenceRewakeStepTimeout) {
+		s.fatalf("incarnation 1 (pid %d) still running %s after gc session suspend", first.PID, nudgeFenceRewakeStepTimeout)
+	}
+
+	// The only command from here on: the nudge, as a sender issues it.
+	out, err := s.stepGC(c.GCStdout, "session", "nudge", "--json", nudgeFenceRewakeAgent, s.probe)
+	var sent nudgeFenceRewakeSent
+	if err != nil {
+		s.fatalf("gc session nudge --json to the stopped session: %v\n%s", err, out)
+	}
+	if decodeErr := json.Unmarshal([]byte(out), &sent); decodeErr != nil {
+		s.fatalf("decoding gc session nudge --json: %v\n%s", decodeErr, out)
+	}
+	if !sent.OK || !sent.Queued || sent.Outcome != "queued" || sent.SessionID != first.SessionID {
+		s.fatalf("gc session nudge --json to the stopped session reported %s; want ok, queued, outcome %q, for session %s",
+			strings.TrimSpace(out), "queued", first.SessionID)
+	}
+	t.Logf("gc session nudge --json: %s", strings.TrimSpace(out))
+
+	// The nudge woke it: a second incarnation runs although nothing called
+	// gc session wake.
+	second := s.waitForCompletedIncarnations(2)[1]
+	s.requireBinaryUnderTest(second)
+	t.Logf("incarnation 2: session=%s epoch=%d pid=%d gc=%s", second.SessionID, second.Epoch, second.PID, second.GCPath)
+	if second.SessionID != first.SessionID || second.Epoch <= first.Epoch {
+		s.fatalf("scenario did not reproduce the incident shape: incarnation 1 was (session %s, epoch %d) and incarnation 2 is (session %s, epoch %d); want the same session at a higher epoch",
+			first.SessionID, first.Epoch, second.SessionID, second.Epoch)
+	}
+
+	// Delivery: the woken incarnation's first drain carried the probe and the
+	// queue is empty.
+	drainOut := nudgeFenceRewakeDrainOut(second.Epoch)
+	wantLine := "- [session] " + s.probe
+	drained := s.report(drainOut)
+	final := s.nudgeStatus()
+	var failures []string
+	if !slices.Contains(strings.Split(drained, "\n"), wantLine) {
+		failures = append(failures, fmt.Sprintf("%s has no line %q", drainOut, wantLine))
+	}
+	if final.Counts != (nudgeFenceRewakeCounts{}) {
+		failures = append(failures, fmt.Sprintf("queue counts are pending %d, in-flight %d, dead %d; want 0, 0, 0",
+			final.Counts.Pending, final.Counts.InFlight, final.Counts.Dead))
+	}
+	if len(failures) > 0 {
+		s.fatalf("the session the nudge woke did not receive it:\n  %s\nqueue after the wake: %s",
+			strings.Join(failures, "\n  "), final.describe())
+	}
+	t.Logf("delivered by the incarnation 2 hook drain: %s has %q; queue after the wake: %s", drainOut, wantLine, final.describe())
+}
+
+// nudgeFenceRewakeSent is the part of gc session nudge --json this test reads.
+type nudgeFenceRewakeSent struct {
+	OK        bool   `json:"ok"`
+	SessionID string `json:"session_id"`
+	Queued    bool   `json:"queued"`
+	Outcome   string `json:"outcome"`
 }
 
 // nudgeFenceRewakeScenario is one city running the scenario.
