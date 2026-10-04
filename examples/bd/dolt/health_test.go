@@ -886,7 +886,15 @@ exit 1
 // JSON-mode assertions that must not see stray stderr) vs
 // CombinedOutput() (for human-mode assertions and failure messages).
 func newHealthScriptCmd(root string, env []string, args ...string) *exec.Cmd {
-	cmd := exec.Command("sh", append([]string{filepath.Join(root, healthScript)}, args...)...)
+	return newShScriptCmd(filepath.Join(root, healthScript), env, args...)
+}
+
+// newShScriptCmd builds an *exec.Cmd that runs a shell script with sh under
+// exactly the given environment. It is the one call site for tests in this
+// package that only need "run this script and look at its output", so such a
+// test adds no subprocess call site of its own to the resource census.
+func newShScriptCmd(script string, env []string, args ...string) *exec.Cmd {
+	cmd := exec.Command("sh", append([]string{script}, args...)...)
 	cmd.Env = env
 	return cmd
 }

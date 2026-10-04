@@ -519,6 +519,53 @@ set_hash() {
   [ -n "$hash_state_file" ] || return 0
   printf '%%s\n' "$1" > "$hash_state_file"
 }
+# mixed_drift_* modes share one setup: table "beads" gains a row and table
+# "notes" drifts at the same row count, which is what one ordinary bead write
+# after the flatten looks like to verify_counts. Each mode then varies one
+# input of the mixed-drift proof.
+mixed_family=0
+case "$mode" in
+  mixed_drift_*) mixed_family=1 ;;
+esac
+# Hash-at-commit probe: DOLT_HASHOF_TABLE under a revision database
+# (--use-db "<db>/<commit>"). It is recognized by the "/" in $db and answered
+# here, ahead of the query dispatch, so the generic DOLT_HASHOF_TABLE arms
+# below (which answer for the working set) never see it.
+if [[ "$db" == */* ]] && [[ "$query" == *"DOLT_HASHOF_TABLE("* ]]; then
+  if [ "$db" != "beads/compactcommit" ]; then
+    printf 'unexpected revision database: %%s\n' "$db" >&2
+    exit 64
+  fi
+  case "$mode" in
+    mixed_drift_hash_probe_fails)
+      printf 'revision database unavailable\n' >&2
+      exit 58
+      ;;
+    mixed_drift_flatten_changed_table)
+      # The flatten commit itself holds a different "beads" than pre-flight.
+      case "$query" in
+        *"'beads'"*) print_cell hash-beads-changed-by-flatten ;;
+        *) print_cell hash-notes-before ;;
+      esac
+      ;;
+    mixed_drift_*|writer_race_with_mixed_same_count_hash_drift)
+      # The flatten commit holds both tables exactly as pre-flight had them.
+      case "$query" in
+        *"'beads'"*) print_cell hash-beads-before ;;
+        *"'notes'"*) print_cell hash-notes-before ;;
+        *)
+          printf 'unexpected hash-at-commit table: %%s\n' "$query" >&2
+          exit 64
+          ;;
+      esac
+      ;;
+    *)
+      printf 'unexpected hash-at-commit probe: db=%%s %%s\n' "$db" "$query" >&2
+      exit 64
+      ;;
+  esac
+  exit 0
+fi
 case "$query" in
   *"SELECT COUNT(*) FROM dolt_remotes WHERE name = 'origin'"*)
     case "$mode" in
@@ -750,7 +797,7 @@ case "$query" in
     # advances HEAD to compactcommit and verify still observes the gain+drift.
     # This advance lives in the HEAD-probe arm (not current_head) so the
     # "$(current_head)" gate-checks in other arms keep seeing the real state.
-    if { [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ]; } && [ "$(current_head)" = "headcommit" ]; then
+    if { [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ] || [ "$mode" = "mixed_drift_absorbed_writer" ]; } && [ "$(current_head)" = "headcommit" ]; then
       calls_file="$state_file.prereset-head-calls"
       calls=0
       if [ -f "$calls_file" ]; then
@@ -769,7 +816,7 @@ case "$query" in
     # probe, which reports writercommit so HEAD has moved past the flatten's own
     # commit. verify_counts still sees compactcommit (gain+drift) because it does
     # not probe HEAD and the "$(current_head)" gates read the real state.
-    if { [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_db_hash_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "row_count_decreases_with_writer_race" ] || [ "$mode" = "same_count_hash_drift_with_writer_race" ] || [ "$mode" = "writer_race_same_count_hash_drift_only" ] || [ "$mode" = "writer_race_same_count_hash_drift_diff_fails" ]; } && [ "$(current_head)" = "compactcommit" ]; then
+    if { [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_db_hash_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "row_count_decreases_with_writer_race" ] || [ "$mode" = "same_count_hash_drift_with_writer_race" ] || [ "$mode" = "writer_race_same_count_hash_drift_only" ] || [ "$mode" = "writer_race_same_count_hash_drift_diff_fails" ] || { [ "$mixed_family" = "1" ] && [ "$mode" != "mixed_drift_absorbed_writer" ] && [ "$mode" != "mixed_drift_postverify_head_empty" ]; }; } && [ "$(current_head)" = "compactcommit" ]; then
       calls_file="$state_file.postverify-head-calls"
       calls=0
       if [ -f "$calls_file" ]; then
@@ -779,6 +826,22 @@ case "$query" in
       printf '%%s\n' "$calls" > "$calls_file"
       if [ "$calls" -ge 2 ]; then
         print_cell writercommit
+        exit 0
+      fi
+    fi
+    # mixed_drift_postverify_head_empty: the post-verify HEAD probe (the 2nd
+    # HEAD probe at compactcommit, as above) returns nothing, so no writer
+    # after the flatten can be proven.
+    if [ "$mode" = "mixed_drift_postverify_head_empty" ] && [ "$(current_head)" = "compactcommit" ]; then
+      calls_file="$state_file.postverify-head-calls"
+      calls=0
+      if [ -f "$calls_file" ]; then
+        calls="$(cat "$calls_file")"
+      fi
+      calls=$((calls + 1))
+      printf '%%s\n' "$calls" > "$calls_file"
+      if [ "$calls" -ge 2 ]; then
+        print_cell ""
         exit 0
       fi
     fi
@@ -867,7 +930,7 @@ case "$query" in
       print_cell ""
       exit 0
     fi
-    if { [ "$mode" = "row_count_and_hash_diverges" ] || [ "$mode" = "same_table_replacement_with_row_gain" ] || [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ] || [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "row_count_decreases_with_writer_race" ] || [ "$mode" = "row_count_decreases_with_hash_change" ] || [ "$mode" = "same_count_hash_drift_with_writer_race" ]; } && [ "$(current_head)" = "compactcommit" ]; then
+    if { [ "$mode" = "row_count_and_hash_diverges" ] || [ "$mode" = "same_table_replacement_with_row_gain" ] || [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ] || [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "row_count_decreases_with_writer_race" ] || [ "$mode" = "row_count_decreases_with_hash_change" ] || [ "$mode" = "same_count_hash_drift_with_writer_race" ] || [ "$mixed_family" = "1" ]; } && [ "$(current_head)" = "compactcommit" ]; then
       print_cell hash-beads-after-writer
       exit 0
     fi
@@ -879,7 +942,7 @@ case "$query" in
     exit 0
     ;;
   *"DOLT_HASHOF_TABLE('notes')"*)
-    if { [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "same_count_hash_drift_then_probe_failure" ] || [ "$mode" = "probe_failure_then_same_count_hash_drift" ]; } && [ "$(current_head)" = "compactcommit" ]; then
+    if { [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mode" = "same_count_hash_drift_then_probe_failure" ] || [ "$mode" = "probe_failure_then_same_count_hash_drift" ] || [ "$mixed_family" = "1" ]; } && [ "$(current_head)" = "compactcommit" ]; then
       print_cell hash-notes-after-writer
       exit 0
     fi
@@ -1021,6 +1084,21 @@ case "$query" in
       print_cells beads notes
       exit 0
     fi
+    # A third table, "wisps", carries the extra failure category in the three
+    # guard modes: it loses a row, fails a probe, or first shows up after the
+    # pre-flight snapshot.
+    if [ "$mode" = "mixed_drift_with_row_decrease" ] || [ "$mode" = "mixed_drift_with_probe_failure" ]; then
+      print_cells beads notes wisps
+      exit 0
+    fi
+    if [ "$mode" = "mixed_drift_with_table_list_change" ] && [ "$(current_head)" = "compactcommit" ]; then
+      print_cells beads notes wisps
+      exit 0
+    fi
+    if [ "$mixed_family" = "1" ]; then
+      print_cells beads notes
+      exit 0
+    fi
     if [ "$mode" = "same_count_hash_drift_then_probe_failure" ]; then
       print_cells notes beads
       exit 0
@@ -1074,9 +1152,33 @@ case "$query" in
       writer_race_same_count_hash_drift_diff_fails)
         print_cell 1
         ;;
+      mixed_drift_*|writer_race_with_mixed_same_count_hash_drift)
+        # The mixed-drift proof's removed-row probe, DOLT_DIFF(<flatten>..
+        # <post_verify>): the writer added a "beads" row and removed none.
+        print_cell 0
+        ;;
       *)
         printf 'unexpected DOLT_DIFF query: %%s\n' "$query" >&2
         exit 64
+        ;;
+    esac
+    exit 0
+    ;;
+  *"DOLT_DIFF("*"'notes')"*)
+    # Same ordering requirement again: without this arm the query falls
+    # through to the "SELECT COUNT(*) FROM"*"notes"* row-count arm below.
+    case "$mode" in
+      mixed_drift_writer_removed_row|writer_race_with_mixed_same_count_hash_drift)
+        # The writer's commits after the flatten removed one "notes" row.
+        print_cell 1
+        ;;
+      mixed_drift_*)
+        print_cell 0
+        ;;
+      *)
+        # Unchanged for every other mode: this is what the row-count arm
+        # answered before this arm existed.
+        print_cell 10
         ;;
     esac
     exit 0
@@ -1098,6 +1200,14 @@ case "$query" in
       print_cell 11
       exit 0
     fi
+    if [ "$mode" = "mixed_drift_with_row_decrease" ] && [ "$(current_head)" = "compactcommit" ]; then
+      print_cell 9
+      exit 0
+    fi
+    if [ "$mode" = "mixed_drift_with_probe_failure" ] && [ "$(current_head)" = "compactcommit" ]; then
+      printf 'wisps row count exploded after flatten\n' >&2
+      exit 47
+    fi
     print_cell 10
     exit 0
     ;;
@@ -1118,7 +1228,7 @@ case "$query" in
       printf 'row count exploded after flatten\n' >&2
       exit 47
     fi
-    if { [ "$mode" = "row_count_gain_with_stable_hashes" ] || [ "$mode" = "row_count_gain_with_db_hash_drift" ] || [ "$mode" = "row_count_and_hash_diverges" ] || [ "$mode" = "same_table_replacement_with_row_gain" ] || [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ] || [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_db_hash_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ]; } && [ "$calls" -gt 1 ]; then
+    if { [ "$mode" = "row_count_gain_with_stable_hashes" ] || [ "$mode" = "row_count_gain_with_db_hash_drift" ] || [ "$mode" = "row_count_and_hash_diverges" ] || [ "$mode" = "same_table_replacement_with_row_gain" ] || [ "$mode" = "mixed_row_count_gain_and_same_count_hash_drift" ] || [ "$mode" = "writer_race_before_flatten" ] || [ "$mode" = "remote_writer_race_before_flatten" ] || [ "$mode" = "writer_race_during_verify" ] || [ "$mode" = "writer_race_db_hash_during_verify" ] || [ "$mode" = "writer_race_with_mixed_same_count_hash_drift" ] || [ "$mixed_family" = "1" ]; } && [ "$calls" -gt 1 ]; then
       print_cell 11
     elif { [ "$mode" = "row_count_decreases" ] || [ "$mode" = "row_count_decreases_with_writer_race" ] || [ "$mode" = "row_count_decreases_with_hash_change" ]; } && [ "$calls" -gt 1 ]; then
       print_cell 9
@@ -2415,8 +2525,21 @@ func TestCompactScriptQuarantinesMixedRowGainAndSameCountHashDriftBeforeFullGC(t
 	if reason := compactMarkerValue(t, marker, "reason"); reason != "post-flatten table value hash changed with row-count increase" {
 		t.Fatalf("quarantine reason should identify first table hash drift, got %q", reason)
 	}
+	// HEAD never moved, so the mixed-drift proof stops at its first item and
+	// says so, without asking Dolt anything.
+	if !strings.Contains(out, "mixed-drift proof failed item=writer_proven table=-") {
+		t.Fatalf("stable-HEAD mixed drift should name the missing writer proof:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) {
+		t.Fatalf("stable-HEAD mixed drift must not send a hash-at-commit probe:\n%s", log)
+	}
 }
 
+// A proven writer does not excuse a removed row. The mode answers the
+// mixed-drift proof explicitly: the flatten commit holds both tables as
+// pre-flight had them, and the writer's commits after it removed one "notes"
+// row. The quarantine is therefore a proof failure at no_removed_rows, not
+// the absence of a defer path for the mixed case.
 func TestCompactScriptQuarantinesMixedSignalsDespiteWriterRace(t *testing.T) {
 	fixture := newCompactScriptFixture(t)
 	out, err := fixture.run(t, "writer_race_with_mixed_same_count_hash_drift", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
@@ -2445,6 +2568,210 @@ func TestCompactScriptQuarantinesMixedSignalsDespiteWriterRace(t *testing.T) {
 	pendingGC := filepath.Join(fixture.cityPath, ".gc", "runtime", "packs", "dolt", "compact-pending-gc", "beads")
 	if _, err := os.Stat(pendingGC); !os.IsNotExist(err) {
 		t.Fatalf("mixed hard integrity signals must not write pending-GC marker; stat=%v", err)
+	}
+	if !strings.Contains(out, "mixed-drift proof failed item=no_removed_rows table=notes") {
+		t.Fatalf("output should name the proof item that failed:\n%s", out)
+	}
+}
+
+// compactLogHasHashAtCommitProbe reports whether the fake dolt was asked for a
+// table hash under a revision database (--use-db "<db>/<commit>"), the probe
+// only the mixed-drift proof sends.
+func compactLogHasHashAtCommitProbe(log string) bool {
+	return strings.Contains(log, "db=beads/")
+}
+
+// assertCompactMixedDriftQuarantined encodes what every refused mixed-drift
+// case must still look like: a failed run, no GC, no pending-GC marker, and a
+// quarantine marker in today's format carrying both drift categories and the
+// flatten heads. When a writer is proven (the post-verify head moved to the
+// writer's commit), the run must also still print the existing "prevents
+// defer; quarantine unchanged" line. It returns the fake dolt's log.
+func assertCompactMixedDriftQuarantined(t *testing.T, fixture compactScriptFixture, out string, err error, wantPostVerifyHead string) string {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("compact succeeded despite an unproven mixed drift:\n%s", out)
+	}
+	if !strings.Contains(out, "post-flatten INTEGRITY check failed") {
+		t.Fatalf("output missing the integrity failure line:\n%s", out)
+	}
+	if wantPostVerifyHead == "writercommit" &&
+		!strings.Contains(out, "additional integrity failure category prevents defer; quarantine unchanged") {
+		t.Fatalf("a proven writer whose mixed drift is refused must still print the prevents-defer line:\n%s", out)
+	}
+	logData, readErr := os.ReadFile(fixture.doltLog)
+	if readErr != nil {
+		t.Fatalf("read dolt log: %v", readErr)
+	}
+	log := string(logData)
+	if strings.Contains(log, "DOLT_GC") {
+		t.Fatalf("an unproven mixed drift must block full GC:\n%s", log)
+	}
+	quarantine := filepath.Join(fixture.cityPath, ".gc", "runtime", "packs", "dolt", "compact-quarantine", "beads")
+	assertCompactMarkerHasEvidence(t, quarantine,
+		"reason=post-flatten table value hash changed with row-count increase",
+		"integrity_table_drift=table=beads,before_rows=10,after_rows=11,before_hash=hash-beads-before,after_hash=hash-beads-after-writer,category=row_count_gain_hash_drift",
+		"table=notes,before_rows=10,after_rows=10,before_hash=hash-notes-before,after_hash=hash-notes-after-writer,category=same_row_count_hash_drift",
+		"flatten_preflight_head=headcommit",
+		"flatten_head=compactcommit",
+	)
+	if got := compactMarkerValue(t, quarantine, "flatten_post_verify_head"); got != wantPostVerifyHead {
+		t.Fatalf("marker flatten_post_verify_head = %q, want %q", got, wantPostVerifyHead)
+	}
+	pendingGC := filepath.Join(fixture.cityPath, ".gc", "runtime", "packs", "dolt", "compact-pending-gc", "beads")
+	if _, statErr := os.Stat(pendingGC); !os.IsNotExist(statErr) {
+		t.Fatalf("an unproven mixed drift must not write a pending-GC marker; stat=%v", statErr)
+	}
+	return log
+}
+
+// One ordinary bead write that lands after the flatten commit adds a row to
+// one table and updates a row in another. verify_counts reports that as two
+// failure categories at once, which no single-category defer path accepts.
+// When HEAD moved past the flatten, the flatten commit still holds both tables
+// exactly as pre-flight had them, and the writer's commits removed no row,
+// the drift is the writer's and the run defers.
+func TestCompactScriptDefersProvenWriterRaceMixedDrift(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_writer_only", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	if !strings.Contains(out, "table=beads gained rows during flatten") ||
+		!strings.Contains(out, "table=notes value hash changed after flatten without row-count increase") {
+		t.Fatalf("output missing the mixed signal that the proof downgrades:\n%s", out)
+	}
+	assertCompactWriterRaceDeferred(t, fixture, out, err)
+	if !strings.Contains(out, "mixed drift (gain+drift tables [beads], same-count drift tables [notes]) proven writer-only") {
+		t.Fatalf("defer line should name both drifted tables:\n%s", out)
+	}
+	if !strings.Contains(out, "flatten_HEAD=compactcommit post_verify_HEAD=writercommit") ||
+		!strings.Contains(out, "DOLT_DIFF(compactcommit..writercommit) has zero removed rows") {
+		t.Fatalf("defer line should name the two commits the proof compared:\n%s", out)
+	}
+	if strings.Contains(out, "mixed-drift proof failed") {
+		t.Fatalf("a passing proof must not print a failure line:\n%s", out)
+	}
+	logData, readErr := os.ReadFile(fixture.doltLog)
+	if readErr != nil {
+		t.Fatalf("read dolt log: %v", readErr)
+	}
+	log := string(logData)
+	for _, want := range []string{
+		"db=beads/compactcommit query=SELECT DOLT_HASHOF_TABLE('beads')",
+		"db=beads/compactcommit query=SELECT DOLT_HASHOF_TABLE('notes')",
+		"db=beads query=SELECT COUNT(*) FROM DOLT_DIFF('compactcommit', 'writercommit', 'beads') WHERE diff_type NOT IN ('added', 'modified')",
+		"db=beads query=SELECT COUNT(*) FROM DOLT_DIFF('compactcommit', 'writercommit', 'notes') WHERE diff_type NOT IN ('added', 'modified')",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("dolt log missing proof probe %q:\n%s", want, log)
+		}
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWhenWriterRemovedRow(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_writer_removed_row", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "mixed-drift proof failed item=no_removed_rows table=notes") {
+		t.Fatalf("output should name the removed-row proof failure:\n%s", out)
+	}
+	if !compactLogHasHashAtCommitProbe(log) {
+		t.Fatalf("the proof should have reached its probes:\n%s", log)
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWhenFlattenChangedTable(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_flatten_changed_table", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "mixed-drift proof failed item=flatten_preserved table=beads") ||
+		!strings.Contains(out, "hash at flatten_HEAD=compactcommit is hash-beads-changed-by-flatten, pre-flight was hash-beads-before") {
+		t.Fatalf("output should name the table the flatten changed:\n%s", out)
+	}
+	if strings.Contains(log, "DOLT_DIFF('compactcommit'") {
+		t.Fatalf("the proof must stop at its first failed item:\n%s", log)
+	}
+}
+
+// A writer absorbed into the flatten commit moves the pre-reset HEAD only. No
+// commit exists after the flatten, so there is nothing for the proof to
+// attribute the drift to, and the mixed case quarantines as before.
+func TestCompactScriptQuarantinesMixedDriftWhenOnlyPreResetHeadMoved(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_absorbed_writer", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "compactcommit")
+	if !strings.Contains(out, "pre_reset_HEAD=writercommit") {
+		t.Fatalf("the mode should have moved the pre-reset HEAD:\n%s", out)
+	}
+	if !strings.Contains(out, "mixed-drift proof failed item=writer_proven table=-") {
+		t.Fatalf("output should name the missing writer proof:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) {
+		t.Fatalf("no probe may be sent when the writer is not proven:\n%s", log)
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWhenPostVerifyHeadProbeEmpty(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_postverify_head_empty", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "")
+	if !strings.Contains(out, "mixed-drift proof failed item=writer_proven table=- post_verify_HEAD is empty") {
+		t.Fatalf("output should name the empty HEAD probe:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) {
+		t.Fatalf("no probe may be sent when the writer is not proven:\n%s", log)
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWhenHashProbeFails(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_hash_probe_fails", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "mixed-drift proof failed item=flatten_preserved table=beads hash probe at flatten_HEAD=compactcommit failed") {
+		t.Fatalf("output should name the failed hash probe:\n%s", out)
+	}
+	if !strings.Contains(out, "revision database unavailable") {
+		t.Fatalf("output should carry the probe's own error:\n%s", out)
+	}
+	if strings.Contains(log, "DOLT_DIFF('compactcommit'") {
+		t.Fatalf("the proof must stop at its first failed item:\n%s", log)
+	}
+}
+
+// The three tests below pin the flag guards in front of the proof. Each adds
+// one more failure category to a mixed drift whose proof would otherwise
+// pass, and the proof must not even be attempted.
+func TestCompactScriptQuarantinesMixedDriftWithRowDecreaseDespiteWriterRace(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_with_row_decrease", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "row count decreased after flatten table=wisps before=10 after=9") {
+		t.Fatalf("output missing the row decrease on the third table:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) || strings.Contains(out, "mixed-drift proof failed") {
+		t.Fatalf("a row decrease must stop the branch before the proof:\n%s\n%s", out, log)
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWithTableListChangeDespiteWriterRace(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_with_table_list_change", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "table=wisps appeared after pre-flight snapshot") {
+		t.Fatalf("output missing the table-list change:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) || strings.Contains(out, "mixed-drift proof failed") {
+		t.Fatalf("a table-list change must stop the branch before the proof:\n%s\n%s", out, log)
+	}
+}
+
+func TestCompactScriptQuarantinesMixedDriftWithProbeFailureDespiteWriterRace(t *testing.T) {
+	fixture := newCompactScriptFixture(t)
+	out, err := fixture.run(t, "mixed_drift_with_probe_failure", "GC_DOLT_COMPACT_THRESHOLD_COMMITS=500")
+	log := assertCompactMixedDriftQuarantined(t, fixture, out, err, "writercommit")
+	if !strings.Contains(out, "post-flatten row count failed for table=wisps") {
+		t.Fatalf("output missing the verify probe failure:\n%s", out)
+	}
+	if compactLogHasHashAtCommitProbe(log) || strings.Contains(out, "mixed-drift proof failed") {
+		t.Fatalf("a verify probe failure must stop the branch before the proof:\n%s\n%s", out, log)
 	}
 }
 
