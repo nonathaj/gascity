@@ -262,6 +262,17 @@ func (p *Provider) WaitForIdle(ctx context.Context, name string, timeout time.Du
 	return runtime.ErrInteractionUnsupported
 }
 
+// NudgeReadiness delegates to the routed backend when it can report whether a
+// session is in a state to take queued input. Without this the queued-nudge
+// gate's type assertion would see only the wrapper and never reach a backend
+// that has the capability.
+func (p *Provider) NudgeReadiness(ctx context.Context, name string) (runtime.NudgeReadiness, string, error) {
+	if rp, ok := p.route(name).(runtime.NudgeReadinessProvider); ok {
+		return rp.NudgeReadiness(ctx, name)
+	}
+	return "", "", runtime.ErrInteractionUnsupported
+}
+
 // NudgeNow delegates to the routed backend when it supports immediate
 // injection without an internal wait-idle step.
 func (p *Provider) NudgeNow(name string, content []runtime.ContentBlock) error {

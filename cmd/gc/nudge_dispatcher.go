@@ -228,7 +228,7 @@ func dispatchAllQueuedNudges(cityPath string, cfg *config.City, store, sessStore
 			logNudgeDispatchSkip(debugOut, "not-running", target.agentKey(), target.sessionName, "")
 			continue
 		}
-		ok, err := tryDeliverQueuedNudgesByPoller(target, store, sessStore, sp, defaultNudgePollQuiescence, obs)
+		ok, verdict, err := tryDeliverQueuedNudgesByPoller(target, store, sessStore, sp, defaultNudgePollQuiescence, obs)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
@@ -237,7 +237,7 @@ func dispatchAllQueuedNudges(cityPath string, cfg *config.City, store, sessStore
 			continue
 		}
 		// Matched a live, running session, yet nothing was claimed/delivered
-		// this tick — e.g. the poller quiescence gate (pollerSessionIdleEnough)
+		// this tick — e.g. the poller delivery gate (pollerDeliveryGate)
 		// hasn't cleared, or claimDueQueuedNudgesForTarget found nothing
 		// claimable (already claimed by a concurrent drain path). Either way
 		// this is the class of skip ra-oudpha finding-3 could not otherwise
@@ -247,7 +247,10 @@ func dispatchAllQueuedNudges(cityPath string, cfg *config.City, store, sessStore
 			reason = "not-delivered-error"
 		}
 		skipCounts[reason]++
-		detail := ""
+		// When the delivery gate held, say which state held it: "hold
+		// reason=not-deliverable status=working" and "reason=could-not-look"
+		// are different problems, and without this both read "not-delivered".
+		detail := verdict.detail()
 		if err != nil {
 			detail = err.Error()
 		}
