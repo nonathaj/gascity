@@ -46,6 +46,23 @@
 #      during/after verify). All other failures — and any of those signatures
 #      with a stable HEAD — still quarantine. Probe failure leaves the race
 #      unproven and quarantines.
+#      One combination has a path of its own: gain+drift on one table together
+#      with same-count drift on another. A single ordinary write after the
+#      flatten produces exactly that (a row added to one table, a row updated
+#      in another), and each single-category path excludes the other category.
+#      It is deferred only when all three of these are proven
+#      (mixed_drift_is_writer_only, compact-gain-drift-proof.sh):
+#        - HEAD moved past the flatten's own commit, so a writer committed
+#          after the flatten. A writer absorbed into the flatten does not
+#          count, and that mixed case still quarantines;
+#        - every drifted table's value hash at the flatten commit equals its
+#          pre-flight hash, so the flatten changed none of them;
+#        - DOLT_DIFF from the flatten commit to the post-verify HEAD has no
+#          row for a drifted table that is neither added nor modified, so the
+#          writer removed nothing.
+#      A row-count decrease, table-list change or verify probe failure
+#      alongside the mix is never offered to that proof. A failed proof prints
+#      which item failed and quarantines exactly as before.
 #   4b. Committed-root drift gate. When per-table verification passed but the
 #      whole-database hash still drifted, DOLT_DIFF_STAT names the tables that
 #      differ across the flatten. Drift is benign only when every named table
@@ -2770,13 +2787,15 @@ flatten_database() {
     integrity_guidance="${verify_counts_failure_guidance:-post-flatten integrity check failed; investigate before re-running}"
     # Downgrade quarantine -> defer for specific integrity-failure categories
     # where a concurrent writer is proven, rather than assuming corruption.
-    # Three categories get their own proof-gated defer path below: gain+drift
+    # Four categories get their own proof-gated defer path below: gain+drift
     # (HEAD-proven writer race, or an absorbed-writer race proven
     # additive-only via diff), row-count decrease (HEAD-proven concurrent
-    # DELETE), and same-count hash drift (HEAD-proven writer race proven
-    # additive-only via diff — a concurrent UPDATE). Table-list drift, probe
-    # failure, or any case whose specific proof fails still quarantine below
-    # unchanged.
+    # DELETE), same-count hash drift (HEAD-proven writer race proven
+    # additive-only via diff — a concurrent UPDATE), and the mix of gain+drift
+    # with same-count drift (a writer after the flatten, proven by the flatten
+    # commit holding each drifted table at its pre-flight hash and the
+    # writer's commits removing no row). Table-list drift, probe failure, or
+    # any case whose specific proof fails still quarantine below unchanged.
     if [ "$writer_race_detected" = "1" ] && \
        [ "${verify_counts_saw_gain:-0}" = "1" ] && \
        [ "${verify_counts_saw_gain_hash_drift:-0}" = "1" ] && \
@@ -2864,6 +2883,39 @@ flatten_database() {
        gain_drift_is_additive_only "$db" "$head" "$flatten_head" "$verify_counts_same_count_drift_tables"; then
       printf 'compact: db=%s writer race detected during flatten (snapshot_HEAD=%s pre_reset_HEAD=%s flatten_HEAD=%s post_verify_HEAD=%s) — same-count table value hash drift proven additive-only via DOLT_DIFF(%s..%s) for tables [%s] is concurrent-writer UPDATE, not corruption; deferring, will retry next run\n' \
         "$db" "$head" "${head_before_reset:-<empty>}" "$flatten_head" "${post_verify_head:-<empty>}" "$head" "$flatten_head" "${verify_counts_same_count_drift_tables# }" >&2
+      if ! defer_writer_race_after_flatten "$db" "$flatten_head" \
+        "$remote" "$expected_remote_head" "$expected_remote_head_verified" \
+        "$compacted_from_head" "$local_branch" "$remote_branch"; then
+        rm -f "$preflight_tmp"
+        return 1
+      fi
+      rm -f "$preflight_tmp"
+      return 0
+    fi
+    # Downgrade quarantine -> defer for the mixed case: one table gained rows
+    # with hash drift AND another drifted at the same row count. That is what
+    # a single ordinary bead write looks like when it lands after the flatten
+    # commit (an event row added, an issue row updated), and each path above
+    # excludes the other category, so it used to quarantine every time. Prove
+    # it directly instead: a writer committed after the flatten, the flatten
+    # commit itself still holds every drifted table exactly as pre-flight had
+    # it, and the writer's commits removed no row. There is deliberately no
+    # HEAD test here: mixed_drift_is_writer_only owns the writer proof and
+    # checks it before sending any probe, so every refused mixed case (an
+    # absorbed writer, an empty HEAD probe, a stable HEAD) prints the proof
+    # item it failed on. A row-count decrease, a table-list change or a verify
+    # probe failure alongside the mixed drift is a different failure and is
+    # not offered to the proof at all. Anything unproven falls through to the
+    # quarantine below unchanged.
+    if [ "${verify_counts_saw_gain_hash_drift:-0}" = "1" ] && \
+       [ "${verify_counts_saw_same_count_hash_drift:-0}" = "1" ] && \
+       [ "${verify_counts_saw_row_decrease:-0}" != "1" ] && \
+       [ "${verify_counts_saw_table_list_change:-0}" != "1" ] && \
+       [ "${verify_counts_saw_probe_failure:-0}" != "1" ] && \
+       mixed_drift_is_writer_only "$db" "$preflight_tmp" "$flatten_head" "$post_verify_head" \
+         "$verify_counts_gain_drift_tables $verify_counts_same_count_drift_tables"; then
+      printf 'compact: db=%s writer race detected during flatten (snapshot_HEAD=%s pre_reset_HEAD=%s flatten_HEAD=%s post_verify_HEAD=%s) — mixed drift (gain+drift tables [%s], same-count drift tables [%s]) proven writer-only: every drifted table'"'"'s value hash at flatten_HEAD equals pre-flight and DOLT_DIFF(%s..%s) has zero removed rows; not corruption; deferring, will retry next run\n' \
+        "$db" "$head" "${head_before_reset:-<empty>}" "$flatten_head" "${post_verify_head:-<empty>}" "${verify_counts_gain_drift_tables# }" "${verify_counts_same_count_drift_tables# }" "$flatten_head" "$post_verify_head" >&2
       if ! defer_writer_race_after_flatten "$db" "$flatten_head" \
         "$remote" "$expected_remote_head" "$expected_remote_head_verified" \
         "$compacted_from_head" "$local_branch" "$remote_branch"; then
