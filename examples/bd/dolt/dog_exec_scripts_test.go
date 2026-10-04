@@ -2584,7 +2584,9 @@ func compactLogHasHashAtCommitProbe(log string) bool {
 // assertCompactMixedDriftQuarantined encodes what every refused mixed-drift
 // case must still look like: a failed run, no GC, no pending-GC marker, and a
 // quarantine marker in today's format carrying both drift categories and the
-// flatten heads. It returns the fake dolt's log.
+// flatten heads. When a writer is proven (the post-verify head moved to the
+// writer's commit), the run must also still print the existing "prevents
+// defer; quarantine unchanged" line. It returns the fake dolt's log.
 func assertCompactMixedDriftQuarantined(t *testing.T, fixture compactScriptFixture, out string, err error, wantPostVerifyHead string) string {
 	t.Helper()
 	if err == nil {
@@ -2592,6 +2594,10 @@ func assertCompactMixedDriftQuarantined(t *testing.T, fixture compactScriptFixtu
 	}
 	if !strings.Contains(out, "post-flatten INTEGRITY check failed") {
 		t.Fatalf("output missing the integrity failure line:\n%s", out)
+	}
+	if wantPostVerifyHead == "writercommit" &&
+		!strings.Contains(out, "additional integrity failure category prevents defer; quarantine unchanged") {
+		t.Fatalf("a proven writer whose mixed drift is refused must still print the prevents-defer line:\n%s", out)
 	}
 	logData, readErr := os.ReadFile(fixture.doltLog)
 	if readErr != nil {
